@@ -343,8 +343,6 @@ def test_serial_estimate_never_sits_below_the_parallel_rate(cpu, monkeypatch):
     """A fan-out cannot make an element cheaper than it is serially, so a
     serial sample under the measured parallel rate is a biased sample."""
     backend = CPUBackend()
-    if not backend._v2:
-        pytest.skip("policy v1 does not measure the parallel rate")
     n = 4096
     compiled, args = _measured(backend, _scale, n)
     honest = compiled.ns_per_elem
@@ -360,8 +358,6 @@ def test_a_parallel_measurement_lifts_a_low_serial_estimate(cpu):
     """The floor applies as soon as a fan-out has measured the range, not
     only on the next serial sample, which may be 1024 dispatches away."""
     backend = CPUBackend()
-    if not backend._v2:
-        pytest.skip("policy v1 does not measure the parallel rate")
     compiled, _ = _measured(backend, _scale, 4096)
     honest = compiled.ns_per_elem
     before = compiled.parallel_min_elems
@@ -394,8 +390,6 @@ def test_a_long_fan_out_floors_the_serial_estimate(cpu):
     backend = CPUBackend()
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
-    if not backend._v2:
-        pytest.skip("policy v1 does not measure the parallel rate")
     n = 200000
     x = tack.empty((n,))
     out = tack.empty((n,))
@@ -426,8 +420,6 @@ def test_a_workload_that_becomes_cheap_returns_to_serial(cpu, monkeypatch):
     load and the clock cannot decide whether this transition passes.
     """
     backend = CPUBackend(num_threads=4)
-    if not backend._v2:
-        pytest.skip("policy v1 does not measure the parallel rate")
     n = 1 << 17
     x = tack.empty((n,))
     out = tack.empty((n,))
@@ -489,8 +481,6 @@ def test_floor_retirement_requires_the_whole_range_to_be_fast(
     from concurrent.futures import Future
 
     backend = CPUBackend(num_threads=4)
-    if not backend._v2:
-        pytest.skip("policy v1 does not measure the parallel rate")
     n = 4096
     x = tack.empty((n,))
     out = tack.empty((n,))
@@ -1018,8 +1008,6 @@ def test_a_sample_after_a_fan_out_cannot_raise_the_estimate(cpu, monkeypatch):
     upper bound, so it may lower the estimate and must not raise it.
     """
     backend = CPUBackend()
-    if not backend._v2:
-        pytest.skip("policy v2 only")
     n = 4096
     compiled, args = _measured(backend, _scale, n)
     prefix = compiled.bind(args)
@@ -1125,8 +1113,6 @@ def test_the_first_clean_sample_is_believed(cpu, monkeypatch):
     the estimate stuck near 3x -- two harness runs in three.
     """
     backend = CPUBackend()
-    if not backend._v2:
-        pytest.skip("policy v2 only")
     n = 4096
     compiled, args = _measured(backend, _scale, n)
     prefix = compiled.bind(args)
@@ -1198,8 +1184,8 @@ def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
     honest r_p is the serial rate over the effective parallelism.
     """
     backend = CPUBackend()
-    if not backend._v2 or backend.num_threads < 2:
-        pytest.skip("policy v2 with threads only")
+    if backend.num_threads < 2:
+        pytest.skip("needs threads")
     compiled, args, n, rate = _stale_parallel_rate_setup(backend, monkeypatch)
 
     fanned = []
@@ -1226,8 +1212,8 @@ def test_negative_control_stale_rate_without_recovery_stays_serial(
     moves. This is what makes the test above a test of the recovery path
     rather than of this host's threshold arithmetic."""
     backend = CPUBackend()
-    if not backend._v2 or backend.num_threads < 2:
-        pytest.skip("policy v2 with threads only")
+    if backend.num_threads < 2:
+        pytest.skip("needs threads")
     monkeypatch.setattr(CPUBackend, "_parallel_recheck_due",
                         lambda self, compiled, loop_end: False)
     compiled, args, n, rate = _stale_parallel_rate_setup(backend, monkeypatch)
@@ -1252,8 +1238,6 @@ def test_one_high_parallel_draw_cannot_set_the_serial_floor(cpu):
     gain from fanning out at all.
     """
     backend = CPUBackend()
-    if not backend._v2:
-        pytest.skip("policy v2 only")
     compiled, _ = _measured(backend, _scale, 4096)
     compiled.ns_per_elem_parallel = 0.02
     backend._set_serial_cost(compiled, 0.2)
@@ -1279,8 +1263,8 @@ def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
     in a few fan-outs' time should be timed serially first.
     """
     backend = CPUBackend()
-    if not backend._v2 or backend.num_threads < 2:
-        pytest.skip("policy v2 with threads only")
+    if backend.num_threads < 2:
+        pytest.skip("needs threads")
     n = 100_000
     assert n >= backend._probe_min_range(), "test needs the first-sight path"
     x = tack.empty((n,))
@@ -1315,8 +1299,8 @@ def test_a_dispatch_never_sleeps(cpu, monkeypatch):
     program actually takes instead.
     """
     backend = CPUBackend()
-    if not backend._v2 or backend.num_threads < 2:
-        pytest.skip("policy v2 with threads only")
+    if backend.num_threads < 2:
+        pytest.skip("needs threads")
     slept = []
     monkeypatch.setattr(cpu_mod.time, "sleep", lambda s: slept.append(s))
     n = 1 << 16
@@ -1338,8 +1322,8 @@ def test_an_idle_knot_is_learned_where_it_was_measured(cpu):
     program has rather than ones it was made to wait through.
     """
     backend = CPUBackend()
-    if not backend._v2 or backend.num_threads < 2:
-        pytest.skip("policy v2 with threads only")
+    if backend.num_threads < 2:
+        pytest.skip("needs threads")
     n = 1 << 16
     compiled, args = _measured(backend, _scale, n)
     backend._calibrate_fan_out(compiled, compiled.bind(args))

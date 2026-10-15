@@ -72,10 +72,7 @@ def fit(xs, ys):
 def main():
     tack.set_default_device("cpu")
     be = get_backend()
-    if be.policy != "v2":
-        raise SystemExit("run with TACK_CPU_POLICY=v2 -- v1 has no r_p")
-
-    print(f"policy {be.policy}  margin {be._margin():.2f}  "
+    print(f"margin {be._margin():.2f}  "
           f"threads {be.num_threads}\n")
     print(f"{'kernel':7s} {'r_s be':>8s} {'r_s fit':>8s} {'r_p be':>8s} "
           f"{'r_p fit':>8s} {'bias':>7s} {'P_eff be':>9s} {'P_eff fit':>10s}")
