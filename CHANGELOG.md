@@ -114,8 +114,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   import. Arrays know their device (`a.device`, `a.to_device(...)`, and
   `device=` on every constructor), and a kernel runs where its arrays are,
   so changing the default no longer strands arrays made before it; arrays
-  on two devices are refused. `tack.algorithms` run on their inputs'
-  device, and `tack.sync()` waits for every device. `Backend.init_options`
+  on two devices are refused, by `tack.algorithms`, `copyto` and `concat`
+  under their own names. `tack.algorithms` run on their inputs' device,
+  and `tack.sync()` waits for every device. `Backend.init_options`
   is `Backend.device_options`. A warm dispatch costs about 0.4 µs more
   (6.7 to 7.1 µs on an M1 Max) for reading its arrays' devices.
 - **Breaking:** kernel values and loops are spelled as NumPy and GLSL
@@ -146,7 +147,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   went with them: a vector array's `shape` counts vectors and its values
   download and upload as rows, and `copyto` refuses a flat array.
   `tack.interop.vtk`'s `vtk_to_field` and `field_to_vtk` are
-  `vtk_to_array` and `array_to_vtk`.
+  `vtk_to_array` and `array_to_vtk(array, ...)`.
   `local_array_like` and `shared_like` remain allocation-only helpers.
 - A scan's small levels are one launch: a level of at most 4096 elements
   on the CPU, or one tile on a GPU backend, is scanned in order by one

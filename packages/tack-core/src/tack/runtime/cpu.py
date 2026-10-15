@@ -864,7 +864,9 @@ class CPUBackend(Backend):
         if num_threads is None:
             env = os.environ.get("TACK_CPU_THREADS")
             num_threads = int(env) if env else _physical_core_count()
-        self.num_threads = max(1, num_threads)
+        elif isinstance(num_threads, bool) or not isinstance(num_threads, (int, np.integer)):
+            raise TypeError(f"num_threads is a thread count, not {num_threads!r}")
+        self.num_threads = max(1, int(num_threads))
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledKernel}
         self._pool: ThreadPoolExecutor | None = None
         # How a range is fanned out: "jit", the pool in `cpu_pool` reached

@@ -756,7 +756,8 @@ def copyto(dst: Array, src):
 
     ``src`` is host data -- a NumPy array, a sequence or a scalar -- whose
     shape is ``dst.numpy()``'s or broadcasts to it, converted to ``dst``'s
-    dtype; or a Tack array of ``dst``'s shape, copied on the device.
+    dtype; or a Tack array of ``dst``'s shape on ``dst``'s device, copied
+    there (``src.to_device(dst.device)`` brings one from another device).
     """
     if not isinstance(dst, Array):
         raise TypeError(f"copyto() writes into a Tack array, not {type(dst).__name__}")
@@ -764,6 +765,8 @@ def copyto(dst: Array, src):
         if src.shape != dst.shape or src.scalar_size != dst.scalar_size:
             raise ValueError(f"copyto() from an array of shape {src.shape} and dtype "
                              f"{src.dtype} into one of shape {dst.shape} and dtype {dst.dtype}")
+        from tack.runtime.dispatch import same_device
+        same_device("copyto()", (dst, src))
         dst._check_writable()
         from tack.algorithms.copy import copy as _copy
         _copy(src._scalar_view(), dst._scalar_view(), dst.scalar_size)
@@ -798,8 +801,8 @@ def arange(start, stop=None, step=1, dtype=None, *, device=None) -> Array:
 def concat(arrays) -> Array:
     """Join a sequence of arrays end to end into a new one-dimensional array.
 
-    All arrays must have the same dtype; the copy runs on the first array's
-    device.
+    All arrays must have the same dtype and be on one device, where the copy
+    runs.
     """
     arrays = list(arrays)
     if not arrays:
@@ -809,6 +812,8 @@ def concat(arrays) -> Array:
         if a.dtype != dt:
             raise TypeError(
                 f"concat: all arrays must have the same dtype, got {dt} and {a.dtype}")
+    from tack.runtime.dispatch import same_device
+    same_device("concat()", arrays)
     total = sum(a.size for a in arrays)
     result = empty((total,), dt, device=arrays[0]._backend)
     from tack.algorithms.copy import copy_with_offset

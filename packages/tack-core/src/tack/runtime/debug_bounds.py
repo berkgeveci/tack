@@ -45,6 +45,7 @@ def _arrays(backend) -> dict:
 def hidden_args(backend, template, args) -> list:
     """``args`` and the hidden errors and extents arrays a debug kernel takes."""
     from tack.lang.array import Array, copyto, zeros
+    from tack.runtime.dispatch import as_device
 
     own = len(template.params) - len(ir_bounds.HIDDEN_PARAMS)
     if len(args) != own:
@@ -57,13 +58,16 @@ def hidden_args(backend, template, args) -> list:
             table[slot] = shape[0] if shape else 1
             table[slot + 1] = math.prod(shape)
             table[slot + 2] = arg.scalar_size
+    # On the launch's device, which need not be the default one: a kernel
+    # runs where its arrays are.
+    device = as_device(backend)
     arrays = _arrays(backend)
     errors = arrays.get("errors")
     if errors is None:
-        errors = arrays["errors"] = zeros((ir_bounds.ERRORS_SIZE,), i32)
+        errors = arrays["errors"] = zeros((ir_bounds.ERRORS_SIZE,), i32, device=device)
     extents = arrays.get(table.size)
     if extents is None:
-        extents = arrays[table.size] = zeros((table.size,), i64)
+        extents = arrays[table.size] = zeros((table.size,), i64, device=device)
     copyto(extents, table)
     return [*args, errors, extents]
 

@@ -276,16 +276,32 @@ def on_inputs_device(func):
 
     For library functions that allocate temporaries and launch kernels on
     their inputs (scans, sorts): both then happen where the inputs are.
+    Arrays on two devices are refused under ``func``'s name, rather than
+    under the name of whichever internal kernel meets them first.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        dev = next((d for d in (getattr(a, "_device", None) for a in args) if d is not None),
-                   None)
+        dev = same_device(f"{func.__name__}()", (*args, *kwargs.values()))
         if dev is None:
             return func(*args, **kwargs)
         with as_device(dev):
             return func(*args, **kwargs)
     return wrapper
+
+
+def same_device(what, arrays):
+    """The device of the first array among ``arrays`` (other values are
+    skipped), or None; raises if another is in a different device's memory."""
+    found = None
+    for array in arrays:
+        dev = getattr(array, "_device", None)
+        if dev is None:
+            continue
+        if found is None:
+            found = dev
+        elif dev is not found and dev.memory_domain != found.memory_domain:
+            raise ValueError(_two_devices(what, found, dev))
+    return found
 
 
 _SCALARS = frozenset((int, float, bool))
@@ -313,7 +329,7 @@ def launch_backend(name, args):
         if found is None:
             found = dev
         elif dev is not found and dev.memory_domain != found.memory_domain:
-            raise ValueError(_two_devices(name, found, dev))
+            raise ValueError(_two_devices(f"Kernel '{name}'", found, dev))
     if found is None and templates:
         found = _template_device(args)
     if found is None or found is default or found.memory_domain == default.memory_domain:
@@ -327,7 +343,7 @@ def check_devices(name, backend, args):
     for arg in args:
         dev = getattr(arg, "_device", None)
         if dev is not None and dev is not backend and dev.memory_domain != backend.memory_domain:
-            raise ValueError(_two_devices(name, backend, dev))
+            raise ValueError(_two_devices(f"Kernel '{name}'", backend, dev))
 
 
 def _template_device(args):
@@ -341,8 +357,8 @@ def _template_device(args):
     return None
 
 
-def _two_devices(name, first, second):
-    return (f"Kernel '{name}' was given arrays on two devices ({as_device(first)} and "
+def _two_devices(what, first, second):
+    return (f"{what} was given arrays on two devices ({as_device(first)} and "
             f"{as_device(second)}); a launch runs on one. Copy them to one device first "
             f"(a.to_device(...)).")
 

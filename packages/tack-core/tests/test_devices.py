@@ -243,11 +243,63 @@ def test_sync_waits_for_every_device(cpu, monkeypatch):
     assert cpu in waited and serial in waited
 
 
-def test_debug_mode_is_its_own_switch(cpu):
-    assert not dispatch.debug_enabled()
+@pytest.fixture
+def debug():
+    """Debug mode on, and afterwards as it was: under TACK_DEBUG=1 it stays on."""
+    was = dispatch.debug_enabled()
     tack.set_debug(True)
+    yield
+    tack.set_debug(was)
+
+
+def test_debug_mode_is_its_own_switch(cpu):
+    was = dispatch.debug_enabled()
     try:
+        tack.set_debug(False)
+        assert not dispatch.debug_enabled()
+        tack.set_debug(True)
         assert dispatch.debug_enabled()
         assert tack.get_default_device() is cpu
     finally:
-        tack.set_debug(False)
+        tack.set_debug(was)
+
+
+@tack.kernel
+def _shift(x, out):
+    for i in range(x.shape[0]):
+        out[i] = x[i + 1]
+
+
+def test_debug_mode_checks_a_launch_off_the_default_device(cpu, second, debug):
+    """The hidden bounds arrays are made where the launch runs, not on the
+    default device (CUDA arrays with the CPU as default failed in the launch
+    with an AttributeError from the CPU's buffer)."""
+    from tack.runtime import debug_bounds
+
+    x, out = tack.ones((4,), device=second), tack.empty((4,), device=second)
+    with pytest.raises(IndexError, match=r"x\[i \+ 1\]"):
+        _shift(x, out)
+    assert debug_bounds._arrays(second._backend)["errors"].device == second
+    with pytest.raises(IndexError):
+        _shift(tack.ones((4,)), tack.empty((4,)))       # and back on the default
+
+
+def test_library_functions_refuse_two_devices_under_their_own_name(cpu, second):
+    """Not under the name of the internal kernel that meets the arrays first."""
+    from tack.algorithms import exclusive_scan
+
+    here = tack.arange(4, dtype=tack.i32)
+    there = tack.empty((4,), tack.i32, device=second)
+    with pytest.raises(ValueError, match=r"^exclusive_scan\(\) was given arrays on two "
+                                         r"devices \(cpu and cpu\)"):
+        exclusive_scan(here, there, 4)
+    with pytest.raises(ValueError, match=r"^copyto\(\) was given arrays on two devices"):
+        tack.copyto(there, here)
+    with pytest.raises(ValueError, match=r"^concat\(\) was given arrays on two devices"):
+        tack.concat([here, there])
+
+
+@pytest.mark.parametrize("count", ["4", 2.0, True, None.__class__])
+def test_a_thread_count_is_an_integer(count):
+    with pytest.raises(TypeError, match="num_threads is a thread count"):
+        tack.device("cpu", num_threads=count)

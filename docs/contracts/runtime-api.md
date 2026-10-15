@@ -41,6 +41,10 @@ returned as it is.
 - Only device 0 of each type is reachable.
 - A CUDA context is current on the thread that made the device (the first
   call that names it). See [Calling a kernel](#calling-a-kernel).
+- A CUDA context already current on that thread, such as one an embedding
+  framework created, is adopted and never destroyed. It must be current
+  before the first call that names `"cuda"`: the device is made once, so a
+  context made current later is not adopted.
 
 **Errors:**
 
@@ -127,7 +131,10 @@ else the one `set_default_device` chose, else the CPU.
   to one device first (a.to_device(...))." The check runs on the dispatch
   fast path too.
 - `tack.algorithms` functions allocate their temporaries and launch on
-  their first array argument's device.
+  their first array argument's device. They, `tack.copyto` from a Tack
+  array and `tack.concat` refuse arrays in two memory domains under their
+  own name: "exclusive_scan() was given arrays on two devices (cpu and
+  cuda:0); ...", not the name of an internal kernel.
 - An array holds its device, so a device's backend (and a CUDA context it
   created) lives at least as long as any of its arrays.
 
@@ -234,7 +241,7 @@ The buffer belongs to the array's device (`a.device`; see
 
 | Operation | Guarantee | Errors |
 |---|---|---|
-| `tack.copyto(a, src)` | With host `src` (a NumPy array, sequence or scalar): converts it to `a`'s scalar dtype with `np.asarray`, an unchecked cast, and copies it in. Its shape must be `a.numpy()`'s shape or broadcast to it, as in `np.copyto`; a flat array is not accepted for a vector or matrix array. Works on reshaped views. With a Tack array `src` of the same shape and scalar count: a device copy | `RuntimeError` if `a` is read-only. `ValueError` "copyto() into an array whose values have shape (8,): cannot broadcast shape (4,)", or for a Tack `src` of another shape. `TypeError` if `a` is not a Tack array |
+| `tack.copyto(a, src)` | With host `src` (a NumPy array, sequence or scalar): converts it to `a`'s scalar dtype with `np.asarray`, an unchecked cast, and copies it in. Its shape must be `a.numpy()`'s shape or broadcast to it, as in `np.copyto`; a flat array is not accepted for a vector or matrix array. Works on reshaped views. With a Tack array `src` of the same shape and scalar count on `a`'s device: a device copy (`src.to_device(a.device)` brings one from another device) | `RuntimeError` if `a` is read-only. `ValueError` "copyto() into an array whose values have shape (8,): cannot broadcast shape (4,)", for a Tack `src` of another shape, or "copyto() was given arrays on two devices ..." for one on another device. `TypeError` if `a` is not a Tack array |
 | `a.numpy()`, `np.asarray(a)` | Returns a **new** NumPy array with the scalar component dtype and component axes appended to `a.shape`. Never a view, including on Metal; `np.asarray(a, copy=False)` raises `ValueError` | — |
 | `a.fill(value)` | Sets every element to a scalar, or, for a vector or matrix array, to one element's components | `RuntimeError` if read-only. `TypeError` for a sequence on a scalar array; `ValueError` for a sequence of the wrong element shape |
 | `a[i]`, `a[i, j]`, `a[()]` | Reads one element: a Python number, or a NumPy array for a vector or matrix element. `a[()]` reads a 0-d array, as in NumPy. There is no host assignment: `a[i] = x` and iteration raise `TypeError` | `TypeError` for anything but one integer per dimension, including `a[None]`, whose message names `a[()]`; `IndexError` out of range |

@@ -315,51 +315,61 @@ def test_kernel_runs_after_reinit():
     assert np.allclose(out.numpy(), 3.0)
 
 
-def test_foreign_context_is_adopted_but_never_destroyed():
-    """A context Tack did not create stays alive after every backend is gone.
+_FOREIGN_SCRIPT = """
+import gc
+from cuda.bindings import driver
+
+# The embedding framework's context, current before Tack touches CUDA.
+driver.cuInit(0)
+err, dev = driver.cuDeviceGet(0)
+assert err == driver.CUresult.CUDA_SUCCESS
+err, foreign = driver.cuCtxCreate(None, 0, dev)
+assert err == driver.CUresult.CUDA_SUCCESS
+
+import tack
+from tack.runtime import dispatch
+from tack.runtime.cuda_backend import _CONTEXTS
+
+backend = tack.device("cuda")._backend
+assert int(backend._context) == int(foreign), "the current context was not adopted"
+assert backend._owns_context is False
+# Tracked, so buffers get a token to hold, but not owned -- which is
+# what keeps it out of cuCtxDestroy's way.
+assert _CONTEXTS[int(foreign)].owned is False
+
+# Let go of every Tack reference to the device; the foreign context must survive.
+del backend
+dispatch._devices.pop(("cuda", 0))
+gc.collect()
+
+err, ptr = driver.cuMemAlloc(256)
+assert err == driver.CUresult.CUDA_SUCCESS, "foreign context was destroyed"
+driver.cuMemFree(ptr)
+driver.cuCtxDestroy(foreign)
+print("ok")
+"""
+
+
+def test_foreign_context_is_adopted_but_never_destroyed(tmp_path):
+    """A context Tack did not create stays alive after Tack lets go of it.
 
     This is the case the adoption logic exists for -- an embedding framework
     (AMReX and friends) sets up its own context and expects Tack to share it,
     not to take it away. Refcounting ownership must not regress that: a
     foreign context is never recorded as owned, so nothing ever destroys it.
+
+    In a fresh process, because a device lives as long as the process: this
+    one made its CUDA device long ago, with Tack's own context, so the
+    context is adopted only where it is current before Tack's first use.
     """
-    import gc
+    import subprocess
+    import sys
 
-    from cuda.bindings import driver
-
-    from tack.runtime import dispatch
-    from tack.runtime.cuda_backend import _CONTEXTS
-
-    # Drop Tack's own context first, so the one we create is the current one.
-    tack.set_default_device("cpu")
-    gc.collect()
-
-    driver.cuInit(0)
-    err, dev = driver.cuDeviceGet(0)
-    assert err == driver.CUresult.CUDA_SUCCESS
-    err, foreign = driver.cuCtxCreate(None, 0, dev)
-    assert err == driver.CUresult.CUDA_SUCCESS
-
-    try:
-        tack.set_default_device("cuda")
-        backend = dispatch.get_backend()
-
-        assert int(backend._context) == int(foreign)
-        assert backend._owns_context is False
-        # Tracked, so buffers get a token to hold, but not owned -- which is
-        # what keeps it out of cuCtxDestroy's way.
-        assert _CONTEXTS[int(foreign)].owned is False
-
-        # Tear every Tack backend down; the foreign context must survive.
-        del backend
-        tack.set_default_device("cpu")
-        gc.collect()
-
-        err, ptr = driver.cuMemAlloc(256)
-        assert err == driver.CUresult.CUDA_SUCCESS, "foreign context was destroyed"
-        driver.cuMemFree(ptr)
-    finally:
-        driver.cuCtxDestroy(foreign)
+    script = tmp_path / "foreign.py"
+    script.write_text(_FOREIGN_SCRIPT)
+    proc = subprocess.run([sys.executable, "-u", str(script)],
+                          capture_output=True, text=True, timeout=300)
+    assert proc.returncode == 0 and proc.stdout.strip() == "ok", proc.stderr
 
 
 # A device is a value that lives as long as the process (or as long as
@@ -611,3 +621,14 @@ def test_host_element_reads_copy_one_element():
         f._buffer.read_range(19, 2)
     with pytest.raises(IndexError, match="outside"):
         f._buffer.read_range(-1, 1)
+
+
+def test_importing_device_memory_on_the_cpu_says_how_to_import_it():
+    """The refusal names the fix (it used to say to initialize a backend)."""
+    g = tack.arange(4, dtype=tack.f32)              # on CUDA, the default here
+    with tack.device("cpu"):
+        with pytest.raises(RuntimeError, match=r"from_dlpack\(x, device='cuda'\)"):
+            tack.from_dlpack(g)
+        wrapped = tack.from_dlpack(g, device="cuda")
+    assert wrapped.device == tack.device("cuda")
+    assert np.array_equal(wrapped.numpy(), np.arange(4, dtype=np.float32))

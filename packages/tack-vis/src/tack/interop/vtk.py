@@ -118,10 +118,10 @@ def vtk_to_array(vtk_array, flatten=False):
             their point and vector inputs in this interleaved form.
 
     Returns:
-        A tack.field sharing the array's memory, shaped
+        A Tack array sharing the VTK array's memory, shaped
         ``(tuples, components)`` -- or ``(tuples,)`` when there is one
         component, since a scalar array is naturally 1-D. The VTK array is
-        held for as long as the field lives, so it may be dropped
+        held for as long as the array lives, so it may be dropped
         immediately.
 
     Raises:
@@ -134,77 +134,77 @@ def vtk_to_array(vtk_array, flatten=False):
     _require_shared_level_zero_context(dlpack_support)
 
     # VTK always exports 2-D, (tuples, components).
-    field = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
+    array = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
 
     if flatten:
-        return field.reshape((field.size,))
-    if len(field.shape) == 2 and field.shape[1] == 1:
-        return field.reshape((field.shape[0],))
-    return field
+        return array.reshape((array.size,))
+    if len(array.shape) == 2 and array.shape[1] == 1:
+        return array.reshape((array.shape[0],))
+    return array
 
 
-def array_to_vtk(field, n_components=None, name=None):
+def array_to_vtk(array, n_components=None, name=None):
     """Wrap a Tack array as a vtkDataArray, without copying.
 
     Args:
-        field: the tack.field to share. A 2-D array maps straight over --
+        array: the Tack array to share. A 2-D array maps straight over --
             ``(1000, 3)`` becomes 1000 tuples of 3.
-        n_components: only needed for a *flat* field holding interleaved
+        n_components: only needed for a *flat* array holding interleaved
             data, which is the form Tack's own algorithms produce. A
-            ``(3000,)`` field with n_components=3 becomes 1000 tuples of 3.
+            ``(3000,)`` array with n_components=3 becomes 1000 tuples of 3.
             Leave it unset for a 2-D array, whose shape already says.
         name: array name, as VTK uses to identify it in a dataset.
 
     Returns:
-        A vtkDataArray sharing the field's memory. The field is held for as
+        A vtkDataArray sharing the array's memory. The array is held for as
         long as the array lives.
 
     Raises:
-        ValueError: if n_components contradicts the field's shape, does not
-            divide its size, or the field has more than 2 dimensions.
+        ValueError: if n_components contradicts the array's shape, does not
+            divide its size, or the array has more than 2 dimensions.
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
-    if hasattr(field, '_vector_n'):
-        width = field._vector_n
+    if hasattr(array, '_vector_n'):
+        width = array._vector_n
         if n_components is not None and n_components != width:
             raise ValueError(
                 f"n_components={n_components} contradicts the element width {width}")
-        if len(field.shape) > 1:
+        if len(array.shape) > 1:
             raise ValueError("reshape a typed array to one array dimension for VTK tuples")
-        field = field._scalar_view().reshape((field.size, width))
+        array = array._scalar_view().reshape((array.size, width))
         n_components = width
-    ndim = len(field.shape)
+    ndim = len(array.shape)
 
     if n_components is None:
         if ndim == 2:
-            n_components = field.shape[1]
+            n_components = array.shape[1]
         elif ndim <= 1:
             n_components = 1
         else:
             raise ValueError(
-                f"a {ndim}-dimensional field has no obvious VTK layout; "
+                f"a {ndim}-dimensional array has no obvious VTK layout; "
                 f"reshape it to (tuples, components), or pass n_components "
                 f"if it holds flat interleaved data")
     else:
         if n_components < 1:
             raise ValueError(f"n_components must be at least 1, got {n_components}")
-        if ndim == 2 and field.shape[1] != n_components:
+        if ndim == 2 and array.shape[1] != n_components:
             raise ValueError(
-                f"n_components={n_components} contradicts the field's shape "
-                f"{field.shape}, which already says {field.shape[1]}")
-        if field.size % n_components:
+                f"n_components={n_components} contradicts the array's shape "
+                f"{array.shape}, which already says {array.shape[1]}")
+        if array.size % n_components:
             raise ValueError(
-                f"a field of {field.size} values does not divide into tuples "
+                f"an array of {array.size} values does not divide into tuples "
                 f"of {n_components}")
 
     dlpack_support = _dlpack_support()
-    _require_shared_level_zero_context(dlpack_support, field._backend)
+    _require_shared_level_zero_context(dlpack_support, array._backend)
 
     # VTK reads the tensor as (tuples, components), so give it that shape.
-    shaped = field
-    if field.shape != (field.size // n_components, n_components):
-        shaped = field.reshape((field.size // n_components, n_components))
+    shaped = array
+    if array.shape != (array.size // n_components, n_components):
+        shaped = array.reshape((array.size // n_components, n_components))
 
     return dlpack_support.dlpack_to_vtk(shaped, name=name)
 

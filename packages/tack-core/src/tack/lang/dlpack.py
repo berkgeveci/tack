@@ -507,10 +507,10 @@ def dlpack_to_array(source, writable=True):
             f"unsupported DLPack device type {tensor.device.device_type}")
     if backend.name not in allowed:
         message = (
-            f"the tensor is on a device the '{backend.name}' backend cannot "
+            f"the tensor is on a device the '{backend.name}' device cannot "
             f"wrap without copying (DLPack device type "
-            f"{tensor.device.device_type}). "
-            f"Initialize a backend from {allowed}, or copy the data yourself.")
+            f"{tensor.device.device_type}). Import it on its own device with "
+            f"tack.from_dlpack(x, device='{allowed[0]}'), or pass copy=True.")
         if backend.dlpack_refusal_note:
             message += f" {backend.dlpack_refusal_note}"
         raise RuntimeError(message)
