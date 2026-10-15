@@ -286,6 +286,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A parallel loop bounded by a local, `n = x.shape[0]; for i in range(n)`,
+  failed at dispatch ("Cannot resolve loop range expression"), and so did
+  `len(obj)` for an indexable object whose `__len__` returns an array's
+  `shape[0]`. Such a bound is now read from the arguments, and a new
+  length reuses the compiled kernel.
 - A device-class instance attribute that shadows a class constant with
   something other than a number (`obj.SCALE = [1, 2]`) made every call
   fail with "unhashable type: 'list'". Such an attribute now drops the

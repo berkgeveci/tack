@@ -287,3 +287,29 @@ def test_class_tuples_are_constants(backend):
     out.fill(0)
     _tile_total(swapped, out)
     assert out[0] == sum(i + 10 * j for i in range(2) for j in range(4))
+
+
+@tack.device_class
+class Wrapped:
+    """`__len__` returns its array's length, which bounds a launch."""
+
+    def __init__(self, values):
+        self.values = values
+
+    @tack.func
+    def __getitem__(self, k):
+        return self.values[k]
+
+    @tack.func
+    def __len__(self):
+        return self.values.shape[0]
+
+
+def test_len_may_return_an_arrays_length(backend):
+    from tack.runtime.dispatch import get_backend
+    drop_variants(_copy_len, lambda key: True)
+    for n in (3, 6):
+        out = tack.zeros((8,))
+        _copy_len(Wrapped(tack.arange(n, dtype=tack.f32)), out)
+        np.testing.assert_allclose(out.numpy(), [*range(n), *[0] * (8 - n)])
+    assert len(get_backend()._cache[_copy_len]) == 1

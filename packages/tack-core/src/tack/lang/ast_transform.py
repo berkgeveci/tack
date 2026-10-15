@@ -215,6 +215,7 @@ class KernelTransformer(ast.NodeVisitor):
         for stmt in body:
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
+        body = _launch_bounds_from_arguments(params, body)
         if self._debug:
             params.extend(ir.IRParam(name=name) for name in ir_bounds.HIDDEN_PARAMS)
         function = ir.IRFunction(name=node.name, params=params, body=body)
@@ -2775,6 +2776,101 @@ def _effect_name(node) -> str | None:
     if isinstance(node, ir.IRPrint):
         return "print()"
     return None
+
+
+def _launch_bounds_from_arguments(params: list, body: list) -> list:
+    """Write the parallel loop's bounds in terms of the arguments alone.
+
+    Dispatch evaluates the bounds from the arguments, so a local they read,
+    bound once before the loop (``n = x.shape[0]``, or the result of an
+    inlined ``__len__`` that returns ``self.data.shape[0]``), is replaced
+    by its value, and an alias of an array parameter by the parameter.
+    Assignments nothing reads any longer are dropped: a dimension read
+    outside the bound would specialize the kernel on that length. A bound
+    that cannot be written so is left as it was, for dispatch to refuse.
+    """
+    loop = next((s for s in body if isinstance(s, ir.IRParallelFor)), None)
+    if loop is None:
+        return body
+    names = {p.name for p in params}
+    bindings: dict = {}
+    for node in walk_ir(body):
+        if isinstance(node, ir.IRAssign):
+            bindings[node.target] = bindings.get(node.target, 0) + 1
+        elif isinstance(node, (ir.IRSequentialFor, ir.IRParallelFor)):
+            for var in [node.var, *(getattr(node, 'dims', None) or ())]:
+                bindings[var] = 2
+    outer = {}
+    for stmt in body:
+        if stmt is loop:
+            break
+        if isinstance(stmt, ir.IRAssign) and bindings[stmt.target] == 1:
+            outer[stmt.target] = stmt.value
+    followed = set()
+
+    def array(name):
+        while name not in names and isinstance(outer.get(name), ir.IRName):
+            followed.add(name)
+            name = outer[name].name
+        return name if name in names else None
+
+    def host(node):
+        if isinstance(node, ir.IRConstant):
+            return node
+        if isinstance(node, ir.IRName):
+            if node.name in names:
+                return node
+            value = outer.get(node.name)
+            found = host(value) if value is not None else None
+            if found is not None:
+                followed.add(node.name)
+            return found
+        if isinstance(node, ir.IRDimSize):
+            name = array(node.array_name)
+            if name is None:
+                return None
+            found = copy.copy(node)
+            found.array_name = name
+            return found
+        if isinstance(node, ir.IRBinOp):
+            left, right = host(node.left), host(node.right)
+            return None if left is None or right is None else ir.IRBinOp(node.op, left, right)
+        if isinstance(node, ir.IRUnaryOp):
+            operand = host(node.operand)
+            return None if operand is None else ir.IRUnaryOp(node.op, operand)
+        if isinstance(node, ir.IRCall) and node.func_name in ("min", "max"):
+            args = [host(a) for a in node.args]
+            return None if None in args else ir.IRCall(node.func_name, args)
+        return None
+
+    def rewrite(bound):
+        if isinstance(bound, ir.IRConstant):
+            return bound
+        found = host(bound)
+        return bound if found is None else found
+
+    loop.end = rewrite(loop.end)
+    if getattr(loop, 'dims', None):
+        loop.extents = [rewrite(e) for e in loop.extents]
+    # Drop the followed assignments nothing else reads, and then those only
+    # they read.
+    while True:
+        read = set()
+        for node in walk_ir(body):
+            if isinstance(node, ir.IRName):
+                read.add(node.name)
+            name = getattr(node, 'array_name', None)
+            if name is not None:
+                read.add(name)
+        for extent in getattr(loop, 'extents', None) or ():
+            read.update(n.name if isinstance(n, ir.IRName) else n.array_name
+                        for n in walk_ir(extent)
+                        if isinstance(n, ir.IRName) or isinstance(n, ir.IRDimSize))
+        dead = [s for s in body if isinstance(s, ir.IRAssign) and s.target in followed
+                and s.target not in read]
+        if not dead:
+            return body
+        body = [s for s in body if not any(s is d for d in dead)]
 
 
 def _mark_outermost_continues(stmts: list):

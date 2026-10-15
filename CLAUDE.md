@@ -298,7 +298,7 @@ subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
 
 `array.shape[k]` and `len(array)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).
 
-**One exception, and it matters:** the outermost parallel loop's bound is left unresolved. It never reaches generated code — codegen reads the `__loop_end__` parameter — so `_resolve_range_expr` evaluates it per dispatch instead, and `ir_shape_deps` excludes it from the variant key. Without that, `for i in range(x.shape[0])` — the most common line in any kernel — would compile a new variant for every array length.
+**One exception, and it matters:** the outermost parallel loop's bound is left unresolved. It never reaches generated code — codegen reads the `__loop_end__` parameter — so `_resolve_range_expr` evaluates it per dispatch instead, and `ir_shape_deps` excludes it from the variant key. Without that, `for i in range(x.shape[0])` — the most common line in any kernel — would compile a new variant for every array length. Lowering writes the bound in terms of the arguments (`_launch_bounds_from_arguments` in `ast_transform.py`): a local bound once before the loop (`n = x.shape[0]; for i in range(n)`, or an inlined `__len__` result) is replaced by its value, an alias of an array parameter by the parameter, and assignments nothing else reads are dropped, since a dimension read outside the bound would specialize. See `test_outside_parallel_loop.py`.
 
 Everywhere else the dimension *is* compiled in, so it specializes:
 

@@ -173,3 +173,35 @@ def test_each_iteration_starts_from_the_outer_local(backend):
     out = tack.empty((1 << 16,))
     _rebinds_outer_local(out)
     assert set(out.numpy().tolist()) == {1.0}
+
+
+@tack.kernel
+def _bound_from_a_local(x, out):
+    n = x.shape[0]
+    m = n - 1
+    for i in range(m):
+        out[i] = x[i] + x[i + 1]
+
+
+@tack.kernel
+def _bound_and_body_share_a_local(x, out):
+    n = x.shape[0]
+    for i in range(n):
+        out[i] = float(n)
+
+
+def test_a_launch_bound_may_read_locals_bound_before_the_loop(backend):
+    from tack.runtime.dispatch import get_backend
+    from tack.runtime.kernel_utils import drop_variants
+    drop_variants(_bound_from_a_local, lambda key: True)
+    for n in (3, 5, 9):
+        x, out = tack.arange(n, dtype=tack.f32), tack.zeros((n,))
+        _bound_from_a_local(x, out)
+        np.testing.assert_allclose(out.numpy()[:n - 1], 2 * np.arange(n - 1) + 1)
+        assert out[n - 1] == 0
+    # The locals are gone once the bound reads the argument, so nothing
+    # compiles the length in.
+    assert len(get_backend()._cache[_bound_from_a_local]) == 1
+    out = tack.zeros((4,))
+    _bound_and_body_share_a_local(tack.zeros((3,)), out)
+    np.testing.assert_allclose(out.numpy(), [3, 3, 3, 0])
