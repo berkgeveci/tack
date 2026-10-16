@@ -21,7 +21,7 @@ page, [CPU Threading Policy](cpu-threading.md).
 
 A kernel has exactly one top-level `for` loop over `range(...)` or
 `tack.ndindex(...)`, a statement directly in the kernel body.
-`KernelTransformer.visit_For` (`lang/ast_transform.py`) lowers the first
+`KernelTransformer.visit_For` (`lang/lowering/loops.py`) lowers the first
 `for` it meets outside a loop through `_visit_parallel_for` to
 `IRParallelFor`; every loop nested inside it becomes an `IRSequentialFor`.
 Each parallel iteration owns its local variables. There is **no defined

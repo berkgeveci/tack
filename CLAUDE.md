@@ -86,7 +86,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 ```
 @tack.kernel Python function
     → Source validation (source_validation.py)
-    → AST transform (ast_transform.py)
+    → AST transform (ast_transform.py, with its parts in lang/lowering/)
     → Tack IR (ir.py)
     → IR passes: resolve (ir_resolve.py) → type inference → optimize (ir_optimize.py)
     → Backend-specific codegen + dispatch
@@ -296,9 +296,9 @@ subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
 
 ### Array dimensions
 
-`array.shape[k]` and `len(array)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).
+`array.shape[k]` and `len(array)` both lower to `IRDimSize` in lowering (`lang/lowering/arrays.py`), which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).
 
-**One exception, and it matters:** the outermost parallel loop's bound is left unresolved. It never reaches generated code — codegen reads the `__loop_end__` parameter — so `_resolve_range_expr` evaluates it per dispatch instead, and `ir_shape_deps` excludes it from the variant key. Without that, `for i in range(x.shape[0])` — the most common line in any kernel — would compile a new variant for every array length. Lowering writes the bound in terms of the arguments (`_launch_bounds_from_arguments` in `ast_transform.py`): a local bound once before the loop (`n = x.shape[0]; for i in range(n)`, or an inlined `__len__` result) is replaced by its value, an alias of an array parameter by the parameter, and assignments nothing else reads are dropped, since a dimension read outside the bound would specialize. See `test_outside_parallel_loop.py`.
+**One exception, and it matters:** the outermost parallel loop's bound is left unresolved. It never reaches generated code — codegen reads the `__loop_end__` parameter — so `_resolve_range_expr` evaluates it per dispatch instead, and `ir_shape_deps` excludes it from the variant key. Without that, `for i in range(x.shape[0])` — the most common line in any kernel — would compile a new variant for every array length. Lowering writes the bound in terms of the arguments (`_launch_bounds_from_arguments` in `lang/lowering/loops.py`): a local bound once before the loop (`n = x.shape[0]; for i in range(n)`, or an inlined `__len__` result) is replaced by its value, an alias of an array parameter by the parameter, and assignments nothing else reads are dropped, since a dimension read outside the bound would specialize. See `test_outside_parallel_loop.py`.
 
 Everywhere else the dimension *is* compiled in, so it specializes:
 
@@ -386,6 +386,10 @@ source or IR text, call a compiled CPU kernel with its own argument list, or
 compile generated code with a reduced toolchain (OpenCL 1.2, the host C++
 shim without `atomicAdd`); kernels that run must all pass.
 
+### Lowering (ast_transform.py and lang/lowering/)
+
+`KernelTransformer` (`lang/ast_transform.py`) keeps the `visit_*` walk for statements and expressions and the expression machinery (`visit`, `_visit_expression`, `_capture_value`, `_visit_ordered`, `_source_error`, `_fresh_name`). Everything else is mixins, one module each in `lang/lowering/`, each owning the state it sets up in its `_init_...` method: `inlining` (`Inlining`: device functions, `_NameRenamer`, `_structure_returns`), `vectors` (`VectorValues`: vector and matrix values, components, construction, methods, `@`), `arrays` (`ArrayAccess`: `_visit_subscript_index`, `_linearize_index`, `_element_locations`, vector/matrix/SOA array elements, and the `_vector_arrays`/`_matrix_arrays`/`_soa_arrays` metadata), `loops` (`Loops`: the parallel loop, `range`/`ndindex`, sequential loops, `_launch_bounds_from_arguments`), `checks` (`LoweringChecks`: effects outside the loop, single values, unbound names, loop variables), `local_arrays` (`LocalArrays`: `tack.shared`/`local_array` and their `_like` forms), `bounds` (`BoundsChecks`: `_checked`), and `values` (`VectorValue`, `TupleValue`, shared helpers and name tables). A mixin reaches another's state and methods through `self`; its docstring says what it owns and reads. The split changed no lowered IR, lowering error or generated source over the whole suite: when refactoring lowering, hash every `transform_kernel` result (IR dump or error) and every generated source over the suite before and after, and compare.
+
 ### IR structure (lang/ir.py)
 
 The IR is a simple tree of nodes:
@@ -437,7 +441,7 @@ N scalars, one scalar for every component, or one N-vector; on the host the
 same names are element dtypes. A list of scalars in kernel source is also a
 vector, of any width (`visit_List`); the validator rejects an empty or
 nested list, a list target and a loop over a list.
-In `ast_transform.py` a vector value is a `VectorValue`, a list of
+In lowering a vector value is a `VectorValue` (`lang/lowering/values.py`), a list of
 component expressions with a `shape`; a source tuple (indices, multiple
 results) is a `TupleValue`. Neither enters the IR: `_check_single_values`
 scans each lowered statement once and raises `UnsupportedSyntaxError` at

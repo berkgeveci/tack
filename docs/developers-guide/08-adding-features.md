@@ -38,7 +38,8 @@ def local_array(dtype, size):
 
 ## 3. Handle in AST Transform
 
-In `ast_transform.py`, add recognition in two places:
+In `ast_transform.py` and `lang/lowering/local_arrays.py`, add recognition
+in two places:
 
 **Assignment form** (the normal usage):
 
@@ -59,7 +60,8 @@ if func_name == "local_array":
         "arr = tack.local_array(tack.f32, 8)")
 ```
 
-**Parser method** (mirrors `_try_parse_shared_alloc`):
+**Parser method** (mirrors `_try_parse_shared_alloc`, in
+`lang/lowering/local_arrays.py`):
 
 ```python
 def _try_parse_local_alloc(self, target_name, value_node):
@@ -175,7 +177,7 @@ know everything that shapes the generated code:
 
 - **Debug mode.** A node that indexes an array or array must have its index
   checked in debug mode: lowering wraps it through `_checked` in
-  `ast_transform.py` (an `IRBoundsCheck`), `ir_bounds.guard_accesses`
+  `lang/lowering/bounds.py` (an `IRBoundsCheck`), `ir_bounds.guard_accesses`
   must skip the access when the check is negative, and every generator must
   emit the check. Run the new tests with `TACK_DEBUG=1` too.
 - **Variant key and fast-path signature.** A new fact about the arguments
@@ -210,7 +212,7 @@ For any new IR node (all files under `packages/tack-core/src/tack/`):
 
 - [ ] `lang/ir.py`: Node class + dump entry
 - [ ] `__init__.py`: Python-side API placeholder
-- [ ] `lang/ast_transform.py`: AST recognition + parser (and `_checked` for an indexed access)
+- [ ] `lang/ast_transform.py` or the `lang/lowering/` module for the job: AST recognition + parser (and `_checked` for an indexed access)
 - [ ] `lang/ir_traversal.py`: Structural children in `CHILD_FIELDS`
 - [ ] `lang/ir_verify.py`: Statement/expression role, required metadata
 - [ ] `lang/ir_resolve.py`: Recurse into child expressions

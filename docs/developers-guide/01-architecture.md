@@ -11,7 +11,7 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
   debug mode), unless the disk cache has it:              [disk_cache.py]
     → Template rewrite (if @tack.device_class args)     [template_rewrite.py]
     → Source validation (reject unsupported syntax)      [source_validation.py]
-    → AST transform → Tack IR, @tack.func inlining       [ast_transform.py, call_bindings.py]
+    → AST transform → Tack IR, @tack.func inlining       [ast_transform.py, lowering/, call_bindings.py]
       (debug mode: bounds checks on every index)         [ir_bounds.py]
     → Verify 'lowered', cache the template on the Kernel [ir_verify.py, kernel.py]
   Once per compiled variant (cache miss), on a clone_ir copy of the template,
@@ -63,6 +63,7 @@ packages/
                 source_validation.py # Reject unsupported syntax before lowering
                 call_bindings.py # Static resolution of device-function calls
                 ast_transform.py # Python AST → Tack IR
+                lowering/        # KernelTransformer's parts: loops, arrays, vectors, inlining, ...
                 template_rewrite.py  # AST pre-pass for template parameters
                 ir.py            # IR node definitions (30+ node types)
                 ir_traversal.py  # walk_ir, transform_ir, clone_ir

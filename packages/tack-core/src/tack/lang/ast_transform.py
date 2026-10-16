@@ -36,18 +36,26 @@ from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_support import workgroup_features
 
 
-class KernelTransformer(Inlining, VectorValues, ArrayAccess, Loops, LoweringChecks, LocalArrays, BoundsChecks, ast.NodeVisitor):
+class KernelTransformer(
+        Inlining,           # device functions inlined at call sites
+        VectorValues,       # vector and matrix values, scalarized
+        ArrayAccess,        # indexing, vector and SOA array elements
+        Loops,              # the parallel loop, sequential loops
+        LoweringChecks,     # checks on what lowering emitted
+        LocalArrays,        # shared and local arrays
+        BoundsChecks,       # debug mode's bounds checks
+        ast.NodeVisitor):
     """Transforms a Python AST (from a @kernel function) into Tack IR.
 
-    Tracks nesting depth to distinguish parallel for-loops (top-level)
-    from sequential for-loops (nested inside another for-loop).
-
-    Supports:
-      - @tack.func inlining at call sites
-      - Multi-dimensional array indexing: array[i, j] → array[i * shape1 + j]
-      - array[()] → array[0] for zero-dimensional arrays
-      - ndindex(w, h) → 1D parallel loop with index decomposition
-      - Vector scalarization: tack.vec3(a, b, c) → 3 scalar variables
+    The methods are grouped by job into the mixins above, one module each
+    in `tack.lang.lowering`, each setting up the state it owns in its own
+    ``_init_...`` method. What stays here is the walk itself: the
+    ``visit_*`` methods for statements and expressions (assignment, calls,
+    subscripts, names, operators) and the expression machinery every mixin
+    uses (``visit``, ``_visit_expression``, ``_capture_value``,
+    ``_visit_ordered``, ``_source_error``, ``_fresh_name``), with the state
+    they share (``_pre_stmts``, ``_used_names``, ``_function_name``, the
+    bindings and the texture metadata).
     """
 
     def __init__(self, vector_arrays=None, texture_arrays=None, python_func=None,
