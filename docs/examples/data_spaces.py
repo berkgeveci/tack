@@ -13,11 +13,9 @@ from tack.arrays import to_host
 
 
 # --8<-- [start:sample]
-@tack.kernel
-def quadratic_temperature(positions, values):
-    for i in range(values.shape[0]):
-        x = positions[i]
-        values[i] = x.x * x.x + 2.0 * x.y + 3.0 * x.z
+@tack.func
+def quadratic_temperature(x):
+    return x.x * x.x + 2.0 * x.y + 3.0 * x.z
 # --8<-- [end:sample]
 
 
@@ -54,12 +52,12 @@ def run(arch="cpu", check=False):
     # --8<-- [end:mesh]
     # --8<-- [start:h1-build]
     temperature_space = td.H1(data, order=2)
-    # Evaluate geometry at all 45 temperature nodes, not just the 12 corners.
-    temperature_nodes = td.project(data, data.geometry, temperature_space)
-    temperature = tack.empty((temperature_space.size,))
-    quadratic_temperature(temperature_nodes.values, temperature)
-    data.fields["temperature"] = td.Field(temperature_space, temperature)
+    # The function at all 45 temperature nodes, not just the 12 corners.
+    data.fields["temperature"] = td.interpolate(data, quadratic_temperature,
+                                                temperature_space)
     # --8<-- [end:h1-build]
+    # Where those nodes are, for the checks and the drawing below.
+    temperature_nodes = td.project(data, data.geometry, temperature_space)
     # --8<-- [start:l2-build]
     pressure_space = td.L2(data, order=1)
     pressure = tack.empty((pressure_space.size,))

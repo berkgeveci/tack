@@ -19,6 +19,7 @@ from tack.dataset.algorithms.dot import dot
 from tack.dataset.algorithms.edge_lengths import edge_lengths
 from tack.dataset.algorithms.entropy import entropy
 from tack.dataset.algorithms.extract_cells import extract_cells
+from tack.dataset.algorithms.extract_edges import extract_edges
 from tack.dataset.algorithms.extract_geometry import extract_geometry
 from tack.dataset.algorithms.extract_points import extract_points
 from tack.dataset.algorithms.extract_surface import extract_surface
@@ -27,6 +28,7 @@ from tack.dataset.algorithms.face_geometry import FaceGeometry, face_geometry
 from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantities
 from tack.dataset.algorithms.gradients import gradients
 from tack.dataset.algorithms.implicit_values import implicit_values
+from tack.dataset.algorithms.interpolate import interpolate
 from tack.dataset.algorithms.jump import jump
 from tack.dataset.algorithms.log_values import log_values
 from tack.dataset.algorithms.magnitude import magnitude
@@ -76,6 +78,7 @@ __all__ = [
     "edge_lengths",
     "entropy",
     "extract_cells",
+    "extract_edges",
     "extract_geometry",
     "extract_points",
     "extract_surface",
@@ -84,6 +87,7 @@ __all__ = [
     "flow_quantities",
     "gradients",
     "implicit_values",
+    "interpolate",
     "jump",
     "log_values",
     "magnitude",

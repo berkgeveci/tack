@@ -19,7 +19,8 @@ triangles, a surface's faces), or a point between two input points
   turns a face around, if they are oriented -- or become values on the
   output's cells when those cells are input faces (``faces_to_cells``).
 - **values on edges** go through the edge map, which only a filter whose
-  edges are the input's gives (``as_polyhedra``).
+  edges are the input's gives (``as_polyhedra``), or become values on the
+  output's cells when those cells are input edges (``edges_to_cells``).
 - traces, and fields on any entity without a map, are left behind: the
   output's own edges and faces are derived afresh, so the old numbering
   means nothing there.
@@ -207,7 +208,8 @@ def _carry_l2(field, out, cells):
     return Field(out_space, values)
 
 
-def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=None):
+def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=None,
+                 edges_to_cells=None):
     """``field`` on ``out``, or ``None`` when no map applies to it."""
     space = field.space
     if isinstance(space, H1) or _on(space, "points"):
@@ -234,8 +236,11 @@ def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=N
             return None
         return Field(Values(out, "faces", oriented=space.oriented),
                      _apply(field.values, faces, oriented=space.oriented))
-    if _on(space, "edges") and edges is not None:
-        return Field(Values(out, "edges"), _apply(field.values, edges))
+    if _on(space, "edges"):
+        if edges_to_cells is not None:
+            return Field(Values(out, "cells"), _apply(field.values, edges_to_cells))
+        if edges is not None:
+            return Field(Values(out, "edges"), _apply(field.values, edges))
     return None
 
 
@@ -245,16 +250,18 @@ def _member_of_source(flags, sources, out):
         out[i] = flags[sources[i]]
 
 
-def _carry_set(member, out, points, cells, faces, faces_to_cells):
+def _carry_set(member, out, points, cells, faces, faces_to_cells, edges, edges_to_cells):
     """``member`` on ``out``: the output entities that come from its members, or
     ``None`` when no map takes its kind there (or a map makes new entities)."""
     from tack.dataset.sets import Set
 
     kind = member.on
     target = kind
-    mapping = {"points": points, "cells": cells, "faces": faces}[kind]
+    mapping = {"points": points, "cells": cells, "faces": faces, "edges": edges}[kind]
     if kind == "faces" and faces_to_cells is not None:
         mapping, target = faces_to_cells, "cells"
+    if kind == "edges" and edges_to_cells is not None:
+        mapping, target = edges_to_cells, "cells"
     if isinstance(mapping, Same):
         return Set._from_flags(out, target, member.flags())
     if not isinstance(mapping, Take):
@@ -279,19 +286,20 @@ def selected(data, fields):
 
 
 def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None,
-          edges=None, geometry=None, fields=None, sets=None):
+          edges=None, edges_to_cells=None, geometry=None, fields=None, sets=None):
     """A dataset on topology ``out`` with ``data``'s fields, by the maps given.
 
     ``points``, ``cells``, ``faces`` and ``edges`` say how ``out``'s come from
     ``data``'s (``Same``, ``Take``, ``Pieces`` for cells, ``Interpolate`` for
-    points); ``faces_to_cells`` that ``out``'s cells are ``data``'s faces. A
+    points); ``faces_to_cells`` (``edges_to_cells``) that ``out``'s cells are
+    ``data``'s faces (edges). A
     kind of entity with no map takes no fields. ``geometry`` is the output's
     geometry field when the filter computed it, otherwise the input's is
     carried like any point (or L2) field.
 
     Sets go by the same maps: an output entity is in a set when the input entity
-    it comes from is, and a face set becomes a cell set where faces become cells
-    (``faces_to_cells``). A set whose kind has no map, or one that makes new
+    it comes from is, and a face or edge set becomes a cell set where faces or
+    edges become cells (``faces_to_cells``, ``edges_to_cells``). A set whose kind has no map, or one that makes new
     entities (``Interpolate``), is left behind; ``sets``, if given, replaces
     them.
     """
@@ -303,13 +311,14 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     carried = {}
     for name in selected(data, fields):
         field = _carry_field(data.fields[name], data, out, points, cells, faces,
-                             faces_to_cells, edges)
+                             faces_to_cells, edges, edges_to_cells)
         if field is not None:
             carried[name] = field
     if sets is None:
         sets = {}
         for name, member in data.sets.items():
-            moved = _carry_set(member, out, points, cells, faces, faces_to_cells)
+            moved = _carry_set(member, out, points, cells, faces, faces_to_cells, edges,
+                               edges_to_cells)
             if moved is not None:
                 sets[name] = moved
     return DataSet(out, geometry, fields=carried, sets=sets)

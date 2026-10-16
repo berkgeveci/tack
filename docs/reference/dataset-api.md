@@ -152,7 +152,7 @@ refused unless the caller asks for the repair.
 
 | Space | Values | Interpolated | Topologies |
 |---|---|---|---|
-| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels and wedges |
+| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels |
 | `L2(data, order=1)` | each cell's own copies: order 1 one per corner, order 0 one per cell; `order` may be an array, one order per cell | yes, discontinuous | shape-based |
 | `Constant(data)` | one per cell | yes, constant in the cell | all |
 | `Values(data, on, oriented=False)` | one per point, edge, face or cell: data about the entity, with no basis | no | all |
@@ -198,6 +198,42 @@ Cell or DG sources give unused points zero, since no cell contributes there.
 `project` is the one way to move a field: into `H1(data)` for point values,
 `Constant(data)` for one value per cell, `L2(data)` for each cell's own copies,
 `SideTraces(data)` for each side's value at the faces.
+
+### A field from a function of position
+
+`interpolate(data, function, space, dtype=None)` is the field in `space`
+whose values are `function` at the space's nodes. `function` is a
+`@tack.func` of a world position (a 3-vector of the geometry's type) that
+returns a scalar or a vector; `dtype` is what it returns, `data.dtype` by
+default (`dtype=tack.vec3()` for 3-vectors).
+
+```python
+@tack.func
+def temperature(x):
+    return x.x * x.x + 2.0 * x.y
+
+data.fields["t"] = td.interpolate(data, temperature, td.H1(data, order=2))
+```
+
+| Space | Its nodes |
+|---|---|
+| `H1` | the points; at order 2 also edge middles, quad face centers and cell centers |
+| order-1 `L2` | each cell's corners |
+| `Constant`, order-0 `L2`, `Values(data, "cells")` | each cell's parametric center |
+| `Values(data, "points")` | the points |
+
+- Node positions come from the geometry as they are needed (a curved
+  geometry's included) and are never stored.
+- A node shared by several cells is evaluated once, by the first cell that
+  has it (cells in group order). Which cell writes each node is kept on the
+  space, so a changed geometry is seen. A discontinuous (`L2`) geometry
+  gives a shared node the first cell's position.
+- A point no cell uses takes `function` at its own position when the
+  geometry is `H1`, and zero when it is `L2`.
+- A polynomial of the space's order on straight cells is represented
+  exactly; anything else gets the space's nodal interpolant.
+- On polyhedra, polygons and polylines only point values (`H1` of order 1,
+  `Values(data, "points")`) interpolate, from an `H1` geometry.
 
 ## Fields and arrays
 
@@ -292,8 +328,9 @@ on_cpu = surface.to_device("cpu")
 
 ## Sets
 
-A `Set(data, on, ids)` selects some of a topology's points, cells or faces
-(`on` is `"points"`, `"cells"` or `"faces"`). Its `ids` are kept sorted and
+A `Set(data, on, ids)` selects some of a topology's points, cells, faces or
+edges (`on` is `"points"`, `"cells"`, `"faces"` or `"edges"`; edge ids are
+those of `topology.edges()`). Its `ids` are kept sorted and
 unique, in the topology's `id_dtype`; an id outside the topology is refused
 when the set is made. `flags()` gives membership, 1 or 0 per entity.
 
@@ -306,7 +343,7 @@ when the set is made. `flags()` gives membership, 1 or 0 per entity.
   `Set.from_sides(data, cells, local_faces)` takes (cell, local face) pairs,
   as Exodus side sets give them; local faces are numbered as the cell view
   numbers them. Which side was named is not kept.
-- **Iteration.** A cell or face set's name is an iteration domain:
+- **Iteration.** A cell, face or edge set's name is an iteration domain:
   `for_each(kernel, data, "inlet", ...)`. A cell set runs over the cell
   groups' subgroups of its members, so field views and varying spaces work
   as on all cells. A point set is not a domain (points have no view): loop
@@ -314,8 +351,9 @@ when the set is made. `flags()` gives membership, 1 or 0 per entity.
 - **Carried through filters**, by the maps that carry fields: an output
   entity is in a set when the input entity it came from is. Kept cells keep
   their sets (`threshold`, `extract_cells`), pieces of cells their cells'
-  (`contour`, `clip`), and a face set becomes a cell set where faces become
-  cells (`extract_surface`). A set of entities the filter
+  (`contour`, `clip`), and a face or edge set becomes a cell set where faces
+  or edges become cells (`extract_surface`, `extract_edges`). A set of
+  entities the filter
   makes anew -- interpolated points, faces derived afresh -- is left
   behind. Filters that keep the topology keep every set.
 
@@ -337,7 +375,8 @@ td.for_each(_jump, data, "faces", cell_values, out)
 
 `for_each(kernel, data, domain, *args)`:
 
-- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a cell or face set.
+- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a cell, face or
+  edge set.
 - It makes one launch per group. The kernel's first argument is the view of
   that group (`for i in view`). Each `Field` among `args` becomes its view
   for the same group, so `u.value(i, pc)` reads entity `i`. Other arguments
@@ -433,7 +472,8 @@ Every algorithm is in `tack.dataset.algorithms`, one module each, and
   name per meaning (`inside=` keeps a region, `value` is a level, `lower` and
   `upper` a range);
 - filters that cut a mesh into a subset of its cells compact the points;
-  `extract_surface` keeps the input's points, so point ids stay valid. The
+  `extract_surface` and `extract_edges` keep the input's points, so point ids
+  stay valid. The
   point filters (`mask_points`, `threshold_points`, `extract_points`) are
   the point twins of `mask`, `threshold` and `extract_geometry`: the points as
   vertex cells, point fields carried and cell fields left behind;
@@ -467,7 +507,7 @@ and "polyline" `PolylineTopology`.
 | | Shape-based | Polyhedral | Polygonal | Polyline |
 |---|---|---|---|---|
 | `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume, area or length; centroid) | yes | yes | yes | yes |
-| `edge_lengths` | yes | yes | yes | no (no derived edges) |
+| `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
 | `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
@@ -496,7 +536,7 @@ of input cell `ids[i]` (`Pieces`), or a point between two input points
 
 | Input field | On the output |
 |---|---|
-| point data (`H1`, values on points) | through the point map; an order-2 field brings its corner values; interpolated only if floating point |
+| point data (`H1`, values on points) | through the point map; an order-2 field brings its corner values, except on a solid's surface (`extract_surface`), whose nodes are the solid's, gathered at order 2; interpolated only if floating point |
 | cell data (`Constant`, values on cells) | through the cell map, keeping its kind |
 | `L2` (DG) data | copied cell by cell, each cell keeping its order, when whole cells are kept (not pieces) and the output has reference cells |
 | values on faces | through the face map, oriented values negated where a face is turned; or onto the output's cells when they are input faces (a surface) |
@@ -512,6 +552,7 @@ What each filter gives:
 | `clip` | kept points, edge crossings and centroids | pieces of the cut cells, whole kept ones | — | — |
 | `extract_points`, `threshold_points`, `mask_points` | kept points, each a vertex cell | — | — | — |
 | `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
+| `extract_edges` | the same points | — (an edge has several cells) | — | the lines' cells: edge values become cell values |
 | `as_polyhedra` | same | same | same | same |
 | `as_polygons` | same | same | — | — |
 

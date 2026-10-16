@@ -165,6 +165,41 @@ def test_streamlines_are_the_paths(backend):
     np.testing.assert_allclose(x[[30, 61]], advected.positions()[:2], atol=1e-6)
 
 
+def test_particles_stay_on_the_device(backend, monkeypatch):
+    """Seeds in an array of 3-vectors are copied on the device, the particles stay
+    there, and the streamlines' paths are chosen and numbered there: nothing is
+    read back but counts. The particles went to the host and back, the seeds
+    too, and the paths' choice ran in NumPy. (Debug mode reads each launch's
+    bounds check back, so it is off here.)"""
+    from tack.lang.array import Array
+    from tack.runtime import dispatch
+
+    monkeypatch.setattr(dispatch, "_debug", False)
+
+    data = _rotation(_grid())
+    host = np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.0], [5.0, 5.0, 5.0]], np.float32)
+    seeds = tack.array(host, tack.vec3())
+    locator = td.CellLocator(data)
+    locator.cell_bins()
+    expected = (td.advect(data, "v", host, 0.05, 30, locator=locator).positions(),
+                td.streamlines(data, "v", host, 0.05, 30, locator=locator))
+    read = []
+    numpy = Array.numpy
+    monkeypatch.setattr(Array, "numpy", lambda self, *a, **k: (read.append(self.shape),
+                                                               numpy(self, *a, **k))[1])
+    out = td.advect(data, "v", seeds, 0.05, 30, locator=locator)
+    lines = td.streamlines(data, "v", seeds, 0.05, 30, locator=locator)
+    assert read == []
+    monkeypatch.undo()
+    np.testing.assert_array_equal(out.positions(), expected[0])
+    np.testing.assert_array_equal(lines.positions(), expected[1].positions())
+    for a, b in zip(lines.topology.lines(), expected[1].topology.lines(), strict=True):
+        np.testing.assert_array_equal(a.numpy(), b.numpy())
+    np.testing.assert_array_equal(lines.fields["seed"].values.numpy(), [0, 1])
+    still = td.streamlines(data, "v", tack.array(host[2:], tack.vec3()), 0.05, 30)
+    assert (still.num_cells, still.num_points) == (0, 1)           # no step, no line
+
+
 def test_refusals(backend):
     data = _two_hexes_and_a_pyramid()
     data.fields["s"] = td.Field(td.H1(data), tack.arrays.ConstantArray(1.0, data.num_points))

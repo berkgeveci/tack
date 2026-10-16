@@ -32,11 +32,10 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
-from tack.dataset.topology import _as_field, _OnItsArrays, _Topology
-from tack.dataset.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells, _PolylineCells
+from tack.dataset.topology import _as_field, _OnItsArrays, _Topology, edge_groups
+from tack.dataset.views import DomainGroup, _PolygonFaces, _PolyhedralCells, _PolylineCells
 from tack.lang.array import Array
 from tack.runtime.dispatch import on_inputs_device
 
@@ -296,10 +295,8 @@ class PolygonEdges(_OnItsArrays):
             _edges_from_runs(order, offsets, keys, self.rows, self.face_edge, count)
 
     @on_inputs_device
-    def groups(self):
-        edge_ids = CountingArray(self.num_edges, dtype=self.id_dtype)    # computed, not stored
-        return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
-                            self.num_edges, 0)]
+    def groups(self, subset=None):
+        return edge_groups(self, subset)
 
 
 # ── The topology ────────────────────────────────────────────────────

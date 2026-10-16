@@ -20,7 +20,25 @@ def _hexes():
     return td.rectilinear_grid([0.0, 1.0, 2.5], [0.0, 0.5, 1.5], [0.0, 1.0])
 
 
-MESHES = {"hexahedra": _hexes, "tetrahedra": lambda: td.tetrahedralize(_hexes())}
+def _quads():
+    return td.rectilinear_grid([0.0, 1.0, 2.5], [0.0, 0.5, 1.5], [0.25])
+
+
+def _triangles():
+    """``_quads``' cells, each cut into two triangles."""
+    quads = _quads()
+    rows = []
+    for j in range(2):
+        for i in range(2):
+            a = i + 3 * j
+            rows += [[a, a + 1, a + 4], [a, a + 4, a + 3]]
+    topology = td.UnstructuredTopology(np.full(len(rows), 5, np.uint8),
+                                       3 * np.arange(len(rows) + 1), np.concatenate(rows))
+    return td.DataSet(topology, quads.positions())
+
+
+MESHES = {"hexahedra": _hexes, "tetrahedra": lambda: td.tetrahedralize(_hexes()),
+          "quads": _quads, "triangles": _triangles}
 
 
 def _vectors(rows):
@@ -158,7 +176,8 @@ def test_changing_h1_order_keeps_unused_points(backend):
 
 
 @pytest.mark.parametrize("shape", [td.shapes.Tetra, td.shapes.Hexahedron,
-                                   td.shapes.Voxel, td.shapes.Wedge])
+                                   td.shapes.Voxel, td.shapes.Wedge, td.shapes.Triangle,
+                                   td.shapes.Quad, td.shapes.Pixel])
 @pytest.mark.parametrize("vector", [False, True])
 def test_exact_quadratic_projection_at_independent_nodes(backend, shape, vector):
     # The shape fixture is a reference table of points/faces/edges, independent
@@ -173,7 +192,7 @@ def test_exact_quadratic_projection_at_independent_nodes(backend, shape, vector)
     faces = sorted(tuple(sorted(face)) for face in reference["faces"] if len(face) == 4)
     nodes = [*positions, *(corners[list(e)].mean(0) for e in edges),
              *(corners[list(f)].mean(0) for f in faces)]
-    if shape in (td.shapes.Hexahedron, td.shapes.Voxel):
+    if shape in (td.shapes.Hexahedron, td.shapes.Voxel, td.shapes.Quad, td.shapes.Pixel):
         nodes.append(corners.mean(0))
     nodes = np.asarray(nodes)
     evaluate = (lambda x: np.c_[_linear(x), 2 * _linear(x) + 1, -_linear(x)]
@@ -186,3 +205,115 @@ def test_exact_quadratic_projection_at_independent_nodes(backend, shape, vector)
     back = td.project(data, out, td.H1(data))
     np.testing.assert_allclose(back.values.numpy(), evaluate(positions),
                                rtol=1e-6, atol=1e-6)
+
+
+# ── Interpolating a function of position ────────────────────────────
+
+@tack.func
+def _quadratic_of(x):
+    return x[0] * x[0] + x[1] * x[2] - 0.5 * x[2]
+
+
+@tack.func
+def _vector_of(x):
+    return tack.vec3(x[0], 2.0 * x[1], x[0] * x[2])
+
+
+def _quadratic(x):
+    return x[:, 0] ** 2 + x[:, 1] * x[:, 2] - 0.5 * x[:, 2]
+
+
+def _nodes(data, space):
+    """Where ``space``'s values are, from the geometry projected there (stored, as
+    interpolate does not)."""
+    if isinstance(space, td.Values):
+        return data.positions() if space.on == "points" else td.cell_centers(data).values.numpy()
+    if isinstance(space, td.Constant) or (isinstance(space, td.L2) and space.order == 0):
+        # The parametric center, which a projection (a mean of corners) is not
+        # on a curved cell.
+        return td.cell_centers(data).values.numpy()
+    return td.project(data, data.geometry, space).values.numpy()
+
+
+def _curved():
+    data = _hexes()
+    space = td.H1(data, order=2)
+    nodes = td.project(data, data.geometry, space).values.numpy()
+    bent = nodes + 0.1 * np.c_[nodes[:, 1] ** 2, nodes[:, 2] ** 2, nodes[:, 0] ** 2]
+    data.geometry = td.Field(space, _vectors(bent))
+    return data
+
+
+@pytest.mark.parametrize("mesh", [*MESHES, "curved"])
+@pytest.mark.parametrize("space", ["H1", "H1 order 2", "L2", "L2 order 0", "Constant",
+                                   "points", "cells"])
+def test_interpolate_evaluates_at_every_node(backend, mesh, space):
+    """Each node's value is the function at the node's position, as the geometry
+    puts it: on a curved geometry too, where nodes are not where straight cells
+    would put them."""
+    data = _curved() if mesh == "curved" else MESHES[mesh]()
+    space = {"H1": td.H1(data), "H1 order 2": td.H1(data, order=2), "L2": td.L2(data),
+             "L2 order 0": td.L2(data, order=0), "Constant": td.Constant(data),
+             "points": td.Values(data, "points"), "cells": td.Values(data, "cells")}[space]
+    u = td.interpolate(data, _quadratic_of, space)
+    assert u.space is space and u.values.dtype == data.dtype
+    np.testing.assert_allclose(u.values.numpy(), _quadratic(_nodes(data, space)), atol=1e-5)
+
+
+def test_interpolate_gives_vectors_and_quadratics_exactly(backend):
+    data = _hexes()
+    space = td.H1(data, order=2)
+    v = td.interpolate(data, _vector_of, space, dtype=tack.vec3())
+    x = _nodes(data, space)
+    np.testing.assert_allclose(v.values.numpy(), np.c_[x[:, 0], 2 * x[:, 1], x[:, 0] * x[:, 2]],
+                               atol=1e-6)
+    # The order-2 interpolant of a quadratic is the quadratic, inside cells too.
+    u = td.interpolate(data, _quadratic_of, space)
+    np.testing.assert_allclose(td.values_at_centers(data, u).values.numpy(),
+                               _quadratic(td.cell_centers(data).values.numpy()), atol=1e-5)
+
+
+def test_interpolate_writes_each_shared_node_once(backend):
+    """Shared nodes are written by one cell each (the first that has it), so a
+    discontinuous geometry gives a shared point the first cell's corner; which
+    cell writes is kept on the space, and follows a changed geometry."""
+    data = _hexes()
+    space = td.H1(data, order=2)
+    td.interpolate(data, _quadratic_of, space)
+    _, writers = space._writers
+    assert int(writers.numpy().sum()) == space.size        # every node, once
+    # Each cell moved its own way: point 1 (x = 1, on cells 0 and 1) is cell 0's.
+    dg = td.project(data, data.geometry, td.L2(data))
+    corners = dg.values.numpy().reshape(data.num_cells, 8, 3)
+    corners += np.arange(data.num_cells)[:, None, None] * np.array([0.0, 0.0, 10.0])
+    moved = td.DataSet(data.topology, td.Field(td.L2(data), _vectors(corners.reshape(-1, 3))))
+    u = td.interpolate(moved, _quadratic_of, td.H1(moved))
+    np.testing.assert_allclose(u.values.numpy()[1], _quadratic(data.positions()[[1]])[0],
+                               atol=1e-5)
+    # A new geometry on the same topology: the same writers, new positions.
+    data.geometry = td.warp(data, (0.0, 0.0, 1.0), scale=2.0).geometry
+    u = td.interpolate(data, _quadratic_of, space)
+    assert space._writers[1] is writers
+    np.testing.assert_allclose(u.values.numpy(), _quadratic(_nodes(data, space)), atol=1e-5)
+
+
+def test_interpolate_unused_points_and_refusals(backend):
+    corners = np.array([[x, y, z] for z in (0, 1) for y in (0, 1) for x in (0, 1)], float)
+    topology = td.UnstructuredTopology([12], [0, 8], [0, 1, 3, 2, 4, 5, 7, 6], num_points=9)
+    data = td.DataSet(topology, np.vstack([corners, [2.0, 2.0, 2.0]]))
+    for space in (td.H1(data), td.H1(data, order=2)):
+        u = td.interpolate(data, _quadratic_of, space)
+        assert u.values.numpy()[8] == pytest.approx(_quadratic(np.array([[2.0, 2.0, 2.0]]))[0])
+    poly = td.as_polyhedra(_hexes())
+    np.testing.assert_allclose(td.interpolate(poly, _quadratic_of, td.H1(poly)).values.numpy(),
+                               _quadratic(poly.positions()), atol=1e-5)
+    with pytest.raises(NotImplementedError, match="reference element"):
+        td.interpolate(poly, _quadratic_of, td.Constant(poly))
+    with pytest.raises(TypeError, match="points or cells, not on faces"):
+        td.interpolate(data, _quadratic_of, td.Values(data, "faces"))
+    with pytest.raises(TypeError, match="H1, L2, Constant or Values"):
+        td.interpolate(data, _quadratic_of, td.SideTraces(data))
+    with pytest.raises(ValueError, match="own topology"):
+        td.interpolate(data, _quadratic_of, td.H1(_hexes()))
+    with pytest.raises(TypeError, match="@tack.func"):
+        td.interpolate(data, lambda x: x, td.H1(data))

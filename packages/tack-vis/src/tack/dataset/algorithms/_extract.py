@@ -298,10 +298,11 @@ def _every(flags, stride):
 
 
 def _vertices(points, like=None):
-    """Vertex cells at ``points``, with ``like``'s id type (or wider if needed)."""
+    """Vertex cells at ``points`` (an ``(n, 3)`` host array or an array of 3-vectors),
+    with ``like``'s id type (or wider if needed)."""
     from tack.dataset.topology import UnstructuredTopology
 
-    n = len(points)
+    n = int(points.shape[0])
     idt = ids.for_output(like, n) if like is not None else ids.choose(None, n)
     types = tack.empty((n,), tack.u8)
     offsets = tack.zeros((n + 1,), idt)

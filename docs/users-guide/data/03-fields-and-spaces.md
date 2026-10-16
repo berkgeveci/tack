@@ -176,9 +176,8 @@ First define the function to sample:
 --8<-- "docs/examples/data_spaces.py:sample"
 ```
 
-Project **geometry** into the temperature space to obtain physical positions
-at all of its interpolation nodes. Then allocate by `temperature_space.size`
-and evaluate the function once per global DOF:
+`interpolate` evaluates it at every node of the temperature space, where
+the geometry puts each one, and returns the field:
 
 ```python
 --8<-- "docs/examples/data_spaces.py:h1-build"
@@ -186,15 +185,17 @@ and evaluate the function once per global DOF:
 
 The space builds local-to-global addressing for shared corners, edges and
 faces. Its node numbering is not simply 27 consecutive entries per cell.
-The node-wise kernel initializes a shared DOF once, rather than writing it
-from both adjacent cells.
+`interpolate` writes a shared node once, from the first cell that has it,
+rather than from every adjacent cell, and stores no node positions: each is
+evaluated through the geometry as it is needed. To see where the nodes are,
+project the geometry into the space
+(`td.project(data, data.geometry, temperature_space)`); that does not change
+`data.geometry`.
 
-Projecting geometry locates the interpolation nodes; it does not change
-`data.geometry`. It also differs from projecting a first-order **solution**
-into a quadratic space: that conversion retains the original first-order
-function. To represent this quadratic, initialize its values at the new
-nodes as above, or supply the original quadratic coefficients in Tack's
-nodal basis and ordering.
+Interpolating differs from projecting a first-order **solution** into a
+quadratic space: that conversion retains the original first-order function.
+To represent this quadratic, interpolate it as above, or supply the
+original quadratic coefficients in Tack's nodal basis and ordering.
 
 ### Evaluate through the quadratic basis
 
@@ -344,11 +345,13 @@ values; a materialized result is a previous computation until recomputed.
 
 ## Know the present higher-order limits
 
-Order-2 H1 is supported on tetrahedra, hexahedra, voxels and wedges. L2 can
+Order-2 H1 is supported on tetrahedra, hexahedra, voxels and wedges, and on
+their faces' shapes: triangles, quads and pixels. L2 can
 vary its order by cell, which the dispatcher handles by launching groups of
 compatible order. This does not make every filter a higher-order geometric
-algorithm: point-data propagation through extraction can use corner values,
-and higher-order subdivision remains open work. The
+algorithm: `extract_surface` keeps a solid's order-2 fields and geometry at
+order 2 (its surface's nodes are the solid's), but other extractions carry
+corner values, and higher-order subdivision remains open work. The
 [reference](../../reference/dataset-api.md#spaces) records the supported layouts
 and [filter propagation rules](../../reference/dataset-api.md#algorithms-and-filters).
 

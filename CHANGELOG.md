@@ -144,9 +144,38 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   hold: `ConstantArray`, `UniformCoordinates` and `CartesianProduct` take
   `device=`, `to_device` moves one, and one made from arrays on two devices
   is refused.
+- Edge sets and `extract_edges`. `Set(data, "edges", ids)` selects edges by
+  their id in `topology.edges()`; an edge set is an iteration domain for
+  `for_each`, and `as_polyhedra` carries it. `extract_edges(data,
+  edges=None)` gives the edges (all of them, or an edge set, its name or
+  ids) as line cells on the same points, each from its lower point id to its
+  higher, as VTK's `vtkExtractEdges` finds them: values on edges become
+  cell values and edge sets cell sets; cell fields are left behind.
+- `interpolate(data, function, space)`: a field whose values are a
+  `@tack.func` of position at the space's nodes (`H1` of either order, `L2`,
+  `Constant`, values on points or cells), evaluated through the geometry
+  (curved included) without storing node positions. A node shared by
+  several cells is written once, by the first cell that has it; before, a
+  quadratic field took projecting the geometry into its space, a stored
+  array of node positions, and a kernel over them.
+- Order-2 `H1` on triangles, quads and pixels: the six-node triangle and the
+  nine-node biquadratic quad, the faces of the tetrahedron's, wedge's and
+  hexahedron's order-2 elements. A mesh without quad faces of solids
+  (tetrahedra, triangles, quads) no longer derives faces for its order-2
+  layout.
 
 ### Changed
 
+- `advect` and `streamlines` keep their particles on the dataset's device:
+  seeds given as an array of 3-vectors are copied there, the particles'
+  positions are the output's geometry as they are, and `streamlines`
+  chooses and numbers its paths with scans. Only counts come back to the
+  host; the particles and seeds used to go there and back.
+- `extract_surface` keeps a solid's order-2 `H1` fields and geometry at
+  order 2, the trace of the solid's: a face's corners, edge middles and (a
+  quad's) center are the surface cell's nodes, so their values are gathered
+  by entity id, not evaluated. It kept only the points' values before; a
+  2D mesh's boundary lines still do.
 - Offsets and ids that are a linear ramp are computed where they are read
   (`CountingArray`) rather than stored: an order-0 `L2` space's offsets, a
   structured grid's `L2` offsets, and the edge groups' ids, which were also

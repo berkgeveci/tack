@@ -82,6 +82,11 @@ def _grid(device):
     return _with_fields(td.uniform_grid((3, 3, 3), device=device), device)
 
 
+@tack.func
+def _norm2(x):
+    return x.dot(x)
+
+
 #: Every public algorithm, as a call on a dataset; each must run on the
 #: dataset's device and leave its results there.
 CALLS = {
@@ -98,6 +103,7 @@ CALLS = {
     "extract_surface": lambda d: td.extract_surface(d, td.boundary_faces(d)),
     "external_faces": td.extract_surface,
     "boundary_faces": td.boundary_faces,
+    "extract_edges": td.extract_edges,
     "tetrahedralize": td.tetrahedralize,
     "shrink": td.shrink,
     "warp": lambda d: td.warp(d, (0, 0, 1), scale=0.5),
@@ -115,6 +121,7 @@ CALLS = {
     "to_points": lambda d: td.project(d, td.project(d, "s", td.Constant(d)), td.H1(d)),
     "discontinuous": lambda d: td.project(d, "s", td.L2(d)),
     "project": lambda d: td.project(d, "s", td.Constant(d)),
+    "interpolate": lambda d: td.interpolate(d, _norm2, td.H1(d, order=2)),
     "traces": lambda d: td.project(d, "s", td.SideTraces(d)),
     "jump": lambda d: td.jump(d, "s"),
     "face_centers": td.face_centers,
@@ -173,6 +180,8 @@ def test_derived_state_and_iteration_are_on_the_datasets_device(second, make):
     offsets, entries = data.topology.point_links()
     assert _on(second, offsets) and _on(second, entries)
     assert _on(second, td.Set.from_sides(data, [0], [0]))
+    data.sets["edge"] = td.Set(data, "edges", [0, 3])
+    assert _on(second, data.sets["edge"]) and _on(second, td.extract_edges(data, "edge"))
     assert td.H1(data, order=2).size > data.num_points
     found = td.CellLocator(data).find(tack.array(np.array([[0.5, 0.5, 0.5]], np.float32),
                                                  tack.vec3(), device=second))

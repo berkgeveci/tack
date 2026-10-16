@@ -486,8 +486,9 @@ class _QuadraticDofs:
     """Where an order-2 H1 space keeps cell ``c``'s value ``k``, in the shape's
     quadratic node order (``shapes.Shape.quadratic_node``): the corners' at
     their point ids; an edge's at ``edge_base`` plus its edge id; a quad face's
-    at ``face_dofs[face]``; the interior's at ``cell_dofs[cell]``. Edge and face
-    ids come from the cell's incidence, so a view of these needs it."""
+    at ``face_dofs[face]`` (``quadratic_face_dof``, from ``quadratic_faces``);
+    the interior's at ``cell_dofs[cell]``. Edge and face ids come from the
+    cell's incidence, so a view of these needs it."""
 
     @tack.func
     def dof_index(self, c, k):
@@ -498,8 +499,32 @@ class _QuadraticDofs:
             return self.edge_base + self.edge_id(c, e)
         i = e - self.NUM_EDGES
         if i < self.QUADRATIC_FACES:
-            return self.face_dofs[self.face_id(c, self.NUM_FACES - self.QUADRATIC_FACES + i)]
+            return self.quadratic_face_dof(c, i)
         return self.cell_dofs[self.entity_id(c)]
+
+
+class _QuadraticFaces:
+    """A shape with quadratic face nodes (a hexahedron's quads, a wedge's): its
+    face ``i``'s value at ``face_dofs[face]``, through the cell's face incidence."""
+
+    @tack.func
+    def quadratic_face_dof(self, c, i):
+        return self.face_dofs[self.face_id(c, self.NUM_FACES - self.QUADRATIC_FACES + i)]
+
+
+class _NoQuadraticFaces:
+    """A shape without them (a tetrahedron, a triangle, a quad): no face incidence,
+    so an order-2 space of these cells needs no faces derived (a surface with
+    an edge of three faces has none)."""
+
+    @tack.func
+    def quadratic_face_dof(self, c, i):
+        return self.cell_dofs[self.entity_id(c)]       # not reached: QUADRATIC_FACES is 0
+
+
+def quadratic_faces(shape):
+    """The mixin that finds ``shape``'s quadratic face values."""
+    return _QuadraticFaces if shape.QUADRATIC_FACES else _NoQuadraticFaces
 
 
 # ── Geometry ────────────────────────────────────────────────────────

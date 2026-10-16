@@ -1,4 +1,5 @@
-"""Tests for tack.dataset.filters: contour, slice, threshold and external faces.
+"""Tests for tack.dataset.filters: contour, slice, threshold, external faces and
+edges.
 
 Ported from vis/data-model's filter tests, with the same references: VTK's
 vtkContourGrid for every case of every 3D shape and for real meshes,
@@ -471,6 +472,64 @@ def test_external_faces_of_a_grid(backend, form):
     assert ((points[rows].mean(axis=1) - centers) * normal).sum(axis=1).min() > 0
 
 
+def _quadratic(x):
+    return x[:, 0] ** 2 + x[:, 1] * x[:, 2] - 0.5 * x[:, 2]
+
+
+def _bend(x):
+    return x + 0.1 * np.c_[x[:, 1] ** 2, x[:, 2] ** 2, x[:, 0] ** 2]
+
+
+@pytest.mark.parametrize("mesh", ["rectilinear", "explicit", "tetrahedra"])
+def test_order_two_stays_order_two_on_the_surface(backend, mesh):
+    """The surface's nodes are the solid's: a face's corners, edge middles and (a
+    quad's) center. An order-2 field and an order-2 geometry are gathered onto
+    them, exactly; the surface used to keep only the points' values."""
+    data = _grid(4, "rectilinear" if mesh == "rectilinear" else "explicit")
+    if mesh == "tetrahedra":
+        data = td.tetrahedralize(data)
+    space = td.H1(data, order=2)
+    nodes = td.project(data, data.geometry, space).values.numpy()
+    data.fields["u"] = td.Field(space, _scalars(_quadratic(nodes)))
+    surface = td.extract_surface(data)
+    u = surface.fields["u"]
+    assert u.space is td.H1(surface, order=2)
+    at = td.project(surface, surface.geometry, u.space).values.numpy()
+    np.testing.assert_allclose(u.values.numpy(), _quadratic(at), atol=1e-5)
+    # Inside a face too: the quadratic is in the triangle's and the quad's spaces.
+    centers = td.cell_centers(surface).values.numpy()
+    np.testing.assert_allclose(td.values_at_centers(surface, "u").values.numpy(),
+                               _quadratic(centers), atol=1e-5)
+    # A curved geometry: the surface's nodes where the solid's are.
+    data.geometry = td.Field(space, tack.array(_bend(nodes).astype(np.float32), tack.vec3()))
+    curved = td.extract_surface(data, fields=[])
+    assert curved.geometry.space is td.H1(curved, order=2)
+    np.testing.assert_allclose(curved.geometry.values.numpy(), _bend(at), atol=1e-5)
+
+
+def test_an_order_two_surface_needs_no_faces_of_its_own(backend):
+    """Two hexahedra sharing one edge: four boundary quads meet there, which no face
+    of the surface could have. Its order-2 layout has no face values, so it
+    derives no faces."""
+    points = np.array([(x, y, z) for z in (0, 1) for y in (0, 1, 2) for x in (0, 1, 2)],
+                      np.float32)
+    pid = lambda i, j, k: i + 3 * (j + 3 * k)
+    hexes = [[pid(i, j, 0), pid(i + 1, j, 0), pid(i + 1, j + 1, 0), pid(i, j + 1, 0),
+              pid(i, j, 1), pid(i + 1, j, 1), pid(i + 1, j + 1, 1), pid(i, j + 1, 1)]
+             for i, j in ((0, 0), (1, 1))]
+    data = td.DataSet(td.UnstructuredTopology([12, 12], [0, 8, 16], np.concatenate(hexes),
+                                              num_points=len(points)), points)
+    space = td.H1(data, order=2)
+    nodes = td.project(data, data.geometry, space).values.numpy()
+    data.fields["u"] = td.Field(space, _scalars(_quadratic(nodes)))
+    surface = td.extract_surface(data)
+    assert surface.num_cells == 12
+    with pytest.raises(ValueError, match="shared by more than two cells"):
+        surface.topology.faces()
+    at = td.project(surface, surface.geometry, td.H1(surface, order=2)).values.numpy()
+    np.testing.assert_allclose(surface.fields["u"].values.numpy(), _quadratic(at), atol=1e-5)
+
+
 @tack.kernel
 def _rows_of(cells, out):
     for c in cells:
@@ -512,3 +571,94 @@ def test_external_faces_are_vtks(f64_backend, kind):
     ours_at = np.round(surface.positions(), 6)
     ours = {frozenset(map(tuple, ours_at[c[o[i]:o[i + 1]]])) for i in range(len(o) - 1)}
     assert len(ours) == surface.num_cells == len(theirs) and ours == theirs
+
+
+# ── Edges ───────────────────────────────────────────────────────────
+
+def _lines(data):
+    """A line dataset's point id pairs, ``(num_cells, 2)``."""
+    t = data.topology
+    assert set(t.types.numpy()) <= {3}
+    np.testing.assert_array_equal(t.offsets.numpy(), 2 * np.arange(data.num_cells + 1))
+    return t.connectivity.numpy().reshape(-1, 2)
+
+
+@pytest.mark.parametrize("form", ["rectilinear", "explicit"])
+def test_extract_edges_of_a_grid(backend, form):
+    data = _with_radius(_grid(4, form))
+    data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
+    data.fields["length"] = td.edge_lengths(data)
+    edges = data.topology.edges()
+    lines = td.extract_edges(data)
+    assert lines.num_cells == edges.num_edges == 3 * 3 * 4 * 4
+    assert lines.num_points == data.num_points
+    np.testing.assert_array_equal(_lines(lines), edges.rows.numpy())     # low to high
+    assert lines.fields["r"].space is td.H1(lines)
+    assert "cell" not in lines.fields                  # an edge has several cells
+    # Values on edges become the lines' values: each its own length.
+    assert lines.fields["length"].space is td.Values(lines, "cells")
+    points = lines.positions()
+    rows = _lines(lines)
+    np.testing.assert_allclose(lines.fields["length"].values.numpy(),
+                               np.linalg.norm(points[rows[:, 1]] - points[rows[:, 0]], axis=1),
+                               rtol=1e-6)
+
+
+def test_extract_edges_of_a_set(backend):
+    data = _grid(3, "explicit")
+    rows = data.topology.edges().rows.numpy()
+    data.sets["some"] = td.Set(data, "edges", [5, 2, 30])
+    data.sets["more"] = td.Set(data, "edges", [2, 4])
+    data.sets["origin"] = td.Set(data, "points", [0])
+    data.sets["first"] = td.Set(data, "cells", [0])
+    for given in ("some", data.sets["some"], [2, 5, 30], tack.array(np.array([2, 5, 30]))):
+        lines = td.extract_edges(data, given)
+        np.testing.assert_array_equal(_lines(lines), rows[[2, 5, 30]])
+    # Sets go by the same maps: an edge set onto the lines it became, points kept.
+    np.testing.assert_array_equal(lines.sets["more"].numpy(), [0])
+    assert lines.sets["more"].on == "cells"
+    np.testing.assert_array_equal(lines.sets["origin"].numpy(), [0])
+    assert "first" not in lines.sets
+    assert td.extract_edges(data, []).num_cells == 0
+    with pytest.raises(ValueError, match="not a set of faces"):
+        td.extract_edges(data, td.boundary_faces(data))
+    with pytest.raises(ValueError, match="another topology"):
+        td.extract_edges(data, td.Set(_grid(3, "explicit"), "edges", [0]))
+    with pytest.raises(IndexError, match="edge ids lie outside"):
+        td.extract_edges(data, [len(rows)])
+    with pytest.raises(TypeError, match="H1 geometry"):
+        td.extract_edges(td.DataSet(data.topology, td.project(data, data.geometry,
+                                                              td.L2(data))))
+
+
+def test_extract_edges_of_polyhedra_and_surfaces(backend):
+    data = _grid(3, "explicit")
+    lines = _lines(td.extract_edges(data))
+    np.testing.assert_array_equal(_lines(td.extract_edges(td.as_polyhedra(data))), lines)
+    flat = td.uniform_grid((4, 4, 1))
+    assert td.extract_edges(flat).num_cells == 24
+    np.testing.assert_array_equal(_lines(td.extract_edges(td.as_polygons(flat))),
+                                  _lines(td.extract_edges(flat)))
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", [10, 12, 13, 14])
+def test_extract_edges_is_vtks(f64_backend, kind):
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    source = vtkCellTypeSource()
+    source.SetCellType(kind)
+    source.SetBlocksDimensions(3, 2, 2)
+    source.Update()
+    grid = source.GetOutput()
+    extract = vtk.vtkExtractEdges()
+    extract.SetInputData(grid)
+    extract.Update()
+    out = extract.GetOutput()
+    connectivity = vtk_to_numpy(out.GetLines().GetConnectivityArray()).reshape(-1, 2)
+    at = np.round(vtk_to_numpy(out.GetPoints().GetData()), 6)
+    theirs = {frozenset(map(tuple, at[row])) for row in connectivity}
+    lines = td.extract_edges(vtk_to_dataset(grid, dtype=tack.f64))
+    ours_at = np.round(lines.positions(), 6)
+    ours = {frozenset(map(tuple, ours_at[row])) for row in _lines(lines)}
+    assert len(ours) == lines.num_cells == len(theirs) and ours == theirs
