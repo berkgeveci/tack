@@ -114,13 +114,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   Level Zero its native binary, with the SPIR-V to fall back on. Debug
   mode's kernels are stored apart from the others.
   See *The Kernel Cache* in the User's Guide.
-- Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
-  field and array index in every kernel, one dimension at a time. An
+- Debug mode: `tack.set_debug(True)` or `TACK_DEBUG=1` checks every
+  array index in every kernel, one dimension at a time. An
   out-of-bounds access is skipped (a load gives 0) and the call raises
   `IndexError` naming the access, its file and line, the index and the
   extent, and how many more were skipped; an access inside a device
   function names it. It runs on every backend, compiles separately from
-  normal kernels, and does not compile per field length. Without it,
+  normal kernels, and does not compile per array length. Without it,
   generated code is unchanged.
 - `pytest -m quick`, a module per area of the code, 80 s on four
   workers, and `pytest -n auto` for the whole suite across processes
@@ -229,13 +229,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   for bit through 4096 elements on the CPU and 2048 on GPUs (512 and 8
   before).
 - A warm dispatch costs less host time: the fast path keeps each
-  field's signature and each buffer's address and byte range once
+  array's signature and each buffer's address and byte range once
   computed, holds the variants it resolved instead of looking them up,
-  learns each template class's attribute layout once, checks field
+  learns each template class's attribute layout once, checks array
   overlap in one walk of the ranges, packs the pool's arguments with one
   `struct.pack_into`, and skips the template scope and the texture
   walks when a call has none. A serial dispatch of a kernel with eight
-  field arguments went from 66 to 34 µs on a 2 GHz Xeon, and inside a
+  array arguments went from 66 to 34 µs on a 2 GHz Xeon, and inside a
   dataset filter the host time per launch from 149 to 130 µs.
 - A CPU launch wakes only the pool workers it uses: each worker waits on
   its own mailbox, a launch of `k` threads posts to `k - 1` of them, and
@@ -244,15 +244,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   every worker and costs 4.4.
 - `tack.empty` returns uninitialized storage on every backend; `tack.zeros`
   is the call that pays for zeros. The CPU backend used to fill every new
-  field on the calling thread, which at 5M cells on eight threads of a
+  array on the calling thread, which at 5M cells on eight threads of a
   2 GHz Xeon was half of threshold's and cell-to-point's time and grew
-  with the thread count. A field is now first touched by the kernel that
+  with the thread count. An array is now first touched by the kernel that
   writes it, and a CPU fill of 256 KiB or more (so `zeros`, `ones`,
   `full`) runs as a kernel through the dispatch, so the threads share it
   and the pages land where they will be used; the executor's threads are
   made under the NUMA interleave policy as the pool's are. The dataset
-  filters' fully written flag and offset arrays take plain fields.
-  `Backend.fill_field` is the hook. On Linux, `TACK_CPU_MALLOC=1` also
+  filters' fully written flag and offset arrays take plain arrays.
+  `Backend.fill_array` is the hook. On Linux, `TACK_CPU_MALLOC=1` also
   tells glibc to keep freed pages (`mallopt`: the mmap threshold at its
   32 MiB cap, no trim under 4 GiB of free heap, the heap grown 256 MiB
   at a time), since a filter reallocates the same temporaries on every
@@ -275,17 +275,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   on Windows.
 - A dispatch whose argument signature was seen before resolves its
   variant from that signature instead of rebuilding the key, and the
-  CPU backend passes field addresses rather than typed pointer objects:
+  CPU backend passes array addresses rather than typed pointer objects:
   a warm dispatch costs 40 µs instead of 70 on a 2 GHz Xeon, on every
   backend, which for a filter of forty launches is a few milliseconds.
 - NUMA interleave no longer replaces a bound thread's memory policy: a
   process started under `numactl --membind` keeps its binding, and the
-  probe at `tack.init` puts back the policy it found instead of the
+  probe at the CPU backend's start puts back the policy it found instead of the
   default.
 - CUDA and HIP launches are queued on a stream and return at once; the
-  host waits where it reads a field (`to_numpy`, indexing, reductions,
+  host waits where it reads an array (`numpy()`, indexing, reductions,
   DLPack export) or calls `tack.sync()`. Fills and host writes queue in order
-  with the launches, and a field dropped while a queued launch still uses
+  with the launches, and an array dropped while a queued launch still uses
   it is freed after that launch (stream-ordered memory). A contour of a
   million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
   of its 31 launches' host side alone; on an MI210, from 6.3 to 4.8 ms.
@@ -294,7 +294,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - Level Zero launches are queued the same way, on one asynchronous
   immediate command list with a barrier after each command; fills and
   host writes queue in order with them (from a private copy of the host
-  array, so it may change at once), and a dropped field is freed after the
+  array, so it may change at once), and a dropped array is freed after the
   work queued before it (the driver's deferred free). On an Intel Max
   1100, 100 small launches went from 8.7 to 2.6 ms, and a contour of a
   million hexahedra from about 24 to 18 ms. Ordering by barriers rather
