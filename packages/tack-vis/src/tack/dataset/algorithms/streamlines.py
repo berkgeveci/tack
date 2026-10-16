@@ -1,10 +1,10 @@
 """``streamlines``: the paths of ``advect``'s particles, as Viskores' Streamline: one polyline per seed."""
 
-import numpy as np
-
 import tack
+from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids
 from tack.dataset.algorithms._advection import _run
+from tack.dataset.algorithms._common import _close
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -23,6 +23,22 @@ def _paths(trace, trace_times, lengths, starts, capacity, points, times):
 
 
 @tack.kernel
+def _moved(lengths, flags):
+    # A path of two points or more is a line.
+    for q in range(lengths.shape[0]):
+        flags[q] = 1 if lengths[q] > 1 else 0
+
+
+@tack.kernel
+def _moved_paths(flags, slots, lengths, kept, seed_of, line_lengths):
+    for q in range(flags.shape[0]):
+        if flags[q] == 1:
+            kept[slots[q]] = q
+            seed_of[slots[q]] = q
+            line_lengths[slots[q]] = lengths[q]
+
+
+@tack.kernel
 def _chains(kept, starts, lengths, line_offsets, line_points):
     # A polyline per path that moved, through its points in order.
     for i in range(kept.shape[0]):
@@ -37,33 +53,35 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
     ``time`` on the points. A seed that takes no step has a point and no line."""
-    from tack.algorithms.scan import exclusive_scan
     from tack.dataset.polyhedra import PolylineTopology
 
     _, _, _, _, (trace, trace_times), lengths, capacity = _run(
         data, field, seeds, step_size, steps, integrator, locator, record=True)
+    # Everything is chosen and numbered on the device; only counts come back.
     m = int(lengths.shape[0])
-    host_lengths = lengths.numpy() if m else np.zeros(0, np.int32)
-    total = int(host_lengths.sum())
-    moved = np.flatnonzero(host_lengths > 1)
-    idt = ids.for_output(data, total)
+    idt = ids.for_output(data, m * capacity)
     starts = tack.empty((m,), idt)
-    if m:
-        exclusive_scan(lengths, starts, m, total=False)
+    total = exclusive_scan(lengths, starts, m) if m else 0
     points = tack.empty((total,), tack.vec(3, data.dtype))
     point_times = tack.empty((total,), data.dtype)
     if m:
         _paths(trace, trace_times, lengths, starts, capacity, points, point_times)
     # The paths that moved, their points numbered as they are, make the chains.
-    kept = tack.empty((len(moved),), idt)
-    line_offsets = tack.empty((len(moved) + 1,), idt)
-    line_points = tack.empty((int(host_lengths[moved].sum()),), idt)
-    seed_of = tack.empty((len(moved),), tack.i32)
-    tack.copyto(line_offsets, np.concatenate([[0], np.cumsum(host_lengths[moved])])
-                            .astype(idt.numpy_dtype))
-    if len(moved):
-        tack.copyto(kept, moved.astype(idt.numpy_dtype))
-        tack.copyto(seed_of, moved.astype(np.int32))
+    flags = tack.empty((m,), tack.i32)
+    slots = tack.empty((m,), idt)
+    if m:
+        _moved(lengths, flags)
+    lines = exclusive_scan(flags, slots, m) if m else 0
+    kept = tack.empty((lines,), idt)
+    seed_of = tack.empty((lines,), tack.i32)
+    line_lengths = tack.empty((lines,), idt)
+    if lines:
+        _moved_paths(flags, slots, lengths, kept, seed_of, line_lengths)
+    line_offsets = tack.empty((lines + 1,), idt)
+    length = exclusive_scan(line_lengths, line_offsets, lines) if lines else 0
+    _close(line_offsets, lines, length)
+    line_points = tack.empty((length,), idt)
+    if lines:
         _chains(kept, starts, lengths, line_offsets, line_points)
     topology = PolylineTopology(line_offsets, line_points, num_points=total, id_dtype=idt)
     out = DataSet(topology, points)

@@ -166,6 +166,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `advect` and `streamlines` keep their particles on the dataset's device:
+  seeds given as an array of 3-vectors are copied there, the particles'
+  positions are the output's geometry as they are, and `streamlines`
+  chooses and numbers its paths with scans. Only counts come back to the
+  host; the particles and seeds used to go there and back.
 - `extract_surface` keeps a solid's order-2 `H1` fields and geometry at
   order 2, the trace of the solid's: a face's corners, edge middles and (a
   quad's) center are the surface cell's nodes, so their values are gathered

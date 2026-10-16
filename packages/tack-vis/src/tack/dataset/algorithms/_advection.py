@@ -16,6 +16,7 @@ from tack.dataset import shapes
 from tack.dataset.algorithms._common import _field
 from tack.dataset.locator import _TOLERANCE, CellLocator, _bin
 from tack.dataset.spaces import H1, Constant, Values
+from tack.lang.array import Array
 
 # A particle's status bits, Viskores' ParticleStatus: the kernel's constants,
 # and the flag users compare against.
@@ -422,10 +423,13 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
         raise ValueError("the locator was built for another dataset")
     bin_offsets, bin_cells = locator.cell_bins()
     dtype = data.dtype
-    host = np.ascontiguousarray(np.asarray(
-        seeds.numpy() if hasattr(seeds, "numpy") else seeds,
-        dtype.numpy_dtype).reshape(-1, 3))
-    m = len(host)
+    # Seeds in an array of 3-vectors are copied on the device; anything else
+    # comes from the host.
+    stored = isinstance(seeds, Array) and seeds._vector_n == 3
+    host = None if stored else np.ascontiguousarray(
+        np.asarray(seeds.numpy() if hasattr(seeds, "numpy") else seeds,
+                   dtype.numpy_dtype).reshape(-1, 3))
+    m = int(seeds.shape[0]) if stored else len(host)
     xs = tack.empty((m,), tack.vec(3, dtype))
     times = tack.empty((m,), dtype)
     taken = tack.empty((m,), tack.i32)
@@ -435,7 +439,7 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     trace = tack.empty((m * capacity,), tack.vec(3, dtype))
     trace_times = tack.empty((m * capacity,), dtype)
     if m:
-        tack.copyto(xs, host)
+        tack.copyto(xs, seeds.to_device(xs.device) if stored else host)
         times.fill(0)
         taken.fill(0)
         status.fill(int(SUCCESS))
