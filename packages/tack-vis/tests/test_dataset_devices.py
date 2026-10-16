@@ -82,6 +82,11 @@ def _grid(device):
     return _with_fields(td.uniform_grid((3, 3, 3), device=device), device)
 
 
+@tack.func
+def _norm2(x):
+    return x.dot(x)
+
+
 #: Every public algorithm, as a call on a dataset; each must run on the
 #: dataset's device and leave its results there.
 CALLS = {
@@ -116,6 +121,7 @@ CALLS = {
     "to_points": lambda d: td.project(d, td.project(d, "s", td.Constant(d)), td.H1(d)),
     "discontinuous": lambda d: td.project(d, "s", td.L2(d)),
     "project": lambda d: td.project(d, "s", td.Constant(d)),
+    "interpolate": lambda d: td.interpolate(d, _norm2, td.H1(d, order=2)),
     "traces": lambda d: td.project(d, "s", td.SideTraces(d)),
     "jump": lambda d: td.jump(d, "s"),
     "face_centers": td.face_centers,

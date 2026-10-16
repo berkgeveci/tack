@@ -199,6 +199,42 @@ Cell or DG sources give unused points zero, since no cell contributes there.
 `Constant(data)` for one value per cell, `L2(data)` for each cell's own copies,
 `SideTraces(data)` for each side's value at the faces.
 
+### A field from a function of position
+
+`interpolate(data, function, space, dtype=None)` is the field in `space`
+whose values are `function` at the space's nodes. `function` is a
+`@tack.func` of a world position (a 3-vector of the geometry's type) that
+returns a scalar or a vector; `dtype` is what it returns, `data.dtype` by
+default (`dtype=tack.vec3()` for 3-vectors).
+
+```python
+@tack.func
+def temperature(x):
+    return x.x * x.x + 2.0 * x.y
+
+data.fields["t"] = td.interpolate(data, temperature, td.H1(data, order=2))
+```
+
+| Space | Its nodes |
+|---|---|
+| `H1` | the points; at order 2 also edge middles, quad face centers and cell centers |
+| order-1 `L2` | each cell's corners |
+| `Constant`, order-0 `L2`, `Values(data, "cells")` | each cell's parametric center |
+| `Values(data, "points")` | the points |
+
+- Node positions come from the geometry as they are needed (a curved
+  geometry's included) and are never stored.
+- A node shared by several cells is evaluated once, by the first cell that
+  has it (cells in group order). Which cell writes each node is kept on the
+  space, so a changed geometry is seen. A discontinuous (`L2`) geometry
+  gives a shared node the first cell's position.
+- A point no cell uses takes `function` at its own position when the
+  geometry is `H1`, and zero when it is `L2`.
+- A polynomial of the space's order on straight cells is represented
+  exactly; anything else gets the space's nodal interpolant.
+- On polyhedra, polygons and polylines only point values (`H1` of order 1,
+  `Values(data, "points")`) interpolate, from an `H1` geometry.
+
 ## Fields and arrays
 
 `Field(space, values)`: the values are a `tack.Array` with a scalar or vector

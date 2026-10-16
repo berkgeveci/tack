@@ -28,6 +28,7 @@ from tack.dataset.algorithms.face_geometry import FaceGeometry, face_geometry
 from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantities
 from tack.dataset.algorithms.gradients import gradients
 from tack.dataset.algorithms.implicit_values import implicit_values
+from tack.dataset.algorithms.interpolate import interpolate
 from tack.dataset.algorithms.jump import jump
 from tack.dataset.algorithms.log_values import log_values
 from tack.dataset.algorithms.magnitude import magnitude
@@ -86,6 +87,7 @@ __all__ = [
     "flow_quantities",
     "gradients",
     "implicit_values",
+    "interpolate",
     "jump",
     "log_values",
     "magnitude",

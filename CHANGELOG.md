@@ -151,6 +151,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   ids) as line cells on the same points, each from its lower point id to its
   higher, as VTK's `vtkExtractEdges` finds them: values on edges become
   cell values and edge sets cell sets; cell fields are left behind.
+- `interpolate(data, function, space)`: a field whose values are a
+  `@tack.func` of position at the space's nodes (`H1` of either order, `L2`,
+  `Constant`, values on points or cells), evaluated through the geometry
+  (curved included) without storing node positions. A node shared by
+  several cells is written once, by the first cell that has it; before, a
+  quadratic field took projecting the geometry into its space, a stored
+  array of node positions, and a kernel over them.
 - Order-2 `H1` on triangles, quads and pixels: the six-node triangle and the
   nine-node biquadratic quad, the faces of the tetrahedron's, wedge's and
   hexahedron's order-2 elements. A mesh without quad faces of solids

@@ -136,10 +136,10 @@ in first-order H1:
 --8<-- "docs/examples/data_spaces.py:spaces"
 ```
 
-Projecting geometry into `temperature_space` gives the **physical positions of
-that space's interpolation nodes**. It does not replace `data.geometry`.
-Those positions initialize temperature coefficients; the original geometry,
-temperature and pressure continue to use their separate spaces.
+`interpolate` evaluates the temperature function at the **physical positions
+of that space's interpolation nodes**, through the geometry; it does not
+replace `data.geometry`. The original geometry, temperature and pressure
+continue to use their separate spaces.
 
 An evaluation combines two maps. The geometry gives physical position from
 reference coordinates, while the solution field uses its own basis and DOFs
