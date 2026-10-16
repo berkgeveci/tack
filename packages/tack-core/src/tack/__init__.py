@@ -52,6 +52,7 @@ from tack.lang.inspect_kernel import inspect
 from tack.lang.kernel import kernel
 from tack.lang.types import (
     ElementType,
+    ScalarType,
     f32,
     f64,
     i8,
@@ -182,3 +183,95 @@ def texture3d(source_array, shape=None, interp='linear'):
     if len(shape) != 3:
         raise ValueError("texture3d requires a 3D shape")
     return Texture3D(source_array, shape_3d=shape, interp=interp)
+
+
+#: Public submodules, loaded on first use, so ``import tack`` alone reaches
+#: ``tack.arrays.CountingArray``. ``dataset`` and ``interop`` are tack-vis's.
+_SUBMODULES = frozenset({"algorithms", "arrays", "cache", "math", "random", "dataset", "interop"})
+
+
+def __getattr__(name):
+    if name in _SUBMODULES:
+        import importlib
+        try:
+            return importlib.import_module(f"{__name__}.{name}")
+        except ModuleNotFoundError as error:
+            if error.name != f"{__name__}.{name}":
+                raise
+            raise AttributeError(f"module 'tack' has no attribute {name!r}: tack.{name} is "
+                                 f"in the tack-vis package, which is not installed") from error
+    raise AttributeError(f"module 'tack' has no attribute {name!r}")
+
+
+__all__ = [
+    "Array",
+    "Device",
+    "ElementType",
+    "ExportedMemory",
+    "ScalarType",
+    "SoaArray",
+    "Texture3D",
+    "arange",
+    "array",
+    "array_from_ptr",
+    "asarray",
+    "atomic_add",
+    "atomic_max",
+    "atomic_min",
+    "barrier",
+    "block_max",
+    "block_min",
+    "block_sum",
+    "concat",
+    "constant",
+    "copyto",
+    "device",
+    "device_class",
+    "device_count",
+    "empty",
+    "empty_like",
+    "f32",
+    "f64",
+    "from_dlpack",
+    "full",
+    "full_like",
+    "func",
+    "get_default_device",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "identity",
+    "inspect",
+    "kernel",
+    "local_array",
+    "local_array_like",
+    "mat",
+    "mat2",
+    "mat3",
+    "mat4",
+    "memory_space",
+    "ndindex",
+    "ones",
+    "ones_like",
+    "select",
+    "set_debug",
+    "set_default_device",
+    "shared",
+    "shared_like",
+    "soa",
+    "sync",
+    "sync_async",
+    "texture3d",
+    "thread_id",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "vec",
+    "vec2",
+    "vec3",
+    "vec4",
+    "zeros",
+    "zeros_like",
+]

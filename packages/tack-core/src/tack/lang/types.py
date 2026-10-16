@@ -26,6 +26,12 @@ class ScalarType:
         # ...and through pickle (the disk cache's IR): by module-level name.
         return self.name
 
+    def __call__(self, value):
+        """A conversion, inside a kernel: ``tack.f32(x)``. On the host, convert
+        through NumPy (``np.float32(x)``) or an array's ``astype``."""
+        raise RuntimeError(f"tack.{self.name}(x) converts inside a @tack.kernel; on the host, "
+                           f"use np.{self.numpy_dtype.name}(x) or array.astype(tack.{self.name})")
+
 
 # Scalar types
 i8  = ScalarType("i8",  np.dtype(np.int8),    "i8",  8)

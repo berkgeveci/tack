@@ -6,7 +6,7 @@ from tack.dataset.algorithms.as_polygons import as_polygons
 from tack.dataset.algorithms.as_polyhedra import as_polyhedra
 from tack.dataset.algorithms.boundary_faces import boundary_faces
 from tack.dataset.algorithms.cell_centers import cell_centers
-from tack.dataset.algorithms.cell_geometry import cell_geometry
+from tack.dataset.algorithms.cell_geometry import CellGeometry, cell_geometry
 from tack.dataset.algorithms.cell_ids import cell_ids
 from tack.dataset.algorithms.check_winding import check_winding
 from tack.dataset.algorithms.clip import clip
@@ -25,8 +25,8 @@ from tack.dataset.algorithms.extract_geometry import extract_geometry
 from tack.dataset.algorithms.extract_points import extract_points
 from tack.dataset.algorithms.extract_surface import extract_surface
 from tack.dataset.algorithms.face_centers import face_centers
-from tack.dataset.algorithms.face_geometry import face_geometry
-from tack.dataset.algorithms.flow_quantities import flow_quantities
+from tack.dataset.algorithms.face_geometry import FaceGeometry, face_geometry
+from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantities
 from tack.dataset.algorithms.gradients import gradients
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.algorithms.jump import jump
@@ -58,6 +58,9 @@ from tack.dataset.algorithms.values_at_centers import values_at_centers
 from tack.dataset.algorithms.warp import warp
 
 __all__ = [
+    "CellGeometry",
+    "FaceGeometry",
+    "FlowQuantities",
     "ParticleStatus",
     "advect",
     "as_polygons",

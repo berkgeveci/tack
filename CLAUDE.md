@@ -15,7 +15,7 @@ The path tracer that was `tack-rendering` is archived in `archive/tack-rendering
 (outside the workspace, CI and docs; its design notes are in its `NOTES.md`)
 until the dataset API settles. Ruff excludes `archive/`.
 
-All share the `tack` namespace via `pkgutil.extend_path`.
+Both share the `tack` namespace via `pkgutil.extend_path` in tack-core's `tack/__init__.py`; tack-vis's `tack/` has no `__init__.py` (a namespace portion), so tack-core's runs whichever comes first on the path (`test_namespace.py`; CI's `wheels` job checks the built wheels). `tack` declares `__all__` and is marked typed (`py.typed`; tack-vis's in `dataset/` and `interop/`): a public name re-exported from `tack/__init__.py` must be in `__all__`, or type checkers read it as private. Public submodules (`tack.arrays`, `tack.algorithms`, `tack.math`, `tack.random`, `tack.cache`, `tack.dataset`, `tack.interop`) load on first attribute access (`__getattr__`).
 
 **One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. So only one package may ship a given `tack/<name>/` subpackage: `tack/algorithms/` is tack-core's alone (scan, sort, stats, copy). tack-vis's visualization algorithms are `tack.dataset.algorithms`. `packages/tack-vis/tests/test_namespace.py` checks tack-vis ships no `tack/algorithms/` and that the retired `tack.data`, `tack.deprecated` and `tack.fe` stay gone.
 
