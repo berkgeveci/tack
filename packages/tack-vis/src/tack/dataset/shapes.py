@@ -338,13 +338,11 @@ class Shape:
     @tack.func
     def nearest_point(self, pts, x, pc):
         """The point of the cell nearest world point ``x``, given ``pc`` from
-        ``world_to_parametric(pts, x)``: ``x`` itself inside a solid cell, and
-        otherwise the position at ``pc`` clamped into the parametric domain, as
-        VTK's ``EvaluatePosition`` has it for a hexahedron, voxel, pyramid, pixel
-        and line -- for a triangle or tetrahedron, as there, the exact nearest
-        point. A quad's clamped position is near its nearest point but, unless
-        it is a parallelogram, not exactly it; a wedge's clamp scales ``(r, s)``
-        back onto its triangle, where VTK clamps each to [0, 1] and can leave it."""
+        ``world_to_parametric(pts, x)``. This default, for a line and a vertex,
+        is the position at ``pc`` clamped into the parametric domain, which for
+        them is exact. A solid's is ``x`` itself inside and otherwise the nearest
+        point of its faces; a triangle's and a quad's the nearest point of the
+        cell itself (``_Solid``, ``Triangle``, ``_Quadrilateral``)."""
         return self.interpolate_point(pts, self._clamp(pc))
 
     @tack.func
@@ -393,6 +391,29 @@ class Shape:
 @tack.device_class
 class _Solid(Shape):
     DIMENSION = 3
+
+    @tack.func
+    def nearest_point(self, pts, x, pc):
+        """``x`` itself inside the cell; outside, the nearest point of its nearest
+        face, a quad face taken as two triangles -- exact when the face is
+        planar, as VTK finds it since 45f0f69a7e (2026-07) for a hexahedron. The
+        position at clamped parametric coordinates, used before (TA-39), is
+        exact only for an axis-aligned box."""
+        out = x
+        if self.is_inside(pc, 0.0) == 1:
+            out = self.interpolate_point(pts, pc)
+        else:
+            nearest = -1.0
+            for f in range(self.NUM_FACES):
+                a = _point(pts, self.face_corner(f, 0))
+                for k in range(1, self.face_num_points(f) - 1):
+                    q = _nearest_on_triangle(a, _point(pts, self.face_corner(f, k)),
+                                             _point(pts, self.face_corner(f, k + 1)), x)
+                    d = (q - x).dot(q - x)
+                    if nearest < 0.0 or d < nearest:
+                        nearest = d
+                        out = q
+        return out
 
     @tack.func
     def _newton_step(self, m, residual):
@@ -628,6 +649,19 @@ class _Quadrilateral(_Surface):
     def _clamp(self, pc):
         return tack.vec3(min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0), pc[2])
 
+    @tack.func
+    def nearest_point(self, pts, x, pc):
+        """The nearest point of the quad's two triangles, split at its first
+        corner: exact when the quad is planar. Its clamped position, used before
+        (TA-39), is exact only for a rectangle."""
+        a = _point(pts, self.face_corner(0, 0))
+        b = _point(pts, self.face_corner(1, 0))
+        c = _point(pts, self.face_corner(2, 0))
+        d = _point(pts, self.face_corner(3, 0))
+        p = _nearest_on_triangle(a, b, c, x)
+        q = _nearest_on_triangle(a, c, d, x)
+        return p if (p - x).dot(p - x) <= (q - x).dot(q - x) else q
+
 
 @tack.device_class
 class Pixel(_Quadrilateral):
@@ -737,24 +771,6 @@ class Tetra(_Solid):
         t = max(pc[2], 0.0)
         scale = 1.0 / max(r + s + t, 1.0)
         return tack.vec3(r * scale, s * scale, t * scale)
-
-    @tack.func
-    def nearest_point(self, pts, x, pc):
-        out = x
-        if self.is_inside(pc, 0.0) == 1:
-            out = self.interpolate_point(pts, pc)
-        else:
-            # The nearest point of the nearest face.
-            nearest = -1.0
-            for f in range(4):
-                q = _nearest_on_triangle(_point(pts, self.face_corner(f, 0)),
-                                         _point(pts, self.face_corner(f, 1)),
-                                         _point(pts, self.face_corner(f, 2)), x)
-                d = (q - x).dot(q - x)
-                if nearest < 0.0 or d < nearest:
-                    nearest = d
-                    out = q
-        return out
 
     @tack.func
     def edge_corner(self, e, k):
