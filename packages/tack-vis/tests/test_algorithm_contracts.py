@@ -107,3 +107,55 @@ def test_empty_particles_keep_ids_and_field_layouts(backend):
     np.testing.assert_array_equal(out.fields["steps"].values.numpy(), [0])
     np.testing.assert_array_equal(out.fields["status"].values.numpy(),
                                   [int(td.ParticleStatus.SPATIAL_BOUNDS)])
+
+
+@pytest.mark.parametrize("polyhedral", [False, True])
+@pytest.mark.parametrize("bad", ["past", "negative"])
+def test_extract_surface_refuses_face_ids_outside_the_topology(backend, polyhedral, bad):
+    """A face id the topology does not have was read out of bounds, silently
+    giving wrong cells (only debug mode noticed)."""
+    data = td.uniform_grid((3, 3, 3))
+    if polyhedral:
+        data = td.as_polyhedra(data)
+    nf = data.topology.faces().num_faces
+    with pytest.raises(IndexError, match=rf"1 face ids lie outside \[0, {nf}\)"):
+        td.extract_surface(data, [0, nf if bad == "past" else -1])
+    assert td.extract_surface(data, [0, nf - 1]).num_cells == 2
+
+
+@pytest.mark.parametrize("polyhedral", [False, True])
+def test_extract_surface_refuses_a_face_set_of_another_topology(backend, polyhedral):
+    data, other = td.uniform_grid((3, 3, 3)), td.uniform_grid((6, 6, 6))
+    if polyhedral:
+        data = td.as_polyhedra(data)
+    with pytest.raises(ValueError, match="another topology"):
+        td.extract_surface(data, td.Set(other, "faces", [0]))
+
+
+def test_extract_cells_refuses_cell_ids_outside_the_topology(backend):
+    data = td.uniform_grid((3, 3, 3))
+    with pytest.raises(IndexError, match=r"2 cell ids lie outside \[0, 8\)"):
+        td.extract_cells(data, [8, -1, 3])
+    assert td.extract_cells(data, [0, 7]).num_cells == 2
+
+
+def _on_points(data):
+    """A linear function as values on the points, and as the H1 field it is."""
+    x = data.positions()
+    values = (x[:, 0] + 2 * x[:, 1] - x[:, 2]).astype(np.float32)
+    return (td.Field(td.Values(data, "points"), tack.array(values)),
+            td.Field(td.H1(data), tack.array(values)))
+
+
+@pytest.mark.parametrize("operation", ["contour", "gradients", "values_at_centers"])
+@pytest.mark.parametrize("dims", [(3, 3, 3), (4, 3)])
+def test_values_on_points_read_as_order_1_h1(backend, operation, dims):
+    """Values on points have a basis, order-1 H1, as project and threshold took
+    them; 3D contour refused them and gradients and values_at_centers failed
+    ("cannot be viewed while iterating cells")."""
+    data = td.uniform_grid(dims)
+    points, h1 = _on_points(data)
+    run = {"contour": lambda f: td.contour(data, f, 2.0).positions(),
+           "gradients": lambda f: td.gradients(data, f).values.numpy(),
+           "values_at_centers": lambda f: td.values_at_centers(data, f).values.numpy()}[operation]
+    np.testing.assert_allclose(run(points), run(h1), atol=1e-6)

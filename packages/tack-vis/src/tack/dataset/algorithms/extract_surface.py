@@ -95,14 +95,19 @@ def _surface_loops(ids, face_offsets, face_points, starts, loops):
 
 def _face_ids(data, faces):
     """``faces`` -- a face set, its name, or face ids -- as a field of the topology's
-    ids."""
+    ids: a set of this topology's faces, or ids within its face count."""
     if isinstance(faces, str):
         faces = data.sets[faces]
     if isinstance(faces, Set):
         if faces.on != "faces":
             raise ValueError(f"extract_surface takes faces, not a set of {faces.on}")
+        if faces.topology is not data.topology:
+            raise ValueError("extract_surface takes a set of this dataset's faces, not "
+                             "one of another topology")
         return faces.ids
-    return id_types.as_ids(faces, data.id_dtype)
+    ids = id_types.as_ids(faces, data.id_dtype)
+    id_types.check_bounds(ids, data.topology.faces().num_faces, "face")
+    return ids
 
 
 @tack.kernel

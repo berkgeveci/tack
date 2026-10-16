@@ -119,6 +119,47 @@ def test_algorithms_take_implicit_arrays(backend):
     np.testing.assert_array_equal(counts.numpy(), [5, 5])
 
 
+def test_algorithms_take_vector_implicit_arrays(backend):
+    """A vector implicit array gives what the same vectors stored give. The
+    outputs used to be sized by the component type, so the kernels stored a
+    vector into a scalar array and failed to compile."""
+    from tack import algorithms as alg
+    x, y, z = (np.array(v, np.float32) for v in ([1, 1, 4, 4], [2, 2, 5, 0], [3, 3, 6, -2]))
+    implicit = arrays.Components(tack.array(x), tack.array(y), tack.array(z))
+    stored = tack.array(np.stack([x, y, z], axis=1), dtype=tack.vec3())
+    keys = tack.array(np.array([0, 0, 1, 1], np.int32))
+    for a in (implicit, stored):
+        np.testing.assert_allclose(alg.gather(a, tack.array([2, 0])).numpy(),
+                                   [[4, 5, 6], [1, 2, 3]])
+        distinct, counts = alg.unique(a)
+        np.testing.assert_allclose(distinct.numpy(), [[1, 2, 3], [4, 5, 6], [4, 0, -2]])
+        np.testing.assert_array_equal(counts.numpy(), [2, 1, 1])
+        runs, totals = alg.reduce_by_key(keys, a)
+        np.testing.assert_allclose(totals.numpy(), [[2, 4, 6], [8, 5, 4]])
+        flat = np.stack([x, y, z], axis=1).ravel()
+        assert alg.norm(a) == pytest.approx(np.linalg.norm(flat))
+        assert alg.var(a) == pytest.approx(np.var(flat))
+        assert alg.absmax(a) == 6 and alg.count_nonzero(a) == 11
+
+
+def test_strided_takes_host_data_as_the_other_arrays_do(backend):
+    s = arrays.Strided(np.arange(10, dtype=np.float32), 2, 1)
+    assert s.dtype is tack.f32 and s.size == 5
+    np.testing.assert_array_equal(arrays.materialize(s).numpy(), [1, 3, 5, 7, 9])
+
+
+@pytest.mark.parametrize("dtype", ["i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
+                                   "f32", "f64"])
+def test_cast_converts_to_every_scalar_type(backend, dtype):
+    dtype = getattr(tack, dtype)
+    if dtype not in tack.get_default_device()._backend.supported_dtypes:
+        pytest.skip(f"{dtype.name} is not supported on {backend}")
+    c = arrays.Cast(tack.array(np.array([1.5, 30.0, 2.0], np.float32)), dtype)
+    assert c.dtype is dtype
+    np.testing.assert_array_equal(arrays.materialize(c).numpy(),
+                                  np.array([1.5, 30.0, 2.0]).astype(dtype.numpy_dtype))
+
+
 def test_reductions_of_implicit_arrays_are_a_stored_arrays(backend):
     c = arrays.CountingArray(10, 1.0, 1.0)
     assert (c.sum(), c.min(), c.max(), c.mean()) == (55, 1, 10, 5.5)

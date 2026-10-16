@@ -97,13 +97,19 @@ def _count(n, *arrays):
     over all its scalar components in storage order through a storage view, since the kernels index scalars and a
     vector element in `a[i] * b[i]` has no scalar meaning.
     An SOA array is first copied to one interleaved buffer, so its
-    components pair with another array's as an interleaved array's do.
-    Returns ``(n, *arrays)`` with the views substituted.
+    components pair with another array's as an interleaved array's do,
+    and a vector implicit array is computed into one first. A given ``n``
+    counts elements, vectors for a vector array, so it is scaled by the
+    vectors' width. Returns ``(n, *arrays)`` with the views substituted.
     """
-    flat = tuple(_storage_view(f) if hasattr(f, '_vector_n') else f for f in arrays)
-    if n is None:
-        n = flat[0].size
-    n = int(n)
+    from tack.arrays import materialize, width_of
+
+    widths = {width_of(f) for f in arrays} - {None}
+    if len(widths) > 1:
+        raise ValueError(f"vector arrays of different widths: {sorted(widths)}")
+    flat = tuple(_storage_view(f) if hasattr(f, '_vector_n') else f
+                 for f in (materialize(f) if width_of(f) else f for f in arrays))
+    n = flat[0].size if n is None else int(n) * (widths.pop() if widths else 1)
     for f in flat:
         if not 0 <= n <= f.size:
             raise ValueError(

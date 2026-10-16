@@ -53,6 +53,7 @@ whose ids are 64-bit asks for ``i64`` whatever its size.
 import tack
 from tack.algorithms.copy import copy
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import element_type, width_of
 from tack.runtime.dispatch import on_inputs_device
 
 # Elements per chunk in the counting and scatter kernels. Larger chunks
@@ -356,6 +357,19 @@ def _flag_run_starts(keys, flags, n):
 
 
 @tack.kernel
+def _flag_vector_run_starts(keys, flags, n):
+    # Vector keys: a comparison is a mask, so a run starts where any
+    # component differs.
+    for i in range(n):
+        if i == 0:
+            flags[i] = 1
+        elif any(keys[i] != keys[i - 1]):
+            flags[i] = 1
+        else:
+            flags[i] = 0
+
+
+@tack.kernel
 def _scatter_run_starts(flags, run_ids, offsets, n, nruns):
     """offsets[r] = first index of run r; offsets[nruns] = n.
 
@@ -520,7 +534,7 @@ def gather(src, indices, n=None):
     output has ``src``'s dtype.  Indices must lie in ``[0, src.size)``.
     """
     n = _count(n, indices)
-    out = tack.empty((n,), src.dtype)
+    out = tack.empty((n,), element_type(src))
     if n:
         _gather(src, indices, out, n)
     return out
@@ -553,7 +567,8 @@ def _run_offsets(sorted_keys, n, index_dtype=None):
         return tack.empty((1,), indices), 0
     flags = tack.empty((n,), tack.i32)
     run_ids = tack.empty((n,), indices)
-    _flag_run_starts(sorted_keys, flags, n)
+    flag = _flag_vector_run_starts if width_of(sorted_keys) else _flag_run_starts
+    flag(sorted_keys, flags, n)
     nruns = exclusive_scan(flags, run_ids, n)
     offsets = tack.empty((nruns + 1,), indices)
     _scatter_run_starts(flags, run_ids, offsets, n, nruns)
@@ -572,7 +587,7 @@ def unique(sorted_keys, n=None):
     """
     n = _count(n, sorted_keys)
     offsets, nruns = _run_offsets(sorted_keys, n)
-    keys = tack.empty((nruns,), sorted_keys.dtype)
+    keys = tack.empty((nruns,), element_type(sorted_keys))
     counts = tack.empty((nruns,), offsets.dtype)
     if nruns:
         _gather(sorted_keys, offsets, keys, nruns)
@@ -597,8 +612,8 @@ def reduce_by_key(sorted_keys, values, n=None, op="sum"):
         raise ValueError(f"op must be one of {', '.join(_REDUCERS)}; got {op!r}")
     n = _count(n, sorted_keys, values)
     offsets, nruns = _run_offsets(sorted_keys, n)
-    keys = tack.empty((nruns,), sorted_keys.dtype)
-    reduced = tack.empty((nruns,), values.dtype)
+    keys = tack.empty((nruns,), element_type(sorted_keys))
+    reduced = tack.empty((nruns,), element_type(values))
     if nruns:
         _gather(sorted_keys, offsets, keys, nruns)
         reducer(values, offsets, reduced, nruns)

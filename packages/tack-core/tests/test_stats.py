@@ -325,3 +325,18 @@ def test_var_of_integers_does_not_wrap_the_mean(backend, dtype, value):
     f = tack.empty((4,), dtype)
     tack.copyto(f, np.full(4, value, dtype.numpy_dtype))
     assert var(f) == 0.0
+
+
+def test_n_counts_vectors_of_a_vector_array(backend):
+    """``n`` is the first n elements, vectors for a vector array: it was read
+    as scalar components after flattening, so ``norm(v, n=2)`` took 2/3 of
+    the first vector (1.0 here, not 7.42)."""
+    values = np.arange(12, dtype=np.float32).reshape(4, 3)
+    v = tack.array(values, dtype=tack.vec3())
+    assert norm(v, n=2) == pytest.approx(np.linalg.norm(values[:2]))
+    assert var(v, n=3) == pytest.approx(np.var(values[:3]))
+    assert absmax(v, n=1) == 2
+    assert dot(v, v, n=2) == pytest.approx(float((values[:2] ** 2).sum()))
+    with pytest.raises(ValueError, match="outside"):
+        norm(v, n=5)
+

@@ -18,7 +18,7 @@ import numpy as np
 import tack
 from tack.lang.array import Array
 
-__all__ = ["LIMIT", "as_ids", "at_least", "choose", "for_output"]
+__all__ = ["LIMIT", "as_ids", "at_least", "check_bounds", "choose", "for_output"]
 
 #: The largest id, offset or count an ``i32`` holds.
 LIMIT = 2**31 - 1
@@ -86,6 +86,25 @@ def as_ids(values, dtype, check=True):
     if values.size:
         tack.copyto(out, values.astype(dtype.numpy_dtype))
     return out
+
+
+@tack.kernel
+def _count_outside(ids, n, bad):
+    for i in range(ids.shape[0]):
+        k = ids[i]
+        if k < 0 or k >= n:
+            tack.atomic_add(bad, 0, 1)
+
+
+def check_bounds(ids, n, what):
+    """Refuse ``ids`` (a field) outside ``[0, n)`` with ``IndexError``: counted
+    in a kernel on the ids' device, so only the count comes back to the host.
+    A kernel given one would read and write outside the arrays it indexes."""
+    if ids.shape[0]:
+        bad = tack.zeros((1,), tack.i32, device=ids.device)
+        _count_outside(ids, n, bad)
+        if bad[0]:
+            raise IndexError(f"{int(bad[0])} {what} ids lie outside [0, {n})")
 
 
 def host_or_field(values):

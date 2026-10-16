@@ -140,7 +140,9 @@ class Kernel:
         # A kernel ending in `return expr` has the expression computed by a
         # one-thread epilogue kernel into a hidden array; see _split_result.
         self._result = None if funcdef is not None else _split_result(self, func)
-        self._result_array = None
+        # Per thread: each call stores its result there and reads it back,
+        # so two threads sharing one array read each other's result.
+        self._result_arrays = threading.local()
 
     def get_ir(self, vector_arrays=None, template_args=None, texture_arrays=None, debug=False):
         """Get IR, re-transforming if vector/texture array or template metadata is provided.
@@ -213,10 +215,10 @@ class Kernel:
         """Run the epilogue kernel and read the result it stored."""
         from tack.lang.array import empty
         dtype, epilogue = self._result
-        result = self._result_array
+        result = getattr(self._result_arrays, "array", None)
         if result is None or result._device is not backend:
             result = empty((1,), dtype, device=backend)
-            self._result_array = result
+            self._result_arrays.array = result
         backend.execute(epilogue, (*args, result), kwargs)
         if dispatch._debug:
             debug_bounds.check()
