@@ -320,7 +320,7 @@ def on_inputs_device(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         dev = same_device(f"{func.__name__}()", (*args, *kwargs.values()))
-        if dev is None:
+        if dev is None or dev is get_backend():   # already where it runs: no scope to push
             return func(*args, **kwargs)
         with as_device(dev):
             return func(*args, **kwargs)
@@ -332,6 +332,8 @@ def same_device(what, arrays):
     skipped), or None; raises if another is in a different device's memory."""
     found = None
     for array in arrays:
+        if isinstance(array, type):     # a classmethod's class: its _device is a property
+            continue
         dev = getattr(array, "_device", None)
         if dev is None:
             continue

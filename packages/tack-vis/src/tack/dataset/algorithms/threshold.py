@@ -5,6 +5,7 @@ from tack import arrays
 from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.algorithms._extract import _keep_cells
 from tack.dataset.spaces import Constant
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['threshold']
 
@@ -26,6 +27,7 @@ def _keep_by_corners(cells, u, lower, upper, all_points, keep):
         keep[cells.entity_id(c)] = ok
 
 
+@on_inputs_device
 def threshold(data, field, lower, upper, all_points=True, fields=None):
     """The cells whose ``field`` lies in ``[lower, upper]``, with only the points they use.
 

@@ -7,6 +7,7 @@ from tack.dataset import ids
 from tack.dataset.algorithms._advection import _run
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['streamlines']
 
@@ -30,6 +31,7 @@ def _chains(kept, starts, lengths, line_offsets, line_points):
             line_points[line_offsets[i] + k] = starts[q] + k
 
 
+@on_inputs_device
 def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
     positions after every step, the seed first, as one polyline per seed

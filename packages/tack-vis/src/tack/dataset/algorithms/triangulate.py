@@ -4,10 +4,12 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._refine import _fan_counts, _fans, _pieces_topology, _split
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['triangulate']
 
 
+@on_inputs_device
 def triangulate(data, fields=None):
     """Every 2D cell as triangles: a quad or pixel in 2, a polygon in a fan from its
     first point; other cells are left out. The points are the same; cell fields

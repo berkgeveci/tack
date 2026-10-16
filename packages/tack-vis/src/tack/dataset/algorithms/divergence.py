@@ -7,6 +7,7 @@ from tack.dataset.algorithms._faces import _on_faces
 from tack.dataset.carry import _like
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['divergence']
 
@@ -21,6 +22,7 @@ def _outward_sums(cells, flux, out):
         out[cells.entity_id(c)] = total
 
 
+@on_inputs_device
 def divergence(data, flux):
     """Each cell's outward sum of ``flux``, values on faces measured out of side 0
     (``Values(data, "faces", oriented=True)``, or plain face values taken so): a

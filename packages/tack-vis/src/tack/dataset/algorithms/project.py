@@ -13,6 +13,7 @@ from tack.dataset.carry import _like, _take
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import H1, L2, Constant, SideTraces, Values, reference_cells
 from tack.dataset.topology import corner_layout
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['project']
 
@@ -148,6 +149,7 @@ def _onto_nodes(data, field, space, values):
 
 # ── The entry point ─────────────────────────────────────────────────
 
+@on_inputs_device
 def project(data, field, space):
     """``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:
     a new field. Values on points or cells count as order-1 ``H1`` and

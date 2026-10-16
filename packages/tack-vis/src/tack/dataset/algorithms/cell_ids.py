@@ -3,10 +3,12 @@
 from tack.arrays import CountingArray
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['cell_ids']
 
 
+@on_inputs_device
 def cell_ids(data):
     """Each cell's id, as values on cells: an implicit array, nothing stored."""
     return Field(Values(data, "cells"), CountingArray(data.num_cells, dtype=data.id_dtype))

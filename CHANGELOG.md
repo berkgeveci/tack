@@ -133,6 +133,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   is left out where PyMFEM has no wheels (anywhere but macOS on Apple
   silicon and Linux x86_64).
 
+- Datasets compute on their own device. A topology, field, set or dataset
+  is on the device its arrays are on (`.device`), and every algorithm,
+  derived entity, `for_each`, `Set` and `CellLocator` runs and allocates
+  there, whatever the default device; before, any dataset off the default
+  device failed at its first launch ("arrays on two devices"). Parts on two
+  devices are refused when a dataset is made. `DataSet.to_device(device)`
+  copies one; `uniform_grid`, `rectilinear_grid`, `wavelet` and `tangle`
+  take `device=`. Implicit arrays are on the device of the arrays they
+  hold: `ConstantArray`, `UniformCoordinates` and `CartesianProduct` take
+  `device=`, `to_device` moves one, and one made from arrays on two devices
+  is refused.
+
 ### Changed
 
 - **Breaking:** CPU threading policy v1 is removed; the policy that has

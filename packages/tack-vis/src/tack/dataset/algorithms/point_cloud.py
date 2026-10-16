@@ -2,10 +2,12 @@
 
 import tack
 from tack.dataset.algorithms._extract import _keep_points
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['point_cloud']
 
 
+@on_inputs_device
 def point_cloud(data, fields=None):
     """Every point as a vertex cell, with the point data (Viskores'
     ConvertToPointCloud); cell data is left behind."""

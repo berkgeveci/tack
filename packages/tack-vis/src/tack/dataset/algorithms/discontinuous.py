@@ -2,10 +2,12 @@
 
 from tack.dataset.algorithms.project import project
 from tack.dataset.spaces import L2
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['discontinuous']
 
 
+@on_inputs_device
 def discontinuous(data, field):
     """``field`` as an order-1 ``L2`` field, ``project(data, field, L2(data))``: each
     cell's values at its corners, stored per cell. The same function, in the DG

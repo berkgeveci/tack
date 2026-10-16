@@ -11,6 +11,7 @@ from tack.dataset.buckets import bucket_order
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.locator import CellLocator
 from tack.dataset.spaces import H1, Constant, Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['probe']
 
@@ -36,6 +37,7 @@ def _valid(found, out):
         out[q] = 1 if found[q] >= 0 else 0
 
 
+@on_inputs_device
 def probe(data, where, fields=None, locator=None):
     """``data``'s fields at the points of ``where`` -- a dataset, or an ``(n, 3)``
     array of points, which becomes vertex cells -- as Viskores' Probe and VTK's

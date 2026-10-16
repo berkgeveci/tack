@@ -5,10 +5,12 @@ import numpy as np
 from tack.dataset.algorithms._extract import _complement, _keep_cells
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.algorithms.threshold import _threshold_flags, threshold
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_geometry']
 
 
+@on_inputs_device
 def extract_geometry(data, function, inside=True, boundary=False, fields=None):
     """The whole cells inside ``function``'s region (all their points at or below zero),
     or, with ``inside=False``, outside it (all above); with ``boundary``, also the

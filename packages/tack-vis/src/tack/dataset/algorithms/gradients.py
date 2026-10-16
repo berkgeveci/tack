@@ -9,6 +9,7 @@ from tack.dataset.algorithms._links import _average_links
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values, reference_cells
 from tack.dataset.topology import corner_layout
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['gradients']
 
@@ -85,6 +86,7 @@ def _scalar_gradients(data, field, at):
     return out
 
 
+@on_inputs_device
 def gradients(data, field, at="cells"):
     """The gradient of ``field`` -- ``H1``, ``L2`` or ``Constant``, scalar or vector --
     at each cell's parametric center (``at="cells"``) or at the points

@@ -6,6 +6,7 @@ import tack
 from tack.arrays import materialize, size_of
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.algorithms._moving import _moved
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['transform']
 
@@ -19,6 +20,7 @@ def _affine(positions, m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m2
                   m20 * p[0] + m21 * p[1] + m22 * p[2] + m23]
 
 
+@on_inputs_device
 def transform(data, matrix, fields=None):
     """The geometry under an affine map: a 4x4 matrix (its last row 0 0 0 1) or 3x4,
     applied to each position as a column (Viskores' PointTransform, VTK's

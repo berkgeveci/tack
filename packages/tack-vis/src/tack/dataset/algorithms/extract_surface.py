@@ -9,6 +9,7 @@ from tack.dataset.carry import Pieces, Same, Take, carry
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1
 from tack.dataset.topology import UnstructuredTopology
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_surface']
 
@@ -40,6 +41,7 @@ def _face_cells(ids, sides, out):
         out[i] = sides[ids[i]][0]
 
 
+@on_inputs_device
 def extract_surface(data, faces, fields=None):
     """The ``faces`` -- a face ``Set`` (as ``boundary_faces`` returns), a set's name
     in ``data.sets``, or face ids (a field or an array) -- as a dataset on the same points: a 3D

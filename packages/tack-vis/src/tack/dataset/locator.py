@@ -26,6 +26,7 @@ from tack.algorithms.sort import gather
 from tack.dataset import ids
 from tack.dataset.buckets import bucket_order
 from tack.dataset.dataset import for_each
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["CellLocator"]
 
@@ -171,6 +172,7 @@ class CellLocator:
     follow the cells' bounding boxes at build time: rebuild after moving the
     geometry. ``density`` is the bins per cell."""
 
+    @on_inputs_device
     def __init__(self, data, density=1.0):
         if not getattr(data.topology, "reference_cells", True):
             raise NotImplementedError("locating points in polyhedra, polygons or polylines is "
@@ -225,6 +227,12 @@ class CellLocator:
             self._cell_bins = (offsets, gather(cells, order) if total else cells)
         return self._cell_bins
 
+    @property
+    def _device(self):
+        data = self.__dict__.get("data")
+        return data._device if data is not None else None
+
+    @on_inputs_device
     def find(self, points):
         """``(cells, pcs)`` for ``points`` (an ``(n, 3)`` host array or a field of
         3-vectors): a field of the cell holding each point (-1 for none), in the

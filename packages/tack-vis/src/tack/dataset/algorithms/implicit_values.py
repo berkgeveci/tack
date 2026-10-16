@@ -4,6 +4,7 @@ import tack
 from tack import arrays
 from tack.arrays import materialize, size_of
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['implicit_values']
 
@@ -14,6 +15,7 @@ def _implicit_values(positions, function, out):
         out[i] = function.value(positions[i])
 
 
+@on_inputs_device
 def implicit_values(data, function):
     """An implicit function (``tack.dataset.implicit``) at the geometry's values: a field
     in the geometry's space, negative inside the function's region. On an ``H1``

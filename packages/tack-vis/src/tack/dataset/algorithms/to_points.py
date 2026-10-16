@@ -3,10 +3,12 @@ into ``H1``."""
 
 from tack.dataset.algorithms.project import project
 from tack.dataset.spaces import H1
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['to_points']
 
 
+@on_inputs_device
 def to_points(data, field):
     """``field`` averaged onto the points: an order-1 ``H1`` field,
     ``project(data, field, H1(data))``. Each point averages the values the cells

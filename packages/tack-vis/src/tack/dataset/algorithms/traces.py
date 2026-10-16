@@ -5,6 +5,7 @@ from tack import arrays
 from tack.dataset.algorithms._common import _field
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import SideTraces, reference_cells
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['traces']
 
@@ -19,6 +20,7 @@ def _traces(cells, u, out):
                 out[first + cells.face_position(c, f, k)] = u.value(c, pc)
 
 
+@on_inputs_device
 def traces(data, field):
     """``field`` -- any field with a basis on the cells: ``H1``, ``L2`` (an order per
     cell too), ``Constant`` -- evaluated by each 3D cell at each of its faces'

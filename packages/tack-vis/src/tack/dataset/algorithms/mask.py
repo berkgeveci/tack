@@ -2,10 +2,12 @@
 
 import tack
 from tack.dataset.algorithms._extract import _every, _keep_cells
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['mask']
 
 
+@on_inputs_device
 def mask(data, stride, fields=None):
     """Every ``stride``-th cell (0, stride, 2 * stride, ...), as Viskores' ``Mask``."""
     if int(stride) < 1:

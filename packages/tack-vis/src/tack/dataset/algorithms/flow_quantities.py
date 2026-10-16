@@ -7,6 +7,7 @@ from tack import arrays
 from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _field
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['FlowQuantities', 'flow_quantities']
 
@@ -30,6 +31,7 @@ class FlowQuantities(NamedTuple):
     q_criterion: Field
 
 
+@on_inputs_device
 def flow_quantities(data, gradient):
     """Divergence, vorticity and the Q-criterion from the gradient of a 3-vector field
     (``gradients`` of it: 9 values per entity), in the gradient's space, as VTK's

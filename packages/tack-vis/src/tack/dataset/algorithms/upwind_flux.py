@@ -9,6 +9,7 @@ from tack.dataset.algorithms.traces import traces
 from tack.dataset.carry import _like
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['upwind_flux']
 
@@ -36,6 +37,7 @@ def _cell_upwind(faces, values, normals, areas, vx, vy, vz, out):
         out[e] = vn * areas[e] * values[cell]
 
 
+@on_inputs_device
 def upwind_flux(data, field, velocity):
     """The flux of ``field`` carried by a constant ``velocity`` through each face, out
     of side 0: ``(v . n) * area * u``, ``u`` taken from the upwind side at the face's

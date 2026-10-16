@@ -6,6 +6,7 @@ from tack.dataset import shapes
 from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Same, carry
 from tack.dataset.polyhedra import PolygonalTopology
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['as_polygons']
 
@@ -26,6 +27,7 @@ def _polygon_loops(cells, offsets, loops):
             loops[at + k] = cells.point_id(c, kk)
 
 
+@on_inputs_device
 def as_polygons(data, fields=None):
     """A shape-based dataset of 2D cells -- triangles, quads, pixels -- as a polygonal
     one: each cell's points in order become its loop. Fields carry as

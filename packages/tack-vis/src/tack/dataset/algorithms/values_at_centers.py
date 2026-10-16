@@ -5,6 +5,7 @@ from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.carry import _like
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values, reference_cells
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['values_at_centers']
 
@@ -15,6 +16,7 @@ def _at_centers(cells, u, out):
         out[cells.entity_id(c)] = u.value(c, cells.parametric_center())
 
 
+@on_inputs_device
 def values_at_centers(data, field):
     """``field`` evaluated at each cell's parametric center, through its basis."""
     field = _with_basis(data, _field(data, field))

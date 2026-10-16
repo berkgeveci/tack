@@ -45,18 +45,19 @@ def _wavelet(out, nx, ny, x0, y0, z0, sx, sy, sz, cx, cy, cz, kx, ky, kz, fx, fy
 
 def wavelet(extent=10, spacing=1.0, center=(0.0, 0.0, 0.0), maximum=255.0,
             frequency=(60.0, 30.0, 40.0), magnitude=(10.0, 18.0, 5.0),
-            standard_deviation=0.5, dtype=tack.f32):
+            standard_deviation=0.5, dtype=tack.f32, device=None):
     """VTK's and Viskores' wavelet on the grid of point indices ``extent`` (``n``:
     -n to n on every axis, or ``x0, x1, y0, y1, z0, z1``), points at index times
     ``spacing``: ``maximum * exp(-|a|^2 / (2 sd^2))`` plus ``magnitude`` times
     sin, sin and cos of ``frequency * a``, where ``a`` is ``center`` minus the
-    point, each axis divided by its extent's length."""
+    point, each axis divided by its extent's length. It is on ``device`` (by
+    default the default device)."""
     lo, hi = _extent(extent)
     s = np.broadcast_to(np.asarray(spacing, float), (3,))
     data = uniform_grid([int(hi[d] - lo[d] + 1) for d in range(3)],
-                        [lo[d] * s[d] for d in range(3)], s, dtype=dtype)
+                        [lo[d] * s[d] for d in range(3)], s, dtype=dtype, device=device)
     n = data.num_points
-    out = tack.empty((n,), dtype)
+    out = tack.empty((n,), dtype, device=data.device)
     scale = [1.0 / (hi[d] - lo[d]) if hi[d] > lo[d] else 1.0 for d in range(3)]
     _wavelet(out, int(hi[0] - lo[0] + 1), int(hi[1] - lo[1] + 1), *map(float, lo),
              *map(float, s), *map(float, center), *scale, *map(float, frequency),
@@ -79,16 +80,17 @@ def _tangle(out, nx, ny, cx, cy, cz):
                   + z * z * z * z - 5.0 * z * z + 11.8) * 0.2 + 0.5
 
 
-def tangle(dims=(16, 16, 16), dtype=tack.f32):
+def tangle(dims=(16, 16, 16), dtype=tack.f32, device=None):
     """Viskores' tangle on ``dims`` points per axis over [0, 1]^3: the quartic
     ``(x^4 - 5x^2 + y^4 - 5y^2 + z^4 - 5z^2 + 11.8) / 5 + 1/2`` of the point
-    mapped to [-3, 3]^3, the point field ``tangle``."""
+    mapped to [-3, 3]^3, the point field ``tangle``. It is on ``device`` (by
+    default the default device)."""
     dims = np.broadcast_to(np.asarray(dims, int), (3,))
     if (dims < 2).any():
         raise ValueError("tangle needs at least two points per axis")
     cells = dims - 1
-    data = uniform_grid(dims, (0.0, 0.0, 0.0), 1.0 / cells, dtype=dtype)
-    out = tack.empty((data.num_points,), dtype)
+    data = uniform_grid(dims, (0.0, 0.0, 0.0), 1.0 / cells, dtype=dtype, device=device)
+    out = tack.empty((data.num_points,), dtype, device=data.device)
     _tangle(out, int(dims[0]), int(dims[1]), *map(float, cells))
     data.fields["tangle"] = Field(H1(data), out)
     return data

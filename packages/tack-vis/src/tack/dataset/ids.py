@@ -73,7 +73,7 @@ def as_ids(values, dtype, check=True):
             return values
         if values.dtype not in (tack.i32, tack.i64):
             raise TypeError(f"ids are i32 or i64 arrays, not {values.dtype.name}")
-        out = tack.empty(values.shape, dtype)
+        out = tack.empty(values.shape, dtype, device=values.device)
         if values.size:
             if check and dtype == tack.i32:
                 _check_fits(values.numpy())

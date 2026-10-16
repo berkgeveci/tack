@@ -24,6 +24,7 @@ quadratic, so then the radix sort is used instead, one component at a time.
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _index_dtype, argsort, gather
+from tack.runtime.dispatch import on_inputs_device
 
 _LARGEST = 256          # entries in one bucket, past which the radix sort is used
 _CHUNK = 1024           # buckets one thread looks through for the largest
@@ -201,6 +202,7 @@ def _radix_order(values, n, indices):
     return order
 
 
+@on_inputs_device
 def bucket_order(values, nbuckets, index_dtype=None):
     """``(order, starts)``: the stable permutation sorting ``values`` -- an id array,
     or a vector field of 2 or 4 ids compared component by component -- as
@@ -252,6 +254,7 @@ def _scatter_run_starts(flags, run_ids, offsets, n, nruns):
             offsets[nruns] = n
 
 
+@on_inputs_device
 def run_offsets(values, order):
     """``(offsets, nruns)``: where each run of equal keys starts among ``values``
     taken in ``order`` (as ``bucket_order`` gives it), ``nruns + 1`` offsets of

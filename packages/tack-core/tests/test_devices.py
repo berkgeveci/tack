@@ -331,3 +331,45 @@ def test_an_implicit_array_is_where_its_arrays_are(cpu, second):
     np.testing.assert_allclose(out.numpy(), [0, 3, 5, 6])
     with pytest.raises(ValueError, match="two devices"):
         exclusive_scan(perm, tack.zeros((4,)), 4)
+
+
+# ── Implicit arrays live where their arrays do ──────────────────────
+
+def test_implicit_arrays_that_store_a_constant_take_a_device(cpu, second):
+    from tack import arrays
+    on_second = lambda a: a._device.memory_domain == ("cpu", 1)
+    c = arrays.ConstantArray(2.5, 4, device=second)
+    assert on_second(c) and arrays.materialize(c).numpy().tolist() == [2.5] * 4
+    assert on_second(arrays.materialize(c))
+    assert on_second(arrays.UniformCoordinates((2, 2, 1), device=second))
+    assert on_second(arrays.CartesianProduct([0.0, 1.0], device=second))
+    assert not on_second(arrays.ConstantArray(2.5, 4))              # the default device
+
+
+def test_an_implicit_array_moves_with_what_it_holds(cpu, second):
+    from tack import arrays
+    grid = arrays.UniformCoordinates((2, 2, 1), direction=np.eye(3)[[1, 0, 2]])
+    moved = grid.to_device(second)
+    assert moved is not grid and moved._device.memory_domain == ("cpu", 1)
+    np.testing.assert_array_equal(arrays.materialize(moved).numpy(),
+                                  arrays.materialize(grid).numpy())
+    assert moved.to_device(second) is moved                  # already there
+    counting = arrays.CountingArray(4)
+    assert counting.to_device(second) is counting            # holds nothing: no device
+
+
+def test_host_operands_go_where_the_device_operands_are(cpu, second):
+    from tack import arrays
+    base = tack.array(np.arange(5, dtype=np.float32), device=second)
+    picked = arrays.Permutation([4, 0], base)
+    assert picked.ids._device.memory_domain == ("cpu", 1)
+    assert arrays.materialize(picked).numpy().tolist() == [4.0, 0.0]
+    axes = arrays.CartesianProduct(tack.array(np.arange(3, dtype=np.float32), device=second),
+                                   [0.0, 1.0])
+    assert axes.ys._device.memory_domain == ("cpu", 1)
+
+
+def test_an_implicit_array_refuses_operands_on_two_devices(cpu, second):
+    from tack import arrays
+    with pytest.raises(ValueError, match="two devices"):
+        arrays.Components(tack.zeros((3,)), tack.zeros((3,), device=second))

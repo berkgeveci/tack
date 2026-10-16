@@ -20,6 +20,7 @@ from tack.dataset.carry import Interpolate, Pieces, _point_values, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
 from tack.dataset.topology import UnstructuredTopology, _as_field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['clip']
 
@@ -222,6 +223,7 @@ def _join_starts(s0, s1, s2, s3, s4, out):
         out[i] = [s0[i], s1[i], s2[i], s3[i], s4[i]]
 
 
+@on_inputs_device
 def clip(data, by, value=0.0, invert=False, fields=None):
     """The part of ``data`` where ``by`` -- point data (a field or its name) or an
     implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or

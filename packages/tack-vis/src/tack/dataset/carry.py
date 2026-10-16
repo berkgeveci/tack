@@ -89,10 +89,10 @@ class Interpolate:
 # ── Values ──────────────────────────────────────────────────────────
 
 def _like(values, n):
+    """``n`` values of ``values``' element type, on its device."""
     width = width_of(values)
-    if width:
-        return tack.empty((n,), tack.vec(width, arrays.dtype_of(values)))
-    return tack.empty((n,), values.dtype)
+    dtype = tack.vec(width, arrays.dtype_of(values)) if width else values.dtype
+    return tack.empty((n,), dtype, device=values.device)
 
 
 @tack.kernel

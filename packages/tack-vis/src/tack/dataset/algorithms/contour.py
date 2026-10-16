@@ -17,6 +17,7 @@ from tack.dataset.carry import Interpolate, Pieces, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
 from tack.dataset.topology import UnstructuredTopology
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['contour']
 
@@ -98,6 +99,7 @@ def _triangles(rows, types, offsets, connectivity, count):
             offsets[count] = 3 * count
 
 
+@on_inputs_device
 def contour(data, field, isovalue, merge_points=True, fields=None):
     """Where ``field`` crosses ``isovalue``: a surface of a 3D mesh, as triangles
     (as polygons on polyhedra); lines of a 2D mesh.

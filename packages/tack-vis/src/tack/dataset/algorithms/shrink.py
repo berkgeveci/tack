@@ -4,6 +4,7 @@ import tack
 from tack.dataset.algorithms.discontinuous import discontinuous
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import H1, Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['shrink']
 
@@ -21,6 +22,7 @@ def _shrink_corners(positions, offsets, factor, n_cells):
             positions[k] = center + factor * (positions[k] - center)
 
 
+@on_inputs_device
 def shrink(data, factor=0.5, fields=None):
     """Every cell shrunk toward its centroid (the mean of its corners) by ``factor``,
     as Viskores' Shrink and VTK's vtkShrinkFilter. Viskores gives each cell its

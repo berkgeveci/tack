@@ -2,10 +2,12 @@
 
 from tack.dataset.algorithms.boundary_faces import boundary_faces
 from tack.dataset.algorithms.extract_surface import extract_surface
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['external_faces']
 
 
+@on_inputs_device
 def external_faces(data, fields=None):
     """The faces that only one cell has, as a dataset: ``extract_surface`` of
     ``boundary_faces`` -- a 3D mesh's boundary surface, a 2D mesh's boundary

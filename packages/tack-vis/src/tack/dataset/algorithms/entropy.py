@@ -4,10 +4,12 @@ import numpy as np
 
 from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['entropy']
 
 
+@on_inputs_device
 def entropy(data, field, bins=10):
     """The Shannon entropy, in bits, of a scalar field's values in ``bins`` equal bins
     over their range: ``-sum(p log2 p)`` over the bins' shares, as Viskores'
