@@ -215,6 +215,7 @@ def test_verification_does_not_mutate_ir_or_metadata():
     ('optimized', 'tack.lang.ir_optimize', 'optimize_ir'),
     ('typed', 'tack.lang.ir_type_annotate', 'annotate_types'),
 ])
+@pytest.mark.usefixtures("no_debug")
 def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name, monkeypatch):
     import importlib
 

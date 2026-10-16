@@ -75,6 +75,7 @@ def _through_tree(out, o):
         out[i] = (o.inner.values[i] + o.inner.offset) * o.scale
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_repeated_call_skips_the_key(backend, monkeypatch):
     calls = []
     real = ku.kernel_variant_key

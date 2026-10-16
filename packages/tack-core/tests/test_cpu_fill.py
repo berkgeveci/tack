@@ -10,7 +10,9 @@ import tack
 from tack.runtime import cpu as cpu_mod
 from tack.runtime.cpu import CPUBackend
 
-pytestmark = pytest.mark.skipif(platform.system() == "Windows", reason="posix threads")
+pytestmark = [pytest.mark.skipif(platform.system() == "Windows", reason="posix threads"),
+              # the tests count fills, and debug mode fills its hidden arguments too
+              pytest.mark.usefixtures("no_debug")]
 
 _BIG = cpu_mod._PARALLEL_FILL_MIN_BYTES
 

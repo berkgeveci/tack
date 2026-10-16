@@ -94,6 +94,7 @@ def _long_enough(run, iters, attempts=4):
     pytest.fail(f"waits under 100 ms after {attempts} doublings: {waits}")
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize("wait", ["sync_async", "numpy_async"])
 def test_the_loop_runs_while_the_device_works(backend, wait):
     """Another task keeps running during the wait -- and, as a control, does
@@ -147,6 +148,7 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
     assert free_ticks >= free_s * 1000 * 0.05, (free_ticks, free_s)
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_the_loop_launches_while_a_read_waits(backend):
     """A task that launches keeps launching while another awaits a read:
     the worker's wait holds no lock a launch needs (Level Zero's reads wait
@@ -192,6 +194,7 @@ def test_the_loop_launches_while_a_read_waits(backend):
     assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_sync_async_does_not_wait_for_later_launches(backend):
     """The mark is made when sync_async is called: a long launch another
     task queues while it waits is not waited for."""

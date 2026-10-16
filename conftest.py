@@ -17,6 +17,8 @@ reduction_backend
     Those that reduce on the device rather than through numpy.
 workgroup_backend
     Those with native workgroup execution for cooperative kernels.
+no_debug
+    Debug mode off for the test: for tests of what plain mode generates.
 require_idle
     A function: ``require_idle(threads=None)`` skips the test, with the
     numbers, when the load average is above half of ``threads`` (the CPUs
@@ -105,6 +107,21 @@ def backend(request):
     """Run a test once per available backend."""
     tack.set_default_device(request.param)
     return request.param
+
+
+@pytest.fixture
+def no_debug():
+    """For a test of what plain mode generates or does: one that reads generated
+    source or IR text, compiles it with a reduced toolchain (OpenCL 1.2, the
+    host C++ shim without atomicAdd), calls a compiled kernel with its own
+    argument list, or times launches overlapping. Debug mode (TACK_DEBUG=1)
+    adds two hidden array parameters and bounds checks that use atomics, and
+    reads each launch's check on the host, so such a test runs with it off."""
+    from tack.runtime import dispatch
+    was = dispatch.debug_enabled()
+    tack.set_debug(False)
+    yield
+    tack.set_debug(was)
 
 
 @pytest.fixture

@@ -239,6 +239,7 @@ def test_annotations_keep_floating_result_types(dtype):
     assert all(n.dtype is tack.i32 for n in integer_operations)
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source,
                                      generate_msl_source, generate_opencl_source],
@@ -263,6 +264,7 @@ def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generat
         assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source],
                          ids=['cuda-host', 'hip-host'])

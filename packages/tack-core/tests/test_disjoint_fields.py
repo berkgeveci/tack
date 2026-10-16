@@ -173,6 +173,7 @@ def test_span_follows_the_array():
 
 # ── Generated code ──────────────────────────────────────────────────
 
+@pytest.mark.usefixtures("no_debug")
 def test_disjoint_call_promises_noalias_on_arrays_only():
     sig = _signature(_accumulate, _f32(), _f32(4), _f32(), 8)
     assert sig.count("noalias") == 3

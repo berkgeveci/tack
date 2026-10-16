@@ -383,6 +383,7 @@ def test_f64_sqrt_exceptional_classes(f64_backend):
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source,
                                      generate_msl_source, generate_opencl_source],
                          ids=['cuda', 'hip', 'metal', 'opencl'])
+@pytest.mark.usefixtures("no_debug")
 def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp_path):
     if dtype is tack.f64 and generate is generate_msl_source:
         pytest.skip('MSL has no f64')
@@ -404,6 +405,7 @@ def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source],
                          ids=['cuda-host', 'hip-host'])
+@pytest.mark.usefixtures("no_debug")
 def test_generated_cpp_executes_safe_identities(dtype, generate, tmp_path):
     clang = require_clang('ubsan')
     tack.set_default_device("cpu")

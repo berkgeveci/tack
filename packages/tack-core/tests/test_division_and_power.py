@@ -218,6 +218,7 @@ def test_operands_execute_once_in_order(backend):
     np.testing.assert_array_equal(quotients.numpy(), [3.5] * 7)
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_opencl_inlined_effects_preserve_array_address_space(tmp_path):
     clang = require_clang()
     tack.set_default_device("cpu")

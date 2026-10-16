@@ -268,6 +268,7 @@ def test_texture_reference_slots_are_encoded(generate):
         assert 'tex3D<float>(' + encoded + ',' in source
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path):
     clang = require_clang()
     tack.set_default_device("cpu")
@@ -282,6 +283,7 @@ def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path)
         assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source],
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_compiles_and_executes_collisions(generate, named_kernel, tmp_path):
