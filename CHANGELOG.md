@@ -367,6 +367,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- The nearest point of a cell, outside a quad, hexahedron, wedge or pyramid,
+  was its position at clamped parametric coordinates, exact only for an
+  axis-aligned box or a rectangle (TA-39). It is now the nearest point of a
+  solid's faces, or of the quad itself, a quad taken as two triangles (exact
+  when planar), as VTK finds it for a hexahedron since 2026-07. `CellLocator`,
+  `probe` and advection accept a point within a tolerance of it, so a point
+  just outside a skewed cell is found where it can be.
 - A parallel loop bounded by a local, `n = x.shape[0]; for i in range(n)`,
   failed at dispatch ("Cannot resolve loop range expression"), and so did
   `len(obj)` for an indexable object whose `__len__` returns an array's

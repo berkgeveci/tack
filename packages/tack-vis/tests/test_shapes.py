@@ -484,39 +484,79 @@ def _nearest(cell, cells, pcs, offsets, positions, nearest):
         nearest[i] = cell.nearest_point(pts, x, pc)
 
 
-@needs_vtk
-@pytest.mark.parametrize("shape", [s for s in SHAPES if s not in (sh.Vertex, sh.Quad, sh.Wedge)],
-                         ids=lambda s: s.__name__)
-@pytest.mark.parametrize("outside", [False, True])
-def test_nearest_point_is_vtks(f64_backend, shape, outside):
-    """VTK's EvaluatePosition closest point, inside the cell and out. Not a quad's:
-    VTK measures to its edges, where the clamped position is close but not exact.
-    Nor a wedge's: VTK clamps r and s each to [0, 1], which can leave the
-    triangle (r + s > 1), where Tack scales them back onto it.
-
-    Outside a hexahedron, Tack keeps the position at the clamped parametric
-    coordinates, as VTK 9.7 does; VTK since 45f0f69a7e (2026-07) takes the
-    nearest of its faces' closest points instead (TA-39). That case is checked
-    against VTK's clamped position, the same in either version."""
-    cells, pcs, offsets = _make_cases(shape, seed=6, count=12, outside=outside)
+def _run_nearest(shape, cells, pcs, offsets):
     n = len(pcs)
     positions = tack.empty((n,), tack.vec(3, tack.f64))
     nearest = tack.empty((n,), tack.vec(3, tack.f64))
     _nearest(shape(), _vectors(cells, tack.f64), _vectors(pcs, tack.f64),
              _vectors(offsets, tack.f64), positions, nearest)
-    positions, nearest = positions.numpy(), nearest.numpy()
-    for i in range(n):
+    return positions.numpy(), nearest.numpy()
+
+
+@needs_vtk
+@pytest.mark.parametrize("shape", [s for s in SHAPES if s not in (sh.Vertex, sh.Quad, sh.Wedge)],
+                         ids=lambda s: s.__name__)
+@pytest.mark.parametrize("outside", [False, True])
+def test_nearest_point_is_vtks(f64_backend, shape, outside):
+    """VTK's EvaluatePosition closest point, inside the cell and out. Outside a
+    hexahedron or a pyramid VTK 9.7 keeps the position at clamped parametric
+    coordinates, where Tack takes the nearest point of the faces (TA-39, as
+    VTK does for a hexahedron since 45f0f69a7e); those, and quads and wedges,
+    are checked against the faces in the next test. For a voxel and a pixel,
+    axis-aligned, the clamped position is the nearest point."""
+    if outside and shape in (sh.Hexahedron, sh.Pyramid):
+        pytest.skip("VTK 9.7 clamps here; checked against the faces below")
+    cells, pcs, offsets = _make_cases(shape, seed=6, count=12, outside=outside)
+    positions, nearest = _run_nearest(shape, cells, pcs, offsets)
+    for i in range(len(pcs)):
         cell = _vtk_cell(shape)
         for j in range(cell.GetNumberOfPoints()):
             cell.GetPoints().SetPoint(j, cells[i, j])
         closest, pc = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
         weights = [0.0] * cell.GetNumberOfPoints()
-        inside = cell.EvaluatePosition(positions[i], closest, vtk.reference(0), pc,
-                                       vtk.reference(0.0), weights)
-        if shape is sh.Hexahedron and inside != 1:
-            cell.EvaluateLocation(vtk.reference(0), list(np.clip(pc, 0.0, 1.0)), closest,
-                                  weights)
+        cell.EvaluatePosition(positions[i], closest, vtk.reference(0), pc,
+                              vtk.reference(0.0), weights)
         np.testing.assert_allclose(nearest[i], closest, atol=1e-8)
+
+
+def _boundary_triangles(shape, cell):
+    """The triangles a solid's faces (or a surface cell itself) are taken as, each
+    loop split at its first corner."""
+    if EXPECTED[shape]["dim"] == 3:
+        loops = EXPECTED[shape]["faces"]
+    else:
+        loops = [{sh.Triangle: (0, 1, 2), sh.Quad: (0, 1, 2, 3), sh.Pixel: (0, 1, 3, 2)}[shape]]
+    return [(cell[loop[0]], cell[loop[k]], cell[loop[k + 1]])
+            for loop in loops for k in range(1, len(loop) - 1)]
+
+
+def _on_triangle(p, a, b, c, tol=1e-9):
+    m = np.column_stack([b - a, c - a])
+    (u, v), *_ = np.linalg.lstsq(m, p - a, rcond=None)
+    return (np.linalg.norm(a + m @ [u, v] - p) < tol and u > -tol and v > -tol
+            and u + v < 1 + tol)
+
+
+@pytest.mark.parametrize("shape", [sh.Triangle, sh.Quad, sh.Pixel, sh.Tetra, sh.Voxel,
+                                   sh.Hexahedron, sh.Wedge, sh.Pyramid],
+                         ids=lambda s: s.__name__)
+def test_nearest_point_outside_is_on_the_nearest_face(f64_backend, shape):
+    """Outside a cell, its nearest point is a point of its boundary -- a solid's
+    faces, a surface cell itself, quads as two triangles -- than which no point
+    of that boundary is nearer (sampled finely). The clamped position used
+    before for quads, hexahedra, wedges and pyramids is not (TA-39)."""
+    cells, pcs, offsets = _make_cases(shape, seed=11, count=12, outside=True)
+    positions, nearest = _run_nearest(shape, cells, pcs, offsets)
+    u, v = np.meshgrid(np.linspace(0, 1, 81), np.linspace(0, 1, 81))
+    keep = u + v <= 1
+    u, v = u[keep], v[keep]
+    for i in range(len(pcs)):
+        triangles = _boundary_triangles(shape, cells[i])
+        assert any(_on_triangle(nearest[i], *t) for t in triangles)
+        x = positions[i]
+        sampled = min(np.linalg.norm(a + np.outer(u, b - a) + np.outer(v, c - a) - x,
+                                     axis=1).min() for a, b, c in triangles)
+        assert np.linalg.norm(nearest[i] - x) <= sampled + 1e-12
 
 
 @tack.kernel
