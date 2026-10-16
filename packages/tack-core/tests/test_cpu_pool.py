@@ -255,6 +255,13 @@ else:
     sys.exit("the pool started")
 gc.collect()
 assert len(calls) == 2, calls
+# pthread_join returns once the kernel clears the thread's id, which comes
+# before it drops the thread from the count /proc reads: on a loaded host
+# the count can lag a correct join (65 against 64 on illyad).
+import time
+deadline = time.monotonic() + 5
+while threads() != before and time.monotonic() < deadline:
+    time.sleep(0.01)
 assert threads() == before, (before, threads())
 tack.set_default_device("cpu", num_threads=4)
 backend = get_backend()

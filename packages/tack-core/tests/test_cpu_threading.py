@@ -197,24 +197,30 @@ def test_measured_cost_ranks_two_real_kernels(cpu):
     """The measurement does work — checked where noise cannot reach it.
 
     Timed over a range big enough that the expensive kernel takes
-    milliseconds and the cheap one microseconds, the gap is ~1000x. That
-    survives any runner. `_run_serial` is called directly so the parallel
-    decision cannot stop the estimate from updating.
+    milliseconds and the cheap one microseconds, the gap is ~1000x.
+    `_run_serial` is called directly so the parallel decision cannot stop
+    the estimate from updating. The cheap run lasts ~100 us, so one
+    preemption on a loaded host can inflate it past the margin (41 ns/elem
+    at load 120 on headroom); noise only ever slows a sample, so one clean
+    ranking in a few fresh tries shows the measurement works.
     """
-    backend = CPUBackend()
     n = 100_000
     x = tack.empty((n,))
     out = tack.empty((n,))
     tack.copyto(x, np.linspace(0, 1, n, dtype=np.float32))
-
-    cheap = _compile_for(backend, _scale, [x, out, n])
-    costly = _compile_for(backend, _expensive, [x, out, n])
     args = [x, out, n]
 
-    backend._run_serial(cheap, cheap.bind(args), 0, n)
-    backend._run_serial(costly, costly.bind(args), 0, n)
-
-    assert costly.ns_per_elem > cheap.ns_per_elem * 20
+    ratios = []
+    for _ in range(5):
+        backend = CPUBackend()
+        cheap = _compile_for(backend, _scale, args)
+        costly = _compile_for(backend, _expensive, args)
+        backend._run_serial(cheap, cheap.bind(args), 0, n)
+        backend._run_serial(costly, costly.bind(args), 0, n)
+        ratios.append(costly.ns_per_elem / cheap.ns_per_elem)
+        if ratios[-1] > 20:
+            return
+    pytest.fail(f"the costly kernel never measured 20x the cheap one: {ratios}")
 
 
 # ── Constants that are not constants ─────────────────────────────────
@@ -669,16 +675,16 @@ def _check_front_loaded(x, out, n, cut):
 
 
 @pytest.mark.timing
-def test_timing_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
+def test_timing_a_cheap_prefix_does_not_stall_the_rechecks(cpu, require_idle):
     """Real clock, real scheduler: the controlled test above with nothing
-    pinned. Needs an idle host (see `_require_idle`); a failure here with
+    pinned. Needs an idle host (`require_idle`); a failure here with
     the controlled test passing points at the scheduler or the sampling
     heuristics' margins on this machine, not at the policy's logic.
     """
     backend = CPUBackend()
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
-    _require_idle(backend)
+    require_idle(backend.num_threads)
     n = 1 << 17
     cut = n // 4
     x = tack.empty((n,))
@@ -895,19 +901,6 @@ def _pin_fan_out(monkeypatch, backend, fan_out_ns=400_000.0, margin=1.5):
     backend._fan_out_ns = fan_out_ns
     monkeypatch.setattr(backend, "_fan_out_estimate", lambda: fan_out_ns)
     monkeypatch.setattr(backend, "_margin", lambda: margin)
-
-
-def _require_idle(backend):
-    """Timing-group precondition: these tests assert what the scheduler
-    actually did, so they need the cores to themselves. Skipped, with the
-    numbers, when the load average says otherwise."""
-    try:
-        load = os.getloadavg()[0]
-    except (AttributeError, OSError):
-        return
-    if load > backend.num_threads / 2:
-        pytest.skip(f"timing test needs an idle host: load average {load:.1f} "
-                    f"against {backend.num_threads} threads")
 
 
 def test_one_outlier_sample_cannot_flip_the_decision(cpu, monkeypatch):
@@ -1459,14 +1452,14 @@ def test_a_dear_kernel_over_a_large_range_is_fanned_out(cpu, monkeypatch):
 
 
 @pytest.mark.timing
-def test_timing_expensive_kernel_does_fan_out(cpu):
+def test_timing_expensive_kernel_does_fan_out(cpu, require_idle):
     """Real clock, real scheduler: an expensive kernel over a large range
     must actually spin up the pool and settle on threading. Needs an idle
-    host (see `_require_idle`)."""
+    host (`require_idle`)."""
     backend = CPUBackend()
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
-    _require_idle(backend)
+    require_idle(backend.num_threads)
 
     n = 200000
     x = tack.empty((n,))

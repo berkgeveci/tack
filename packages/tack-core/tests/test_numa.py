@@ -168,7 +168,7 @@ print("ok")
 
 @requires_numa
 @pytest.mark.parametrize("pool", ["jit", "python"])
-def test_a_array_the_workers_write_is_spread_across_the_nodes(pool):
+def test_a_array_the_workers_write_is_spread_across_the_nodes(pool, require_idle):
     """The path a real kernel takes. A new array is not touched when it is
     made; the workers that first write it carry the interleave policy (the
     JIT'd pool's from `_jit_pool`, the executor's from `_get_pool`), so its
@@ -177,7 +177,16 @@ def test_a_array_the_workers_write_is_spread_across_the_nodes(pool):
     In a fresh process: with `TACK_CPU_MALLOC=1` glibc keeps freed pages,
     so in a process that already freed a block this size the "new" array
     would be that block, its pages present and placed by whoever touched
-    them first. Only a process's first such block is a fresh mapping."""
+    them first. Only a process's first such block is a fresh mapping.
+
+    Needs an idle host. The calling thread runs chunks beside the workers
+    and keeps its own (local) policy, so the pages it touches first land on
+    its node: about a quarter of the chunks at four threads when idle, which
+    puts ~62% of the pages on that node on a two-node host. On a busy host
+    the workers wake late, the caller takes more chunks and its node passes
+    the 75% the assertion allows (77% on mustafar-linux under a suite run;
+    seen on illyad and headroom too)."""
+    require_idle()
     import os
     import subprocess
     import sys

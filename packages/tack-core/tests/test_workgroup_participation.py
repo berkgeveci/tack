@@ -1,5 +1,6 @@
 """Collectives require a proven uniform path and complete native workgroups."""
 
+import gc
 from types import SimpleNamespace
 
 import numpy as np
@@ -427,6 +428,16 @@ def test_level_zero_checks_both_device_limits_before_driver(x_limit, total_limit
     def forbidden_driver():
         pytest.fail('unsupported collective reached the Level Zero driver')
 
-    monkeypatch.setattr(level_zero, '_get_ze', forbidden_driver)
-    with pytest.raises(ValueError, match='require 256 lanes.*selects 128'):
-        backend._compile_kernel(full_groups_only.get_ir().functions[0])
+    # No collection while the driver is patched: another test's buffer
+    # collected now would free itself through `forbidden_driver`, whose
+    # pytest.fail escapes the buffer's __del__ and leaks it (headroom,
+    # under xdist).
+    gc.collect()
+    gc.disable()
+    try:
+        monkeypatch.setattr(level_zero, '_get_ze', forbidden_driver)
+        with pytest.raises(ValueError, match='require 256 lanes.*selects 128'):
+            backend._compile_kernel(full_groups_only.get_ir().functions[0])
+        monkeypatch.undo()
+    finally:
+        gc.enable()
