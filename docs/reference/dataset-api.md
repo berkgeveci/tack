@@ -292,8 +292,9 @@ on_cpu = surface.to_device("cpu")
 
 ## Sets
 
-A `Set(data, on, ids)` selects some of a topology's points, cells or faces
-(`on` is `"points"`, `"cells"` or `"faces"`). Its `ids` are kept sorted and
+A `Set(data, on, ids)` selects some of a topology's points, cells, faces or
+edges (`on` is `"points"`, `"cells"`, `"faces"` or `"edges"`; edge ids are
+those of `topology.edges()`). Its `ids` are kept sorted and
 unique, in the topology's `id_dtype`; an id outside the topology is refused
 when the set is made. `flags()` gives membership, 1 or 0 per entity.
 
@@ -306,7 +307,7 @@ when the set is made. `flags()` gives membership, 1 or 0 per entity.
   `Set.from_sides(data, cells, local_faces)` takes (cell, local face) pairs,
   as Exodus side sets give them; local faces are numbered as the cell view
   numbers them. Which side was named is not kept.
-- **Iteration.** A cell or face set's name is an iteration domain:
+- **Iteration.** A cell, face or edge set's name is an iteration domain:
   `for_each(kernel, data, "inlet", ...)`. A cell set runs over the cell
   groups' subgroups of its members, so field views and varying spaces work
   as on all cells. A point set is not a domain (points have no view): loop
@@ -314,8 +315,9 @@ when the set is made. `flags()` gives membership, 1 or 0 per entity.
 - **Carried through filters**, by the maps that carry fields: an output
   entity is in a set when the input entity it came from is. Kept cells keep
   their sets (`threshold`, `extract_cells`), pieces of cells their cells'
-  (`contour`, `clip`), and a face set becomes a cell set where faces become
-  cells (`extract_surface`). A set of entities the filter
+  (`contour`, `clip`), and a face or edge set becomes a cell set where faces
+  or edges become cells (`extract_surface`, `extract_edges`). A set of
+  entities the filter
   makes anew -- interpolated points, faces derived afresh -- is left
   behind. Filters that keep the topology keep every set.
 
@@ -337,7 +339,8 @@ td.for_each(_jump, data, "faces", cell_values, out)
 
 `for_each(kernel, data, domain, *args)`:
 
-- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a cell or face set.
+- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a cell, face or
+  edge set.
 - It makes one launch per group. The kernel's first argument is the view of
   that group (`for i in view`). Each `Field` among `args` becomes its view
   for the same group, so `u.value(i, pc)` reads entity `i`. Other arguments
@@ -433,7 +436,8 @@ Every algorithm is in `tack.dataset.algorithms`, one module each, and
   name per meaning (`inside=` keeps a region, `value` is a level, `lower` and
   `upper` a range);
 - filters that cut a mesh into a subset of its cells compact the points;
-  `extract_surface` keeps the input's points, so point ids stay valid. The
+  `extract_surface` and `extract_edges` keep the input's points, so point ids
+  stay valid. The
   point filters (`mask_points`, `threshold_points`, `extract_points`) are
   the point twins of `mask`, `threshold` and `extract_geometry`: the points as
   vertex cells, point fields carried and cell fields left behind;
@@ -467,7 +471,7 @@ and "polyline" `PolylineTopology`.
 | | Shape-based | Polyhedral | Polygonal | Polyline |
 |---|---|---|---|---|
 | `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume, area or length; centroid) | yes | yes | yes | yes |
-| `edge_lengths` | yes | yes | yes | no (no derived edges) |
+| `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
 | `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
@@ -512,6 +516,7 @@ What each filter gives:
 | `clip` | kept points, edge crossings and centroids | pieces of the cut cells, whole kept ones | — | — |
 | `extract_points`, `threshold_points`, `mask_points` | kept points, each a vertex cell | — | — | — |
 | `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
+| `extract_edges` | the same points | — (an edge has several cells) | — | the lines' cells: edge values become cell values |
 | `as_polyhedra` | same | same | same | same |
 | `as_polygons` | same | same | — | — |
 

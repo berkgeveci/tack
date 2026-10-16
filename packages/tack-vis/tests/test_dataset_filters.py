@@ -1,4 +1,5 @@
-"""Tests for tack.dataset.filters: contour, slice, threshold and external faces.
+"""Tests for tack.dataset.filters: contour, slice, threshold, external faces and
+edges.
 
 Ported from vis/data-model's filter tests, with the same references: VTK's
 vtkContourGrid for every case of every 3D shape and for real meshes,
@@ -512,3 +513,94 @@ def test_external_faces_are_vtks(f64_backend, kind):
     ours_at = np.round(surface.positions(), 6)
     ours = {frozenset(map(tuple, ours_at[c[o[i]:o[i + 1]]])) for i in range(len(o) - 1)}
     assert len(ours) == surface.num_cells == len(theirs) and ours == theirs
+
+
+# ── Edges ───────────────────────────────────────────────────────────
+
+def _lines(data):
+    """A line dataset's point id pairs, ``(num_cells, 2)``."""
+    t = data.topology
+    assert set(t.types.numpy()) <= {3}
+    np.testing.assert_array_equal(t.offsets.numpy(), 2 * np.arange(data.num_cells + 1))
+    return t.connectivity.numpy().reshape(-1, 2)
+
+
+@pytest.mark.parametrize("form", ["rectilinear", "explicit"])
+def test_extract_edges_of_a_grid(backend, form):
+    data = _with_radius(_grid(4, form))
+    data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
+    data.fields["length"] = td.edge_lengths(data)
+    edges = data.topology.edges()
+    lines = td.extract_edges(data)
+    assert lines.num_cells == edges.num_edges == 3 * 3 * 4 * 4
+    assert lines.num_points == data.num_points
+    np.testing.assert_array_equal(_lines(lines), edges.rows.numpy())     # low to high
+    assert lines.fields["r"].space is td.H1(lines)
+    assert "cell" not in lines.fields                  # an edge has several cells
+    # Values on edges become the lines' values: each its own length.
+    assert lines.fields["length"].space is td.Values(lines, "cells")
+    points = lines.positions()
+    rows = _lines(lines)
+    np.testing.assert_allclose(lines.fields["length"].values.numpy(),
+                               np.linalg.norm(points[rows[:, 1]] - points[rows[:, 0]], axis=1),
+                               rtol=1e-6)
+
+
+def test_extract_edges_of_a_set(backend):
+    data = _grid(3, "explicit")
+    rows = data.topology.edges().rows.numpy()
+    data.sets["some"] = td.Set(data, "edges", [5, 2, 30])
+    data.sets["more"] = td.Set(data, "edges", [2, 4])
+    data.sets["origin"] = td.Set(data, "points", [0])
+    data.sets["first"] = td.Set(data, "cells", [0])
+    for given in ("some", data.sets["some"], [2, 5, 30], tack.array(np.array([2, 5, 30]))):
+        lines = td.extract_edges(data, given)
+        np.testing.assert_array_equal(_lines(lines), rows[[2, 5, 30]])
+    # Sets go by the same maps: an edge set onto the lines it became, points kept.
+    np.testing.assert_array_equal(lines.sets["more"].numpy(), [0])
+    assert lines.sets["more"].on == "cells"
+    np.testing.assert_array_equal(lines.sets["origin"].numpy(), [0])
+    assert "first" not in lines.sets
+    assert td.extract_edges(data, []).num_cells == 0
+    with pytest.raises(ValueError, match="not a set of faces"):
+        td.extract_edges(data, td.boundary_faces(data))
+    with pytest.raises(ValueError, match="another topology"):
+        td.extract_edges(data, td.Set(_grid(3, "explicit"), "edges", [0]))
+    with pytest.raises(IndexError, match="edge ids lie outside"):
+        td.extract_edges(data, [len(rows)])
+    with pytest.raises(TypeError, match="H1 geometry"):
+        td.extract_edges(td.DataSet(data.topology, td.project(data, data.geometry,
+                                                              td.L2(data))))
+
+
+def test_extract_edges_of_polyhedra_and_surfaces(backend):
+    data = _grid(3, "explicit")
+    lines = _lines(td.extract_edges(data))
+    np.testing.assert_array_equal(_lines(td.extract_edges(td.as_polyhedra(data))), lines)
+    flat = td.uniform_grid((4, 4, 1))
+    assert td.extract_edges(flat).num_cells == 24
+    np.testing.assert_array_equal(_lines(td.extract_edges(td.as_polygons(flat))),
+                                  _lines(td.extract_edges(flat)))
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", [10, 12, 13, 14])
+def test_extract_edges_is_vtks(f64_backend, kind):
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    source = vtkCellTypeSource()
+    source.SetCellType(kind)
+    source.SetBlocksDimensions(3, 2, 2)
+    source.Update()
+    grid = source.GetOutput()
+    extract = vtk.vtkExtractEdges()
+    extract.SetInputData(grid)
+    extract.Update()
+    out = extract.GetOutput()
+    connectivity = vtk_to_numpy(out.GetLines().GetConnectivityArray()).reshape(-1, 2)
+    at = np.round(vtk_to_numpy(out.GetPoints().GetData()), 6)
+    theirs = {frozenset(map(tuple, at[row])) for row in connectivity}
+    lines = td.extract_edges(vtk_to_dataset(grid, dtype=tack.f64))
+    ours_at = np.round(lines.positions(), 6)
+    ours = {frozenset(map(tuple, ours_at[row])) for row in _lines(lines)}
+    assert len(ours) == lines.num_cells == len(theirs) and ours == theirs

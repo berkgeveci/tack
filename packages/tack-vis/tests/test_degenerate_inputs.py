@@ -82,6 +82,7 @@ def test_a_grid_squeezed_of_a_size_one_axis_is_the_same_grid(backend, dims):
     stored = _with_points_stored(data)
     seed, middle = x[len(x) // 2] + 0.01, (x.min(0) + x.max(0)) / 2
     for algorithm in (td.cell_geometry, td.cell_centers, td.face_geometry, td.extract_surface,
+                      td.extract_edges,
                       lambda d: td.gradients(d, "p"),
                       lambda d: td.gradients(d, "p", at="points"),
                       lambda d: td.probe(d, [middle, seed]),

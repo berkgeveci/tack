@@ -581,7 +581,8 @@ class Edges(_OnItsArrays):
     ``num_edges``; per edge: ``rows``, its (low, high) point ids, a 2-vector.
     Per (cell, local edge), in the topology's group layout: ``side_edge``
     (the edge id) and ``side_sign`` (+1 if the cell's local edge runs low to
-    high, -1 if not). ``groups()`` are the edges, as one ``Line`` group.
+    high, -1 if not). ``groups()`` are the edges (or a subset of them), as one
+    ``Line`` group.
     """
 
     @classmethod
@@ -611,7 +612,19 @@ class Edges(_OnItsArrays):
         return self
 
     @on_inputs_device
-    def groups(self):
-        edge_ids = CountingArray(self.num_edges, dtype=self.id_dtype)    # computed, not stored
-        return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
-                            self.num_edges, 0)]
+    def groups(self, subset=None):
+        return edge_groups(self, subset)
+
+
+def edge_groups(edges, subset=None):
+    """``edges``' edges (or those in ``subset``, a field of edge ids) as one ``Line``
+    ``DomainGroup``."""
+    if subset is None:
+        n = edges.num_edges
+        rows = edges.rows
+        edge_ids = CountingArray(n, dtype=edges.id_dtype)        # computed, not stored
+    else:
+        edge_ids = ids.as_ids(subset, edges.id_dtype)
+        n = edge_ids.shape[0]
+        rows = _take_vector(edges.rows, edge_ids)
+    return [DomainGroup(_Edges, shapes.Line, (rows, edge_ids, n), n, 0)]

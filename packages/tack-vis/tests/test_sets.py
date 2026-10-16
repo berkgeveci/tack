@@ -1,6 +1,6 @@
-"""Sets (``tack.dataset.Set``): named selections of points, cells or faces. Made and
-checked, iterated over (cell and face sets), and carried through filters by the
-same maps as fields."""
+"""Sets (``tack.dataset.Set``): named selections of points, cells, faces or edges.
+Made and checked, iterated over (cell, face and edge sets), and carried through
+filters by the same maps as fields."""
 
 import numpy as np
 import pytest
@@ -30,8 +30,10 @@ def test_a_set_is_sorted_unique_and_checked(backend):
     assert s.ids.dtype == data.id_dtype
     with pytest.raises(ValueError, match="outside the topology's 6 cells"):
         td.Set(data, "cells", [6])
-    with pytest.raises(ValueError, match="points, cells or faces"):
-        td.Set(data, "edges", [0])
+    with pytest.raises(ValueError, match="points, cells, faces or edges"):
+        td.Set(data, "sides", [0])
+    with pytest.raises(ValueError, match="outside the topology's 46 edges"):
+        td.Set(data, "edges", [46])
     assert len(td.Set(data, "points", [])) == 0
 
 
@@ -189,3 +191,30 @@ def test_filters_carry_sets(backend):
     pieces = cut.fields["c"].values.numpy()
     np.testing.assert_array_equal(np.sort(cut.sets["odd"].numpy()),
                                   np.flatnonzero(np.isin(pieces, [1, 3, 5])))
+
+
+@tack.kernel
+def _edge_ends(edges, weights, out):
+    for e in edges:
+        k = edges.entity_id(e)
+        out[k] = weights[k] + 10 * edges.point_id(e, 0) + 1000 * edges.point_id(e, 1)
+
+
+@pytest.mark.parametrize("polyhedral", [False, True], ids=["shapes", "polyhedra"])
+def test_for_each_over_an_edge_set(backend, polyhedral):
+    data = td.as_polyhedra(_grid()) if polyhedral else _grid()
+    edges = data.topology.edges()
+    assert edges.num_edges == 46            # 3*3*2 along x, 4*2*2 along y, 4*3 along z
+    data.sets["some"] = td.Set(data, "edges", [45, 7, 0, 7])
+    weights = tack.array(np.arange(46, dtype=np.float32) / 100)
+    out = tack.zeros((46,))
+    td.for_each(_edge_ends, data, "some", weights, out)
+    rows = edges.rows.numpy()
+    expected = np.zeros(46, np.float32)
+    for k in (0, 7, 45):
+        expected[k] = k / 100 + 10 * rows[k, 0] + 1000 * rows[k, 1]
+    np.testing.assert_allclose(out.numpy(), expected)
+    assert sum(g.count for g in data.domain_groups("some")) == 3
+    # The same topology numbered the same: as_polyhedra keeps edges, and their sets.
+    if not polyhedral:
+        np.testing.assert_array_equal(td.as_polyhedra(data).sets["some"].numpy(), [0, 7, 45])

@@ -144,6 +144,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   hold: `ConstantArray`, `UniformCoordinates` and `CartesianProduct` take
   `device=`, `to_device` moves one, and one made from arrays on two devices
   is refused.
+- Edge sets and `extract_edges`. `Set(data, "edges", ids)` selects edges by
+  their id in `topology.edges()`; an edge set is an iteration domain for
+  `for_each`, and `as_polyhedra` carries it. `extract_edges(data,
+  edges=None)` gives the edges (all of them, or an edge set, its name or
+  ids) as line cells on the same points, each from its lower point id to its
+  higher, as VTK's `vtkExtractEdges` finds them: values on edges become
+  cell values and edge sets cell sets; cell fields are left behind.
 
 ### Changed
 

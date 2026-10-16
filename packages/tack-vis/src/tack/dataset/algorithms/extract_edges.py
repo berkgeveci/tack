@@ -1,0 +1,76 @@
+"""``extract_edges``: the edges of set ``name`` (all of them by default) as line cells on the same points, each running from its lower point id to its higher. Values on edges become the surface's cell values, and edge sets cell sets; point fields (``H1``, values on points) stay on the same points -- an order-2 field's or geometry's values at the points, the lines being linear. Cell fields are left behind: an edge has as many cells as meet there. The geometry must be ``H1``."""
+
+import tack
+from tack.arrays import CountingArray
+from tack.dataset import ids as id_types
+from tack.dataset import shapes
+from tack.dataset.carry import Same, Take, carry
+from tack.dataset.sets import Set
+from tack.dataset.spaces import H1
+from tack.dataset.topology import UnstructuredTopology
+from tack.runtime.dispatch import on_inputs_device
+
+__all__ = ['extract_edges']
+
+
+@tack.kernel
+def _edge_cells(ids, rows, types, offsets, connectivity, n):
+    for i in range(n):
+        row = rows[ids[i]]
+        types[i] = tack.u8(shapes.LINE)
+        offsets[i] = 2 * i
+        connectivity[2 * i] = row[0]
+        connectivity[2 * i + 1] = row[1]
+        if i == 0:
+            offsets[n] = 2 * n
+
+
+@on_inputs_device
+def extract_edges(data, edges=None, fields=None):
+    """The ``edges`` -- an edge ``Set``, a set's name in ``data.sets``, or edge ids (a
+    field or an array); by default every edge of the topology (``edges()``) --
+    as a dataset of line cells on the same points, cell ``i`` running from edge
+    ``i``'s lower point id to its higher (``edges().rows``). Values on edges
+    (``Values(data, "edges")``) become the output's cell values, and edge sets
+    its cell sets; point fields (``H1``, values on points) and point sets stay
+    on the same points -- an order-2 field's or geometry's values at the
+    points, the lines being linear. Cell and face fields are left behind: an
+    edge lies on every cell and face around it. The geometry must be ``H1``:
+    an ``L2`` one has no shared points for the lines to stand on."""
+    if not isinstance(data.geometry.space, H1):
+        raise TypeError("extract_edges keeps the points, so needs an H1 geometry")
+    topology = data.topology
+    found = topology.edges()
+    idt = data.id_dtype
+    if edges is None:
+        n = found.num_edges
+        chosen = CountingArray(n, dtype=idt)              # every edge, in order
+        edges_to_cells = Same()
+    else:
+        chosen = _edge_ids(data, edges, found.num_edges)
+        n = chosen.shape[0]
+        edges_to_cells = Take(chosen)
+    types = tack.empty((n,), tack.u8)
+    offsets = tack.zeros((n + 1,), idt)
+    connectivity = tack.empty((2 * n,), idt)
+    if n:
+        _edge_cells(chosen, found.rows, types, offsets, connectivity, n)
+    lines = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
+    return carry(data, lines, points=Same(), edges_to_cells=edges_to_cells, fields=fields)
+
+
+def _edge_ids(data, edges, count):
+    """``edges`` -- an edge set, its name, or edge ids -- as a field of the topology's
+    ids: a set of this topology's edges, or ids within its edge count."""
+    if isinstance(edges, str):
+        edges = data.sets[edges]
+    if isinstance(edges, Set):
+        if edges.on != "edges":
+            raise ValueError(f"extract_edges takes edges, not a set of {edges.on}")
+        if edges.topology is not data.topology:
+            raise ValueError("extract_edges takes a set of this dataset's edges, not "
+                             "one of another topology")
+        return edges.ids
+    ids = id_types.as_ids(edges, data.id_dtype)
+    id_types.check_bounds(ids, count, "edge")
+    return ids

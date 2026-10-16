@@ -1,6 +1,6 @@
-"""Sets: named selections of a dataset's points, cells or faces (``data.sets``).
+"""Sets: named selections of a dataset's points, cells, faces or edges (``data.sets``).
 
-A ``Set`` knows what it selects (``on``), so a cell or face set is an
+A ``Set`` knows what it selects (``on``), so a cell, face or edge set is an
 iteration domain, filters carry sets as they carry fields, and an id outside
 the topology is refused when the set is made. Its ids are sorted and unique.
 """
@@ -65,12 +65,14 @@ def _count(topology, on):
         return topology.num_points
     if on == "cells":
         return topology.num_cells
+    if on == "edges":
+        return topology.edges().num_edges
     return topology.faces().num_faces
 
 
 class Set:
-    """Some of a topology's ``on`` entities -- ``"points"``, ``"cells"`` or
-    ``"faces"`` -- by id: ``Set(data, on, ids)``, ``ids`` a field, an array or a
+    """Some of a topology's ``on`` entities -- ``"points"``, ``"cells"``,
+    ``"faces"`` or ``"edges"`` -- by id: ``Set(data, on, ids)``, ``ids`` a field, an array or a
     list. Duplicates collapse and the ids are kept sorted (``ids``, a field of
     the topology's ``id_dtype``); an id outside the topology is refused.
 
@@ -82,8 +84,8 @@ class Set:
     @on_inputs_device
     def __init__(self, data, on, ids):
         topology = getattr(data, "topology", data)
-        if on not in ("points", "cells", "faces"):
-            raise ValueError(f"a set selects points, cells or faces, not {on!r}")
+        if on not in ("points", "cells", "faces", "edges"):
+            raise ValueError(f"a set selects points, cells, faces or edges, not {on!r}")
         self.topology = topology
         self.on = on
         n = _count(topology, on)

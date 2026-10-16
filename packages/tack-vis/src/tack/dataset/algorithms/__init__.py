@@ -19,6 +19,7 @@ from tack.dataset.algorithms.dot import dot
 from tack.dataset.algorithms.edge_lengths import edge_lengths
 from tack.dataset.algorithms.entropy import entropy
 from tack.dataset.algorithms.extract_cells import extract_cells
+from tack.dataset.algorithms.extract_edges import extract_edges
 from tack.dataset.algorithms.extract_geometry import extract_geometry
 from tack.dataset.algorithms.extract_points import extract_points
 from tack.dataset.algorithms.extract_surface import extract_surface
@@ -76,6 +77,7 @@ __all__ = [
     "edge_lengths",
     "entropy",
     "extract_cells",
+    "extract_edges",
     "extract_geometry",
     "extract_points",
     "extract_surface",

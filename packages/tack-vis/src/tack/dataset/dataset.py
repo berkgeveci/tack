@@ -15,11 +15,11 @@ As ``docs/design/dataset-api.md`` §3 describes them:
 - the *geometry* is a field too, kept apart from the named fields
   (``data.geometry``): ``H1`` positions, one per point (a rectilinear grid's
   are a ``CartesianProduct``), or ``L2`` positions, each cell's own corners;
-- *sets* (``tack.dataset.sets``) are named selections of points, cells or faces,
-  such as the boundary faces.
+- *sets* (``tack.dataset.sets``) are named selections of points, cells, faces or
+  edges, such as the boundary faces.
 
 ``for_each(kernel, data, domain, *args)`` runs ``kernel`` once per shape in
-the domain -- ``"cells"``, ``"faces"``, ``"edges"``, or a cell or face set --
+the domain -- ``"cells"``, ``"faces"``, ``"edges"``, or a cell, face or edge set --
 passing the domain's view and, for every ``Field`` among ``args``, the
 field's view for the same group. When a field's space varies from cell to
 cell (an order per cell), each shape group is split by the keys of every
@@ -232,8 +232,9 @@ class DataSet:
 
     @property
     def sets(self):
-        """Named ``Set``s of this dataset's points, cells or faces, checked as they are
-        put in: a set of another topology, or named for a domain, is refused."""
+        """Named ``Set``s of this dataset's points, cells, faces or edges, checked as
+        they are put in: a set of another topology, or named for a domain, is
+        refused."""
         return self._sets
 
     @sets.setter
@@ -250,8 +251,8 @@ class DataSet:
                 raise ValueError(f"set {domain!r} selects points, which are not an "
                                  "iteration domain: loop over its ids")
             return kind
-        raise ValueError(f"no domain {domain!r}: cells, faces, edges, or a cell or face set "
-                         f"({', '.join(self.sets) or 'none'})")
+        raise ValueError(f"no domain {domain!r}: cells, faces, edges, or a cell, face or "
+                         f"edge set ({', '.join(self.sets) or 'none'})")
 
     @property
     def geometry(self):
@@ -291,8 +292,8 @@ class DataSet:
     @on_inputs_device
     def domain_groups(self, domain):
         """The ``DomainGroup``s of ``domain``: ``"cells"``, ``"faces"``, ``"edges"``, or
-        the name of a cell or face set in ``sets`` -- a cell set's as the cell
-        groups' subgroups of its members."""
+        the name of a cell, face or edge set in ``sets`` -- a cell set's as the
+        cell groups' subgroups of its members."""
         kind = self._kind(domain)
         if domain == "cells":
             return self.topology.groups()
@@ -302,6 +303,8 @@ class DataSet:
             return self.topology.edges().groups()
         if kind == "faces":
             return self.topology.faces().groups(self.sets[domain].ids)
+        if kind == "edges":
+            return self.topology.edges().groups(self.sets[domain].ids)
         return self.launch_groups(domain)
 
     @on_inputs_device
