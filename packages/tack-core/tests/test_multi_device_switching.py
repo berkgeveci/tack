@@ -583,22 +583,25 @@ check("every call on its own device: " + repr(fake.wrong), not fake.wrong)
 '''
 
 
-def _run(fake, checks):
-    script = "\n".join(textwrap.dedent(part) for part in (fake, _COMMON, checks))
+def _run(fake, checks, tmp_path):
+    # From a file, not `python -c`: the script defines kernels, and before
+    # Python 3.13 the source of code given with -c cannot be read back.
+    script = tmp_path / "scenario.py"
+    script.write_text("\n".join(textwrap.dedent(part) for part in (fake, _COMMON, checks)))
     env = dict(os.environ, TACK_CACHE="off")
     env.pop("TACK_NO_REINIT", None)
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+    result = subprocess.run([sys.executable, str(script)], capture_output=True,
                             text=True, timeout=300, env=env)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("checks", [_CUDA_CHECKS, _CUDA_ADOPTS, _CUDA_SECOND_ONLY],
                          ids=["two-devices", "adopts-a-framework-context", "second-only"])
-def test_cuda_works_in_each_devices_context(checks):
-    _run(_FAKE_CUDA, checks)
+def test_cuda_works_in_each_devices_context(checks, tmp_path):
+    _run(_FAKE_CUDA, checks, tmp_path)
 
 
 @pytest.mark.parametrize("checks", [_HIP_CHECKS, _HIP_SECOND_ONLY],
                          ids=["two-devices", "second-only"])
-def test_hip_works_on_each_device(checks):
-    _run(_FAKE_HIP, checks)
+def test_hip_works_on_each_device(checks, tmp_path):
+    _run(_FAKE_HIP, checks, tmp_path)
