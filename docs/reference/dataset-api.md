@@ -210,9 +210,9 @@ in `tack.arrays`, are indexable in any kernel as a stored array is (`a[k]`,
 
 | Array | Value `k` | VTK | Viskores |
 |---|---|---|---|
-| `ConstantArray(value, size, dtype=None)` | `value`, a scalar or a vector | `vtkConstantArray` | `ArrayHandleConstant` |
+| `ConstantArray(value, size, dtype=None, device=None)` | `value`, a scalar or a vector | `vtkConstantArray` | `ArrayHandleConstant` |
 | `CountingArray(size, start=0, step=1, dtype=None)` | `start + step * k` | `vtkAffineArray` | `ArrayHandleCounting` |
-| `CartesianProduct(x, y=(0.0,), z=(0.0,))` | a rectilinear grid's point, from three axes | `vtkStructuredPointArray` | `ArrayHandleCartesianProduct` |
+| `CartesianProduct(x, y=(0.0,), z=(0.0,), device=None)` | a rectilinear grid's point, from three axes | `vtkStructuredPointArray` | `ArrayHandleCartesianProduct` |
 | `UniformCoordinates(dims, origin, spacing, direction=None)` | an image's point, `origin + direction @ (ijk * spacing)` | `vtkStructuredPointArray` | `ArrayHandleUniformPointCoordinates` |
 | `Permutation(ids, base)` | `base[ids[k]]` | `vtkIndexedArray` | `ArrayHandlePermutation` |
 | `Concatenate(a, b, ...)` | the arrays end to end | `vtkCompositeArray` | `ArrayHandleConcatenate` |
@@ -256,6 +256,39 @@ field. It is kept apart from `fields`: `data.geometry` returns it, assigning
 `data.positions()` gives the positions on the host. Algorithms move it with
 the cells; it is never among the fields they carry or select. An `L2` geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.
+
+## Devices
+
+A dataset is on the device its arrays are on, and it computes there: every
+algorithm, every derived entity (faces, edges, point links, groups, layouts),
+`for_each`, `Set`, `CellLocator` and the sources run and allocate on the
+dataset's device, whatever the default device is. Results stay on it.
+
+- `data.device`, `data.topology.device`, `field.device`, `a_set.device`: the
+  device, a `tack.Device`. A structured topology holds no arrays, so it is
+  on the device it was made for (`device=`, by default the default device
+  when it was made).
+- A dataset's parts must share one device: a `Field` whose values are not on
+  its topology's device is refused, and so is a dataset whose topology,
+  geometry, fields or sets are on two (`ValueError`, "arrays on two
+  devices"), when it is made and when an algorithm is given it.
+- `data.to_device(device)` copies it there: the topology from its arrays,
+  each field in the same space, the sets by the same ids. What the topology
+  derives is derived there afresh.
+- `uniform_grid`, `rectilinear_grid`, `wavelet` and `tangle` take `device=`;
+  a rectilinear grid of device-array axes is on their device.
+- An implicit array is on the device of the arrays it holds:
+  `ConstantArray`, `UniformCoordinates` and `CartesianProduct` take
+  `device=` for the small arrays they store, `to_device` moves one, and one
+  made from arrays on two devices is refused. One that holds no array
+  (`CountingArray`, `Function`) belongs to no device.
+
+```python
+with tack.device("cuda"):
+    data = td.wavelet(20)                     # every array on the GPU
+surface = td.contour(data, "RTData", 150.0)   # computed there, whatever the default
+on_cpu = surface.to_device("cpu")
+```
 
 ## Sets
 

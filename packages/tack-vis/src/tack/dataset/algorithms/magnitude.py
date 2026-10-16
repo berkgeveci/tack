@@ -4,6 +4,7 @@ import tack
 from tack.arrays import size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype, _scalars
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['magnitude']
 
@@ -14,6 +15,7 @@ def _magnitudes(values, out):
         out[i] = values[i].norm()
 
 
+@on_inputs_device
 def magnitude(data, field):
     """Each vector's length (Viskores' VectorMagnitude)."""
     field = _field(data, field)

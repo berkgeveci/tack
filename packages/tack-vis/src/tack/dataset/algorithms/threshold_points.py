@@ -5,10 +5,12 @@ from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _keep_points, _point_flags
 from tack.dataset.carry import _point_values
 from tack.dataset.spaces import H1, Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['threshold_points']
 
 
+@on_inputs_device
 def threshold_points(data, field, lower, upper, fields=None):
     """The points whose ``field`` (point data: ``H1``, values on points) lies in
     ``[lower, upper]``, as vertex cells."""

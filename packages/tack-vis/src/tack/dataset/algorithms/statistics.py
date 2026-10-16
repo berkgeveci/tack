@@ -7,6 +7,7 @@ import numpy as np
 import tack
 from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['statistics']
 
@@ -21,6 +22,7 @@ def _central_powers(values, mean, p2, p3, p4):
         p4[i] = d2 * d2
 
 
+@on_inputs_device
 def statistics(data, field):
     """Descriptive statistics of a scalar field's values, as Viskores' Statistics
     filter gives them: a dict of ``n``, ``min``, ``max``, ``sum``, ``mean``, the

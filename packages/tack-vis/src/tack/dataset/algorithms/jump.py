@@ -8,6 +8,7 @@ from tack.dataset.algorithms.traces import traces
 from tack.dataset.carry import _like
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['jump']
 
@@ -29,6 +30,7 @@ def _cell_jump(faces, values, out):
                                    if faces.num_sides(f) == 2 else inside * 0.0)
 
 
+@on_inputs_device
 def jump(data, field):
     """A field's difference across each face at the face's center, side 1 minus side
     0 (zero on the boundary): a field on faces. Each side is the field as its own

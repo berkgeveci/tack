@@ -5,6 +5,7 @@ from tack import arrays
 from tack.arrays import materialize, width_of
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _vectors
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['cross']
 
@@ -15,6 +16,7 @@ def _crosses(a, b, out):
         out[i] = a[i].cross(b[i])
 
 
+@on_inputs_device
 def cross(data, a, b):
     """``a x b`` at every value of two 3-vector fields of one dtype and space."""
     a, b = _field(data, a), _field(data, b)

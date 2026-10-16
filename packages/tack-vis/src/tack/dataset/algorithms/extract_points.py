@@ -6,10 +6,12 @@ from tack.dataset.algorithms._extract import _complement, _keep_points, _point_f
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.carry import _point_values
 from tack.dataset.spaces import H1
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_points']
 
 
+@on_inputs_device
 def extract_points(data, function, inside=True, fields=None):
     """The points inside ``function``'s region (at or below zero), or outside it
     (above), as vertex cells. Needs an ``H1`` geometry: one position per point."""

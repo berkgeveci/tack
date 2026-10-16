@@ -42,6 +42,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes, views
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["H1", "L2", "Constant", "SideTraces", "Space", "Values"]
 
@@ -80,6 +81,19 @@ class Space:
     @classmethod
     def _params(cls):
         return {}
+
+    @property
+    def _device(self):
+        """Its topology's device, where its layout is made (`on_inputs_device`)."""
+        return self.topology._device
+
+    def _rebuilt_on(self, topology):
+        """This space on ``topology`` (another dataset's, or this one's moved to
+        another device): the same kind and parameters, array parameters copied
+        to that topology's device."""
+        target = topology.device
+        return type(self)(topology, **{k: v.to_device(target) if _is_array(v) else v
+                                       for k, v in self.params.items()})
 
     def attributes(self, group=None):
         """The layout a view of this space reads for ``group``, beside the values."""
@@ -168,6 +182,7 @@ class H1(Space):
     def mixin(self):
         return views._H1Field if self.order == 1 else views._H1Order2Field
 
+    @on_inputs_device
     def _layout(self):
         """Order 2: ``(face_dofs, cell_dofs, size)``, made on first use and kept."""
         if "_order2" not in self.__dict__:
@@ -270,6 +285,7 @@ class L2(Space):
         order = key if self.varies else self.order
         return views._L2Order0Field if order == 0 else views._L2Field
 
+    @on_inputs_device
     def cell_keys(self):
         """Each cell's order, an i32 array (for a space with an order per cell)."""
         if not self.varies:
@@ -290,6 +306,7 @@ class L2(Space):
             self._orders = orders
         return self._orders
 
+    @on_inputs_device
     def _layout(self):
         """``(offsets, size)``, made on first use and kept."""
         if "_offsets" not in self.__dict__:

@@ -38,6 +38,7 @@ from tack.dataset.views import (
     _StructuredQuads,
 )
 from tack.lang.array import Array
+from tack.runtime.dispatch import as_device, backend_of, get_backend, on_inputs_device, same_device
 
 __all__ = ["Edges", "Faces", "StructuredTopology", "UnstructuredTopology"]
 
@@ -94,13 +95,59 @@ def corner_layout(topology):
     return {g: int(s) for g, s in zip(groups, starts[:-1])}, int(starts[-1])
 
 
+class _OnItsArrays:
+    """For an object whose device is that of the arrays it holds (derived faces
+    and edges): ``_device``, what `on_inputs_device` reads, so its methods run
+    there."""
+
+    @property
+    def _device(self):
+        return same_device(type(self).__name__, vars(self).values())
+
+
 class _Topology:
-    """What both kinds share: the derived faces and edges, made once and kept."""
+    """What both kinds share: the derived faces and edges, made once and kept.
+
+    A topology is on the device its arrays are on (``device``); everything
+    derived from it is made there, its entry points running under that device
+    (`on_inputs_device`), and its algorithms run there too.
+    """
 
     _faces = None
     _edges = None
     _point_links = None
 
+    #: The arrays it is built from, which say its device.
+    _STORED = ()
+
+    @property
+    def _device(self):
+        found = self.__dict__.get("_found_device")
+        if found is None:
+            found = same_device(type(self).__name__,
+                                [getattr(self, name, None) for name in self._STORED])
+            if found is not None:           # its arrays never change: keep it
+                self.__dict__["_found_device"] = found
+        return found
+
+    @property
+    def device(self):
+        """The `tack.Device` its arrays are on, where it and its datasets compute."""
+        return as_device(self._device or get_backend())
+
+    def to_device(self, device):
+        """This topology on ``device``: itself if it is already there, else one
+        made from its arrays copied there (what it derives is derived afresh)."""
+        target = as_device(backend_of(device))
+        if target._backend.memory_domain == self.device._backend.memory_domain:
+            return self
+        return self._moved(target)
+
+    def _moved(self, target):
+        """A copy on ``target`` (a `tack.Device`), from its arrays copied there."""
+        raise NotImplementedError
+
+    @on_inputs_device
     def point_links(self):
         """Each point's cell corners, derived on first use and kept: ``(offsets,
         entries)``, CSR by point in ``id_dtype``, ``entries`` indexing the (cell,
@@ -121,6 +168,7 @@ class _Topology:
         """The cells' highest dimension: 3 for a mesh with solids, 2 for a surface."""
         return max((g.shape.DIMENSION for g in self.groups() if g.count), default=0)
 
+    @on_inputs_device
     def faces(self):
         """The faces (``Faces``): codimension 1 of the cells of the highest
         dimension -- polygons of a 3D mesh, edges of a 2D one. Derived on first
@@ -135,6 +183,7 @@ class _Topology:
             self._faces = Faces._derive(self)
         return self._faces
 
+    @on_inputs_device
     def edges(self):
         """The edges of every cell (``Edges``), derived on first use and kept."""
         if self._edges is None:
@@ -158,6 +207,9 @@ class UnstructuredTopology(_Topology):
     or too large for ``i32`` -- a mesh whose ids, connectivity or derived
     arrays (twelve edges a cell) pass ``2**31 - 1``."""
 
+    _STORED = ("types", "offsets", "connectivity")
+
+    @on_inputs_device
     def __init__(self, types, offsets, connectivity, num_points=None, id_dtype=None):
         self.types = _as_field(types, tack.u8)
         self.num_cells = self.types.shape[0]
@@ -175,6 +227,13 @@ class UnstructuredTopology(_Topology):
         self.connectivity = ids.as_ids(connectivity, self.id_dtype, check=False)
         self._groups = None
 
+    def _moved(self, target):
+        return UnstructuredTopology(self.types.to_device(target),
+                                    self.offsets.to_device(target),
+                                    self.connectivity.to_device(target),
+                                    num_points=self.num_points, id_dtype=self.id_dtype)
+
+    @on_inputs_device
     def groups(self):
         if self._groups is not None:
             return self._groups
@@ -215,7 +274,7 @@ class StructuredTopology(_Topology):
     _KINDS = {1: (_StructuredLines, shapes.Line), 2: (_StructuredQuads, shapes.Quad),
               3: (_StructuredHexahedra, shapes.Hexahedron)}
 
-    def __init__(self, point_dims, id_dtype=None):
+    def __init__(self, point_dims, id_dtype=None, device=None):
         point_dims = tuple(int(d) for d in point_dims)
         if not 1 <= len(point_dims) <= 3 or min(point_dims) < 2:
             raise ValueError(f"point_dims must be 1 to 3 sizes of at least 2, not {point_dims}")
@@ -227,6 +286,12 @@ class StructuredTopology(_Topology):
         dims = point_dims + (1,) * (3 - len(point_dims))
         # One group, kept: derived incidence is laid out per group.
         self._groups = [DomainGroup(kind, shape, (*dims, self.num_cells), self.num_cells, 0)]
+        # It holds no arrays, so its device is the one it is made for: ``device``,
+        # or the default device when it is made.
+        self._found_device = backend_of(device)
+
+    def _moved(self, target):
+        return StructuredTopology(self.point_dims, id_dtype=self.id_dtype, device=target)
 
     def groups(self):
         return self._groups
@@ -339,7 +404,7 @@ def _gather_kind(flags, slots, face_rows, face_sides, ids, rows, sides):
             sides[s] = face_sides[f]
 
 
-class Faces:
+class Faces(_OnItsArrays):
     """The faces of a topology's cells of the highest dimension, as global entities:
     a 3D mesh's polygons, a 2D mesh's edges.
 
@@ -404,6 +469,7 @@ class Faces:
         self._boundary = None
         return self
 
+    @on_inputs_device
     def groups(self, subset=None):
         """The faces (or those in ``subset``, a field of face ids) as one
         ``DomainGroup`` per face shape."""
@@ -435,6 +501,7 @@ class Faces:
             self._groups = groups
         return groups
 
+    @on_inputs_device
     def boundary(self):
         """The ids of the faces with one side, a field of ``id_dtype``: the boundary
         side set."""
@@ -507,7 +574,7 @@ def _edges_from_runs(order, offsets, keys, edge_rows, side_edge, count):
             side_edge[order[i]] = r
 
 
-class Edges:
+class Edges(_OnItsArrays):
     """The edges of a topology's cells, as global entities.
 
     ``num_edges``; per edge: ``rows``, its (low, high) point ids, a 2-vector.
@@ -542,6 +609,7 @@ class Edges:
             _edges_from_runs(order, offsets, keys, self.rows, self.side_edge, count)
         return self
 
+    @on_inputs_device
     def groups(self):
         edge_ids = tack.arange(self.num_edges, dtype=self.id_dtype)
         return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),

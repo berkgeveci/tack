@@ -36,6 +36,7 @@ from tack.arrays import CartesianProduct, UniformCoordinates
 from tack.dataset import shapes, views
 from tack.dataset.sets import Sets
 from tack.dataset.spaces import H1, L2, Space
+from tack.runtime.dispatch import as_device, backend_of, get_backend, on_inputs_device, same_device
 
 __all__ = ["DataSet", "Field", "for_each", "rectilinear_grid"]
 
@@ -54,6 +55,19 @@ class Field:
                              f"{arrays.size_of(values)}")
         self.space = space
         self.values = values
+        _ = self._device                    # refuses values on another device
+
+    @property
+    def _device(self):
+        """The device of its values and its space's topology, which must agree."""
+        space = self.__dict__.get("space")
+        return same_device("Field", (space.topology if space is not None else None,
+                                     self.__dict__.get("values")))
+
+    @property
+    def device(self):
+        """The `tack.Device` its values are on."""
+        return as_device(self._device or get_backend())
 
     def view(self, group):
         """This field's view for ``group``: the group's kind and shape, the space, and
@@ -165,6 +179,7 @@ class DataSet:
     ``fields`` as ``data.geometry``: algorithms move it with the cells, never as
     one of the fields they carry or select."""
 
+    @on_inputs_device
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32):
         self.topology = topology
         self._geometry = _as_geometry(geometry, topology, dtype)
@@ -173,6 +188,47 @@ class DataSet:
             if field.space.topology is not topology:
                 raise ValueError(f"field {name!r} is on another topology")
         self.sets = sets
+        _ = self._device                    # refuses parts on two devices
+
+    @property
+    def _device(self):
+        """The device its topology, geometry, fields and sets are on; parts on two
+        devices are refused (the check every algorithm makes on entry, through
+        `on_inputs_device`)."""
+        parts = self.__dict__
+        held = [parts.get("topology")]
+        if parts.get("_geometry") is not None:
+            held.append(parts["_geometry"].values)
+        held.extend(field.values for field in parts.get("fields", {}).values())
+        held.extend(s.ids for s in (parts.get("_sets") or {}).values())
+        return same_device("DataSet", held)
+
+    @property
+    def device(self):
+        """The `tack.Device` it is on: where its algorithms run and allocate."""
+        return as_device(self._device or get_backend())
+
+    def to_device(self, device):
+        """This dataset on ``device``: itself if it is already there, else a copy --
+        the topology made from its arrays copied there, each field in the same
+        space on it, the sets by the same ids. What the topology derives (faces,
+        groups, layouts) is derived there afresh, not copied."""
+        from tack.dataset.sets import Set
+
+        target = as_device(backend_of(device))
+        here = self._device
+        if here is not None and target._backend.memory_domain == here.memory_domain:
+            return self
+        topology = self.topology.to_device(target)
+
+        def moved(field):
+            return Field(field.space._rebuilt_on(topology), field.values.to_device(target))
+
+        sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
+                for name, s in self.sets.items()}
+        return DataSet(topology, moved(self.geometry),
+                       {name: moved(field) for name, field in self.fields.items()},
+                       sets, dtype=self.dtype)
 
     @property
     def sets(self):
@@ -232,6 +288,7 @@ class DataSet:
         # An order-2 geometry's first values are the points'.
         return arrays.to_host(self.geometry.values)[:self.num_points]
 
+    @on_inputs_device
     def domain_groups(self, domain):
         """The ``DomainGroup``s of ``domain``: ``"cells"``, ``"faces"``, ``"edges"``, or
         the name of a cell or face set in ``sets`` -- a cell set's as the cell
@@ -247,6 +304,7 @@ class DataSet:
             return self.topology.faces().groups(self.sets[domain].ids)
         return self.launch_groups(domain)
 
+    @on_inputs_device
     def domain_view(self, domain, group):
         """``group``'s view: kind, shape, geometry, and for cells their incidence when
         faces and edges have been derived."""
@@ -282,6 +340,7 @@ class DataSet:
                 mixins.append(key.domain_mixin(value))
         return group.view(*mixins, **attributes)
 
+    @on_inputs_device
     def _side_zero_points(self):
         """An L2 geometry's current corners per (face, side, point).
 
@@ -291,6 +350,7 @@ class DataSet:
 
         return traces(self, self.geometry).values
 
+    @on_inputs_device
     def launch_groups(self, domain, fields=(), keys=()):
         """The groups a kernel over ``domain`` launches once each, given the ``Field``s
         it reads: the domain's groups, each split by the keys of the spaces among
@@ -312,6 +372,7 @@ class DataSet:
                 if members is None or sub.keys[members] == 1]
 
 
+@on_inputs_device
 def for_each(kernel, data, domain, *args):
     """Run ``kernel(view, *args)`` once per shape in ``domain`` of ``data``.
 
@@ -446,14 +507,15 @@ def _check_domain(space, kind):
     raise TypeError(f"a field on {space!r} cannot be viewed while iterating {kind}")
 
 
-def grid_topology(dims, id_dtype=None):
+def grid_topology(dims, id_dtype=None, device=None):
     """The topology of a grid of ``dims`` points (one to three sizes, x fastest).
 
     A size of 1 adds no cells, in any position: ``(1, 3)`` is a line of three
     points (along y; the coordinates say where), as ``(3, 1)`` is. With no axis
     of two or more points the grid is points without cells: one point, or
     none when a size is 0. The flat point index is the same either way, so
-    the coordinates of all ``dims`` serve.
+    the coordinates of all ``dims`` serve. It is on ``device`` (by default the
+    default device).
     """
     from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
@@ -462,22 +524,27 @@ def grid_topology(dims, id_dtype=None):
         raise ValueError(f"a grid has 1 to 3 sizes of at least 0 points, not {dims}")
     axes = tuple(d for d in dims if d != 1)
     if 0 in dims or not axes:
-        return UnstructuredTopology([], [0], [], num_points=int(np.prod(dims)), id_dtype=id_dtype)
-    return StructuredTopology(axes, id_dtype=id_dtype)
+        with as_device(backend_of(device)):
+            return UnstructuredTopology([], [0], [], num_points=int(np.prod(dims)),
+                                        id_dtype=id_dtype)
+    return StructuredTopology(axes, id_dtype=id_dtype, device=device)
 
 
-def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32):
+def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None):
     """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``; see
-    ``grid_topology`` for axes of one point or none."""
-    coordinates = CartesianProduct(x, y, z, dtype=dtype)
-    return DataSet(grid_topology(coordinates.dims), coordinates)
+    ``grid_topology`` for axes of one point or none. It is on ``device``, by
+    default that of axes given as device arrays, else the default device."""
+    coordinates = CartesianProduct(x, y, z, dtype=dtype, device=device)
+    return DataSet(grid_topology(coordinates.dims, device=coordinates.device), coordinates)
 
 
 def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
-                 dtype=tack.f32):
+                 dtype=tack.f32, device=None):
     """A dataset of ``dims`` points (one to three sizes) at ``origin + direction @
     (ijk * spacing)``: VTK's image data, Viskores' uniform data set. Nothing per
     point is stored (``UniformCoordinates``). A size of 1 adds no cells, in any
-    position, and a grid with no axis of two points has none (``grid_topology``)."""
-    topology = grid_topology(dims)      # the sizes as given, before padding to three
-    return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype))
+    position, and a grid with no axis of two points has none (``grid_topology``).
+    It is on ``device`` (by default the default device)."""
+    topology = grid_topology(dims, device=device)   # the sizes as given, before padding
+    return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype,
+                                                device=device))

@@ -4,6 +4,7 @@ import tack
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['face_centers']
 
@@ -33,6 +34,7 @@ def _face_centers(faces, out):
             out[faces.entity_id(f)] = origin + weighted / (3.0 * total)
 
 
+@on_inputs_device
 def face_centers(data):
     """Each face's area centroid: a field on faces. The face is fanned from its
     points' mean, so both its cells -- which store it once -- see the same fan. A

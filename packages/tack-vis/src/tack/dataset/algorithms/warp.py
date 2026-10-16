@@ -7,6 +7,7 @@ from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.algorithms._moving import _moved
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['warp']
 
@@ -25,6 +26,7 @@ def _warp_constant(positions, dx, dy, dz, factors, scale, out):
         out[i] = [p[0] + dx * f, p[1] + dy * f, p[2] + dz * f]
 
 
+@on_inputs_device
 def warp(data, direction, scale=1.0, scale_by=None, fields=None):
     """The geometry moved along ``direction`` -- a 3-vector field in the geometry's
     space (or its name), or one 3-vector for every point -- times ``scale``

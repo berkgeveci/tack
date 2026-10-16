@@ -10,6 +10,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids as id_types
+from tack.runtime.dispatch import as_device, get_backend, on_inputs_device, same_device
 
 __all__ = ["Set"]
 
@@ -78,6 +79,7 @@ class Set:
     pairs, as Exodus side sets give them. Put a set in ``data.sets`` to name it.
     """
 
+    @on_inputs_device
     def __init__(self, data, on, ids):
         topology = getattr(data, "topology", data)
         if on not in ("points", "cells", "faces"):
@@ -126,6 +128,7 @@ class Set:
         self._flags = flags
 
     @classmethod
+    @on_inputs_device
     def from_sides(cls, data, cells, local_faces):
         """The faces named by (cell, local face) pairs -- local faces numbered as the
         cell's view numbers them (VTK's order on the shape path, the cell's own
@@ -167,6 +170,17 @@ class Set:
             raise ValueError(f"{bad[0]} cells are given a local face they do not have")
         return cls._from_flags(data.topology, "faces", flags)
 
+    @property
+    def _device(self):
+        """Its topology's device, which its ids are on."""
+        return same_device("Set", (self.__dict__.get("topology"), self.__dict__.get("ids")))
+
+    @property
+    def device(self):
+        """The `tack.Device` its ids are on."""
+        return as_device(self._device or get_backend())
+
+    @on_inputs_device
     def flags(self):
         """Membership: an i32 array, 1 for each entity in the set, else 0."""
         if self._flags is None:

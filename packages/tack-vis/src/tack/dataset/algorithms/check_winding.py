@@ -6,6 +6,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.polyhedra import _cell_sizes
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['check_winding']
 
@@ -69,6 +70,7 @@ def _check_loops(t):
     return np.flatnonzero(bad.numpy())
 
 
+@on_inputs_device
 def check_winding(data):
     """The cells whose faces do not wind consistently, a sorted host array of cell ids.
 

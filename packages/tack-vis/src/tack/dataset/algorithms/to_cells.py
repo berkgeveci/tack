@@ -3,10 +3,12 @@
 
 from tack.dataset.algorithms.project import project
 from tack.dataset.spaces import Constant
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['to_cells']
 
 
+@on_inputs_device
 def to_cells(data, field):
     """``field`` averaged over each cell's corners: a ``Constant`` field,
     ``project(data, field, Constant(data))``.

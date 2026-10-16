@@ -5,6 +5,7 @@ from tack import arrays
 from tack.arrays import materialize, width_of
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _scalars
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['dot']
 
@@ -15,6 +16,7 @@ def _dots(a, b, out):
         out[i] = a[i].dot(b[i])
 
 
+@on_inputs_device
 def dot(data, a, b):
     """``a . b`` at every value of two vector fields of one width, dtype and space."""
     a, b = _field(data, a), _field(data, b)

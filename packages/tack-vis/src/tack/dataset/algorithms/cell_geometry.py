@@ -7,6 +7,7 @@ from tack.dataset import shapes
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['CellGeometry', 'cell_geometry']
 
@@ -113,6 +114,7 @@ class CellGeometry(NamedTuple):
     centroid: Field
 
 
+@on_inputs_device
 def cell_geometry(data):
     """``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the
     divergence theorem over its faces -- polyhedral or of a shape -- with faces

@@ -5,6 +5,7 @@ from tack import arrays
 from tack.arrays import materialize, width_of
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _vectors
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['composite']
 
@@ -15,6 +16,7 @@ def _set_component(values, component, out):
         out[i][component] = values[i]
 
 
+@on_inputs_device
 def composite(data, *fields):
     """Scalar fields of one space as the components of one vector field (Viskores'
     CompositeVectors), in the order given."""

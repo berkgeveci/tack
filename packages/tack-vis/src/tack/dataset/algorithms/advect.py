@@ -6,10 +6,12 @@ from tack.dataset.algorithms._advection import ParticleStatus, _run
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['ParticleStatus', 'advect']
 
 
+@on_inputs_device
 def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
     """Seeds moved through the velocity ``field`` (a 3-vector field or its name: point
     data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as

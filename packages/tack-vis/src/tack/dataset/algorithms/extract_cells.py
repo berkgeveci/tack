@@ -5,6 +5,7 @@ import numpy as np
 import tack
 from tack.dataset import ids
 from tack.dataset.algorithms._extract import _keep_cells
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_cells']
 
@@ -15,6 +16,7 @@ def _flag_ids(ids, flags):
         flags[ids[i]] = 1
 
 
+@on_inputs_device
 def extract_cells(data, cells, fields=None):
     """The cells with the given ids (a host array, an integer field, or a cell
     ``Set`` or its name in ``data.sets``), with only the points they use; cells

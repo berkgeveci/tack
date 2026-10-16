@@ -9,6 +9,7 @@ from tack.dataset.algorithms.face_centers import face_centers
 from tack.dataset.algorithms.face_geometry import face_geometry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['perot']
 
@@ -26,6 +27,7 @@ def _perot(cells, flux, areas, centers, centroids, volumes, out):
         out[e] = u / volumes[e]
 
 
+@on_inputs_device
 def perot(data, flux):
     """A vector per cell from each face's normal component -- Perot's reconstruction,
     ``u_c = (1/V) sum_f A_f u_f (r_f - r_c)``, as C-grid models (MPAS, ICON) need to

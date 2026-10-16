@@ -6,6 +6,7 @@ import tack
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['FaceGeometry', 'face_geometry']
 
@@ -70,6 +71,7 @@ class FaceGeometry(NamedTuple):
     area: Field
 
 
+@on_inputs_device
 def face_geometry(data):
     """``FaceGeometry(normal, area)``: fields on faces. A face's normal points out of
     its side 0. A 3D mesh's faces are polygons of any size, the normal the mean

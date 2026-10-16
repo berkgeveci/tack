@@ -8,6 +8,7 @@ import tack
 from tack.arrays import size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype, _scalars
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['log_values']
 
@@ -18,6 +19,7 @@ def _logs(values, scale, smallest, out):
         out[i] = log(max(values[i], smallest)) * scale
 
 
+@on_inputs_device
 def log_values(data, field, base=math.e, min_value=None):
     """The logarithm of a scalar field in ``base`` (e, 2, 10, or any), values below
     ``min_value`` -- by default the smallest positive normal float, as in

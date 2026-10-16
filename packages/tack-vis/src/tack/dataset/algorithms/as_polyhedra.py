@@ -6,6 +6,7 @@ from tack.dataset import shapes
 from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Same, carry
 from tack.dataset.polyhedra import PolyhedralTopology
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['as_polyhedra']
 
@@ -39,6 +40,7 @@ def _cell_face_entries(cells, offsets, cell_faces, cell_face_sides):
             cell_face_sides[at + f] = tack.u8(cells.face_side(c, f))
 
 
+@on_inputs_device
 def as_polyhedra(data, fields=None):
     """A shape-based dataset as a polyhedral one, every cell a polyhedron.
 

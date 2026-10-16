@@ -34,9 +34,10 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
-from tack.dataset.topology import _as_field, _Topology
+from tack.dataset.topology import _as_field, _OnItsArrays, _Topology
 from tack.dataset.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells, _PolylineCells
 from tack.lang.array import Array
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["PolygonalTopology", "PolyhedralTopology", "PolylineTopology", "SizeBuckets",
            "orient"]
@@ -105,7 +106,7 @@ def _side_counts(topology):
     return counts, int(bad[0])
 
 
-class PolygonFaces:
+class PolygonFaces(_OnItsArrays):
     """A polyhedral topology's faces, with the shape path's ``Faces`` interface:
     ``num_faces``, ``sides`` (``[cell0, local0, cell1, local1]`` per face),
     ``boundary()`` and ``groups()``. Per (cell, local face), the topology's own
@@ -140,6 +141,7 @@ class PolygonFaces:
         self._groups = None
         self._boundary = None
 
+    @on_inputs_device
     def groups(self, subset=None):
         """The faces (or those in ``subset``, a field of face ids) as one
         ``Polygon`` group."""
@@ -155,6 +157,7 @@ class PolygonFaces:
             self._groups = groups
         return groups
 
+    @on_inputs_device
     def boundary(self):
         """The ids of the faces with one side, a field of ``id_dtype``."""
         if self._boundary is None:
@@ -265,7 +268,7 @@ def _edges_from_runs(order, offsets, keys, rows, face_edge, count):
             face_edge[order[i]] = r
 
 
-class PolygonEdges:
+class PolygonEdges(_OnItsArrays):
     """The edges of a polyhedral topology's faces, as global entities: ``num_edges``,
     ``rows`` (``(low, high)`` point ids), and per (face, local edge) -- indexed like
     ``face_points``, edge ``j`` of a face running from its point ``j`` to the next
@@ -291,6 +294,7 @@ class PolygonEdges:
         if count:
             _edges_from_runs(order, offsets, keys, self.rows, self.face_edge, count)
 
+    @on_inputs_device
     def groups(self):
         edge_ids = tack.arange(self.num_edges, dtype=self.id_dtype)
         return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
@@ -320,6 +324,14 @@ class PolyhedralTopology(_Topology):
     cell_shape = shapes.Polyhedron
     facet_shape = shapes.Polygon
 
+    _STORED = ("face_offsets", "face_points", "cell_offsets", "cell_faces", "cell_face_sides")
+
+    def _moved(self, target):
+        return PolyhedralTopology(
+            *(getattr(self, name).to_device(target) for name in self._STORED),
+            num_points=self.num_points, id_dtype=self.id_dtype)
+
+    @on_inputs_device
     def __init__(self, face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides,
                  num_points=None, id_dtype=None):
         face_offsets, face_points, cell_offsets, cell_faces = (
@@ -347,12 +359,14 @@ class PolyhedralTopology(_Topology):
         self._cell_points = None
         self._groups = None
 
+    @on_inputs_device
     def faces(self):
         """The faces' sides and boundary (``PolygonFaces``), derived on first use."""
         if self._faces is None:
             self._faces = PolygonFaces(self)
         return self._faces
 
+    @on_inputs_device
     def edges(self):
         """The faces' edges (``PolygonEdges``), derived on first use."""
         if self._edges is None:
@@ -369,12 +383,14 @@ class PolyhedralTopology(_Topology):
             self._point_links = (offsets, order)
         return self._point_links
 
+    @on_inputs_device
     def cell_points(self):
         """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR."""
         if self._cell_points is None:
             self._cell_points = _derive_cell_points(self)
         return self._cell_points
 
+    @on_inputs_device
     def groups(self):
         """The cells as one ``Polyhedron`` group."""
         if self._groups is None:
@@ -458,7 +474,7 @@ def _bucket_keys(sizes, caps, keys, largest, n):
             tack.atomic_max(largest, 0, need)
 
 
-class SizeBuckets:
+class SizeBuckets(_OnItsArrays):
     """Groups a polyhedral topology's cells by size, for kernels that keep per-cell
     scratch: a cell's key is the first cap in ``caps`` at least half its facet
     points (an upper bound on its edges, so on its crossings of any isovalue).
@@ -480,6 +496,7 @@ class SizeBuckets:
             kept[caps] = buckets
         return kept[caps]
 
+    @on_inputs_device
     def cell_keys(self):
         """Each cell's bucket, an i32 array."""
         if "_keys" not in self.__dict__:
@@ -577,6 +594,12 @@ class PolygonalTopology(PolyhedralTopology):
     cell_shape = shapes.Polygon
     facet_shape = shapes.Line
 
+    def _moved(self, target):
+        return PolygonalTopology(self.loop_offsets.to_device(target),
+                                 self.loop_points.to_device(target),
+                                 num_points=self.num_points, id_dtype=self.id_dtype)
+
+    @on_inputs_device
     def __init__(self, loop_offsets, loop_points, num_points=None, id_dtype=None):
         loop_offsets, loop_points = ids.host_or_field(loop_offsets), ids.host_or_field(loop_points)
         total = int(loop_points.shape[0])
@@ -680,6 +703,14 @@ class PolylineTopology(_Topology):
     cell_shape = shapes.PolyLine
     facet_shape = shapes.Vertex
 
+    _STORED = ("line_offsets", "line_points")
+
+    def _moved(self, target):
+        return PolylineTopology(self.line_offsets.to_device(target),
+                                self.line_points.to_device(target),
+                                num_points=self.num_points, id_dtype=self.id_dtype)
+
+    @on_inputs_device
     def __init__(self, line_offsets, line_points, num_points=None, id_dtype=None):
         line_offsets, line_points = ids.host_or_field(line_offsets), ids.host_or_field(line_points)
         total = int(line_points.shape[0])
@@ -708,6 +739,7 @@ class PolylineTopology(_Topology):
         """Each polyline's points in order: ``(line_offsets, line_points)``."""
         return self.line_offsets, self.line_points
 
+    @on_inputs_device
     def cell_points(self):
         """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR."""
         if self._cell_points is None:
@@ -720,6 +752,7 @@ class PolylineTopology(_Topology):
 
     point_links = PolyhedralTopology.point_links
 
+    @on_inputs_device
     def groups(self):
         """The cells as one ``PolyLine`` group."""
         if self._groups is None:
@@ -730,6 +763,7 @@ class PolylineTopology(_Topology):
                 self.num_cells, 0)]
         return self._groups
 
+    @on_inputs_device
     def faces(self):
         """The chains' ends as faces (``PolygonFaces`` of one-point faces), derived on
         first use and kept; refuses a point where more than two chains end."""
@@ -761,6 +795,7 @@ class PolylineTopology(_Topology):
             self._faces = PolygonFaces(self)
         return self._faces
 
+    @on_inputs_device
     def edges(self):
         """Not derived: a polyline's segments are parts of its cells, and nothing
         needs them as global entities yet."""

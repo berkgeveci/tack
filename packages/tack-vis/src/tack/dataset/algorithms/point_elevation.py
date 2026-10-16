@@ -6,6 +6,7 @@ import tack
 from tack.arrays import materialize, size_of
 from tack.dataset.algorithms._common import _scalars
 from tack.dataset.dataset import Field
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['point_elevation']
 
@@ -18,6 +19,7 @@ def _elevations(positions, lx, ly, lz, dx, dy, dz, length2, low, span, out):
         out[i] = low + min(max(s, 0.0), 1.0) * span
 
 
+@on_inputs_device
 def point_elevation(data, low_point=(0, 0, 0), high_point=(0, 0, 1), range=(0.0, 1.0)):
     """Each geometry value's position along the line from ``low_point`` to
     ``high_point``, clamped to it and mapped to ``range`` (VTK's
