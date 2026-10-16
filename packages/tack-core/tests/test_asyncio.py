@@ -140,9 +140,11 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
     (blocked_ticks, blocked_s), (free_ticks, free_s) = _long_enough(both, iters)
     # Ticks are 1 ms sleeps; the free wait should see many of them, the
     # blocked one almost none. On a loaded host a 1 ms sleep takes 2-4 ms
-    # (Level Zero, load 115, four workers: 50 ticks in 207 ms).
+    # (Level Zero, load 115, four workers: 50 ticks in 207 ms), and up to
+    # ~10 ms (HIP on illyad, load 120-185).
     assert blocked_ticks <= 2, blocked_ticks
-    assert free_ticks >= free_s * 1000 * 0.1, (free_ticks, free_s)
+    # 0.05 per ms keeps the free wait clear of the blocked one's 2 at 100 ms.
+    assert free_ticks >= free_s * 1000 * 0.05, (free_ticks, free_s)
 
 
 def test_the_loop_launches_while_a_read_waits(backend):
@@ -184,7 +186,10 @@ def test_the_loop_launches_while_a_read_waits(backend):
         return (launched, elapsed), (elapsed,)
 
     launched, elapsed = _long_enough(once, iters)
-    assert launched >= elapsed * 1000 * 0.1, (launched, elapsed)
+    # At least one per 20 ms of a 1 ms cadence: a loaded host's 1 ms sleep
+    # takes ~10 ms (illyad at load 120-185 reached 0.09 per ms), and a wait
+    # that blocks launches allows about one per wait (0.003 per ms).
+    assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
 
 
 def test_sync_async_does_not_wait_for_later_launches(backend):

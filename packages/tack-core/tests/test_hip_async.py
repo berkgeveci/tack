@@ -289,7 +289,10 @@ def test_a_wait_releases_the_gil_and_the_stream(wait):
         time.sleep(0.001)
     elapsed = time.perf_counter() - t0
     waiter.join()
-    assert launched >= elapsed * 1000 * 0.1, (launched, elapsed)
+    # At least one per 20 ms of a 1 ms cadence: a loaded host's 1 ms sleep
+    # takes ~10 ms (illyad at load 120-185 reached 0.09 per ms), and a wait
+    # that blocks launches allows about one per wait (0.003 per ms).
+    assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
     assert short.numpy()[0] == 1 + launched
 
 
