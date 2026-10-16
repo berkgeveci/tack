@@ -426,3 +426,31 @@ def test_arrays_made_before_a_switch_run_on_their_device():
         np.testing.assert_allclose(out.numpy(), np.arange(8) * 2.0)
     finally:
         tack.set_default_device("cpu")
+
+@tack.kernel
+def _first_times(x, k) -> float:
+    for i in range(x.shape[0]):
+        x[i] = x[i]
+    return x[0] * k
+
+
+def test_threads_calling_a_returning_kernel_get_their_own_results():
+    """A kernel's `return` is stored by a one-thread epilogue into a hidden
+    array and read back. The array was one per kernel, so a thread could read
+    the result another thread had just stored."""
+    errors = []
+
+    def work(k):
+        x = tack.array(np.full(4, float(k), np.float32))
+        for _ in range(2000):
+            got = _first_times(x, 1.0)
+            if got != k:
+                errors.append((k, got))
+                return
+
+    threads = [threading.Thread(target=work, args=(k,)) for k in range(1, 9)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors[:4]
