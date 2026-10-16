@@ -106,6 +106,23 @@ class _Implicit:
         from tack.runtime.dispatch import as_device, get_backend
         return as_device(self._device or get_backend())
 
+    def to_device(self, device):
+        """This array, reading from ``device``: a copy with every array it holds
+        copied there (an implicit array it holds moved the same way); the
+        parameters it keeps as numbers are the same. One that holds no array
+        belongs to no device and is returned as it is."""
+        if self._device is None:
+            return self
+        import copy
+        held = {name: value.to_device(device) for name, value in vars(self).items()
+                if isinstance(value, (_Implicit, _DeviceArray)) and value._device is not None}
+        if all(held[name] is getattr(self, name) for name in held):
+            return self                       # already readable there
+        moved = copy.copy(self)
+        for name, value in held.items():
+            setattr(moved, name, value)
+        return moved
+
     # Reductions compute the values into a temporary array and reduce it as a
     # stored array is reduced, so they share its semantics exactly: float
     # extrema propagate NaNs, integer sums wrap in 64 bits.
@@ -141,6 +158,11 @@ class _Implicit:
 
 
 def _metadata(array, size, width, dtype):
+    from tack.runtime.dispatch import same_device
+
+    # An implicit array lives where the arrays it holds do, so they must
+    # share one device's memory (what `materialize` and kernels read).
+    same_device(type(array).__name__, vars(array).values())
     array._size, array._width, array._dtype = int(size), width, dtype
     # The length again, as an attribute a kernel receives, for `len(a)`.
     array.length = int(size)
@@ -163,9 +185,10 @@ class _Explicit(_Implicit):
         self.values[k] = v
 
 
-def _operand(values):
+def _operand(values, device=None):
     """``values`` as an array another array can hold: an implicit array as it is, a
-    device array wrapped, anything else stored first."""
+    device array wrapped, anything else stored first (on ``device``, by default
+    the default device)."""
     if isinstance(values, _Implicit):
         return values
     if isinstance(values, _DeviceArray):
@@ -173,15 +196,23 @@ def _operand(values):
     host = np.asarray(values)
     dtype = tack.i64 if host.dtype.kind in "iu" and host.size and \
         np.abs(host).max() > 2**31 - 1 else (tack.i32 if host.dtype.kind in "iu" else tack.f32)
-    return _Explicit(_store(host, dtype))
+    return _Explicit(_store(host, dtype, device))
 
 
-def _store(host, dtype):
+def _operands(*values):
+    """Several operands of one array: host data is stored where the device arrays
+    among them are, so an array of arrays on another device can take a list."""
+    device = next((v._device for v in values if getattr(v, "_device", None) is not None),
+                  None)
+    return [_operand(v, device) for v in values]
+
+
+def _store(host, dtype, device=None):
     host = np.ascontiguousarray(host, dtype=dtype.numpy_dtype)
     if host.ndim == 2:
-        field = tack.empty((host.shape[0],), tack.vec(host.shape[1], dtype))
+        field = tack.empty((host.shape[0],), tack.vec(host.shape[1], dtype), device=device)
     else:
-        field = tack.empty(host.shape, dtype)
+        field = tack.empty(host.shape, dtype, device=device)
     if host.size:
         tack.copyto(field, host)
     return field
@@ -194,13 +225,15 @@ class ConstantArray(_Implicit):
     """``size`` copies of ``value``: a scalar, or a vector (a sequence of components),
     as VTK's constant arrays of several components. ``dtype`` defaults to i32 for
     integers and f32 otherwise; the value is kept in a one-element field of it,
-    so it is exactly that type in the kernel."""
+    so it is exactly that type in the kernel, on ``device`` (by default the
+    default device)."""
 
-    def __init__(self, value, size, dtype=None):
+    def __init__(self, value, size, dtype=None, device=None):
         host = np.asarray(value)
         if dtype is None:
             dtype = tack.i32 if host.dtype.kind in "iu" else tack.f32
-        self.value = _store(host.reshape(1, -1) if host.ndim else host.reshape(1), dtype)
+        self.value = _store(host.reshape(1, -1) if host.ndim else host.reshape(1), dtype,
+                            device)
         _metadata(self, size, host.shape[0] if host.ndim else None, dtype)
 
     @tack.func
@@ -238,17 +271,19 @@ class CartesianProduct(_Implicit):
     """The points of a grid whose lines run along the axes: ``(x[i], y[j], z[k])`` at
     index ``i + nx * (j + ny * k)``. Only the three axes are stored."""
 
-    def __init__(self, x, y=(0.0,), z=(0.0,), dtype=tack.f32):
-        self.xs, self.ys, self.zs = (self._axis(a, dtype) for a in (x, y, z))
+    def __init__(self, x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None):
+        if device is None:      # host axes go where the device axes are
+            device = next((a._device for a in (x, y, z) if isinstance(a, _DeviceArray)), None)
+        self.xs, self.ys, self.zs = (self._axis(a, dtype, device) for a in (x, y, z))
         self.dims = (self.xs.shape[0], self.ys.shape[0], self.zs.shape[0])
         self.px, self.py = self.dims[0], self.dims[1]
         _metadata(self, np.prod(self.dims), 3, dtype)
 
     @staticmethod
-    def _axis(values, dtype):
+    def _axis(values, dtype, device=None):
         if isinstance(values, _DeviceArray):
             return values
-        return _store(np.asarray(values).reshape(-1), dtype)
+        return _store(np.asarray(values).reshape(-1), dtype, device)
 
     x = property(lambda self: self.xs)
     y = property(lambda self: self.ys)
@@ -293,7 +328,7 @@ class UniformCoordinates(_Implicit):
     ORIENTED = 0                              # compile-time: apply ``direction``
 
     def __init__(self, dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
-                 dtype=tack.f32):
+                 dtype=tack.f32, device=None):
         dims = tuple(int(d) for d in dims) + (1,) * (3 - len(dims))
         self.dims = dims
         self.px, self.py = dims[0], dims[1]
@@ -302,8 +337,9 @@ class UniformCoordinates(_Implicit):
         matrix = np.eye(3) if direction is None else np.asarray(direction, float).reshape(3, 3)
         if direction is not None and not np.allclose(matrix, np.eye(3)):
             self.ORIENTED = 1
-        # Always present, so an f64 grid's scalars are f64 in the kernel.
-        self.direction = _store(matrix.reshape(-1), dtype)
+        # Always present, so an f64 grid's scalars are f64 in the kernel; it
+        # puts the grid on ``device`` (by default the default device).
+        self.direction = _store(matrix.reshape(-1), dtype, device)
         self._origin, self._spacing, self._matrix = tuple(origin), tuple(spacing), matrix
         _metadata(self, np.prod(dims), 3, dtype)
 
@@ -344,8 +380,7 @@ class Permutation(_Implicit):
     not) gives, as VTK's indexed array."""
 
     def __init__(self, ids, base):
-        self.ids = _operand(ids)
-        self.base = _operand(base)
+        self.ids, self.base = _operands(ids, base)
         _metadata(self, size_of(self.ids), width_of(self.base), dtype_of(self.base))
 
     @tack.func
@@ -380,7 +415,7 @@ def Concatenate(*arrays):
     """The arrays end to end, as VTK's composite array: of one width and type."""
     if not arrays:
         raise ValueError("Concatenate needs at least one array")
-    parts = [_operand(a) for a in arrays]
+    parts = _operands(*arrays)
     for part in parts[1:]:
         if (width_of(part), dtype_of(part)) != (width_of(parts[0]), dtype_of(parts[0])):
             raise TypeError("concatenated arrays must have one width and one type")
@@ -498,7 +533,7 @@ class _Components4(_Implicit):
 def Components(*arrays):
     """Two to four scalar arrays as the components of a vector array, as Viskores'
     composite vector."""
-    parts = [_operand(a) for a in arrays]
+    parts = _operands(*arrays)
     if not 2 <= len(parts) <= 4 or any(width_of(p) for p in parts):
         raise TypeError("Components takes two to four scalar arrays")
     if len({size_of(p) for p in parts}) != 1:
