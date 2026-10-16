@@ -20,7 +20,25 @@ def _hexes():
     return td.rectilinear_grid([0.0, 1.0, 2.5], [0.0, 0.5, 1.5], [0.0, 1.0])
 
 
-MESHES = {"hexahedra": _hexes, "tetrahedra": lambda: td.tetrahedralize(_hexes())}
+def _quads():
+    return td.rectilinear_grid([0.0, 1.0, 2.5], [0.0, 0.5, 1.5], [0.25])
+
+
+def _triangles():
+    """``_quads``' cells, each cut into two triangles."""
+    quads = _quads()
+    rows = []
+    for j in range(2):
+        for i in range(2):
+            a = i + 3 * j
+            rows += [[a, a + 1, a + 4], [a, a + 4, a + 3]]
+    topology = td.UnstructuredTopology(np.full(len(rows), 5, np.uint8),
+                                       3 * np.arange(len(rows) + 1), np.concatenate(rows))
+    return td.DataSet(topology, quads.positions())
+
+
+MESHES = {"hexahedra": _hexes, "tetrahedra": lambda: td.tetrahedralize(_hexes()),
+          "quads": _quads, "triangles": _triangles}
 
 
 def _vectors(rows):
@@ -158,7 +176,8 @@ def test_changing_h1_order_keeps_unused_points(backend):
 
 
 @pytest.mark.parametrize("shape", [td.shapes.Tetra, td.shapes.Hexahedron,
-                                   td.shapes.Voxel, td.shapes.Wedge])
+                                   td.shapes.Voxel, td.shapes.Wedge, td.shapes.Triangle,
+                                   td.shapes.Quad, td.shapes.Pixel])
 @pytest.mark.parametrize("vector", [False, True])
 def test_exact_quadratic_projection_at_independent_nodes(backend, shape, vector):
     # The shape fixture is a reference table of points/faces/edges, independent
@@ -173,7 +192,7 @@ def test_exact_quadratic_projection_at_independent_nodes(backend, shape, vector)
     faces = sorted(tuple(sorted(face)) for face in reference["faces"] if len(face) == 4)
     nodes = [*positions, *(corners[list(e)].mean(0) for e in edges),
              *(corners[list(f)].mean(0) for f in faces)]
-    if shape in (td.shapes.Hexahedron, td.shapes.Voxel):
+    if shape in (td.shapes.Hexahedron, td.shapes.Voxel, td.shapes.Quad, td.shapes.Pixel):
         nodes.append(corners.mean(0))
     nodes = np.asarray(nodes)
     evaluate = (lambda x: np.c_[_linear(x), 2 * _linear(x) + 1, -_linear(x)]

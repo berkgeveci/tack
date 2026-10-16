@@ -1,4 +1,4 @@
-"""``extract_edges``: the edges of set ``name`` (all of them by default) as line cells on the same points, each running from its lower point id to its higher. Values on edges become the surface's cell values, and edge sets cell sets; point fields (``H1``, values on points) stay on the same points -- an order-2 field's or geometry's values at the points, the lines being linear. Cell fields are left behind: an edge has as many cells as meet there. The geometry must be ``H1``."""
+"""``extract_edges``: the edges of set ``name`` (all of them by default) as line cells on the same points, each running from its lower point id to its higher. Values on edges become the lines' cell values, and edge sets cell sets; point fields (``H1``, values on points) stay on the same points -- an order-2 field's or geometry's values at the points, the lines being linear. Cell fields are left behind: an edge has as many cells as meet there. The geometry must be ``H1``."""
 
 import tack
 from tack.arrays import CountingArray

@@ -100,8 +100,9 @@ class Space:
         """The layout a view of this space reads for ``group``, beside the values."""
         return {}
 
-    def extra_mixins(self):
-        """Mixins a field view of this space needs beyond its own and the storage."""
+    def extra_mixins(self, group):
+        """Mixins a field view of this space needs for ``group`` beyond its own and
+        the storage."""
         return ()
 
     def mixin_for(self, key):
@@ -167,8 +168,9 @@ def _interiors(cells, flags):
 class H1(Space):
     """Continuous: values shared by the cells around them, interpolated by the shape's
     functions. Order 1 holds one value per point -- today's point data; order 2
-    adds one per edge, per quad face and per hexahedron, for the shape's
-    quadratic Lagrange functions (tetrahedra, hexahedra, wedges)."""
+    adds one per edge, per quad face and per hexahedron or quad, for the shape's
+    quadratic Lagrange functions (tetrahedra, hexahedra, voxels, wedges,
+    triangles, quads and pixels)."""
 
     on = "points"
     interpolated = True
@@ -193,10 +195,15 @@ class H1(Space):
                 if group.count and not group.shape.NUM_QUADRATIC:
                     raise NotImplementedError(
                         f"H1 order 2 on {group.shape.__name__} cells is not supported yet; "
-                        "it is on tetrahedra, hexahedra, voxels and wedges")
-            edges, faces = topology.edges(), topology.faces()
+                        "it is on tetrahedra, hexahedra, voxels, wedges, triangles, quads "
+                        "and pixels")
+            edges = topology.edges()
             base = topology.num_points + edges.num_edges
-            nf = faces.num_faces
+            # Only quad faces of solids hold values: a mesh of tetrahedra, triangles
+            # or quads needs no faces derived.
+            faces = (topology.faces() if any(g.shape.QUADRATIC_FACES for g in topology.groups())
+                     else None)
+            nf = faces.num_faces if faces is not None else 0
             n = topology.num_cells
             idt = ids.at_least(topology.id_dtype, base + nf + n)
             flags = tack.empty((nf,), tack.i32)
@@ -230,22 +237,25 @@ class H1(Space):
             return {}
         face_dofs, cell_dofs, _ = self._layout()
         topology = self.topology
-        edges, faces = topology.edges(), topology.faces()
         attributes = {"edge_base": topology.num_points, "face_dofs": face_dofs,
                       "cell_dofs": cell_dofs}
         if group is not None:
             root = group.root
+            edges = topology.edges()
             attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
-                              edge_start=edges.group_starts[root],
-                              side_face=faces.side_face, side_slot=faces.side_slot,
-                              side_orientation=faces.side_orientation,
-                              face_start=faces.group_starts[root])
+                              edge_start=edges.group_starts[root])
+            if group.shape.QUADRATIC_FACES:
+                faces = topology.faces()
+                attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
+                                  side_orientation=faces.side_orientation,
+                                  face_start=faces.group_starts[root])
         return attributes
 
-    def extra_mixins(self):
+    def extra_mixins(self, group):
         if self.order == 1:
             return ()
-        return (views._EdgeIncidence, views._FaceIncidence)
+        faces = (views._FaceIncidence,) if group.shape.QUADRATIC_FACES else ()
+        return (views._EdgeIncidence, *faces, views.quadratic_faces(group.shape))
 
 
 @tack.kernel

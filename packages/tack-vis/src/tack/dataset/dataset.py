@@ -109,7 +109,7 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
         mixins.append(views.point_address(group.kind, storage, aligned))
     if not space_mixin:
         # A geometry's incidence is the domain view's own.
-        mixins.extend(space.extra_mixins())
+        mixins.extend(space.extra_mixins(group))
     mixins.append(storage)
     # Reading only the points' values -- an order-2 geometry on faces and edges
     # -- needs none of the space's own layout.
@@ -163,8 +163,10 @@ def _geometry_parts(data, group, kind):
     if geometry.space.order == 2 and kind == "cells":
         # Curved: the domain view's incidence gives the quadratic nodes' ids.
         data.topology.edges()
-        data.topology.faces()
-        return _space_parts(geometry, group, views._H1Order2Geometry)
+        if group.shape.QUADRATIC_FACES:
+            data.topology.faces()
+        mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
+        return [*mixins, views.quadratic_faces(group.shape)], attributes
     # Faces and edges of a curved geometry see its corners.
     return _space_parts(geometry, group, views._H1Geometry, corners_only=True)
 

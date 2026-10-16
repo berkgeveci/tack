@@ -152,7 +152,7 @@ refused unless the caller asks for the repair.
 
 | Space | Values | Interpolated | Topologies |
 |---|---|---|---|
-| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels and wedges |
+| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels |
 | `L2(data, order=1)` | each cell's own copies: order 1 one per corner, order 0 one per cell; `order` may be an array, one order per cell | yes, discontinuous | shape-based |
 | `Constant(data)` | one per cell | yes, constant in the cell | all |
 | `Values(data, on, oriented=False)` | one per point, edge, face or cell: data about the entity, with no basis | no | all |
@@ -500,7 +500,7 @@ of input cell `ids[i]` (`Pieces`), or a point between two input points
 
 | Input field | On the output |
 |---|---|
-| point data (`H1`, values on points) | through the point map; an order-2 field brings its corner values; interpolated only if floating point |
+| point data (`H1`, values on points) | through the point map; an order-2 field brings its corner values, except on a solid's surface (`extract_surface`), whose nodes are the solid's, gathered at order 2; interpolated only if floating point |
 | cell data (`Constant`, values on cells) | through the cell map, keeping its kind |
 | `L2` (DG) data | copied cell by cell, each cell keeping its order, when whole cells are kept (not pieces) and the output has reference cells |
 | values on faces | through the face map, oriented values negated where a face is turned; or onto the output's cells when they are input faces (a surface) |

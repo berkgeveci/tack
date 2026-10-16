@@ -151,9 +151,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   ids) as line cells on the same points, each from its lower point id to its
   higher, as VTK's `vtkExtractEdges` finds them: values on edges become
   cell values and edge sets cell sets; cell fields are left behind.
+- Order-2 `H1` on triangles, quads and pixels: the six-node triangle and the
+  nine-node biquadratic quad, the faces of the tetrahedron's, wedge's and
+  hexahedron's order-2 elements. A mesh without quad faces of solids
+  (tetrahedra, triangles, quads) no longer derives faces for its order-2
+  layout.
 
 ### Changed
 
+- `extract_surface` keeps a solid's order-2 `H1` fields and geometry at
+  order 2, the trace of the solid's: a face's corners, edge middles and (a
+  quad's) center are the surface cell's nodes, so their values are gathered
+  by entity id, not evaluated. It kept only the points' values before; a
+  2D mesh's boundary lines still do.
 - Offsets and ids that are a linear ramp are computed where they are read
   (`CountingArray`) rather than stored: an order-0 `L2` space's offsets, a
   structured grid's `L2` offsets, and the edge groups' ids, which were also

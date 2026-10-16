@@ -472,6 +472,64 @@ def test_external_faces_of_a_grid(backend, form):
     assert ((points[rows].mean(axis=1) - centers) * normal).sum(axis=1).min() > 0
 
 
+def _quadratic(x):
+    return x[:, 0] ** 2 + x[:, 1] * x[:, 2] - 0.5 * x[:, 2]
+
+
+def _bend(x):
+    return x + 0.1 * np.c_[x[:, 1] ** 2, x[:, 2] ** 2, x[:, 0] ** 2]
+
+
+@pytest.mark.parametrize("mesh", ["rectilinear", "explicit", "tetrahedra"])
+def test_order_two_stays_order_two_on_the_surface(backend, mesh):
+    """The surface's nodes are the solid's: a face's corners, edge middles and (a
+    quad's) center. An order-2 field and an order-2 geometry are gathered onto
+    them, exactly; the surface used to keep only the points' values."""
+    data = _grid(4, "rectilinear" if mesh == "rectilinear" else "explicit")
+    if mesh == "tetrahedra":
+        data = td.tetrahedralize(data)
+    space = td.H1(data, order=2)
+    nodes = td.project(data, data.geometry, space).values.numpy()
+    data.fields["u"] = td.Field(space, _scalars(_quadratic(nodes)))
+    surface = td.extract_surface(data)
+    u = surface.fields["u"]
+    assert u.space is td.H1(surface, order=2)
+    at = td.project(surface, surface.geometry, u.space).values.numpy()
+    np.testing.assert_allclose(u.values.numpy(), _quadratic(at), atol=1e-5)
+    # Inside a face too: the quadratic is in the triangle's and the quad's spaces.
+    centers = td.cell_centers(surface).values.numpy()
+    np.testing.assert_allclose(td.values_at_centers(surface, "u").values.numpy(),
+                               _quadratic(centers), atol=1e-5)
+    # A curved geometry: the surface's nodes where the solid's are.
+    data.geometry = td.Field(space, tack.array(_bend(nodes).astype(np.float32), tack.vec3()))
+    curved = td.extract_surface(data, fields=[])
+    assert curved.geometry.space is td.H1(curved, order=2)
+    np.testing.assert_allclose(curved.geometry.values.numpy(), _bend(at), atol=1e-5)
+
+
+def test_an_order_two_surface_needs_no_faces_of_its_own(backend):
+    """Two hexahedra sharing one edge: four boundary quads meet there, which no face
+    of the surface could have. Its order-2 layout has no face values, so it
+    derives no faces."""
+    points = np.array([(x, y, z) for z in (0, 1) for y in (0, 1, 2) for x in (0, 1, 2)],
+                      np.float32)
+    pid = lambda i, j, k: i + 3 * (j + 3 * k)
+    hexes = [[pid(i, j, 0), pid(i + 1, j, 0), pid(i + 1, j + 1, 0), pid(i, j + 1, 0),
+              pid(i, j, 1), pid(i + 1, j, 1), pid(i + 1, j + 1, 1), pid(i, j + 1, 1)]
+             for i, j in ((0, 0), (1, 1))]
+    data = td.DataSet(td.UnstructuredTopology([12, 12], [0, 8, 16], np.concatenate(hexes),
+                                              num_points=len(points)), points)
+    space = td.H1(data, order=2)
+    nodes = td.project(data, data.geometry, space).values.numpy()
+    data.fields["u"] = td.Field(space, _scalars(_quadratic(nodes)))
+    surface = td.extract_surface(data)
+    assert surface.num_cells == 12
+    with pytest.raises(ValueError, match="shared by more than two cells"):
+        surface.topology.faces()
+    at = td.project(surface, surface.geometry, td.H1(surface, order=2)).values.numpy()
+    np.testing.assert_allclose(surface.fields["u"].values.numpy(), _quadratic(at), atol=1e-5)
+
+
 @tack.kernel
 def _rows_of(cells, out):
     for c in cells:

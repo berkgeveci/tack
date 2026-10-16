@@ -532,6 +532,27 @@ class Triangle(_Surface):
             return tack.vec3(-1.0, -1.0, 0.0)
         return self.parametric_point(j)
 
+    #: The six-node triangle, a tetrahedron's face: corners and edge middles.
+    NUM_QUADRATIC = 6
+
+    @tack.func
+    def quadratic_function(self, k, pc):
+        n = self.quadratic_node(k)
+        return (_p2(1.0 - n[0] - n[1], 1.0 - pc[0] - pc[1])
+                * _p2(n[0], pc[0]) * _p2(n[1], pc[1]))
+
+    @tack.func
+    def quadratic_gradient(self, k, pc):
+        n = self.quadratic_node(k)
+        m0 = 1.0 - n[0] - n[1]
+        x0 = 1.0 - pc[0] - pc[1]
+        f0 = _p2(m0, x0)
+        f1 = _p2(n[0], pc[0])
+        f2 = _p2(n[1], pc[1])
+        d0 = _p2_derivative(m0, x0) * f1 * f2               # by x0, which falls with r, s
+        return tack.vec3(f0 * _p2_derivative(n[0], pc[0]) * f2 - d0,
+                         f0 * f1 * _p2_derivative(n[1], pc[1]) - d0, 0.0)
+
     @tack.func
     def is_inside(self, pc, tol):
         return -tol <= pc[0] and -tol <= pc[1] and pc[0] + pc[1] <= 1.0 + tol
@@ -580,6 +601,22 @@ class _Quadrilateral(_Surface):
         # d/dx of _linear(a, x) is +1 at the end a = 1 and -1 at a = 0.
         return tack.vec3((2.0 * a - 1.0) * _linear(b, pc[1]),
                          _linear(a, pc[0]) * (2.0 * b - 1.0), 0.0)
+
+    #: The nine-node biquadratic quad, a hexahedron's face: corners, edge
+    #: middles and the center.
+    NUM_QUADRATIC = 9
+    QUADRATIC_INTERIOR = 1
+
+    @tack.func
+    def quadratic_function(self, k, pc):
+        n = self.quadratic_node(k)
+        return _q1d(n[0], pc[0]) * _q1d(n[1], pc[1])
+
+    @tack.func
+    def quadratic_gradient(self, k, pc):
+        n = self.quadratic_node(k)
+        return tack.vec3(_q1d_derivative(n[0], pc[0]) * _q1d(n[1], pc[1]),
+                         _q1d(n[0], pc[0]) * _q1d_derivative(n[1], pc[1]), 0.0)
 
     @tack.func
     def is_inside(self, pc, tol):

@@ -920,7 +920,8 @@ def _quadratic_at(shape, pcs, values, gradients, nodes, n):
                 nodes[k] = shape.quadratic_node(k)
 
 
-@pytest.mark.parametrize("name", ["Tetra", "Hexahedron", "Voxel", "Wedge"])
+@pytest.mark.parametrize("name", ["Tetra", "Hexahedron", "Voxel", "Wedge", "Triangle", "Quad",
+                                  "Pixel"])
 def test_quadratic_bases(backend, name):
     """Each shape's quadratic Lagrange functions: one at their own node and zero at
     the others, summing to one, with gradients their finite differences."""
