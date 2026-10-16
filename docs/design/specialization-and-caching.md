@@ -354,7 +354,7 @@ together they were the largest part of a dispatch's host time (90 of about
 `resolve_variant` first tries `_fast_resolve`: a call whose *signature*
 was seen before reuses what that call resolved.
 
-The signature (`_call_signature`) is read straight off the arguments: a
+The signature (`_call_signature`) is read straight off the arguments: an
 array's dtype, shape and element layout (memoized on the array as
 `_sig`); a texture's extents; a scalar's kind and, for integers, the type
 its value selects; a template object's class token, its class constants'

@@ -19,11 +19,11 @@
        [CPU Threading Policy](design/cpu-threading.md).
     3. **CPU disjoint-array specialization (2026-10-03).** The CPU backend
        now compiles a separate `noalias` variant for calls whose written
-       fields don't overlap other fields. See
+       arrays don't overlap other arrays. See
        [Memory and Aliasing](design/memory-and-aliasing.md).
     4. **Queued GPU launches (Metal 2026-10-09; CUDA, HIP and Level Zero
        2026-10-14).** A kernel call on a GPU backend returns once the launch
-       is queued, and the host waits only when it reads a field or calls
+       is queued, and the host waits only when it reads an array or calls
        `tack.sync()`. The two reproduce scripts below time a call without
        `tack.sync()`, so their GPU columns would now time the launch rather
        than the kernel.

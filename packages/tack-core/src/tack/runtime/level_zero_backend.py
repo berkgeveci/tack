@@ -1747,7 +1747,7 @@ class LevelZeroBackend(GPUBackend):
         Under `_launch_lock`: the deferred free looks at what the queue has
         yet to run, and two threads freeing at once, or one freeing while
         another appends, crashed the driver (25.05; four threads launching
-        and dropping arrays, within a few hundred frees). Reentrant, so a
+        and dropping arrays, within a few hundred frees). Reentrant, so an
         array collected while its thread holds the lock is freed in turn.
         """
         ze = _get_ze()

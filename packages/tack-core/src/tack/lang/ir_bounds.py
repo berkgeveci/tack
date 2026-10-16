@@ -1,7 +1,7 @@
 """Debug mode's bounds checks: the parts shared by lowering, the passes and dispatch.
 
 With ``tack.set_debug(True)`` (or ``TACK_DEBUG=1``) every index of an array
-or array access is checked against its extent, one dimension at a time.
+access is checked against its extent, one dimension at a time.
 Lowering wraps each access's flat index in an ``IRBoundsCheck``, which is -1
 when an index is out of bounds and records the first violation in a hidden
 errors array; ``guard_accesses`` then skips every access whose index is
@@ -47,7 +47,7 @@ class BoundsSite(NamedTuple):
 
 
 def guard_accesses(function: ir.IRFunction):
-    """Skip each array or array access of a debug kernel whose index is negative.
+    """Skip each array access of a debug kernel whose index is negative.
 
     Runs once types are annotated: a skipped load or atomic yields a zero
     of its own type. A load becomes ``index >= 0 ? load : 0`` (only the

@@ -226,7 +226,7 @@ def _set_policy(mode, nodes):
 
 @requires_numa
 def test_a_bound_thread_keeps_its_policy_and_its_node():
-    """Under ``numactl --membind=0`` (here: the same policy set by hand) a
+    """Under ``numactl --membind=0`` (here: the same policy set by hand) an
     array's pages stay on node 0, and the policy is still the binding
     afterwards -- not the default, which is what restoring the default
     unconditionally left behind.

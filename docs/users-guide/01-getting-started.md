@@ -43,7 +43,7 @@ pages instead of using checkout-relative paths such as `docs/examples/heat.py`.
 An installed release may lack APIs added in the checkout. If an example uses
 an unavailable API, check the release notes or use the source installation above.
 A bare `tack-core` install does not include the CPU JIT dependency; the `[cpu]`
-extra does. The visualization and rendering packages also need a working backend.
+extra does. The visualization package also needs a working backend.
 
 ## Your First Kernel
 
@@ -146,7 +146,7 @@ same kernel loads it instead of compiling it; see
 
 Read [From Python to a Tack program](12-execution-model.md) to understand the
 host/kernel boundary, then work through [Heat diffusion](tutorials/heat.md).
-The [tutorial gallery](tutorials/index.md) offers seven complete programs with
+The [tutorial gallery](tutorials/index.md) offers six complete programs with
 figures, downloadable source, and checks of their results.
 
 The numerical tutorials need NumPy and the selected Tack backend. To save their

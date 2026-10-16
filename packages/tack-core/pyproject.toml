@@ -72,5 +72,5 @@ packages = ["src/tack"]
 [project.urls]
 Homepage = "https://github.com/berkgeveci/tack"
 Repository = "https://github.com/berkgeveci/tack"
-Documentation = "https://github.com/berkgeveci/tack/tree/main/docs"
+Documentation = "https://berkgeveci.github.io/tack/"
 Issues = "https://github.com/berkgeveci/tack/issues"

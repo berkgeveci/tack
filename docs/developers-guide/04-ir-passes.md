@@ -45,11 +45,12 @@ attribute dictionaries. Clone regression tests cover every registered kind,
 metadata ownership and cached dispatch.
 
 `uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`
-compares generic copying and specialized cloning on example 33's pristine
-and typed CPU IR. It prepares the scene before clearing the variant cache,
-then captures the render kernels and alternates copy methods on each graph.
-It reports median and individual samples plus unique-node and occurrence
-counts. Setup, compilation and rendering are outside those timings; this
+compares generic copying and specialized cloning on the pristine and typed
+CPU IR of dataset filters: it runs a contour and a clip of VTK's wavelet once,
+clears the variant cache, captures their kernels on a second run and
+alternates copy methods on each graph. It reports median and individual
+samples plus unique-node and occurrence counts. Setup, compilation and
+filtering are outside those timings; this
 measures copying cost, not total cold compilation or GPU performance.
 
 ## Verification (`ir_verify.py`)
@@ -103,7 +104,7 @@ concrete sizes.
 
 Annotates each `IRParam` with:
 - `type_annotation` — a `ScalarType` (f32, i32, i64, etc.)
-- `_is_array` — True if the argument is a `Array` or `Texture3D`
+- `_is_array` — True if the argument is an `Array` or `Texture3D`
 - `_is_texture` — True if the argument is a `Texture3D`
 
 Type rules:
@@ -204,8 +205,8 @@ An `IRBoundsCheck` is `i64`.
 ## Bounds Guards (`ir_bounds.py`, debug mode)
 
 `annotate_types` ends with `guard_accesses`, which does nothing unless the
-function was lowered with bounds checks (`bounds_sites`). Each user array or
-array access whose index is an `IRBoundsCheck` is skipped when that index
+function was lowered with bounds checks (`bounds_sites`). Each user array
+access whose index is an `IRBoundsCheck` is skipped when that index
 is negative: a load becomes `index >= 0 ? load : 0` with a zero of the
 load's own type (hence after typing), and a store or atomic runs under
 `if index >= 0`. The index is evaluated twice, which is harmless because

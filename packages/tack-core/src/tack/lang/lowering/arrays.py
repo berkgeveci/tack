@@ -90,7 +90,7 @@ class ArrayAccess:
                 + ("s" if len(shape) == 1 else " elements"))
         array_node, index_node, components = self._visit_store_location(target, components)
         stmts = []
-        # Each component store repeats the index, so one that loads from a
+        # Each component store repeats the index, so one that loads from an
         # array is read before the first store can change it.
         if any(isinstance(n, ir.IRArrayLoad) for n in walk_ir(index_node)):
             index_node = self._capture_value(index_node, stmts)
@@ -106,7 +106,7 @@ class ArrayAccess:
 
         The cast makes a float index name an element (127.7 is element
         127) before it is scaled by the width. It is 64-bit: a narrower
-        one would wrap the index, or its product with the width, for a
+        one would wrap the index, or its product with the width, for an
         array of more than 2**31 components.
         """
         return ir.IRCast(value=index, dtype=i64)

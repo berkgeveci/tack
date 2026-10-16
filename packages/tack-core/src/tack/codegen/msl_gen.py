@@ -93,7 +93,7 @@ def _float_atomic_extrema_helpers(ops) -> list:
     return lines
 
 
-# The function a kernel's body moves to when it has a loop that stores to a
+# The function a kernel's body moves to when it has a loop that stores to an
 # array. Generated variables carry the `tack_var_` prefix, so it cannot
 # collide with one.
 _BODY_FUNCTION = "__tack_body__"

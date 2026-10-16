@@ -134,7 +134,7 @@ a template once. Building is `Kernel._lower`, which asks the disk cache
 raises before it is stored, so it is never cached, in memory or on disk.
 
 In debug mode (`tack.set_debug(True)` or `TACK_DEBUG=1`) lowering wraps
-each array and array access's flat index in an `IRBoundsCheck`, which is
+each array access's flat index in an `IRBoundsCheck`, which is
 `-1` when an index is out of bounds, after recording the first violation
 in a hidden errors array; leading and flat extents are `IRArrayExtent`
 loads from a hidden extents array, so no extent is compiled in. The two

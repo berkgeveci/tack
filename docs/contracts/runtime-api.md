@@ -167,7 +167,7 @@ Turns debug mode on or off for every kernel launched from then on.
 Tack is imported. `tack.runtime.dispatch.debug_enabled()` reports the
 current setting.
 
-**Debug mode** checks every index of every array and array access, one
+**Debug mode** checks every index of every array access, one
 dimension at a time: an array's leading dimension against its length, the
 others against theirs, a flat index against the element count (a component
 count for a scalar atomic on a vector array), and a local or shared array
@@ -660,7 +660,7 @@ Translated exceptions keep the original as `__cause__`.
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
 | `RuntimeError` | Device start-up failures, compilation and launch failures, unreadable kernel or device-function source, host writes to read-only arrays, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
-| `IndexError` | In debug mode, a launch that indexed an array or array out of bounds; host indexing `f[i]` outside the array | After the launch, from `Kernel.__call__`; host calls |
+| `IndexError` | In debug mode, a launch that indexed an array out of bounds; host indexing `f[i]` outside the array | After the launch, from `Kernel.__call__`; host calls |
 
 **Current behavior:** every dispatch rejection listed on this page and in
 [Backend capabilities](backend-capabilities.md) is raised before the kernel

@@ -248,7 +248,7 @@ dropped as soon as the call returns.
 
 **`array_to_vtk(array, n_components=None, name=None)`** works out the
 layout first, before touching VTK, so a shape mistake is reported as one
-(`ValueError` for a contradictory or non-dividing `n_components`, or for a
+(`ValueError` for a contradictory or non-dividing `n_components`, or for an
 array of three or more dimensions without one). It reshapes the array to
 `(tuples, components)` if needed and passes it to
 `dlpack_support.dlpack_to_vtk`, which consumes the array's `__dlpack__`.
@@ -292,7 +292,7 @@ it starts and creates its own with `cuCtxCreate` only if there is none; see
 ### Why a pointer is not enough
 
 A Level Zero USM pointer is meaningful only inside the context that
-allocated it, and DLPack has no array for a context. `kDLOneAPI` and an
+allocated it, and DLPack has no field for a context. `kDLOneAPI` and an
 address say *which device*, not *which context*. Two libraries that each
 create their own context therefore cannot legitimately exchange pointers,
 however well DLPack is implemented on both sides.

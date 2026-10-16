@@ -297,6 +297,53 @@ jobs:
           /tmp/gpuenv/bin/python -m pytest -q \
             packages/tack-core/tests/test_backend_isolation.py
 
+  # ── Built wheels ───────────────────────────────────────────────────
+  # Every other job runs the source tree. This one builds both wheels and
+  # installs them in a fresh environment, as a user would, so a packaging
+  # mistake (tack-vis shipping its own tack/__init__.py, which runs instead
+  # of tack-core's when it comes first) fails here.
+  wheels:
+    name: Built wheels install and import
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
+
+      - name: Build both wheels
+        run: |
+          uv build --wheel --out-dir dist packages/tack-core
+          uv build --wheel --out-dir dist packages/tack-vis
+          python3 - <<'EOF'
+          import glob, zipfile
+          vis = zipfile.ZipFile(glob.glob("dist/tack_vis-*.whl")[0]).namelist()
+          assert "tack/__init__.py" not in vis, "tack-vis's wheel ships tack/__init__.py"
+          assert any(n.startswith("tack/dataset/") for n in vis), "no tack.dataset in tack-vis"
+          print("OK: tack-vis's wheel is a namespace portion of tack")
+          EOF
+
+      - name: Install the wheels in a fresh environment
+        run: |
+          uv venv /tmp/wheelenv --python 3.13
+          VIRTUAL_ENV=/tmp/wheelenv uv pip install "$(ls dist/tack_core-*.whl)[cpu]" \
+            dist/tack_vis-*.whl pytest
+
+      - name: Import and run tests from the installed wheels
+        run: |
+          (cd /tmp && /tmp/wheelenv/bin/python -c "import tack, tack.dataset as td; \
+            assert 'site-packages' in tack.__file__, tack.__file__; \
+            print(td.contour(td.wavelet(4), 'RTData', 150.0).num_cells, 'triangles')")
+          /tmp/wheelenv/bin/python -m pytest -q \
+            packages/tack-vis/tests/test_namespace.py \
+            packages/tack-vis/tests/test_algorithm_contracts.py
+
   # ── Examples ───────────────────────────────────────────────────────
   # The shipped examples are the code new users copy, and they exercise
   # combinations the unit tests do not — templates feeding a solver, a

@@ -37,7 +37,8 @@ def check_quickstarts():
             script = Path(temporary) / f"{name}.py"
             script.write_text(code)
             print(f"Checking Markdown quick start: {page.name} on cpu", flush=True)
-            subprocess.run([sys.executable, str(script)], check=True, timeout=120)
+            subprocess.run([sys.executable, str(script)], check=True, timeout=120,
+                           cwd=temporary)
             checked += 1
 
         # Mark complete examples beyond a page's opening with an HTML comment:
@@ -52,7 +53,8 @@ def check_quickstarts():
                 script = Path(temporary) / f"{page.stem}-{name}.py"
                 script.write_text(code)
                 print(f"Checking Markdown example: {page.name}/{name} on cpu", flush=True)
-                subprocess.run([sys.executable, str(script)], check=True, timeout=120)
+                subprocess.run([sys.executable, str(script)], check=True, timeout=120,
+                               cwd=temporary)
                 checked += 1
     return checked
 

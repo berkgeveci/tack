@@ -327,5 +327,5 @@ host next waits for the device: a read of an array, or `tack.sync()`.
 
 To find an index out of bounds, turn on
 [debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
-instead: it checks every array and array access and raises `IndexError`
+instead: it checks every array access and raises `IndexError`
 naming the first bad one.
