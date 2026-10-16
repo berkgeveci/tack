@@ -1,7 +1,7 @@
 """``values_at_centers``: ``field`` evaluated at each cell's parametric center, through its basis."""
 
 import tack
-from tack.dataset.algorithms._common import _field
+from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.carry import _like
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values, reference_cells
@@ -17,7 +17,7 @@ def _at_centers(cells, u, out):
 
 def values_at_centers(data, field):
     """``field`` evaluated at each cell's parametric center, through its basis."""
-    field = _field(data, field)
+    field = _with_basis(data, _field(data, field))
     reference_cells(data.topology, "values_at_centers")
     out = _like(field.values, data.num_cells)
     for_each(_at_centers, data, "cells", field, out)

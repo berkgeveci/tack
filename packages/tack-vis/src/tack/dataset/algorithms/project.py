@@ -5,7 +5,7 @@ are shortcuts."""
 import tack
 from tack.arrays import dtype_of, materialize
 from tack.dataset import ids
-from tack.dataset.algorithms._common import _field
+from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.algorithms.traces import traces
 from tack.dataset.buckets import bucket_order
@@ -147,16 +147,6 @@ def _onto_nodes(data, field, space, values):
 
 
 # ── The entry point ─────────────────────────────────────────────────
-
-def _with_basis(data, field):
-    """Values on points or cells read as the space they are: order-1 H1, Constant."""
-    space = field.space
-    if isinstance(space, Values) and space.on == "points":
-        return Field(H1(data), field.values)
-    if isinstance(space, Values) and space.on == "cells":
-        return Field(Constant(data), field.values)
-    return field
-
 
 def project(data, field, space):
     """``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:

@@ -137,3 +137,25 @@ def test_extract_cells_refuses_cell_ids_outside_the_topology(backend):
     with pytest.raises(IndexError, match=r"2 cell ids lie outside \[0, 8\)"):
         td.extract_cells(data, [8, -1, 3])
     assert td.extract_cells(data, [0, 7]).num_cells == 2
+
+
+def _on_points(data):
+    """A linear function as values on the points, and as the H1 field it is."""
+    x = data.positions()
+    values = (x[:, 0] + 2 * x[:, 1] - x[:, 2]).astype(np.float32)
+    return (td.Field(td.Values(data, "points"), tack.array(values)),
+            td.Field(td.H1(data), tack.array(values)))
+
+
+@pytest.mark.parametrize("operation", ["contour", "gradients", "values_at_centers"])
+@pytest.mark.parametrize("dims", [(3, 3, 3), (4, 3)])
+def test_values_on_points_read_as_order_1_h1(backend, operation, dims):
+    """Values on points have a basis, order-1 H1, as project and threshold took
+    them; 3D contour refused them and gradients and values_at_centers failed
+    ("cannot be viewed while iterating cells")."""
+    data = td.uniform_grid(dims)
+    points, h1 = _on_points(data)
+    run = {"contour": lambda f: td.contour(data, f, 2.0).positions(),
+           "gradients": lambda f: td.gradients(data, f).values.numpy(),
+           "values_at_centers": lambda f: td.values_at_centers(data, f).values.numpy()}[operation]
+    np.testing.assert_allclose(run(points), run(h1), atol=1e-6)

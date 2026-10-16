@@ -49,6 +49,21 @@ def _field(data, field):
     return field
 
 
+def _with_basis(data, field):
+    """Values on points or cells read as the space they are: order-1 ``H1`` and
+    ``Constant``, so every algorithm that takes a field with a basis takes them
+    (``point_ids``, a gradient at the points)."""
+    from tack.dataset.dataset import Field
+    from tack.dataset.spaces import H1, Constant, Values
+
+    space = field.space
+    if isinstance(space, Values) and space.on == "points":
+        return Field(H1(data), field.values)
+    if isinstance(space, Values) and space.on == "cells":
+        return Field(Constant(data), field.values)
+    return field
+
+
 def _floating_dtype(*values):
     """Fractional arithmetic: f64 for an f64 operand, otherwise f32.
 

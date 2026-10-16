@@ -2,10 +2,9 @@
 
 import tack
 from tack import arrays
-from tack.dataset.algorithms._common import _field
+from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.algorithms._extract import _keep_cells
-from tack.dataset.dataset import Field
-from tack.dataset.spaces import H1, Constant, Values
+from tack.dataset.spaces import Constant
 
 __all__ = ['threshold']
 
@@ -52,10 +51,8 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
     field = _field(data, field)
     if arrays.width_of(field.values):
         raise TypeError("threshold needs a scalar field")
+    field = _with_basis(data, field)
     space = field.space
-    if isinstance(space, Values) and space.on in ("points", "cells"):
-        field = Field((H1 if space.on == "points" else Constant)(data), field.values)
-        space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"threshold needs a field on the points or cells, not {space!r}")
     return _keep_cells(data, _threshold_flags(data, field, lower, upper, all_points), fields)

@@ -4,7 +4,7 @@ import tack
 from tack import arrays
 from tack.arrays import materialize, size_of, width_of
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _field, _vectors
+from tack.dataset.algorithms._common import _field, _vectors, _with_basis
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values, reference_cells
@@ -98,7 +98,7 @@ def gradients(data, field, at="cells"):
     into a world gradient, so the two need not share a space. Cells below three
     dimensions get zero, and a cell of no volume NaN (its Jacobian is singular). ``flow_quantities`` derives divergence, vorticity and
     the Q-criterion from a vector field's gradient."""
-    field = _field(data, field)
+    field = _with_basis(data, _field(data, field))
     reference_cells(data.topology, "gradients")
     if at not in ("cells", "points"):
         raise ValueError(f"gradients are at 'cells' or 'points', not {at!r}")

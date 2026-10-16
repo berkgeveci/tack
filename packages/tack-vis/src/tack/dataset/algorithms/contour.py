@@ -4,7 +4,14 @@ import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
-from tack.dataset.algorithms._common import _close, _compact, _crossing, _field, _scalar_floating
+from tack.dataset.algorithms._common import (
+    _close,
+    _compact,
+    _crossing,
+    _field,
+    _scalar_floating,
+    _with_basis,
+)
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.carry import Interpolate, Pieces, carry
 from tack.dataset.dataset import Field
@@ -130,6 +137,8 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
         if data.topology.dimension == 1:
             raise NotImplementedError("contour of polylines (which would give points) is not built")
         return _polyhedral_contour(data, field, isovalue, fields)
+    field = _with_basis(data, field)
+    space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"contour needs a field with a basis on the cells, not {space!r}")
     per_cell = 0 if isinstance(space, H1) and isinstance(data.geometry.space, H1) else 1
