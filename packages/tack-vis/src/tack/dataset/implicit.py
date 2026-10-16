@@ -118,9 +118,16 @@ class Box:
 @tack.device_class
 class Planes:
     """The convex region below every one of several planes (a frustum, a clipping
-    box at any angle): the largest of their signed distances."""
+    box at any angle): the largest of their signed distances.
 
-    def __init__(self, origins, normals):
+    The planes are stored in an array of ``dtype``, f32 by default; pass
+    ``dtype=tack.f64`` for f64 data, so the distances are computed at its
+    precision. (The other functions hold Python numbers, which take the data's
+    precision on their own.)"""
+
+    def __init__(self, origins, normals, dtype=tack.f32):
+        if dtype not in (tack.f32, tack.f64):
+            raise TypeError(f"Planes stores f32 or f64, not {dtype}")
         origins = np.asarray(origins, float).reshape(-1, 3)
         normals = np.asarray(normals, float).reshape(-1, 3)
         if len(origins) == 0 or origins.shape != normals.shape:
@@ -128,8 +135,8 @@ class Planes:
         lengths = np.linalg.norm(normals, axis=1)
         if not (lengths > 0).all():
             raise ValueError("a plane's normal must not be zero")
-        rows = np.hstack([origins, normals / lengths[:, None]]).astype(np.float32)
-        self.planes = tack.empty((rows.size,))
+        rows = np.hstack([origins, normals / lengths[:, None]]).astype(dtype.numpy_dtype)
+        self.planes = tack.empty((rows.size,), dtype)
         tack.copyto(self.planes, rows.reshape(-1))
 
     @tack.func

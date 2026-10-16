@@ -351,6 +351,37 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `Function(ramp, n)`) then put some crossings at an edge's end. HIP now
   fuses multiply and add only inside one expression, as the language
   contract says.
+- `extract_surface` checked neither face ids nor a face `Set`'s topology:
+  an id past the face count, or negative, was read out of bounds and gave
+  wrong cells silently, and another topology's set was used as this one's.
+  Both are refused now, as `extract_cells` refuses them; out-of-range ids
+  raise `IndexError`, counted on the ids' device.
+- `tack.algorithms.norm`, `var`, `std`, `absmax`, `count_nonzero`, `dot`
+  and `histogram` read a given `n` as scalar components of a vector array
+  (`norm(v, n=2)` of 3-vectors took two components); `n` now counts
+  vectors.
+- Vector implicit arrays (`UniformCoordinates`, `CartesianProduct`,
+  `Components`, a vector `ConstantArray`) failed to compile in `gather`,
+  `unique`, `reduce_by_key` and the statistics; they give what the same
+  vectors stored give. `unique` takes vector keys, stored or implicit.
+- A kernel with a `return` shared one result array across calls, so two
+  threads calling it at once could read each other's result. It is kept
+  per thread.
+- `vtk_to_dataset` refused a grid of `VTK_POLYGON` cells, which is how
+  `dataset_to_vtk` writes a polygonal topology (a polyhedral contour or
+  slice, `as_polygons`); it reads it back as a `PolygonalTopology`. A
+  warped or transformed structured grid, which keeps its topology over
+  explicit coordinates, could not be exported; it is a `vtkStructuredGrid`,
+  and `vtk_to_dataset` reads one.
+- 3D `contour`, `gradients` and `values_at_centers` refused a field of
+  values on points (such as `point_ids` or a gradient at the points), which
+  `project`, `threshold` and 2D contour read as order-1 `H1`; all of them
+  do now.
+- `Planes` stored its planes in f32 whatever the data; `Planes(origins,
+  normals, dtype=tack.f64)` keeps f64 data at its precision.
+- `tack.arrays.Strided` given NumPy data kept a NumPy dtype where a Tack
+  type belongs; it stores the data as the other implicit arrays do.
+  `Cast` converts to all ten scalar types.
 
 ## 0.4.0 — 2026-10-13
 
