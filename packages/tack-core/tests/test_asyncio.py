@@ -258,13 +258,16 @@ def test_sync_async_waits_for_every_device(monkeypatch):
 
     devices = (tack.device("cpu"), serial)
     for device in devices:
-        monkeypatch.setattr(device._backend, "async_marker",
+        # In the instance's dict, so the undo removes it: setattr's would
+        # leave the bound class method on the registry's backend, shadowing
+        # later patches of the class.
+        monkeypatch.setitem(vars(device._backend), "async_marker",
                             lambda d=device: Marker(d))
     asyncio.run(tack.sync_async())
     assert set(devices) <= set(waited)
 
     waited.clear()
-    monkeypatch.setattr(serial._backend, "async_marker",
+    monkeypatch.setitem(vars(serial._backend), "async_marker",
                         lambda: Marker(serial, "device error on serial"))
     with pytest.raises(RuntimeError, match="device error on serial"):
         asyncio.run(tack.sync_async())

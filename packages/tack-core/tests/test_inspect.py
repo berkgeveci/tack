@@ -149,7 +149,7 @@ def test_inspect_takes_the_backends_texture_decision(monkeypatch):
                 seen.append(param.name)
                 param._is_texture = False
 
-    monkeypatch.setattr(backend, "_store_texture_shapes", software_only)
+    monkeypatch.setitem(vars(backend), "_store_texture_shapes", software_only)
 
     @tack.kernel
     def sample(tex, out):

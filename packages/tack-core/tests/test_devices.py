@@ -245,7 +245,10 @@ def test_sync_waits_for_every_device(cpu, monkeypatch):
     serial = tack.device("cpu", num_threads=1)
     waited = []
     for device in (cpu, serial):
-        monkeypatch.setattr(device._backend, "synchronize",
+        # In the instance's dict: setattr's undo would leave the bound class
+        # method on the registry's backend, shadowing later patches of the
+        # class (test_asyncio's).
+        monkeypatch.setitem(vars(device._backend), "synchronize",
                             lambda d=device: waited.append(d))
     tack.sync()
     assert cpu in waited and serial in waited

@@ -169,7 +169,7 @@ def test_gpu_rejects_before_compilation(workgroup_backend, kernel, mode, monkeyp
     def forbidden_build(*args):
         pytest.fail('unsafe collective reached shader compilation')
 
-    monkeypatch.setattr(backend, '_build_variant', forbidden_build)
+    monkeypatch.setitem(vars(backend), '_build_variant', forbidden_build)
     with pytest.raises(ValueError, match='requires uniform workgroup participation'):
         if mode == 'dispatch':
             kernel(data, out, 512)
@@ -196,7 +196,7 @@ def test_cold_partial_groups_rejected(workgroup_backend, count, mode, monkeypatc
     def forbidden_build(*args):
         pytest.fail('partial collective group reached shader compilation')
 
-    monkeypatch.setattr(backend, '_build_variant', forbidden_build)
+    monkeypatch.setitem(vars(backend), '_build_variant', forbidden_build)
     with pytest.raises(ValueError, match=f'complete 256-lane groups.*count {count}'):
         if mode == 'dispatch':
             full_groups_only(data, out, count)
