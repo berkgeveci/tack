@@ -1,9 +1,9 @@
 """Backend fixtures, shared by every package's tests.
 
 Discovers what this machine can run once, at import, and hands it out as
-fixtures. It lives at the repository root because all three packages need
-the same thing and pytest's rootdir is here: a conftest per package meant
-three copies of the loop below, which is the same duplication the fixtures
+fixtures. It lives at the repository root because both packages need the
+same thing and pytest's rootdir is here: a conftest per package meant two
+copies of the loop below, which is the same duplication the fixtures
 exist to remove, one level up.
 
 Fixtures

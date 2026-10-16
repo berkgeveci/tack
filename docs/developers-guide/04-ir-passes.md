@@ -45,11 +45,12 @@ attribute dictionaries. Clone regression tests cover every registered kind,
 metadata ownership and cached dispatch.
 
 `uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`
-compares generic copying and specialized cloning on example 33's pristine
-and typed CPU IR. It prepares the scene before clearing the variant cache,
-then captures the render kernels and alternates copy methods on each graph.
-It reports median and individual samples plus unique-node and occurrence
-counts. Setup, compilation and rendering are outside those timings; this
+compares generic copying and specialized cloning on the pristine and typed
+CPU IR of dataset filters: it runs a contour and a clip of VTK's wavelet once,
+clears the variant cache, captures their kernels on a second run and
+alternates copy methods on each graph. It reports median and individual
+samples plus unique-node and occurrence counts. Setup, compilation and
+filtering are outside those timings; this
 measures copying cost, not total cold compilation or GPU performance.
 
 ## Verification (`ir_verify.py`)

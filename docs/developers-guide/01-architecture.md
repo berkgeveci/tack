@@ -49,7 +49,7 @@ for the full account.
 
 ## Package Structure
 
-Tack is split into three packages in a monorepo:
+Tack is split into two packages in a monorepo:
 
 ```
 packages/

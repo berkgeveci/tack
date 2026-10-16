@@ -97,9 +97,9 @@ a custom operation, or connect a simulation's working arrays to the dataset.
 
 ## Worked examples
 
-The [tutorial gallery](tutorials/index.md) includes seven complete programs:
-heat diffusion, coloured dye, trail-following agents, marching squares, MPM,
-tiled N-body forces and isosurface rendering. Each page explains its data and
+The [tutorial gallery](tutorials/index.md) includes six complete programs:
+heat diffusion, coloured dye, trail-following agents, marching squares, MPM
+and tiled N-body forces. Each page explains its data and
 kernels, includes the complete script, shows output generated from that script,
 and credits its origin. All sources are included in this documentation.
 

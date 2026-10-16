@@ -23,7 +23,7 @@ recorded at `745e01f`.
 
 ## How the suite is organized
 
-`pyproject.toml` sets `testpaths` to the three packages' `tests/`
+`pyproject.toml` sets `testpaths` to the two packages' `tests/`
 directories. The root `conftest.py` probes every backend once at import
 and provides capability fixtures, so which backends a test runs on depends
 on the machine, not on the test file:
@@ -146,8 +146,8 @@ can't silently disappear.
 
 ## Examples and the validation harness
 
-**Example sweep.** `test_examples.py` runs every numbered example in the
-three packages and in the top-level `examples/` directory as a subprocess
+**Example sweep.** `test_examples.py` runs every numbered example in
+`packages/*/examples/` as a subprocess
 with `--arch $TACK_EXAMPLES_ARCH`, which defaults to `cpu`. An example
 skips, with the reason, when it needs an optional third-party package or
 doesn't offer the selected backend. A missing `tack` module is a failure.
