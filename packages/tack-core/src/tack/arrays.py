@@ -396,12 +396,13 @@ class Strided(_Implicit):
     one column of interleaved data, or every n-th value."""
 
     def __init__(self, values, stride, offset=0, size=None):
+        values = _operand(values)
         if width_of(values):
             raise TypeError("Strided reads a scalar field; ExtractComponent reads a vector's")
         self.values = values
         self.stride, self.offset = int(stride), int(offset)
         count = -(-(size_of(values) - self.offset) // self.stride) if size is None else size
-        _metadata(self, count, None, values.dtype)
+        _metadata(self, count, None, dtype_of(values))
 
     @tack.func
     def get(self, k):
@@ -575,8 +576,34 @@ def _to_f64(x):
     return tack.f64(x)
 
 
-_CASTS = {tack.i32: _to_i32, tack.i64: _to_i64, tack.u32: _to_u32, tack.f32: _to_f32,
-          tack.f64: _to_f64}
+@tack.func
+def _to_i8(x):
+    return tack.i8(x)
+
+
+@tack.func
+def _to_u8(x):
+    return tack.u8(x)
+
+
+@tack.func
+def _to_i16(x):
+    return tack.i16(x)
+
+
+@tack.func
+def _to_u16(x):
+    return tack.u16(x)
+
+
+@tack.func
+def _to_u64(x):
+    return tack.u64(x)
+
+
+_CASTS = {tack.i8: _to_i8, tack.u8: _to_u8, tack.i16: _to_i16, tack.u16: _to_u16,
+          tack.i32: _to_i32, tack.u32: _to_u32, tack.i64: _to_i64, tack.u64: _to_u64,
+          tack.f32: _to_f32, tack.f64: _to_f64}
 
 
 def Cast(base, dtype):
@@ -637,6 +664,15 @@ def dtype_of(values):
     return values.scalar_dtype if isinstance(values, _DeviceArray) else values.dtype
 
 
+def element_type(values):
+    """The element type an array of these values stores: ``tack.vec(3, f32)``
+    for 3-vectors of f32, the component type for scalars (a stored array's
+    ``dtype``)."""
+    if isinstance(values, _Implicit):
+        return tack.vec(values.width, values.dtype) if values.width else values.dtype
+    return values.dtype
+
+
 def to_host(values):
     """The values as a host array: ``(size,)`` for scalars, ``(size, width)`` for vectors."""
     return values.numpy()
@@ -654,8 +690,7 @@ def materialize(values):
         return values
     if isinstance(values, _Explicit):
         return values.values
-    dtype = tack.vec(values.width, values.dtype) if values.width else values.dtype
-    out = tack.empty((values.size,), dtype, device=values._device)
+    out = tack.empty((values.size,), element_type(values), device=values._device)
     if values.size:
         _fill(values, out)
     return out
