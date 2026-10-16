@@ -17,6 +17,11 @@ reduction_backend
     Those that reduce on the device rather than through numpy.
 workgroup_backend
     Those with native workgroup execution for cooperative kernels.
+require_idle
+    A function: ``require_idle(threads=None)`` skips the test, with the
+    numbers, when the load average is above half of ``threads`` (the CPUs
+    this process may use, by default). For a test that asserts what the
+    scheduler or the OS did with the machine.
 
 Options
 -------
@@ -131,3 +136,23 @@ def workgroup_backend(request):
     """Run a test once per available backend with workgroup execution."""
     tack.set_default_device(request.param)
     return request.param
+
+
+@pytest.fixture
+def require_idle():
+    """For a test whose assertion is about what the scheduler or the OS did
+    (timings, wake-ups, which node a page landed on): skip it, with the
+    numbers, on a busy host rather than fail. A tolerance that a loaded
+    host passes is better where one exists; this is for where none does."""
+    def require(threads=None):
+        try:
+            load = os.getloadavg()[0]
+        except (AttributeError, OSError):
+            return
+        if threads is None:
+            threads = (len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity")
+                       else os.cpu_count() or 1)
+        if load > threads / 2:
+            pytest.skip(f"needs an idle host: load average {load:.1f} "
+                        f"against {threads} threads")
+    return require
