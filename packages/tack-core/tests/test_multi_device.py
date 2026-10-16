@@ -180,3 +180,112 @@ def test_dlpack_carries_the_device_number(pair):
     imported = tack.from_dlpack(owner)
     assert imported.device == second
     np.testing.assert_array_equal(imported.numpy(), np.arange(16))
+
+
+def test_every_device_runs_a_kernel(pair):
+    """Every device of the type, not just the first two (Perlmutter has four)."""
+    kind = pair[0].type
+    for k in range(tack.device_count(kind)):
+        dev = tack.device(f"{kind}:{k}")
+        x = _on(dev, np.arange(512))
+        out = tack.zeros((512,), device=dev)
+        _affine(x, out, float(k + 1), 0.5)
+        np.testing.assert_allclose(out.numpy(), np.arange(512) * (k + 1) + 0.5)
+        assert out.device.index == k
+
+
+# Another library makes device 1 the thread's before Tack first touches the
+# runtime: an embedding framework's CUDA context there, or hipSetDevice(1).
+# A bare spec then means device 1, and work on device 0 leaves the thread's
+# device as it was. In a fresh process, since a device lives as long as the
+# process and this one has made its devices already.
+_BARE_SPEC_SCRIPTS = {
+    "cuda": """
+from cuda.bindings import driver
+assert driver.cuInit(0)[0] == driver.CUresult.CUDA_SUCCESS
+err, dev = driver.cuDeviceGet(1)
+assert err == driver.CUresult.CUDA_SUCCESS, err
+err, foreign = driver.cuCtxCreate(None, 0, dev)
+assert err == driver.CUresult.CUDA_SUCCESS, err
+
+def threads_own():
+    err, ctx = driver.cuCtxGetCurrent()
+    return int(ctx) == int(foreign)
+""",
+    "hip": """
+from hip import hip
+
+def ok(result):
+    err = result[0] if isinstance(result, tuple) else result
+    return err == hip.hipError_t.hipSuccess
+
+assert ok(hip.hipSetDevice(1))
+
+def threads_own():
+    err, device = hip.hipGetDevice()
+    return ok(err) and int(device) == 1
+""",
+}
+
+_BARE_SPEC_CHECK = """
+import numpy as np
+import tack
+
+@tack.kernel
+def affine(x, out, a, b):
+    for i in range(x.shape[0]):
+        out[i] = x[i] * a + b
+
+bare = tack.device("{kind}")
+assert bare.index == 1, f"'{kind}' made {{bare}}, not the thread's device 1"
+{adopted}
+first = tack.device("{kind}:0")
+for dev, a in ((bare, 2.0), (first, 3.0), (bare, 4.0)):
+    x = tack.array(np.arange(100, dtype=np.float32), device=dev)
+    out = tack.zeros((100,), device=dev)
+    affine(x, out, a, 1.0)
+    assert np.allclose(out.numpy(), np.arange(100) * a + 1.0), (dev, out.numpy()[:4])
+    assert threads_own(), f"work on {{dev}} changed the thread's device"
+print("ok")
+"""
+
+_ADOPTED = {
+    "cuda": 'assert int(bare._backend._context) == int(foreign), "the thread\'s context was not adopted"',
+    "hip": "",
+}
+
+
+@pytest.mark.parametrize("kind", [p for p in _TYPES if p.values[0] != "level_zero"])
+def test_a_bare_spec_takes_the_threads_device(kind, tmp_path):
+    import subprocess
+    import sys
+
+    script = tmp_path / "bare_spec.py"
+    script.write_text(_BARE_SPEC_SCRIPTS[kind]
+                      + _BARE_SPEC_CHECK.format(kind=kind, adopted=_ADOPTED[kind]))
+    proc = subprocess.run([sys.executable, "-u", str(script)],
+                          capture_output=True, text=True, timeout=300)
+    assert proc.returncode == 0 and proc.stdout.strip() == "ok", proc.stdout + proc.stderr
+
+
+@pytest.mark.skipif(not (tack.device_count("cuda") and tack.device_count("hip")),
+                    reason="needs a CUDA and a HIP device")
+def test_cuda_and_hip_in_one_process():
+    """Both runtimes in one process (illyad: an H100 beside the MI210s),
+    work interleaved between them."""
+    tack.set_default_device("cpu")
+    devices = tack.device("cuda:0"), tack.device("hip:0")
+    xs = [_on(dev, np.full(256, k + 1)) for k, dev in enumerate(devices)]
+    outs = [tack.zeros((256,), device=dev) for dev in devices]
+    for step in range(20):
+        for k in (0, 1):
+            _affine(xs[k], outs[k], 1.0, float(step))
+            tack.copyto(xs[k], outs[k].numpy())
+    for k in (0, 1):
+        np.testing.assert_allclose(xs[k].numpy(), k + 1 + sum(range(20)))
+    with pytest.raises(ValueError, match="arrays on two devices"):
+        _affine(xs[0], outs[1], 1.0, 0.0)
+    moved = xs[0].to_device(devices[1])
+    assert moved.device == devices[1]
+    np.testing.assert_array_equal(moved.numpy(), xs[0].numpy())
+    tack.sync()
