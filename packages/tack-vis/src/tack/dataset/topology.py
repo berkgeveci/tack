@@ -26,6 +26,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import argsort
+from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.views import (
@@ -611,6 +612,6 @@ class Edges(_OnItsArrays):
 
     @on_inputs_device
     def groups(self):
-        edge_ids = tack.arange(self.num_edges, dtype=self.id_dtype)
+        edge_ids = CountingArray(self.num_edges, dtype=self.id_dtype)    # computed, not stored
         return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
                             self.num_edges, 0)]

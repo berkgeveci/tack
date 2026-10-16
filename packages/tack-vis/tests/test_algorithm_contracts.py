@@ -210,3 +210,21 @@ def test_contour_and_clip_name_their_parameters_as_the_others_do(backend):
     assert td.contour(data, "x", value=0.5).num_cells == td.contour(data, "x", 0.5).num_cells
     below, above = td.clip(data, "x", 0.5, inside=True), td.clip(data, "x", 0.5)
     assert below.positions()[:, 0].max() <= 0.5 + 1e-6 <= above.positions()[:, 0].max()
+
+
+def test_ramps_are_computed_not_stored(backend):
+    """Offsets that are a linear ramp -- order-0 L2's, a structured grid's L2 --
+    and the edge groups' ids are implicit arrays, which store nothing per cell
+    or edge; the fields read through them are unchanged."""
+    grid = td.uniform_grid((3, 3, 3))
+    for space, step in ((td.L2(grid, order=0), 1), (td.L2(grid), 8)):
+        assert isinstance(space.offsets, tack.arrays.CountingArray)
+        assert tack.arrays.materialize(space.offsets).numpy().tolist() == \
+            list(range(0, step * (grid.num_cells + 1), step))
+    x = grid.positions()[:, 0].astype(np.float32)
+    grid.fields["x"] = td.Field(td.H1(grid), tack.array(x))
+    corners = td.project(grid, "x", td.L2(grid)).values.numpy().reshape(-1, 8)
+    np.testing.assert_allclose(corners.mean(1), td.cell_centers(grid).values.numpy()[:, 0])
+    [edges] = grid.topology.edges().groups()
+    assert isinstance(edges.args[1], tack.arrays.CountingArray)
+    np.testing.assert_allclose(td.edge_lengths(grid).values.numpy(), 1.0)
