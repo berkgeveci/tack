@@ -36,7 +36,7 @@ data.fields["radius_squared"] = td.Field(td.H1(data), values)
 
 surface = td.contour(data, "radius_squared", 0.5)
 print(surface.num_cells, "triangles,", surface.num_points, "points")
-print(td.statistics(data, "radius_squared")["mean"])
+print(td.statistics(data, "radius_squared").mean)
 ```
 
 Save this as a `.py` file and run it after installing the packages above, or use
@@ -210,7 +210,8 @@ pieces each cell was cut into. A kept cell keeps its values.
 ## Moving fields between spaces
 
 `project(data, field, space)` gives a field in another space of the same
-mesh. `to_points`, `to_cells` and `discontinuous` are shortcuts for it.
+mesh: `td.H1(data)` for point values, `td.Constant(data)` for one value per
+cell, `td.L2(data)` for each cell's own copies.
 
 ```python
 --8<-- "docs/examples/datasets.py:spaces"

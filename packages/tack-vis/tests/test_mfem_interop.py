@@ -158,7 +158,7 @@ def test_cells_are_right_side_out(backend, name):
     flux = td.Field(td.Values(data, "faces"), tack.empty((areas.values.shape[0],), tack.vec(3, tack.f32)))
     tack.copyto(flux.values, (normals.values.numpy()
                             * areas.values.numpy()[:, None]).astype(np.float32))
-    np.testing.assert_allclose(alg.divergence(data, flux).values.numpy(), 0,
+    np.testing.assert_allclose(alg.net_flux(data, flux).values.numpy(), 0,
                                atol=1e-5)
 
 

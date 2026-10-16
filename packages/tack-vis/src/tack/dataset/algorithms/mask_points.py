@@ -10,7 +10,10 @@ __all__ = ['mask_points']
 @on_inputs_device
 def mask_points(data, stride, fields=None):
     """Every ``stride``-th point (0, stride, 2 * stride, ...) as vertex cells, as
-    Viskores' ``MaskPoints``."""
+    Viskores' ``MaskPoints``.
+
+    The point twin of ``mask``: the points as vertex cells, with point fields
+    carried and cell fields left behind (a vertex cell has no cell of the input)."""
     if int(stride) < 1:
         raise ValueError(f"stride must be at least 1, not {stride!r}")
     flags = tack.empty((data.num_points,), tack.i32)

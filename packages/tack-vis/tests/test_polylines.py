@@ -54,7 +54,7 @@ def test_faces_are_the_ends(backend):
         [0, 0, -1, -1], [0, 1, 1, 0], [1, 1, -1, -1], [2, 0, 2, 1], [3, 0, -1, -1],
         [3, 1, -1, -1]]
     np.testing.assert_array_equal(td.boundary_faces(data).numpy(), [0, 2, 4, 5])
-    ends = td.external_faces(data)
+    ends = td.extract_surface(data)
     assert set(ends.topology.types.numpy()) == {1}                  # VTK_VERTEX
     np.testing.assert_array_equal(ends.topology.connectivity.numpy(), [0, 5, 9, 10])
 
@@ -95,7 +95,7 @@ def test_a_straight_flow_has_no_divergence(backend):
     normals, areas = td.face_geometry(data)
     flux = normals.values.numpy() @ np.array([2.0, 0, 0])
     flux_field = td.Field(td.Values(data, "faces", oriented=True), _scalars(flux))
-    divergence = td.divergence(data, flux_field).values.numpy()
+    divergence = td.net_flux(data, flux_field).values.numpy()
     # Interior cells pass the flow on; nothing leaves the chain but at its ends.
     np.testing.assert_allclose(divergence, 0, atol=1e-6)
 
@@ -104,8 +104,8 @@ def test_averages_and_extraction(backend):
     data = _lines()
     data.fields["s"] = td.Field(td.H1(data), _scalars(X[:, 0]))
     data.fields["c"] = td.Field(td.Constant(data), _scalars([10.0, 20.0, 30.0, 40.0]))
-    np.testing.assert_allclose(td.to_cells(data, "s").values.numpy(), [1.5, 4, 7, 9.5])
-    point_values = td.to_points(data, "c").values.numpy()
+    np.testing.assert_allclose(td.project(data, "s", td.Constant(data)).values.numpy(), [1.5, 4, 7, 9.5])
+    point_values = td.project(data, "c", td.H1(data)).values.numpy()
     assert point_values[3] == pytest.approx(15.0)                     # shared by 0 and 1
     kept = td.threshold(data, "c", 25, 45)
     assert isinstance(kept.topology, td.PolylineTopology)

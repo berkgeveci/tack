@@ -147,6 +147,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking: tack.dataset names, one per operation.** `external_faces(data)`
+  is `extract_surface(data)`, whose `faces` now default to the boundary.
+  `to_points`, `to_cells`, `discontinuous` and the public `traces` are gone:
+  `project(data, field, H1(data) | Constant(data) | L2(data) |
+  SideTraces(data))`. `point_cloud(data)` is `mask_points(data, 1)`. The old
+  `divergence`, an outward sum with no volume, is `net_flux`, unchanged;
+  `divergence` is now the finite-volume divergence, `net_flux` over each
+  cell's measure. `statistics` returns a `Statistics` named tuple
+  (`s.mean`, not `s["mean"]`), and `check_winding` a cell `Set`.
+  `clip(..., invert=True)` is `clip(..., inside=True)`, and `contour`'s
+  `isovalue` is `value`. The reference states the rules: what each kind of
+  algorithm returns, and that the point filters are the cell filters'
+  point twins (point fields carried, cell fields left behind).
 - **Breaking:** CPU threading policy v1 is removed; the policy that has
   been the default since 2026-08-10 is the only one. `TACK_CPU_POLICY=v2`
   (or unset) is still accepted, and any other value, `v1` included, raises

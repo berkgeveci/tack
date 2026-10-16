@@ -80,8 +80,8 @@ def run(arch="cpu", check=False):
         np.testing.assert_allclose(to_host(flow.q_criterion.values), 1, atol=1e-6)
         np.testing.assert_array_equal(valid, [True, True, False])
         np.testing.assert_allclose(samples[valid], query[valid, 0], atol=1e-6)
-        assert summary["n"] == data.num_points
-        np.testing.assert_allclose(summary["mean"], 0, atol=1e-6)
+        assert summary.n == data.num_points
+        np.testing.assert_allclose(summary.mean, 0, atol=1e-6)
         assert isinstance(paths.topology, td.PolylineTopology) and paths.num_cells == 2
         np.testing.assert_allclose(particles.positions()[:, :2],
                                    [[0.5 * np.cos(1), 0.5 * np.sin(1)],
@@ -102,7 +102,7 @@ def save_figure(result, output):
     fig = plt.figure(figsize=(10.5, 3.8), layout="constrained")
     titles = ["Threshold: starts at x = 0.25", "Clip: starts at x = 0.125", "Contour: x = 0.125"]
     for k, (data, title) in enumerate(zip(result, titles, strict=True)):
-        triangles = td.triangulate(td.external_faces(data)) if k < 2 else data
+        triangles = td.triangulate(td.extract_surface(data)) if k < 2 else data
         xyz = triangles.positions()
         ids = triangles.topology.connectivity.numpy().reshape(-1, 3)
         ax = fig.add_subplot(1, 3, k + 1, projection="3d")

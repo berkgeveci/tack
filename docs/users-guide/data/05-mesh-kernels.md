@@ -93,10 +93,11 @@ The normal and center fields use the same topology's face numbering.
 --8<-- "docs/examples/data_mesh_kernels.py:balance"
 ```
 
-`td.divergence` is an **outward sum of the supplied face values**: a face adds
+`td.net_flux` is an **outward sum of the supplied face values**: a face adds
 to its side-0 cell and subtracts from its side-1 cell. It does not divide by
 cell volume. With integrated face flux as input, its result is integrated
-net outflow. Divide by volume if you want an average divergence.
+net outflow. `td.divergence` divides it by each cell's volume, the
+finite-volume divergence.
 
 Each example cell has volume 0.5, net outflow 1.5, and therefore average
 divergence 3. The sum of both cells' outflows is the boundary outflow 3;

@@ -1,4 +1,4 @@
-"""``contour``: the surface where ``field`` crosses ``isovalue``, as triangles."""
+"""``contour``: the surface where ``field`` crosses ``value``, as triangles."""
 
 import tack
 from tack import arrays
@@ -100,8 +100,8 @@ def _triangles(rows, types, offsets, connectivity, count):
 
 
 @on_inputs_device
-def contour(data, field, isovalue, merge_points=True, fields=None):
-    """Where ``field`` crosses ``isovalue``: a surface of a 3D mesh, as triangles
+def contour(data, field, value, merge_points=True, fields=None):
+    """Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles
     (as polygons on polyhedra); lines of a 2D mesh.
 
     ``field`` is a scalar field with a basis, or its name: ``H1`` (point
@@ -131,14 +131,14 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     _scalar_floating("contour", field)
     dimension = data.topology.dimension
     if dimension == 2:
-        return _contour_lines(data, field, isovalue, fields)
+        return _contour_lines(data, field, value, fields)
     if dimension < 2 and data.num_cells:
         # No cells (a threshold that kept none) has no dimension, and no surface.
         raise NotImplementedError("contour of lines (which would give points) is not built")
     if not getattr(data.topology, "reference_cells", True):
         if data.topology.dimension == 1:
             raise NotImplementedError("contour of polylines (which would give points) is not built")
-        return _polyhedral_contour(data, field, isovalue, fields)
+        return _polyhedral_contour(data, field, value, fields)
     field = _with_basis(data, field)
     space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
@@ -151,7 +151,7 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     odt = ids.for_output(data, 15 * n_cells)     # up to five triangles a cell
     counts = tack.zeros((n_cells,), tack.i32)
     for group in groups:
-        _contour_counts(data.domain_view("cells", group), field.view(group), isovalue, counts)
+        _contour_counts(data.domain_view("cells", group), field.view(group), value, counts)
     starts = tack.empty((n_cells,), odt)
     triangles = exclusive_scan(counts, starts, n_cells) if n_cells else 0
 
@@ -162,7 +162,7 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     sources = tack.empty((n,), idt)
     keys = tack.empty((n,), tack.vec(2, idt))
     for group in groups:
-        _contour_points(data.domain_view("cells", group), field.view(group), isovalue,
+        _contour_points(data.domain_view("cells", group), field.view(group), value,
                         per_cell, starts, points, edges, weights, sources, keys)
     triangle_cells = tack.empty((triangles,), idt)
     if triangles:

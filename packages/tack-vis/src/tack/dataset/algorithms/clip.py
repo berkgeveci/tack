@@ -1,4 +1,4 @@
-"""``clip``: the part of ``data`` where ``by`` -- point data (a field or its name) or an implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or with ``invert`` below it: Viskores' ClipWithField and (``value`` 0) ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their shape; cut cells become the pieces their case lists. Points are the kept corners, the crossings on cut edges (merged across cells) and centroid points; point data is interpolated onto them, cell data goes to each piece."""
+"""``clip``: the part of ``data`` where ``by`` -- point data (a field or its name) or an implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or with ``inside`` below it (inside an implicit function's region): Viskores' ClipWithField and (``value`` 0) ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their shape; cut cells become the pieces their case lists. Points are the kept corners, the crossings on cut edges (merged across cells) and centroid points; point data is interpolated onto them, cell data goes to each piece."""
 
 import numpy as np
 
@@ -224,10 +224,10 @@ def _join_starts(s0, s1, s2, s3, s4, out):
 
 
 @on_inputs_device
-def clip(data, by, value=0.0, invert=False, fields=None):
+def clip(data, by, value=0.0, inside=False, fields=None):
     """The part of ``data`` where ``by`` -- point data (a field or its name) or an
     implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or
-    with ``invert`` below it: Viskores' ClipWithField and (``value`` 0)
+    with ``inside`` below it: Viskores' ClipWithField and (``value`` 0)
     ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their
     shape; cut cells become the pieces their case lists. Points are the kept
     corners, the crossings on cut edges (merged across cells) and centroid
@@ -251,7 +251,7 @@ def clip(data, by, value=0.0, invert=False, fields=None):
         raise TypeError("clip needs a scalar field")
     precision = _floating_dtype(field.values)
     values = _converted(_point_values(field.values, data.num_points), precision)
-    invert = 1 if invert else 0
+    invert = 1 if inside else 0           # the tables' name: keep what is below
     n = data.num_cells
 
     groups = []

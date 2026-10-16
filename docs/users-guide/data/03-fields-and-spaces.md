@@ -21,7 +21,7 @@ mesh and have runnable examples below.
 | `td.L2(data)` | Each cell's own corner values | Discontinuous solution fields |
 | `td.Values(data, "faces")` | One value per face, without an interpolation basis | Face areas, labels or fluxes |
 | `td.Values(data, "points" / "cells" / "edges")` | One value per named entity kind | Entity attributes that need no basis |
-| `td.SideTraces(data)` | Values per face, per side, per face corner | Two-sided evaluation made by `td.traces` |
+| `td.SideTraces(data)` | Values per face, per side, per face corner | Two-sided evaluation, by projecting into it |
 
 For `L2(order=0)` the value is constant per cell; `L2(order=1)` uses each
 cell's own corners. `H1(order=2)` adds higher-order degrees of freedom on
@@ -249,8 +249,8 @@ the dataset's named fields.
 
 ## Projection is an algorithmic choice
 
-`project(data, field, target_space)` is the general operation.
-`to_points`, `to_cells` and `discontinuous` select common target spaces.
+`project(data, field, target_space)` is the one operation: `td.H1(data)`,
+`td.Constant(data)` and `td.L2(data)` are the common target spaces.
 
 | Conversion | Meaning | What to check |
 |---|---|---|
@@ -275,7 +275,7 @@ that it supplies shape-function evaluation for every algorithm.
 --8<-- "docs/examples/data_fields.py:traces"
 ```
 
-`traces` evaluates each cell at its faces' corners, keeping the two sides
+Projecting into `SideTraces` evaluates each cell at its faces' corners, keeping the two sides
 separate and aligned in the face's ordering. `jump` evaluates a difference
 at each face center: side 1 minus side 0, or zero at a boundary.
 

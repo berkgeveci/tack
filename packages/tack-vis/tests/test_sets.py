@@ -119,7 +119,7 @@ def test_side_sets_of_cells_with_many_faces(backend):
         td.Set.from_sides(data, [0], [66])
 
 
-@pytest.mark.parametrize("make", [td.as_polyhedra, lambda d: td.as_polygons(td.external_faces(d))])
+@pytest.mark.parametrize("make", [td.as_polyhedra, lambda d: td.as_polygons(td.extract_surface(d))])
 def test_side_sets_where_cells_list_their_faces(backend, make):
     data = make(_grid())
     sides = data.topology.faces().sides.numpy()
@@ -156,7 +156,7 @@ def test_the_boundary_set_is_taken_as_the_faces_hold_it(backend, monkeypatch):
     expected[faces.boundary().numpy()] = 1
     np.testing.assert_array_equal(boundary.flags().numpy(), expected)
     data.sets["boundary"] = boundary
-    surface = td.external_faces(data)
+    surface = td.extract_surface(data)
     assert surface.num_cells == len(boundary)
 
 
@@ -172,7 +172,7 @@ def test_filters_carry_sets(backend):
     assert len(kept.sets["origin"]) == 0
     assert "boundary" not in kept.sets                  # faces are derived afresh
     # The boundary surface's cells are the boundary faces: the face set is all of them.
-    surface = td.external_faces(data)
+    surface = td.extract_surface(data)
     assert len(surface.sets["boundary"]) == surface.num_cells
     assert surface.sets["boundary"].on == "cells"
     # Same entities, same sets.

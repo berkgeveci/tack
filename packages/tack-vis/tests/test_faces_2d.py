@@ -85,7 +85,7 @@ def test_edge_geometry_and_closed_cells(backend, mesh):
     # A uniform flow's flux sums to zero through every cell's edges.
     velocity = np.array([0.7, -0.4, 0.0])
     flux = td.Field(td.Values(data, "faces", oriented=True), _scalars(normals @ velocity * lengths))
-    np.testing.assert_allclose(td.divergence(data, flux).values.numpy(), 0, atol=1e-5)
+    np.testing.assert_allclose(td.net_flux(data, flux).values.numpy(), 0, atol=1e-5)
     # Perot's reconstruction gives the flow back in every cell.
     normal_component = td.Field(td.Values(data, "faces", oriented=True), _scalars(normals @ velocity))
     np.testing.assert_allclose(td.perot(data, normal_component).values.numpy(),
@@ -96,7 +96,7 @@ def test_edge_geometry_and_closed_cells(backend, mesh):
 def test_the_boundary_of_a_2d_mesh_is_lines(backend, mesh):
     data = MESHES[mesh]()
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
-    outside = td.external_faces(data)
+    outside = td.extract_surface(data)
     assert set(outside.topology.types.numpy()) == {3}               # VTK_LINE
     _, lengths = td.face_geometry(data)
     perimeter = lengths.values.numpy()[td.boundary_faces(data).numpy()].sum()
@@ -148,12 +148,12 @@ def test_contour_of_l2_data_on_a_2d_mesh(backend):
     data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0, 2.0])
     x = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
     shared = td.contour(data, x, 0.5)
-    own = td.contour(data, td.discontinuous(data, x), 0.5)
+    own = td.contour(data, td.project(data, x, td.L2(data)), 0.5)
     assert (shared.num_cells, shared.num_points, own.num_cells, own.num_points) == (2, 3, 2, 4)
     lines = own.positions()[own.topology.connectivity.numpy()].reshape(-1, 2, 3)
     np.testing.assert_allclose(lines, [[[0.5, 0, 0], [0.5, 1, 0]], [[0.5, 1, 0], [0.5, 2, 0]]])
     # The second cell lifted to z = 10: its line stays on it.
-    geometry = td.discontinuous(data, data.geometry)
+    geometry = td.project(data, data.geometry, td.L2(data))
     corners = geometry.values.numpy()
     corners[4:, 2] += 10.0
     tack.copyto(geometry.values, corners)

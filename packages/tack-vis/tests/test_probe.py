@@ -119,7 +119,7 @@ def test_probe_keeps_the_probed_dataset_and_evaluates_every_kind(backend):
     x = data.positions()
     data.fields["h"] = td.Field(td.H1(data), _scalars(3 * x[:, 0] + x[:, 2]))
     data.fields["c"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 3.0]))
-    data.fields["dg"] = td.algorithms.discontinuous(data, data.fields["h"])
+    data.fields["dg"] = td.algorithms.project(data, data.fields["h"], td.L2(data))
     where = td.sources.tangle((4, 3, 3))
     out = td.probe(data, where)
     assert out.topology is where.topology and "tangle" in out.fields

@@ -14,7 +14,10 @@ __all__ = ['extract_points']
 @on_inputs_device
 def extract_points(data, function, inside=True, fields=None):
     """The points inside ``function``'s region (at or below zero), or outside it
-    (above), as vertex cells. Needs an ``H1`` geometry: one position per point."""
+    (above), as vertex cells. Needs an ``H1`` geometry: one position per point.
+
+    The point twin of ``extract_geometry``: the points as vertex cells, with point fields
+    carried and cell fields left behind (a vertex cell has no cell of the input)."""
 
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_points needs an H1 geometry: one position per point")

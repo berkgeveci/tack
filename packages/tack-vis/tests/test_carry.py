@@ -25,7 +25,7 @@ def _every_kind():
     data.fields["label"] = td.Field(td.Values(data, "points"), _ints(np.arange(data.num_points)))
     data.fields["cell"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 3.0]))
     data.fields["cell id"] = td.Field(td.Values(data, "cells"), _ints([0, 1, 2]))
-    data.fields["dg"] = td.algorithms.discontinuous(data, data.fields["height"])
+    data.fields["dg"] = td.algorithms.project(data, data.fields["height"], td.L2(data))
     data.fields["flux"] = td.Field(td.Values(data, "faces", oriented=True),
                                    _scalars(np.arange(nf, dtype=float)))
     data.fields["edge"] = td.Field(td.Values(data, "edges"), _scalars(np.arange(ne, dtype=float)))
@@ -64,7 +64,7 @@ def test_contour_interpolates_point_data_and_takes_its_cells(backend):
 
 def test_a_surface_takes_face_data_as_its_cells(backend):
     data = _every_kind()
-    out = td.external_faces(data)
+    out = td.extract_surface(data)
     kinds = _kinds(out)
     assert kinds["flux"] == ("Values", "cells") and kinds["cell"] == ("Constant", "cells")
     assert kinds["label"] == ("Values", "points") and "dg" not in kinds and "edge" not in kinds
@@ -84,7 +84,7 @@ def test_fields_selects_what_comes(backend, filter_):
     run = {"threshold": lambda f: td.threshold(data, "cell", 0.5, 3.5, fields=f),
            "contour": lambda f: td.contour(data, "height", 0.5, fields=f),
            "slice": lambda f: td.slice_plane(data, (0.5, 0.5, 0.5), (1, 0, 0), fields=f),
-           "external faces": lambda f: td.external_faces(data, fields=f),
+           "external faces": lambda f: td.extract_surface(data, fields=f),
            "polyhedra": lambda f: td.as_polyhedra(data, fields=f)}[filter_]
     assert _names(run(["height", "cell"])) == {"height", "cell"}
     assert _names(run("cell")) == {"cell"}
