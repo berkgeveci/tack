@@ -107,3 +107,33 @@ def test_empty_particles_keep_ids_and_field_layouts(backend):
     np.testing.assert_array_equal(out.fields["steps"].values.numpy(), [0])
     np.testing.assert_array_equal(out.fields["status"].values.numpy(),
                                   [int(td.ParticleStatus.SPATIAL_BOUNDS)])
+
+
+@pytest.mark.parametrize("polyhedral", [False, True])
+@pytest.mark.parametrize("bad", ["past", "negative"])
+def test_extract_surface_refuses_face_ids_outside_the_topology(backend, polyhedral, bad):
+    """A face id the topology does not have was read out of bounds, silently
+    giving wrong cells (only debug mode noticed)."""
+    data = td.uniform_grid((3, 3, 3))
+    if polyhedral:
+        data = td.as_polyhedra(data)
+    nf = data.topology.faces().num_faces
+    with pytest.raises(IndexError, match=rf"1 face ids lie outside \[0, {nf}\)"):
+        td.extract_surface(data, [0, nf if bad == "past" else -1])
+    assert td.extract_surface(data, [0, nf - 1]).num_cells == 2
+
+
+@pytest.mark.parametrize("polyhedral", [False, True])
+def test_extract_surface_refuses_a_face_set_of_another_topology(backend, polyhedral):
+    data, other = td.uniform_grid((3, 3, 3)), td.uniform_grid((6, 6, 6))
+    if polyhedral:
+        data = td.as_polyhedra(data)
+    with pytest.raises(ValueError, match="another topology"):
+        td.extract_surface(data, td.Set(other, "faces", [0]))
+
+
+def test_extract_cells_refuses_cell_ids_outside_the_topology(backend):
+    data = td.uniform_grid((3, 3, 3))
+    with pytest.raises(IndexError, match=r"2 cell ids lie outside \[0, 8\)"):
+        td.extract_cells(data, [8, -1, 3])
+    assert td.extract_cells(data, [0, 7]).num_cells == 2

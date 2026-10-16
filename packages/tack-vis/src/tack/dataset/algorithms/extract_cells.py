@@ -37,8 +37,6 @@ def extract_cells(data, cells, fields=None):
     chosen = ids.as_ids(cells, data.id_dtype)
     keep = tack.zeros((data.num_cells,), tack.i32)
     if chosen.shape[0]:
-        bad = chosen.numpy()
-        if bad.min() < 0 or bad.max() >= data.num_cells:
-            raise IndexError(f"cell ids must lie in [0, {data.num_cells})")
+        ids.check_bounds(chosen, data.num_cells, "cell")
         _flag_ids(chosen, keep)
     return _keep_cells(data, keep, fields)
