@@ -374,6 +374,53 @@ def test_rectilinear_round_trip(backend):
                                data.fields["h"].values.numpy())
 
 
+
+@needs_vtk
+@pytest.mark.parametrize("make", ["as_polygons", "polyhedral_contour"])
+def test_polygonal_round_trip(backend, make):
+    """A polygonal topology exports as VTK_POLYGON cells, which the import read
+    as linear shapes and refused ("cell types [7] are not linear shapes")."""
+    if make == "as_polygons":
+        data = td.as_polygons(td.external_faces(td.uniform_grid((3, 3, 3))))
+    else:
+        poly = td.as_polyhedra(td.uniform_grid((4, 4, 4)))
+        data = td.contour(poly, _height(poly), 3.0)
+    assert isinstance(data.topology, td.PolygonalTopology) and data.num_cells
+    data.fields["c"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
+    grid = dataset_to_vtk(data)
+    back = vtk_to_dataset(grid)
+    assert isinstance(back.topology, td.PolygonalTopology)
+    assert back.num_cells == data.num_cells
+    for a, b in zip(back.topology.loops(), data.topology.loops()):
+        np.testing.assert_array_equal(a.numpy(), b.numpy())
+    np.testing.assert_allclose(back.positions(), data.positions())
+    np.testing.assert_array_equal(back.fields["c"].values.numpy(), np.arange(data.num_cells))
+
+
+@needs_vtk
+@pytest.mark.parametrize("make", ["warp", "transform"])
+def test_explicit_structured_round_trip(backend, make):
+    """A warped or transformed grid keeps its structured topology over explicit
+    coordinates, which the export refused ("unsupported topology
+    StructuredTopology with Array"); it is a vtkStructuredGrid."""
+    data = td.rectilinear_grid([0, 1, 3], [0, 2], [0, 1, 1.5])
+    if make == "warp":
+        data = td.warp(data, (0, 0, 1), scale=0.5)
+    else:
+        data = td.transform(data, np.array([[0, -1, 0, 1], [1, 0, 0, 0], [0, 0, 1, 2],
+                                            [0, 0, 0, 1]], np.float64))
+    assert isinstance(data.topology, td.StructuredTopology)
+    data.fields["h"] = _height(data)
+    grid = dataset_to_vtk(data)
+    assert grid.IsA("vtkStructuredGrid") and grid.GetNumberOfCells() == data.num_cells
+    back = vtk_to_dataset(grid)
+    assert isinstance(back.topology, td.StructuredTopology)
+    assert back.topology.point_dims == data.topology.point_dims
+    np.testing.assert_allclose(back.positions(), data.positions(), atol=1e-6)
+    np.testing.assert_allclose(back.fields["h"].values.numpy(),
+                               data.fields["h"].values.numpy(), atol=1e-6)
+
+
 # ── Geometry is a field, kept apart ─────────────────────────────────
 
 def test_geometry_is_a_field_kept_apart(backend):
