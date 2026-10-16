@@ -387,9 +387,12 @@ def test_a_short_fan_out_does_not_floor_the_serial_estimate(cpu):
 
 
 def test_a_long_fan_out_floors_the_serial_estimate(cpu):
-    backend = CPUBackend()
-    if backend.num_threads < 2:
+    if CPUBackend().num_threads < 2:
         pytest.skip("machine has one core")
+    # A fixed width: a floor needs long worker spans, and this range over
+    # every thread of a large node (128 on a Perlmutter GPU node) gives
+    # spans too short to set one, as the policy intends.
+    backend = CPUBackend(num_threads=4)
     n = 200000
     x = tack.empty((n,))
     out = tack.empty((n,))
