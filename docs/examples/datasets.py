@@ -41,16 +41,16 @@ def run(arch="cpu", check=False):
     data = td.wavelet(extent=10)                     # 21^3 points, field "RTData"
     surface = td.contour(data, "RTData", 157.0)      # triangles, RTData carried
     inside = td.threshold(data, "RTData", 200.0, 300.0)
-    skin = td.external_faces(inside)                 # the kept region's boundary
+    skin = td.extract_surface(inside)                 # the kept region's boundary
     cut = td.slice_plane(data, origin=(0, 0, 0), normal=(0, 0, 1))
-    stats = td.statistics(data, "RTData")            # a dict of Python values
+    stats = td.statistics(data, "RTData")            # a Statistics of Python values
     print(f"contour: {surface.num_cells} triangles; threshold: {inside.num_cells} "
-          f"cells, {skin.num_cells} boundary faces; mean RTData {stats['mean']:.1f}")
+          f"cells, {skin.num_cells} boundary faces; mean RTData {stats.mean:.1f}")
     # --8<-- [end:pipeline]
 
     # --8<-- [start:spaces]
-    on_points = td.to_points(mesh, "material")       # Constant -> H1: averaged
-    on_cells = td.to_cells(mesh, "height")           # H1 -> Constant: corner means
+    on_points = td.project(mesh, "material", td.H1(mesh))       # Constant -> H1: averaged
+    on_cells = td.project(mesh, "height", td.Constant(mesh))           # H1 -> Constant: corner means
     dg = td.project(mesh, "height", td.L2(mesh))     # each cell's own corner values
     slope = td.gradients(mesh, "height")             # a 3-vector per cell
     # --8<-- [end:spaces]

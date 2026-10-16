@@ -1,4 +1,4 @@
-"""``cell_geometry``: ``(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A polygon's area, along its own normal (Newell's), for a polygonal topology."""
+"""``cell_geometry``: a ``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A polygon's area, along its own normal (Newell's), for a polygonal topology."""
 
 from typing import NamedTuple
 

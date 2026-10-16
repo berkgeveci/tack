@@ -49,10 +49,10 @@ def test_statistics_are_viskores(backend):
                 "population_variance": m2 / n, "population_stddev": np.sqrt(m2 / n),
                 "skewness": np.sqrt(n) * m3 / m2 ** 1.5, "kurtosis": n * m4 / m2 ** 2}
     for key, value in expected.items():
-        assert s[key] == pytest.approx(value, rel=2e-4), key
+        assert getattr(s, key) == pytest.approx(value, rel=2e-4), key
     constant = td.algorithms.statistics(data, td.Field(data.fields["RTData"].space,
                                                  _scalars(np.full(n, 3.0))))
-    assert constant["skewness"] == constant["kurtosis"] == 0.0
+    assert constant.skewness == constant.kurtosis == 0.0
 
 
 def test_entropy_is_viskores(backend):
@@ -173,7 +173,7 @@ def test_shrink_is_vtks(backend, cell_type):
 
 def test_point_cloud_keeps_every_point(backend):
     data = td.sources.tangle((4, 4, 4))
-    out = td.point_cloud(data)
+    out = td.mask_points(data, 1)
     assert out.num_points == out.num_cells == data.num_points
     np.testing.assert_array_equal(out.fields["tangle"].values.numpy(),
                                   data.fields["tangle"].values.numpy())
@@ -185,8 +185,8 @@ def test_statistics_of_integers(backend):
     data = td.uniform_grid((2,))
     for dtype in (tack.i32, tack.f32):
         out = td.statistics(data, td.Field(td.H1(data), _scalars([0, 1], dtype)))
-        assert (out["mean"], out["m2"], out["m4"]) == (0.5, 0.5, 0.125)
-        assert (out["sample_variance"], out["population_variance"]) == (0.5, 0.25)
+        assert (out.mean, out.m2, out.m4) == (0.5, 0.5, 0.125)
+        assert (out.sample_variance, out.population_variance) == (0.5, 0.25)
 
 
 def test_integer_statistics_sum_exactly(backend):
@@ -194,21 +194,21 @@ def test_integer_statistics_sum_exactly(backend):
     summed to 2**24 and 1001000064."""
     data = td.uniform_grid((2,))
     result = td.statistics(data, td.Field(td.H1(data), _scalars([2**24 + 1, 0], tack.i32)))
-    assert (result["sum"], result["mean"]) == (2**24 + 1, (2**24 + 1) / 2)
+    assert (result.sum, result.mean) == (2**24 + 1, (2**24 + 1) / 2)
     n = 1_000_001
     data = td.uniform_grid((n,))
     values = np.full(n, 1001, np.int32)
     values[-1] = 7
     result = td.statistics(data, td.Field(td.H1(data), _scalars(values, tack.i32)))
-    assert result["sum"] == 1001 * (n - 1) + 7
-    assert (result["min"], result["max"]) == (7, 1001)
+    assert result.sum == 1001 * (n - 1) + 7
+    assert (result.min, result.max) == (7, 1001)
 
 
 def test_integer_statistics_sum_without_wrapping(backend):
     data = td.uniform_grid((2,))
     values = _scalars([2**63, 2**63], tack.u64)
     result = td.statistics(data, td.Field(td.H1(data), values))
-    assert result["sum"] == float(2**64)
-    assert result["mean"] == float(2**63)
-    assert result["population_variance"] == 0.0
+    assert result.sum == float(2**64)
+    assert result.mean == float(2**63)
+    assert result.population_variance == 0.0
     np.testing.assert_array_equal(values.numpy(), np.array([2**63] * 2, np.uint64))

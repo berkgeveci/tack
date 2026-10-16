@@ -66,7 +66,7 @@ def test_into_cells_and_dg(backend):
     x = data.positions()
     data.fields["f"] = td.Field(td.H1(data), _scalars(_linear(x)))
     means = td.project(data, "f", td.Constant(data)).values.numpy()
-    np.testing.assert_allclose(means, td.to_cells(data, "f").values.numpy())
+    np.testing.assert_allclose(means, td.project(data, "f", td.Constant(data)).values.numpy())
     np.testing.assert_allclose(td.project(data, "f", td.L2(data, order=0)).values.numpy(),
                                means)
     # A cell value in order-1 L2: every corner holds it.
@@ -92,7 +92,7 @@ def test_vectors_and_values(backend):
     assert points.space is td.Values(data, "points")
     scalar = td.Field(td.Constant(data), _scalars(rows[:, 1]))
     np.testing.assert_allclose(points.values.numpy()[:, 1],
-                               td.to_points(data, scalar).values.numpy(), rtol=1e-6)
+                               td.project(data, scalar, td.H1(data)).values.numpy(), rtol=1e-6)
     # The same space: a copy, not the same storage.
     same = td.project(data, "v", td.Constant(data))
     assert same.values is not data.fields["v"].values
@@ -104,7 +104,7 @@ def test_into_side_traces(backend):
     data.fields["f"] = td.Field(td.H1(data), _scalars(_linear(data.positions())))
     np.testing.assert_array_equal(
         td.project(data, "f", td.SideTraces(data)).values.numpy(),
-        td.traces(data, "f").values.numpy())
+        td.project(data, "f", td.SideTraces(data)).values.numpy())
 
 
 def test_polyhedra_project_between_points_and_cells(backend):
@@ -112,9 +112,9 @@ def test_polyhedra_project_between_points_and_cells(backend):
     data.fields["f"] = td.Field(td.H1(data), _scalars(_linear(data.positions())))
     data.fields["c"] = td.Field(td.Constant(data), _scalars(np.arange(4.0)))
     np.testing.assert_allclose(td.project(data, "f", td.Constant(data)).values.numpy(),
-                               td.to_cells(_hexes_with_f(), "f").values.numpy(), rtol=1e-6)
+                               td.project(fresh := _hexes_with_f(), "f", td.Constant(fresh)).values.numpy(), rtol=1e-6)
     np.testing.assert_allclose(td.project(data, "c", td.H1(data)).values.numpy(),
-                               td.to_points(data, "c").values.numpy())
+                               td.project(data, "c", td.H1(data)).values.numpy())
     with pytest.raises(NotImplementedError, match="reference element"):
         td.project(data, "f", td.L2(data))
 
@@ -139,7 +139,7 @@ def test_refusals(backend):
                    td.Constant(data))
     with pytest.raises(ValueError, match="one topology"):
         td.project(data, "f", td.Constant(_hexes()))
-    traces = td.traces(data, "f")
+    traces = td.project(data, "f", td.SideTraces(data))
     with pytest.raises(TypeError, match="two values on each face"):
         td.project(data, traces, td.Constant(data))
 

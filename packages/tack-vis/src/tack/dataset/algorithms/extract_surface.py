@@ -42,9 +42,10 @@ def _face_cells(ids, sides, out):
 
 
 @on_inputs_device
-def extract_surface(data, faces, fields=None):
+def extract_surface(data, faces=None, fields=None):
     """The ``faces`` -- a face ``Set`` (as ``boundary_faces`` returns), a set's name
-    in ``data.sets``, or face ids (a field or an array) -- as a dataset on the same points: a 3D
+    in ``data.sets``, or face ids (a field or an array); by default the boundary
+    (``boundary_faces``), VTK's external faces -- as a dataset on the same points: a 3D
     mesh's faces as triangles, quads or polygons, each in its side 0's outward
     order; a 2D mesh's edges as line cells; a polyline mesh's ends as vertex
     cells. Fields on faces become the surface's
@@ -55,6 +56,9 @@ def extract_surface(data, faces, fields=None):
     ``L2`` one has no shared points for the faces to stand on."""
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
+    if faces is None:
+        from tack.dataset.algorithms.boundary_faces import boundary_faces
+        faces = boundary_faces(data)
     ids = _face_ids(data, faces)
     if not getattr(data.topology, "reference_cells", True):
         return _polygon_surface(data, ids, fields)

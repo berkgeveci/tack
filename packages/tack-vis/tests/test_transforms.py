@@ -176,7 +176,7 @@ def test_coordinate_transforms_are_viskores(backend, which):
 
 def test_an_l2_geometry_moves_every_corner(backend):
     data = _two_hexes_and_a_pyramid()
-    corners = td.algorithms.discontinuous(data, data.geometry)
+    corners = td.algorithms.project(data, data.geometry, td.L2(data))
     pulled = td.DataSet(data.topology, corners)
     moved = td.transform(pulled, [[1, 0, 0, 5], [0, 1, 0, 0], [0, 0, 1, 0]])
     assert isinstance(moved.geometry.space, td.L2)
@@ -220,7 +220,7 @@ def test_integer_nonlinear_transforms_compute_floating_results(backend):
 
 def test_l2_face_positions_follow_mutable_geometry(backend):
     data = td.uniform_grid((2, 2, 2))
-    data.geometry = td.discontinuous(data, data.geometry)
+    data.geometry = td.project(data, data.geometry, td.L2(data))
     points = data.geometry.values.numpy()
     before = td.face_centers(data).values.numpy()
     shift = np.array([10, -3, 2], np.float32)

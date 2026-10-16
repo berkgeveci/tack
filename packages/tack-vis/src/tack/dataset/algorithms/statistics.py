@@ -1,6 +1,7 @@
-"""``statistics``: descriptive statistics of a scalar field's values, as Viskores' Statistics filter gives them: a dict of ``n``, ``min``, ``max``, ``sum``, ``mean``, the central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance`` (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis`` (``n m4 / m2^2``, not the excess), the last two 0 for a constant field. Moments are taken about the mean, in a second pass."""
+"""``statistics``: descriptive statistics of a scalar field's values, as Viskores' Statistics filter gives them: a ``Statistics`` (a NamedTuple) of ``n``, ``min``, ``max``, ``sum``, ``mean``, the central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance`` (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis`` (``n m4 / m2^2``, not the excess), the last two 0 for a constant field. Moments are taken about the mean, in a second pass."""
 
 import math
+from typing import NamedTuple
 
 import numpy as np
 
@@ -9,7 +10,7 @@ from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ['statistics']
+__all__ = ['Statistics', 'statistics']
 
 
 @tack.kernel
@@ -22,10 +23,28 @@ def _central_powers(values, mean, p2, p3, p4):
         p4[i] = d2 * d2
 
 
+class Statistics(NamedTuple):
+    """What ``statistics`` returns: Python numbers, by name (``s.mean``)."""
+    n: int
+    min: float
+    max: float
+    sum: float
+    mean: float
+    m2: float
+    m3: float
+    m4: float
+    sample_variance: float
+    population_variance: float
+    sample_stddev: float
+    population_stddev: float
+    skewness: float
+    kurtosis: float
+
+
 @on_inputs_device
 def statistics(data, field):
     """Descriptive statistics of a scalar field's values, as Viskores' Statistics
-    filter gives them: a dict of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
+    filter gives them: a ``Statistics`` of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
     central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance``
     (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard
     deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis``
@@ -51,10 +70,10 @@ def statistics(data, field):
     m2, m3, m4 = p2.sum(), p3.sum(), p4.sum()
     skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
     kurtosis = n * m4 / (m2 * m2) if m2 else 0.0
-    return {"n": n, "min": source.min(), "max": source.max(), "sum": total, "mean": mean,
-            "m2": m2, "m3": m3, "m4": m4,
-            "sample_variance": m2 / (n - 1) if n > 1 else 0.0,
-            "population_variance": m2 / n,
-            "sample_stddev": math.sqrt(m2 / (n - 1)) if n > 1 else 0.0,
-            "population_stddev": math.sqrt(m2 / n),
-            "skewness": skewness, "kurtosis": kurtosis}
+    return Statistics(n=n, min=source.min(), max=source.max(), sum=total, mean=mean,
+                      m2=m2, m3=m3, m4=m4,
+                      sample_variance=m2 / (n - 1) if n > 1 else 0.0,
+                      population_variance=m2 / n,
+                      sample_stddev=math.sqrt(m2 / (n - 1)) if n > 1 else 0.0,
+                      population_stddev=math.sqrt(m2 / n),
+                      skewness=skewness, kurtosis=kurtosis)

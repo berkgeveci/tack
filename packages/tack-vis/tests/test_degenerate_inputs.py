@@ -81,7 +81,7 @@ def test_a_grid_squeezed_of_a_size_one_axis_is_the_same_grid(backend, dims):
     data.fields["v"] = td.Field(td.H1(data), tack.arrays.ConstantArray([0.1, 0.2, 0.3], data.num_points))
     stored = _with_points_stored(data)
     seed, middle = x[len(x) // 2] + 0.01, (x.min(0) + x.max(0)) / 2
-    for algorithm in (td.cell_geometry, td.cell_centers, td.face_geometry, td.external_faces,
+    for algorithm in (td.cell_geometry, td.cell_centers, td.face_geometry, td.extract_surface,
                       lambda d: td.gradients(d, "p"),
                       lambda d: td.gradients(d, "p", at="points"),
                       lambda d: td.probe(d, [middle, seed]),
@@ -111,8 +111,8 @@ FACE_ALGORITHMS = {
     "face_geometry": td.face_geometry,
     "face_centers": td.face_centers,
     "boundary_faces": td.boundary_faces,
-    "external_faces": td.external_faces,
-    "traces": lambda d: td.traces(d, "p"),
+    "external_faces": td.extract_surface,
+    "traces": lambda d: td.project(d, "p", td.SideTraces(d)),
     "jump": lambda d: td.jump(d, "c"),
     "upwind_flux": lambda d: td.upwind_flux(d, "c", (1.0, 0.0, 0.0)),
 }
@@ -134,7 +134,7 @@ def test_a_mesh_of_lines_still_has_cells(backend):
     data.fields["p"] = td.Field(td.H1(data), tack.array(np.array([0, 1, 4, 9], np.float32)))
     np.testing.assert_allclose(td.cell_centers(data).values.numpy()[:, 0],
                                [0.25, 0.75, 1.25])
-    np.testing.assert_allclose(td.to_cells(data, "p").values.numpy(), [0.5, 2.5, 6.5])
+    np.testing.assert_allclose(td.project(data, "p", td.Constant(data)).values.numpy(), [0.5, 2.5, 6.5])
     assert td.threshold(data, "p", 0.5, 5.0).num_cells == 1     # the line from 1 to 4
 
 
@@ -162,7 +162,7 @@ def test_geometry_of_cells_of_no_volume_is_finite(backend, kind):
     np.testing.assert_array_equal(areas.values.numpy(), 0)
     flux = td.upwind_flux(data, "c", (1.0, 0.0, 0.0))
     np.testing.assert_array_equal(flux.values.numpy(), 0)
-    np.testing.assert_array_equal(td.divergence(data, flux).values.numpy(), 0)
+    np.testing.assert_array_equal(td.net_flux(data, flux).values.numpy(), 0)
 
 
 @pytest.mark.parametrize("kind", ["hexahedron", "grid"])

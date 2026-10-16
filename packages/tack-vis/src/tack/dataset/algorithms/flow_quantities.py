@@ -1,4 +1,4 @@
-"""``flow_quantities``: divergence, vorticity and the Q-criterion from the gradient of a 3-vector field (``gradients`` of it: 9 values per entity), in the gradient's space, as VTK's vtkGradientFilter and Viskores' Gradient compute them: a dict of the three fields."""
+"""``flow_quantities``: divergence, vorticity and the Q-criterion from the gradient of a 3-vector field (``gradients`` of it: 9 values per entity), in the gradient's space, as VTK's vtkGradientFilter and Viskores' Gradient compute them: a ``FlowQuantities`` of the three fields."""
 
 from typing import NamedTuple
 

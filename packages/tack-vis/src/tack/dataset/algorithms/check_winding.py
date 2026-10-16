@@ -1,11 +1,11 @@
-"""``check_winding``: the cells whose faces do not wind consistently, a sorted host array of cell ids."""
+"""``check_winding``: the cells whose faces do not wind consistently, as a cell ``Set``."""
 
-import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.polyhedra import _cell_sizes
+from tack.dataset.sets import Set
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['check_winding']
@@ -67,12 +67,12 @@ def _check_loops(t):
         order, _ = bucket_order(keys, t.num_cells, t.id_dtype)
         offsets, runs = run_offsets(keys, order)
         _unbalanced(keys, ends, order, offsets, bad, runs)
-    return np.flatnonzero(bad.numpy())
+    return Set._from_flags(t, "cells", bad)
 
 
 @on_inputs_device
 def check_winding(data):
-    """The cells whose faces do not wind consistently, a sorted host array of cell ids.
+    """The cells whose faces do not wind consistently, as a cell ``Set``.
 
     Walking every face outward (``side_point``), a closed, consistently wound cell
     walks each of its edges exactly twice, once each way. A cell that does not --
@@ -105,4 +105,4 @@ def check_winding(data):
         order, _ = bucket_order(keys, n, t.id_dtype)
         offsets, runs = run_offsets(keys, order)
         _unbalanced(keys, directions, order, offsets, bad, runs)
-    return np.flatnonzero(bad.numpy())
+    return Set._from_flags(t, "cells", bad)

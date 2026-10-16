@@ -126,7 +126,7 @@ def show(name, data):
     print(f"  'cell id' jumps across {np.count_nonzero(jump.values.numpy())} "
           f"interior faces")
     area_vectors = normals.values.numpy() * areas.values.numpy()[:, None]
-    closed = alg.divergence(data, td.Field(td.Values(data, "faces"), _vectors(area_vectors)))
+    closed = alg.net_flux(data, td.Field(td.Values(data, "faces"), _vectors(area_vectors)))
     print(f"  every cell's outward area vectors sum to zero: "
           f"{np.allclose(closed.values.numpy(), 0, atol=1e-5)}")
 
@@ -139,9 +139,9 @@ def show(name, data):
     surface = alg.extract_surface(data, boundary)
 
     # Cell data to points, and the same function in the DG layout.
-    data.fields["cell id at points"] = alg.to_points(data, data.fields["cell id"])
-    dg = alg.discontinuous(data, data.fields["height"])
-    back = alg.to_points(data, dg).values.numpy()
+    data.fields["cell id at points"] = alg.project(data, data.fields["cell id"], td.H1(data))
+    dg = alg.project(data, data.fields["height"], td.L2(data))
+    back = alg.project(data, dg, td.H1(data)).values.numpy()
     print(f"  'height' as an L2 field: {dg.values.shape[0]} values, one per cell corner; "
           f"averaged back onto the points it is unchanged: "
           f"{np.allclose(back, data.fields['height'].values.numpy(), atol=1e-5)}")
@@ -151,7 +151,7 @@ def show(name, data):
     dg_iso = td.contour(data, dg, 1.0)
     cut = td.slice_plane(data, data.positions().mean(axis=0), (1.0, 0.2, 0.1))
     kept = td.threshold(data, "cell id", 0, data.num_cells // 2)
-    outside = td.external_faces(data)
+    outside = td.extract_surface(data)
     print(f"  contour of 'height' at 1: {iso.num_cells} triangles on {iso.num_points} points; "
           f"as a DG field the same triangles on {dg_iso.num_points} points, merged only "
           f"within cells")
@@ -234,14 +234,14 @@ rng = np.random.default_rng(0)
 for c in range(mixed.num_cells):
     values[offsets[c]:offsets[c + 1]] += rng.uniform(-0.3, 0.3)
 dg = td.Field(td.L2(mixed), _scalars(values))
-spread = alg.to_points(mixed, dg).values.numpy() - mixed.fields["height"].values.numpy()
+spread = alg.project(mixed, dg, td.H1(mixed)).values.numpy() - mixed.fields["height"].values.numpy()
 print(f"  each cell shifted by up to 0.3: the point averages now differ by up to "
       f"{np.abs(spread).max():.3f}")
 # Each side of each face as its own cell has it: the DG field's own jumps,
 # and an upwind flux through every face, from the side the flow leaves.
 dg_jump = alg.jump(mixed, dg).values.numpy()
 height_jump = alg.jump(mixed, mixed.fields["height"]).values.numpy()
-net = alg.divergence(mixed, alg.upwind_flux(mixed, td.Field(td.Constant(mixed),
+net = alg.net_flux(mixed, alg.upwind_flux(mixed, td.Field(td.Constant(mixed),
                      tack.arrays.ConstantArray(1.0, mixed.num_cells)), (1.0, 0.5, 0.0)))
 print(f"  traces: the DG field jumps by up to {np.abs(dg_jump).max():.3f} across faces, "
       f"the continuous one by {np.abs(height_jump).max():.1e}; an upwind flux of a "
@@ -278,7 +278,7 @@ print(f"\nshrunk: the mixed grid with an L2 geometry, cells at 70%: "
       f"smaller cells has gradient (0.25, 0, 1) / 0.7 in every cell: "
       f"{np.allclose(gradient, np.array([0.25, 0, 1]) / 0.7, atol=1e-4)}")
 if args.output:
-    _write(explode(shrunk, alg.discontinuous(shrunk, shrunk.fields["height"])),
+    _write(explode(shrunk, alg.project(shrunk, shrunk.fields["height"], td.L2(shrunk))),
            os.path.join(args.output, "mixed_shrunk"))
 
 show("rectilinear", td.rectilinear_grid(np.linspace(0, 3, 7), [0, 0.5, 1.5, 3], [0, 1, 2]))

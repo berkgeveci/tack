@@ -52,14 +52,14 @@ def run(arch="cpu", check=False):
     td.for_each(integrated_flux, data, "faces", centers.values,
                 geometry.normal.values, geometry.area.values, flux_values)
     flux = td.Field(td.Values(data, "faces", oriented=True), flux_values)
-    net_outflow = td.divergence(data, flux)       # integrated flux, per cell
-    volume = td.cell_geometry(data).measure
-    # For v = (x,y,z), net_outflow / volume is the divergence 3.
+    net_outflow = td.net_flux(data, flux)       # integrated flux, per cell
+    divergence = td.divergence(data, flux)    # net_outflow / volume: 3 for v = (x,y,z)
     # --8<-- [end:balance]
     if check:
         np.testing.assert_allclose(means.numpy(), [0, 3.25])
-        np.testing.assert_allclose(volume.values.numpy(), [0.5, 0.5])
+        np.testing.assert_allclose(td.cell_geometry(data).measure.values.numpy(), [0.5, 0.5])
         np.testing.assert_allclose(net_outflow.values.numpy(), [1.5, 1.5], atol=1e-6)
+        np.testing.assert_allclose(divergence.values.numpy(), [3.0, 3.0], atol=1e-5)
         boundary = td.boundary_faces(data)
         np.testing.assert_allclose(flux_values.numpy()[boundary.ids.numpy()].sum(), 3.0)
         all_means = tack.empty((data.num_cells,))

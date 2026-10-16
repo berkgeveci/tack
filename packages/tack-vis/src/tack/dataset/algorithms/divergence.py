@@ -1,11 +1,10 @@
-"""``divergence``: each cell's outward sum of ``flux``, values on faces measured out of side 0 (``Values(data, "faces", oriented=True)``, or plain face values taken so): a face's value counts plus for its side-0 cell and minus for its side-1 cell."""
+"""``divergence``: each cell's finite-volume divergence, its net outflow (``net_flux``) over its measure."""
 
 import tack
-from tack.arrays import materialize
-from tack.dataset.algorithms._common import _field
-from tack.dataset.algorithms._faces import _on_faces
+from tack.dataset.algorithms.cell_geometry import cell_geometry
+from tack.dataset.algorithms.net_flux import net_flux
 from tack.dataset.carry import _like
-from tack.dataset.dataset import Field, for_each
+from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -13,24 +12,22 @@ __all__ = ['divergence']
 
 
 @tack.kernel
-def _outward_sums(cells, flux, out):
-    for c in cells:
-        total = flux[0] * 0.0
-        for f in range(cells.num_faces(c)):     # the shape's count, or a polyhedron's
-            sign = 1.0 if cells.face_side(c, f) == 0 else -1.0
-            total += sign * flux[cells.face_id(c, f)]
-        out[cells.entity_id(c)] = total
+def _per_measure(net, measure, out):
+    for c in range(out.shape[0]):
+        out[c] = net[c] / measure[c]
 
 
 @on_inputs_device
 def divergence(data, flux):
-    """Each cell's outward sum of ``flux``, values on faces measured out of side 0
-    (``Values(data, "faces", oriented=True)``, or plain face values taken so): a
-    face's value counts plus for its side-0 cell and minus for its side-1 cell."""
-    flux = _field(data, flux)
-    if not _on_faces(data, flux):
-        raise TypeError("divergence sums a field on faces")
-    data.topology.faces()                          # the incidence the cell views need
-    out = _like(flux.values, data.num_cells)
-    for_each(_outward_sums, data, "cells", materialize(flux.values), out)
+    """Each cell's finite-volume divergence of ``flux``, the integrated flux through
+    each face out of its side 0 (``upwind_flux``, or a normal component times the
+    area): ``net_flux`` over the cell's measure (``cell_geometry``), so for a
+    linear field it is the field's divergence. A cell of no measure gives no
+    finite value, as ``perot`` and ``gradients`` give. ``flow_quantities`` gives
+    the finite-element divergence instead, the trace of a field's gradient."""
+    net = net_flux(data, flux)
+    measure = cell_geometry(data).measure
+    out = _like(net.values, data.num_cells)
+    if data.num_cells:
+        _per_measure(net.values, measure.values, out)
     return Field(Values(data, "cells"), out)

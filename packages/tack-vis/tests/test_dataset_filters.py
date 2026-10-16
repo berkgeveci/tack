@@ -124,7 +124,7 @@ def test_grid_forms_and_merging_agree(backend):
 def test_a_dg_field_keeps_its_jumps(backend):
     data = _with_radius(_grid(7, "explicit"))
     continuous = td.contour(data, "r", 0.7)
-    dg = alg.discontinuous(data, data.fields["r"])
+    dg = alg.project(data, data.fields["r"], td.L2(data))
     same = td.contour(data, dg, 0.7)
     # The same function: the same triangles, but points merged only within cells,
     # so the surface is no longer stitched across cell faces.
@@ -451,7 +451,7 @@ def test_threshold_is_vtks(f64_backend, name, lower, upper):
 def test_external_faces_of_a_grid(backend, form):
     data = _with_radius(_grid(4, form))
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
-    surface = td.external_faces(data)
+    surface = td.extract_surface(data)
     assert surface.num_cells == 6 * 9
     assert set(surface.topology.types.numpy()) == {9}
     assert surface.fields["r"].space is td.H1(surface)
@@ -506,7 +506,7 @@ def test_external_faces_are_vtks(f64_backend, kind):
     at = np.round(vtk_to_numpy(out.GetPoints().GetData()), 6)
     theirs = {frozenset(map(tuple, at[connectivity[offsets[i]:offsets[i + 1]]]))
               for i in range(len(offsets) - 1)}
-    surface = td.external_faces(vtk_to_dataset(grid, dtype=tack.f64))
+    surface = td.extract_surface(vtk_to_dataset(grid, dtype=tack.f64))
     t = surface.topology
     o, c = t.offsets.numpy(), t.connectivity.numpy()
     ours_at = np.round(surface.positions(), 6)

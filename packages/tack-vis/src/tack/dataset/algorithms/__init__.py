@@ -14,12 +14,10 @@ from tack.dataset.algorithms.composite import composite
 from tack.dataset.algorithms.contour import contour
 from tack.dataset.algorithms.cross import cross
 from tack.dataset.algorithms.cylindrical import cylindrical
-from tack.dataset.algorithms.discontinuous import discontinuous
 from tack.dataset.algorithms.divergence import divergence
 from tack.dataset.algorithms.dot import dot
 from tack.dataset.algorithms.edge_lengths import edge_lengths
 from tack.dataset.algorithms.entropy import entropy
-from tack.dataset.algorithms.external_faces import external_faces
 from tack.dataset.algorithms.extract_cells import extract_cells
 from tack.dataset.algorithms.extract_geometry import extract_geometry
 from tack.dataset.algorithms.extract_points import extract_points
@@ -34,8 +32,8 @@ from tack.dataset.algorithms.log_values import log_values
 from tack.dataset.algorithms.magnitude import magnitude
 from tack.dataset.algorithms.mask import mask
 from tack.dataset.algorithms.mask_points import mask_points
+from tack.dataset.algorithms.net_flux import net_flux
 from tack.dataset.algorithms.perot import perot
-from tack.dataset.algorithms.point_cloud import point_cloud
 from tack.dataset.algorithms.point_elevation import point_elevation
 from tack.dataset.algorithms.point_ids import point_ids
 from tack.dataset.algorithms.probe import probe
@@ -43,14 +41,11 @@ from tack.dataset.algorithms.project import project
 from tack.dataset.algorithms.shrink import shrink
 from tack.dataset.algorithms.slice import slice, slice_plane
 from tack.dataset.algorithms.spherical import spherical
-from tack.dataset.algorithms.statistics import statistics
+from tack.dataset.algorithms.statistics import Statistics, statistics
 from tack.dataset.algorithms.streamlines import streamlines
 from tack.dataset.algorithms.tetrahedralize import tetrahedralize
 from tack.dataset.algorithms.threshold import threshold
 from tack.dataset.algorithms.threshold_points import threshold_points
-from tack.dataset.algorithms.to_cells import to_cells
-from tack.dataset.algorithms.to_points import to_points
-from tack.dataset.algorithms.traces import traces
 from tack.dataset.algorithms.transform import transform
 from tack.dataset.algorithms.triangulate import triangulate
 from tack.dataset.algorithms.upwind_flux import upwind_flux
@@ -62,6 +57,7 @@ __all__ = [
     "FaceGeometry",
     "FlowQuantities",
     "ParticleStatus",
+    "Statistics",
     "advect",
     "as_polygons",
     "as_polyhedra",
@@ -75,12 +71,10 @@ __all__ = [
     "contour",
     "cross",
     "cylindrical",
-    "discontinuous",
     "divergence",
     "dot",
     "edge_lengths",
     "entropy",
-    "external_faces",
     "extract_cells",
     "extract_geometry",
     "extract_points",
@@ -95,8 +89,8 @@ __all__ = [
     "magnitude",
     "mask",
     "mask_points",
+    "net_flux",
     "perot",
-    "point_cloud",
     "point_elevation",
     "point_ids",
     "probe",
@@ -110,9 +104,6 @@ __all__ = [
     "tetrahedralize",
     "threshold",
     "threshold_points",
-    "to_cells",
-    "to_points",
-    "traces",
     "transform",
     "triangulate",
     "upwind_flux",

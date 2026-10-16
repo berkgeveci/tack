@@ -113,8 +113,8 @@ print(f"against MFEM at element centers: values within {value_error:.1e}, "
 # contour and slice are of the field and geometry at the corners, linearized.
 iso = td.contour(data, "u", 0.5 * peak)
 cut = td.slice_plane(data, data.positions().mean(axis=0), (1.0, 0.3, 0.2))
-outside = td.external_faces(data)
-flux = alg.divergence(data, alg.upwind_flux(data, field, (1.0, 0.0, 0.0)))
+outside = td.extract_surface(data)
+flux = alg.net_flux(data, alg.upwind_flux(data, field, (1.0, 0.0, 0.0)))
 print(f"contour of u at half its peak: {iso.num_cells} triangles; slice: {cut.num_cells}; "
       f"boundary: {outside.num_cells} faces; net upwind outflow summed over cells "
       f"{flux.values.numpy().sum():.2e}")

@@ -13,7 +13,10 @@ __all__ = ['threshold_points']
 @on_inputs_device
 def threshold_points(data, field, lower, upper, fields=None):
     """The points whose ``field`` (point data: ``H1``, values on points) lies in
-    ``[lower, upper]``, as vertex cells."""
+    ``[lower, upper]``, as vertex cells.
+
+    The point twin of ``threshold``: the points as vertex cells, with point fields
+    carried and cell fields left behind (a vertex cell has no cell of the input)."""
     field = _field(data, field)
     space = field.space
     if not (isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")):

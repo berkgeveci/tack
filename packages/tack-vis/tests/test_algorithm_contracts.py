@@ -65,9 +65,9 @@ def test_empty_filter_pipelines_preserve_maps_and_ids(backend, kind, unused_poin
         assert set(out.fields) == {"p", "c"}
         assert "empty" in out.sets and len(out.sets["empty"]) == 0
         assert out.geometry.values.size == 0
-    points = td.to_points(data, "c")
+    points = td.project(data, "c", td.H1(data))
     np.testing.assert_array_equal(points.values.numpy(), np.zeros(unused_points))
-    assert td.to_cells(data, "p").values.size == 0
+    assert td.project(data, "p", td.Constant(data)).values.size == 0
     if kind == "polyline":
         with pytest.raises(NotImplementedError, match="polylines"):
             td.contour(data, "p", 0.5)
@@ -159,3 +159,54 @@ def test_values_on_points_read_as_order_1_h1(backend, operation, dims):
            "gradients": lambda f: td.gradients(data, f).values.numpy(),
            "values_at_centers": lambda f: td.values_at_centers(data, f).values.numpy()}[operation]
     np.testing.assert_allclose(run(points), run(h1), atol=1e-6)
+
+
+# ── The consolidated names (2026-10-16) ─────────────────────────────
+
+def test_extract_surface_defaults_to_the_boundary(backend):
+    """``external_faces`` was ``extract_surface(data, boundary_faces(data))``; the
+    boundary is now ``extract_surface``'s default."""
+    data = td.uniform_grid((3, 3, 3))
+    implicit, explicit = td.extract_surface(data), td.extract_surface(data, td.boundary_faces(data))
+    assert implicit.num_cells == explicit.num_cells == 24
+    for a, b in zip(implicit.topology.connectivity.numpy(), explicit.topology.connectivity.numpy()):
+        assert a == b
+
+
+@pytest.mark.parametrize("make", ["hexes", "tetrahedra"])
+def test_divergence_is_net_flux_over_the_measure(backend, make):
+    """For ``v = x`` the exact flux through each planar face is ``v(center) . n A``,
+    and the finite-volume divergence is 3 in every cell; ``net_flux`` is that
+    times the cell's volume (it divides by nothing)."""
+    data = td.uniform_grid((3, 3, 3), spacing=(0.5, 1.0, 2.0))
+    if make == "tetrahedra":
+        data = td.tetrahedralize(data)
+    normals, areas = td.face_geometry(data)
+    centers = td.face_centers(data).values.numpy()
+    flux = (centers * normals.values.numpy()).sum(1) * areas.values.numpy()
+    field = td.Field(td.Values(data, "faces"), tack.array(flux.astype(np.float32)))
+    np.testing.assert_allclose(td.divergence(data, field).values.numpy(), 3.0, rtol=1e-4)
+    volume = td.cell_geometry(data).measure.values.numpy()
+    np.testing.assert_allclose(td.net_flux(data, field).values.numpy(), 3.0 * volume, rtol=1e-4)
+
+
+def test_statistics_are_a_named_tuple(backend):
+    data = td.uniform_grid((2, 2, 2))
+    data.fields["x"] = td.Field(td.H1(data), tack.array(np.arange(8, dtype=np.float32)))
+    s = td.statistics(data, "x")
+    assert isinstance(s, td.Statistics) and s.n == 8 and s.mean == pytest.approx(3.5)
+    assert s._asdict()["max"] == 7.0
+
+
+def test_check_winding_gives_a_cell_set(backend):
+    data = td.as_polyhedra(td.uniform_grid((3, 3, 3)))
+    bad = td.check_winding(data)
+    assert isinstance(bad, td.Set) and bad.on == "cells" and len(bad) == 0
+
+
+def test_contour_and_clip_name_their_parameters_as_the_others_do(backend):
+    data = td.uniform_grid((3, 3, 3))
+    data.fields["x"] = td.Field(td.H1(data), tack.array(data.positions()[:, 0].astype(np.float32)))
+    assert td.contour(data, "x", value=0.5).num_cells == td.contour(data, "x", 0.5).num_cells
+    below, above = td.clip(data, "x", 0.5, inside=True), td.clip(data, "x", 0.5)
+    assert below.positions()[:, 0].max() <= 0.5 + 1e-6 <= above.positions()[:, 0].max()

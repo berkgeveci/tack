@@ -37,9 +37,9 @@ def run(arch="cpu", check=False):
     tack.set_default_device(arch)
     data = build()
     # --8<-- [start:spaces]
-    cell_temperature = td.to_cells(data, "temperature")
-    point_material = td.to_points(data, "material")
-    separate_material = td.discontinuous(data, "material")
+    cell_temperature = td.project(data, "temperature", td.Constant(data))
+    point_material = td.project(data, "material", td.H1(data))
+    separate_material = td.project(data, "material", td.L2(data))
     gradient = td.gradients(data, "temperature")
     # --8<-- [end:spaces]
     # --8<-- [start:implicit]
@@ -48,7 +48,7 @@ def run(arch="cpu", check=False):
     snapshot = tack.arrays.to_host(data.fields["constant"].values)
     # --8<-- [end:implicit]
     # --8<-- [start:traces]
-    face_values = td.traces(data, "material")
+    face_values = td.project(data, "material", td.SideTraces(data))
     material_jump = td.jump(data, "material")
     continuous_jump = td.jump(data, "temperature")
     # --8<-- [end:traces]

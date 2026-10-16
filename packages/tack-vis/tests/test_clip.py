@@ -74,7 +74,7 @@ def test_clip_by_a_function_is_vtks(backend, kind, name, invert):
     data = vtk_to_dataset(grid)
     f = FUNCTIONS[name]()
     values = td.algorithms.implicit_values(data, f).values.numpy()
-    out = td.clip(data, f, invert=invert)
+    out = td.clip(data, f, inside=invert)
     what = "Volume" if SHAPES[kind] >= 10 else "Area"
     _check_like_vtk(out, _vtk_clip(grid, values, 0.0, invert), what)
 
@@ -111,7 +111,7 @@ def test_clip_by_a_field_carries_fields(backend, kind):
 def test_clip_of_a_mixed_mesh_keeps_its_volume(backend):
     data = _two_hexes_and_a_pyramid()
     f = td.Plane((1.0, 0.5, 0.5), (1, 0.2, 0.1))
-    kept, other = td.clip(data, f), td.clip(data, f, invert=True)
+    kept, other = td.clip(data, f), td.clip(data, f, inside=True)
     total = td.algorithms.cell_geometry(data)[0].values.numpy().sum()
     both = sum(td.algorithms.cell_geometry(td.as_polyhedra(part))[0].values.numpy().sum()
                for part in (kept, other))
@@ -143,7 +143,7 @@ def test_clip_refuses_an_l2_geometry(backend):
     refused up front, as for a clip by a function."""
     data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
     field = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
-    data.geometry = td.discontinuous(data, data.geometry)
+    data.geometry = td.project(data, data.geometry, td.L2(data))
     with pytest.raises(TypeError, match="H1 geometry"):
         td.clip(data, field, 0.5)
 
