@@ -107,11 +107,11 @@ dataset of more than 2^31 − 1 cells; everything else works there.
   top-dimensional cells alone.
 - On a 2D mesh `face_geometry` gives each edge's normal in the plane of its
   side 0's cell, pointing out of it, and its length as its "area";
-  `face_centers` its midpoint. `divergence`, `perot`, `jump` and
+  `face_centers` its midpoint. `net_flux`, `divergence`, `perot`, `jump` and
   `upwind_flux` then work on 2D meshes as on 3D ones.
 - A mesh of line cells (a 1D grid's, or VTK lines) has no faces yet: a
   line's would be its end points, which are not derived, so `faces()` and
-  everything built on it (`face_geometry`, `external_faces`, `traces`,
+  everything built on it (`face_geometry`, `extract_surface`, side traces,
   `jump`, `upwind_flux`, ...) raise `NotImplementedError`. A polyline
   topology's have them.
 - A cell of no volume (a hexahedron whose points coincide, a grid of
@@ -141,7 +141,7 @@ dataset of more than 2^31 − 1 cells; everything else works there.
 |---|---|
 | `as_polyhedra(data)` | a 3D shape-based dataset as polyhedra, carrying its fields |
 | `as_polygons(data)` | a 2D shape-based dataset as polygons |
-| `check_winding(data)` | of polyhedra or polygons, the ids of the cells whose faces do not wind consistently; empty when all is well (a shape's faces come from its table) |
+| `check_winding(data)` | of polyhedra or polygons, a cell `Set` of the cells whose faces do not wind consistently; empty when all is well (a shape's faces come from its table) |
 | `orient(topology)` | turns around faces wound into their only cell |
 | `from_cell_faces(..., orient=True)` | repairs input whose faces or cells are inconsistently wound, then turns each connected piece outward by the sign of its total volume |
 
@@ -156,7 +156,7 @@ refused unless the caller asks for the repair.
 | `L2(data, order=1)` | each cell's own copies: order 1 one per corner, order 0 one per cell; `order` may be an array, one order per cell | yes, discontinuous | shape-based |
 | `Constant(data)` | one per cell | yes, constant in the cell | all |
 | `Values(data, on, oriented=False)` | one per point, edge, face or cell: data about the entity, with no basis | no | all |
-| `SideTraces(data)` | per face, per side, per face point; made by `traces` | through the face's shape | shape-based, 3D |
+| `SideTraces(data)` | per face, per side, per face point; made by `project` into it | through the face's shape | shape-based, 3D |
 
 - **Identity.** A space is interned on its topology: `H1(data)` is the same
   object every time, so fields on it share its layout. Two spaces with
@@ -184,7 +184,7 @@ and `Constant`, as source and as target.
 | `H1` (order 1 or 2) | the mean, over the cells around the node, of the source evaluated there | the source is continuous: a lower order comes across exactly |
 | `Constant`, order-0 `L2` | the mean of the cell's corner values (vtkPointDataToCellData) | the source is constant in the cell |
 | order-1 `L2` (or an order per cell) | the source's value at each corner (the corner mean at order 0) | the source's order is at most 1 |
-| `SideTraces` | each side's value from its cell (`traces`) | always |
+| `SideTraces` | each side's value from its cell | always |
 
 Where cells disagree -- cell data, DG data -- the `H1` mean is VTK's
 averaging (vtkCellDataToPointData). Sums run in a fixed order. Scalars or
@@ -195,9 +195,9 @@ project, each into the other.
 Unused points retain their values when the source is H1 (or values on points).
 Cell or DG sources give unused points zero, since no cell contributes there.
 
-The shortcuts are projections: `to_points(data, f)` is
-`project(data, f, H1(data))`, `to_cells` projects into `Constant(data)`,
-and `discontinuous` into `L2(data)`.
+`project` is the one way to move a field: into `H1(data)` for point values,
+`Constant(data)` for one value per cell, `L2(data)` for each cell's own copies,
+`SideTraces(data)` for each side's value at the faces.
 
 ## Fields and arrays
 
@@ -315,7 +315,7 @@ when the set is made. `flags()` gives membership, 1 or 0 per entity.
   entity is in a set when the input entity it came from is. Kept cells keep
   their sets (`threshold`, `extract_cells`), pieces of cells their cells'
   (`contour`, `clip`), and a face set becomes a cell set where faces become
-  cells (`external_faces`, `extract_surface`). A set of entities the filter
+  cells (`extract_surface`). A set of entities the filter
   makes anew -- interpolated points, faces derived afresh -- is left
   behind. Filters that keep the topology keep every set.
 
@@ -425,7 +425,18 @@ Every algorithm is in `tack.dataset.algorithms`, one module each, and
   name, a list of names, or `[]` for none) and returns a `DataSet`;
 - an algorithm that computes a field returns a `Field`, and several fields a
   named tuple of them (`cell_geometry`, `face_geometry`, `flow_quantities`);
-- summaries (`statistics`, `entropy`) return Python values;
+- a summary returns a Python number (`entropy`), or a named tuple of them
+  (`statistics`);
+- a selection returns a `Set` (`boundary_faces`, `check_winding`);
+- one name per operation, a variant a parameter (`extract_surface` defaults to
+  the boundary; `project` moves a field into any space), and one parameter
+  name per meaning (`inside=` keeps a region, `value` is a level, `lower` and
+  `upper` a range);
+- filters that cut a mesh into a subset of its cells compact the points;
+  `extract_surface` keeps the input's points, so point ids stay valid. The
+  point filters (`mask_points`, `threshold_points`, `extract_points`) are
+  the point twins of `mask`, `threshold` and `extract_geometry`: the points as
+  vertex cells, point fields carried and cell fields left behind;
 - nothing changes its input: a new dataset is new, and sets are kept by
   storing what `boundary_faces` returns.
 
@@ -457,8 +468,8 @@ and "polyline" `PolylineTopology`.
 |---|---|---|---|---|
 | `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume, area or length; centroid) | yes | yes | yes | yes |
 | `edge_lengths` | yes | yes | yes | no (no derived edges) |
-| `boundary_faces`, `extract_surface`, `external_faces` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
-| `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes | yes |
+| `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
+| `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
 | `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points) | yes (López, face-based) | yes (line cells) | no (would give points) |
 | `clip` | yes (with an `H1` geometry) | not yet | not yet | not yet |
@@ -468,9 +479,9 @@ and "polyline" `PolylineTopology`.
 | `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
 | `cell_centers`, `values_at_centers` | yes | no | no | no |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no | no |
-| `project` (and `to_points`, `to_cells`) between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
-| `project` into or from `L2`, order-2 `H1`, `SideTraces` (and `discontinuous`) | yes | no | no | no |
-| `traces`, and `jump`/`upwind_flux` of point data | yes | no | no | no |
+| `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
+| `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
+| side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |
 
 Where the table says "no", the algorithm needs a reference element and
 raises `NotImplementedError` saying so.
@@ -500,7 +511,7 @@ What each filter gives:
 | `contour`, `slice`, `slice_plane` | interpolated along edges | pieces of the cut cells | — | — |
 | `clip` | kept points, edge crossings and centroids | pieces of the cut cells, whole kept ones | — | — |
 | `extract_points`, `threshold_points`, `mask_points` | kept points, each a vertex cell | — | — | — |
-| `external_faces`, `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
+| `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
 | `as_polyhedra` | same | same | same | same |
 | `as_polygons` | same | same | — | — |
 
@@ -540,9 +551,9 @@ template and calls `f.value(p)`. Taking one:
 | `extract_geometry(data, f, inside=True, boundary=False)` | whole cells inside (every point at or below zero) or outside, plus with `boundary` those `f` cuts |
 | `extract_points(data, f, inside=True)` | the points inside or outside, as vertex cells |
 
-`clip(data, by, value=0.0, invert=False)` keeps the part of every cell where
+`clip(data, by, value=0.0, inside=False)` keeps the part of every cell where
 `by` -- point data or an implicit function -- is at or above `value` (below,
-with `invert`), cutting cells by Viskores' case tables (VisIt's): whole cells
+with `inside`: inside an implicit function's region), cutting cells by Viskores' case tables (VisIt's): whole cells
 keep their shape (pixels and voxels become quads and hexahedra, as in VTK),
 cut cells become tetrahedra, pyramids, wedges and hexahedra (triangles and
 quads in 2D). The tables number a wedge's corners as VisIt does, mirrored
@@ -586,8 +597,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `tetrahedralize(data)` | 3D cells as tetrahedra by Viskores' tables (hexahedron or voxel 5, wedge 3, pyramid 2), one wedge tetrahedron turned the right way out |
 | `triangulate(data)` | 2D cells as triangles: quads and pixels in two, polygons in fans |
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
-| `point_cloud(data)` | every point as a vertex cell, with the point data |
-| `statistics(data, f)` | Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
+| `statistics(data, f)` | a `Statistics` named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
 | `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as `numpy.histogram` does) |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |

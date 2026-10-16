@@ -56,8 +56,9 @@ that is negative inside, zero on the boundary and positive outside. For the
 plane in the example it is `x - 0.125`.
 
 `clip(data, plane)` keeps values **at or above zero**, here the positive-x
-side. Pass `invert=True` to keep the other side. `extract_geometry` instead
-defaults to `inside=True`, the negative side, and keeps whole cells. State
+side. Pass `inside=True` to keep the other side, inside the function's
+region. `extract_geometry` instead defaults to `inside=True`, the negative
+side, and keeps whole cells. State
 which region you mean before choosing flags; the words “inside” and “keep”
 do not by themselves specify the same default for both functions.
 
