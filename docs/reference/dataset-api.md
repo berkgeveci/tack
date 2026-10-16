@@ -705,6 +705,19 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 - polyhedra are a separate path that shares the data model;
 - face values have an orientation where it matters.
 
+**Settled by the consolidation (2026-10-16):**
+
+- one name per operation, a variant a parameter (`extract_surface`'s faces,
+  `project`'s target space);
+- what each kind of algorithm returns: a filter a `DataSet`, an analysis a
+  `Field` or a named tuple of them, a summary a number or a named tuple, a
+  selection a `Set`;
+- one parameter name per meaning (`inside=`, `value`, `lower`/`upper`);
+- a dataset computes on its own device, and its parts share one.
+
+The algorithm surface is settled as the core's is: a change to it is a
+decision, recorded in the CHANGELOG as breaking.
+
 **Open:**
 
 - coefficient layout (DOF-fastest or cell-fastest);
