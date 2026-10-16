@@ -1383,6 +1383,7 @@ def test_vector_stores_must_match_their_array(define, message):
         define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_vector_array_element_index_is_64_bit():
     """The element index is scaled by the width in i64: an i32 product
     wraps for an array of more than 2**31 components."""

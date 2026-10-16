@@ -388,10 +388,12 @@ unchanged code. The disk cache's lowered-IR key includes debug mode
 so debug and plain kernels never share one; a stored debug kernel keeps
 its `bounds_sites`. Debug calls bypass the dispatch fast path. See
 `test_debug_bounds.py`. `TACK_DEBUG=1 pytest` runs every
-kernel of the suite with checks; the tests that fail then read generated
-source or IR text, call a compiled CPU kernel with its own argument list, or
-compile generated code with a reduced toolchain (OpenCL 1.2, the host C++
-shim without `atomicAdd`); kernels that run must all pass.
+kernel of the suite with checks, and passes. A test of what plain mode
+generates or does (one that reads generated source or IR text, calls a
+compiled CPU kernel with its own argument list, compiles generated code with
+a reduced toolchain such as OpenCL 1.2 or the host C++ shim without
+`atomicAdd`, counts fills or times overlapping launches) takes the
+`no_debug` fixture (`conftest.py`), which turns debug mode off for it.
 
 ### Lowering (ast_transform.py and lang/lowering/)
 

@@ -163,6 +163,7 @@ _C_GENERATORS = [generate_cuda_source, generate_hip_source, generate_opencl_sour
 _C_IDS = ['cuda', 'hip', 'opencl']
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize('generate', _C_GENERATORS, ids=_C_IDS)
 def test_c_generators_emit_exact_double_literals(generate, tmp_path):
     source = generate(_prepare(_long_literal, tack.f64))
@@ -200,6 +201,7 @@ def test_llvm_f32_kernels_emit_no_double_literals():
     assert 'double' not in ll
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source],
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_computes_exact_f64_literals(generate, tmp_path):

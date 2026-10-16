@@ -167,6 +167,7 @@ def test_which_lookups_become_tables():
     (generate_opencl_source, "__constant int"),
     (generate_msl_source, "constant int"),
 ], ids=["cuda", "hip", "opencl", "metal"])
+@pytest.mark.usefixtures("no_debug")
 def test_each_table_is_declared_once(generate, qualifier):
     tack.set_default_device("cpu")
     source = generate(_prepared(_faces, *_faces_args()))

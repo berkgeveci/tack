@@ -181,6 +181,7 @@ def test_atomic_value_converts_to_unsigned_target(backend, op):
     assert out.numpy()[0] == expected
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize('op', KERNELS)
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 def test_cpu_concurrent_updates_are_atomic(dtype, op):

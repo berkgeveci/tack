@@ -500,6 +500,7 @@ def test_float_if_statement_keeps_its_bare_condition():
 
 # ── Local address space placement ────────────────────────────────────
 
+@pytest.mark.usefixtures("no_debug")
 def test_nested_shared_allocation_is_declared_at_kernel_scope():
     """OpenCL C admits `__local` only in a kernel's outermost scope.
 

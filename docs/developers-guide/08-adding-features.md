@@ -179,7 +179,9 @@ know everything that shapes the generated code:
   checked in debug mode: lowering wraps it through `_checked` in
   `lang/lowering/bounds.py` (an `IRBoundsCheck`), `ir_bounds.guard_accesses`
   must skip the access when the check is negative, and every generator must
-  emit the check. Run the new tests with `TACK_DEBUG=1` too.
+  emit the check. Run the new tests with `TACK_DEBUG=1` too; a test of
+  what plain mode generates (source text, a reduced toolchain) takes the
+  `no_debug` fixture.
 - **Variant key and fast-path signature.** A new fact about the arguments
   that changes the generated code goes into the variant key, and the
   dispatch fast path's `_call_signature` must distinguish it as well, or a

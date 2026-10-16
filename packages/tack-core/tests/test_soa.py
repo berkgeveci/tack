@@ -213,6 +213,7 @@ def test_kernels_read_and_write_either_layout(backend):
     np.testing.assert_allclose(out.numpy(), _expected())
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_the_generated_code_reads_each_component_array():
     tack.set_default_device("cpu")
     ir = tack.inspect(_scale, tack.zeros((4,), tack.vec3(), layout="soa"),

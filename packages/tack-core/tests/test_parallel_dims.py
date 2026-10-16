@@ -263,6 +263,7 @@ def test_cpu_empty_chunk_with_a_zero_extent_does_not_divide():
     compiled.call_range(compiled.bind([a, 0, 0], (0, 0)), 0, 0)
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_cpu_fan_out_across_workers():
     """The dispatcher's own fan-out, on worker chunks that end mid-row."""
     tack.set_default_device("cpu", num_threads=7)
