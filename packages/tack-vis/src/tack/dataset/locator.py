@@ -20,9 +20,10 @@ at its own points through the fields' bases.
 import numpy as np
 
 import tack
+from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import gather
-from tack.dataset import arrays, ids
+from tack.dataset import ids
 from tack.dataset.buckets import bucket_order
 from tack.dataset.dataset import for_each
 

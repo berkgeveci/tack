@@ -42,8 +42,26 @@ class Backend:
     #: Device type, as a device spec writes it (`tack.device("cuda")`).
     name: str = "unknown"
 
-    #: Which of the type's devices this backend drives. Only 0, for now.
+    #: Which of the type's devices this backend drives: N in ``"cuda:N"``,
+    #: the device's number on its runtime (CUDA's device ordinal, HIP's
+    #: device id, the index among the Level Zero driver's devices).
     ordinal: int = 0
+
+    #: Whether the type has more than one device to reach: the constructor
+    #: then takes ``ordinal=`` (None for `current_ordinal`'s), and
+    #: `device_count` says how many there are.
+    multi_device: bool = False
+
+    @classmethod
+    def device_count(cls) -> int:
+        """How many devices of this type the machine has."""
+        return 1
+
+    @classmethod
+    def current_ordinal(cls) -> int:
+        """The device a bare spec names (``"cuda"``): the one the calling
+        thread already uses, as another library may have chosen it."""
+        return 0
 
     #: How the backend is written in messages meant for people. Defaults to
     #: `name`; backends whose arch id is not how you would spell it in prose
@@ -100,7 +118,8 @@ class Backend:
     def memory_domain(self) -> tuple:
         """What an array's memory is valid in: two backends with one domain can use
         each other's arrays (two CPU backends with different thread counts,
-        say). Level Zero adds its context, since its pointers belong to one."""
+        say). CUDA and Level Zero add their context, since a pointer belongs
+        to one."""
         return (self.name, self.ordinal)
 
     @property

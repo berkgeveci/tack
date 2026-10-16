@@ -188,14 +188,14 @@ def test_contour_of_varying_l2_orders_on_mixed_2d_shapes(backend):
     segments = out.positions()[out.topology.connectivity.numpy()].reshape(-1, 2, 3)
     np.testing.assert_allclose(segments, [[[0.5, 0, 0], [0.5, 0.5, 0]],
                                         [[4.5, 0, 0], [4.5, 1, 0]]], atol=1e-6)
-    np.testing.assert_array_equal(td.arrays.to_host(out.fields["cell"].values), [0, 2])
+    np.testing.assert_array_equal(tack.arrays.to_host(out.fields["cell"].values), [0, 2])
     assert np.all(segments[:, 1, 1] > segments[:, 0, 1])  # higher x on the right
 
 
 def test_contour_cell_values_have_no_2d_level_set(backend):
     data = td.uniform_grid((2, 2))
-    field = td.Field(td.Values(data, "cells"), td.ConstantArray(1., data.num_cells))
+    field = td.Field(td.Values(data, "cells"), tack.arrays.ConstantArray(1., data.num_cells))
     assert td.contour(data, field, 0.5).num_cells == 0
-    face_field = td.Field(td.Values(data, "faces"), td.ConstantArray(1., 4))
+    face_field = td.Field(td.Values(data, "faces"), tack.arrays.ConstantArray(1., 4))
     with pytest.raises(TypeError, match="basis"):
         td.contour(data, face_field, 0.5)

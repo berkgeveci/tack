@@ -2,9 +2,9 @@
 fields of values, compaction of 0/1 flags into ids, closing offsets."""
 
 import tack
+from tack import arrays
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import arrays
-from tack.dataset.arrays import size_of
+from tack.arrays import size_of
 from tack.dataset.ids import at_least
 
 

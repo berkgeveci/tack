@@ -218,6 +218,49 @@ pos.fill(0.0)                            # every component to this scalar
 A flat `(n * 3,)` array is not accepted by `copyto` for a vector array;
 reshape it to `(n, 3)` first.
 
+### Structure of Arrays
+
+A vector or matrix array can instead keep each component in an array of
+its own: the structure-of-arrays layout, as a simulation often hands over
+its coordinates. `tack.soa(x, y, z)` makes a `vec3` array from three
+arrays that exist already, without copying, so they can come from another
+library (`tack.from_dlpack`, `tack.array_from_ptr`) on the CPU or a GPU;
+`layout="soa"` on a constructor makes new ones:
+
+<!-- tack-check: soa-arrays -->
+```python
+import numpy as np
+
+import tack
+
+tack.set_default_device("cpu")
+
+
+@tack.kernel
+def advance(pos, vel, dt):
+    for i in range(len(pos)):
+        pos[i] += vel[i] * dt
+
+
+x, y, z = (np.zeros(4, np.float32) for _ in range(3))   # someone else's arrays
+pos = tack.soa(tack.from_dlpack(x), tack.from_dlpack(y), tack.from_dlpack(z))
+vel = tack.full((4,), [1.0, 2.0, 3.0], tack.vec3(), layout="soa")
+advance(pos, vel, 0.5)
+assert np.allclose(y, 1.0)                     # written through to their memory
+assert pos.layout == "soa" and pos.components[1].size == 4
+assert np.allclose(pos.numpy(), [[0.5, 1.0, 1.5]] * 4)
+```
+
+Kernels index an SOA array exactly as an interleaved one (`pos[i]`,
+`pos[i].y`, `pos[i] += v`, atomics with a vector), and the same kernel
+takes either layout, compiling one variant for each; only a scalar
+atomic at a flat component index is interleaved-only. On the host it
+reads and writes as any vector array (`numpy()`, `copyto`, `fill`,
+reductions); `a.components` gives the component arrays back, and
+`tack.array(a, layout="aos")` copies it into one interleaved buffer. With
+no one buffer, it is not exported whole through DLPack or to VTK; its
+components are.
+
 ### Reading One Element from the Host
 
 `f[i]`, `f[i, j]` and `f[()]` (for a zero-dimensional array) read one
@@ -343,6 +386,56 @@ f.nbytes     # 48 (bytes of storage)
 v = tack.empty((4,), tack.vec3())
 v.size, v.ndim, v.nbytes   # 4, 1, 48: elements, not components
 ```
+
+## Implicit Arrays
+
+`tack.arrays` has arrays that compute each value from its index instead of
+storing it: `CountingArray`, `ConstantArray`, `CartesianProduct`,
+`UniformCoordinates`, `Permutation`, `Concatenate`, `View`, `Strided`,
+`Components`, `Function`, `Transform`, `Cast` and random arrays. They
+compose, and a kernel indexes them as it indexes a stored array, so a
+kernel written for stored arrays takes them unchanged:
+
+<!-- tack-check: implicit-arrays -->
+```python
+import numpy as np
+
+import tack
+from tack import arrays
+
+tack.set_default_device("cpu")
+
+
+@tack.kernel
+def scaled(a, out, s):
+    for i in range(len(a)):
+        out[i] = a[i] * s
+
+
+out = tack.zeros((4,))
+scaled(tack.array([1.0, 2.0, 3.0, 4.0]), out, 2)       # a stored array
+scaled(arrays.CountingArray(4, 1.0, 1.0), out, 2)       # 1, 2, 3, 4 computed
+ids = tack.array([3, 0, 2, 1])
+scaled(arrays.Permutation(ids, arrays.CountingArray(4, 0.0, 10.0)), out, 1)
+assert np.allclose(out.numpy(), [30, 0, 20, 10])
+```
+
+Each kind of array compiles its own variant of the kernel, and a composed
+array inlines to the expression you would write by hand.
+
+Arrays that wrap stored ones can also be written through: a store into a
+`View`, `Strided` or `Permutation` (a scatter) lands in the array it wraps,
+`Components(x, y, z)` takes a vector and writes each component to its own
+array (a structure of arrays, which `tack.soa` also stores; see
+[Structure of Arrays](#structure-of-arrays)), `Concatenate` writes into the part that
+holds the index, and `ExtractComponent` writes one component. An array is
+writable exactly when what it writes through is: a store into a
+`CountingArray`, a `Function`, or a `Permutation` of one, is refused when
+the kernel compiles, and a read-only stored array stays read-only behind
+any wrapper. Your own classes
+join the same way: see [Indexable Objects](06-templates.md#indexable-objects).
+The [dataset reference](../reference/dataset-api.md#fields-and-arrays) lists
+every implicit array with its VTK and Viskores counterparts.
 
 ## Scalar Types
 

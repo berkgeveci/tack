@@ -64,11 +64,11 @@ def _with_points_stored(data):
 def _host(out):
     """Every array of a result, in its order: datasets' positions and fields."""
     if isinstance(out, td.DataSet):
-        return [out.positions()] + [np.asarray(td.arrays.to_host(f.values), float)
+        return [out.positions()] + [np.asarray(tack.arrays.to_host(f.values), float)
                                     for f in out.fields.values()]
     if isinstance(out, tuple):
         return [a for part in out for a in _host(part)]
-    return [np.asarray(td.arrays.to_host(out.values), float)]
+    return [np.asarray(tack.arrays.to_host(out.values), float)]
 
 
 @pytest.mark.parametrize("dims", [(1, 4, 3), (4, 1, 3), (3, 4, 1)])
@@ -78,7 +78,7 @@ def test_a_grid_squeezed_of_a_size_one_axis_is_the_same_grid(backend, dims):
     data = td.uniform_grid(dims, origin=(0.3, -0.2, 0.1), spacing=(0.5, 0.7, 0.9))
     x = data.positions()
     data.fields["p"] = td.Field(td.H1(data), tack.array((x @ [1.0, 2.0, 3.0]).astype(np.float32)))
-    data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([0.1, 0.2, 0.3], data.num_points))
+    data.fields["v"] = td.Field(td.H1(data), tack.arrays.ConstantArray([0.1, 0.2, 0.3], data.num_points))
     stored = _with_points_stored(data)
     seed, middle = x[len(x) // 2] + 0.01, (x.min(0) + x.max(0)) / 2
     for algorithm in (td.cell_geometry, td.cell_centers, td.face_geometry, td.external_faces,
@@ -123,8 +123,8 @@ def test_a_mesh_of_lines_has_no_faces_and_says_so(backend, name):
     """A line's faces would be its end points, which are not derived; asking
     gave no faces, so a line's boundary was empty, or an internal error."""
     data = td.uniform_grid((4,))
-    data.fields["p"] = td.Field(td.H1(data), td.ConstantArray(1.0, 4))
-    data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, 3))
+    data.fields["p"] = td.Field(td.H1(data), tack.arrays.ConstantArray(1.0, 4))
+    data.fields["c"] = td.Field(td.Constant(data), tack.arrays.ConstantArray(1.0, 3))
     with pytest.raises(NotImplementedError, match="faces of a mesh of lines"):
         FACE_ALGORITHMS[name](data)
 
@@ -152,7 +152,7 @@ def _collapsed(kind):
 @pytest.mark.parametrize("kind", ["hexahedron", "grid"])
 def test_geometry_of_cells_of_no_volume_is_finite(backend, kind):
     data = _collapsed(kind)
-    data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, data.num_cells))
+    data.fields["c"] = td.Field(td.Constant(data), tack.arrays.ConstantArray(1.0, data.num_cells))
     measure, centroid = td.cell_geometry(data)
     np.testing.assert_array_equal(measure.values.numpy(), 0)
     np.testing.assert_allclose(centroid.values.numpy(), 2.0)
@@ -168,8 +168,8 @@ def test_geometry_of_cells_of_no_volume_is_finite(backend, kind):
 @pytest.mark.parametrize("kind", ["hexahedron", "grid"])
 def test_derivatives_on_cells_of_no_volume_are_nan(backend, kind):
     data = _collapsed(kind)
-    data.fields["p"] = td.Field(td.H1(data), td.ConstantArray(1.0, data.num_points))
-    data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, data.num_cells))
+    data.fields["p"] = td.Field(td.H1(data), tack.arrays.ConstantArray(1.0, data.num_points))
+    data.fields["c"] = td.Field(td.Constant(data), tack.arrays.ConstantArray(1.0, data.num_cells))
     assert np.isnan(td.gradients(data, "p").values.numpy()).all()
     assert np.isnan(td.perot(data, td.upwind_flux(data, "c", (1, 0, 0))).values.numpy()).all()
 
@@ -194,7 +194,7 @@ def _ramp_with(value):
     values = np.linspace(0, 1, 27).astype(np.float32)
     values[0] = value
     data.fields["p"] = td.Field(td.H1(data), tack.array(values))
-    data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([1.0, 2.0, 3.0], 27))
+    data.fields["v"] = td.Field(td.H1(data), tack.arrays.ConstantArray([1.0, 2.0, 3.0], 27))
     return data
 
 
@@ -230,12 +230,12 @@ def test_histograms_refuse_ranges_that_are_not_finite(backend):
 
 def test_entropy_of_one_value_and_of_none(backend):
     data = td.uniform_grid((3, 3))
-    data.fields["one"] = td.Field(td.H1(data), td.ConstantArray(2.0, 9))
+    data.fields["one"] = td.Field(td.H1(data), tack.arrays.ConstantArray(2.0, 9))
     assert str(td.entropy(data, "one")) == "0.0"
     with pytest.raises(ValueError, match="at least 1 bin"):
         td.entropy(data, "one", bins=0)
     empty = td.DataSet(td.UnstructuredTopology([], [0], [], num_points=0), np.empty((0, 3)))
-    empty.fields["p"] = td.Field(td.H1(empty), td.ConstantArray(0.0, 0))
+    empty.fields["p"] = td.Field(td.H1(empty), tack.arrays.ConstantArray(0.0, 0))
     with pytest.raises(ValueError, match="entropy of no values"):
         td.entropy(empty, "p")
 

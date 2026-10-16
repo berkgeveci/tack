@@ -367,7 +367,7 @@ shapes and a rectilinear grid:
 |---|---|
 | `topology.py` | `UnstructuredTopology`, `StructuredTopology`; cells as one `DomainGroup` per shape; `faces()` and `edges()` derived by sorting and cached |
 | `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry (`position`, `geometry_jacobian`, read from the geometry field), cell incidence, one per space, one per storage (`get(k)`), and how a point's value is addressed |
-| `arrays.py` | implicit arrays a field's values may be: `CartesianProduct` (a rectilinear grid's points), `ConstantArray`, `CountingArray`; helpers for any array |
+| (`tack.arrays`, in tack-core) | implicit arrays a field's values may be: `CartesianProduct` (a rectilinear grid's points), `ConstantArray`, `CountingArray` and the rest; helpers for any array. Once `arrays.py` here, moved to the core when any kernel could index them |
 | `spaces.py` | spaces on a topology, each owning its layout: `H1(data)`, `L2(data)` (holds its offsets), `Constant(data)`, `Values(data, on)`; one object per (kind, parameters, topology) |
 | `dataset.py` | `Field` (a space and its values), `DataSet` (geometry is its `"shape"` field), `for_each` |
 | `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `traces`, `jump`, `upwind_flux`, `divergence`, `to_points`, `to_cells` |

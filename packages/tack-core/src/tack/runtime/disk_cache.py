@@ -352,7 +352,7 @@ def _template_content(obj) -> tuple:
                struct.pack("!d", v).hex() if isinstance(v, float) else v)
               for k, v in sorted(scalars.items())),
         tuple((k, f.scalar_dtype.name, len(getattr(f, "_logical_shape", None) or f.shape),
-               getattr(f, "_vector_n", None), getattr(f, "_matrix_shape", None))
+               getattr(f, "_vector_n", None), getattr(f, "_matrix_shape", None), f.layout)
               for k, f in sorted(arrays.items())),
         tuple(sorted(runtime)),
         tuple((k, func_fingerprint(f)) for k, f in sorted(template_func_attrs(obj).items())),

@@ -3,11 +3,11 @@ a field between spaces, of which ``to_points``, ``to_cells`` and ``discontinuous
 are shortcuts."""
 
 import tack
+from tack.arrays import dtype_of, materialize
 from tack.dataset import ids
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.algorithms.traces import traces
-from tack.dataset.arrays import dtype_of, materialize
 from tack.dataset.buckets import bucket_order
 from tack.dataset.carry import _like, _take
 from tack.dataset.dataset import Field, for_each

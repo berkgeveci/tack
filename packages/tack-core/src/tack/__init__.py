@@ -25,6 +25,7 @@ del _NotInstalled, _installed_version
 from tack.lang.array import (
     Array,
     ExportedMemory,
+    SoaArray,
     Texture3D,
     arange,
     array,
@@ -40,6 +41,7 @@ from tack.lang.array import (
     memory_space,
     ones,
     ones_like,
+    soa,
     zeros,
     zeros_like,
 )
@@ -72,6 +74,7 @@ from tack.lang.types import (
 from tack.runtime.dispatch import (
     Device,
     device,
+    device_count,
     get_default_device,
     set_debug,
     set_default_device,

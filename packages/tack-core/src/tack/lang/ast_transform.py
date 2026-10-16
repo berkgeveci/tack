@@ -9,160 +9,76 @@ Inspired by Taichi's AST transformer (Apache 2.0), simplified for Tack's needs.
 """
 
 import ast
-import copy
 
 from tack.lang import ir, ir_bounds, parallel_dims
 from tack.lang.constant import constant_components, constant_ir, constant_table
 from tack.lang.ir_names import fresh_name
-from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
+from tack.lang.lowering.arrays import ArrayAccess
+from tack.lang.lowering.bounds import BoundsChecks
+from tack.lang.lowering.checks import LoweringChecks
+from tack.lang.lowering.inlining import Inlining
+from tack.lang.lowering.local_arrays import LocalArrays
+from tack.lang.lowering.loops import Loops, _launch_bounds_from_arguments, _mark_outermost_continues
+from tack.lang.lowering.values import (
+    _MATRIX_CONSTRUCTORS,
+    _VECTOR_CONSTRUCTORS,
+    MATH_BUILTINS,
+    MAX_MATRIX_EXTENT,
+    TupleValue,
+    VectorValue,
+    _describe_value,
+    _like,
+    _size,
+)
+from tack.lang.lowering.vectors import VectorValues
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_support import workgroup_features
 
-# Math builtins that map to LLVM intrinsics / libm calls
-MATH_BUILTINS = {
-    "sqrt", "sin", "cos", "tan",
-    "asin", "acos", "atan", "atan2",
-    "sinh", "cosh", "tanh",
-    "exp", "log", "log2", "log10",
-    "floor", "ceil",
-    "abs", "min", "max", "pow",
-    "fabs",
-    "exp2",
-}
 
-# Names for the first four components of a vector: v.x is v[0].
-COMPONENT_NAMES = "xyzw"
-
-# Matrices are scalarized like vectors, so their size is the size of the
-# expressions they expand to: a 4x4 product is 64 multiplications.
-MAX_MATRIX_EXTENT = 4
-
-
-class VectorValue(list):
-    """A vector-valued expression during lowering.
-
-    Tack scalarizes vectors: the value is one scalar IR expression per
-    component, in storage order, and it never enters the IR itself. It is
-    a ``list`` so code that maps over components stays plain. What the
-    class adds is an identity distinct from a tuple of values and from a
-    list of statements, and a ``shape``: ``(n,)`` for a vector.
-    """
-
-    def __init__(self, components, shape=None):
-        super().__init__(components)
-        self.shape = (len(self),) if shape is None else tuple(shape)
-
-    def describe(self) -> str:
-        if len(self.shape) == 1:
-            return f"a {self.shape[0]}-vector"
-        return "a " + "x".join(str(d) for d in self.shape) + " matrix"
-
-
-class TupleValue(list):
-    """Several values side by side: a tuple in the source.
-
-    The indices of ``f[i, j]``, the right side of ``a, b = b, a``, and what
-    a device function with ``return a, b`` yields. An item may itself be a
-    ``VectorValue``.
-    """
-
-    def describe(self) -> str:
-        return f"a tuple of {len(self)} values"
-
-
-def _size(shape) -> int:
-    total = 1
-    for extent in shape:
-        total *= extent
-    return total
-
-
-def _like(original, components):
-    """``components`` as the kind of value ``original`` is."""
-    if isinstance(original, VectorValue):
-        return VectorValue(components, original.shape)
-    if isinstance(original, TupleValue):
-        return TupleValue(components)
-    return list(components)
-
-
-def _describe_value(value) -> str:
-    describe = getattr(value, 'describe', None)
-    return describe() if describe is not None else f"a list of {len(value)} values"
-
-
-# Kernel value constructors and the shape each builds.
-_VECTOR_CONSTRUCTORS = {"vec2": 2, "vec3": 3, "vec4": 4}
-_MATRIX_CONSTRUCTORS = {"mat": None, "mat2": 2, "mat3": 3, "mat4": 4}
-
-
-class KernelTransformer(ast.NodeVisitor):
+class KernelTransformer(
+        Inlining,           # device functions inlined at call sites
+        VectorValues,       # vector and matrix values, scalarized
+        ArrayAccess,        # indexing, vector and SOA array elements
+        Loops,              # the parallel loop, sequential loops
+        LoweringChecks,     # checks on what lowering emitted
+        LocalArrays,        # shared and local arrays
+        BoundsChecks,       # debug mode's bounds checks
+        ast.NodeVisitor):
     """Transforms a Python AST (from a @kernel function) into Tack IR.
 
-    Tracks nesting depth to distinguish parallel for-loops (top-level)
-    from sequential for-loops (nested inside another for-loop).
-
-    Supports:
-      - @tack.func inlining at call sites
-      - Multi-dimensional array indexing: array[i, j] → array[i * shape1 + j]
-      - array[()] → array[0] for zero-dimensional arrays
-      - ndindex(w, h) → 1D parallel loop with index decomposition
-      - Vector scalarization: tack.vec3(a, b, c) → 3 scalar variables
+    The methods are grouped by job into the mixins above, one module each
+    in `tack.lang.lowering`, each setting up the state it owns in its own
+    ``_init_...`` method. What stays here is the walk itself: the
+    ``visit_*`` methods for statements and expressions (assignment, calls,
+    subscripts, names, operators) and the expression machinery every mixin
+    uses (``visit``, ``_visit_expression``, ``_capture_value``,
+    ``_visit_ordered``, ``_source_error``, ``_fresh_name``), with the state
+    they share (``_pre_stmts``, ``_used_names``, ``_function_name``, the
+    bindings and the texture metadata).
     """
 
     def __init__(self, vector_arrays=None, texture_arrays=None, python_func=None,
                  bindings=None, template_funcs=None, debug=False):
         self._python_func = python_func
-        # Debug mode: every array and array index is checked (IRBoundsCheck),
-        # and each checked access is described in _bounds_sites.
-        self._debug = debug
-        self._bounds_sites: list = []
-        self._array_sizes: dict = {}   # local/shared array name -> its size expression
-        self._sources: dict = {}       # Python function -> its source, for _source_text
+        self._init_bounds(debug)
+        self._init_local_arrays()
+        self._init_checks()
+        self._init_loops()
+        self._init_arrays(vector_arrays)
+        self._init_vectors()
+        self._init_inlining()
         self._bindings = bindings
         self._template_funcs = template_funcs
         self._call_bindings = None
-        # Lowered nodes already checked by _check_single_values, by id.
-        self._checked_nodes = set()
-        self._active_funcs = set()
-        self._loop_depth = 0
         self._used_names: set[str] = set()
-        self._component_names: dict[tuple[str, int], str] = {}
-        self._inline_counter = 0  # unique suffix for inlined variables
-        # Vector tracking: name → number of components
-        self._vector_vars: dict[str, int] = {}
         # Statements generated by expression-level inlining (hoisted before current stmt)
         self._pre_stmts: list = []
-        # Shared memory variables
-        self._shared_vars: set[str] = set()
-        # Vector array metadata: param_name → number of components. The
-        # caller gives a matrix array as its (rows, columns); those are
-        # kept beside the component count.
-        self._vector_arrays: dict[str, int] = {}
-        self._matrix_arrays: dict[str, tuple] = {}
-        for name, width in (vector_arrays or {}).items():
-            if isinstance(width, tuple):
-                self._matrix_arrays[name] = width
-                width = _size(width)
-            self._vector_arrays[name] = width
-        # Matrix variables: name → (rows, columns), beside _vector_vars
-        self._matrix_vars: dict[str, tuple] = {}
         # Texture array metadata: param_name → (W, H, D) shape
         self._texture_arrays: dict[str, tuple] = texture_arrays or {}
         # Maps renamed texture names back to the original kernel param name
         self._texture_origin: dict[str, str] = {}
-        # Where each name is first read: name → (line, column, device
-        # function it was inlined from or None). Only for diagnostics.
-        self._name_reads: dict[str, tuple] = {}
-        self._inline_stack: list[str] = []
         self._function_name = '<module>'
-        # Statements outside the parallel loop may run any number of times
-        # per launch (once per GPU thread, once per CPU chunk or probe), so
-        # only effect-free ones are accepted there.
-        self._kernel_body: list = []
-        self._in_parallel_loop = False
-        self._parallel_loop_seen = False
 
     def visit(self, node):
         try:
@@ -201,10 +117,14 @@ class KernelTransformer(ast.NodeVisitor):
         self._used_names.update(arg.arg for arg in node.args.args)
         params = []
         for arg in node.args.args:
-            params.append(ir.IRParam(
-                name=arg.arg,
-                type_annotation=None,  # resolved during type inference
-            ))
+            # An SOA array is one parameter per component, in its place;
+            # dispatch passes the component arrays there.
+            for name in self._soa_arrays.get(arg.arg, (arg.arg,)):
+                self._used_names.add(name)
+                params.append(ir.IRParam(
+                    name=name,
+                    type_annotation=None,  # resolved during type inference
+                ))
         self._kernel_body = node.body
         body = self._visit_body(node.body)
         if not self._parallel_loop_seen:
@@ -215,9 +135,13 @@ class KernelTransformer(ast.NodeVisitor):
         for stmt in body:
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
+        body = _launch_bounds_from_arguments(params, body)
         if self._debug:
             params.extend(ir.IRParam(name=name) for name in ir_bounds.HIDDEN_PARAMS)
         function = ir.IRFunction(name=node.name, params=params, body=body)
+        # The source spelling of the arrays device-class arguments hold, by
+        # synthetic parameter (template_rewrite), for diagnostics.
+        function.held_arrays = dict(getattr(node, '_tack_held_arrays', {}))
         if self._debug:
             function.bounds_sites = tuple(self._bounds_sites)
         if workgroup_features(function):
@@ -239,158 +163,6 @@ class KernelTransformer(ast.NodeVisitor):
         return UnsupportedSyntaxError(
             f"{where}: {construct} at line {node.lineno}, "
             f"column {node.col_offset + 1} {detail}")
-
-    def _check_outside_parallel_loop(self, stmt, lowered: list):
-        """Reject an observable effect lowered outside the parallel loop.
-
-        Runs on each statement's lowered IR, so effects that arrive through
-        inlined device functions, template methods, vector stores or tuple
-        unpacking are all seen. Nested and inlined bodies are checked first,
-        so the position is that of the innermost source statement.
-        """
-        for node in walk_ir([s for s in lowered if not isinstance(s, ir.IRParallelFor)]):
-            effect = _effect_name(node)
-            if effect is not None:
-                raise self._source_error(
-                    stmt, effect, "is outside the parallel loop. Statements "
-                    "there may run any number of times per launch, so they "
-                    "may only assign local variables and declare arrays; "
-                    f"move the {effect} into the loop body")
-
-    def _check_single_values(self, stmt, lowered: list):
-        """Reject a vector or a tuple left where the IR needs one value.
-
-        Vectors exist only during lowering, as lists of component
-        expressions; every operation that accepts one maps over it. One
-        that does not would otherwise put the list into the IR, where the
-        verifier reports it as "expected expr node" with a tree path. Here
-        the statement's source position is still known. Each lowered node
-        is examined once: a nested body was checked when it was lowered.
-        """
-        pending = list(lowered)
-        while pending:
-            node = pending.pop()
-            if id(node) in self._checked_nodes:
-                continue
-            self._checked_nodes.add(id(node))
-            if isinstance(node, list):
-                raise self._source_error(
-                    stmt, "statement", f"uses {_describe_value(node)} where a single "
-                    f"value is required")
-            for name, role in child_fields(node):
-                value = getattr(node, name)
-                if role in LIST_ROLES:
-                    pending.extend(value)
-                elif value is not None:
-                    pending.append(value)
-
-    def _component_name(self, name, component):
-        key = (name, component)
-        if key not in self._component_names:
-            self._component_names[key] = self._fresh_name(f"{name}__{component}")
-        return self._component_names[key]
-
-    def _check_names_bound(self, function: ir.IRFunction):
-        """Reject a read of a name the kernel never binds.
-
-        The usual cause is a module-level Python value: a kernel is compiled
-        from its own source and captures nothing from the enclosing scope.
-        The IR verifier would refuse the same thing a moment later, but only
-        as a tree path into the lowered IR; here the source position is still
-        known. Existence only -- not definite assignment on every path.
-        """
-        bound = {p.name for p in function.params}
-        used = []
-        for n in walk_ir(function.body):
-            if isinstance(n, ir.IRAssign):
-                bound.add(n.target)
-            elif isinstance(n, (ir.IRParallelFor, ir.IRSequentialFor)):
-                bound.add(n.var)
-                bound.update(getattr(n, 'dims', None) or ())
-            elif isinstance(n, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
-                bound.add(n.name)
-            elif isinstance(n, ir.IRName):
-                used.append(n.name)
-            elif isinstance(n, (ir.IRDimSize, ir.IRTextureSample)):
-                used.append(n.array_name)
-        for name in used:
-            if name in bound:
-                continue
-            where = f"Kernel '{function.name}'"
-            read = self._name_reads.get(name)
-            at = ""
-            if read is not None:
-                line, column, inlined_from = read
-                at = f" at line {line}, column {column}"
-                if inlined_from is not None:
-                    where = (f"Device function '{inlined_from}' "
-                             f"(inlined into kernel '{function.name}')")
-            raise NameError(
-                f"{where}: name '{name}'{at} is not a parameter and is never "
-                f"assigned. Kernels do not capture Python variables from the "
-                f"enclosing scope: define it as {name} = tack.constant(...), "
-                f"pass the value as an argument, or make it a class-level "
-                f"constant of a @tack.device_class template.")
-
-    def _check_loop_variables_stay_in_their_loops(self, function: ir.IRFunction):
-        """Reject a read of a loop variable after its loop.
-
-        A `for` loop's variable is a binding of its own that ends with the
-        loop, on every backend: afterwards the name means whatever it meant
-        before the loop, or nothing. Python would give the last value
-        iterated. Rather than compute either silently -- CPU raised a
-        NameError at codegen while the GPU backends failed to compile --
-        refuse the read here, with its source position. A name whose most
-        recent binding in program order is a loop header may not be read
-        until it is assigned again. Branches and loops that may not run are
-        merged conservatively: the name stays stale if it is stale on any
-        path, so `assign it before the loop` is always a valid fix.
-        """
-        def read(expr, stale):
-            for n in walk_ir(expr):
-                if isinstance(n, ir.IRName) and n.name in stale:
-                    raise self._loop_variable_error(function, n)
-
-        def block(stmts, stale):
-            stale = set(stale)
-            for s in stmts:
-                if isinstance(s, ir.IRAssign):
-                    read(s.value, stale)
-                    stale.discard(s.target)
-                elif isinstance(s, (ir.IRSequentialFor, ir.IRParallelFor)):
-                    for bound in (s.start, s.end, getattr(s, "step", None)):
-                        if bound is not None:
-                            read(bound, stale)
-                    inner = block(s.body, stale - {s.var})
-                    stale = (stale | inner) | {s.var}
-                elif isinstance(s, ir.IRWhile):
-                    read(s.condition, stale)
-                    stale = stale | block(s.body, stale)
-                elif isinstance(s, ir.IRIf):
-                    read(s.condition, stale)
-                    stale = block(s.then_body, stale) | block(s.else_body or [], stale)
-                else:
-                    read(s, stale)
-            return stale
-
-        block(function.body, set())
-
-    def _loop_variable_error(self, function, name_node):
-        where = f"Kernel '{function.name}'"
-        at = ""
-        read = getattr(name_node, "_source", None) or self._name_reads.get(name_node.name)
-        if read is not None:
-            line, column, inlined_from = read
-            at = f" at line {line}, column {column}"
-            if inlined_from is not None:
-                where = (f"Device function '{inlined_from}' "
-                         f"(inlined into kernel '{function.name}')")
-        spelled = getattr(name_node, "_source_id", name_node.name)
-        return NameError(
-            f"{where}: name '{spelled}'{at} is read after the `for` loop "
-            f"that bound it. A loop variable's binding ends with its loop; "
-            f"to use the value afterwards, copy it to another name inside the "
-            f"loop, or assign the name again before reading it.")
 
     def _visit_body(self, stmts: list) -> list:
         """Visit a list of statements, filtering out None results.
@@ -452,235 +224,6 @@ class KernelTransformer(ast.NodeVisitor):
 
     # --- Loops ---
 
-    def visit_For(self, node: ast.For) -> ir.IRNode:
-        if not self._in_parallel_loop:
-            return self._visit_parallel_for(node)
-        return self._visit_for(node)
-
-    def _visit_parallel_for(self, node: ast.For) -> ir.IRParallelFor:
-        """Lower the kernel's one parallel loop, a statement of its own body."""
-        if self._parallel_loop_seen or not any(node is s for s in self._kernel_body):
-            raise self._source_error(
-                node, "for loop", "is outside the parallel loop. A kernel has "
-                "one parallel loop, a `for` statement directly in its body; "
-                "sequential loops belong inside it")
-        self._parallel_loop_seen = True
-        return self._visit_for(node)
-
-    def _visit_for_body(self, stmts: list) -> list:
-        """Lower a for-loop body, which always lies inside the parallel loop.
-
-        Its range arguments were lowered before, where the loop is entered.
-        """
-        saved = self._in_parallel_loop
-        self._in_parallel_loop = True
-        self._loop_depth += 1
-        body = self._visit_body(stmts)
-        self._loop_depth -= 1
-        self._in_parallel_loop = saved
-        return body
-
-    def _visit_for(self, node: ast.For) -> ir.IRNode:
-        target = node.target
-
-        if node.orelse:
-            raise NotImplementedError("'else' clause on for-loop not supported in kernels")
-
-        # Handle tuple targets: for i, j in ndindex(w, h)
-        if isinstance(target, ast.Tuple):
-            return self._visit_ndindex_for(node)
-
-        if not isinstance(target, ast.Name):
-            raise NotImplementedError("Only simple loop variables supported")
-
-        # Detect for i in range(...)
-        if not self._is_range_call(node.iter):
-            raise NotImplementedError("Only range() loops supported in kernels")
-
-        start, end, step = self._parse_range_args(node.iter)
-        if self._loop_depth:
-            # Python's range evaluates its arguments once, before entering
-            # the loop, even when the body rebinds a bound or step variable.
-            start = self._capture_value(start, self._pre_stmts, freeze_name=True)
-            end = self._capture_value(end, self._pre_stmts, freeze_name=True)
-            if step is not None:
-                step = self._capture_value(step, self._pre_stmts, freeze_name=True)
-
-        body = self._visit_for_body(node.body)
-
-        # Top-level for-range is parallel; nested for-range is sequential
-        if self._loop_depth == 0:
-            if step is not None:
-                # Transform: for i in range(start, end, step)
-                # Into: for __step_idx__ in range(0, (end - start + step - 1) // step):
-                #            i = start + __step_idx__ * step
-                idx_name = self._fresh_name(f"__step_idx_{self._inline_counter}__")
-                self._inline_counter += 1
-                total = ir.IRBinOp(
-                    op="//",
-                    left=ir.IRBinOp(op="+",
-                        left=ir.IRBinOp(op="-", left=end, right=start),
-                        right=ir.IRBinOp(op="-", left=step, right=ir.IRConstant(1))),
-                    right=step,
-                )
-                decomp = ir.IRAssign(
-                    target=target.id,
-                    value=ir.IRBinOp(op="+", left=start,
-                        right=ir.IRBinOp(op="*", left=ir.IRName(idx_name), right=step)),
-                )
-                return ir.IRParallelFor(var=idx_name, start=ir.IRConstant(0),
-                                        end=total, body=[decomp, *body])
-            if not (isinstance(start, ir.IRConstant) and start.value == 0):
-                # Every backend launches the grid over [0, n) and never sees
-                # the start, so it has to live in the body.
-                # Transform: for i in range(start, end)
-                # Into: for __start_idx__ in range(0, end - start):
-                #            i = start + __start_idx__
-                idx_name = self._fresh_name(f"__start_idx_{self._inline_counter}__")
-                self._inline_counter += 1
-                decomp = ir.IRAssign(
-                    target=target.id,
-                    value=ir.IRBinOp(op="+", left=start, right=ir.IRName(idx_name)),
-                )
-                return ir.IRParallelFor(
-                    var=idx_name, start=ir.IRConstant(0),
-                    end=ir.IRBinOp(op="-", left=end, right=start),
-                    body=[decomp, *body])
-            return ir.IRParallelFor(var=target.id, start=start, end=end, body=body)
-        return ir.IRSequentialFor(var=target.id, start=start, end=end,
-                                  body=body, step=step)
-
-    def _visit_ndindex_for(self, node: ast.For):
-        """Handle: for i, j in ndindex(w, h) or for i, j in tack.ndindex(w, h).
-
-        Each argument is a size, counting from zero, or a ``(start, end)``
-        pair: ``ndindex((1, n - 1), (1, m - 1))`` visits the interior. An
-        empty or reversed pair makes the whole loop empty.
-        """
-        target = node.target
-        if not isinstance(target, ast.Tuple):
-            raise NotImplementedError("ndindex requires tuple target")
-
-        names = []
-        for elt in target.elts:
-            if not isinstance(elt, ast.Name):
-                raise NotImplementedError("ndindex targets must be simple names")
-            names.append(elt.id)
-
-        # Parse ndindex call
-        call = node.iter
-        if not isinstance(call, ast.Call):
-            raise NotImplementedError("Expected ndindex() call")
-
-        func_name = self._resolve_call_name(call)
-        if func_name != "ndindex":
-            raise NotImplementedError(f"Expected ndindex(), got {func_name}()")
-
-        if len(call.args) != len(names):
-            raise NotImplementedError(
-                f"ndindex() dimension count ({len(call.args)}) must match "
-                f"target count ({len(names)})"
-            )
-
-        starts = []
-        dim_exprs = []
-        for arg in call.args:
-            if isinstance(arg, ast.Tuple):
-                if len(arg.elts) != 2:
-                    raise NotImplementedError(
-                        "an ndindex() range is a (start, end) pair")
-                start, end = self._visit_ordered(arg.elts)
-                starts.append(start)
-                # Clamp at zero: a reversed pair must not turn into a count
-                # that another reversed pair makes positive again.
-                dim_exprs.append(ir.IRCall(func_name="max", args=[
-                    ir.IRBinOp(op="-", left=end, right=start), ir.IRConstant(0)]))
-            else:
-                starts.append(None)
-                dim_exprs.append(self.visit(arg))
-
-        # Compute total = dim0 * dim1 * ...
-        total = dim_exprs[0]
-        for d in dim_exprs[1:]:
-            total = ir.IRBinOp(op="*", left=total, right=d)
-
-        if self._loop_depth == 0 and len(names) in (2, 3):
-            # The backend binds one index per dimension from a launch of
-            # the same shape (see parallel_dims); nothing divides.
-            idx_name = self._fresh_name(f"__nd_idx_{self._inline_counter}__")
-            dims = [self._fresh_name(f"__nd_{self._inline_counter}_{k}__")
-                    for k in range(len(names))]
-            self._inline_counter += 1
-            offsets = [ir.IRAssign(target=name, value=self._offset_index(start, ir.IRName(dim)))
-                       for name, start, dim in zip(names, starts, dims)]
-            body_stmts = self._visit_for_body(node.body)
-            return ir.IRParallelFor(var=idx_name, start=ir.IRConstant(0), end=total,
-                                    body=offsets + body_stmts, dims=dims,
-                                    extents=list(dim_exprs))
-
-        # Build body: decompose linear index into multi-dim indices
-        # for __nd_idx__ in range(total):
-        #     i = __nd_idx__ // dim1
-        #     j = __nd_idx__ % dim1
-        # For 3D: i = idx // (d1*d2), j = (idx // d2) % d1, k = idx % d2
-        idx_name = self._fresh_name(f"__nd_idx_{self._inline_counter}__")
-        self._inline_counter += 1
-
-        decomp_stmts = []
-        remaining = ir.IRName(idx_name)
-
-        for k in range(len(names) - 1):
-            # Product of remaining dimensions
-            tail_product = dim_exprs[k + 1]
-            for d in dim_exprs[k + 2:]:
-                tail_product = ir.IRBinOp(op="*", left=tail_product, right=d)
-
-            decomp_stmts.append(ir.IRAssign(target=names[k], value=self._offset_index(
-                starts[k], ir.IRBinOp(op="//", left=remaining, right=tail_product))))
-            remaining = ir.IRBinOp(op="%", left=remaining, right=tail_product)
-
-        # Last dimension gets the remainder
-        decomp_stmts.append(ir.IRAssign(
-            target=names[-1], value=self._offset_index(starts[-1], remaining)))
-
-        body_stmts = self._visit_for_body(node.body)
-
-        full_body = decomp_stmts + body_stmts
-
-        if self._loop_depth == 0:
-            return ir.IRParallelFor(
-                var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
-        return ir.IRSequentialFor(
-            var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
-
-    @staticmethod
-    def _offset_index(start, index):
-        """An ndindex index counted from its range's start, if it has one."""
-        return index if start is None else ir.IRBinOp(op="+", left=start, right=index)
-
-    def visit_While(self, node: ast.While) -> ir.IRWhile:
-        if node.orelse:
-            raise NotImplementedError("'else' clause on while-loop not supported in kernels")
-        condition, condition_stmts = self._visit_expression(node.test)
-        condition = self._scalar_condition(node, "while", condition)
-        self._loop_depth += 1
-        body = self._visit_body(node.body)
-        self._loop_depth -= 1
-        if condition_stmts:
-            # The condition's inlined calls execute on every test, including
-            # after continue, rather than once before entering the loop.
-            body = [*condition_stmts,
-                    ir.IRIf(ir.IRUnaryOp('not', condition), [ir.IRBreak()], []),
-                    *body]
-            condition = ir.IRConstant(1)
-        return ir.IRWhile(condition=condition, body=body)
-
-    def visit_Break(self, node: ast.Break) -> ir.IRBreak:
-        return ir.IRBreak()
-
-    def visit_Continue(self, node: ast.Continue) -> ir.IRContinue:
-        return ir.IRContinue()
-
     # --- Control flow ---
 
     def _scalar_condition(self, node, construct: str, condition):
@@ -715,31 +258,6 @@ class KernelTransformer(ast.NodeVisitor):
             ))
             return ir.IRName(name)
         return ir.IRIfExp(condition, then_value, else_value)
-
-    def _vector_conditional(self, node, condition, then_value, then_stmts,
-                            else_value, else_stmts):
-        """``a if c else b`` with a vector arm: one selection per component.
-
-        The condition is evaluated once. An arm that needs statements of
-        its own (an inlined call) runs them only when it is selected.
-        """
-        shape = self._common_shape(node, "conditional expression", [then_value, else_value])
-        then_value, else_value = zip(*self._componentwise(
-            node, "conditional expression", [then_value, else_value]), strict=True)
-        if then_stmts or else_stmts:
-            names = []
-            for _ in then_value:
-                names.append(self._fresh_name(f"__conditional_{self._inline_counter}__"))
-                self._inline_counter += 1
-            self._pre_stmts.append(ir.IRIf(
-                condition,
-                [*then_stmts, *(ir.IRAssign(n, v) for n, v in zip(names, then_value))],
-                [*else_stmts, *(ir.IRAssign(n, v) for n, v in zip(names, else_value))],
-            ))
-            return VectorValue([ir.IRName(n) for n in names], shape)
-        condition = self._capture_value(condition, self._pre_stmts)
-        return VectorValue(
-            [ir.IRIfExp(condition, t, e) for t, e in zip(then_value, else_value)], shape)
 
     # --- Assignments ---
 
@@ -1087,21 +605,6 @@ class KernelTransformer(ast.NodeVisitor):
             return comparisons[0]
         return ir.IRBoolOp(op="and", values=comparisons)
 
-    def _vector_compare(self, node, ops: list, values: list) -> VectorValue:
-        """``v < w``, ``lo <= v < hi``: a vector of 0/1, one comparison per component.
-
-        A scalar operand is compared with every component. Each link of a
-        chain is a comparison vector of its own and the links are combined
-        with ``and`` per component.
-        """
-        links = [self._elementwise(node, "comparison", [left, right],
-                                   lambda row, op=op: ir.IRCompare(op, row[0], row[1]))
-                 for op, left, right in zip(ops, values[:-1], values[1:], strict=True)]
-        if len(links) == 1:
-            return links[0]
-        return self._elementwise(node, "comparison", links,
-                                 lambda row: ir.IRBoolOp(op="and", values=list(row)))
-
     def visit_BoolOp(self, node: ast.BoolOp) -> ir.IRBoolOp:
         op = "and" if isinstance(node.op, ast.And) else "or"
         operands = [self._visit_expression(n) for n in node.values]
@@ -1165,42 +668,18 @@ class KernelTransformer(ast.NodeVisitor):
 
         # Compute the linearized index (handles multi-dim, None, etc.)
         index = self._visit_subscript_index(node)
-        array_ir = self.visit(node.value)
 
         # Vector array load: expand to n component loads
         if is_vector_array:
-            ndim = self._vector_arrays[array_name]
             # Cast index to int before computing component offsets so that
             # a float index like 127.7 maps to element 127, not a fractional
             # position that shifts the component access.
-            int_index = self._element_index(index)
+            locations = self._element_locations(array_name, self._element_index(index))
             return VectorValue(
-                (ir.IRArrayLoad(array=array_ir, index=self._component_index(int_index, ndim, c))
-                 for c in range(ndim)), self._matrix_arrays.get(array_name))
+                (ir.IRArrayLoad(array=array, index=at) for array, at in locations),
+                self._matrix_arrays.get(array_name))
 
-        return ir.IRArrayLoad(array=array_ir, index=index)
-
-    def _as_dim_size(self, node: ast.Subscript) -> ir.IRDimSize | None:
-        """`f.shape[k]` on an array → IRDimSize, which resolve_ir folds.
-
-        Emitting a generic IRAttribute here is what limited `.shape` to the
-        outermost loop bound: dispatch evaluated that one expression
-        numerically, and every other position reached codegen unresolved.
-        IRDimSize is the node the resolve pass already knows how to fold,
-        and it recurses through every body.
-        """
-        value = node.value
-        if not (isinstance(value, ast.Attribute) and value.attr == "shape"):
-            return None
-        if not isinstance(value.value, ast.Name):
-            return None
-        index = node.slice
-        if not (isinstance(index, ast.Constant) and isinstance(index.value, int)):
-            raise NotImplementedError(
-                f"'{value.value.id}.shape[...]' needs a constant dimension "
-                f"index; the shape is resolved when the kernel is compiled."
-            )
-        return ir.IRDimSize(array_name=value.value.id, dim=index.value)
+        return ir.IRArrayLoad(array=self.visit(node.value), index=index)
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
         # module.NAME bound to a tack.constant reads as its value
@@ -1220,37 +699,6 @@ class KernelTransformer(ast.NodeVisitor):
                     f"a matrix entry is m[i, j]")
             return obj[self._named_component(node, len(obj))]
         return ir.IRAttribute(obj=obj, attr=node.attr)
-
-    def _named_component(self, node: ast.Attribute, n: int) -> int:
-        """The index that ``x``, ``y``, ``z`` or ``w`` names in an n-vector."""
-        c = COMPONENT_NAMES.find(node.attr) if len(node.attr) == 1 else -1
-        if not 0 <= c < n:
-            names = ", ".join(COMPONENT_NAMES[:n])
-            raise self._source_error(
-                node, "attribute", f"'{node.attr}' is not a component of a {n}-vector; "
-                f"use {names} or an index")
-        return c
-
-    def _component_target(self, target):
-        """An assignment target ``v.x`` or ``vf[i].x`` as the subscript it names."""
-        if not isinstance(target, ast.Attribute):
-            return target
-        vector = target.value
-        if isinstance(vector, ast.Name) and vector.id in self._vector_vars:
-            n = self._vector_vars[vector.id]
-            is_matrix = vector.id in self._matrix_vars
-        elif (isinstance(vector, ast.Subscript) and isinstance(vector.value, ast.Name)
-                and vector.value.id in self._vector_arrays):
-            n = self._vector_arrays[vector.value.id]
-            is_matrix = vector.value.id in self._matrix_arrays
-        else:
-            return target
-        if is_matrix:
-            raise self._source_error(
-                target, "attribute", f"'{target.attr}' names a component of a vector; "
-                f"a matrix entry is m[i, j]")
-        index = ast.copy_location(ast.Constant(self._named_component(target, n)), target)
-        return ast.copy_location(ast.Subscript(value=vector, slice=index, ctx=target.ctx), target)
 
     def _named_constant(self, node):
         """The value of a name bound to a tack.constant: a scalar's IR, or a
@@ -1289,6 +737,11 @@ class KernelTransformer(ast.NodeVisitor):
         # If this name is a vector variable, return its components as a list
         if node.id in self._vector_vars:
             return self._variable_value(node.id)
+        if node.id in self._soa_arrays:
+            raise self._source_error(
+                node, "name", f"'{node.id}' is an SOA array (one array per component), "
+                f"which a kernel indexes ({node.id}[i]), measures ({node.id}.shape, "
+                f"len({node.id})) or passes to a device function, but cannot use as a value")
         name = ir.IRName(name=node.id)
         # This read's position and source spelling, for scope errors.
         name._source = source
@@ -1306,31 +759,17 @@ class KernelTransformer(ast.NodeVisitor):
         """A list of scalars is a vector: ``[x, y]`` is ``tack.vec2(x, y)``."""
         return VectorValue(self._visit_ordered(node.elts))
 
-    def _variable_value(self, name: str) -> VectorValue:
-        """The components of the vector or matrix variable ``name``."""
-        return VectorValue((ir.IRName(self._component_name(name, c))
-                            for c in range(self._vector_vars[name])),
-                           self._matrix_vars.get(name))
-
-    def _bind_vector(self, name: str, value: list):
-        """Record that the variable ``name`` holds the vector or matrix ``value``."""
-        self._vector_vars[name] = len(value)
-        shape = getattr(value, 'shape', None)
-        if shape is not None and len(shape) == 2:
-            self._matrix_vars[name] = shape
-        else:
-            self._matrix_vars.pop(name, None)
-
-    def _array_shape(self, name: str) -> tuple:
-        """The shape of one element of the vector or matrix array ``name``."""
-        return self._matrix_arrays.get(name) or (self._vector_arrays[name],)
-
     def visit_Call(self, node: ast.Call) -> ir.IRNode:
         # Check for @tack.func calls → inline
         func_obj = self._call_bindings.device_func(node.func)
         if func_obj is not None:
             return self._inline_func_call(func_obj, node)
         func_name = self._resolve_call_name(node)
+
+        # A refusal the template rewrite left in a method body: raised only when
+        # the method is used (template_rewrite._Indexing).
+        if func_name == "__tack_refuse__":
+            raise TypeError(node.args[0].value)
 
         # Vector constructors: tack.vec3(x, y, z), tack.vec3(s), tack.vec3(v)
         if func_name in _VECTOR_CONSTRUCTORS:
@@ -1397,7 +836,7 @@ class KernelTransformer(ast.NodeVisitor):
                 raise NotImplementedError("len() takes exactly one argument")
             target = node.args[0]
             if isinstance(target, ast.Name) and target.id not in self._vector_vars:
-                return ir.IRDimSize(array_name=target.id, dim=0)
+                return ir.IRDimSize(array_name=self._shape_name(target.id), dim=0)
             arg = self.visit(target)
             return ir.IRAttribute(obj=arg, attr="__len__")
 
@@ -1520,7 +959,12 @@ class KernelTransformer(ast.NodeVisitor):
         op = func_name.replace("atomic_", "")  # "add", "min", "max"
         array_node = node.args[0]
         array_name = array_node.id if isinstance(array_node, ast.Name) else None
-        array, index, value = self._visit_ordered(node.args)
+        soa = array_name in self._soa_arrays
+        if soa:
+            array = None                     # each component is its own parameter
+            index, value = self._visit_ordered(node.args[1:])
+        else:
+            array, index, value = self._visit_ordered(node.args)
         by_dimension = isinstance(index, list)
         if by_dimension:
             if array_name is None:
@@ -1538,6 +982,11 @@ class KernelTransformer(ast.NodeVisitor):
                 raise self._source_error(
                     node, f"{func_name}()", f"names an element of an array of {ndim}-vectors; "
                     f"give it a {ndim}-vector, or the flat index of one component")
+            if soa:
+                raise self._source_error(
+                    node, f"{func_name}()", f"gives a scalar to '{array_name}', an SOA array "
+                    f"of {ndim}-vectors, which has no flat component index; give it a "
+                    f"{ndim}-vector")
             atomic = ir.IRAtomicOp(op=op, array=array, index=index, value=value)
             if as_statement:
                 return atomic
@@ -1554,10 +1003,9 @@ class KernelTransformer(ast.NodeVisitor):
         element = self._element_index(self._capture_value(index, self._pre_stmts))
         value = self._settle_components(value, self._pre_stmts)
         olds = []
-        for c, component in enumerate(value):
-            atomic = ir.IRAtomicOp(
-                op=op, array=array, index=self._component_index(element, ndim, c),
-                value=component)
+        locations = self._element_locations(array_name, element, array)
+        for (target, at), component in zip(locations, value, strict=True):
+            atomic = ir.IRAtomicOp(op=op, array=target, index=at, value=component)
             if as_statement:
                 self._pre_stmts.append(atomic)
             else:
@@ -1598,1108 +1046,13 @@ class KernelTransformer(ast.NodeVisitor):
 
     # --- @tack.func inlining ---
 
-    def _inline_func_call(self, func_obj, call_node: ast.Call):
-        """Inline a @tack.func call, tracking it for diagnostics."""
-        # Arguments belong to the caller's source; visiting them first
-        # records their positions before the callee's are in play.
-        for arg in call_node.args:
-            for sub in ast.walk(arg):
-                if (isinstance(sub, ast.Name) and hasattr(sub, 'lineno')
-                        and sub.id not in self._name_reads):
-                    self._name_reads[sub.id] = (
-                        sub.lineno, sub.col_offset + 1,
-                        self._inline_stack[-1] if self._inline_stack else None)
-        # Template methods are renamed; diagnostics use the source name.
-        self._inline_stack.append(func_obj.func.__name__)
-        try:
-            return self._inline_func_body(func_obj, call_node)
-        finally:
-            self._inline_stack.pop()
-
-    def _inline_func_body(self, func_obj, call_node: ast.Call):
-        """Inline a @tack.func call at the call site.
-
-        Produces a list of IR statements (parameter assignments + body),
-        and returns the result variable name as an IRName.
-        """
-        from tack.lang.call_bindings import CallBindings
-        func_name = func_obj.name
-        funcdef = func_obj._funcdef
-        callee_bindings = CallBindings(funcdef, func_obj.func,
-                                      template_funcs=self._template_funcs)
-        validate_source(funcdef, kind='Device function', call_bindings=callee_bindings)
-
-        # Save and reset _pre_stmts so nested inlining doesn't interfere
-        saved_pre_stmts = self._pre_stmts
-        self._pre_stmts = []
-
-        # Unique suffix to avoid name collisions across multiple inlines
-        suffix = self._inline_counter
-        self._inline_counter += 1
-
-        # Map callee params to caller args
-        callee_params = [a.arg for a in funcdef.args.args]
-        if len(call_node.args) != len(callee_params):
-            raise TypeError(
-                f"@tack.func '{func_name}' expects {len(callee_params)} args, "
-                f"got {len(call_node.args)}"
-            )
-
-        # Create a name renamer for the callee's body
-        rename_map = {}
-        for param_name in callee_params:
-            rename_map[param_name] = self._fresh_name(f"__{func_name}_{param_name}_{suffix}__")
-
-        # Detect return count: 0=void, 1=scalar, >1=tuple
-        n_returns = self._detect_return_count(funcdef)
-        if n_returns == 0:
-            result_var = None
-        elif n_returns > 1:
-            result_var = [self._fresh_name(f"__{func_name}_ret_{c}_{suffix}__")
-                          for c in range(n_returns)]
-        else:
-            result_var = self._fresh_name(f"__{func_name}_ret_{suffix}__")
-
-        # Rename all local variables in the callee body to avoid collisions
-        # We collect all assigned names and create renames for them
-        assigned_names = self._collect_assigned_names(funcdef.body)
-        for name in sorted(assigned_names):
-            if name not in rename_map:
-                rename_map[name] = self._fresh_name(f"__{func_name}_{name}_{suffix}__")
-
-        # Override rename map for local array / shared memory params:
-        # alias the caller's array name directly so the inlined body
-        # accesses it without an assignment (arrays can't be assigned in C).
-        # Must happen BEFORE the renamer runs.
-        for param_name in callee_params:
-            if isinstance(call_node.args[callee_params.index(param_name)], ast.Name):
-                arg_name = call_node.args[callee_params.index(param_name)].id
-                if arg_name in self._shared_vars:
-                    rename_map[param_name] = arg_name
-
-        # Rename the callee AST (deep copy first)
-        renamed_body = _structure_returns(copy.deepcopy(funcdef.body), func_name)
-        renamer = _NameRenamer(rename_map, result_var)
-        # Flatten in case visit_Return returns a list (multi-return)
-        flat_body = []
-        for stmt in renamed_body:
-            result = renamer.visit(stmt)
-            if isinstance(result, list):
-                flat_body.extend(result)
-            else:
-                flat_body.append(result)
-        renamed_body = flat_body
-
-        # Propagate vector-ness and texture metadata for renamed parameters
-        # (must happen before parameter assignments so we can skip texture assigns)
-        for param_name in callee_params:
-            renamed = rename_map[param_name]
-            if isinstance(call_node.args[callee_params.index(param_name)], ast.Name):
-                arg_name = call_node.args[callee_params.index(param_name)].id
-                if arg_name in self._vector_vars:
-                    self._bind_vector(renamed, self._variable_value(arg_name))
-                if arg_name in self._vector_arrays:
-                    # A vector array passed in: `fld[i]` in the body must
-                    # expand to its components, as it does in the caller.
-                    self._vector_arrays[renamed] = self._vector_arrays[arg_name]
-                    if arg_name in self._matrix_arrays:
-                        self._matrix_arrays[renamed] = self._matrix_arrays[arg_name]
-                if arg_name in self._texture_arrays:
-                    self._texture_arrays[renamed] = self._texture_arrays[arg_name]
-                    self._texture_origin[renamed] = self._texture_origin.get(arg_name, arg_name)
-
-        # Emit parameter assignments
-        stmts = []
-        for param_name, arg_ast in zip(callee_params, call_node.args):
-            renamed = rename_map[param_name]
-            # Skip assignment for texture params and local array params —
-            # these are aliased to the caller's variable directly.
-            if renamed in self._texture_arrays:
-                continue
-            if renamed in self._shared_vars:
-                continue
-            arg_val = self.visit(arg_ast)
-            # Capture any stmts from visiting this arg (e.g. nested inlines)
-            stmts.extend(self._pre_stmts)
-            self._pre_stmts = []
-            if isinstance(arg_val, list):
-                # Vector argument — assign each component
-                ndim = len(arg_val)
-                self._bind_vector(renamed, arg_val)
-                for c in range(ndim):
-                    stmts.append(ir.IRAssign(
-                        target=self._component_name(renamed, c), value=arg_val[c]))
-            else:
-                stmts.append(ir.IRAssign(target=renamed, value=arg_val))
-
-        # Visit the renamed body statements
-        if func_obj in self._active_funcs:
-            raise NotImplementedError(f"Recursive @tack.func '{func_name}' is not supported")
-        caller_bindings = self._call_bindings
-        callee_bindings.locals.update(rename_map.values())
-        self._call_bindings = callee_bindings
-        self._active_funcs.add(func_obj)
-        try:
-            body_ir = self._visit_body(renamed_body)
-        finally:
-            self._active_funcs.remove(func_obj)
-            self._call_bindings = caller_bindings
-        stmts.extend(body_ir)
-
-        # Restore saved pre_stmts and append all inline stmts
-        self._pre_stmts = saved_pre_stmts
-        self._pre_stmts.extend(stmts)
-
-        # Void function: no return value
-        if result_var is None:
-            return None
-
-        # Multi-return: one value per element, a vector element as its
-        # components (a nested list)
-        if isinstance(result_var, list):
-            return TupleValue(self._result_value(v) for v in result_var)
-
-        return self._result_value(result_var)
-
-    def _result_value(self, result_var: str):
-        """An inlined call's result: a name, or a vector's component names."""
-        if result_var in self._vector_vars:
-            return self._variable_value(result_var)
-        return ir.IRName(result_var)
-
-    def _collect_assigned_names(self, stmts) -> set[str]:
-        """Collect all variable names assigned in a list of AST statements.
-
-        Every binding counts, including the names inside a tuple target
-        (`t, u = f()`, `for i, j in ndindex(...)`): a callee local that is
-        not collected is not renamed, and the inlined body then writes
-        the caller's variable of the same name.
-        """
-        names = set()
-
-        def targets(node):
-            if isinstance(node, ast.Name):
-                names.add(node.id)
-            elif isinstance(node, (ast.Tuple, ast.List)):
-                for elt in node.elts:
-                    targets(elt)
-
-        for stmt in stmts:
-            for node in ast.walk(stmt):
-                if isinstance(node, ast.Assign):
-                    for t in node.targets:
-                        targets(t)
-                elif isinstance(node, ast.AugAssign):
-                    targets(node.target)
-                elif isinstance(node, ast.For):
-                    targets(node.target)
-        return names
-
-    def _detect_return_count(self, funcdef) -> int:
-        """Detect if a function returns a tuple (multi-return).
-
-        Returns the number of return values (0 for void, 1 for scalar, >1 for tuple).
-        """
-        for node in ast.walk(funcdef):
-            if isinstance(node, ast.Return) and node.value:
-                if isinstance(node.value, ast.Tuple):
-                    return len(node.value.elts)
-                return 1
-        return 0
-
     # --- Vector operations ---
-
-    def _try_parse_shared_alloc(self, target_name: str, value_node: ast.Call):
-        """Try to parse smem = tack.shared(tack.f32, 256). Returns IRSharedAlloc or None."""
-        try:
-            name = self._resolve_call_name(value_node)
-        except (NotImplementedError, AttributeError):
-            return None
-        if name != "shared":
-            return None
-        if len(value_node.args) != 2:
-            raise NotImplementedError("tack.shared() takes exactly 2 arguments (dtype, size)")
-
-        # Parse dtype argument — tack.f32, tack.i32, etc.
-        dtype_arg = value_node.args[0]
-        if isinstance(dtype_arg, ast.Attribute):
-            dtype_str = dtype_arg.attr
-        elif isinstance(dtype_arg, ast.Name):
-            dtype_str = dtype_arg.id
-        else:
-            raise NotImplementedError("tack.shared() dtype must be tack.f32, tack.i32, etc.")
-
-        from tack.lang.types import _NAME_TO_TYPE
-        scalar_type = _NAME_TO_TYPE.get(dtype_str)
-        if scalar_type is None:
-            raise NotImplementedError(f"Unsupported shared memory dtype: {dtype_str}")
-
-        size = self.visit(value_node.args[1])
-        self._shared_vars.add(target_name)
-        self._array_sizes[target_name] = size
-        return ir.IRSharedAlloc(name=target_name, dtype=scalar_type, size=size)
-
-    def _try_parse_shared_like(self, target_name: str, value_node: ast.Call):
-        """Try to parse smem = tack.shared_like(array, 256). Returns IRSharedAlloc or None."""
-        try:
-            name = self._resolve_call_name(value_node)
-        except (NotImplementedError, AttributeError):
-            return None
-        if name != "shared_like":
-            return None
-        if len(value_node.args) != 2:
-            raise NotImplementedError("tack.shared_like() takes exactly 2 arguments (array, size)")
-
-        # First arg is the array reference
-        array_arg = value_node.args[0]
-        if isinstance(array_arg, ast.Name):
-            array_name = array_arg.id
-        elif isinstance(array_arg, ast.Attribute):
-            array_name = array_arg.attr
-        else:
-            raise NotImplementedError("tack.shared_like() first argument must be an array name")
-
-        size = self.visit(value_node.args[1])
-        self._shared_vars.add(target_name)
-        self._array_sizes[target_name] = size
-        return ir.IRSharedAlloc(name=target_name, dtype=None, size=size, array_name=array_name)
-
-    def _try_parse_local_alloc(self, target_name: str, value_node: ast.Call):
-        """Try to parse arr = tack.local_array(tack.f32, 8). Returns IRLocalAlloc or None."""
-        try:
-            name = self._resolve_call_name(value_node)
-        except (NotImplementedError, AttributeError):
-            return None
-        if name != "local_array":
-            return None
-        if len(value_node.args) != 2:
-            raise NotImplementedError("tack.local_array() takes exactly 2 arguments (dtype, size)")
-
-        dtype_arg = value_node.args[0]
-        if isinstance(dtype_arg, ast.Attribute):
-            dtype_str = dtype_arg.attr
-        elif isinstance(dtype_arg, ast.Name):
-            dtype_str = dtype_arg.id
-        else:
-            raise NotImplementedError("tack.local_array() dtype must be tack.f32, tack.i32, etc.")
-
-        from tack.lang.types import _NAME_TO_TYPE
-        scalar_type = _NAME_TO_TYPE.get(dtype_str)
-        if scalar_type is None:
-            raise NotImplementedError(f"Unsupported local array dtype: {dtype_str}")
-
-        size = self.visit(value_node.args[1])
-        self._shared_vars.add(target_name)  # treat as array for indexing purposes
-        self._array_sizes[target_name] = size
-        return ir.IRLocalAlloc(name=target_name, dtype=scalar_type, size=size)
-
-    def _try_parse_local_array_like(self, target_name: str, value_node: ast.Call):
-        """Try to parse arr = tack.local_array_like(array, 8). Returns IRLocalAlloc or None."""
-        try:
-            name = self._resolve_call_name(value_node)
-        except (NotImplementedError, AttributeError):
-            return None
-        if name != "local_array_like":
-            return None
-        if len(value_node.args) != 2:
-            raise NotImplementedError("tack.local_array_like() takes exactly 2 arguments (array, size)")
-
-        # First arg is the array reference
-        array_arg = value_node.args[0]
-        if isinstance(array_arg, ast.Name):
-            array_name = array_arg.id
-        elif isinstance(array_arg, ast.Attribute):
-            array_name = array_arg.attr
-        else:
-            raise NotImplementedError("tack.local_array_like() first argument must be an array name")
-
-        size = self.visit(value_node.args[1])
-        self._shared_vars.add(target_name)  # treat as array for indexing purposes
-        self._array_sizes[target_name] = size
-        return ir.IRLocalAlloc(name=target_name, dtype=None, size=size, array_name=array_name)
-
-    def _try_parse_vector_construct(self, value_node: ast.expr) -> list | None:
-        """The component nodes of ``tack.vecN(a, b, ...)`` with N scalar arguments
-        written out, or None."""
-        if not isinstance(value_node, ast.Call):
-            return None
-        try:
-            name = self._resolve_call_name(value_node)
-        except (NotImplementedError, AttributeError):
-            return None
-        width = _VECTOR_CONSTRUCTORS.get(name)
-        if width is None or len(value_node.args) != width or width == 1:
-            return None
-        if any(isinstance(arg, (ast.List, ast.Starred)) for arg in value_node.args):
-            return None
-        return value_node.args
-
-    def _visit_vector_construct(self, node: ast.Call, width: int):
-        """``tack.vecN(...)``: N scalars, one scalar for every component, or
-        one vector of N components."""
-        what = f"tack.vec{width}()"
-        values = self._visit_ordered(node.args)
-        if len(values) == width and not any(isinstance(v, list) for v in values):
-            return VectorValue(values)
-        if len(values) == 1:
-            value = values[0]
-            if isinstance(value, VectorValue):
-                if value.shape != (width,):
-                    raise self._source_error(
-                        node, what, f"takes a vector of {width} components, not one of "
-                        f"shape {value.shape}")
-                return value
-            if not isinstance(value, list):
-                value = self._capture_value(value, self._pre_stmts)
-                return VectorValue([value] * width)
-        raise self._source_error(
-            node, what, f"takes {width} scalars, one scalar or one {width}-vector")
-
-    def _visit_matrix_construct(self, node: ast.Call, extent: int | None) -> VectorValue:
-        """``tack.mat(row, ...)`` and ``tack.matN(...)``: rows that are lists of
-        scalars or vectors, or (``matN``) N*N scalars in row-major order."""
-        what = f"tack.mat{extent}()" if extent else "tack.mat()"
-        if not node.args:
-            raise self._source_error(node, what, "needs its rows")
-        if extent and len(node.args) == extent * extent and not any(
-                isinstance(arg, ast.List) for arg in node.args):
-            values = self._visit_ordered(node.args)
-            if not any(isinstance(v, list) for v in values):
-                return VectorValue(values, (extent, extent))
-        rows = []
-        for row in node.args:
-            if isinstance(row, ast.List):
-                rows.append(VectorValue(self._visit_ordered(row.elts)))
-            else:
-                value, statements = self._visit_expression(row)
-                if statements:
-                    rows = [self._capture_value(r, self._pre_stmts) for r in rows]
-                    self._pre_stmts.extend(statements)
-                rows.append(value)
-        for row in rows:
-            if (not isinstance(row, VectorValue) or len(row.shape) != 1
-                    or any(isinstance(entry, list) for entry in row)):
-                raise self._source_error(
-                    node, what, "needs each row to be a list of scalars or a vector")
-        widths = {len(row) for row in rows}
-        if len(widths) != 1:
-            raise self._source_error(node, what, "has rows of different lengths")
-        shape = (len(rows), widths.pop())
-        if max(shape) > MAX_MATRIX_EXTENT:
-            raise self._source_error(
-                node, what, f"is {shape[0]}x{shape[1]}; matrices are at most "
-                f"{MAX_MATRIX_EXTENT}x{MAX_MATRIX_EXTENT}")
-        if extent and shape != (extent, extent):
-            raise self._source_error(
-                node, what, f"needs {extent} rows of {extent}, or {extent * extent} scalars; "
-                f"got {shape[0]} rows of {shape[1]}")
-        return VectorValue([entry for row in rows for entry in row], shape)
-
-    def _visit_matrix_identity(self, node: ast.Call) -> VectorValue:
-        """``tack.identity(n)`` for a literal ``n``, as ``np.identity``."""
-        if (len(node.args) != 1 or not isinstance(node.args[0], ast.Constant)
-                or not isinstance(node.args[0].value, int)
-                or not 1 <= node.args[0].value <= MAX_MATRIX_EXTENT):
-            raise NotImplementedError(
-                f"tack.identity() takes a literal size from 1 to {MAX_MATRIX_EXTENT}")
-        n = node.args[0].value
-        return VectorValue(
-            [ir.IRConstant(1.0 if i == j else 0.0) for i in range(n) for j in range(n)], (n, n))
-
-    def _matmul(self, node, left, right):
-        """``left @ right``: matrix products, with a vector as a row or a column.
-
-        Matrix @ matrix is a matrix, matrix @ vector and vector @ matrix
-        are vectors, and vector @ vector is their dot product.
-        """
-        for operand in (left, right):
-            if not isinstance(operand, VectorValue):
-                raise self._source_error(
-                    node, "'@'", "multiplies vectors and matrices; use '*' to scale by a scalar")
-        # Every entry is used once per row or column of the other operand.
-        left = self._capture_value(left, self._pre_stmts)
-        right = self._capture_value(right, self._pre_stmts)
-        lrows, lcols = (1, len(left)) if len(left.shape) == 1 else left.shape
-        rrows, rcols = (len(right), 1) if len(right.shape) == 1 else right.shape
-        if lcols != rrows:
-            raise self._source_error(
-                node, "'@'", f"multiplies {left.describe()} by {right.describe()}")
-        entries = []
-        for i in range(lrows):
-            for j in range(rcols):
-                total = ir.IRBinOp(op="*", left=left[i * lcols], right=right[j])
-                for k in range(1, lcols):
-                    total = ir.IRBinOp(op="+", left=total, right=ir.IRBinOp(
-                        op="*", left=left[i * lcols + k], right=right[k * rcols + j]))
-                entries.append(total)
-        if len(left.shape) == 1 and len(right.shape) == 1:
-            return entries[0]
-        if len(left.shape) == 1 or len(right.shape) == 1:
-            return VectorValue(entries)
-        return VectorValue(entries, (lrows, rcols))
-
-    def _emit_matrix_method(self, method_name: str, m: VectorValue, arg_nodes: list):
-        """transpose, trace, determinant and inverse of a matrix value."""
-        rows, cols = m.shape
-        if arg_nodes:
-            raise NotImplementedError(f"{method_name}() takes no arguments")
-        if method_name == "transpose":
-            return VectorValue([m[i * cols + j] for j in range(cols) for i in range(rows)],
-                               (cols, rows))
-        if rows != cols:
-            raise NotImplementedError(
-                f"{method_name}() needs a square matrix, not {m.describe()}")
-        if method_name == "trace":
-            total = m[0]
-            for i in range(1, rows):
-                total = ir.IRBinOp(op="+", left=total, right=m[i * cols + i])
-            return total
-        if rows not in (2, 3):
-            raise NotImplementedError(
-                f"{method_name}() is implemented for 2x2 and 3x3 matrices, not {m.describe()}")
-
-        def mul(a, b):
-            return ir.IRBinOp(op="*", left=a, right=b)
-
-        def sub(a, b):
-            return ir.IRBinOp(op="-", left=a, right=b)
-
-        # Each entry appears in several products.
-        m = self._capture_value(m, self._pre_stmts)
-        if rows == 2:
-            a, b, c, d = m
-            det = sub(mul(a, d), mul(b, c))
-            adjugate = [d, ir.IRUnaryOp(op="-", operand=b), ir.IRUnaryOp(op="-", operand=c), a]
-        else:
-            a, b, c, d, e, f, g, h, i = m
-            # Cofactors along the first row give the determinant; the
-            # adjugate is the transpose of the cofactor matrix.
-            c00, c01, c02 = sub(mul(e, i), mul(f, h)), sub(mul(f, g), mul(d, i)), \
-                sub(mul(d, h), mul(e, g))
-            det = ir.IRBinOp(op="+", left=ir.IRBinOp(op="+", left=mul(a, c00), right=mul(b, c01)),
-                             right=mul(c, c02))
-            adjugate = [c00, sub(mul(c, h), mul(b, i)), sub(mul(b, f), mul(c, e)),
-                        c01, sub(mul(a, i), mul(c, g)), sub(mul(c, d), mul(a, f)),
-                        c02, sub(mul(b, g), mul(a, h)), sub(mul(a, e), mul(b, d))]
-        if method_name == "determinant":
-            return det
-        det = self._capture_value(det, self._pre_stmts)
-        return VectorValue([ir.IRBinOp(op="/", left=entry, right=det) for entry in adjugate],
-                           (rows, cols))
-
-    def _assign_vector(self, name: str, ast_elts: list) -> list:
-        """Assign a vector construction to a variable: v = tack.vec3(a, b, c)."""
-        return self._assign_vector_from_ir(name, self._visit_ordered(ast_elts))
-
-    def _assign_vector_from_ir(self, name: str, components: list) -> list:
-        """Assign a vector expression result to a variable."""
-        ndim = len(components)
-        self._bind_vector(name, components)
-        names = [self._component_name(name, c) for c in range(ndim)]
-        stmts = []
-        components = self._settle_components(components, stmts, names)
-        for target, comp in zip(names, components):
-            stmts.append(ir.IRAssign(target=target, value=comp))
-        return stmts
-
-    def _settle_components(self, components: list, statements: list, targets=None) -> list:
-        """Components that can be assigned one at a time, in order.
-
-        A vector assignment lowers to one assignment per component, but its
-        right side is a single value that Python evaluates completely before
-        binding anything. A component that reads what an earlier component's
-        assignment has already written would see the new value, so it is
-        evaluated into a temporary first: for a vector variable, a read of
-        an earlier target component (``v = v.cross(w)``); for an array
-        element, any array load, since arrays may share storage
-        (``a[i] = a[i].cross(b[i])``). ``targets`` names the variable's
-        components, or is None for a store to an array.
-        """
-        settled = list(components)
-        for c in range(1, len(settled)):
-            if targets is None:
-                hazard = any(isinstance(n, ir.IRArrayLoad) for n in walk_ir(settled[c]))
-            else:
-                written = set(targets[:c])
-                hazard = any(isinstance(n, ir.IRName) and n.name in written
-                             for n in walk_ir(settled[c]))
-            if hazard:
-                settled[c] = self._capture_value(settled[c], statements, freeze_name=True)
-        return _like(components, settled)
-
-    def _store_vector_array(self, target: ast.Subscript, components: list) -> list:
-        """Store a vector into a vector array: array[i] = vec."""
-        ndim = len(components)
-        name = target.value.id if isinstance(target.value, ast.Name) else None
-        width = self._vector_arrays.get(name)
-        if width is None:
-            raise self._source_error(
-                target, "assignment", f"stores {_describe_value(components)} into an "
-                f"element of scalar storage; '{name}' is not a vector array")
-        shape = self._array_shape(name)
-        if getattr(components, 'shape', (ndim,)) != shape:
-            element = VectorValue([None] * width, shape).describe()[2:]
-            raise self._source_error(
-                target, "assignment",
-                f"stores {_describe_value(components)} into an array of {element}"
-                + ("s" if len(shape) == 1 else " elements"))
-        array_node, index_node, components = self._visit_store_location(target, components)
-        stmts = []
-        # Each component store repeats the index, so one that loads from a
-        # array is read before the first store can change it.
-        if any(isinstance(n, ir.IRArrayLoad) for n in walk_ir(index_node)):
-            index_node = self._capture_value(index_node, stmts)
-        int_index = self._element_index(index_node)
-        components = self._settle_components(components, stmts)
-        for c in range(ndim):
-            stmts.append(ir.IRArrayStore(
-                array=array_node, index=self._component_index(int_index, ndim, c),
-                value=components[c]))
-        return stmts
-
-    @staticmethod
-    def _element_index(index):
-        """A vector array element's index as an integer.
-
-        The cast makes a float index name an element (127.7 is element
-        127) before it is scaled by the width. It is 64-bit: a narrower
-        one would wrap the index, or its product with the width, for a
-        array of more than 2**31 components.
-        """
-        return ir.IRCast(value=index, dtype=i64)
-
-    def _component_index(self, element, ndim: int, c: int):
-        """Where component ``c`` of element ``element`` is stored: element * ndim + c."""
-        return ir.IRBinOp(
-            op="+",
-            left=ir.IRBinOp(op="*", left=element, right=ir.IRConstant(ndim)),
-            right=ir.IRConstant(c),
-        )
-
-    def _componentwise(self, node, construct: str, args: list) -> list:
-        """Per-component argument lists for a scalar operation given vectors.
-
-        Vector arguments must have one width; scalar arguments are repeated
-        for every component.
-        """
-        self._common_shape(node, construct, args)
-        width = next(len(a) for a in args if isinstance(a, list))
-        return [[a[c] if isinstance(a, list) else a for a in args] for c in range(width)]
-
-    def _common_shape(self, node, construct: str, args: list) -> tuple:
-        """The one shape the vectors among ``args`` have, or a diagnostic."""
-        shapes = []
-        for a in args:
-            if isinstance(a, TupleValue):
-                raise self._source_error(
-                    node, construct, f"is given {a.describe()} where a value is required")
-            if isinstance(a, list):
-                shape = getattr(a, 'shape', (len(a),))
-                if shape not in shapes:
-                    shapes.append(shape)
-        if len(shapes) != 1:
-            kinds = sorted(VectorValue([None] * _size(shape), shape).describe()[2:]
-                           for shape in shapes)
-            raise self._source_error(node, construct, "combines a " + " and ".join(kinds))
-        return shapes[0]
-
-    def _elementwise(self, node, construct: str, args: list, build) -> VectorValue:
-        """Apply ``build`` to each component's arguments; the result keeps the shape."""
-        shape = self._common_shape(node, construct, args)
-        return VectorValue(
-            (build(row) for row in self._componentwise(node, construct, args)), shape)
 
     # --- Vector array elements: vf[i] op= vec, vf[i][c] = x, vf[i][c] op= x ---
 
-    def _is_array_component(self, target) -> bool:
-        """``vf[i][c]``: one component of an element of a vector array."""
-        return (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Subscript)
-                and isinstance(target.value.value, ast.Name)
-                and target.value.value.id in self._vector_arrays)
-
-    def _array_element(self, node: ast.Subscript):
-        """The array and the component indices of the vector array element ``vf[i]``.
-
-        The element index is evaluated once, so a load and a store of the
-        element can share it.
-        """
-        ndim = self._vector_arrays[node.value.id]
-        index = self._capture_value(self._visit_subscript_index(node), self._pre_stmts)
-        array = self.visit(node.value)
-        element = self._element_index(index)
-        return array, [self._component_index(element, ndim, c) for c in range(ndim)]
-
-    def _component_stores(self, array, indices: list, selector, value):
-        """Store ``value`` to the component of an array element ``selector`` picks."""
-        if isinstance(selector, int):
-            return ir.IRArrayStore(array=array, index=indices[selector], value=value)
-        value = self._capture_value(value, self._pre_stmts)
-        return [
-            ir.IRIf(ir.IRCompare(op="==", left=selector, right=ir.IRConstant(c)),
-                    [ir.IRArrayStore(array=array, index=index, value=value)], [])
-            for c, index in enumerate(indices)
-        ]
-
-    def _assign_array_component(self, target: ast.Subscript, value):
-        """``vf[i][c] = value``.
-
-        A literal component is one store. A runtime one guards a store to
-        each component, as for a vector variable: out of range stores
-        nothing.
-        """
-        if isinstance(value, list):
-            raise self._source_error(
-                target, "assignment", "a component of a vector must be a scalar")
-        # The value is evaluated before the target's indices.
-        saved = self._pre_stmts
-        self._pre_stmts = []
-        array, indices = self._array_element(target.value)
-        selector = self._component_selector(
-            target, len(indices), self._matrix_arrays.get(target.value.value.id))
-        statements = self._pre_stmts
-        self._pre_stmts = saved
-        if statements:
-            value = self._capture_value(value, self._pre_stmts)
-            self._pre_stmts.extend(statements)
-        return self._component_stores(array, indices, selector, value)
-
-    def _augment_array_component(self, target: ast.Subscript, op: str, value_node):
-        """``vf[i][c] op= value``: indices once, the old value read first."""
-        array, indices = self._array_element(target.value)
-        selector = self._component_selector(
-            target, len(indices), self._matrix_arrays.get(target.value.value.id))
-        loads = [ir.IRArrayLoad(array=array, index=index) for index in indices]
-        if isinstance(selector, int):
-            read = loads[selector]
-        else:
-            read = self._select_component(selector, loads)
-        right, statements = self._visit_expression(value_node)
-        if isinstance(right, list):
-            raise self._source_error(
-                target, "augmented assignment", "combines a component of a vector with a vector")
-        if statements:
-            read = self._capture_value(read, self._pre_stmts)
-            self._pre_stmts.extend(statements)
-        return self._component_stores(
-            array, indices, selector, ir.IRBinOp(op=op, left=read, right=right))
-
-    def _augment_vector_array(self, target: ast.Subscript, op: str, value_node):
-        """``vf[i] op= value`` for a vector or a scalar ``value``."""
-        array, indices = self._array_element(target)
-        loads = VectorValue((ir.IRArrayLoad(array=array, index=index) for index in indices),
-                            self._matrix_arrays.get(target.value.id))
-        right, statements = self._visit_expression(value_node)
-        if statements:
-            loads = self._capture_value(loads, self._pre_stmts)
-            self._pre_stmts.extend(statements)
-        rows = self._componentwise(target, "augmented assignment", [loads, right])
-        stmts = []
-        values = self._settle_components(
-            [ir.IRBinOp(op=op, left=old, right=new) for old, new in rows], stmts)
-        stmts.extend(ir.IRArrayStore(array=array, index=index, value=value)
-                     for index, value in zip(indices, values))
-        return stmts
-
-    def _visit_as_vector(self, value_node, ndim: int) -> list:
-        """Visit an expression and ensure it returns vector components."""
-        result = self.visit(value_node)
-        if isinstance(result, list):
-            if len(result) != ndim:
-                raise TypeError(f"Vector dimension mismatch: expected {ndim}, got {len(result)}")
-            return result
-        # Scalar → broadcast to all components
-        return [result] * ndim
-
-    def _try_visit_vector_method(self, node: ast.Call):
-        """Try to handle vector method calls: v.normalized(), v.cross(w), etc."""
-        if not isinstance(node.func, ast.Attribute):
-            return None
-
-        method_name = node.func.attr
-        obj_node = node.func.value
-
-        # Check if the object is a known vector variable
-        if isinstance(obj_node, ast.Name) and obj_node.id in self._vector_vars:
-            components = self._variable_value(obj_node.id)
-            return self._emit_vector_method(method_name, components, len(components), node.args)
-
-        # Also handle chained expressions: (expr).normalized()
-        obj_result = self.visit(obj_node)
-        if isinstance(obj_result, list):
-            ndim = len(obj_result)
-            return self._emit_vector_method(method_name, obj_result, ndim, node.args)
-
-        return None
-
-    def _emit_vector_method(self, method_name: str, components: list, ndim: int, arg_nodes: list):
-        """Emit IR for a vector method call."""
-        is_matrix = len(getattr(components, 'shape', ())) == 2
-        if method_name in ('transpose', 'trace', 'determinant', 'inverse'):
-            if not is_matrix:
-                raise NotImplementedError(f"{method_name}() is a method of a matrix")
-            return self._emit_matrix_method(method_name, components, arg_nodes)
-        if is_matrix and method_name in ('dot', 'cross', 'outer_product'):
-            raise NotImplementedError(
-                f"{method_name}() is a method of a vector; multiply matrices with '@'")
-        if method_name == "outer_product":
-            if len(arg_nodes) != 1:
-                raise TypeError("outer_product() takes exactly one argument")
-            other = self.visit(arg_nodes[0])
-            if not isinstance(other, VectorValue) or len(other.shape) != 1:
-                raise TypeError("outer_product() argument must be a vector")
-            if max(ndim, len(other)) > MAX_MATRIX_EXTENT:
-                raise NotImplementedError(
-                    f"outer_product() of a {ndim}-vector and a {len(other)}-vector is larger "
-                    f"than {MAX_MATRIX_EXTENT}x{MAX_MATRIX_EXTENT}")
-            left = self._capture_value(VectorValue(components), self._pre_stmts)
-            other = self._capture_value(other, self._pre_stmts)
-            return VectorValue([ir.IRBinOp(op="*", left=a, right=b) for a in left for b in other],
-                               (ndim, len(other)))
-        if method_name in ('norm_sqr', 'sum', 'min', 'max') and arg_nodes:
-            raise NotImplementedError(f"{method_name}() takes no arguments")
-        if method_name == "normalized":
-            # length = sqrt(sum(c*c for c in components)), plus an optional
-            # eps that keeps a zero vector from dividing by zero
-            if len(arg_nodes) > 1:
-                raise NotImplementedError("normalized() takes at most one argument (eps)")
-            sum_sq = components[0]
-            sum_sq = ir.IRBinOp(op="*", left=components[0], right=components[0])
-            for c in range(1, ndim):
-                sum_sq = ir.IRBinOp(op="+", left=sum_sq,
-                                    right=ir.IRBinOp(op="*", left=components[c], right=components[c]))
-            length = ir.IRCall(func_name="sqrt", args=[sum_sq])
-            if arg_nodes:
-                eps = self.visit(arg_nodes[0])
-                if isinstance(eps, list):
-                    raise TypeError("normalized() eps must be a scalar")
-                length = ir.IRBinOp(op="+", left=length, right=eps)
-            return VectorValue(ir.IRBinOp(op="/", left=c, right=length) for c in components)
-
-        if method_name == "sum":
-            total = components[0]
-            for c in components[1:]:
-                total = ir.IRBinOp(op="+", left=total, right=c)
-            return total
-
-        if method_name in ("min", "max"):
-            extreme = components[0]
-            for c in components[1:]:
-                extreme = ir.IRCall(func_name=method_name, args=[extreme, c])
-            return extreme
-
-        if method_name == "norm":
-            # norm(eps) is sqrt(norm_sqr() + eps): the eps goes under the
-            # root, where it keeps a zero vector's length from being zero.
-            if len(arg_nodes) > 1:
-                raise NotImplementedError("norm() takes at most one argument (eps)")
-            sum_sq = ir.IRBinOp(op="*", left=components[0], right=components[0])
-            for c in range(1, ndim):
-                sum_sq = ir.IRBinOp(op="+", left=sum_sq,
-                                    right=ir.IRBinOp(op="*", left=components[c], right=components[c]))
-            if arg_nodes:
-                eps = self.visit(arg_nodes[0])
-                if isinstance(eps, list):
-                    raise TypeError("norm() eps must be a scalar")
-                sum_sq = ir.IRBinOp(op="+", left=sum_sq, right=eps)
-            return ir.IRCall(func_name="sqrt", args=[sum_sq])
-
-        if method_name == "norm_sqr":
-            sum_sq = ir.IRBinOp(op="*", left=components[0], right=components[0])
-            for c in range(1, ndim):
-                sum_sq = ir.IRBinOp(op="+", left=sum_sq,
-                                    right=ir.IRBinOp(op="*", left=components[c], right=components[c]))
-            return sum_sq
-
-        if method_name == "dot":
-            if len(arg_nodes) != 1:
-                raise TypeError("dot() takes exactly one argument")
-            other = self.visit(arg_nodes[0])
-            if not isinstance(other, list) or len(other) != ndim:
-                raise TypeError("dot() argument must be a vector of same dimension")
-            result = ir.IRBinOp(op="*", left=components[0], right=other[0])
-            for c in range(1, ndim):
-                result = ir.IRBinOp(op="+", left=result,
-                                    right=ir.IRBinOp(op="*", left=components[c], right=other[c]))
-            return result
-
-        if method_name == "cross":
-            if ndim != 3:
-                raise TypeError("cross() only defined for 3D vectors")
-            if len(arg_nodes) != 1:
-                raise TypeError("cross() takes exactly one argument")
-            other = self.visit(arg_nodes[0])
-            if not isinstance(other, list) or len(other) != 3:
-                raise TypeError("cross() argument must be a 3D vector")
-            a0, a1, a2 = components
-            b0, b1, b2 = other
-            return VectorValue([
-                ir.IRBinOp(op="-",
-                           left=ir.IRBinOp(op="*", left=a1, right=b2),
-                           right=ir.IRBinOp(op="*", left=a2, right=b1)),
-                ir.IRBinOp(op="-",
-                           left=ir.IRBinOp(op="*", left=a2, right=b0),
-                           right=ir.IRBinOp(op="*", left=a0, right=b2)),
-                ir.IRBinOp(op="-",
-                           left=ir.IRBinOp(op="*", left=a0, right=b1),
-                           right=ir.IRBinOp(op="*", left=a1, right=b0)),
-            ])
-
-        raise NotImplementedError(f"Vector method '{method_name}' not supported")
-
     # --- Helpers ---
 
-    def _vector_component(self, node: ast.Subscript, components: list):
-        """``components[index]`` as one scalar expression.
-
-        A literal index picks the component at lowering. A runtime index
-        selects through a chain of conditional expressions, so the result is
-        a scalar wherever a scalar is expected and no local array is needed;
-        an index past the last component yields the last component (Python
-        would raise, and a kernel cannot). The index is evaluated once.
-        """
-        selector = self._component_selector(
-            node, len(components), getattr(components, 'shape', None))
-        if isinstance(selector, int):
-            return components[selector]
-        table = getattr(components, 'table', None)
-        if table is not None:
-            return ir.IRTableLoad(*table, selector)
-        return self._select_component(selector, components)
-
-    def _component_selector(self, node: ast.Subscript, n: int, shape=None):
-        """The component a subscript of an n-vector, or of a matrix, names.
-
-        An ``int`` for a literal index, checked against the width;
-        otherwise the index as an IR value, evaluated once. A matrix takes
-        a row and a column, and the component is their row-major position.
-        """
-        if shape is not None and len(shape) == 2:
-            return self._matrix_selector(node, shape)
-        index = node.slice
-        if isinstance(index, ast.Tuple):
-            raise self._source_error(
-                node, "subscript", f"gives {len(index.elts)} indices to a {n}-vector")
-        if isinstance(index, ast.Constant) and isinstance(index.value, int):
-            c = index.value
-            if not -n <= c < n:
-                raise self._source_error(
-                    node, "subscript", f"component {c} of a {n}-vector is out of range")
-            return c % n
-        idx, statements = self._visit_expression(index)
-        self._pre_stmts.extend(statements)
-        if isinstance(idx, list):
-            raise self._source_error(node, "subscript", "a vector cannot index a vector")
-        return self._capture_value(idx, self._pre_stmts)
-
-    def _matrix_selector(self, node: ast.Subscript, shape: tuple):
-        """The row-major position ``m[i, j]`` names in a matrix of ``shape``."""
-        rows, cols = shape
-        index = node.slice
-        if not (isinstance(index, ast.Tuple) and len(index.elts) == 2):
-            raise self._source_error(
-                node, "subscript", f"of a {rows}x{cols} matrix needs a row and a column: m[i, j]")
-        literal = [e.value if isinstance(e, ast.Constant) and isinstance(e.value, int)
-                   and not isinstance(e.value, bool) else None for e in index.elts]
-        if None not in literal:
-            i, j = literal
-            if not (-rows <= i < rows and -cols <= j < cols):
-                raise self._source_error(
-                    node, "subscript", f"entry [{i}, {j}] of a {rows}x{cols} matrix is out of range")
-            return (i % rows) * cols + (j % cols)
-        row, col = self._visit_ordered(index.elts)
-        if isinstance(row, list) or isinstance(col, list):
-            raise self._source_error(node, "subscript", "a vector cannot index a matrix")
-        position = ir.IRBinOp(
-            op="+", left=ir.IRBinOp(op="*", left=row, right=ir.IRConstant(cols)), right=col)
-        return self._capture_value(position, self._pre_stmts)
-
-    def _select_component(self, selector, components: list):
-        """The component a runtime ``selector`` picks; past the last, the last."""
-        result = components[-1]
-        for c in range(len(components) - 2, -1, -1):
-            result = ir.IRIfExp(
-                ir.IRCompare(op="==", left=selector, right=ir.IRConstant(c)),
-                components[c], result)
-        return result
-
-    def _store_vector_component(self, target: ast.Subscript, value):
-        """``v[index] = value`` for a vector variable ``v``.
-
-        A literal index assigns one component. A runtime index guards an
-        assignment to each component with a comparison, so exactly the
-        selected component changes; out of range changes nothing.
-        """
-        name = target.value.id
-        n = self._vector_vars[name]
-        if isinstance(value, list):
-            raise self._source_error(
-                target, "assignment", "a component of a vector must be a scalar")
-        idx = self._component_selector(target, n, self._matrix_vars.get(name))
-        if isinstance(idx, int):
-            return ir.IRAssign(target=self._component_name(name, idx), value=value)
-        value = self._capture_value(value, self._pre_stmts)
-        return [
-            ir.IRIf(ir.IRCompare(op="==", left=idx, right=ir.IRConstant(c)),
-                    [ir.IRAssign(target=self._component_name(name, c), value=value)], [])
-            for c in range(n)
-        ]
-
-    def _visit_store_location(self, target, value):
-        """Evaluate an assignment RHS before side effects in its target."""
-        saved = self._pre_stmts
-        self._pre_stmts = []
-        array = self.visit(target.value)
-        index = self._visit_subscript_index(target)
-        statements = self._pre_stmts
-        self._pre_stmts = saved
-        if statements:
-            value = self._capture_value(value, self._pre_stmts)
-            self._pre_stmts.extend(statements)
-        return array, index, value
-
-    def _visit_subscript_index(self, node: ast.Subscript):
-        """Extract and linearize index from a subscript.
-
-        Handles:
-        - array[i] → i
-        - array[()] → 0, the one element of a zero-dimensional array
-        - array[i, j] → i * DimSize(array, 1) + j
-        - array[i, j, k] → (i * DimSize(array, 1) + j) * DimSize(array, 2) + k
-        """
-        if isinstance(node.slice, ast.Tuple) and not node.slice.elts:
-            return ir.IRConstant(0)
-
-        # Multi-dimensional: array[i, j, k]
-        if isinstance(node.slice, ast.Tuple):
-            array_name = node.value.id if isinstance(node.value, ast.Name) else None
-            if array_name is None:
-                raise NotImplementedError("Multi-dim indexing requires a named array")
-
-            return self._linearize_index(node, array_name, self._visit_ordered(node.slice.elts))
-
-        index = self.visit(node.slice)
-        if isinstance(index, list):
-            # A vector indexes one dimension per component: g[I] is g[I[0], I[1]]
-            if not isinstance(node.value, ast.Name):
-                raise self._source_error(node, "subscript", "indexes an unnamed array with a vector")
-            return self._linearize_index(node, node.value.id, [index])
-        name = node.value.id if isinstance(node.value, ast.Name) else None
-        return self._checked(node, name, [index], index)
-
-    def _linearize_index(self, node, array_name: str, indices: list):
-        """Row-major index from one index per dimension: (i * dim1 + j) * dim2 + k.
-
-        A vector among the indices supplies one dimension per component.
-        """
-        flat = []
-        for index in indices:
-            flat.extend(index if isinstance(index, list) else [index])
-        # The array's shape is known only at dispatch, where its dimension
-        # sizes are resolved; each size carries what that check needs. One
-        # index alone has no size to resolve: it is a flat index.
-        source = (getattr(node, 'lineno', None), getattr(node, 'col_offset', 0) + 1,
-                  self._inline_stack[-1] if self._inline_stack else None)
-        result = flat[0]
-        for d in range(1, len(flat)):
-            dim_size = ir.IRDimSize(array_name=array_name, dim=d)
-            dim_size.index_count = len(flat)
-            dim_size.index_source = source
-            result = ir.IRBinOp(
-                op="+",
-                left=ir.IRBinOp(op="*", left=result, right=dim_size),
-                right=flat[d],
-            )
-        return self._checked(node, array_name, flat, result, source=source)
-
     # --- Debug mode: bounds checks ---
-
-    def _source_text(self, python, node) -> str:
-        """``node`` as written in ``python``'s source, before inlining renamed it."""
-        if python is not None and getattr(node, 'end_col_offset', None) is not None:
-            source = self._sources.get(python)
-            if source is None:
-                import textwrap
-
-                from tack.lang.func import read_source
-                try:
-                    source = textwrap.dedent(read_source(python, "kernel"))
-                except Exception:   # no source to read: the AST's text below
-                    source = ""
-                self._sources[python] = source
-            try:
-                text = ast.get_source_segment(source, node)
-            except (IndexError, ValueError):     # positions from elsewhere
-                text = None
-            if text:
-                return text
-        return ast.unparse(node)
-
-    def _checked(self, node, name, indices, flat, kind=ir.IRArrayExtent.ELEMENTS,
-                 source=None):
-        """``flat``, the index of an access to ``name``, as debug mode checks it.
-
-        Several ``indices`` are checked against one dimension of the array
-        each; one is a flat index, checked against the ``kind`` of extent.
-        An array is checked against its size. Out of debug mode, or for an
-        array this function cannot size, ``flat`` is returned unchecked.
-        """
-        if not self._debug or name is None:
-            return flat
-        if name in self._shared_vars:
-            size = self._array_sizes.get(name)
-            if size is None or len(indices) != 1:
-                return flat
-            extents = [copy.deepcopy(size)]
-        elif len(indices) == 1:
-            extents = [ir.IRArrayExtent(name, kind)]
-        else:
-            extents = [ir.IRArrayExtent(name, ir.IRArrayExtent.LEADING)]
-            for d in range(1, len(indices)):
-                # Tagged as linearization's are, so too many indices is
-                # the same TypeError whichever node resolve meets first.
-                dim_size = ir.IRDimSize(array_name=name, dim=d)
-                dim_size.index_count = len(indices)
-                dim_size.index_source = source
-                extents.append(dim_size)
-        site = len(self._bounds_sites)
-        # Whose source the access is in (func.tag_origin): a call's
-        # arguments are the caller's although they are lowered while the
-        # callee is inlined. The line in the file is where the function's
-        # source, parsed alone, starts at line 1 with the decorator.
-        origin = getattr(node, '_tack_origin', None)
-        python = origin() if origin is not None else None
-        if python is not None:
-            function = None if python is self._python_func else python.__name__
-        else:   # a node lowering made: where the other diagnostics say
-            function = self._inline_stack[-1] if self._inline_stack else None
-        code = getattr(python, '__code__', None)
-        line = getattr(node, 'lineno', None)
-        self._bounds_sites.append(ir_bounds.BoundsSite(
-            kernel=self._function_name, function=function,
-            file=code.co_filename if code is not None and line is not None else None,
-            line=code.co_firstlineno + line - 1 if code is not None and line is not None
-            else line,
-            column=getattr(node, 'col_offset', 0) + 1,
-            text=self._source_text(python, node), dimensions=len(indices)))
-        # The check evaluates its own copy of the indices: IR is a tree.
-        return ir.IRBoundsCheck(indices=[copy.deepcopy(i) for i in indices], extents=extents,
-                                flat=flat, site=site, errors=ir.IRName(ir_bounds.ERRORS_PARAM))
-
-    def _is_range_call(self, node: ast.expr) -> bool:
-        """Check if an AST node is a call to range()."""
-        return (isinstance(node, ast.Call) and
-                self._resolve_call_name(node) == 'range')
-
-    def _parse_range_args(self, call_node: ast.Call):
-        """Parse range(end), range(start, end), or range(start, end, step)."""
-        args = self._visit_ordered(call_node.args)
-        if len(args) == 1:
-            return ir.IRConstant(0), args[0], None
-        if len(args) == 2:
-            return args[0], args[1], None
-        if len(args) == 3:
-            return args[0], args[1], args[2]
-        raise NotImplementedError("range() takes 1-3 arguments")
 
     def _resolve_call_name(self, node: ast.Call) -> str:
         """Resolve the function name from a Call node.
@@ -2756,119 +1109,6 @@ class KernelTransformer(ast.NodeVisitor):
         if op_type not in ops:
             raise NotImplementedError(f"Unsupported comparison operator: {op_type.__name__}")
         return ops[op_type]
-
-
-def _effect_name(node) -> str | None:
-    """Name an observable effect, or None for an effect-free node."""
-    if isinstance(node, ir.IRArrayStore):
-        return "store"
-    if isinstance(node, (ir.IRAtomicOp, ir.IRBlockReduce)):
-        prefix = "atomic" if isinstance(node, ir.IRAtomicOp) else "block"
-        return f"{prefix}_{node.op}()"
-    if isinstance(node, ir.IRBarrier):
-        return "barrier()"
-    if isinstance(node, ir.IRPrint):
-        return "print()"
-    return None
-
-
-def _mark_outermost_continues(stmts: list):
-    """Flag each `continue` that belongs to the parallel loop itself."""
-    for stmt in stmts:
-        if isinstance(stmt, ir.IRContinue):
-            stmt.outermost = True
-        elif isinstance(stmt, ir.IRIf):
-            _mark_outermost_continues(stmt.then_body)
-            _mark_outermost_continues(stmt.else_body or [])
-        # Nested loops own their continues; do not descend into them.
-
-
-def _has_return(stmts: list) -> bool:
-    return any(isinstance(n, ast.Return) for s in stmts for n in ast.walk(s))
-
-
-def _structure_returns(stmts: list, func_name: str) -> list:
-    """Make every `return` the last statement on its path.
-
-    Inlining lowers `return x` to an assignment, which does not leave the
-    function: after `if c: return a` the statements that follow would still
-    run and overwrite the result. Statements after an `if` that returns are
-    moved into its branches, so each path ends at its own return.
-    """
-    for idx, stmt in enumerate(stmts):
-        if isinstance(stmt, ast.Return):
-            return stmts[:idx + 1]  # the rest is unreachable
-        if isinstance(stmt, (ast.For, ast.While)) and _has_return([stmt]):
-            raise NotImplementedError(
-                f"@tack.func '{func_name}': 'return' inside a loop is not "
-                f"supported. Assign the result to a variable, 'break', and "
-                f"return after the loop.")
-        if isinstance(stmt, ast.If) and _has_return([stmt]):
-            rest = stmts[idx + 1:]
-            stmt.body = _structure_returns(
-                stmt.body + copy.deepcopy(rest), func_name)
-            stmt.orelse = _structure_returns(stmt.orelse + rest, func_name)
-            return [*stmts[:idx], stmt]
-    return stmts
-
-
-class _NameRenamer(ast.NodeTransformer):
-    """Renames variables in an AST subtree and converts return → assignment.
-
-    result_var can be:
-    - str: single return value → one assignment
-    - list[str]: multi-return (tuple) → multiple assignments
-    """
-
-    def __init__(self, rename_map: dict[str, str], result_var):
-        self._rename_map = rename_map
-        self._result_var = result_var  # str or list[str]
-
-    def visit_Name(self, node: ast.Name) -> ast.Name:
-        if node.id in self._rename_map:
-            # Keep the position and the source spelling for diagnostics.
-            renamed = ast.copy_location(ast.Name(id=self._rename_map[node.id], ctx=node.ctx), node)
-            renamed._source_id = node.id
-            return renamed
-        return node
-
-    def visit_Return(self, node: ast.Return):
-        """Convert 'return expr' → assignment(s).
-
-        Single return: 'return x' → '__func_ret_N__ = x'
-        Multi-return:  'return (a, b)' → '__func_ret_0_N__ = a; __func_ret_1_N__ = b'
-        """
-        value = self.visit(node.value) if node.value else ast.Constant(value=0)
-
-        # Multi-return: result_var is a list, value should be a Tuple
-        if isinstance(self._result_var, list):
-            if isinstance(value, ast.Tuple):
-                stmts = []
-                for var, elt in zip(self._result_var, value.elts):
-                    stmts.append(ast.copy_location(ast.Assign(
-                        targets=[ast.Name(id=var, ctx=ast.Store())],
-                        value=elt,
-                    ), node))
-                return stmts
-            # Single expression returned but expected multi — assign to first
-            return ast.copy_location(ast.Assign(
-                targets=[ast.Name(id=self._result_var[0], ctx=ast.Store())],
-                value=value,
-            ), node)
-
-        # Keep the return's position for diagnostics in the inlined body.
-        return ast.copy_location(ast.Assign(
-            targets=[ast.Name(id=self._result_var, ctx=ast.Store())],
-            value=value,
-        ), node)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
-        """Rename function parameters."""
-        node = self.generic_visit(node)
-        for arg in node.args.args:
-            if arg.arg in self._rename_map:
-                arg.arg = self._rename_map[arg.arg]
-        return node
 
 
 def transform_kernel(kernel_ast: ast.Module, vector_arrays=None,

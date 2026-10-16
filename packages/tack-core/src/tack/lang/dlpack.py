@@ -246,21 +246,21 @@ def _get_device_info(array):
         # every later one that uses it.
         buf.share()
         data_ptr = int(buf._device_ptr)
-        return kDLCUDA, 0, data_ptr
+        return kDLCUDA, array._backend.ordinal, data_ptr
 
     if cls_name == "HIPBuffer":
         # As for CUDA: complete the queued launches now, and every later
         # one that uses it.
         buf.share()
         data_ptr = int(buf._device_ptr)
-        return kDLROCM, 0, data_ptr
+        return kDLROCM, array._backend.ordinal, data_ptr
 
     if cls_name == "L0Buffer":
         # As for CUDABuffer: the consumer reads it at once, on its own
         # queue, and may keep reading it after later launches.
         buf.share()
         data_ptr = buf._device_ptr.value if hasattr(buf._device_ptr, 'value') else int(buf._device_ptr)
-        return kDLOneAPI, 0, data_ptr
+        return kDLOneAPI, array._backend.ordinal, data_ptr
 
     raise RuntimeError(f"DLPack not supported for buffer type: {cls_name}")
 
@@ -521,7 +521,8 @@ def dlpack_to_array(source, writable=True, device=None):
         backend = _target(device)
     else:
         backend = get_backend()
-        if backend.name not in allowed:
+        if backend.name not in allowed or (
+                backend.multi_device and backend.ordinal != tensor.device.device_id):
             backend = _tensor_device(allowed[0], tensor.device.device_id)
     if backend.name not in allowed:
         message = (

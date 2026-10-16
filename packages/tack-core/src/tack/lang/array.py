@@ -201,7 +201,15 @@ class Array:
     ``shape`` counts elements and ``dtype`` describes one element, so an array
     of shape ``(n,)`` and dtype ``vec3(f32)`` holds ``3 * n`` scalars and
     downloads as ``(n, 3)``.
+
+    ``layout`` says how a vector or matrix array stores its components:
+    ``"aos"`` (the default) interleaves them in one buffer, ``"soa"`` keeps
+    one scalar array per component (`SoaArray`). An array of scalars says
+    ``"aos"``.
     """
+
+    #: How vector or matrix components are stored; see `SoaArray`.
+    layout = "aos"
 
     def __init__(self, dtype: ScalarType, shape: tuple[int, ...], buffer: DeviceBuffer,
                  writable: bool = True, device=None):
@@ -274,6 +282,11 @@ class Array:
     def nbytes(self) -> int:
         """Bytes of storage the elements occupy."""
         return self.scalar_size * self._dtype.numpy_dtype.itemsize
+
+    @property
+    def _starts_zeroed(self) -> bool:
+        """Whether new storage holds zeros already, so `zeros` need not fill it."""
+        return self._buffer.starts_zeroed
 
     def _check_writable(self):
         if not self._writable:
@@ -554,6 +567,188 @@ class Array:
         return f"Array(shape={self.shape}, dtype={self.dtype})"
 
 
+class SoaArray(Array):
+    """A vector or matrix array stored as one scalar array per component.
+
+    Made by `soa` from arrays that exist already (from another library,
+    through ``from_dlpack`` or ``array_from_ptr``), or by a constructor given
+    ``layout="soa"``. It is an `Array` like any other: a kernel reads
+    ``a[i]`` as a vector, stores, updates and atomically updates it, and
+    only the generated code differs, reading component ``c`` of element
+    ``i`` from ``a.components[c][i]`` rather than from ``i * n + c`` of one
+    buffer. A kernel compiled for one layout is not used for the other.
+
+    With no single buffer, an SOA array is not exported whole (DLPack,
+    ``export_memory``); its components are.
+    """
+
+    layout = "soa"
+
+    def __init__(self, components, element_shape):
+        first = components[0]
+        super().__init__(first.scalar_dtype, (len(components) * first.size,), None,
+                         all(c._writable for c in components), first._backend)
+        self._components = tuple(components)
+        self._vector_n = len(components)
+        self._logical_shape = first.shape
+        if len(element_shape) == 2:
+            self._matrix_shape = tuple(element_shape)
+
+    @property
+    def components(self) -> tuple:
+        """The scalar arrays holding each component, in order (row-major for
+        a matrix): the arrays `soa` was given, or the ones a constructor made."""
+        return self._components
+
+    @property
+    def _starts_zeroed(self) -> bool:
+        return all(c._starts_zeroed for c in self._components)
+
+    def to_device(self, device) -> 'Array':
+        moved = tuple(c.to_device(device) for c in self._components)
+        if all(m is c for m, c in zip(moved, self._components)):
+            return self
+        return SoaArray(moved, self.dtype.shape)
+
+    def _check_writable(self):
+        for c in self._components:
+            c._check_writable()
+
+    def _upload(self, host: np.ndarray):
+        self._check_writable()
+        host = np.asarray(host).reshape((*self.shape, self._vector_n))
+        for k, c in enumerate(self._components):
+            c._upload(host[..., k])
+
+    def numpy(self) -> np.ndarray:
+        """Copy the values into a new NumPy array, components as the trailing
+        dimensions, exactly as for an interleaved array."""
+        return np.stack([c.numpy() for c in self._components], axis=-1).reshape(
+            self._host_shape)
+
+    async def numpy_async(self) -> np.ndarray:
+        import asyncio
+        parts = await asyncio.gather(*(c.numpy_async() for c in self._components))
+        return np.stack(parts, axis=-1).reshape(self._host_shape)
+
+    def fill(self, value):
+        self._check_writable()
+        if np.ndim(value) == 0:
+            for c in self._components:
+                c.fill(value)
+            return
+        element = np.asarray(value)
+        if element.shape != self.dtype.shape:
+            raise ValueError(
+                f"fill() value has shape {element.shape}; "
+                f"the elements of this array have shape {self.dtype.shape}")
+        for c, v in zip(self._components, element.reshape(-1), strict=True):
+            c.fill(v.item())
+
+    def _reduce(self, op: str):
+        from tack.runtime.reductions import empty_reduction, reduce_numpy
+        if self.size == 0:
+            return empty_reduction(op)
+        return reduce_numpy([c._reduce(op) for c in self._components], op)
+
+    def __getitem__(self, index):
+        values = [c[index] for c in self._components]
+        return np.array(values, dtype=self.scalar_dtype.numpy_dtype).reshape(self.dtype.shape)
+
+    def _scalar_view(self):
+        raise TypeError(
+            "an SOA array has no single storage to view; its components "
+            "(a.components) are separate arrays")
+
+    def copy(self) -> 'Array':
+        return SoaArray(tuple(c.copy() for c in self._components), self.dtype.shape)
+
+    def astype(self, dtype) -> 'Array':
+        dtype = as_dtype(dtype)
+        if isinstance(dtype, ElementType):
+            if dtype.shape != self.dtype.shape:
+                raise TypeError("astype cannot change an element's component dimensions")
+            dtype = dtype.scalar_dtype
+        return SoaArray(tuple(c.astype(dtype) for c in self._components), self.dtype.shape)
+
+    def reshape(self, *shape) -> 'Array':
+        return SoaArray(tuple(c.reshape(*shape) for c in self._components), self.dtype.shape)
+
+    def _no_single_buffer(self, what):
+        return BufferError(
+            f"an SOA array has no single buffer for {what}; export its "
+            f"components (a.components) one by one, or copy it to one buffer "
+            f"with tack.array(a, layout='aos')")
+
+    def export_memory(self) -> ExportedMemory:
+        raise self._no_single_buffer("export_memory()")
+
+    def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
+        raise self._no_single_buffer("DLPack")
+
+    def __dlpack_device__(self):
+        raise self._no_single_buffer("DLPack")
+
+    def __repr__(self):
+        return f"Array(shape={self.shape}, dtype={self.dtype}, layout='soa')"
+
+
+def soa(*components, dtype=None) -> SoaArray:
+    """A vector array whose components are the given arrays, without copying.
+
+    ``tack.soa(x, y, z)`` is an array of ``vec3`` elements whose element
+    ``i`` is ``(x[i], y[i], z[i])``: the structure-of-arrays layout, for
+    data that arrives that way, such as a simulation's coordinate arrays
+    or another library's tensors (``from_dlpack``, ``array_from_ptr``).
+    Kernels read and write it as they do any vector array, and writes go
+    to the component arrays. The components are arrays of scalars of one
+    dtype and one shape, on one device. An element ``dtype`` of the same
+    component type makes a matrix array instead, components row-major:
+    ``tack.soa(a, b, c, d, dtype=tack.mat2())``.
+    """
+    if len(components) == 1 and isinstance(components[0], (list, tuple)):
+        components = tuple(components[0])
+    if not components:
+        raise TypeError("soa() takes the component arrays, at least one")
+    for c in components:
+        if not isinstance(c, Array):
+            raise TypeError(f"soa() takes Tack arrays, not {type(c).__name__}; make one "
+                            f"with tack.array(), tack.from_dlpack() or tack.array_from_ptr()")
+        if hasattr(c, '_vector_n'):
+            raise TypeError(f"soa() takes arrays of scalars, one per component, "
+                            f"not an array of {c.dtype}")
+    first = components[0]
+    for c in components[1:]:
+        if c.scalar_dtype is not first.scalar_dtype or c.shape != first.shape:
+            raise ValueError(
+                f"soa() components must share a dtype and a shape; got {first.dtype} "
+                f"{first.shape} and {c.dtype} {c.shape}")
+    from tack.runtime.dispatch import same_device
+    same_device("soa()", components)
+    if dtype is None:
+        element = vec(len(components), first.scalar_dtype)
+    else:
+        element = as_dtype(dtype)
+        if not isinstance(element, ElementType) or element.size != len(components):
+            raise TypeError(f"soa() was given {len(components)} components; dtype must be "
+                            f"a vector or matrix of {len(components)}, not {element}")
+        if element.scalar_dtype is not first.scalar_dtype:
+            raise TypeError(f"soa() components are {first.scalar_dtype}; dtype {element} "
+                            f"has {element.scalar_dtype} components")
+    return SoaArray(components, element.shape)
+
+
+def _check_layout(layout, dtype):
+    if layout == "aos":
+        return False
+    if layout != "soa":
+        raise ValueError(f"layout is 'aos' or 'soa', not {layout!r}")
+    if not isinstance(dtype, ElementType):
+        raise TypeError(f"layout='soa' stores each component of a vector or matrix element "
+                        f"in its own array; the dtype {dtype} has no components")
+    return True
+
+
 
 def _element(scalar, shape):
     """The (cached, so comparable with ``is``) element type of ``shape``."""
@@ -617,40 +812,45 @@ def _target(device):
     return device if isinstance(device, Backend) else backend_of(device)
 
 
-def empty(shape, dtype=f32, *, device=None, exportable=False) -> Array:
+def empty(shape, dtype=f32, *, device=None, exportable=False, layout="aos") -> Array:
     """A new array of uninitialized scalar, vector or matrix elements.
 
     ``shape`` counts elements; ``dtype`` describes one element. A vector
     array of shape ``(n,)`` and dtype ``vec3(f32)`` downloads as ``(n, 3)``.
     Initialize its values with a kernel, ``fill`` or ``tack.copyto`` before
     reading. ``device`` is a `tack.Device` or a spec such as ``"cuda"``; by
-    default the default device.
+    default the default device. ``layout="soa"`` stores a vector or matrix
+    array's components in one array each (see `SoaArray`).
     """
     backend = _target(device)
     shape = _array_shape(shape)
     dtype = as_dtype(dtype)
+    if _check_layout(layout, dtype):
+        return SoaArray(tuple(empty(shape, dtype.scalar_dtype, device=backend,
+                                    exportable=exportable) for _ in range(dtype.size)),
+                        dtype.shape)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
     storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
     buffer = backend.allocate_array(scalar, storage, exportable=exportable)
     return _array_view(dtype, shape, buffer, device=backend)
 
 
-def zeros(shape, dtype=f32, *, device=None) -> Array:
+def zeros(shape, dtype=f32, *, device=None, layout="aos") -> Array:
     """A new array of zeros, filled on the device."""
-    a = empty(shape, dtype, device=device)
-    if not a._buffer.starts_zeroed:
+    a = empty(shape, dtype, device=device, layout=layout)
+    if not a._starts_zeroed:
         a.fill(0)
     return a
 
 
-def ones(shape, dtype=f32, *, device=None) -> Array:
+def ones(shape, dtype=f32, *, device=None, layout="aos") -> Array:
     """A new array of ones."""
-    a = empty(shape, dtype, device=device)
+    a = empty(shape, dtype, device=device, layout=layout)
     a.fill(1)
     return a
 
 
-def full(shape, fill_value, dtype=None, *, device=None) -> Array:
+def full(shape, fill_value, dtype=None, *, device=None, layout="aos") -> Array:
     """A new array with every element ``fill_value``.
 
     Without ``dtype``, a Python float gives f32 and an int i32 (i64 if it
@@ -659,12 +859,12 @@ def full(shape, fill_value, dtype=None, *, device=None) -> Array:
     """
     if dtype is None:
         dtype = _host_dtype(np.asarray(fill_value), fill_value)
-    a = empty(shape, dtype, device=device)
+    a = empty(shape, dtype, device=device, layout=layout)
     a.fill(fill_value)
     return a
 
 
-def _like(prototype, dtype, device):
+def _like(prototype, dtype, device, layout):
     if not isinstance(prototype, (Array, np.ndarray)):
         raise TypeError("expected a Tack array or NumPy array as the prototype")
     if dtype is None:
@@ -677,42 +877,47 @@ def _like(prototype, dtype, device):
             dtype = _element(dtype, prototype.dtype.shape)
     if device is None and isinstance(prototype, Array):
         device = prototype._backend
-    return empty(prototype.shape, dtype, device=device)
+    if layout is None:
+        layout = prototype.layout if isinstance(prototype, Array) else "aos"
+        if not isinstance(dtype, ElementType):
+            layout = "aos"
+    return empty(prototype.shape, dtype, device=device, layout=layout)
 
 
-def empty_like(prototype, dtype=None, *, device=None) -> Array:
+def empty_like(prototype, dtype=None, *, device=None, layout=None) -> Array:
     """A new uninitialized array of ``prototype``'s shape and dtype.
 
     ``prototype`` is a Tack or NumPy array; nothing is read from it. A scalar
     ``dtype`` changes the component type of a vector or matrix prototype and
-    keeps its element dimensions. A Tack prototype's device is the default.
+    keeps its element dimensions. A Tack prototype's device and layout are
+    the defaults.
     """
-    return _like(prototype, dtype, device)
+    return _like(prototype, dtype, device, layout)
 
 
-def zeros_like(prototype, dtype=None, *, device=None) -> Array:
+def zeros_like(prototype, dtype=None, *, device=None, layout=None) -> Array:
     """A new array of zeros of ``prototype``'s shape and dtype."""
-    a = _like(prototype, dtype, device)
-    if not a._buffer.starts_zeroed:
+    a = _like(prototype, dtype, device, layout)
+    if not a._starts_zeroed:
         a.fill(0)
     return a
 
 
-def ones_like(prototype, dtype=None, *, device=None) -> Array:
+def ones_like(prototype, dtype=None, *, device=None, layout=None) -> Array:
     """A new array of ones of ``prototype``'s shape and dtype."""
-    a = _like(prototype, dtype, device)
+    a = _like(prototype, dtype, device, layout)
     a.fill(1)
     return a
 
 
-def full_like(prototype, fill_value, dtype=None, *, device=None) -> Array:
+def full_like(prototype, fill_value, dtype=None, *, device=None, layout=None) -> Array:
     """A new array of ``prototype``'s shape and dtype, every element ``fill_value``."""
-    a = _like(prototype, dtype, device)
+    a = _like(prototype, dtype, device, layout)
     a.fill(fill_value)
     return a
 
 
-def array(obj, dtype=None, *, device=None) -> Array:
+def array(obj, dtype=None, *, device=None, layout=None) -> Array:
     """A new array holding a copy of ``obj``: a NumPy array, a sequence or a Tack array.
 
     Without ``dtype``, all of ``obj``'s dimensions are array dimensions, a
@@ -720,8 +925,18 @@ def array(obj, dtype=None, *, device=None) -> Array:
     i32 (i64 if a value needs it). With an element dtype such as
     ``vec3(f32)``, the trailing dimensions are the elements' components.
     A Tack array is copied on its device unless ``device`` names another.
+    ``layout`` is ``"aos"`` or ``"soa"`` for a vector or matrix array (see
+    `SoaArray`); by default a Tack array keeps its own and other data is
+    interleaved.
     """
     if isinstance(obj, Array):
+        if layout is not None and layout != obj.layout:
+            if device is not None:
+                obj = obj.to_device(device)
+            out = empty(obj.shape, obj.dtype if dtype is None else dtype,
+                        device=obj._backend, layout=layout)
+            copyto(out, obj)
+            return out
         if device is not None and _target(device).memory_domain != obj._backend.memory_domain:
             moved = obj.to_device(device)
             return moved if dtype is None else moved.astype(dtype)
@@ -734,21 +949,24 @@ def array(obj, dtype=None, *, device=None) -> Array:
         if len(shape) < rank or shape[-rank:] != dtype.shape:
             raise ValueError(f"input shape {shape} must end with element shape {dtype.shape}")
         shape = shape[:-rank]
-    out = empty(shape, dtype, device=device)
+    out = empty(shape, dtype, device=device, layout=layout or "aos")
     out._upload(host.astype(out.scalar_dtype.numpy_dtype, copy=False))
     return out
 
 
-def asarray(obj, dtype=None, *, device=None) -> Array:
+def asarray(obj, dtype=None, *, device=None, layout=None) -> Array:
     """``obj`` itself if it is a Tack array of ``dtype`` (or any, without one)
-    on ``device`` (or any, without one), else `array(obj, dtype, device=device)`."""
+    on ``device`` (or any, without one) in ``layout`` (or either, without one),
+    else `array(obj, dtype, device=device, layout=layout)`."""
     if isinstance(obj, Array):
+        if layout is not None and layout != obj.layout:
+            return array(obj, dtype, device=device, layout=layout)
         if device is not None:
             obj = obj.to_device(device)
         if dtype is None or as_dtype(dtype) == obj.dtype:
             return obj
         return obj.astype(dtype)
-    return array(obj, dtype, device=device)
+    return array(obj, dtype, device=device, layout=layout)
 
 
 def copyto(dst: Array, src):
@@ -769,7 +987,15 @@ def copyto(dst: Array, src):
         same_device("copyto()", (dst, src))
         dst._check_writable()
         from tack.algorithms.copy import copy as _copy
-        _copy(src._scalar_view(), dst._scalar_view(), dst.scalar_size)
+        if src.layout == dst.layout == "aos":
+            _copy(src._scalar_view(), dst._scalar_view(), dst.scalar_size)
+            return
+        # An SOA array has no one buffer: copy element by element, which
+        # reads and writes either layout.
+        if getattr(src.dtype, 'shape', None) != getattr(dst.dtype, 'shape', None):
+            raise ValueError(f"copyto() from an array of {src.dtype} elements into one "
+                             f"of {dst.dtype} elements")
+        _copy(src.reshape(src.size), dst.reshape(dst.size), dst.size)
         return
     host = np.asarray(src, dtype=dst.scalar_dtype.numpy_dtype)
     expected = dst._host_shape
@@ -1000,3 +1226,22 @@ class Texture3D:
         """Sample at normalized coordinates. Only usable inside @tack.kernel."""
         raise RuntimeError("Texture3D.sample() can only be used inside a @tack.kernel")
 
+
+
+# How a kernel names an SOA array's components: the parameter `a` becomes
+# one parameter per component, in its place, and dispatch passes the
+# component arrays there (`kernel_utils._flatten_soa`).
+_SOA_PREFIX = "__soa"
+
+
+def soa_param_names(name: str, n: int) -> tuple:
+    """The kernel parameters standing for the ``n`` components of ``name``."""
+    return tuple(f"{_SOA_PREFIX}{c}__{name}" for c in range(n))
+
+
+def soa_component(param: str):
+    """``(name, c)`` if ``param`` is component ``c`` of the SOA array ``name``, else None."""
+    if not param.startswith(_SOA_PREFIX):
+        return None
+    c, sep, name = param[len(_SOA_PREFIX):].partition("__")
+    return (name, int(c)) if sep and c.isdigit() else None

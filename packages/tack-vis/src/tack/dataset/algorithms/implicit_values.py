@@ -1,8 +1,8 @@
 """``implicit_values``: an implicit function (``tack.dataset.implicit``) at the geometry's values: a field in the geometry's space, negative inside the function's region. On an ``H1`` geometry that is one value per point."""
 
 import tack
-from tack.dataset import arrays
-from tack.dataset.arrays import materialize, size_of
+from tack import arrays
+from tack.arrays import materialize, size_of
 from tack.dataset.dataset import Field
 
 __all__ = ['implicit_values']

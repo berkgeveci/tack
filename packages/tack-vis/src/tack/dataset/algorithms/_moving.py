@@ -2,8 +2,8 @@
 ``cylindrical`` and ``spherical``."""
 
 import tack
+from tack.arrays import materialize, size_of
 from tack.dataset.algorithms._common import _vectors
-from tack.dataset.arrays import materialize, size_of
 from tack.dataset.carry import selected
 from tack.dataset.dataset import DataSet, Field
 

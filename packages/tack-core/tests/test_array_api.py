@@ -176,16 +176,16 @@ def test_typed_geometry_and_dataset_fields(backend):
     positions = tack.array(mesh.positions(), dtype=tack.vec3())
     data = td.DataSet(mesh.topology, td.Field(td.H1(mesh), positions))
     assert data.dtype is tack.f32
-    assert td.arrays.size_of(positions) == 8
-    assert td.arrays.dtype_of(positions) is tack.f32
+    assert tack.arrays.size_of(positions) == 8
+    assert tack.arrays.dtype_of(positions) is tack.f32
     temperature = tack.array(data.positions()[:, 0], dtype=tack.f32)
     data.fields['temperature'] = td.Field(td.H1(data), temperature)
     data.fields['velocity'] = td.Field(td.H1(data), positions)
     projected = td.project(data, 'velocity', td.Constant(data))
-    np.testing.assert_allclose(td.arrays.to_host(projected.values), [[0.5, 0.5, 0.5]])
+    np.testing.assert_allclose(tack.arrays.to_host(projected.values), [[0.5, 0.5, 0.5]])
     surface = td.contour(data, 'temperature', 0.5)
     assert surface.num_cells > 0
-    np.testing.assert_allclose(td.arrays.to_host(surface.fields['velocity'].values)[:, 0], 0.5)
+    np.testing.assert_allclose(tack.arrays.to_host(surface.fields['velocity'].values)[:, 0], 0.5)
 
 
 def test_typed_pointer_and_dlpack_views(backend):

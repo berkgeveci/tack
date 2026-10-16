@@ -71,8 +71,8 @@ def test_log_values_clamp_below_the_minimum(backend, base):
 
 def test_ids_are_implicit(backend):
     data = _two_hexes_and_a_pyramid()
-    assert isinstance(td.point_ids(data).values, td.CountingArray)
-    np.testing.assert_array_equal(td.arrays.to_host(td.cell_ids(data).values), [0, 1, 2])
+    assert isinstance(td.point_ids(data).values, tack.arrays.CountingArray)
+    np.testing.assert_array_equal(tack.arrays.to_host(td.cell_ids(data).values), [0, 1, 2])
     assert td.cell_ids(data).space is td.Values(data, "cells")
 
 
@@ -195,12 +195,12 @@ def test_composite_refuses_mixed_types(backend):
 @pytest.mark.parametrize("algorithm", [td.dot, td.cross])
 def test_binary_vector_operations_refuse_mixed_types(backend, algorithm):
     data = td.uniform_grid((2,))
-    a = td.Field(td.H1(data), td.ConstantArray([1, 2, 3], 2, dtype=tack.i32))
-    b = td.Field(td.H1(data), td.ConstantArray([0.5, 0.25, 0.75], 2))
+    a = td.Field(td.H1(data), tack.arrays.ConstantArray([1, 2, 3], 2, dtype=tack.i32))
+    b = td.Field(td.H1(data), tack.arrays.ConstantArray([0.5, 0.25, 0.75], 2))
     for left, right in ((a, b), (b, a)):
         with pytest.raises(TypeError, match="differ in type"):
             algorithm(data, left, right)
-    converted = td.Field(a.space, td.Cast(a.values, tack.f32))
+    converted = td.Field(a.space, tack.arrays.Cast(a.values, tack.f32))
     result = algorithm(data, converted, b).values.numpy()
     expected = [3.25, 3.25] if algorithm is td.dot else [[0.75, 0.75, -0.75]] * 2
     np.testing.assert_allclose(result, expected, rtol=1e-6)
@@ -208,7 +208,7 @@ def test_binary_vector_operations_refuse_mixed_types(backend, algorithm):
 
 def test_integer_nonlinear_transforms_compute_floating_results(backend):
     data = td.uniform_grid((2,))
-    vector = td.Field(td.H1(data), td.ConstantArray([1, 1, 0], 2, dtype=tack.i32))
+    vector = td.Field(td.H1(data), tack.arrays.ConstantArray([1, 1, 0], 2, dtype=tack.i32))
     norm = td.magnitude(data, vector)
     assert norm.values.dtype is tack.f32
     np.testing.assert_allclose(norm.values.numpy(), np.sqrt(2), rtol=1e-6)

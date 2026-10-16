@@ -16,7 +16,13 @@ with a `build` callback, and that callback is where this page begins.
 
 ## The Backend contract
 
-All five backends subclass `Backend` (`runtime/backend.py`). It declares
+All five backends subclass `Backend` (`runtime/backend.py`); the four GPU
+backends do so through `GPUBackend` (`runtime/gpu_backend.py`), which turns a
+call into a queued launch the same way for all of them and leaves each the
+hooks where they differ: how a kernel is compiled and launched, which lock a
+launch holds, how its packed scalars are owned, and whether it must complete
+before returning. Their code generators likewise share `CFamilyCodeGen`
+(`codegen/c_family.py`). It declares
 three required methods — `allocate_array()`, `wrap_ptr()` and `execute()` —
 and a set of capability attributes that callers *read* instead of probing
 with `hasattr`. Optional methods have defaults that suit a backend whose

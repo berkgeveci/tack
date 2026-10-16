@@ -78,8 +78,8 @@ def test_outputs_widen_only_when_they_must():
     assert ids.for_output(Data, 2**31) == tack.i64
     Data.id_dtype = tack.i64
     assert ids.for_output(Data, 10) == tack.i64
-    assert td.CountingArray(10).dtype == tack.i32
-    assert td.CountingArray(10, start=2**31).dtype == tack.i64
+    assert tack.arrays.CountingArray(10).dtype == tack.i32
+    assert tack.arrays.CountingArray(10, start=2**31).dtype == tack.i64
 
 
 @pytest.mark.skipif(vtk is None, reason="needs VTK")

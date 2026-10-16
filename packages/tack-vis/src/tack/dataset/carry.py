@@ -33,8 +33,9 @@ raises ``KeyError``.
 import numpy as np
 
 import tack
-from tack.dataset import arrays, ids
-from tack.dataset.arrays import materialize, size_of, width_of
+from tack import arrays
+from tack.arrays import materialize, size_of, width_of
+from tack.dataset import ids
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.lang.array import Array as _DeviceArray

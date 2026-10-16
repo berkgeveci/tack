@@ -25,6 +25,7 @@ Each nested class is part of the cache key, as the outer one is.
 import ast
 import contextlib
 import copy
+import re
 import threading
 import weakref
 
@@ -57,7 +58,7 @@ def _class_constants(cls):
             for name, val in vars(klass).items():
                 if name.startswith('_'):
                     continue
-                if isinstance(val, (int, float)):
+                if isinstance(val, (int, float)) or _number_tuple(val):
                     found[name] = val
                 else:
                     found.pop(name, None)   # replaced by something that is not a constant
@@ -67,12 +68,33 @@ def _class_constants(cls):
         val = getattr(cls, name)
         if isinstance(val, (int, float)):
             constants[name] = val
+        elif _number_tuple(val):
+            # A class tuple of numbers: one constant per entry, read as
+            # obj.shape[k] as an instance tuple is, but compiled in.
+            for k, entry in enumerate(val):
+                constants[f"{name}{_NESTED}{k}"] = entry
     return constants
 
 
 # Joins a nested template's path to its attribute names when the tree is
 # flattened: ``self.base.step`` is the tree's ``base__step``.
 _NESTED = "__"
+# An instance tuple of numbers, ``self.shape = (nx, ny)``, is one runtime
+# scalar per entry, named ``shape__0``, ``shape__1``: read as
+# ``obj.shape[k]`` with a literal ``k``.
+_TUPLE_ENTRY = re.compile(r"^(.+)__(\d+)$")
+
+
+def _number_tuple(value):
+    return (isinstance(value, tuple) and value
+            and all(isinstance(v, (int, float)) for v in value))
+
+
+def scalar_path(name):
+    """The attribute path of an object's own runtime scalar: ``("n",)``, or
+    ``("shape", 0)`` for an entry of a tuple attribute."""
+    entry = _TUPLE_ENTRY.match(name)
+    return (entry.group(1), int(entry.group(2))) if entry else (name,)
 
 # One dispatch reads a template's tree several times -- its cache key, its
 # expanded arguments, its vector arrays -- and each pass walked and
@@ -159,6 +181,9 @@ def _classify_own(obj):
         if name.startswith('_'):
             continue
         val = getattr(obj, name)
+        if _TUPLE_ENTRY.match(name):
+            raise TypeError(f"{type(obj).__name__}.{name}: an attribute name ending in "
+                            "'__' and digits is how a tuple's entries are named; rename it")
         if name in scalars:
             if isinstance(val, (int, float)):
                 # Instance overrides a class variable — use the instance value
@@ -170,10 +195,25 @@ def _classify_own(obj):
             # like any other attribute. Kept, it reached the cache keys, where
             # a list made dispatch fail with "unhashable type".
             del scalars[name]
+        entries = [key for key in scalars
+                   if scalar_path(key)[0] == name and len(scalar_path(key)) == 2]
+        if entries:
+            # A class tuple of numbers, one constant per entry: an instance
+            # tuple of numbers replacing it is still compiled in; anything
+            # else drops it, as for a number above.
+            for key in entries:
+                del scalars[key]
+            if _number_tuple(val):
+                for k, entry in enumerate(val):
+                    scalars[f"{name}{_NESTED}{k}"] = entry
+                continue
         if isinstance(val, (int, float)):
             runtime_scalars[name] = val
         elif isinstance(val, Array):
             arrays[name] = val
+        elif _number_tuple(val):
+            for k, entry in enumerate(val):
+                runtime_scalars[f"{name}{_NESTED}{k}"] = entry
     return scalars, arrays, runtime_scalars
 
 
@@ -334,11 +374,17 @@ def rewrite_templates(kernel_ast, template_args):
     used_names.update(n.arg for source in sources for n in ast.walk(source)
                       if isinstance(n, ast.arg))
 
+    # The source spelling of each held array's synthetic parameter, for
+    # diagnostics; lowering keeps it on the IR (`IRFunction.held_arrays`).
+    funcdef._tack_held_arrays = {}
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
         param_name, obj = template_args[idx]
-        root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs)
+        root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs,
+                                      funcdef._tack_held_arrays)
 
+        # obj[i], obj[i] = v and len(obj) as the protocol's method calls
+        _desugar_indexing(funcdef, param_name, root, used_names)
         # Rewrite the kernel function definition
         rewriter = _KernelTemplateRewriter(param_name, idx, root, extra, template=obj,
                                            used_names=used_names)
@@ -346,6 +392,196 @@ def rewrite_templates(kernel_ast, template_args):
         ast.fix_missing_locations(funcdef)
 
     return rewritten, resolved_funcs
+
+
+_INDEXING = ("__getitem__", "__setitem__", "__len__")
+_ATOMICS = {"atomic_add", "atomic_min", "atomic_max"}
+
+
+class _Indexing(ast.NodeTransformer):
+    """Python's indexing protocol on device-class objects, as method calls.
+
+    ``obj[i]`` becomes ``obj.__getitem__(i)``, ``obj[i] = v``
+    ``obj.__setitem__(i, v)``, ``obj[i] += v`` a get and a set with the
+    index evaluated once, and ``len(obj)`` ``obj.__len__()``, wherever
+    ``obj`` is ``root`` or a template it holds (``root.base``); the calls
+    then resolve as any method's do. Several indices, ``obj[i, j]``, pass
+    one vector, as a vector index supplies one dimension per component.
+    A stored array, ``root.values[i]``, is left alone.
+    """
+
+    def __init__(self, root_name, root_node, used_names, lazy=False):
+        self.root_name = root_name
+        self.root_node = root_node
+        self.used_names = used_names
+        # In a method, a refusal waits until the method is used: every method
+        # of an object is resolved, and a read-only one's __setitem__ is fine
+        # until a kernel stores. The call lowers to the error.
+        self.lazy = lazy
+
+    def _template(self, expr):
+        """The template node ``expr`` names (``root`` or ``root.a.b``), or None."""
+        if isinstance(expr, ast.Name):
+            return self.root_node if expr.id == self.root_name else None
+        names = _chain(expr, self.root_name)
+        if not names:
+            return None
+        node = self.root_node
+        for name in names:
+            node = node.children.get(name)
+            if node is None:
+                return None
+        return node
+
+    @staticmethod
+    def _key(subscript):
+        key = subscript.slice
+        if isinstance(key, ast.Tuple):
+            if not key.elts:
+                raise TypeError(f"{ast.unparse(subscript)}: a device-class object takes "
+                                "one index or several, not an empty tuple")
+            return ast.List(elts=key.elts, ctx=ast.Load())
+        return key
+
+    @staticmethod
+    def _method(target, name, args):
+        return ast.Call(func=ast.Attribute(value=target, attr=name, ctx=ast.Load()),
+                        args=args, keywords=[])
+
+    def _require(self, node, name, expr, what):
+        """None if ``node``'s class defines ``name``; else, in a method, the call
+        that refuses when lowered, and in a kernel the error at once."""
+        if name in node.methods:
+            return None
+        cls = type(node.obj).__name__
+        message = (f"{ast.unparse(expr)}: {what} a {cls}, whose class defines no "
+                   f"@tack.func {name}")
+        if not self.lazy:
+            raise TypeError(message)
+        return ast.Call(func=ast.Name(id="__tack_refuse__", ctx=ast.Load()),
+                        args=[ast.Constant(value=message)], keywords=[])
+
+    def _tuple_entries(self, expr):
+        """``(owner, name, count)`` if ``expr`` is ``root...name`` for a tuple
+        attribute ``name`` of a template, else None."""
+        if not isinstance(expr, ast.Attribute):
+            return None
+        owner = self._template(expr.value)
+        if owner is None:
+            return None
+        prefix = f"{expr.attr}{_NESTED}"
+        count = sum(1 for key in (*owner.runtime, *owner.scalars)
+                    if key.startswith(prefix) and key[len(prefix):].isdigit())
+        return (owner, expr.attr, count) if count else None
+
+    def visit_Subscript(self, node):
+        entries = self._tuple_entries(node.value)
+        if entries is not None:
+            owner, name, count = entries
+            index = node.slice
+            literal = None
+            if isinstance(index, ast.Constant) and type(index.value) is int:
+                literal = index.value
+            elif (isinstance(index, ast.UnaryOp) and isinstance(index.op, ast.USub)
+                  and isinstance(index.operand, ast.Constant)
+                  and type(index.operand.value) is int):
+                literal = -index.operand.value
+            if literal is None or not -count <= literal < count:
+                raise TypeError(f"{ast.unparse(node)}: a tuple attribute takes a literal "
+                                f"index from {-count} to {count - 1}")
+            if not isinstance(node.ctx, ast.Load):
+                raise TypeError(f"{ast.unparse(node)}: a tuple attribute is read-only")
+            key = f"{name}{_NESTED}{literal % count}"
+            entry = ast.Constant(value=owner.scalars[key]) if key in owner.scalars \
+                else ast.Name(id=owner.runtime[key], ctx=ast.Load())
+            return ast.copy_location(entry, node)
+        node = self.generic_visit(node)
+        owner = self._template(node.value)
+        if owner is None or not isinstance(node.ctx, ast.Load):
+            return node
+        refusal = self._require(owner, "__getitem__", node, "indexing")
+        if refusal is not None:
+            return ast.copy_location(refusal, node)
+        return ast.copy_location(
+            self._method(node.value, "__getitem__", [self._key(node)]), node)
+
+    def visit_Assign(self, node):
+        templated = [t for t in node.targets if isinstance(t, ast.Subscript)
+                     and self._template(t.value) is not None]
+        nested = [e for t in node.targets if isinstance(t, (ast.Tuple, ast.List))
+                  for e in t.elts if isinstance(e, ast.Subscript)
+                  and self._template(e.value) is not None]
+        if nested or (templated and len(node.targets) > 1):
+            raise TypeError(f"{ast.unparse(node)}: a store into a device-class object "
+                            "takes one target")
+        if not templated:
+            return self.generic_visit(node)
+        target = templated[0]
+        owner = self._template(target.value)
+        refusal = self._require(owner, "__setitem__", target, "storing into")
+        if refusal is not None:
+            return ast.copy_location(ast.Expr(value=refusal), node)
+        value = self.visit(node.value)
+        key = self.visit(self._key(target))
+        call = self._method(target.value, "__setitem__", [key, value])
+        return ast.copy_location(ast.Expr(value=call), node)
+
+    def visit_AugAssign(self, node):
+        target = node.target
+        owner = self._template(target.value) if isinstance(target, ast.Subscript) else None
+        if owner is None:
+            return self.generic_visit(node)
+        for name in ("__getitem__", "__setitem__"):
+            refusal = self._require(owner, name, target, "updating")
+            if refusal is not None:
+                return ast.copy_location(ast.Expr(value=refusal), node)
+        value = self.visit(node.value)
+        key = self.visit(self._key(target))
+        statements = []
+        if not isinstance(key, (ast.Name, ast.Constant)):
+            temp = fresh_name("__tack_key__", self.used_names)
+            self.used_names.add(temp)
+            statements.append(ast.Assign(targets=[ast.Name(id=temp, ctx=ast.Store())],
+                                         value=key))
+            key = ast.Name(id=temp, ctx=ast.Load())
+        old = self._method(target.value, "__getitem__", [key])
+        new = ast.BinOp(left=old, op=node.op, right=value)
+        statements.append(ast.Expr(value=self._method(target.value, "__setitem__",
+                                                      [key, new])))
+        for statement in statements:
+            ast.copy_location(statement, node)
+        return statements
+
+    def visit_Call(self, node):
+        node = self.generic_visit(node)
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else \
+            func.attr if isinstance(func, ast.Attribute) else None
+        if name == "len" and isinstance(func, ast.Name) and len(node.args) == 1:
+            entries = self._tuple_entries(node.args[0])
+            if entries is not None:
+                return ast.copy_location(ast.Constant(value=entries[2]), node)
+            owner = self._template(node.args[0])
+            if owner is not None:
+                refusal = self._require(owner, "__len__", node, "len() of")
+                return ast.copy_location(
+                    refusal or self._method(node.args[0], "__len__", []), node)
+        if name in _ATOMICS and node.args and self._template(node.args[0]) is not None:
+            cls = type(self._template(node.args[0]).obj).__name__
+            raise TypeError(f"{ast.unparse(node)}: an atomic updates an array's memory, "
+                            f"and a {cls} has none to update")
+        return node
+
+
+def _desugar_indexing(funcdef, root_name, root_node, used_names, lazy=False):
+    """Apply `_Indexing` to a function's body."""
+    transformer = _Indexing(root_name, root_node, used_names, lazy)
+    body = []
+    for statement in funcdef.body:
+        result = transformer.visit(statement)
+        body.extend(result if isinstance(result, list) else [result])
+    funcdef.body = body
+    ast.fix_missing_locations(funcdef)
 
 
 class _Node:
@@ -364,13 +600,17 @@ class _Node:
         self.children = {}
 
 
-def _template_nodes(param_name, obj, used_names, resolved_funcs):
+def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays):
     """The resolved tree of one template argument: ``(root, extra)``, ``extra`` the
     synthetic parameters every resolved method takes, in the runtime's order --
-    the flattened arrays by name, then the flattened runtime scalars by name."""
+    the flattened arrays by name, then the flattened runtime scalars by name.
+    Each array's synthetic parameter goes into ``held_arrays`` with the path
+    the source writes: ``__tmpl_dst_base__values__`` -> ``dst.base.values``."""
     _, arrays, runtime = classify_template_attrs(obj)
     array_names = {key: fresh_name(template_array_param_name(param_name, key), used_names)
                    for key in sorted(arrays)}
+    for key, synthetic in array_names.items():
+        held_arrays[synthetic] = f"{param_name}.{key.replace(_NESTED, '.')}"
     runtime_names = {key: fresh_name(f"__tmpl_{param_name}_{key}__", used_names)
                      for key in sorted(runtime)}
     extra = [array_names[k] for k in sorted(array_names)] + \
@@ -496,6 +736,10 @@ def _resolve_method(func_obj, resolved_name, node, extra):
     funcdef.args.args = [a for a in funcdef.args.args if a.arg != 'self']
     for synth_name in extra:
         funcdef.args.args.append(ast.arg(arg=synth_name))
+
+    # self[i], self.base[i] and len(self) as the protocol's method calls
+    names = {n.id for n in ast.walk(funcdef) if isinstance(n, ast.Name)}
+    _desugar_indexing(funcdef, 'self', node, names, lazy=True)
 
     # Resolve self.attr and self.method(args) references in the body
     resolver = _SelfResolver(node, extra)

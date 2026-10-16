@@ -35,7 +35,7 @@ Tack keeps the syntax and defines its own meaning for it.
   selected operand. Floating `min`/`max` prefer the numeric operand over a
   NaN, unlike Python's order-dependent result.
 - Kernels do not capture values from the enclosing scope:
-  `KernelTransformer._check_names_bound` (`lang/ast_transform.py`) raises
+  `KernelTransformer._check_names_bound` (`lang/lowering/checks.py`) raises
   `NameError` instead.
 - Where Python's semantics are well defined and implementable, Tack adopts
   them deliberately: integer `//` and `%` floor like Python's, and

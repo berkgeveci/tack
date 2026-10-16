@@ -1,6 +1,6 @@
 """``point_ids``: each point's id, as values on points: an implicit array, nothing stored."""
 
-from tack.dataset.arrays import CountingArray
+from tack.arrays import CountingArray
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 

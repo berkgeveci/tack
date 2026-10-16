@@ -1,8 +1,23 @@
 # AST Transform
 
 The AST transformer (`ast_transform.py`) converts a Python function's AST
-into Tack IR. It is the largest single frontend file and the heart of
-the frontend.
+into Tack IR. It is the heart of the frontend.
+
+`KernelTransformer` is one class assembled from mixins, one module each in
+`lang/lowering/`, grouped by job. Each sets up the state it owns in its own
+`_init_...` method and reaches the others through `self`:
+
+| Module | Mixin | What it lowers |
+|---|---|---|
+| `ast_transform.py` | `KernelTransformer` | the `visit_*` walk (assignment, calls, subscripts, names, operators) and the expression machinery the others use (`_visit_expression`, `_visit_ordered`, `_capture_value`, `_source_error`) |
+| `lowering/loops.py` | `Loops` | the parallel loop, `ndindex`, sequential loops, `while` |
+| `lowering/arrays.py` | `ArrayAccess` | indexing and linearization, vector and structure-of-arrays elements |
+| `lowering/vectors.py` | `VectorValues` | vector and matrix values, components, methods, scalarized assignment |
+| `lowering/inlining.py` | `Inlining` | `@tack.func` calls, return restructuring, renaming |
+| `lowering/local_arrays.py` | `LocalArrays` | `tack.shared`, `tack.local_array` |
+| `lowering/checks.py` | `LoweringChecks` | checks on emitted IR: effects outside the parallel loop, values left in scalar positions, unbound names |
+| `lowering/bounds.py` | `BoundsChecks` | debug mode's `IRBoundsCheck` (`_checked`) |
+| `lowering/values.py` | — | `VectorValue` and `TupleValue` |
 
 ## Entry Point
 

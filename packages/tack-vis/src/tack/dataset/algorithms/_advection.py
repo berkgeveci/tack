@@ -11,7 +11,8 @@ import enum
 import numpy as np
 
 import tack
-from tack.dataset import arrays, shapes
+from tack import arrays
+from tack.dataset import shapes
 from tack.dataset.algorithms._common import _field
 from tack.dataset.locator import _TOLERANCE, CellLocator, _bin
 from tack.dataset.spaces import H1, Constant, Values

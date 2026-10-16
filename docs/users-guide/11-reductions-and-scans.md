@@ -97,6 +97,13 @@ stated in the
     On a GPU backend an `f32` reduction reads back one value. Any other
     dtype copies the whole array to the host first, on every call.
 
+The implicit arrays of `tack.arrays` reduce the same way, with the same
+semantics: `tack.arrays.CountingArray(8).sum()` is 28. Their values are
+computed into a temporary array first, which is then reduced as a stored
+array is. The algorithms below also take implicit arrays as inputs, read
+in their kernels without a temporary: `exclusive_scan(CountingArray(n),
+offsets, n)` scans 0, 1, 2, ... without storing them.
+
 ## Statistics
 
 ```python

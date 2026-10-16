@@ -1,8 +1,9 @@
 """``contour``: the surface where ``field`` crosses ``isovalue``, as triangles."""
 
 import tack
+from tack import arrays
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import arrays, ids, shapes
+from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import _close, _compact, _crossing, _field, _scalar_floating
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.carry import Interpolate, Pieces, carry

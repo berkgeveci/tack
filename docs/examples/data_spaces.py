@@ -9,7 +9,7 @@ import numpy as np
 
 import tack
 import tack.dataset as td
-from tack.dataset.arrays import to_host
+from tack.arrays import to_host
 
 
 # --8<-- [start:sample]
@@ -68,7 +68,7 @@ def run(arch="cpu", check=False):
     # --8<-- [end:l2-build]
     material_space = td.Constant(data)
     data.fields["material"] = td.Field(
-        material_space, td.ConstantArray(2.0, material_space.size))
+        material_space, tack.arrays.ConstantArray(2.0, material_space.size))
     # Geometry keeps its own order-1 H1 space and UniformCoordinates values.
     # --8<-- [end:spaces]
     # --8<-- [start:l2-upload]
@@ -104,7 +104,7 @@ def run(arch="cpu", check=False):
     if check:
         assert data.num_points == 12 and data.num_cells == 2
         assert data.geometry.space is td.H1(data, order=1)
-        assert isinstance(data.geometry.values, td.UniformCoordinates)
+        assert isinstance(data.geometry.values, tack.arrays.UniformCoordinates)
         assert temperature_space.size == 45
         assert pressure_space.size == 16 and material_space.size == 2
         assert all(f.space.topology is data.topology for f in data.fields.values())

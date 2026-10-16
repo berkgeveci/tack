@@ -278,7 +278,9 @@ def test_many_repeated_inits_do_not_leak_contexts():
     however many that happens to be: a plain script settles at one, but a
     test runner can keep a superseded backend alive in a frame or traceback
     for a while, and that is not a leak. What would be a leak is the count
-    climbing with the number of inits, or a second context appearing.
+    climbing with the number of inits, or a second context appearing on the
+    device. Other devices have contexts of their own (one each) once
+    something has used them, as test_multi_device does on a multi-GPU node.
     """
     import gc
 
@@ -288,9 +290,12 @@ def test_many_repeated_inits_do_not_leak_contexts():
         tack.set_default_device("cuda")
     gc.collect()
 
-    live = sum(1 for o in gc.get_objects() if isinstance(o, CUDABackend))
-    assert len(_CONTEXTS) == 1
-    assert [t.users for t in _CONTEXTS.values()] == [live]
+    backend = tack.get_default_device()._backend
+    token = backend._token
+    assert [t for t in _CONTEXTS.values() if t.device == backend.ordinal] == [token]
+    live = sum(1 for o in gc.get_objects()
+               if isinstance(o, CUDABackend) and getattr(o, "_token", None) is token)
+    assert token.users == live
 
     f = tack.empty((32,))
     tack.copyto(f, np.ones(32, dtype=np.float32))

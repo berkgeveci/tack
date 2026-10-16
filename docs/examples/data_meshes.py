@@ -15,14 +15,14 @@ def run(arch="cpu", check=False):
     # --8<-- [start:uniform]
     point_dims = (3, 2, 2)
     uniform_topology = td.StructuredTopology(point_dims)
-    uniform_coordinates = td.UniformCoordinates(point_dims, spacing=(0.5, 1.0, 1.0))
+    uniform_coordinates = tack.arrays.UniformCoordinates(point_dims, spacing=(0.5, 1.0, 1.0))
     uniform_geometry = td.Field(td.H1(uniform_topology), uniform_coordinates)
     uniform = td.DataSet(uniform_topology, uniform_geometry)
     # --8<-- [end:uniform]
     # --8<-- [start:rectilinear]
     x_axis, y_axis, z_axis = [0.0, 0.25, 1.0], [0.0, 1.0], [0.0, 1.0]
     rectilinear_topology = td.StructuredTopology((len(x_axis), len(y_axis), len(z_axis)))
-    rectilinear_coordinates = td.CartesianProduct(x_axis, y_axis, z_axis)
+    rectilinear_coordinates = tack.arrays.CartesianProduct(x_axis, y_axis, z_axis)
     rectilinear_geometry = td.Field(td.H1(rectilinear_topology), rectilinear_coordinates)
     rectilinear = td.DataSet(rectilinear_topology, rectilinear_geometry)
     # --8<-- [end:rectilinear]
@@ -76,8 +76,8 @@ def run(arch="cpu", check=False):
             assert isinstance(data.topology, td.StructuredTopology)
             assert data.geometry.space is td.H1(data.topology)
             assert (data.num_points, data.num_cells) == (12, 2)
-        assert isinstance(uniform.geometry.values, td.UniformCoordinates)
-        assert isinstance(rectilinear.geometry.values, td.CartesianProduct)
+        assert isinstance(uniform.geometry.values, tack.arrays.UniformCoordinates)
+        assert isinstance(rectilinear.geometry.values, tack.arrays.CartesianProduct)
         assert curvilinear.geometry.values.dtype is tack.vec3()
         for explicit, shortcut in ((uniform, uniform_shortcut), (rectilinear, rectilinear_shortcut)):
             assert type(explicit.topology) is type(shortcut.topology)

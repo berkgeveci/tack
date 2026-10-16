@@ -17,7 +17,7 @@ defined in [Contracts](index.md#how-to-read-a-contract).
 ## Devices
 
 Defined in `packages/tack-core/src/tack/runtime/dispatch.py` and
-re-exported as `tack.device`, `tack.Device`, `tack.set_default_device`,
+re-exported as `tack.device`, `tack.Device`, `tack.device_count`, `tack.set_default_device`,
 `tack.get_default_device`, `tack.set_debug`, `tack.sync` and
 `tack.sync_async`.
 
@@ -28,7 +28,7 @@ returned as it is.
 
 | | |
 |---|---|
-| `spec` | `"cpu"`, `"metal"`, `"cuda"`, `"hip"` or `"level_zero"`. The numbered types (`cuda`, `hip`, `level_zero`) also take `"type:N"`, such as `"cuda:0"`; `"cuda"` means `"cuda:0"`. `cpu` and `metal` are written bare |
+| `spec` | `"cpu"`, `"metal"`, `"cuda"`, `"hip"` or `"level_zero"`. The numbered types (`cuda`, `hip`, `level_zero`) also take `"type:N"`, such as `"cuda:1"`: device N as its runtime numbers it (the CUDA device ordinal, the HIP device id, the index among the first Level Zero driver's devices). A bare `"cuda"` or `"hip"` is the device the calling thread already uses: the device of a CUDA context another library made current on the thread, or HIP's current device (`hipGetDevice()`), else 0. `"level_zero"` means `"level_zero:0"`. `cpu` and `metal` are written bare |
 | `**options` | Forwarded to the backend constructor. Each option must be in that backend's `device_options`. CPU declares `num_threads`, which takes precedence over `TACK_CPU_THREADS`, and Level Zero declares `external_context` (the driver, device and context handles of a context owned by another library). The other backends declare none |
 
 **Current behavior:**
@@ -38,13 +38,25 @@ returned as it is.
   are shared by everything that asks for it.
 - With options, every call makes a new device, which is not equal to the
   one without options or to another made with the same options.
-- Only device 0 of each type is reachable.
-- A CUDA context is current on the thread that made the device (the first
-  call that names it). See [Calling a kernel](#calling-a-kernel).
-- A CUDA context already current on that thread, such as one an embedding
-  framework created, is adopted and never destroyed. It must be current
-  before the first call that names `"cuda"`: the device is made once, so a
-  context made current later is not adopted.
+- Every device of `cuda`, `hip` and `level_zero` is reachable;
+  `tack.device_count(type)` says how many there are. A bare spec is
+  resolved at each call, so after another library changes the thread's
+  device, `"cuda"` or `"hip"` names the other device.
+- Each CUDA device has its own context, and each Level Zero device its own
+  context unless `external_context` names one. A CUDA context already
+  current on the calling thread, such as one an embedding framework
+  created, is adopted for its device and never destroyed. It must be
+  current before the first call that names that device: the device is made
+  once, so a context made current later is not adopted.
+- A CUDA context that Tack creates while no context is current stays
+  current on that thread; one created while another is current is not, and
+  the thread keeps its own. As long as Tack holds one context and it is
+  current where it was made, nothing is switched. Once it holds two, or a
+  context is not current on the thread that made its device, every CUDA
+  operation makes its own context current for its duration and restores
+  the thread's afterwards. HIP does the same with its current device once a
+  device other than 0, or two devices, are in use. See
+  [Calling a kernel](#calling-a-kernel).
 
 **Errors:**
 
@@ -54,7 +66,8 @@ returned as it is.
 | Options with a `Device` | `TypeError`: "options make a new device: pass a device spec, not a Device" |
 | Unknown type | `ValueError`: "Unknown device type: '`vulkan`'. Available: cpu, cuda, hip, level_zero, metal" |
 | A number on `cpu` or `metal`, or a non-numeric suffix | `ValueError`: "'`cpu:0`' is not a device: write '`cpu`'" (with "or '`cuda:N`'" for numbered types) |
-| A device other than 0 | `ValueError`: "device 1 of '`cuda`': Tack reaches device 0 only, for now" |
+| A device past the last | `ValueError`: "`cuda:2`: this machine has 2 CUDA devices" (Level Zero: "the first Level Zero driver has ..."). Raised by the constructor, so it propagates unwrapped |
+| `external_context` with a number other than its device's | `ValueError`: "`level_zero:1`: the external_context's device is `level_zero:0`; ..." |
 | Missing Python dependency (an `ImportError` from the backend module or constructor) | `RuntimeError`: "Cannot start the '`hip`' device: missing dependency." followed by the original error and install instructions. The original exception is chained |
 | Option not in `device_options` | `ValueError`: "The '`metal`' device does not accept the option(s) `num_threads`. Accepted: none." Raised after the backend module is imported, so a missing dependency is reported first |
 | Device or runtime failure (a `RuntimeError` from the constructor) | `RuntimeError`: "Cannot start the '`cuda`' device on Linux." followed by the original message and install instructions. Chained |
@@ -65,11 +78,19 @@ returned as it is.
 | Member | Meaning |
 |---|---|
 | `d.type` | `"cpu"`, `"metal"`, `"cuda"`, `"hip"` or `"level_zero"` (the backend's `name`) |
-| `d.index` | Which of the type's devices (the backend's `ordinal`); always 0 for now |
+| `d.index` | Which of the type's devices (the backend's `ordinal`): N in `"cuda:N"`. A bare spec gives the device it resolved to, so `str(tack.device("cuda"))` may be `"cuda:1"`. 0 for `cpu` and `metal` |
 | `d.synchronize()` | Waits for every kernel launched on this device so far, and raises a queued launch's error |
 | `str(d)` | The spec: `"cuda:0"` for numbered types, `"cpu"` and `"metal"` bare. `repr(d)` is `Device('cuda:0')` |
 | `d == e` | True when both are the same backend; hashable on the same terms |
 | `with d:` | Makes `d` the default device inside the block, on this thread only. Blocks nest; leaving one restores the previous default |
+
+### `tack.device_count(type)`
+
+Returns how many devices of `type` the machine has, without making any:
+`tack.device(f"{type}:{n}")` is valid for `n` below the count. The CPU
+counts 1, and Metal 1 where there is a Metal GPU. A type whose backend cannot
+load or start (a missing dependency, no driver) counts 0. An unknown type
+raises `ValueError` as `tack.device` does.
 
 ### `tack.set_default_device(spec="cpu", **options)`
 
@@ -549,12 +570,14 @@ it is queued (see [Host operations](#host-operations)).
   CPU binds arguments per call and takes no lock, but fan-outs through its
   JIT'd pool run one at a time. `test_concurrent_dispatch.py` covers
   this.
-- **Required caller constraint:** on CUDA, Tack's context is current only
-  on the thread that made the device (the first `tack.device("cuda")`,
-  `set_default_device("cuda")` or allocation on it). Another thread must make it
-  current, for example with `cuCtxSetCurrent(backend._context)`, before
-  dispatching. Otherwise the launch fails with
-  `CUDA_ERROR_INVALID_CONTEXT`.
+- **Required caller constraint:** on CUDA with one device in use, Tack's
+  context is current only on the thread that made the device (the first
+  `tack.device("cuda")`, `set_default_device("cuda")` or allocation on it).
+  Another thread must make it current, for example with
+  `cuCtxSetCurrent(backend._context)`, before dispatching. Otherwise the
+  launch fails with `CUDA_ERROR_INVALID_CONTEXT`. Once Tack switches
+  contexts (two devices; see [Devices](#devices)),
+  every operation makes its own context current, from any thread.
 
 **Rejected:**
 

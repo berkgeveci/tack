@@ -202,8 +202,8 @@ such as statements after a `return` in a device function. See the
 
 ### 3c. AST transform
 
-`KernelTransformer` (`packages/tack-core/src/tack/lang/ast_transform.py`)
-lowers the validated AST to the tree of nodes defined in
+`KernelTransformer` (`packages/tack-core/src/tack/lang/ast_transform.py`,
+with its parts in `lang/lowering/`) lowers the validated AST to the tree of nodes defined in
 `packages/tack-core/src/tack/lang/ir.py`. The decisions that matter for the
 rest of the pipeline are these:
 

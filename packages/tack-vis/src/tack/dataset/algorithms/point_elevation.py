@@ -3,8 +3,8 @@
 import numpy as np
 
 import tack
+from tack.arrays import materialize, size_of
 from tack.dataset.algorithms._common import _scalars
-from tack.dataset.arrays import materialize, size_of
 from tack.dataset.dataset import Field
 
 __all__ = ['point_elevation']

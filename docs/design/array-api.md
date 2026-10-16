@@ -78,16 +78,148 @@ tensor into Metal requires `copy=True`, because arbitrary host pointers cannot
 be wrapped as MTLBuffers without a copy.
 
 `scalar_dtype`, `scalar_size`, and `storage_shape` expose storage metadata
-for implementation and interop. Storage remains contiguous, interleaved and
-unpadded; matrices store rows together. The compiler continues to lower vector
+for implementation and interop. Storage is contiguous and unpadded, and
+interleaved unless the array is structure-of-arrays (below); matrices store
+rows together. The compiler continues to lower vector
 and matrix accesses to scalar component operations. Runtime type inference
 and backend capability checks use the component type; vector/matrix shape
 remains part of specialization keys.
 
 Array reductions and `tack.algorithms` statistics reduce scalar components
 in storage order; a statistic's explicit `n` counts scalar components.
-Rendering accepts typed coordinate, normal and RGB arrays
-and obtains scalar storage views without a host transfer.
+
+## Implicit arrays and the indexing protocol
+
+`tack.arrays` holds arrays that compute each value from its index rather
+than store it (`CountingArray`, `ConstantArray`, `CartesianProduct`,
+`UniformCoordinates`, `Function`, `Transform`, `Cast`, random arrays) and
+arrays that rearrange others (`Permutation`, `Concatenate`, `View`,
+`Strided`, `ExtractComponent`, `Components`). They play the part of
+Viskores' fancy array handles: a kernel reads `a[i]` and the indexing
+expression is inlined into it.
+
+They are ordinary `@tack.device_class` objects, and kernels index them
+through Python's own protocol, not a Tack-specific one: a device class
+whose `__getitem__`, `__setitem__` and `__len__` are `@tack.func` methods is
+indexed in a kernel as an array is.
+
+```python
+@tack.device_class
+class Counting:
+    def __init__(self, n, start, step):
+        self.n, self.start, self.step = n, start, step
+
+    @tack.func
+    def __getitem__(self, k):
+        return self.start + self.step * k
+
+    @tack.func
+    def __len__(self):
+        return self.n
+```
+
+Template rewriting (`template_rewrite._Indexing`) turns `obj[i]` into
+`obj.__getitem__(i)`, `obj[i] = v` into `obj.__setitem__(i, v)`,
+`obj[i] += v` into a get and a set sharing one evaluation of the index,
+and `len(obj)` into `obj.__len__()`; the calls then inline like any method.
+Several indices arrive as one vector. So the library's arrays have no
+privileged path: a user's class joins them by defining the same methods,
+and a kernel written for stored arrays takes any of them unchanged.
+
+The choices this rests on:
+
+- **Specialization, not dispatch.** Each class, and each composition of
+  them (a `Permutation` of a `Transform` of a `CountingArray`), compiles
+  its own variant of the kernel, and a composed array inlines to the
+  expression one would write by hand. There are no type lists to declare,
+  as in Viskores, and no per-element virtual call, as in VTK's generic
+  arrays. The cost is a variant per composition a program uses; the
+  template part of the cache key keeps them apart and the disk cache keeps
+  them across processes.
+- **Values that change stay runtime parameters.** Instance numbers (a
+  length, a start, a step) and instance tuples of numbers (`self.shape =
+  (nx, ny)`, one scalar per entry) are kernel arguments, so a new length
+  does not recompile. Class attributes, tuples included, are compiled in.
+- **Writability composes.** An array that wraps stored ones writes
+  through: a `View` or `Strided` store lands in the wrapped array, a
+  `Permutation` store is a scatter, `Concatenate` writes the part holding
+  the index, `Components` writes each component to its own array. Each is
+  writable exactly when what it writes into is. A computed array defines no
+  `__setitem__`, and storing into it is a `TypeError` when the kernel
+  compiles. Since every method of a held object is resolved, a missing
+  method inside one is refused only when a kernel actually uses it
+  (`__tack_refuse__`).
+- **No address, no atomics.** An atomic needs a storage location, so an
+  atomic on an indexable object is refused.
+- **Host operations materialize.** `sum`, `min`, `max` and `mean` compute
+  the values into a temporary array on the device of the arrays the
+  implicit array holds (`a.device`), then reduce it as a stored array.
+  `tack.algorithms` reads implicit inputs in its kernels without storing
+  them.
+
+## Structure-of-arrays storage
+
+A vector or matrix array can keep each component in an array of its own:
+
+```python
+pos = tack.soa(x, y, z)                                  # existing arrays, no copy
+vel = tack.zeros((n,), tack.vec3(), layout="soa")        # new ones
+```
+
+The motivation is data that arrives that way: a simulation's coordinate
+arrays, or another library's tensors imported with `from_dlpack` or
+`array_from_ptr`, on the CPU or a GPU. Copying them into an interleaved
+buffer would double the memory and add a pass per exchange.
+
+SOA is a layout of `tack.Array`, not a separate kind of object. A
+`SoaArray` has the dtype, shape, device and host API of any vector array;
+`a.layout` is `"soa"` (`"aos"` for interleaved and scalar arrays) and
+`a.components` gives the component arrays. Kernels index it exactly as an
+interleaved array, including component stores, augmented stores and
+vector atomics, so one kernel serves both layouts. `tack.arrays.Components`
+expresses the same layout through the indexing protocol; it differs in
+taking any arrays, computed ones included, and in being an implicit
+array rather than storage: it reads back with `numpy()` and reduces, but
+takes no `copyto`, `fill` or atomics, and is not an `Array`.
+
+**Lowering.** A `SoaArray` has no buffer of its own, and backends never
+see one. Dispatch replaces it, in its place among the arguments, by its
+component arrays (`_flatten_soa`, after template expansion, so an SOA
+array a device class holds is flattened too), and lowering replaces its
+parameter, in the same place, by one parameter per component. Lowering
+learns the layout from the vector-array metadata (`("soa", width)`), and
+every access computes each component's location: `(array, i * n + c)` for
+an interleaved array, `(component c, i)` for an SOA one. Shape queries,
+the strides of multi-dimensional indexing and debug-mode extents read the
+first component, which has the array's shape. The consequences:
+
+- No backend changed. Each component is an ordinary scalar array
+  argument, so what holds for those holds per component: the CPU's
+  disjointness check (`tack.soa(x, x)` is simply not disjoint), Metal's
+  argument buffer, read-only checks (reported as "component 1 of parameter
+  'a'"), atomic alignment and debug-mode bounds checks.
+- The layout is part of the call signature, the template keys and the
+  vector-array metadata in the IR key, so a kernel holds one variant per
+  layout and never runs one layout's code on the other.
+- The SOA array's own name is never a value in the IR. A kernel may index
+  it, ask its shape or length, or pass it to a device function, which
+  then uses the caller's component parameters; binding it to another name
+  is refused.
+
+**What is refused, and why.** A scalar atomic at a flat component index
+(`atomic_add(a, 3 * i + 1, x)`) names a position in one interleaved buffer,
+which an SOA array does not have; an atomic with a vector value works. For
+the same reason an SOA array is not exported whole through DLPack,
+`export_memory` or to VTK. Its components are, and `tack.array(a,
+layout="aos")` copies it into one buffer.
+
+**Host operations** work per component: `numpy()` stacks the components
+as trailing dimensions, `copyto` and `fill` split values among them, and
+reductions combine the components' results. `copyto` between layouts, and
+`array`/`asarray` with another `layout`, copy element by element in a
+kernel. Statistics that pair the components of two arrays (`dot`) copy an
+SOA input to an interleaved buffer first, so pairs match whatever the
+layouts.
 
 ## Dataset fields
 

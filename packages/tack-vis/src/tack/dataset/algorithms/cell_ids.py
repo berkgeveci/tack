@@ -1,6 +1,6 @@
 """``cell_ids``: each cell's id, as values on cells: an implicit array, nothing stored."""
 
-from tack.dataset.arrays import CountingArray
+from tack.arrays import CountingArray
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 

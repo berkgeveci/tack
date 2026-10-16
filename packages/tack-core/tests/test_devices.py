@@ -64,14 +64,22 @@ def test_a_device_is_one_value(cpu):
     # A device made with options is its own.
     serial = tack.device("cpu", num_threads=1)
     assert serial != cpu and serial != tack.device("cpu", num_threads=1)
-    with pytest.raises(ValueError, match="device 0 only"):
-        tack.device("cuda:1")
     with pytest.raises(ValueError, match="Unknown device type"):
         tack.device("vulkan")
+    assert tack.device_count("cpu") == 1
+    with pytest.raises(ValueError, match="Unknown device type"):
+        tack.device_count("vulkan")
     with pytest.raises(ValueError, match="not a device"):
         tack.device("cpu:0")
     with pytest.raises(ValueError, match="does not accept"):
         tack.device("cpu", contxt=1)
+
+
+def test_a_type_that_cannot_start_has_no_devices(monkeypatch):
+    def missing(kind):
+        raise ImportError(f"no {kind} bindings here")
+    monkeypatch.setattr(dispatch, "_backend_class", missing)
+    assert tack.device_count("cuda") == 0
 
 
 def test_set_default_device_keeps_arrays_and_compiled_kernels(cpu):
@@ -237,7 +245,10 @@ def test_sync_waits_for_every_device(cpu, monkeypatch):
     serial = tack.device("cpu", num_threads=1)
     waited = []
     for device in (cpu, serial):
-        monkeypatch.setattr(device._backend, "synchronize",
+        # In the instance's dict: setattr's undo would leave the bound class
+        # method on the registry's backend, shadowing later patches of the
+        # class (test_asyncio's).
+        monkeypatch.setitem(vars(device._backend), "synchronize",
                             lambda d=device: waited.append(d))
     tack.sync()
     assert cpu in waited and serial in waited
@@ -303,3 +314,20 @@ def test_library_functions_refuse_two_devices_under_their_own_name(cpu, second):
 def test_a_thread_count_is_an_integer(count):
     with pytest.raises(TypeError, match="num_threads is a thread count"):
         tack.device("cpu", num_threads=count)
+
+
+def test_an_implicit_array_is_where_its_arrays_are(cpu, second):
+    from tack import arrays
+    from tack.algorithms import exclusive_scan
+    base = tack.array(np.arange(4, dtype=np.float32), device=second)
+    perm = arrays.Permutation(tack.array(np.array([3, 2, 1, 0], np.int32), device=second),
+                              base)
+    assert perm.device == second
+    assert arrays.CountingArray(3).device == cpu          # holds nothing: the default
+    assert perm.sum() == 6
+    assert arrays.materialize(perm).device == second
+    out = tack.zeros((4,), device=second)
+    assert exclusive_scan(perm, out, 4) == 6
+    np.testing.assert_allclose(out.numpy(), [0, 3, 5, 6])
+    with pytest.raises(ValueError, match="two devices"):
+        exclusive_scan(perm, tack.zeros((4,)), 4)

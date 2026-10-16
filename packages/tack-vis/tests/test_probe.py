@@ -145,7 +145,7 @@ def test_probe_keeps_target_topology_ids_and_quadratic_geometry(backend):
     source = td.uniform_grid((2, 2, 2))
     source.fields["x"] = td.Field(td.H1(source), _scalars(source.positions()[:, 0]))
     top = td.StructuredTopology((2, 2, 2), id_dtype=tack.i64)
-    target = td.DataSet(top, td.UniformCoordinates((2, 2, 2)))
+    target = td.DataSet(top, tack.arrays.UniformCoordinates((2, 2, 2)))
     target.geometry = td.project(target, target.geometry, td.H1(target, order=2))
     out = td.probe(source, target)
     assert out.topology is target.topology

@@ -20,9 +20,9 @@ compile the same kernel again. See [The Kernel Cache](17-kernel-cache.md).
 
 A device is where arrays live and kernels run. `tack.device("cuda")`
 returns one: the spec is `"cpu"`, `"metal"`, `"cuda"`, `"hip"` or
-`"level_zero"`, and the numbered types also take `"cuda:0"` (only device 0
-is reachable for now). Asked for twice, it is the same device, with the
-kernels it has compiled.
+`"level_zero"`, and the numbered types also take `"cuda:1"`: the second
+CUDA GPU. Asked for twice, it is the same device, with the kernels it has
+compiled.
 
 - `tack.set_default_device("cuda")` makes it the default device: where
   arrays are allocated, and where kernels with no array arguments run.
@@ -41,6 +41,13 @@ kernels it has compiled.
 - Switching the default doesn't invalidate anything. Arrays made before
   the switch keep their device and keep working.
 - `tack.sync()` waits for every device; `d.synchronize()` waits for one.
+
+On a machine with several GPUs, `tack.device_count("cuda")` says how many
+there are (also for `"hip"` and `"level_zero"`), and `tack.device("cuda:1")`
+is the second. A bare `"cuda"` or `"hip"` is the GPU the thread already
+uses, as a framework that embeds Tack may have chosen, else the first.
+Each device compiles its own kernels, and a kernel's arrays must all be on
+one: `b = a.to_device(tack.device("cuda:1"))` copies through the host.
 
 Options make a separate device: `tack.device("cpu", num_threads=1)` is a
 second CPU device with one thread. It shares memory with the default CPU

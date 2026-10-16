@@ -47,7 +47,7 @@ all corner cases have been validated.
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions of vectors act per component |
 | Assignments | Local assignment, augmented assignment, array stores, tuple assignment to names, array elements and components | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndindex` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load arrays and declare arrays |
-| Composition | `@tack.func` inlining, returning one or several values; a kernel's trailing `return`; `@tack.device_class` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
+| Composition | `@tack.func` inlining, returning one or several values; a kernel's trailing `return`; `@tack.device_class` templates, with inheritance, device functions held as attributes or under `@staticmethod`, kernels as methods, and indexing through `@tack.func` `__getitem__`, `__setitem__` and `__len__` (`obj[i]`, `obj[i] = v`, `obj[i] += v`, `len(obj)`; several indices as one vector; instance tuples of numbers read as `obj.shape[k]` with a literal `k`) | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar arrays, vector arrays, matrix arrays, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
@@ -993,7 +993,8 @@ element addressed by that index with one atomic operation per component;
 the element as a whole is not updated atomically, and the element index
 and any component that loads from an array are evaluated before the first
 of them. A scalar value on such an array addresses one component by its
-flat index.
+flat index, except on a structure-of-arrays array (`layout="soa"`), whose
+components have no common flat index; there it is refused.
 `Backend.supported_atomic_dtypes` declares the implemented add/min/max domain,
 independently of the ordinary array types or workgroup capability:
 
@@ -1099,7 +1100,8 @@ scalars retain their distinct roles.
 
 The current key includes argument dtypes and array/scalar/texture categories,
 vector widths and matrix shapes (a 2×2 matrix array and a 4-vector array
-compile separately), texture extents, and resolved shape dependencies.
+compile separately), each vector or matrix array's layout (interleaved or
+structure of arrays), texture extents, and resolved shape dependencies.
 Template identity includes the actual class, typed constants (inherited
 ones included), array metadata, runtime scalar attribute names, and the
 identity of each device function held as an attribute. A `tack.constant`

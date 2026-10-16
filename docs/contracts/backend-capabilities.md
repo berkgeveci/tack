@@ -95,7 +95,7 @@ Read from the backend classes at `23d6e1d`. "All ten" means `i8`, `u8`,
 | DLPack zero-copy import | `kDLCPU`, `kDLCUDAHost`, `kDLROCMHost` | none in practice (see [DLPack](runtime-api.md#dlpack)) | `kDLCUDA`, `kDLCUDAManaged` | `kDLROCM` | `kDLOneAPI` |
 | A kernel call returns | after the range has run | once queued | once queued | once queued | once queued (with a driver older than API 1.6, after it completes) |
 | Disk-cache artifact | object code | MSL source | PTX | code object | native binary, with SPIR-V to fall back on |
-| Device chosen | host | `MTLCreateSystemDefaultDevice()` | the current CUDA context if one exists, else device 0 | `hipGetDevice()` | the first device of the first driver, or the one in `external_context` |
+| Devices | the host | `MTLCreateSystemDefaultDevice()` | every device: `"cuda:N"` is ordinal N; bare `"cuda"` the device of a current context Tack did not make, else 0 | every device: `"hip:N"` is device N; bare `"hip"` is `hipGetDevice()` | every device of the first driver: `"level_zero:N"` is the Nth; or the one in `external_context` |
 | Python requirements | `llvmlite` (`[cpu]` extra) | `pyobjc-framework-Metal` (`[metal]`) | `cuda-python>=13.2.0` (`[cuda]`) | `hip-python>=7.0`, Linux x86_64 only (`[hip]`) | none. The `[level_zero]` extra is empty |
 | System requirements | none | macOS with a Metal GPU | NVIDIA driver and NVRTC (13 or newer; older warns at the first compile) | ROCm with hipRTC | `libze_loader.so` and `libocloc.so` (Intel compute runtime) |
 
@@ -249,9 +249,11 @@ answers `"cpu"` for them and `array_from_ptr()` wraps an `MTLBuffer`
 object, not an address. Collectives need a pipeline whose
 `maxTotalThreadsPerThreadgroup` is at least 256.
 
-**CUDA.** If a CUDA context is already current, for example one that a
-simulation framework created, the backend adopts it and never destroys it.
-Otherwise it creates one on device 0. `exportable=True` allocates through
+**CUDA.** If a CUDA context is already current on the device, for example
+one that a simulation framework created, the backend adopts it and never
+destroys it. Otherwise it creates one for the device. With a second device
+(or a context not current where it was made), every operation makes its
+context current for its duration. `exportable=True` allocates through
 the CUDA virtual memory management API, so `export_memory()` can hand out
 an OS handle without a copy.
 

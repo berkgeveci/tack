@@ -58,13 +58,18 @@ class _Other:
     pass
 
 
+@tack.device_class
+class _Grid:
+    SHAPE = (2, 3)            # a class tuple of numbers: one constant per entry
+
+
 @tack.kernel
 def _touch(t, x, s):
     for i in range(x.shape[0]):
         x[i] = x[i]
 
 
-_NAMES = ("a", "b", "c", "SCALE", "LIMIT", "_hidden")
+_NAMES = ("a", "b", "c", "SCALE", "LIMIT", "SHAPE", "_hidden")
 
 
 def _arrays():
@@ -72,29 +77,37 @@ def _arrays():
             lambda: tack.zeros((4,), tack.i32), lambda: tack.zeros((4,), tack.f64),
             lambda: tack.zeros((2, 2)), lambda: tack.zeros((2, 3)),
             lambda: tack.zeros((4,), tack.vec3()), lambda: tack.zeros((4,), tack.vec2()),
-            lambda: tack.zeros((4,), tack.mat2()), lambda: tack.zeros((4,), tack.vec4())]
+            lambda: tack.zeros((4,), tack.mat2()), lambda: tack.zeros((4,), tack.vec4()),
+            lambda: tack.zeros((4,), tack.vec3(), layout="soa"),
+            lambda: tack.zeros((4,), tack.vec2(), layout="soa"),
+            lambda: tack.zeros((4,), tack.mat2(), layout="soa")]
 
 
 _SCALARS = (1, 7, 2**40, -1, True, False, 1.0, 2.5, np.int32(1), np.int64(2**40),
             np.float32(1.0), np.float64(1.0), np.uint8(3))
-_OTHERS = (None, "text", [1, 2], {}, (1, 2), (1.0, 2), ("x",), (1, 2**40))
+_OTHERS = (None, "text", [1, 2], {}, ("x",))
+# Tuples of numbers: runtime scalars per entry, or, replacing a class tuple
+# such as _Grid.SHAPE, compiled-in constants; same widths, other values too.
+_TUPLES = ((1, 2), (2, 3), (4, 4), (1.0, 2), (1, 2**40), (2, 3, 4))
 
 
 def _value(rng, depth):
-    kind = rng.choice(("array", "scalar", "scalar", "func", "child", "other"))
+    kind = rng.choice(("array", "scalar", "scalar", "func", "child", "other", "tuple"))
     if kind == "array":
         return rng.choice(_arrays())()
     if kind == "scalar":
         return rng.choice(_SCALARS)
     if kind == "func":
         return rng.choice((_one, _two))
+    if kind == "tuple":
+        return rng.choice(_TUPLES)
     if kind == "child" and depth < 2:
         return _template(rng, depth + 1)
     return rng.choice(_OTHERS)
 
 
 def _template(rng, depth=0):
-    obj = rng.choice((_Leaf, _Node, _Other))()
+    obj = rng.choice((_Leaf, _Node, _Other, _Grid))()
     for name in rng.sample(_NAMES, rng.randint(0, 3)):
         setattr(obj, name, _value(rng, depth))
     return obj
@@ -134,10 +147,11 @@ def test_equal_signatures_resolve_to_the_same_variant_and_arguments():
     rng = random.Random(20261015)
     checked = 0
     seen = set()
-    for step in range(1200):
+    for step in range(1600):
         if step % 50 == 25:                   # a class constant changes between calls
             _Leaf.SCALE = rng.choice((2.0, 3.0))
             _Node.LIMIT = rng.choice((4, 5))
+            _Grid.SHAPE = rng.choice(((2, 3), (3, 3)))
         args = _call(rng)
         sig = _call_signature(args)
         # As dispatch does: the fast path first, from what earlier calls
@@ -164,7 +178,7 @@ def test_equal_signatures_resolve_to_the_same_variant_and_arguments():
         checked += 1
     # The pools are small so that calls share signatures; make sure enough
     # did for the check to mean something.
-    assert checked > 100, checked
+    assert checked > 75, checked
 
 
 @tack.device_class

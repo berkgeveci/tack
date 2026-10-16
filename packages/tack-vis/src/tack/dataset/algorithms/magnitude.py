@@ -1,8 +1,8 @@
 """``magnitude``: each vector's length (Viskores' VectorMagnitude)."""
 
 import tack
+from tack.arrays import size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype, _scalars
-from tack.dataset.arrays import size_of, width_of
 from tack.dataset.dataset import Field
 
 __all__ = ['magnitude']

@@ -1,10 +1,12 @@
-"""Arrays: what a field's values are, apart from how they are stored.
+"""Arrays: values apart from how they are stored -- stored, or computed from the index.
 
-A ``Field``'s ``values`` is any array: a Tack array (``tack.empty``,
-``tack.array``), stored explicitly, or an implicit array, which
-computes each value from its index and stores next to nothing. Implicit
-arrays compose: a permutation of a concatenation of a counting array is an
-array, to any depth.
+An array is a Tack array (``tack.empty``, ``tack.array``), stored
+explicitly, or an implicit array, which computes each value from its index
+and stores next to nothing. Implicit arrays compose: a permutation of a
+concatenation of a counting array is an array, to any depth. Every one is
+indexable in kernels as a stored array is -- ``a[k]``, ``len(a)`` -- so a
+kernel written for stored arrays takes them as they are, compiled for each;
+``tack.dataset`` fields hold them as their values.
 
 =======================================  ========================  ====================================
 Tack                                     VTK                       Viskores
@@ -28,7 +30,8 @@ spacing, direction)``                    (image data)
 =======================================  ========================  ====================================
 
 An implicit array is a ``@tack.device_class`` template with ``get(k)``,
-value ``k``, and grid points also with ``get_ijk(ijk)``, the point at
+value ``k`` (``__getitem__`` calls it, and ``__len__`` reads ``length``),
+and grid points also with ``get_ijk(ijk)``, the point at
 ``(i, j, k)``, which a structured grid's cells use to skip splitting a flat
 index. An array holding arrays reaches them as ``self.base.get(k)``; the
 templates nest, so a composed array compiles to the expression one would
@@ -38,7 +41,8 @@ Unlike VTK's ``std::function`` arrays, a ``Function`` or ``Transform`` is a
 ``@tack.func``, so it runs in the kernel on every backend.
 
 An array's size, width (components per value, or None) and dtype are kept
-beside it, not as attributes a kernel would receive: ``size_of``,
+beside it, not as attributes a kernel would receive (only ``length``, for
+``len(a)``, is one): ``size_of``,
 ``width_of``, ``dtype_of`` and ``to_host`` answer for any array, explicit or
 implicit, and ``materialize`` stores one, by a kernel.
 """
@@ -75,6 +79,52 @@ class _Implicit:
     def dtype(self):
         return self._dtype
 
+    # Python's indexing protocol, so a kernel indexes any array as it does a
+    # stored one: ``a[k]`` is ``get(k)``, ``len(a)`` its length.
+    @tack.func
+    def __getitem__(self, k):
+        return self.get(k)
+
+    @tack.func
+    def __len__(self):
+        return self.length
+
+    @property
+    def _device(self):
+        """The backend of the arrays this one holds, or None for one that holds
+        none: where it is read, and where `materialize` stores it."""
+        for value in vars(self).values():
+            dev = getattr(value, "_device", None)
+            if dev is not None:
+                return dev
+        return None
+
+    @property
+    def device(self):
+        """The `tack.Device` of the arrays this one holds; the default device for
+        one that holds none."""
+        from tack.runtime.dispatch import as_device, get_backend
+        return as_device(self._device or get_backend())
+
+    # Reductions compute the values into a temporary array and reduce it as a
+    # stored array is reduced, so they share its semantics exactly: float
+    # extrema propagate NaNs, integer sums wrap in 64 bits.
+    def sum(self):
+        """The sum of every component, as ``Array.sum``."""
+        return materialize(self).sum()
+
+    def min(self):
+        """The least component, as ``Array.min``."""
+        return materialize(self).min()
+
+    def max(self):
+        """The greatest component, as ``Array.max``."""
+        return materialize(self).max()
+
+    def mean(self):
+        """The mean of every component, as ``Array.mean``."""
+        return materialize(self).mean()
+
     def numpy(self):
         """The values as a host array: ``(size,)``, or ``(size, width)`` for vectors."""
         return to_host(materialize(self))
@@ -92,6 +142,8 @@ class _Implicit:
 
 def _metadata(array, size, width, dtype):
     array._size, array._width, array._dtype = int(size), width, dtype
+    # The length again, as an attribute a kernel receives, for `len(a)`.
+    array.length = int(size)
 
 
 @tack.device_class
@@ -105,6 +157,10 @@ class _Explicit(_Implicit):
     @tack.func
     def get(self, k):
         return self.values[k]
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.values[k] = v
 
 
 def _operand(values):
@@ -296,6 +352,10 @@ class Permutation(_Implicit):
     def get(self, k):
         return self.base.get(self.ids.get(k))
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.base[self.ids[k]] = v           # a scatter: repeated ids race
+
 
 @tack.device_class
 class _Concatenation(_Implicit):
@@ -307,6 +367,13 @@ class _Concatenation(_Implicit):
     @tack.func
     def get(self, k):
         return self.first.get(k) if k < self.split else self.second.get(k - self.split)
+
+    @tack.func
+    def __setitem__(self, k, v):
+        if k < self.split:
+            self.first[k] = v
+        else:
+            self.second[k - self.split] = v
 
 
 def Concatenate(*arrays):
@@ -340,6 +407,10 @@ class Strided(_Implicit):
     def get(self, k):
         return self.values[self.offset + self.stride * k]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.values[self.offset + self.stride * k] = v
+
 
 @tack.device_class
 class View(_Implicit):
@@ -353,6 +424,10 @@ class View(_Implicit):
     @tack.func
     def get(self, k):
         return self.base.get(self.start + k)
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.base[self.start + k] = v
 
 
 @tack.device_class
@@ -373,12 +448,23 @@ class ExtractComponent(_Implicit):
     def get(self, k):
         return self.base.get(k)[self.COMPONENT]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        element = self.base[k]
+        element[self.COMPONENT] = v
+        self.base[k] = element
+
 
 @tack.device_class
 class _Components2(_Implicit):
     @tack.func
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k)]
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.c0[k] = v[0]
+        self.c1[k] = v[1]
 
 
 @tack.device_class
@@ -387,12 +473,25 @@ class _Components3(_Implicit):
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k), self.c2.get(k)]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.c0[k] = v[0]
+        self.c1[k] = v[1]
+        self.c2[k] = v[2]
+
 
 @tack.device_class
 class _Components4(_Implicit):
     @tack.func
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k), self.c2.get(k), self.c3.get(k)]
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.c0[k] = v[0]
+        self.c1[k] = v[1]
+        self.c2[k] = v[2]
+        self.c3[k] = v[3]
 
 
 def Components(*arrays):
@@ -555,23 +654,8 @@ def materialize(values):
         return values
     if isinstance(values, _Explicit):
         return values.values
-    if values.width:
-        out = tack.empty((values.size,), tack.vec(values.width, values.dtype))
-    else:
-        out = tack.empty((values.size,), values.dtype)
+    dtype = tack.vec(values.width, values.dtype) if values.width else values.dtype
+    out = tack.empty((values.size,), dtype, device=values._device)
     if values.size:
         _fill(values, out)
     return out
-
-
-def storage(values):
-    """The storage mixin that reads ``values``, and the attributes it needs."""
-    from tack.dataset import views
-
-    if isinstance(values, _Implicit):
-        mixin = views._ArrayIJKStorage if hasattr(values, "get_ijk") else views._ArrayStorage
-        return mixin, {"array": values}
-    if isinstance(values, _DeviceArray):
-        return views._ExplicitStorage, {"values": values}
-    raise TypeError(f"field values must be a Tack array or an implicit array, "
-                    f"not {type(values).__name__}")

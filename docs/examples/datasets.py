@@ -123,12 +123,12 @@ def run(arch="cpu", check=False):
         np.testing.assert_allclose(on_cells.values.numpy(), [0.5, (4 + 1.6) / 5],
                                    rtol=1e-6)
         assert dg.values.shape[0] == 8 + 5
-        np.testing.assert_allclose(td.arrays.to_host(slope.values)[0], [0, 0, 1],
+        np.testing.assert_allclose(tack.arrays.to_host(slope.values)[0], [0, 0, 1],
                                    atol=1e-6)
         assert len(mesh.sets["boundary"]) == 9                          # 5 + 4 faces
         np.testing.assert_array_equal(kept.sets["roof"].numpy(), [0])
         np.testing.assert_allclose(values.numpy()[0], 0.5)
-        np.testing.assert_allclose(td.arrays.to_host(where)[0], [0.5, 0.5, 0.5])
+        np.testing.assert_allclose(tack.arrays.to_host(where)[0], [0.5, 0.5, 0.5])
         np.testing.assert_allclose(areas.numpy(), same.numpy(), rtol=1e-6)
         np.testing.assert_allclose(areas.numpy()[0], 6.0, rtol=1e-6)
         assert isinstance(paths.topology, td.PolylineTopology) and paths.num_cells == 2

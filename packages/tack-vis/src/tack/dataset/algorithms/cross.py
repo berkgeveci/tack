@@ -1,9 +1,9 @@
 """``cross``: ``a x b`` at every value of two 3-vector fields in one space."""
 
 import tack
-from tack.dataset import arrays
+from tack import arrays
+from tack.arrays import materialize, width_of
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _vectors
-from tack.dataset.arrays import materialize, width_of
 from tack.dataset.dataset import Field
 
 __all__ = ['cross']

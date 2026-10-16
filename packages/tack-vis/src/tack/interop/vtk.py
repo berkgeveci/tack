@@ -171,6 +171,11 @@ def array_to_vtk(array, n_components=None, name=None):
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
+    if getattr(array, 'layout', 'aos') == 'soa':
+        raise TypeError(
+            "array_to_vtk() shares one buffer with VTK, and an SOA array has one per "
+            "component; share each of its components, or copy it to one buffer with "
+            "tack.array(a, layout='aos')")
     if hasattr(array, '_vector_n'):
         width = array._vector_n
         if n_components is not None and n_components != width:
@@ -323,15 +328,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     import numpy as np
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
-    from tack.dataset import (
-        H1,
-        CartesianProduct,
-        Constant,
-        DataSet,
-        PolylineTopology,
-        UniformCoordinates,
-        UnstructuredTopology,
-    )
+    from tack.arrays import CartesianProduct, UniformCoordinates
+    from tack.dataset import H1, Constant, DataSet, PolylineTopology, UnstructuredTopology
     from tack.dataset.dataset import grid_topology
 
     if grid.IsA("vtkUnstructuredGrid") and polyhedral is None:
@@ -406,7 +404,7 @@ def _vtk_points(grid):
 def _field_to_array(name, field):
     from vtkmodules.util.numpy_support import numpy_to_vtk
 
-    from tack.dataset.arrays import to_host
+    from tack.arrays import to_host
 
     values = to_host(field)
     array = numpy_to_vtk(values, deep=1)
@@ -441,15 +439,14 @@ def dataset_to_vtk(data):
         vtkUnstructuredGrid,
     )
 
+    from tack.arrays import CartesianProduct, UniformCoordinates
     from tack.dataset import (
         H1,
-        CartesianProduct,
         Constant,
         PolygonalTopology,
         PolyhedralTopology,
         PolylineTopology,
         StructuredTopology,
-        UniformCoordinates,
         UnstructuredTopology,
         Values,
     )

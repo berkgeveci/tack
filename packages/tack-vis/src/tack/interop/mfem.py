@@ -140,7 +140,8 @@ def _quadratic_values(data, mesh, gf):
     """``gf`` at every value of ``data``'s H1 order-2 space: each element evaluates it
     at its quadratic nodes, whose parametric coordinates are MFEM's reference
     coordinates too (the corners agree, and so the references)."""
-    from tack.dataset import H1, ConstantArray, Field, for_each
+    from tack.arrays import ConstantArray
+    from tack.dataset import H1, Field, for_each
 
     m = _mfem()
     space = H1(data, order=2)

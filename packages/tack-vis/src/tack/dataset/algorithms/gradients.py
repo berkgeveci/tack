@@ -1,10 +1,11 @@
 """``gradients``: the gradient of ``field`` -- ``H1``, ``L2`` or ``Constant``, scalar or vector -- at each cell's parametric center (``at="cells"``) or at the points (``at="points"``: each cell's gradient at the point, averaged over the cells around it, as VTK's vtkGradientFilter and Viskores' point gradients do)."""
 
 import tack
-from tack.dataset import arrays, shapes
+from tack import arrays
+from tack.arrays import materialize, size_of, width_of
+from tack.dataset import shapes
 from tack.dataset.algorithms._common import _field, _vectors
 from tack.dataset.algorithms._links import _average_links
-from tack.dataset.arrays import materialize, size_of, width_of
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values, reference_cells
 from tack.dataset.topology import corner_layout

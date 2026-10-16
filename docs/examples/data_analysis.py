@@ -8,7 +8,7 @@ import numpy as np
 
 import tack
 import tack.dataset as td
-from tack.dataset.arrays import to_host
+from tack.arrays import to_host
 
 
 # --8<-- [start:sample]

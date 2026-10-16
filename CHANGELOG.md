@@ -7,6 +7,54 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Indexable objects. A `@tack.device_class` that defines `__getitem__`,
+  `__setitem__` and `__len__` as `@tack.func` methods is indexed in kernels
+  as an array is: `obj[i]`, `obj[i] = v`, `obj[i] += v` (the index evaluated
+  once) and `len(obj)`, which may bound the parallel loop. Several indices,
+  `obj[i, j]`, arrive as one vector. One kernel then takes a stored array or
+  any indexable object, compiled once for each. An instance tuple of
+  numbers, `self.shape = (nx, ny)`, is one runtime scalar per entry, read
+  as `obj.shape[k]` with a literal `k`; a new shape does not recompile. A
+  class tuple, `shape = (4, 4)`, is read the same way and compiled in. A
+  store without `__setitem__`, and an atomic on an indexable object, are
+  refused when the kernel compiles.
+- `tack.arrays`: the implicit arrays (`CountingArray`, `ConstantArray`,
+  `CartesianProduct`, `UniformCoordinates`, `Permutation`, `Concatenate`,
+  `View`, `Strided`, `ExtractComponent`, `Components`, `Function`,
+  `Transform`, `Cast`, `RandomUniform`, `RandomNormal`) move from
+  `tack.dataset.arrays` into tack-core and are indexable objects: any
+  kernel takes them as it takes a stored array, `a[k]` and `len(a)`, not
+  only through a dataset field. **Breaking:** import them from
+  `tack.arrays`; `tack.dataset` no longer re-exports them.
+- `tack.algorithms` (scans, sorts, `gather`, `unique`, `reduce_by_key`, the
+  statistics, `copy`) take implicit arrays as inputs, read in their kernels
+  without storing them, and implicit arrays have `sum`, `min`, `max` and
+  `mean` with a stored array's semantics (computed into a temporary, then
+  reduced). An implicit array is on the device of the arrays it holds
+  (`a.device`), so these run and allocate there.
+- Writable implicit arrays: a kernel's store into a `View`, `Strided` or
+  `Permutation` lands in the array it wraps (a permutation's is a scatter),
+  `Components(x, y, z)` writes each component to its own array, and
+  `Concatenate` and `ExtractComponent` write through too. An array is
+  writable when what it writes through is; a store into a computed array
+  is refused when the kernel compiles, and a read-only stored array stays
+  read-only behind a wrapper.
+- Structure-of-arrays storage. `tack.soa(x, y, z)` makes a vector array
+  (a matrix array with `dtype=tack.mat2()`...) whose components are
+  existing arrays of scalars, without copying, so data that arrives one
+  array per component (another library's tensors through `from_dlpack`,
+  a device pointer through `array_from_ptr`, on the CPU or a GPU) is a
+  `tack.Array` as it is. `layout="soa"` on `empty`, `zeros`, `ones`,
+  `full`, `array`, `asarray` and the `*_like` constructors (which keep a
+  prototype's layout) makes new ones; `a.layout` is `"aos"` or `"soa"`
+  and `a.components` gives the component arrays. Kernels index an SOA
+  array exactly as an interleaved one, loads, stores, components,
+  augmented stores and vector atomics, each component its own kernel
+  parameter; one kernel takes either layout, compiled once for each. On
+  the host it reads and writes as any vector array, and `copyto` and
+  `tack.array(a, layout=...)` convert between layouts. Not available for
+  an SOA array: a scalar atomic at a flat component index, and export as
+  one buffer (DLPack, `export_memory`, VTK), which its components do.
 - `tack.__version__`, the installed tack-core's version, and a docstring
   for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`
@@ -112,9 +160,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the two cross-package examples and the rendering benchmarks moved with it.
 - **Breaking:** the dataset package is now `tack.dataset`, replacing
   `tack.data`. Use `import tack.dataset as td`; submodules move with it
-  (for example, `tack.dataset.algorithms` and `tack.dataset.arrays`).
-  The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
-  is a separate kernel decorator and keeps its name.
+  (for example, `tack.dataset.algorithms`; the implicit arrays have since
+  moved on to `tack.arrays`). The dataset model and algorithm signatures
+  are unchanged.
 
 - **Breaking:** devices are values, spelled as the array API spells them,
   and `tack.init` is gone with the `tack.cpu`/`metal`/`cuda`/`hip`/
@@ -130,6 +178,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   on two devices are refused, by `tack.algorithms`, `copyto` and `concat`
   under their own names. `tack.algorithms` run on their inputs' device,
   and `tack.sync()` and `tack.sync_async()` wait for every device.
+  `"cuda:N"`, `"hip:N"` and `"level_zero:N"` reach every GPU, and
+  `tack.device_count(type)` counts them; a bare `"cuda"` or `"hip"` is the
+  device the thread already uses (a framework's current CUDA context, HIP's
+  current device), else 0. With a second device in use, every CUDA or HIP
+  operation makes its own context or device current and restores the
+  thread's. DLPack carries the device number both ways.
   `tack.from_dlpack(x)` keeps memory on its own device when the default
   cannot wrap it, as the array API's does: CUDA memory with the CPU as
   default is a CUDA array, host memory with Metal as default a CPU array;
@@ -254,6 +308,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A parallel loop bounded by a local, `n = x.shape[0]; for i in range(n)`,
+  failed at dispatch ("Cannot resolve loop range expression"), and so did
+  `len(obj)` for an indexable object whose `__len__` returns an array's
+  `shape[0]`. Such a bound is now read from the arguments, and a new
+  length reuses the compiled kernel.
 - A device-class instance attribute that shadows a class constant with
   something other than a number (`obj.SCALE = [1, 2]`) made every call
   fail with "unhashable type: 'list'". Such an attribute now drops the
