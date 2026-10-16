@@ -44,7 +44,10 @@ flowchart LR
     SC --> MA[Memory and Aliasing]
     PE --> CT[CPU Threading Policy]
     MA --> BI[Backend Implementations]
+    BI --> VW[Vendor Workarounds]
     BI --> IO[Interoperability]
+    IO --> DA[Dataset API]
+    DA --> PH[Polyhedra]
 ```
 
 ## Pages
@@ -106,6 +109,20 @@ shared IR into native code, allocates and moves memory, and launches work
 (queued in order on the GPU backends), along with the device-specific
 fallbacks each one needs.
 
+**[Vendor Workarounds](vendor-workarounds.md).** Each place generated code
+or a runtime call is shaped around a defect in a vendor compiler, driver or
+binding rather than by the language contract: the symptom, the workaround,
+the test that guards it, and when it can go.
+
 **[Interoperability](interoperability.md).** Sharing memory with other
 libraries and frameworks without copying: wrapping external pointers,
 DLPack, exported device memory, and VTK interop.
+
+**[Dataset API](dataset-api.md).** The design record of `tack.dataset`: how
+its data model (topologies, spaces, fields, sets) and algorithms were
+reasoned out. The API as it stands is the
+[Dataset API reference](../reference/dataset-api.md).
+
+**[Polyhedra](polyhedra.md).** The design record of the polyhedral path in
+`tack.dataset`: faces shared between cells, their orientation, and the
+algorithms that run on arbitrary polyhedra.
