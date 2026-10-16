@@ -59,7 +59,10 @@ validation round or a merge gate, once per machine, not for iteration.
    order. Every xdist worker is a process with its own backends and CUDA
    context, so GPU memory scales with the worker count. The `timing`
    tests skip themselves on a busy host, so a parallel run skips them;
-   run `-m timing` alone when they matter.
+   run `-m timing` alone when they matter. A test whose assertion is about
+   what the scheduler or the OS did (timings, wake-ups, NUMA placement)
+   calls the root conftest's `require_idle` fixture, or better, asserts
+   with a tolerance a loaded host passes.
 
 Do not edit a `.py` file while a run that imported it is still going:
 `linecache` reloads the changed file and every source lookup after that
