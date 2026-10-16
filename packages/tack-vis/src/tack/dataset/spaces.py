@@ -41,6 +41,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import CountingArray
 from tack.dataset import ids, shapes, views
 from tack.runtime.dispatch import on_inputs_device
 
@@ -324,17 +325,16 @@ class L2(Space):
                 _set_last(offsets, n, size)
                 self._offsets, self._size = offsets, int(size)
             elif self.order == 0:
-                offsets = tack.arange(n + 1, dtype=topology.id_dtype)
-                self._offsets, self._size = offsets, n
+                # A ramp, computed where it is read rather than stored.
+                self._offsets = CountingArray(n + 1, dtype=topology.id_dtype)
+                self._size = n
             elif hasattr(topology, "offsets"):
                 self._offsets = topology.offsets          # the connectivity's: shared
                 self._size = int(topology.connectivity.shape[0])
             else:
                 k = topology.groups()[0].shape.NUM_POINTS
                 dtype = ids.at_least(topology.id_dtype, n * k)
-                offsets = tack.empty((n + 1,), dtype)
-                tack.copyto(offsets, np.arange(n + 1, dtype=dtype.numpy_dtype) * k)
-                self._offsets = offsets
+                self._offsets = CountingArray(n + 1, 0, k, dtype=dtype)    # k values a cell
                 self._size = n * k
         return self._offsets, self._size
 

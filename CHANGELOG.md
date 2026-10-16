@@ -147,6 +147,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Offsets and ids that are a linear ramp are computed where they are read
+  (`CountingArray`) rather than stored: an order-0 `L2` space's offsets, a
+  structured grid's `L2` offsets, and the edge groups' ids, which were also
+  rebuilt on every `edges().groups()` call. Order-1 `L2` on an unstructured
+  mesh already shared the connectivity's offsets.
 - **Breaking: tack.dataset names, one per operation.** `external_faces(data)`
   is `extract_surface(data)`, whose `faces` now default to the boundary.
   `to_points`, `to_cells`, `discontinuous` and the public `traces` are gone:
