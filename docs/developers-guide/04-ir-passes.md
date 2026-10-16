@@ -103,7 +103,7 @@ concrete sizes.
 
 Annotates each `IRParam` with:
 - `type_annotation` — a `ScalarType` (f32, i32, i64, etc.)
-- `_is_array` — True if the argument is a `Array` or `Texture3D`
+- `_is_array` — True if the argument is an `Array` or `Texture3D`
 - `_is_texture` — True if the argument is a `Texture3D`
 
 Type rules:
@@ -204,8 +204,8 @@ An `IRBoundsCheck` is `i64`.
 ## Bounds Guards (`ir_bounds.py`, debug mode)
 
 `annotate_types` ends with `guard_accesses`, which does nothing unless the
-function was lowered with bounds checks (`bounds_sites`). Each user array or
-array access whose index is an `IRBoundsCheck` is skipped when that index
+function was lowered with bounds checks (`bounds_sites`). Each user array
+access whose index is an `IRBoundsCheck` is skipped when that index
 is negative: a load becomes `index >= 0 ? load : 0` with a zero of the
 load's own type (hence after typing), and a store or atomic runs under
 `if index >= 0`. The index is evaluated twice, which is harmless because

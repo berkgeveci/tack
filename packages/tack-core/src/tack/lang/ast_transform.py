@@ -1125,7 +1125,7 @@ def transform_kernel(kernel_ast: ast.Module, vector_arrays=None,
         python_func: Defining Python callable for globals/closure bindings.
         bindings: Explicit namespace for AST-only callers without a callable.
         template_funcs: Transformation-local map of resolved template methods.
-        debug: Check every array and array index (see ``ir_bounds``).
+        debug: Check every array index (see ``ir_bounds``).
     """
     transformer = KernelTransformer(vector_arrays=vector_arrays,
                                     texture_arrays=texture_arrays, python_func=python_func,

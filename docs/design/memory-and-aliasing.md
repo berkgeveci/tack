@@ -32,7 +32,7 @@ known to read as zeros so `tack.zeros` need not fill it, and
 diagnostic can say which backend allocated a stray array (see
 `_arrays_from_another_backend` in `lang/kernel.py`).
 
-Why a separate buffer rather than a `Array` subclass per backend? Because a
+Why a separate buffer rather than an `Array` subclass per backend? Because an
 array's *shape* is a property of how kernels index the data, while the
 *buffer* is a property of where the bytes live. Separating them lets
 `Array.reshape()` produce a new array over the same buffer without knowing
@@ -430,7 +430,7 @@ relationships: one variant serves every combination.
 #### Loops that store to an array get a function of their own
 
 The argument buffer brought a miscompilation with it, found on an M1 Max
-in October 2026. In the kernel entry function, Apple's compiler reads a
+in October 2026. In the kernel entry function, Apple's compiler reads an
 array element once before a loop and never again when the element's
 address does not depend on the thread, the loop also stores to another
 array of the same type, and the trip count is a runtime value:
@@ -495,7 +495,7 @@ already do. A standalone report to Apple would be the shader in
 
 ### The CPU disjoint-arrays specialization
 
-Dropping `noalias` is not free on the CPU. Without it LLVM must reload a
+Dropping `noalias` is not free on the CPU. Without it LLVM must reload an
 array after every store through another array, and its loop vectorizer
 must guard a loop that accumulates through an array with runtime overlap
 checks. So the CPU backend compiles a second variant *with* `noalias` and

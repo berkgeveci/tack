@@ -65,7 +65,7 @@ Tack does not establish race freedom for you. A kernel compiling successfully
 does not mean two iterations cannot interfere. Array accesses are not
 bounds-checked either: keep indices within the storage you allocated.
 [Debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
-(`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every array and array
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every array
 index and raises `IndexError` naming the access, for finding such a bug.
 Negative host indices count from the end; do not assume that rule for kernel
 array loads.

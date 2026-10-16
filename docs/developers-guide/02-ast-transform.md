@@ -59,7 +59,7 @@ The transformer tracks several pieces of state:
   body; a second one, or one inside a top-level `if` or `while`, raises
   `UnsupportedSyntaxError`, as does a kernel with none. While
   `_in_parallel_loop` is false, `_visit_body` passes each lowered statement
-  to `_check_outside_parallel_loop`, which rejects an array or array store,
+  to `_check_outside_parallel_loop`, which rejects an array store,
   atomic, barrier, block reduction or `print` (`_effect_name`) at the
   statement's source position. It runs on the lowered IR so effects from
   inlined device functions and template methods are seen; nested bodies

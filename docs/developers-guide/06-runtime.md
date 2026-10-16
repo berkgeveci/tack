@@ -137,7 +137,7 @@ disjoint. `arrays_disjoint()` compares the byte ranges of the array arguments
 on every dispatch and passes when no array the kernel writes overlaps another
 array. Qualifying calls use a variant compiled with `noalias` on its array
 pointers; the rest use the variant without it. Without the promise LLVM must
-reload after every store, which matters for kernels that accumulate through a
+reload after every store, which matters for kernels that accumulate through an
 array in an inner loop. Measured on 2026-10-03, single-threaded: on a 2012
 Xeon E5-2650 the store-accumulator kernel at 2^20 elements ran in 2465 µs
 without the promise and 736 µs with it, and a stencil in 776 µs and 604 µs;

@@ -24,7 +24,7 @@ class BoundsChecks:
     """
 
     def _init_bounds(self, debug):
-        # Debug mode: every array and array index is checked (IRBoundsCheck),
+        # Debug mode: every array index is checked (IRBoundsCheck),
         # and each checked access is described in _bounds_sites.
         self._debug = debug
         self._bounds_sites: list = []

@@ -138,7 +138,7 @@ outside the parallel loop, before or after it, may be evaluated any
 number of times per launch: once per GPU thread, and on CPU once per
 chunk, threading probe or timing sample. They may therefore only assign
 local variables, load arrays, and declare shared or local arrays, which
-is unobservable however often it runs. Stores to arrays or arrays,
+is unobservable however often it runs. Stores to arrays,
 atomics, barriers, block reductions and `print` there are rejected with
 the kernel or device function and source position, including inside
 top-level branches and `while` loops and when they arrive through an
@@ -282,7 +282,7 @@ argument counts as written. That is a check of the binding, not of accesses:
 writable arrays aliasing read-only storage are not detected. Indices are
 not checked, and an out-of-bounds access has no defined result. Debug mode
 (`tack.set_debug(True)` or `TACK_DEBUG=1`) is the exception: it checks
-every index of every array and array access against its extent, one
+every index of every array access against its extent, one
 dimension at a time (so `a[i, j + 1]` past the last column is caught even
 when its flat index lands inside the array), skips an access outside it (a
 load gives 0, a store or atomic does nothing), and makes the call raise

@@ -1,4 +1,4 @@
-"""Debug mode: every array and array index is checked, one dimension at a time.
+"""Debug mode: every array index is checked, one dimension at a time.
 
 With ``tack.set_debug(True)`` an out-of-bounds access is skipped (a load
 gives 0) and the launch raises ``IndexError`` naming the first one: kernel

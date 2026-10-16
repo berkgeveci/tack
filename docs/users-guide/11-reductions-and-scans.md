@@ -479,7 +479,7 @@ has the full conservative domain; in short:
   data to a multiple of 256 with the reduction's identity (`0.0` for a sum,
   `inf` for a minimum, `-inf` for a maximum).
 - **Every lane participates.** The reduction must be reached by all lanes
-  of the group: not under a condition that depends on the loop index, a
+  of the group: not under a condition that depends on the loop index, an
   array value or `thread_id()`, not after a lane-dependent `break` or
   `continue`, and not in a conditional expression, the second operand of
   `and`/`or`, or a `while` condition. Conditions on scalar arguments and

@@ -175,7 +175,7 @@ a test that counts compilations is not hidden by a cache hit.
 The IR node is most of the work, but several runtime mechanisms assume they
 know everything that shapes the generated code:
 
-- **Debug mode.** A node that indexes an array or array must have its index
+- **Debug mode.** A node that indexes an array must have its index
   checked in debug mode: lowering wraps it through `_checked` in
   `lang/lowering/bounds.py` (an `IRBoundsCheck`), `ir_bounds.guard_accesses`
   must skip the access when the check is negative, and every generator must
