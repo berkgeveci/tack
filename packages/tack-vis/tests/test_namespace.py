@@ -29,6 +29,28 @@ def test_tack_vis_ships_no_algorithms_directory():
     assert not list((src / "algorithms").glob("**/*.py"))
 
 
+def test_tack_vis_ships_no_tack_init_and_core_initializes_first_or_second():
+    """tack-vis's ``tack/`` is a namespace portion, with no ``__init__.py``:
+    one there (holding only ``extend_path``) was the package Python ran when
+    tack-vis came first on the path, so tack-core's never ran and ``tack``
+    had no ``kernel``. Without it, tack-core's runs in either order and
+    ``extend_path`` adds tack-vis's portion."""
+    import os
+    import subprocess
+    import sys
+
+    packages = pathlib.Path(__file__).resolve().parents[2]
+    vis, core = packages / "tack-vis" / "src", packages / "tack-core" / "src"
+    assert not (vis / "tack" / "__init__.py").exists()
+    check = ("import tack, tack.dataset, tack.algorithms; "
+             "print(callable(tack.kernel), tack.dataset.__name__)")
+    for order in ((vis, core), (core, vis)):
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(str(p) for p in order))
+        run = subprocess.run([sys.executable, "-c", check], env=env,
+                             capture_output=True, text=True, timeout=120)
+        assert run.stdout.split() == ["True", "tack.dataset"], run.stdout + run.stderr
+
+
 def test_dataset_package_exports_the_canonical_model():
     import importlib
 

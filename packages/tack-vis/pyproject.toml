@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Kitware, Inc." }]
-keywords = ["gpu", "compute", "kernel", "jit", "cuda", "metal", "hip", "visualization"]
+keywords = ["gpu", "visualization", "mesh", "finite elements", "vtk", "cuda", "metal", "hip"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
-    "Topic :: Software Development :: Compilers",
+    "Topic :: Scientific/Engineering :: Visualization",
 ]
 dependencies = [
     "tack-core>=0.4.0",
@@ -29,11 +29,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tack"]
 
-[tool.hatch.build]
-exclude = ["src/tack/__init__.py"]
-
 [project.urls]
 Homepage = "https://github.com/berkgeveci/tack"
 Repository = "https://github.com/berkgeveci/tack"
-Documentation = "https://github.com/berkgeveci/tack/tree/main/docs"
+Documentation = "https://berkgeveci.github.io/tack/"
 Issues = "https://github.com/berkgeveci/tack/issues"
