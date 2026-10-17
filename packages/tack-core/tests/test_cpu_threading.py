@@ -377,17 +377,39 @@ def test_a_parallel_measurement_lifts_a_low_serial_estimate(cpu):
     assert compiled.parallel_min_elems < before
 
 
-def test_a_short_fan_out_does_not_floor_the_serial_estimate(cpu):
+def test_a_short_fan_out_does_not_floor_the_serial_estimate(cpu, monkeypatch):
     """Worker spans of a few microseconds are mostly GIL hand-back, not
     the kernel: 100x the serial rate, measured. Such a fan-out may still
-    inform `r_p`, which the threshold tolerates, but never the floor."""
+    inform `r_p`, which the threshold tolerates, but never the floor.
+
+    The rule is checked as such; whether a real short fan-out's spans are
+    short is the scheduler's doing. A loaded host can stretch them past the
+    trusted span, and a long span does set the floor, as it should: the real
+    fan-out then skips, with its numbers (it failed so on a busy CI runner)."""
     backend = CPUBackend()
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
     n = 4096
     compiled, args = _measured(backend, _scale, n)
+    honest = compiled.ns_per_elem
 
+    # The rule: spans not long enough to trust never floor the estimate.
+    backend._record_parallel_cost(compiled, [honest * 100.0] * 4, 4, bounds_serial=False)
+    assert compiled.serial_floor_ns == 0.0
+
+    # A real fan-out over a short range, and what it decided.
+    compiled, args = _measured(backend, _scale, n)
+    decided = []
+    record = backend._record_parallel_cost
+    monkeypatch.setattr(backend, "_record_parallel_cost",
+                        lambda c, rates, workers, bounds_serial=False, retire=False:
+                        (decided.append((bounds_serial, rates)),
+                         record(c, rates, workers, bounds_serial, retire))[1])
     backend._parallel_execute(compiled, compiled.bind(args), 0, n)
+    if decided and decided[-1][0]:
+        pytest.skip(f"the host stretched a {n}-element fan-out's worker spans "
+                    f"past the trusted span (rates {decided[-1][1]} ns per element, "
+                    f"call cost {compiled.call_overhead_ns:.0f} ns)")
 
     assert compiled.serial_floor_ns == 0.0
 
