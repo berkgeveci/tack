@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{# Material shows this on every version but `extra.version.default`. #}
+{% block outdated %}
+  This is not the latest release's documentation.
+  <a href="{{ '../' ~ base_url }}">
+    <strong>Go to the latest release.</strong>
+  </a>
+{% endblock %}

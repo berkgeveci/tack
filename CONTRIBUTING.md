@@ -29,7 +29,11 @@ README for the install line.
 
 The site is [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) with
 [mkdocstrings](https://mkdocstrings.github.io/) for the API pages, published to
-GitHub Pages by the CI workflow on `main`. `.readthedocs.yaml` is also retained
+GitHub Pages one version per folder with [mike](https://github.com/jimporter/mike)
+on the `gh-pages` branch: `dev` is `main`, rebuilt by the CI workflow on every
+push; each published GitHub Release adds `MAJOR.MINOR` and moves `latest`, the
+site's default, to it (`.github/workflows/docs-versions.yml`, which also adds an
+older release's docs when run by hand). `.readthedocs.yaml` is also retained
 for compatible Read the Docs builds.
 
 ```bash

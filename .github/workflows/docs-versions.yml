@@ -1,0 +1,88 @@
+# A release's documentation, published beside the others on GitHub Pages.
+#
+# The site is versioned with mike on the gh-pages branch: one folder per
+# release (`0.4`, `0.5`, ...), `dev` for main (ci.yml's docs-publish), and
+# `latest`, a copy of the newest release, which the site's root redirects
+# to. Publishing a GitHub Release runs this from its tag: it builds that
+# tag's docs as MAJOR.MINOR, moves `latest` to it, and keeps `latest` the
+# default. Run it by hand (workflow_dispatch) to add an older release's
+# docs, with "latest" unticked so the newest stays the default.
+
+name: docs versions
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The tag to build, e.g. v0.4.0"
+        required: true
+      latest:
+        description: "Make it `latest`, the site's default"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # The tag's own lock: its docs build with what it was released with.
+      - name: Sync the docs extra
+        run: uv sync --extra docs
+
+      - name: Name the version
+        id: version
+        env:
+          TAG: ${{ inputs.ref || github.ref_name }}
+          RELEASE_LATEST: ${{ github.event_name == 'release' && !github.event.release.prerelease }}
+          INPUT_LATEST: ${{ inputs.latest }}
+        run: |
+          version=$(echo "${TAG#v}" | cut -d. -f1,2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$RELEASE_LATEST" = true ] || [ "$INPUT_LATEST" = true ]; then
+            echo "aliases=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Releases before 0.5 have no version selector in their mkdocs.yml.
+      - name: Give an older release the version selector
+        run: |
+          python3 - <<'PY'
+          s = open("mkdocs.yml").read()
+          if "provider: mike" not in s:
+              assert s.count("\nextra:\n") == 1, "no extra: section to extend"
+              s = s.replace("\nextra:\n",
+                            "\nextra:\n  version:\n    provider: mike\n    default: latest\n")
+              open("mkdocs.yml", "w").write(s)
+          PY
+
+      - name: Deploy
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ALIASES: ${{ steps.version.outputs.aliases }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1 || true   # absent before the first deploy
+          # Older locks predate mike; --with brings it into the tag's environment.
+          uv run --with "mike>=2.1,<3" mike deploy --push --alias-type=copy \
+            --update-aliases --title "$VERSION" "$VERSION" $ALIASES
+          if [ -n "$ALIASES" ]; then
+            uv run --with "mike>=2.1,<3" mike set-default --push latest
+          fi

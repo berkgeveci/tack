@@ -38,6 +38,10 @@ docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.7,<10",
     "mkdocstrings[python]>=1.0,<2",
+    # Versioned docs on GitHub Pages: one folder per release, `dev` for
+    # main, `latest` the newest release and the site's default (the
+    # `docs-versions` workflow and docs-publish in ci.yml).
+    "mike>=2.1,<3",
     # mkdocstrings formats signatures with Black or Ruff if one is present
     # and silently leaves them unformatted otherwise. Ruff is already this
     # project's linter.
