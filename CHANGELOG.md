@@ -166,6 +166,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- The documentation site keeps every release's docs: `/latest/` (the newest
+  release, where the site's root goes), `/0.4/` and on, and `/dev/` for
+  `main`, with a version selector and a banner on all but the latest.
 - `advect` and `streamlines` keep their particles on the dataset's device:
   seeds given as an array of 3-vectors are copied there, the particles'
   positions are the output's geometry as they are, and `streamlines`

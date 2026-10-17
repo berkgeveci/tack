@@ -2,7 +2,7 @@
 #
 # Three jobs, all independent so they report in parallel:
 #
-#   docs       — builds the site strictly; publishes it from main
+#   docs       — builds the site strictly; publishes main's as `dev`
 #   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
 #   ids-i64    — the dataset tests again, every topology with 64-bit ids
 #   packaging  — proves a GPU install works without llvmlite
@@ -75,8 +75,8 @@ jobs:
   # there were five, and "40+ examples" against 49 on disk -- and drift is
   # only cheap to fix while it is small.
   #
-  # This job checks links and runnable guide examples on pull requests,
-  # and packages the site for the GitHub Pages deployment below.
+  # This job checks links and runnable guide examples on pull requests;
+  # docs-publish below deploys main's site as `dev`.
 
   docs:
     name: docs
@@ -101,20 +101,14 @@ jobs:
       - name: Build the site
         run: uv run mkdocs build --strict
 
-      # Uploaded on every run, including pull requests, so the packaging
-      # step is exercised by the same gate that checks the links rather
-      # than only on the push that publishes.
-      - name: Package the site for Pages
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
   # ── Publish ────────────────────────────────────────────────────────
   #
   # Separate from the gate above because deploying and checking are
   # different things: every pull request should build the docs, and none
-  # of them should be able to publish. Pages has one live site, so this
-  # runs only on a push to main.
+  # of them should be able to publish. The site is versioned with mike on
+  # the gh-pages branch, which Pages serves: this job rebuilds `dev` from
+  # main; each release adds its own folder and moves `latest`, the site's
+  # default (docs-versions.yml).
 
   docs-publish:
     name: docs (publish)
@@ -123,29 +117,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    # Job-level permissions replace the workflow's rather than adding to
-    # them, so `contents` is restated. `id-token` is what lets
-    # deploy-pages prove to Pages that this run is what it claims to be.
+    # Job-level permissions replace the workflow's: this job alone commits,
+    # and only to gh-pages.
     permissions:
-      contents: read
-      pages: write
-      id-token: write
+      contents: write
 
-    # Not the workflow's concurrency group: that one cancels in progress,
-    # which is right for a gate and wrong for a deploy — a cancelled
-    # deploy can leave the site mid-swap.
+    # Shared with docs-versions.yml, and never cancelled: two deploys
+    # committing to gh-pages at once would race, and a cancelled one can
+    # leave a half-written commit behind.
     concurrency:
-      group: pages
+      group: gh-pages
       cancel-in-progress: false
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-
     steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v5
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Sync the docs extra
+        run: uv sync --extra docs
+
+      - name: Deploy main as dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1 || true   # absent before the first deploy
+          uv run mike deploy --push --alias-type=copy dev
 
   # ── The main gate ──────────────────────────────────────────────────
   tests:
