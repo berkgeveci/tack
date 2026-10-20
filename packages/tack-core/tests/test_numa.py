@@ -57,6 +57,14 @@ def small_pages():
         raise OSError(ctypes.get_errno(), "prctl(PR_SET_THP_DISABLE)")
 
 
+def memory_nodes():
+    """The nodes interleave places pages on: those with memory, as the CPU
+    backend found them (`cpu._numa_node_mask`). A node with CPUs and no
+    memory -- nodes 2 and 3 of jura's EPYC -- holds no pages and has no
+    free pages, so it is never one a placement check needs room on."""
+    return [n for n in range(cpu._numa_max_node + 1) if cpu._numa_node_mask >> n & 1]
+
+
 def require_free_pages(nodes, nbytes):
     """Skip, with the numbers, when a node the check places pages on has no
     room for them above its low watermark. The allocator takes a page from
@@ -140,7 +148,7 @@ def test_interleave_context_spreads_pages():
     import os
     import subprocess
     import sys
-    require_free_pages(range(cpu._numa_max_node + 1), 64 << 20)
+    require_free_pages(memory_nodes(), 64 << 20)
     code = _INTERLEAVE_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
     run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          timeout=300)
@@ -236,7 +244,7 @@ def test_a_array_the_workers_write_is_spread_across_the_nodes(pool, require_idle
     the 75% the assertion allows (77% on mustafar-linux under a suite run;
     seen on illyad and headroom too)."""
     require_idle()
-    require_free_pages(range(cpu._numa_max_node + 1), 64 << 20)
+    require_free_pages(memory_nodes(), 64 << 20)
     import os
     import subprocess
     import sys
