@@ -121,6 +121,7 @@ def test_an_indexed_read_waits():
     assert acc[3] == 10
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_launch_returns_before_it_completes():
     """The host side of a launch is far shorter than the kernel: a heavy
     kernel queued 20 times takes less than one run of it to queue."""
@@ -148,6 +149,7 @@ def test_a_launch_returns_before_it_completes():
     assert queued < one, f"20 launches took {queued*1e3:.1f} ms to queue, one run is {one*1e3:.1f}"
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_shared_buffer_completes_its_launches():
     """Memory handed outside Tack is complete when a launch on it returns."""
     acc = tack.zeros((64,), tack.i32)
@@ -225,6 +227,7 @@ def _heavy_queue(seconds):
     return x, out
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_read_waits_outside_the_launch_lock():
     """A read queues its copy and an event under the backend's lock and
     waits on the event without it, so another thread may launch while a
@@ -273,6 +276,7 @@ def test_markers_reuse_their_events():
     assert len(backend._events) == events
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_small_host_copies_do_not_wait_for_the_queue():
     """Appending a copy from pageable memory waited for the queue to drain
     (to the device up to 4 MiB, from it up to 1 KiB, driver 25.05): a
