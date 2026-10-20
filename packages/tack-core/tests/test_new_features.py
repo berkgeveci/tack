@@ -1588,6 +1588,30 @@ def test_negative_runtime_component_index_is_out_of_range(backend):
     np.testing.assert_array_equal(vf.numpy(), values)
 
 
+@tack.kernel
+def rotated_components(rows, out, size: tack.i32):
+    for f in range(out.shape[0]):
+        for j in range(size):
+            out[f, j] = float(rows[f][j + 1 if j + 1 < size else 0])
+
+
+def test_runtime_component_from_a_conditional_in_a_loop(backend):
+    """`rows[f][j + 1 if j + 1 < size else 0]` in a sequential loop. IGC
+    2.7.11 miscompiled the chain of 64-bit equality tests on a selector a
+    conditional expression defined: the first component for an even selector,
+    the last for an odd one (TA-48; the polyhedra face kernels read a -1 from
+    a triangle's padded fourth slot). The selector is compared as an i32."""
+    n = 8
+    rows_np = np.stack([np.arange(n), np.arange(n) + 100, np.arange(n) + 200,
+                        np.full(n, -1)], axis=1).astype(np.int32)
+    rows = tack.empty((n,), tack.vec(4, tack.i32))
+    tack.copyto(rows, rows_np)
+    out = tack.zeros((n, 3))
+    rotated_components(rows, out, 3)
+    np.testing.assert_array_equal(
+        out.numpy(), np.stack([rows_np[:, 1], rows_np[:, 2], rows_np[:, 0]], axis=1))
+
+
 # --- A list of scalars is a vector ---
 
 @tack.func

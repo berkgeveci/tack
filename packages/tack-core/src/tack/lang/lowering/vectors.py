@@ -21,6 +21,7 @@ from tack.lang.lowering.values import (
     _like,
     _size,
 )
+from tack.lang.types import i32
 
 
 class VectorValues:
@@ -561,7 +562,21 @@ class VectorValues:
         self._pre_stmts.extend(statements)
         if isinstance(idx, list):
             raise self._source_error(node, "subscript", "a vector cannot index a vector")
-        return self._capture_value(idx, self._pre_stmts)
+        return self._capture_value(self._narrow_selector(idx), self._pre_stmts)
+
+    @staticmethod
+    def _narrow_selector(selector):
+        """The selector as an i32, which the component tests compare against.
+
+        A component index lies in ``[0, n)`` (the language contract), so
+        nothing is lost; and IGC 2.7.11 miscompiled a chain of 64-bit
+        equality tests on a selector that a conditional expression defined
+        (``rows[f][j + 1 if j + 1 < size else 0]`` in a sequential loop):
+        the first component for an even selector, the last for an odd one
+        (TA-48, ``docs/design/vendor-workarounds.md``). Compared as an i32
+        the chain compiles right.
+        """
+        return ir.IRCast(value=selector, dtype=i32)
 
     def _matrix_selector(self, node: ast.Subscript, shape: tuple):
         """The row-major position ``m[i, j]`` names in a matrix of ``shape``."""
@@ -583,7 +598,7 @@ class VectorValues:
             raise self._source_error(node, "subscript", "a vector cannot index a matrix")
         position = ir.IRBinOp(
             op="+", left=ir.IRBinOp(op="*", left=row, right=ir.IRConstant(cols)), right=col)
-        return self._capture_value(position, self._pre_stmts)
+        return self._capture_value(self._narrow_selector(position), self._pre_stmts)
 
     def _select_component(self, selector, components: list):
         """The component a runtime ``selector`` picks; past the last, the last."""
