@@ -77,6 +77,7 @@ _libc = None
 # Syscall numbers are per-architecture.  These are x86-64's; arm64 numbers the
 # same calls differently -- 238 is migrate_pages there -- so _init_numa declines
 # on any other machine rather than issuing a syscall it cannot name.
+_SYS_MBIND = 237
 _SYS_SET_MEMPOLICY = 238
 _SYS_GET_MEMPOLICY = 239
 _MPOL_DEFAULT = 0
@@ -164,6 +165,44 @@ def _init_numa():
         pass
 
 _init_numa()
+
+
+# A field of at least this many bytes has its pages interleaved over the
+# memory nodes whoever touches them first (`_interleave_range`).
+_INTERLEAVE_MIN_BYTES = 1 << 20
+
+
+def _interleave_range(address: int, nbytes: int) -> bool:
+    """Give the whole pages of ``[address, address + nbytes)`` the interleave
+    policy (``mbind``, no page moved), unless the calling thread is bound.
+
+    The workers first-touch under the interleave policy, but the calling
+    thread does not: a serial launch, a `from_numpy` or a NumPy temporary
+    on the caller places pages on its node. With freed blocks kept
+    (glibc's sliding mmap threshold below 32 MiB, `TACK_CPU_MALLOC=1`
+    above), a reused block keeps that placement for every later parallel
+    use (TA-49): on jura, unbound, tet contour's reused blocks sat 89% on
+    one of the two memory nodes and the filter ran 10-20% slower. A policy
+    on the range governs a page's first fault, whichever thread takes it,
+    and stays with the range when glibc hands the block out again, so a
+    block whose range got it before its first touch is interleaved for
+    good. Pages already present keep their node: the first allocation of
+    a range decides. A bound thread (``numactl --membind``) keeps its
+    binding, as `_NumaInterleave` does.
+    """
+    if not _numa_available or nbytes < _INTERLEAVE_MIN_BYTES:
+        return False
+    policy = _read_mempolicy()
+    if policy is None or policy[0] != _MPOL_DEFAULT:
+        return False
+    start = (address + 4095) & ~4095
+    end = (address + nbytes) & ~4095
+    if end <= start:
+        return False
+    mask = (ctypes.c_ulong * 1)(_numa_node_mask)
+    return _libc.syscall(_SYS_MBIND, ctypes.c_ulong(start), ctypes.c_ulong(end - start),
+                         _MPOL_INTERLEAVE, mask, ctypes.c_ulong(_numa_max_node + 2),
+                         0) == 0
 
 
 # ── glibc: keep freed pages ──────────────────────────────────────────
@@ -911,8 +950,11 @@ class CPUBackend(Backend):
         # binding. Filling here was serial, and dearer after a fan-out
         # while the workers' caches owned the lines: at 5M cells on eight
         # threads of a 2 GHz Xeon, allocation was 130 of threshold's
-        # 276 ms and 77 of cell-to-point's 135.
-        return NumpyBuffer(dtype.numpy_dtype, shape)
+        # 276 ms and 77 of cell-to-point's 135. A large field's range is
+        # interleaved whoever touches it first (`_interleave_range`).
+        buf = NumpyBuffer(dtype.numpy_dtype, shape)
+        _interleave_range(buf.address, buf.nbytes)
+        return buf
 
     def fill_array(self, array, value) -> bool:
         """Fill `_PARALLEL_FILL_MIN_BYTES` or more as a kernel through the

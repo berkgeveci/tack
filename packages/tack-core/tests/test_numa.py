@@ -248,6 +248,48 @@ def test_a_array_the_workers_write_is_spread_across_the_nodes(pool, require_idle
         (run.stdout + run.stderr)[-1500:]
 
 
+_REUSE_CHECK = """
+import sys
+sys.path.insert(0, {tests!r})
+import tack
+from test_numa import pages_per_node
+
+tack.init(arch=tack.cpu, num_threads=4)
+backend = tack.runtime.dispatch.get_backend()
+assert backend.malloc_tuned, "TACK_CPU_MALLOC=1 did not take"
+n = (64 << 20) // 4
+for round in range(3):
+    buf = backend.allocate_field(tack.f32, (n,))
+    buf._data.fill(1.0)       # first touched serially, by this thread
+    hist = pages_per_node(buf.address, 64 << 20)
+    assert len(hist) > 1, f"round {{round}}: all pages on one node: {{dict(hist)}}"
+    biggest = max(hist.values()) / sum(hist.values())
+    assert biggest < 0.75, f"round {{round}}: lopsided placement: {{dict(hist)}}"
+    del buf                   # kept by glibc, handed out again next round
+print("ok")
+"""
+
+
+@requires_numa
+def test_a_field_the_caller_touches_is_spread_and_stays_spread_when_reused():
+    """TA-49. A field the calling thread touches first -- a serial launch,
+    `from_numpy` -- is spread over the nodes like one the workers touch,
+    since its range carries the interleave policy (`_interleave_range`);
+    and with freed pages kept (`TACK_CPU_MALLOC=1`) the block handed out
+    again keeps that placement. Without the policy the pages sat on the
+    caller's node and stayed there for every later use. In a fresh
+    process, since keeping pages is process-wide."""
+    import os
+    import subprocess
+    import sys
+    code = _REUSE_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ, TACK_CPU_MALLOC="1")
+    run = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True,
+                         text=True, timeout=300)
+    assert run.returncode == 0 and run.stdout.strip().endswith("ok"), \
+        (run.stdout + run.stderr)[-1500:]
+
+
 @requires_numa
 def test_policy_is_restored_after_the_context():
     """Leaking MPOL_INTERLEAVE would change every later allocation in-process."""
