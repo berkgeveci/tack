@@ -3323,6 +3323,13 @@ and goes when 7.x support does.</p>
 <td><code>test_float_semantics.py</code> on Level Zero</td>
 </tr>
 <tr>
+<td>A runtime vector or matrix component index is compared as an i32: the selector is cast once where it is captured.</td>
+<td>IGC 2.7.11 (compute runtime 25.05, Max 1100)</td>
+<td>A chain of 64-bit equality tests on a selector that a conditional expression defined (<code>rows[f][j + 1 if j + 1 &lt; size else 0]</code> in a sequential loop) selected the first component for an even selector and the last for an odd one, so the polyhedra face kernels read a triangle's padded -1 under debug mode's bounds checks (TA-48). <code>-ze-opt-disable</code> avoided it, as did a 32-bit selector, a <code>switch</code> or plain index arithmetic; the generated OpenCL C is correct and the CPU agrees.</td>
+<td><code>lowering/vectors.py</code> (<code>_narrow_selector</code>)</td>
+<td><code>test_new_features.py</code> (<code>test_runtime_component_from_a_conditional_in_a_loop</code>) on Level Zero</td>
+</tr>
+<tr>
 <td>A stored native binary the driver refuses is rebuilt from the stored SPIR-V.</td>
 <td>Drivers that refuse another build's native binary</td>
 <td>The disk cache entry would be unusable. Counted as <code>native_refused</code> in the cache stats.</td>
