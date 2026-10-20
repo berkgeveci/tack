@@ -112,6 +112,7 @@ def test_an_indexed_read_waits():
     assert acc[3] == 10
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_launch_returns_before_it_completes():
     """The host side of a launch is far shorter than the kernel: a heavy
     kernel queued 20 times takes less than one run of it to queue."""
@@ -243,6 +244,7 @@ def test_a_marker_waits_for_the_launches_before_it():
     np.testing.assert_array_equal(acc.numpy(), sum(range(50)) + 50 * np.arange(64))
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_marker_does_not_wait_for_later_launches():
     out = tack.empty((1 << 18,))
     short = tack.zeros((16,), tack.i32)
@@ -257,6 +259,7 @@ def test_a_marker_does_not_wait_for_later_launches():
     np.testing.assert_array_equal(short.numpy(), 1 + np.arange(16))
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize("wait", ["sync", "numpy", "index", "sum", "marker"])
 def test_a_wait_releases_the_gil_and_the_stream(wait):
     """While one thread waits for a long launch, another thread keeps

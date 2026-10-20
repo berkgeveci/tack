@@ -111,6 +111,7 @@ def test_an_indexed_read_waits():
     assert acc[3] == 10
 
 
+@pytest.mark.usefixtures("no_debug")
 def test_a_launch_returns_before_it_completes():
     """The host side of a launch is far shorter than the kernel: a heavy
     kernel queued 20 times takes less than one run of it to queue."""
@@ -182,6 +183,7 @@ def _long_launch(out, seconds=0.3):
     pytest.skip("no launch long enough to measure here")
 
 
+@pytest.mark.usefixtures("no_debug")
 @pytest.mark.parametrize("wait", ["sync", "numpy", "index", "sum", "marker", "exported"])
 def test_a_wait_does_not_hold_the_context(wait):
     """While one thread waits for a long launch, another thread keeps
