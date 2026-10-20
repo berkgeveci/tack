@@ -78,6 +78,8 @@ _libc = None
 # same calls differently -- 238 is migrate_pages there -- so _init_numa declines
 # on any other machine rather than issuing a syscall it cannot name.
 _SYS_MBIND = 237
+_SYS_MOVE_PAGES = 279
+_MPOL_MF_MOVE = 2
 _SYS_SET_MEMPOLICY = 238
 _SYS_GET_MEMPOLICY = 239
 _MPOL_DEFAULT = 0
@@ -170,6 +172,78 @@ _init_numa()
 # A field of at least this many bytes has its pages interleaved over the
 # memory nodes whoever touches them first (`_interleave_range`).
 _INTERLEAVE_MIN_BYTES = 1 << 20
+# Pages already present when a range is first seen are spread in steps of
+# this size, a transparent huge page, so no huge page is split between
+# nodes (NumPy asks for them on large arrays).
+_SPREAD_STEP = 2 << 20
+# Address ranges whose present pages were spread already, as sorted
+# disjoint [start, end) pairs; `_spread_lock` guards them.
+_spread_ranges: list = []
+_spread_lock = threading.Lock()
+
+
+def _unspread_parts(start: int, end: int) -> list:
+    """The parts of ``[start, end)`` not yet in `_spread_ranges`, which are
+    then recorded as spread. Under `_spread_lock`."""
+    import bisect
+    parts, cursor = [], start
+    i = bisect.bisect_right(_spread_ranges, (start, float("inf"))) - 1
+    i = max(i, 0)
+    while cursor < end and i < len(_spread_ranges):
+        lo, hi = _spread_ranges[i]
+        if hi <= cursor:
+            i += 1
+            continue
+        if lo >= end:
+            break
+        if lo > cursor:
+            parts.append((cursor, lo))
+        cursor = max(cursor, hi)
+        i += 1
+    if cursor < end:
+        parts.append((cursor, end))
+    if parts:
+        merged = sorted([*_spread_ranges, (start, end)])
+        _spread_ranges[:] = []
+        for lo, hi in merged:
+            if _spread_ranges and lo <= _spread_ranges[-1][1]:
+                _spread_ranges[-1] = (_spread_ranges[-1][0], max(hi, _spread_ranges[-1][1]))
+            else:
+                _spread_ranges.append((lo, hi))
+    return parts
+
+
+def _spread_present_pages(start: int, end: int):
+    """Move the pages of ``[start, end)`` that are present but not on their
+    interleave node: the block was first touched outside a field (NumPy
+    work on the calling thread, before or beside Tack), so its pages sit on
+    that thread's node, and the range's policy does not move a present
+    page. Each `_SPREAD_STEP` of address goes to the next memory node in
+    turn. Once per range: `_unspread_parts` remembers what was done."""
+    nodes = [n for n in range(_numa_max_node + 1) if _numa_node_mask >> n & 1]
+    with _spread_lock:
+        parts = _unspread_parts(start, end)
+    for lo, hi in parts:
+        pages = np.arange(lo, hi, 4096, dtype=np.uint64)
+        # The kernel's answers go into ctypes buffers: these are the
+        # backend's bookkeeping, not arrays a field allocates.
+        status = np.frombuffer((ctypes.c_int32 * len(pages))(), dtype=np.int32)
+        if _libc.syscall(_SYS_MOVE_PAGES, 0, ctypes.c_ulong(len(pages)),
+                         ctypes.c_void_p(pages.ctypes.data), None,
+                         ctypes.c_void_p(status.ctypes.data), 0) != 0:
+            continue
+        want = np.asarray(nodes, dtype=np.int32)[
+            (pages // _SPREAD_STEP) % len(nodes)]
+        move = (status >= 0) & (status != want)
+        if not move.any():
+            continue
+        moving = np.ascontiguousarray(pages[move])
+        targets = np.ascontiguousarray(want[move])
+        result = (ctypes.c_int32 * len(moving))()
+        _libc.syscall(_SYS_MOVE_PAGES, 0, ctypes.c_ulong(len(moving)),
+                      ctypes.c_void_p(moving.ctypes.data),
+                      ctypes.c_void_p(targets.ctypes.data),
+                      result, _MPOL_MF_MOVE)
 
 
 def _interleave_range(address: int, nbytes: int) -> bool:
@@ -186,9 +260,10 @@ def _interleave_range(address: int, nbytes: int) -> bool:
     on the range governs a page's first fault, whichever thread takes it,
     and stays with the range when glibc hands the block out again, so a
     block whose range got it before its first touch is interleaved for
-    good. Pages already present keep their node: the first allocation of
-    a range decides. A bound thread (``numactl --membind``) keeps its
-    binding, as `_NumaInterleave` does.
+    good. Pages already present -- a block NumPy used first -- are moved
+    once, the first time a field lands on their range
+    (`_spread_present_pages`). A bound thread (``numactl --membind``)
+    keeps its binding, as `_NumaInterleave` does.
     """
     if not _numa_available or nbytes < _INTERLEAVE_MIN_BYTES:
         return False
@@ -200,9 +275,12 @@ def _interleave_range(address: int, nbytes: int) -> bool:
     if end <= start:
         return False
     mask = (ctypes.c_ulong * 1)(_numa_node_mask)
-    return _libc.syscall(_SYS_MBIND, ctypes.c_ulong(start), ctypes.c_ulong(end - start),
-                         _MPOL_INTERLEAVE, mask, ctypes.c_ulong(_numa_max_node + 2),
-                         0) == 0
+    if _libc.syscall(_SYS_MBIND, ctypes.c_ulong(start), ctypes.c_ulong(end - start),
+                     _MPOL_INTERLEAVE, mask, ctypes.c_ulong(_numa_max_node + 2),
+                     0) != 0:
+        return False
+    _spread_present_pages(start, end)
+    return True
 
 
 # ── glibc: keep freed pages ──────────────────────────────────────────

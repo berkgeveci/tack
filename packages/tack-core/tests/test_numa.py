@@ -257,11 +257,17 @@ from test_numa import pages_per_node
 tack.init(arch=tack.cpu, num_threads=4)
 backend = tack.runtime.dispatch.get_backend()
 assert backend.malloc_tuned, "TACK_CPU_MALLOC=1 did not take"
-n = (64 << 20) // 4
+# 16 MiB: below glibc's 32 MiB mmap threshold, so blocks come from the
+# heap and are handed out again (larger ones are fresh mappings).
+n = (16 << 20) // 4
+import numpy as np
+scratch = np.empty(n, np.float32)
+scratch.fill(0.0)             # NumPy work on this thread places the block first
+del scratch
 for round in range(3):
     buf = backend.allocate_field(tack.f32, (n,))
     buf._data.fill(1.0)       # first touched serially, by this thread
-    hist = pages_per_node(buf.address, 64 << 20)
+    hist = pages_per_node(buf.address, 16 << 20)
     assert len(hist) > 1, f"round {{round}}: all pages on one node: {{dict(hist)}}"
     biggest = max(hist.values()) / sum(hist.values())
     assert biggest < 0.75, f"round {{round}}: lopsided placement: {{dict(hist)}}"
@@ -275,10 +281,12 @@ def test_a_field_the_caller_touches_is_spread_and_stays_spread_when_reused():
     """TA-49. A field the calling thread touches first -- a serial launch,
     `from_numpy` -- is spread over the nodes like one the workers touch,
     since its range carries the interleave policy (`_interleave_range`);
-    and with freed pages kept (`TACK_CPU_MALLOC=1`) the block handed out
-    again keeps that placement. Without the policy the pages sat on the
-    caller's node and stayed there for every later use. In a fresh
-    process, since keeping pages is process-wide."""
+    a block NumPy placed before the field got it has its present pages
+    moved once (`_spread_present_pages`); and with freed pages kept
+    (`TACK_CPU_MALLOC=1`) the block handed out again keeps that placement.
+    Without these the pages sat on the caller's node and stayed there for
+    every later use. In a fresh process, since keeping pages is
+    process-wide."""
     import os
     import subprocess
     import sys
