@@ -23,6 +23,7 @@ from tack.runtime.kernel_utils import resolve_variant
 # x86-64 syscall number.  Only used on machines where the backend has already
 # decided it knows the numbers, i.e. where _numa_available is True.
 _SYS_MOVE_PAGES = 279
+_PR_SET_THP_DISABLE = 41
 
 requires_numa = pytest.mark.skipif(
     not cpu._numa_available,
@@ -40,6 +41,57 @@ def pages_per_node(addr: int, nbytes: int) -> Counter:
                       status, 0)
     assert rc == 0, f"move_pages failed: errno {ctypes.get_errno()}"
     return Counter(status)
+
+
+def small_pages():
+    """Fault this process's new memory in 4K pages, as the placement checks
+    count them. With transparent huge pages on `always` a fault takes a 2 MB
+    page, and where a node has no free 2 MB block left the kernel takes one
+    from another node, whatever the policy: on illyad, node 1 full of slab,
+    an interleaved array came out {0: 16128, 1: 256} and one bound to node 1
+    {0: 15872, 1: 512}, against 8192/8192 and all on node 1 in 4K pages. That
+    measures the host's free huge pages, not Tack's policy. Inherited by
+    threads, so the workers' first touches are small pages too."""
+    libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+    if libc.prctl(_PR_SET_THP_DISABLE, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_THP_DISABLE)")
+
+
+def memory_nodes():
+    """The nodes interleave places pages on: those with memory, as the CPU
+    backend found them (`cpu._numa_node_mask`). A node with CPUs and no
+    memory -- nodes 2 and 3 of jura's EPYC -- holds no pages and has no
+    free pages, so it is never one a placement check needs room on."""
+    return [n for n in range(cpu._numa_max_node + 1) if cpu._numa_node_mask >> n & 1]
+
+
+def require_free_pages(nodes, nbytes):
+    """Skip, with the numbers, when a node the check places pages on has no
+    room for them above its low watermark. The allocator takes a page from
+    the node the policy names only while that node is above the mark, and
+    with `zone_reclaim_mode` 0 it falls back to another node rather than
+    reclaim, so no policy can place pages there: on illyad, node 1 full of
+    slab sat at 221830 free pages against a low mark of 221432, and an
+    interleaved array came out all on node 0, in 4K pages as in 2 MB ones."""
+    room = {}
+    node = None
+    free = low = 0
+    with open("/proc/zoneinfo") as zoneinfo:
+        for line in zoneinfo:
+            words = line.split()
+            if line.startswith("Node "):
+                node = int(words[1].rstrip(","))
+            elif words[:2] == ["pages", "free"]:
+                free = int(words[2])
+            elif words[:1] == ["low"] and node is not None:
+                low = int(words[1])
+                room[node] = room.get(node, 0) + max(0, free - low)
+    # Interleave puts 1/len(nodes) of the pages on each; ask for twice that.
+    need = 2 * nbytes // 4096 // len(nodes)
+    short = {n: room.get(n, 0) for n in nodes if room.get(n, 0) < need}
+    if short:
+        pytest.skip(f"node(s) without {need} free pages above the low watermark "
+                    f"(have {short}): the kernel places these pages elsewhere")
 
 
 def test_interleave_constant_is_the_kernels():
@@ -96,6 +148,7 @@ def test_interleave_context_spreads_pages():
     import os
     import subprocess
     import sys
+    require_free_pages(memory_nodes(), 64 << 20)
     code = _INTERLEAVE_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
     run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          timeout=300)
@@ -108,7 +161,9 @@ import sys
 sys.path.insert(0, {tests!r})
 import numpy as np
 from tack.runtime import cpu
-from test_numa import pages_per_node
+from test_numa import pages_per_node, small_pages
+
+small_pages()
 
 nbytes = 64 << 20
 with cpu._NumaInterleave():
@@ -144,7 +199,9 @@ import numpy as np
 import tack
 from tack.lang.array import Array
 from tack.runtime.cpu import CPUBackend
-from test_numa import _fan_out, _number, pages_per_node
+from test_numa import _fan_out, _number, pages_per_node, small_pages
+
+small_pages()
 
 backend = CPUBackend(num_threads=4)
 n = (64 << 20) // 4
@@ -187,6 +244,7 @@ def test_a_array_the_workers_write_is_spread_across_the_nodes(pool, require_idle
     the 75% the assertion allows (77% on mustafar-linux under a suite run;
     seen on illyad and headroom too)."""
     require_idle()
+    require_free_pages(memory_nodes(), 64 << 20)
     import os
     import subprocess
     import sys
@@ -238,6 +296,7 @@ def test_a_bound_thread_keeps_its_policy_and_its_node():
     import os
     import subprocess
     import sys
+    require_free_pages([0], 64 << 20)
     code = _BOUND_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
     run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          timeout=300)
@@ -250,7 +309,9 @@ import sys
 sys.path.insert(0, {tests!r})
 import tack
 from tack.runtime import cpu
-from test_numa import _MPOL_BIND, _set_policy, pages_per_node
+from test_numa import _MPOL_BIND, _set_policy, pages_per_node, small_pages
+
+small_pages()
 
 _set_policy(_MPOL_BIND, 1)
 # One thread: the fill runs on this, bound, thread.
