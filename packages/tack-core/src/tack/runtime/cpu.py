@@ -169,7 +169,7 @@ def _init_numa():
 _init_numa()
 
 
-# A field of at least this many bytes has its pages interleaved over the
+# An array of at least this many bytes has its pages interleaved over the
 # memory nodes whoever touches them first (`_interleave_range`).
 _INTERLEAVE_MIN_BYTES = 1 << 20
 # Pages already present when a range is first seen are spread in steps of
@@ -215,7 +215,7 @@ def _unspread_parts(start: int, end: int) -> list:
 
 def _spread_present_pages(start: int, end: int):
     """Move the pages of ``[start, end)`` that are present but not on their
-    interleave node: the block was first touched outside a field (NumPy
+    interleave node: the block was first touched outside an array (NumPy
     work on the calling thread, before or beside Tack), so its pages sit on
     that thread's node, and the range's policy does not move a present
     page. Each `_SPREAD_STEP` of address goes to the next memory node in
@@ -226,7 +226,7 @@ def _spread_present_pages(start: int, end: int):
     for lo, hi in parts:
         pages = np.arange(lo, hi, 4096, dtype=np.uint64)
         # The kernel's answers go into ctypes buffers: these are the
-        # backend's bookkeeping, not arrays a field allocates.
+        # backend's bookkeeping, not arrays it hands out.
         status = np.frombuffer((ctypes.c_int32 * len(pages))(), dtype=np.int32)
         if _libc.syscall(_SYS_MOVE_PAGES, 0, ctypes.c_ulong(len(pages)),
                          ctypes.c_void_p(pages.ctypes.data), None,
@@ -261,7 +261,7 @@ def _interleave_range(address: int, nbytes: int) -> bool:
     and stays with the range when glibc hands the block out again, so a
     block whose range got it before its first touch is interleaved for
     good. Pages already present -- a block NumPy used first -- are moved
-    once, the first time a field lands on their range
+    once, the first time an array lands on their range
     (`_spread_present_pages`). A bound thread (``numactl --membind``)
     keeps its binding, as `_NumaInterleave` does.
     """
@@ -1028,7 +1028,7 @@ class CPUBackend(Backend):
         # binding. Filling here was serial, and dearer after a fan-out
         # while the workers' caches owned the lines: at 5M cells on eight
         # threads of a 2 GHz Xeon, allocation was 130 of threshold's
-        # 276 ms and 77 of cell-to-point's 135. A large field's range is
+        # 276 ms and 77 of cell-to-point's 135. A large array's range is
         # interleaved whoever touches it first (`_interleave_range`).
         buf = NumpyBuffer(dtype.numpy_dtype, shape)
         _interleave_range(buf.address, buf.nbytes)
