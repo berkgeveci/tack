@@ -42,7 +42,7 @@ def _resolve_clang(cxx=False):
         return _explicit_compiler(setting)
     if cxx and os.environ.get("TACK_CLANG"):
         compiler = Path(_explicit_compiler("TACK_CLANG"))
-        match = re.fullmatch(r"clang((?:-\d+)?(?:\.exe)?)", compiler.name)
+        match = re.fullmatch(r"clang((?:-\d+)?(?i:\.exe)?)", compiler.name)
         if not match:
             raise _Unavailable(
                 f"cannot derive clang++ from TACK_CLANG={str(compiler)!r}; "

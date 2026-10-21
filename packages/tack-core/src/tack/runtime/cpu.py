@@ -889,8 +889,9 @@ def _windows_core_count() -> int | None:
     its own size, so counting the processor-core ones needs no unpacking of
     the union that follows.
 
-    Untested — no Windows machine to hand. It fails to None rather than
-    guessing, and the caller falls back to the logical count.
+    Checked on Windows Server 2022 (an m6i.xlarge: 2 cores, 4 logical
+    processors, 2 counted). It fails to None rather than guessing, and the
+    caller falls back to the logical count.
     """
     try:
         import ctypes
@@ -925,11 +926,8 @@ def _windows_core_count() -> int | None:
         # itself can fail (OSError), and a record layout that does not
         # parse raises from `int.from_bytes` (ValueError/TypeError).
         #
-        # Narrow specifically *because* this code has never run -- there is
-        # no Windows machine here. A broad `except Exception` would hide a
-        # genuine bug in it for exactly as long as that stays true, which
-        # is the worst place to be lenient: untested code is where an
-        # unexpected exception is most likely to be information.
+        # Narrow on purpose: this runs on one Windows machine only, and a
+        # broad `except Exception` would hide a genuine bug on another.
         return None
 
 

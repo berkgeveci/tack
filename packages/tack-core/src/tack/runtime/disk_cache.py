@@ -638,6 +638,17 @@ def _write_atomically(path, data):
         raise
 
 
+def _write_entry(path, data):
+    """Windows refuses to replace a file another process has open (reading
+    it, or writing the same entry). Entries are keyed by content, so the one
+    already there will do."""
+    try:
+        _write_atomically(path, data)
+    except PermissionError:
+        if os.name != "nt" or not path.exists():
+            raise
+
+
 class _Cache:
     """One directory, one mode, one optional bundle, for this process."""
 
@@ -737,12 +748,12 @@ class _Cache:
         try:
             try:
                 folder.mkdir(exist_ok=True, mode=0o700)
-                _write_atomically(folder / f"{key}.{kind}", data)
+                _write_entry(folder / f"{key}.{kind}", data)
             except FileNotFoundError:
                 # Another process's prune removed the emptied folder.
                 self.root.mkdir(exist_ok=True, mode=0o700)
                 folder.mkdir(exist_ok=True, mode=0o700)
-                _write_atomically(folder / f"{key}.{kind}", data)
+                _write_entry(folder / f"{key}.{kind}", data)
             _count(f"{kind}_write")
         except OSError as e:
             self.writes = False
