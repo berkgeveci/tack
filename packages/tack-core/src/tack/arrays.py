@@ -47,6 +47,8 @@ beside it, not as attributes a kernel would receive (only ``length``, for
 implicit, and ``materialize`` stores one, by a kernel.
 """
 
+import math
+
 import numpy as np
 
 import tack
@@ -277,7 +279,7 @@ class CartesianProduct(_Implicit):
         self.xs, self.ys, self.zs = (self._axis(a, dtype, device) for a in (x, y, z))
         self.dims = (self.xs.shape[0], self.ys.shape[0], self.zs.shape[0])
         self.px, self.py = self.dims[0], self.dims[1]
-        _metadata(self, np.prod(self.dims), 3, dtype)
+        _metadata(self, math.prod(self.dims), 3, dtype)
 
     @staticmethod
     def _axis(values, dtype, device=None):
@@ -341,7 +343,7 @@ class UniformCoordinates(_Implicit):
         # puts the grid on ``device`` (by default the default device).
         self.direction = _store(matrix.reshape(-1), dtype, device)
         self._origin, self._spacing, self._matrix = tuple(origin), tuple(spacing), matrix
-        _metadata(self, np.prod(dims), 3, dtype)
+        _metadata(self, math.prod(dims), 3, dtype)
 
     @property
     def point_dims(self):

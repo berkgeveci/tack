@@ -12,6 +12,7 @@ transfers copy values into or out of backend storage. On CUDA transfers
 can go over PCIe.
 """
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -276,7 +277,7 @@ class Array:
     @property
     def scalar_size(self):
         """Number of scalar components in storage."""
-        return int(np.prod(self.storage_shape))
+        return int(math.prod(self.storage_shape))
 
     @property
     def nbytes(self) -> int:
@@ -487,7 +488,7 @@ class Array:
         if vector_shape is None:
             return self._buffer.read_range(flat, 1)[0].item()
         element_shape = vector_shape[len(shape):]
-        count = int(np.prod(element_shape))
+        count = int(math.prod(element_shape))
         return self._buffer.read_range(flat * count, count).reshape(element_shape)
 
     def __setitem__(self, index, value):
@@ -545,13 +546,13 @@ class Array:
         if new_shape.count(-1) > 1:
             raise ValueError("reshape can infer at most one dimension")
         if -1 in new_shape:
-            known = int(np.prod([n for n in new_shape if n != -1]))
+            known = int(math.prod([n for n in new_shape if n != -1]))
             if known == 0 or self.size % known:
                 raise ValueError(f"cannot reshape {self.shape} ({self.size} elements) "
                                  f"to {tuple(shape)}")
             new_shape[new_shape.index(-1)] = self.size // known
         new_shape = tuple(new_shape)
-        new_size = int(np.prod(new_shape))
+        new_size = int(math.prod(new_shape))
         if new_size != self.size:
             raise ValueError(
                 f"Cannot reshape {self.shape} ({self.size} elements) "
@@ -772,7 +773,7 @@ def _array_view(dtype, shape, buffer, writable=True, device=None):
     if not isinstance(dtype, (ScalarType, ElementType)):
         raise TypeError("dtype must be a Tack scalar, vector or matrix type")
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
-    storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
+    storage = (int(math.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
     out = Array(scalar, storage, buffer, writable, device)
     if isinstance(dtype, ElementType):
         out._vector_n = dtype.size
@@ -830,7 +831,7 @@ def empty(shape, dtype=f32, *, device=None, exportable=False, layout="aos") -> A
                                     exportable=exportable) for _ in range(dtype.size)),
                         dtype.shape)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
-    storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
+    storage = (int(math.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
     buffer = backend.allocate_array(scalar, storage, exportable=exportable)
     return _array_view(dtype, shape, buffer, device=backend)
 
@@ -1130,7 +1131,7 @@ def array_from_ptr(ptr, shape, dtype, *, device=None, writable: bool = False) ->
     dtype = as_dtype(dtype)
     if isinstance(dtype, ElementType):
         scalar = dtype.scalar_dtype
-        storage = (int(np.prod(shape)) * dtype.size,)
+        storage = (int(math.prod(shape)) * dtype.size,)
     else:
         scalar, storage = dtype, shape
     backend = _target(device)
