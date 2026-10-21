@@ -1,11 +1,16 @@
 """Compiler selection, tool failures and real host preflight coverage."""
 
+import os
 import subprocess
 from pathlib import Path
 
 import compiler_tools as tools
 import pytest
 
+# Windows runs (and shutil.which finds) only files with a PATHEXT suffix,
+# and a PATH lookup returns the suffix in PATHEXT's case (clang.EXE).
+_EXE = ".exe" if os.name == "nt" else ""
+_same = os.path.normcase
 
 @pytest.fixture(autouse=True)
 def clear_probe_cache():
@@ -23,7 +28,7 @@ def compiler_env(monkeypatch, tmp_path):
 
 
 def _driver(root, name="clang"):
-    path = root / name
+    path = root / (name if name.endswith(".exe") else name + _EXE)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("placeholder for controlled subprocess tests\n")
     path.chmod(0o755)
@@ -113,7 +118,7 @@ def test_missing_cpp_sibling_never_falls_back_to_path(
 
 def test_symlink_keeps_selected_installation_sibling(compiler_env, monkeypatch):
     actual = _driver(compiler_env / "real", "clang-15")
-    selected = compiler_env / "selected" / "clang"
+    selected = compiler_env / "selected" / ("clang" + _EXE)
     selected.parent.mkdir()
     selected.symlink_to(actual)
     sibling = _driver(selected.parent, "clang++")
@@ -125,8 +130,8 @@ def test_versioned_drivers_are_found_without_unversioned_names(
         compiler_env, successful_probe):
     clang = _driver(compiler_env, "clang-15")
     clangxx = _driver(compiler_env, "clang++-15")
-    assert tools.require_clang() == clang
-    assert tools.require_clang("cxx") == clangxx
+    assert _same(tools.require_clang()) == _same(clang)
+    assert _same(tools.require_clang("cxx")) == _same(clangxx)
 
 
 @pytest.mark.parametrize("mode,stage,diagnostic", [
@@ -148,7 +153,7 @@ def test_unusable_tools_have_preflight_diagnostics(
 
     def run(command, **kwargs):
         current = "version" if "--version" in command else (
-            "compile" if command[0] == driver else "execute")
+            "compile" if _same(command[0]) == _same(driver) else "execute")
         if stage == "identity" and current == "version":
             return subprocess.CompletedProcess(command, 0, diagnostic, "")
         if current == stage:
