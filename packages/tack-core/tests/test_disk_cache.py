@@ -616,6 +616,20 @@ def test_concurrent_writers_leave_whole_entries(tmp_path):
     assert after["stats"].get("variant_miss", 0) == 0
 
 
+def test_an_entry_open_elsewhere_does_not_stop_writes(tmp_path):
+    """Windows refuses to replace a file that is open; the entry there is
+    kept, and the process goes on storing others."""
+    cache = disk_cache._Cache(tmp_path, "write", 0)
+    key = "ab" + "0" * 62
+    cache.put(key, "variant", {"key": key, "value": 1})
+    entry = cache.root / "ab" / f"{key}.variant"
+    with open(entry, "rb"):
+        cache.put(key, "variant", {"key": key, "value": 2})
+    assert cache.writes
+    assert cache.get(key, "variant")["value"] in (1, 2)
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
 class _FakeComm:
     """What ``load_bundle`` uses of an mpi4py communicator."""
 
