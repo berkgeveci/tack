@@ -26,7 +26,7 @@ def check_quickstarts():
     with tempfile.TemporaryDirectory(prefix="tack-guide-check-") as temporary:
         for name in QUICKSTARTS:
             page = guide / f"{name}.md"
-            blocks = re.findall(r"```python\n(.*?)```", page.read_text(), flags=re.S)
+            blocks = re.findall(r"```python\n(.*?)```", page.read_text(encoding="utf-8"), flags=re.S)
             if not blocks:
                 raise RuntimeError(f"No Python quick start in {page.name}")
             code = blocks[0]
@@ -35,7 +35,7 @@ def check_quickstarts():
             if name == "09-visualization":
                 code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'
             script = Path(temporary) / f"{name}.py"
-            script.write_text(code)
+            script.write_text(code, encoding="utf-8")
             print(f"Checking Markdown quick start: {page.name} on cpu", flush=True)
             subprocess.run([sys.executable, str(script)], check=True, timeout=120,
                            cwd=temporary)
@@ -48,10 +48,10 @@ def check_quickstarts():
         for page in sorted(guide.glob("*.md")):
             blocks = re.findall(
                 r"<!-- tack-check: ([a-z0-9-]+) -->\s*```python\n(.*?)```",
-                page.read_text(), flags=re.S)
+                page.read_text(encoding="utf-8"), flags=re.S)
             for name, code in blocks:
                 script = Path(temporary) / f"{page.stem}-{name}.py"
-                script.write_text(code)
+                script.write_text(code, encoding="utf-8")
                 print(f"Checking Markdown example: {page.name}/{name} on cpu", flush=True)
                 subprocess.run([sys.executable, str(script)], check=True, timeout=120,
                                cwd=temporary)
