@@ -56,7 +56,7 @@ def {name}({name}, out, scale):
             {value} = {array}[0] - 1
         out[enum] = {value} * scale
 '''
-    path.write_text(source)
+    path.write_text(source, encoding="utf-8")
     spec = importlib.util.spec_from_file_location('_tack_identifier_test', path)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, spec.name, module)
@@ -276,7 +276,7 @@ def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path)
     for kernel in [named_kernel, _helper_collisions]:
         function = _packed(kernel, (data, out, 5))
         path = tmp_path / 'kernel.cl'
-        path.write_text(generate_opencl_source(function))
+        path.write_text(generate_opencl_source(function), encoding="utf-8")
         result = subprocess.run([clang, '-target', 'x86_64-unknown-linux-gnu',
                                  '-x', 'cl', '-cl-std=CL1.2', '-fsyntax-only', str(path)],
                                 capture_output=True, text=True)
@@ -315,7 +315,7 @@ int main() {{
 }}
 '''
     cpp, executable = tmp_path / 'kernel.cpp', tmp_path / 'kernel'
-    cpp.write_text(source)
+    cpp.write_text(source, encoding="utf-8")
     result = subprocess.run([clang, '-std=c++14', '-O2',
                              '-fsanitize=undefined', '-fno-sanitize-recover=all',
                              str(cpp), '-o', str(executable)], capture_output=True, text=True)
