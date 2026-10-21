@@ -7,6 +7,7 @@ kernels give the results they give without debug mode, and debug mode off
 generates the code it always did.
 """
 
+import re
 import threading
 
 import numpy as np
@@ -18,6 +19,7 @@ from tack.runtime.dispatch import env_flag
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 _FILE = __file__
+_FILE_RE = re.escape(_FILE)     # a Windows path's backslashes are escapes
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +131,7 @@ def test_an_out_of_bounds_store_is_skipped(debug):
     x = _array(np.arange(4))
     y = _array(np.zeros(4))
     after = _array(np.full(4, 7))
-    with pytest.raises(IndexError, match=rf"y\[i \+ k\] at {_FILE}:{_line('# scatter store')}"
+    with pytest.raises(IndexError, match=rf"y\[i \+ k\] at {_FILE_RE}:{_line('# scatter store')}"
                                          r", column 9: index [45] is outside \[0, 4\)"):
         _scatter(x, y, 2)
     np.testing.assert_array_equal(y.numpy(), [0, 0, 0, 1])
@@ -202,7 +204,7 @@ def _local(out, k):
 
 def test_local_arrays_are_checked_against_their_size(debug):
     out = _array(np.zeros(4))
-    with pytest.raises(IndexError, match=rf"tmp\[i \+ k\] at {_FILE}:{_line('# local load')}, "
+    with pytest.raises(IndexError, match=rf"tmp\[i \+ k\] at {_FILE_RE}:{_line('# local load')}, "
                                          r"column 18: index 4 is outside \[0, 4\)"):
         _local(out, 1)
     np.testing.assert_array_equal(out.numpy(), [1, 1, 1, 0])
