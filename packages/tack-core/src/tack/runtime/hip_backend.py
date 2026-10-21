@@ -26,6 +26,7 @@ Requires: hip-python (the ``[hip]`` extra)
 import contextlib
 import ctypes
 import inspect
+import math
 import threading
 
 import numpy as np
@@ -345,7 +346,7 @@ class HIPBuffer(DeviceBuffer):
     def __init__(self, numpy_dtype, shape, queue=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
-        self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
         self._queue = queue = queue or _queue()
         with _on_device(queue.device):
             # hip-python returns None for a zero-byte request, which a launch
@@ -932,7 +933,7 @@ class HIPBackend(GPUBackend):
         buf = HIPBuffer.__new__(HIPBuffer)
         buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
         buf._shape = shape
-        buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
+        buf._nbytes = int(math.prod(shape)) * buf._numpy_dtype.itemsize
         # Store the address as an int. hip-python takes a NumPy integer
         # through the buffer protocol, as the address of the scalar's own
         # storage rather than the value it holds, so every copy through a
@@ -1023,7 +1024,7 @@ class HIPBackend(GPUBackend):
             return empty_reduction(op)
         if array.dtype is not f32:
             return reduce_numpy(array.numpy(), op)
-        n = int(np.prod(array.shape))
+        n = int(math.prod(array.shape))
         check_launch_size(f"Array {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):

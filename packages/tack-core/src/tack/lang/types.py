@@ -1,5 +1,6 @@
 """Tack type system — scalar types and type annotations for kernels."""
 
+import math
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -131,7 +132,7 @@ class ElementType:
 
     @property
     def size(self):
-        return int(np.prod(self.shape))
+        return int(math.prod(self.shape))
 
     def __repr__(self):
         if len(self.shape) == 1:

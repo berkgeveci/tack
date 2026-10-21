@@ -22,6 +22,7 @@ its packed scalars, and references to its arrays until it completes.
 """
 
 import atexit
+import math
 import threading
 import weakref
 from collections import deque
@@ -128,7 +129,7 @@ class MetalBuffer(DeviceBuffer):
     starts_zeroed = True
 
     def __init__(self, device, numpy_dtype, shape, sync=None):
-        nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize
+        nbytes = int(math.prod(shape)) * np.dtype(numpy_dtype).itemsize
         # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory). A
         # zero-length request returns no buffer, so an empty array (the
         # result of a filter that selected nothing) gets one byte it never
@@ -607,7 +608,7 @@ class MetalBackend(GPUBackend):
         buf._sync = _synchronize_all
         buf._shared = True       # another library's buffer, read without Tack
         buf._metal_buffer = ptr  # expects an MTLBuffer object
-        nbytes = int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize
+        nbytes = int(math.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize
         raw = ptr.contents().as_buffer(nbytes)
         buf._view = np.frombuffer(raw, dtype=dtype.numpy_dtype).reshape(shape)
         return buf
@@ -693,7 +694,7 @@ class MetalBackend(GPUBackend):
         if array.dtype is not f32:
             # Fall back to numpy for non-f32
             return reduce_numpy(array.numpy(), op)
-        n = int(np.prod(array.shape))
+        n = int(math.prod(array.shape))
         if n >= _MAX_LAUNCH:
             # The kernel holds the count and its thread position in 32 bits.
             # Reduce the shared buffer in place rather than copy 16 GB.

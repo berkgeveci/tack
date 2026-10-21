@@ -15,6 +15,7 @@ No per-dispatch copies — data stays on the GPU between kernel calls.
 import contextlib
 import ctypes
 import functools
+import math
 import os
 import sys
 import warnings
@@ -309,7 +310,7 @@ class CUDABuffer(DeviceBuffer):
     def __init__(self, numpy_dtype, shape, token=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
-        self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
         self._token = token = token or _current_context_token()
         stream = token.queue()
         with _in_context(token):
@@ -476,7 +477,7 @@ class ExportableCUDABuffer(DeviceBuffer):
     def __init__(self, numpy_dtype, shape, token=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
-        self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
 
         # Set before anything can fail, so __del__ can tell what was reached.
         self._mem_handle = None
@@ -1125,7 +1126,7 @@ class CUDABackend(GPUBackend):
         buf = CUDABuffer.__new__(CUDABuffer)
         buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
         buf._shape = shape
-        buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
+        buf._nbytes = int(math.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ptr  # integer or CUdeviceptr
         buf._owned = False
         buf._token = self._token_or_none or _current_context_token()
@@ -1212,7 +1213,7 @@ class CUDABackend(GPUBackend):
             return empty_reduction(op)
         if array.dtype is not f32:
             return reduce_numpy(array.numpy(), op)
-        n = int(np.prod(array.shape))
+        n = int(math.prod(array.shape))
         check_launch_size(f"Array {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):

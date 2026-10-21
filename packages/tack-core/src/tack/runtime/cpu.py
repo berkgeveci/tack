@@ -48,6 +48,7 @@ steady to within a few percent.
 import ctypes
 import ctypes.util
 import itertools
+import math
 import os
 import platform
 import threading
@@ -1075,7 +1076,7 @@ class CPUBackend(Backend):
         else:
             # Wrap raw C pointer as numpy array
             ct = np.ctypeslib.as_array(
-                (ctypes.c_char * (int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize))
+                (ctypes.c_char * (int(math.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize))
                 .from_address(int(ptr)))
             buf._data = np.frombuffer(ct, dtype=dtype.numpy_dtype).reshape(shape)
         return buf

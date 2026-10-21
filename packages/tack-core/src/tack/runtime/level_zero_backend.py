@@ -18,6 +18,7 @@ No Python packages needed — uses ctypes directly.
 
 import ctypes
 import ctypes.util
+import math
 import threading
 
 import numpy as np
@@ -968,7 +969,7 @@ class L0Buffer(DeviceBuffer):
         self._backend = backend
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
-        self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
 
         ze = _get_ze()
         alloc_size = max(self._nbytes, 1)
@@ -1772,7 +1773,7 @@ class LevelZeroBackend(GPUBackend):
         buf._backend = self
         buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
         buf._shape = shape
-        buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
+        buf._nbytes = int(math.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ctypes.c_void_p(int(ptr))
         buf._owned = False
         buf._shared = True      # someone else's memory: launches on it complete
@@ -1895,7 +1896,7 @@ class LevelZeroBackend(GPUBackend):
             self._reduce_cache[op] = self._compile_reduce(op)
 
         compiled_kernel = self._reduce_cache[op]
-        n = int(np.prod(array.shape))
+        n = int(math.prod(array.shape))
 
         # Create output buffer with init value
         init_vals = REDUCTION_IDENTITIES
