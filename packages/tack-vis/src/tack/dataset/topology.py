@@ -70,9 +70,19 @@ def uniform_cells(shape_id, count, id_dtype, points_per_cell=None):
 
 def _ids_of(values, id_dtype):
     """A topology's offsets or connectivity in ``id_dtype``: an implicit array kept
-    implicit (cast if its type differs), anything else stored."""
+    implicit -- a counting or constant one remade in that type, so it stays what
+    it is (and crosses to VTK as an affine or constant array), anything else
+    cast -- and a stored one converted."""
     if isinstance(values, _Implicit):
-        return values if values.dtype == id_dtype else Cast(values, id_dtype)
+        if values.dtype == id_dtype:
+            return values
+        if isinstance(values, CountingArray):
+            return CountingArray(values.size, start=values.start, step=values.step,
+                                 dtype=id_dtype)
+        if isinstance(values, ConstantArray):
+            return ConstantArray(int(values.value.numpy().reshape(-1)[0]), values.size,
+                                 dtype=id_dtype, device=values.device)
+        return Cast(values, id_dtype)
     return ids.as_ids(values, id_dtype, check=False)
 
 

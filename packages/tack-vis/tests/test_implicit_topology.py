@@ -71,7 +71,9 @@ def test_a_topology_keeps_its_implicit_arrays():
     types, offsets = uniform_cells(td.shapes.TRIANGLE, 2, tack.i32)
     t = td.UnstructuredTopology(types, offsets, tack.array([0, 1, 2, 1, 3, 2], dtype=tack.i32))
     assert _kinds(t) == ("ConstantArray", "CountingArray", "Array")
-    assert (t.num_cells, t.num_points, t.id_dtype) == (2, 4, tack.i32)
+    # i32 ids, or i64 under the suite's --ids=i64; the offsets follow, still counting.
+    assert (t.num_cells, t.num_points, t.id_dtype) == (2, 4, td.ids.choose())
+    assert t.offsets.dtype == t.id_dtype
     assert [(g.shape.__name__, g.count) for g in t.groups()] == [("Triangle", 2)]
     assert (t.faces().num_faces, t.edges().num_edges) == (5, 5)
     np.testing.assert_array_equal(np.asarray(t.offsets), [0, 3, 6])
@@ -94,7 +96,8 @@ def test_a_topology_keeps_its_implicit_arrays():
     narrow = td.UnstructuredTopology(ConstantArray(1, 3, dtype=tack.u8),
                                      CountingArray(4, dtype=tack.i64), CountingArray(3),
                                      num_points=3, id_dtype=tack.i32)
-    assert narrow.offsets.dtype == tack.i32             # cast, still implicit
+    assert narrow.offsets.dtype == tack.i32             # remade, still counting
+    assert _kinds(narrow)[1:] == ("CountingArray", "CountingArray")
     np.testing.assert_array_equal(np.asarray(narrow.offsets), [0, 1, 2, 3])
 
 
