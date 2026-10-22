@@ -3629,7 +3629,7 @@ read it, and dispatches on <code>handle_type</code>.</p>
 <tr>
 <td>CUDA (Windows)</td>
 <td><code>win32_kmt</code></td>
-<td>a legacy global KMT handle</td>
+<td>a legacy global KMT handle; WDDM mode only, since a GPU in TCC mode has no virtual memory management and cannot export</td>
 </tr>
 </tbody>
 </table>

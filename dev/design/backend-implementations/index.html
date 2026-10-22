@@ -3727,7 +3727,11 @@ empty grid. Buffers are stream-ordered: <code>cuMemAllocAsync</code> and
 <code>cuMemFreeAsync</code> on that stream, from the device's default memory pool
 with its release threshold raised, so freed memory is handed back out
 without a device round trip, and an array dropped while a queued launch
-still uses it is freed after that launch. <code>from_numpy</code>, <code>fill</code> and the
+still uses it is freed after that launch. A device without memory pools
+(a GPU in TCC mode on Windows) allocates with <code>cuMemAlloc</code> instead; since
+<code>cuMemFree</code> waits for the whole device, a dropped buffer is queued on its
+context and freed once the stream is idle, at the next allocation or sync
+(<code>_free_dropped</code>). <code>from_numpy</code>, <code>fill</code> and the
 allocation's zeroing are queued in order with the launches; <code>to_numpy</code> and
 <code>read_range</code> queue their copy and wait with <code>cuStreamSynchronize</code>.</p>
 <p><strong>Disk cache.</strong> The PTX NVRTC made is stored with the entry name, the
