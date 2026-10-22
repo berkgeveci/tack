@@ -67,6 +67,32 @@ that share everything else: spaces without a basis, fields, sets,
 
 `num_points` exists because a dataset may have points that no cell uses.
 
+**Implicit topology arrays.** An `UnstructuredTopology`'s `types`, `offsets`
+and `connectivity` may each be an implicit array from `tack.arrays`, kept as
+it is and computed where it is read, as Viskores' single-type cell sets keep
+theirs:
+
+- the types of cells all of one shape, a `ConstantArray` (u8);
+- the offsets of cells all of one size, a `CountingArray` with that size as
+  its step;
+- the connectivity of cells that each have their own points (vertex cells,
+  a 2D contour's lines), a `CountingArray` too.
+
+`uniform_cells(shape_id, count, id_dtype)` in `tack.dataset.topology` makes
+the first two. Filters whose output cells are all one shape give them:
+`contour` and `slice` (triangles, or lines in 2D), `tetrahedralize`,
+`triangulate`, `extract_edges`, the point extractions and `probe`'s vertex
+cells (all three implicit), and `threshold`, `extract_cells`,
+`extract_geometry` and `mask` of a topology of one shape. A topology of one
+shape groups its cells without a histogram of their types. Everything else
+reads them as it reads stored ones; `numpy()` computes them on the host.
+
+`dataset_to_vtk` hands them over as VTK's own: a `ConstantArray` of types
+becomes the cell type given as a number (VTK keeps it as a
+`vtkConstantArray`), a `CountingArray` a `vtkAffineArray`.
+`vtk_to_dataset` takes VTK's constant and affine arrays back as
+`ConstantArray` and `CountingArray`.
+
 ### Ids
 
 Every id a topology stores or derives has one integer type,

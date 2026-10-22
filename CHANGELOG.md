@@ -17,6 +17,26 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `mask_points`, `extract_edges`, `tetrahedralize`, `as_polygons`, `perot`
   and `shrink`.
 
+### Changed
+
+- Implicit topology arrays. An `UnstructuredTopology`'s `types`, `offsets`
+  and `connectivity` may be implicit arrays, kept as they are rather than
+  stored: a `ConstantArray` of types for cells all of one shape, a
+  `CountingArray` of offsets for cells all of one size, and a
+  `CountingArray` connectivity for cells that each have their own points
+  (`tack.dataset.topology.uniform_cells` makes the first two). Filters
+  whose cells are all one shape now give them: `contour` and `slice`,
+  `tetrahedralize`, `triangulate`, `extract_edges`, the point extractions
+  and `probe` (vertex cells: all three implicit), and `threshold`,
+  `extract_cells`, `extract_geometry` and `mask` of a topology of one shape.
+  A million triangles store their 12 MB of connectivity and nothing else,
+  against 5 MB more before. `dataset_to_vtk` and `vtk_to_dataset` map them
+  to and from VTK's `vtkConstantArray` and `vtkAffineArray`, through VTK's
+  pythonic API (`ug.cells = (type, vtkCellArray(offsets=...,
+  connectivity=...))`, `cells.offsets_array`, `grid.cell_types`). Code that
+  reads a topology's arrays as `tack.Array`s should use `numpy()`,
+  `np.asarray` or `tack.arrays.materialize`, which accept both.
+
 ## 0.5.0 — 2026-10-22
 
 The headline: the API freeze. Arrays are NumPy-style (`tack.Array` is

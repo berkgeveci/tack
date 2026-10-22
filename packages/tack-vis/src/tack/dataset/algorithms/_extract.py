@@ -6,11 +6,12 @@ polyhedral topology keeps the kept cells' faces once."""
 import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import _close, _compact, _kept_ids
 from tack.dataset.carry import Take, carry
 from tack.dataset.dataset import DataSet
-from tack.dataset.topology import UnstructuredTopology
+from tack.dataset.topology import UnstructuredTopology, uniform_cells
 
 
 @tack.kernel
@@ -29,6 +30,22 @@ def _kept_cells(cells, keep, slots, starts, types, offsets, connectivity, source
             at = starts[cell]
             types[slot] = tack.u8(cells.ID)
             offsets[slot] = at
+            sources[slot] = cell
+            for j in range(cells.NUM_POINTS):
+                p = cells.point_id(c, j)
+                connectivity[at + j] = p
+                tack.atomic_max(used, p, 1)
+
+
+@tack.kernel
+def _kept_uniform_cells(cells, keep, slots, starts, connectivity, sources, used):
+    # As _kept_cells, for a topology of one shape, whose types and offsets the
+    # output takes as implicit arrays.
+    for c in cells:
+        cell = cells.entity_id(c)
+        if keep[cell] == 1:
+            slot = slots[cell]
+            at = starts[cell]
             sources[slot] = cell
             for j in range(cells.NUM_POINTS):
                 p = cells.point_id(c, j)
@@ -73,16 +90,22 @@ def _keep_cells(data, keep, fields=None):
     length = exclusive_scan(sizes, starts, n) if n else 0
 
     num_points = data.num_points
-    types = tack.empty((count,), tack.u8)
-    offsets = tack.empty((count + 1,), idt)
     connectivity = tack.empty((length,), idt)
     sources = tack.empty((count,), idt)
     used = tack.zeros((num_points,), tack.i32)
-    for group in data.topology.groups():
-        if group.count:
+    present = [g for g in data.topology.groups() if g.count]
+    if len(present) == 1:
+        # One shape in, one shape out: the output's types and offsets are implicit.
+        types, offsets = uniform_cells(int(present[0].shape.ID), count, idt)
+        _kept_uniform_cells(present[0].view(), keep, slots, starts, connectivity, sources,
+                            used)
+    else:
+        types = tack.empty((count,), tack.u8)
+        offsets = tack.empty((count + 1,), idt)
+        for group in present:
             _kept_cells(group.view(), keep, slots, starts, types, offsets, connectivity,
                         sources, used)
-    _close(offsets, count, length)
+        _close(offsets, count, length)
     new_ids = tack.empty((num_points,), idt)
     kept_points = exclusive_scan(used, new_ids, num_points) if num_points else 0
     if length:
@@ -254,26 +277,18 @@ def _gather_offsets(starts, kept, total):
     return out
 
 
-@tack.kernel
-def _vertex_cells(types, offsets, connectivity, n):
-    for i in range(n):
-        types[i] = tack.u8(shapes.VERTEX)
-        offsets[i] = i
-        connectivity[i] = i
-        if i == 0:
-            offsets[n] = n
+def _vertex_cells(count, id_dtype):
+    """``count`` vertex cells, cell ``i`` at point ``i``: types, offsets and
+    connectivity all implicit, nothing stored."""
+    types, offsets = uniform_cells(shapes.VERTEX, count, id_dtype)
+    return types, offsets, CountingArray(count, dtype=id_dtype)
 
 
 def _keep_points(data, flags, fields):
     """The points whose ``flags`` (i32, one per point) is 1, each a vertex cell; point
     fields come along, cell fields do not."""
     _, kept, count = _compact(flags, data.id_dtype)
-    types = tack.empty((count,), tack.u8)
-    offsets = tack.zeros((count + 1,), data.id_dtype)
-    connectivity = tack.empty((count,), data.id_dtype)
-    if count:
-        _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
-    vertices = UnstructuredTopology(types, offsets, connectivity, num_points=count)
+    vertices = UnstructuredTopology(*_vertex_cells(count, data.id_dtype), num_points=count)
     return carry(data, vertices, points=Take(kept), fields=fields)
 
 
@@ -304,10 +319,5 @@ def _vertices(points, like=None):
 
     n = int(points.shape[0])
     idt = ids.for_output(like, n) if like is not None else ids.choose(None, n)
-    types = tack.empty((n,), tack.u8)
-    offsets = tack.zeros((n + 1,), idt)
-    connectivity = tack.empty((n,), idt)
-    if n:
-        _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
-    return DataSet(UnstructuredTopology(types, offsets, connectivity, num_points=n), points,
+    return DataSet(UnstructuredTopology(*_vertex_cells(n, idt), num_points=n), points,
                    dtype=like.dtype if like is not None else tack.f32)

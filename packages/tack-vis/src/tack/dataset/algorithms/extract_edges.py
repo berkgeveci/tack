@@ -7,22 +7,18 @@ from tack.dataset import shapes
 from tack.dataset.carry import Same, Take, carry
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1
-from tack.dataset.topology import UnstructuredTopology
+from tack.dataset.topology import UnstructuredTopology, uniform_cells
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_edges']
 
 
 @tack.kernel
-def _edge_cells(ids, rows, types, offsets, connectivity, n):
+def _edge_cells(ids, rows, connectivity, n):
     for i in range(n):
         row = rows[ids[i]]
-        types[i] = tack.u8(shapes.LINE)
-        offsets[i] = 2 * i
         connectivity[2 * i] = row[0]
         connectivity[2 * i + 1] = row[1]
-        if i == 0:
-            offsets[n] = 2 * n
 
 
 @on_inputs_device
@@ -50,11 +46,10 @@ def extract_edges(data, edges=None, fields=None):
         chosen = _edge_ids(data, edges, found.num_edges)
         n = chosen.shape[0]
         edges_to_cells = Take(chosen)
-    types = tack.empty((n,), tack.u8)
-    offsets = tack.zeros((n + 1,), idt)
+    types, offsets = uniform_cells(shapes.LINE, n, idt)       # all lines: implicit
     connectivity = tack.empty((2 * n,), idt)
     if n:
-        _edge_cells(chosen, found.rows, types, offsets, connectivity, n)
+        _edge_cells(chosen, found.rows, connectivity, n)
     lines = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
     return carry(data, lines, points=Same(), edges_to_cells=edges_to_cells, fields=fields)
 

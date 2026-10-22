@@ -3,6 +3,7 @@
 import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import (
     _close,
@@ -16,7 +17,7 @@ from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.carry import Interpolate, Pieces, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
-from tack.dataset.topology import UnstructuredTopology
+from tack.dataset.topology import UnstructuredTopology, uniform_cells
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['contour']
@@ -86,17 +87,6 @@ def _run_of_each(order, offsets, run_of, count):
 def _triangle_cells(sources, out):
     for t in range(out.shape[0]):
         out[t] = sources[3 * t]
-
-
-@tack.kernel
-def _triangles(rows, types, offsets, connectivity, count):
-    for t in range(count):
-        types[t] = tack.u8(shapes.TRIANGLE)
-        offsets[t] = 3 * t
-        for k in range(3):
-            connectivity[3 * t + k] = rows[3 * t + k]
-        if t == 0:
-            offsets[count] = 3 * count
 
 
 @on_inputs_device
@@ -181,14 +171,12 @@ def contour(data, field, value, merge_points=True, fields=None):
         _run_of_each(order, offsets, rows, count)
         points, edges, weights = merged, merged_edges, merged_weights
     else:
-        rows, count = tack.arange(n, dtype=odt), n
+        rows, count = CountingArray(n, dtype=odt), n          # each triangle its own points
 
-    types = tack.empty((triangles,), tack.u8)
-    tri_offsets = tack.zeros((triangles + 1,), odt)
-    connectivity = tack.empty((n,), odt)
-    if triangles:
-        _triangles(rows, types, tri_offsets, connectivity, triangles)
-    surface = UnstructuredTopology(types, tri_offsets, connectivity, num_points=count)
+    # Every cell a triangle, three points each: the types and offsets are
+    # implicit, and the connectivity is the triangles' rows of merged points.
+    types, tri_offsets = uniform_cells(shapes.TRIANGLE, triangles, odt)
+    surface = UnstructuredTopology(types, tri_offsets, rows, num_points=count)
     return carry(data, surface, points=Interpolate(edges, weights),
                  cells=Pieces(triangle_cells), geometry=Field(H1(surface), points),
                  fields=fields)
@@ -466,15 +454,11 @@ def _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_posit
 
 
 @tack.kernel
-def _line_cells(line_faces, point_of_face, types, offsets, connectivity, n):
+def _line_cells(line_faces, point_of_face, connectivity, n):
     for i in range(n):
         pair = line_faces[i]
-        types[i] = tack.u8(shapes.LINE)
-        offsets[i] = 2 * i
         connectivity[2 * i] = point_of_face[pair[0]]
         connectivity[2 * i + 1] = point_of_face[pair[1]]
-        if i == n - 1:
-            offsets[i + 1] = 2 * (i + 1)
 
 
 @tack.kernel
@@ -529,17 +513,6 @@ def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, position
                     at += 1
 
 
-@tack.kernel
-def _paired_lines(types, offsets, connectivity, n):
-    for i in range(n):
-        types[i] = tack.u8(shapes.LINE)
-        offsets[i] = 2 * i
-        connectivity[2 * i] = 2 * i
-        connectivity[2 * i + 1] = 2 * i + 1
-        if i == n - 1:
-            offsets[i + 1] = 2 * (i + 1)
-
-
 def _contour_cell_lines(data, field, isovalue, fields=None):
     """``contour`` of a 2D shape mesh whose field or geometry is per cell (``L2``):
     each cell's lines from its own values and corners, their points not shared,
@@ -566,12 +539,10 @@ def _contour_cell_lines(data, field, isovalue, fields=None):
         for group in groups:
             _cell_line_points(data.domain_view("cells", group), field.view(group), isovalue,
                               starts, line_cells, ends, weights, positions)
-    types = tack.empty((lines,), tack.u8)
-    offsets = tack.zeros((lines + 1,), odt)
-    connectivity = tack.empty((2 * lines,), odt)
-    if lines:
-        _paired_lines(types, offsets, connectivity, lines)
-    out = UnstructuredTopology(types, offsets, connectivity, num_points=2 * lines)
+    # Each line its own two points: everything about the cells is implicit.
+    types, offsets = uniform_cells(shapes.LINE, lines, odt)
+    out = UnstructuredTopology(types, offsets, CountingArray(2 * lines, dtype=odt),
+                               num_points=2 * lines)
     return carry(data, out, points=Interpolate(ends, weights), cells=Pieces(line_cells),
                  geometry=Field(H1(out), positions), fields=fields)
 
@@ -621,11 +592,10 @@ def _contour_lines(data, field, isovalue, fields=None):
     out_positions = tack.empty((count,), tack.vec(3, data.dtype))
     if count:
         _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_positions)
-    types = tack.empty((lines,), tack.u8)
-    offsets = tack.zeros((lines + 1,), odt)
+    types, offsets = uniform_cells(shapes.LINE, lines, odt)
     connectivity = tack.empty((2 * lines,), odt)
     if lines:
-        _line_cells(line_faces, point_of_face, types, offsets, connectivity, lines)
+        _line_cells(line_faces, point_of_face, connectivity, lines)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
     return carry(data, out, points=Interpolate(out_ends, out_weights), cells=Pieces(line_cells),
                  geometry=Field(H1(out), out_positions), fields=fields)
