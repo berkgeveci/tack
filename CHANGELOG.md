@@ -3,6 +3,20 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Added
+
+- Examples: `45_flow.py` (gradients, `flow_quantities`, `advect`,
+  `streamlines` and `perot` on a swirl whose answers are known exactly) and
+  `46_cut_and_sample.py` (`clip`, `extract_geometry`, `extract_points`,
+  `slice` and `probe` with implicit functions and a reused `CellLocator`),
+  each checking its results. The dataset tour now runs and checks the
+  algorithms no example showed: `implicit_values`, `point_elevation`,
+  `log_values`, `point_ids`, `cylindrical` and `spherical` (and back),
+  `mask_points`, `extract_edges`, `tetrahedralize`, `as_polygons`, `perot`
+  and `shrink`.
+
 ## 0.5.0 — 2026-10-22
 
 The headline: the API freeze. Arrays are NumPy-style (`tack.Array` is
