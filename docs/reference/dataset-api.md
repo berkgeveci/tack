@@ -455,6 +455,11 @@ for piece in pieces:
 s = td.statistics(pieces, "cells")                      # the whole grid's
 ```
 
+`packages/tack-vis/examples/44_partitioned_data.py` runs all of it: pieces,
+their ghost marks, work in a loop, reductions checked against the whole,
+pieces spread over several GPUs where there are, and a `.vtpd` file for
+ParaView.
+
 **Next** (the partitioned-data proposal's later phases): filters that carry
 ghost marks; global ids; ghost cells generated in one process; then MPI.
 

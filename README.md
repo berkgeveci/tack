@@ -411,7 +411,7 @@ User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
 
 ## Examples
 
-34 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
+35 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
 
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
@@ -422,7 +422,7 @@ uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # ta
 | Location | Count | Covers |
 |----------|------:|--------|
 | `packages/tack-core/examples/` | 28 | Kernels, arrays, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
-| `packages/tack-vis/examples/` | 6 | A tour of `tack.dataset` (every algorithm, checked), an MFEM solution through it, multi-block contour, VTK interop, flow (vorticity, particles, streamlines, Perot), cutting and sampling (clip, extract, slice, probe) |
+| `packages/tack-vis/examples/` | 7 | A tour of `tack.dataset` (every algorithm, checked), an MFEM solution through it, multi-block contour, VTK interop, partitioned data with ghost marks, flow (vorticity, particles, streamlines, Perot), cutting and sampling (clip, extract, slice, probe) |
 
 Numbers are unique within a package but repeat across packages — `tack-vis/31_multiblock_contour.py`
 and `tack-core/31_dawn_interop.py` both exist.
