@@ -11,7 +11,12 @@ and one rectilinear grid, each run through the same algorithms:
   array (three axes, nothing per point);
 - sets: the boundary faces, a face Set;
 - iteration domains: kernels over cells, faces, edges, or a set, once per
-  shape, reading fields through views built for that shape.
+  shape, reading fields through views built for that shape;
+- the smaller algorithms, each checked: implicit function values, point
+  elevation, logarithms, point ids, cylindrical and spherical coordinates
+  and back, every Nth point, the edges as lines, tetrahedra, the surface as
+  polygons, Perot's reconstruction of a vector from its face components,
+  and shrink.
 
 With --output DIR it writes, for ParaView:
   <grid>.vt[ur]          the grid, with H1 and Constant fields
@@ -159,6 +164,8 @@ def show(name, data):
           f"{kept.num_cells} cells on {kept.num_points} points; external faces: "
           f"{outside.num_cells}")
 
+    more_algorithms(data, surface)
+
     if args.output:
         os.makedirs(args.output, exist_ok=True)
         _write(dataset_to_vtk(data), os.path.join(args.output, name))
@@ -166,6 +173,67 @@ def show(name, data):
         _write(dataset_to_vtk(iso), os.path.join(args.output, f"{name}_contour"))
         _write(dataset_to_vtk(cut), os.path.join(args.output, f"{name}_slice"))
     return dg
+
+
+def more_algorithms(data, surface):
+    """The smaller algorithms, each checked against what it should give."""
+    x = data.positions()
+    n = data.num_points
+
+    # An implicit function at the points: a sphere's quadric, |x - c|^2 - r^2.
+    center, radius = x.mean(axis=0), 1.5
+    sphere = alg.implicit_values(data, td.Sphere(center, radius)).values.numpy()
+    assert np.allclose(sphere, ((x - center) ** 2).sum(axis=1) - radius ** 2, atol=1e-4)
+
+    # Position along a line, clamped to [0, 1] and mapped to the range.
+    low, high = x.min(axis=0), x.max(axis=0)
+    elevation = alg.point_elevation(data, low, high, (10.0, 20.0)).values.numpy()
+    t = ((x - low) @ (high - low)) / ((high - low) @ (high - low))
+    assert np.allclose(elevation, 10.0 + 10.0 * np.clip(t, 0, 1), atol=1e-4)
+
+    # A logarithm, and ids that store nothing.
+    data.fields["shifted"] = td.Field(td.H1(data), _scalars(np.arange(1, n + 1)))
+    logs = alg.log_values(data, "shifted", base=10.0).values.numpy()
+    assert np.allclose(logs, np.log10(np.arange(1, n + 1)), atol=1e-5)
+    ids = alg.point_ids(data)
+    assert np.array_equal(tack.arrays.to_host(ids.values), np.arange(n))
+
+    # The geometry in spherical and cylindrical coordinates, and back.
+    for to in (alg.spherical, alg.cylindrical):
+        there = to(data)
+        back = to(there, inverse=True).positions()
+        assert np.allclose(back, x, atol=1e-4), to.__name__
+    r_theta_z = alg.cylindrical(data).positions()
+    assert np.allclose(r_theta_z[:, 0], np.hypot(x[:, 0], x[:, 1]), atol=1e-5)
+
+    # Every third point as a vertex cell; the edges as line cells.
+    every_third = alg.mask_points(data, 3)
+    assert every_third.num_cells == (n + 2) // 3
+    lines = alg.extract_edges(data)
+    assert lines.num_cells == data.topology.edges().num_edges
+
+    # Tetrahedra by Viskores' tables: a hexahedron or voxel 5, a wedge 3, a
+    # pyramid 2, a tetrahedron 1.
+    per_shape = {"Hexahedron": 5, "Voxel": 5, "Wedge": 3, "Pyramid": 2, "Tetra": 1}
+    expected = sum(per_shape[g.shape.__name__] * g.count for g in data.topology.groups())
+    assert alg.tetrahedralize(data).num_cells == expected
+
+    # The boundary surface as polygons: the same faces, any number of points.
+    polygons = alg.as_polygons(surface)
+    assert isinstance(polygons.topology, td.PolygonalTopology)
+    assert polygons.num_cells == surface.num_cells
+
+    # Perot: a vector per cell from each face's normal component. A uniform
+    # field comes back exactly on cells with planar faces.
+    u = np.array([0.3, -1.0, 0.5])
+    normals, _ = alg.face_geometry(data)
+    flux = td.Field(td.Values(data, "faces"), _scalars(normals.values.numpy() @ u))
+    assert np.allclose(alg.perot(data, flux).values.numpy(), u, atol=1e-4)
+
+    print(f"  and the smaller algorithms: implicit values, elevation, logarithms, ids, "
+          f"spherical and cylindrical coordinates and back, {every_third.num_cells} of "
+          f"{n} points, {lines.num_cells} edges as lines, {expected} tetrahedra, "
+          f"{polygons.num_cells} polygons, Perot's reconstruction: all as expected")
 
 
 def explode(data, dg):
@@ -272,6 +340,16 @@ for c in range(mixed.num_cells):
     corners[rows] = centers[c] + 0.7 * (corners[rows] - centers[c])
 shrunk = td.DataSet(mixed.topology, td.Field(td.L2(mixed), _vectors(corners)),
                     fields={"height": mixed.fields["height"]})
+# shrink does the same, but toward the mean of each cell's corners, as VTK's
+# vtkShrinkFilter does (for a pyramid or a wedge that is not the parametric
+# center used above).
+toward = mixed.positions()[connectivity]
+for c in range(mixed.num_cells):
+    rows = slice(offsets[c], offsets[c + 1])
+    mean = toward[rows].mean(axis=0)
+    toward[rows] = mean + 0.7 * (toward[rows] - mean)
+by_shrink = alg.shrink(mixed, 0.7)
+assert np.allclose(tack.arrays.to_host(by_shrink.geometry.values), toward, atol=1e-5)
 gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.numpy()
 print(f"\nshrunk: the mixed grid with an L2 geometry, cells at 70%: "
       f"{shrunk.topology.faces().num_faces} faces, the same; 'height' over the "
