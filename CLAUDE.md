@@ -734,4 +734,17 @@ context, so this check is the only one that catches the mistake. The
 backend reports `device_memory_spaces = {"level_zero"}` via
 `zeMemGetAllocProperties`. See `test_level_zero_context.py`.
 
+## VTK
+
+Tack requires VTK 9.7.1 or later (the `interop` extra) and uses VTK's pythonic API in all VTK code -- the interop, tests, examples, tutorials, benchmarks and tools: keyword constructors (`vtkImageData(dimensions=..., spacing=...)`), properties (`grid.number_of_cells`, `cells.offsets_array`), `grid.points = vtkPoints(data=...)`, `grid.cells = (type, vtkCellArray(offsets=..., connectivity=...))`, dict-like `point_data`/`cell_data`, numpy-compatible arrays (`np.asarray(arr)`, `vtkFloatArray(x)`) in place of `numpy_support`, implicit arrays (`vtkConstantArray[dtype](n, v)`, `vtkAffineArray[dtype](n, slope, intercept)`), pipelines (`(a >> b)()`, a filter called on its input), and `isinstance` in place of `IsA`. Test a doubtful form against the wheel before relying on it; import `vtkmodules.vtkCommonDataModel` first, which registers the pythonic constructors. Where 9.7.1 has none, the classic call stays. Known gaps and traps in 9.7.1:
+
+- `vtkPoints(data=numpy)` stores doubles whatever the array's type: pass `vtkFloatArray(x)` to keep f32.
+- A missing array reads as a `NoneArray`, not `None`: test `name in ds.point_data.keys()`.
+- `point_data.scalars`/`.vectors` are not writable, and naming an array does not make it active: `SetActiveScalars`/`SetActiveVectors` stay.
+- A `vtkCharArray` has no numpy-compatible wrapper; NumPy reads it as bytes (view it as `int8`), and `point_data[...] = ` refuses one.
+- A filter with two outputs called as a function returns a tuple of both.
+- `vtkPNGWriter`/`vtkJPEGWriter` called on their input write raw pixels: connect and call `Write()`. An XML writer called on its input works, but returns `None` even when it fails.
+- An int cell type (`ug.cells = (type, ...)`) makes the types a `vtkConstantArray`, and `InsertNextCell` then records every new cell as that type.
+- Not indexable: `vtkMatrix3x3`/`4x4` (`GetElement`), `vtkPartitionedDataSet` (iterates, `GetPartition(i)`), and a partitioned collection iterates over its leaves. A `vtkStructuredGrid`'s `dimensions` is not readable (`GetDimensions`).
+
 ## Do not mention Claude in git commits

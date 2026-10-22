@@ -55,6 +55,9 @@ run the same validator with `--arch metal|cuda|hip|level_zero` on a hardware hos
 Figures are generated from actual script outputs by `docs/examples/figures.py`.
 Keep upstream source credits and the applicable license beside adapted examples.
 
+VTK code anywhere in the repository uses VTK's pythonic API (VTK 9.7.1 or
+later); `CLAUDE.md`'s VTK section lists the forms and the gaps in 9.7.1.
+
 Generate the figures with `uv run --with vtk python docs/examples/figures.py`.
 For a local VTK build, put its matching Python site-packages directory on
 `PYTHONPATH` and omit `--with vtk`. VTK is imported only when writing figures;
