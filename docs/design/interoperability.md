@@ -206,7 +206,7 @@ read it, and dispatches on `handle_type`.
 |---|---|---|
 | Metal | `mtl_buffer` | the `MTLBuffer`'s Objective-C object pointer (`objc.pyobjc_id`) |
 | CUDA (Linux) | `posix_fd` | a file descriptor from `cuMemExportToShareableHandle` |
-| CUDA (Windows) | `win32_kmt` | a legacy global KMT handle |
+| CUDA (Windows) | `win32_kmt` | a legacy global KMT handle; WDDM mode only, since a GPU in TCC mode has no virtual memory management and cannot export |
 
 Other buffers raise `RuntimeError` (`Backend ... does not support memory
 export`). CUDA memory from `cuMemAllocAsync` cannot be exported as an OS handle,

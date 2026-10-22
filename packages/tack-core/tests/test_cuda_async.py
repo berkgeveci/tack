@@ -4,6 +4,7 @@ completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
 import gc
+import sys
 import time
 
 import numpy as np
@@ -192,8 +193,10 @@ def test_a_wait_does_not_hold_the_context(wait):
     let the launcher make one launch per 910 ms wait (H100, driver 595);
     waiting for the stream first, it launches every millisecond."""
     import threading
+    if wait == "exported" and not cuda_backend._has_virtual_memory(get_backend().ordinal):
+        pytest.skip("this CUDA device has no virtual memory management (TCC mode)")
     out = tack.empty((1 << 18,))
-    exported = tack.empty((16,), exportable=True)
+    exported = tack.empty((16,), exportable=(wait == "exported"))
     short = tack.zeros((16,), tack.i32)
     iters = _long_launch(out)
     _add_into(short, 1)                      # compiled before the timing,
@@ -226,6 +229,34 @@ def test_a_wait_does_not_hold_the_context(wait):
     waiter.join()
     # At least one per 20 ms of a 1 ms cadence: a loaded host's 1 ms sleep
     # takes ~10 ms (illyad at load 120-185 reached 0.09 per ms), and a wait
-    # that blocks launches allows about one per wait (0.003 per ms).
-    assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
+    # that blocks launches allows about one per wait (0.003 per ms). Windows
+    # wakes a 1 ms sleep far later on a busy host: with four CPU-bound
+    # processes on aws-windows' 4 vCPUs a launch loop made 16 per second
+    # (0.016 per ms), and the whole suite's four workers once gave 0.027; it
+    # asks for one per 100 ms.
+    per_ms = 0.01 if sys.platform == "win32" else 0.05
+    assert launched >= elapsed * 1000 * per_ms, (launched, elapsed)
     assert short.numpy()[0] == 1 + launched
+
+
+@pytest.mark.usefixtures("no_debug")
+def test_dropping_an_array_does_not_wait_for_the_launches():
+    """An array dropped while a long launch is queued is not freed by
+    waiting for it. On a device without memory pools (a GPU in TCC mode on
+    Windows) `cuMemFree` waits for the whole device, so a garbage collection
+    that freed at once took the whole launch (1.1 s on a T4); the free waits
+    for the next allocation or sync that finds the stream idle. (Not timed
+    with `gc.collect`: late in a suite one takes 0.14 s on its own.)"""
+    out = tack.empty((1 << 18,))
+    iters = _long_launch(out)
+    _spin(out, iters)
+    t0 = time.perf_counter()
+    for _ in range(4):
+        tmp = tack.zeros((1 << 16,))
+        del tmp                      # freed here, by its reference count
+    dropped = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    tack.sync()
+    launch = time.perf_counter() - t0
+    assert dropped < launch / 2, (dropped, launch)
+    assert not get_backend()._token.dropped          # freed at the sync

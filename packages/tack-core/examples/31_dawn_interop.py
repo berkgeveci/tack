@@ -62,7 +62,15 @@ print(f"  (expected: {alpha * np.arange(5, dtype=np.float32) + 2.0})")
 # Step 2: Export GPU memory (backend-agnostic)
 # ================================================================
 
-exported = out.export_memory()
+# A GPU in TCC mode on Windows has no virtual memory management, so nothing
+# it allocates can be exported; Tack says so, and there is nothing to share.
+try:
+    exported = out.export_memory()
+except RuntimeError as e:
+    if "no virtual memory management" not in str(e):
+        raise
+    print(f"\nThis device cannot export memory -- stopping here.\n  {e}")
+    raise SystemExit(0) from None
 buffer_size = exported.size
 
 print(f"\nExported memory: backend={exported.backend}, "
