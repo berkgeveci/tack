@@ -27,7 +27,7 @@ def interaction(p, q):
 @tack.kernel
 def acceleration_plain(pos, acceleration, n):
     for i in range(n):
-        a = tack.Vector([0.0, 0.0, 0.0])
+        a = tack.vec3(0.0, 0.0, 0.0)
         for j in range(n):
             a += interaction(pos[i], pos[j])
         acceleration[i] = a
@@ -43,7 +43,7 @@ def acceleration_tiled(pos, acceleration, n):
     for i in range(n):
         xyz = tack.shared(tack.f32, TILE * 3)  # folded to 768 scalar components
         lane = tack.thread_id()
-        a = tack.Vector([0.0, 0.0, 0.0])
+        a = tack.vec3(0.0, 0.0, 0.0)
         for tile in range(n // TILE):
             q = pos[tile * TILE + lane]
             xyz[3 * lane], xyz[3 * lane + 1], xyz[3 * lane + 2] = q.x, q.y, q.z
@@ -56,12 +56,12 @@ def acceleration_tiled(pos, acceleration, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n = 256 if check else 512
     xyz = np.random.default_rng(42).normal(size=(n, 3)).astype(np.float32)
-    pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-    acceleration = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-    pos.from_numpy(xyz)
+    pos = tack.empty((n,), tack.vec3(tack.f32))
+    acceleration = tack.empty((n,), tack.vec3(tack.f32))
+    tack.copyto(pos, xyz)
     # --8<-- [start:choose]
     if get_backend().supports_workgroups:
         if n % TILE:
@@ -70,16 +70,16 @@ def run(arch="cpu", check=False):
     else:
         acceleration_plain(pos, acceleration, n)
     # --8<-- [end:choose]
-    result = acceleration.to_numpy(vectors=True)
+    result = acceleration.numpy()
     if check:
         r = xyz.astype(np.float64)[None, :, :] - xyz.astype(np.float64)[:, None, :]
         distance_sq = (r * r).sum(axis=-1) + 0.01
         reference = (r / distance_sq[..., None] ** 1.5).sum(axis=1)
         np.testing.assert_allclose(result, reference, atol=8e-4, rtol=3e-5)
         if get_backend().supports_workgroups:
-            baseline = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+            baseline = tack.empty((n,), tack.vec3(tack.f32))
             acceleration_plain(pos, baseline, n)
-            np.testing.assert_allclose(result, baseline.to_numpy(vectors=True), atol=8e-4, rtol=3e-5)
+            np.testing.assert_allclose(result, baseline.numpy(), atol=8e-4, rtol=3e-5)
     return xyz, result
 
 

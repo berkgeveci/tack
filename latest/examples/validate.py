@@ -9,34 +9,54 @@ import sys
 import tempfile
 from pathlib import Path
 
-EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface",
-            "kernel_results", "array_sizes", "datasets")
+EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
+            "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
+            "data_analysis", "data_mesh_kernels", "data_spaces")
 QUICKSTARTS = (
-    "01-getting-started", "12-execution-model", "14-vectors-and-matrices",
-    "09-visualization", "10-rendering", "15-debugging-and-timing", "16-interoperability",
+    "01-getting-started", "02-arrays-and-types", "11-reductions-and-scans",
+    "12-execution-model", "14-vectors-and-matrices",
+    "09-visualization", "15-debugging-and-timing", "16-interoperability",
 )
 
 
 def check_quickstarts():
     """Execute the complete opening examples, including the actual Markdown code."""
     guide = Path(__file__).resolve().parents[1] / "users-guide"
+    checked = 0
     with tempfile.TemporaryDirectory(prefix="tack-guide-check-") as temporary:
         for name in QUICKSTARTS:
             page = guide / f"{name}.md"
-            blocks = re.findall(r"```python\n(.*?)```", page.read_text(), flags=re.S)
+            blocks = re.findall(r"```python\n(.*?)```", page.read_text(encoding="utf-8"), flags=re.S)
             if not blocks:
                 raise RuntimeError(f"No Python quick start in {page.name}")
             code = blocks[0]
-            if "import tack" not in code or "tack.init" not in code:
+            if "import tack" not in code or "tack.set_default_device" not in code:
                 raise RuntimeError(f"The first Python example in {page.name} is not standalone")
             if name == "09-visualization":
                 code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'
-            if name == "01-getting-started":
-                code += '\nnp.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2)\n'
             script = Path(temporary) / f"{name}.py"
-            script.write_text(code)
+            script.write_text(code, encoding="utf-8")
             print(f"Checking Markdown quick start: {page.name} on cpu", flush=True)
-            subprocess.run([sys.executable, str(script)], check=True, timeout=120)
+            subprocess.run([sys.executable, str(script)], check=True, timeout=120,
+                           cwd=temporary)
+            checked += 1
+
+        # Mark complete examples beyond a page's opening with an HTML comment:
+        # <!-- tack-check: example-name --> immediately before a Python fence.
+        # Execute the displayed Markdown so its inputs and assertions cannot
+        # drift away from a separate validation script.
+        for page in sorted(guide.glob("*.md")):
+            blocks = re.findall(
+                r"<!-- tack-check: ([a-z0-9-]+) -->\s*```python\n(.*?)```",
+                page.read_text(encoding="utf-8"), flags=re.S)
+            for name, code in blocks:
+                script = Path(temporary) / f"{page.stem}-{name}.py"
+                script.write_text(code, encoding="utf-8")
+                print(f"Checking Markdown example: {page.name}/{name} on cpu", flush=True)
+                subprocess.run([sys.executable, str(script)], check=True, timeout=120,
+                               cwd=temporary)
+                checked += 1
+    return checked
 
 
 def main():
@@ -52,8 +72,8 @@ def main():
                        check=True, timeout=120)
     print(f"All {len(EXAMPLES)} tutorial checks passed on {args.arch}.")
     if args.arch == "cpu":
-        check_quickstarts()
-        print(f"All {len(QUICKSTARTS)} Markdown quick starts passed on cpu.")
+        checked = check_quickstarts()
+        print(f"All {checked} Markdown examples passed on cpu.")
     if args.vtk:
         print("Checking VTK interop on cpu", flush=True)
         subprocess.run([sys.executable, str(Path(__file__).with_name("vtk_interop.py"))],

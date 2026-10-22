@@ -6,11 +6,11 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/05-device-functions/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/05-device-functions/">
       
       
         <link rel="prev" href="../04-control-flow/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -509,6 +521,61 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../01-getting-started/" class="md-nav__link">
         
@@ -566,14 +633,107 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -771,10 +931,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#passing-fields" class="md-nav__link">
+  <a href="#passing-arrays" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Passing Fields
+        Passing Arrays
       
     </span>
   </a>
@@ -879,21 +1039,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -901,11 +1088,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -934,6 +1129,384 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -998,62 +1571,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1070,6 +1587,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1098,10 +1651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1119,8 +1672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1326,34 +1879,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1464,6 +1989,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1660,6 +2213,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2505,10 +3086,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#passing-fields" class="md-nav__link">
+  <a href="#passing-arrays" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Passing Fields
+        Passing Arrays
       
     </span>
   </a>
@@ -2601,14 +3182,14 @@ numerical Python variables: pass those values as kernel arguments.</p>
     <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="n">r_field</span><span class="p">,</span> <span class="n">theta_field</span><span class="p">,</span> <span class="n">x_out</span><span class="p">,</span> <span class="n">y_out</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="n">r_array</span><span class="p">,</span> <span class="n">theta_array</span><span class="p">,</span> <span class="n">x_out</span><span class="p">,</span> <span class="n">y_out</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">polar_to_cart</span><span class="p">(</span><span class="n">r_field</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">theta_field</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">polar_to_cart</span><span class="p">(</span><span class="n">r_array</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">theta_array</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
         <span class="n">x_out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span>
         <span class="n">y_out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">y</span>
 </code></pre></div>
 <p>The values may be vectors and matrices as well as scalars, in any mix,
-and the targets may be field elements:</p>
+and the targets may be array elements:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">closest_hit</span><span class="p">(</span><span class="n">origin</span><span class="p">,</span> <span class="n">direction</span><span class="p">):</span>
     <span class="o">...</span>
@@ -2636,8 +3217,8 @@ binding it to a single name is rejected.</p>
 <span class="k">def</span><span class="w"> </span><span class="nf">length</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">):</span>
     <span class="k">return</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">square</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">square</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">+</span> <span class="n">square</span><span class="p">(</span><span class="n">z</span><span class="p">))</span>
 </code></pre></div>
-<h2 id="passing-fields">Passing Fields<a class="headerlink" href="#passing-fields" title="Permanent link">&para;</a></h2>
-<p>Fields can be passed to <code>@tack.func</code> — they work just like in kernels:</p>
+<h2 id="passing-arrays">Passing Arrays<a class="headerlink" href="#passing-arrays" title="Permanent link">&para;</a></h2>
+<p>Arrays can be passed to <code>@tack.func</code> — they work just like in kernels:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">safe_load</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">default_val</span><span class="p">):</span>
     <span class="n">result</span> <span class="o">=</span> <span class="n">default_val</span>
@@ -2666,7 +3247,7 @@ function accesses the caller's array directly — no copy:</p>
         <span class="n">w</span><span class="p">[</span><span class="n">v</span><span class="p">]</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">weight</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">pc0</span><span class="p">,</span> <span class="n">pc1</span><span class="p">,</span> <span class="n">pc2</span><span class="p">)</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">interp</span><span class="p">(</span><span class="n">ct</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">template</span><span class="p">(),</span> <span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">interp</span><span class="p">(</span><span class="n">ct</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
         <span class="n">w</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">local_array</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">ct</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
         <span class="n">fill_weights</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">ct</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>  <span class="c1"># fills w in place</span>
@@ -2675,13 +3256,13 @@ function accesses the caller's array directly — no copy:</p>
 <p>This also works with <code>@tack.device_class</code> methods — see
 <a href="../07-advanced/">Advanced Features</a> for the cell set pattern.</p>
 <h2 id="reuse-a-numerical-operation-across-element-types">Reuse a numerical operation across element types<a class="headerlink" href="#reuse-a-numerical-operation-across-element-types" title="Permanent link">&para;</a></h2>
-<p>A device function is specialized on the values or fields it receives. The same
+<p>A device function is specialized on the values or arrays it receives. The same
 linear interpolation expression works for scalars and vectors:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">mix_values</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
     <span class="k">return</span> <span class="n">a</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span> <span class="o">*</span> <span class="n">t</span>
 </code></pre></div>
-<p>The <a href="../tutorials/dye/">dye tutorial</a> builds a bilinear sampler from four field
+<p>The <a href="../tutorials/dye/">dye tutorial</a> builds a bilinear sampler from four array
 loads and applies it to RGB vectors. The <a href="../tutorials/mpm/">MPM tutorial</a> uses
 matrix-valued arithmetic, and <a href="../tutorials/nbody/">N-body</a> shares one interaction
 function between the plain and tiled kernels.</p>

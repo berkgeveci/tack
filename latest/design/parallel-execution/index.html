@@ -6,11 +6,11 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/design/parallel-execution/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/design/parallel-execution/">
       
       
         <link rel="prev" href="../numerical-semantics/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -504,6 +516,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../users-guide/01-getting-started/" class="md-nav__link">
         
@@ -561,14 +625,102 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/02-fields-and-types/" class="md-nav__link">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -750,21 +902,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -772,11 +948,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -805,6 +989,378 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -869,62 +1425,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -952,6 +1452,42 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -966,10 +1502,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
             
   
   
@@ -987,8 +1523,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1194,34 +1730,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1337,6 +1845,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1678,15 +2214,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#atomic-field-updates" class="md-nav__link">
+  <a href="#atomic-array-updates" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Atomic field updates
+        Atomic array updates
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Atomic field updates">
+    <nav class="md-nav" aria-label="Atomic array updates">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1746,6 +2282,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#library-algorithms-scans-and-sorts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Library algorithms: scans and sorts
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1840,6 +2387,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2829,15 +3404,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#atomic-field-updates" class="md-nav__link">
+  <a href="#atomic-array-updates" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Atomic field updates
+        Atomic array updates
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Atomic field updates">
+    <nav class="md-nav" aria-label="Atomic array updates">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2901,6 +3476,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#library-algorithms-scans-and-sorts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Library algorithms: scans and sorts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#exceptions-summary" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2935,21 +3521,21 @@
 <p>This page describes how a Tack kernel executes in parallel: the single
 top-level iteration space and how each backend maps it onto threads, the
 rules for early exits, the workgroup model behind shared memory, barriers
-and block reductions, and atomic field updates. For each it gives the
+and block reductions, and atomic array updates. For each it gives the
 design rationale, the implementing functions, and the contract: what is
 guaranteed, what the caller must ensure, and which exception is raised
 where.</p>
 <p>The normative text is in the <a href="../../reference/language-contract/">kernel language contract</a>,
 sections <a href="../../reference/language-contract/#execution-and-ordering">Execution and ordering</a>,
 <a href="../../reference/language-contract/#workgroups-and-synchronization">Workgroups and synchronization</a>
-and <a href="../../reference/language-contract/#atomic-field-updates">Atomic field updates</a>.
+and <a href="../../reference/language-contract/#atomic-array-updates">Atomic array updates</a>.
 How the CPU decides between serial and threaded execution is a separate
 page, <a href="../cpu-threading/">CPU Threading Policy</a>.</p>
 <h2 id="the-iteration-space">The iteration space<a class="headerlink" href="#the-iteration-space" title="Permanent link">&para;</a></h2>
 <h3 id="one-top-level-parallel-loop">One top-level parallel loop<a class="headerlink" href="#one-top-level-parallel-loop" title="Permanent link">&para;</a></h3>
 <p>A kernel has exactly one top-level <code>for</code> loop over <code>range(...)</code> or
-<code>tack.ndrange(...)</code>, a statement directly in the kernel body.
-<code>KernelTransformer.visit_For</code> (<code>lang/ast_transform.py</code>) lowers the first
+<code>tack.ndindex(...)</code>, a statement directly in the kernel body.
+<code>KernelTransformer.visit_For</code> (<code>lang/lowering/loops.py</code>) lowers the first
 <code>for</code> it meets outside a loop through <code>_visit_parallel_for</code> to
 <code>IRParallelFor</code>; every loop nested inside it becomes an <code>IRSequentialFor</code>.
 Each parallel iteration owns its local variables. There is <strong>no defined
@@ -2966,8 +3552,11 @@ the parallel loop. A kernel has one parallel loop, ..."). The IR verifier
 (<code>lang/ir_verify.py</code>) checks the same invariant ("kernel must contain
 exactly one top-level parallel loop") on every later stage, as a backstop
 for passes rather than as the user's diagnostic. Multiple parallel phases
-are written as separate kernels; since dispatch is synchronous, the second
-kernel sees everything the first wrote.</p>
+are written as separate kernels. A backend runs its launches in the order
+they were made: the CPU completes each before its call returns, and each
+GPU backend queues them in order on one stream, command list or command
+buffer and returns once queued. Either way the second kernel sees
+everything the first wrote.</p>
 <p><strong>Why one loop.</strong> A single flat index space is the one shape every backend
 supports with no runtime machinery: a grid on a GPU, a range split into
 chunks on the CPU. Multiple loops in one kernel would need either a global
@@ -2998,7 +3587,7 @@ other range into that form before code generation:</p>
 <td><code>ParallelFor t in [0, ((8 - 1) + (3 - 1)) // 3)</code>; body starts with <code>i = 1 + t * 3</code></td>
 </tr>
 <tr>
-<td><code>for i, j in tack.ndrange(w, h)</code></td>
+<td><code>for i, j in tack.ndindex(w, h)</code></td>
 <td><code>ParallelFor (d0 &lt; w x d1 &lt; h)</code>; body starts with <code>i = d0</code>, <code>j = d1</code></td>
 </tr>
 <tr>
@@ -3007,7 +3596,7 @@ other range into that form before code generation:</p>
 </tr>
 </tbody>
 </table>
-<p>A two- or three-dimensional <code>ndrange</code> keeps its dimensions, and each
+<p>A two- or three-dimensional <code>ndindex</code> keeps its dimensions, and each
 backend launches in that shape instead of dividing a flat index: CPU
 workers split the flat range into chunks as before, decompose a chunk's
 first index once, and walk the rest row by row with a carry; CUDA, HIP and
@@ -3088,6 +3677,13 @@ new array length reuses the compiled variant; see
 <td><code>if (idx &gt;= __n__) return;</code></td>
 </tr>
 <tr>
+<td>The call returns</td>
+<td>after the range has run</td>
+<td>once encoded into the open command buffer</td>
+<td>once queued on the context's stream (CUDA) or the device's (HIP)</td>
+<td>once appended to the asynchronous immediate command list</td>
+</tr>
+<tr>
 <td>Largest launch</td>
 <td>no limit</td>
 <td>2^32 (<code>_MAX_LAUNCH</code>)</td>
@@ -3096,9 +3692,15 @@ new array length reuses the compiled variant; see
 </tr>
 </tbody>
 </table>
+<p>A queued GPU launch is waited for where the host next touches array memory
+(<code>numpy()</code>, indexing, reductions) or calls <code>tack.sync()</code>, and its error
+surfaces there. A launch that uses memory handed outside Tack (a wrapped
+pointer, a DLPack export) completes before its call returns, and so, on
+CUDA, HIP and Level Zero, does a launch that samples a hardware texture; see
+<a href="../backend-implementations/#launches-are-queued">Backend Implementations</a>.</p>
 <p>Loop variables are 64-bit on every backend (<code>long long</code> for CUDA/HIP,
 <code>long</code> for MSL and OpenCL, i64 in LLVM), so index arithmetic derived from
-them does not overflow 32 bits for large fields. The thread index itself
+them does not overflow 32 bits for large arrays. The thread index itself
 must be formed at that width too. CUDA's <code>blockIdx.x</code>, <code>blockDim.x</code> and
 <code>threadIdx.x</code> are 32-bit unsigned, so <code>CUDACodeGen._emit_parallel_for</code>
 casts <code>blockIdx.x</code> to <code>long long</code> <em>before</em> the multiply; a 32-bit product
@@ -3132,9 +3734,9 @@ compiled function, which is once per chunk, threading probe or timing
 sample. They have no defined execution count, so they must be
 unobservable however often they run. <code>KernelTransformer._visit_body</code> checks
 each statement outside the loop after lowering it
-(<code>_check_outside_parallel_loop</code>) and accepts only local assignments, field
+(<code>_check_outside_parallel_loop</code>) and accepts only local assignments, array
 loads, <code>tack.shared</code>/<code>tack.local_array</code> declarations and <code>thread_id()</code>
-reads. A field or array store, an atomic, a barrier, a block reduction or a
+reads. An array or array store, an atomic, a barrier, a block reduction or a
 <code>print</code> raises <code>UnsupportedSyntaxError</code> naming the construct and its line
 and column ("store at line 2, column 5 is outside the parallel loop. ..."),
 including inside top-level <code>if</code> and <code>while</code> statements.</p>
@@ -3145,7 +3747,7 @@ augmented stores. Nested and inlined bodies are checked first, so the error
 names the innermost statement, in the device function or method where it
 was written ("Device function '<code>bump</code>' (inlined into kernel '<code>k</code>'):
 atomic_add() at line 3, column 5 ..."). The IR verifier rejects any
-<code>IRFieldStore</code>, <code>IRAtomicOp</code>, <code>IRBlockReduce</code>, <code>IRBarrier</code> or <code>IRPrint</code>
+<code>IRArrayStore</code>, <code>IRAtomicOp</code>, <code>IRBlockReduce</code>, <code>IRBarrier</code> or <code>IRPrint</code>
 outside the loop at every later stage.</p>
 <p>Local assignments are not unobservable on their own. On the CPU a local
 assigned before the loop and reassigned inside it would carry its value
@@ -3186,7 +3788,7 @@ backend.</p>
 <td><code>UnsupportedSyntaxError</code></td>
 </tr>
 <tr>
-<td><code>return</code> in a kernel</td>
+<td><code>return</code> in a kernel, except as its last statement (after the parallel loop, with a return annotation)</td>
 <td></td>
 <td><code>UnsupportedSyntaxError</code></td>
 </tr>
@@ -3270,7 +3872,7 @@ runs at three points:</p>
 </table>
 <p>Private scratch storage remains available on CPU through
 <code>tack.local_array</code> and <code>tack.local_array_like</code>, which lower to a stack
-allocation. Ordinary kernels, host field reductions and supported atomics
+allocation. Ordinary kernels, host array reductions and supported atomics
 are unaffected.</p>
 <p><strong>Why reject rather than emulate.</strong> Before this check, the CPU lowering
 turned barriers into no-ops, <code>thread_id()</code> into zero, block reductions into
@@ -3294,7 +3896,7 @@ final groups and device-chosen smaller groups.</p>
 <code>IRBarrier</code> or <code>IRBlockReduce</code>. <code>check_workgroup_launch</code> raises
 <code>ValueError</code> when the selected group size is not 256 or when a positive
 iteration count is not a multiple of 256. The count is the normalized one,
-so <code>range(0, 1024, 2)</code> (512 iterations) passes and <code>ndrange(16, 16)</code> (256)
+so <code>range(0, 1024, 2)</code> (512 iterations) passes and <code>ndindex(16, 16)</code> (256)
 passes; zero or negative counts run nothing and pass.</p>
 <table>
 <thead>
@@ -3376,7 +3978,7 @@ domain and rejects everything else.</p>
 </tr>
 <tr>
 <td><code>x.shape[k]</code> and <code>len(x)</code></td>
-<td>field, local-array and shared-memory loads</td>
+<td>array, local-array and shared-memory loads</td>
 </tr>
 <tr>
 <td>loads from a packed scalar buffer (<code>_is_scalar_pack</code>) at a uniform index</td>
@@ -3480,7 +4082,7 @@ localization, so a barrier inside a <code>@tack.func</code> is checked in contex
 <p><strong>Why <code>i // 256</code> is rejected.</strong> With complete 256-lane groups, every lane of
 one group has the same <code>i // 256</code>, so the branch is in fact uniform. Proving
 it requires knowing how loop indices map onto groups, including after range
-normalization (<code>i = start + t * step</code>) and <code>ndrange</code> flattening, and doing
+normalization (<code>i = start + t * step</code>) and <code>ndindex</code> flattening, and doing
 arithmetic reasoning over the expression. The analysis deliberately tracks
 only "derived from a lane value or not". It can be extended without changing
 any accepted program. Until then, restructure so that every lane reaches
@@ -3554,7 +4156,7 @@ loads must stay uniform for the generator's second check.</p>
 </tbody>
 </table>
 <p>A user barrier orders memory among the lanes of <strong>one workgroup</strong>: a value
-one lane writes to shared memory or to a field before the barrier is
+one lane writes to shared memory or to an array before the barrier is
 visible to the other lanes of its group after it. It is not a grid-wide
 barrier; different workgroups are never synchronized inside a launch. The
 barriers internal to block reductions fence only shared memory, which is all
@@ -3586,12 +4188,14 @@ with the combine step elided:</p>
 fast lane starting the next loop iteration and overwriting the shared array
 before slower lanes have read it, so the caller needs no barrier of their
 own. Extrema use the same NaN-propagating, order-independent combiner as
-field reductions; sums may vary in low bits with the reduction order.</p>
-<h2 id="atomic-field-updates">Atomic field updates<a class="headerlink" href="#atomic-field-updates" title="Permanent link">&para;</a></h2>
-<p><code>tack.atomic_add(field, index, value)</code>, <code>atomic_min</code> and <code>atomic_max</code> update
-one element of a global field indivisibly. They are statements:
-<code>lang/source_validation.py</code> rejects any use as an expression with
-<code>UnsupportedSyntaxError</code>, and no previous value is returned.</p>
+array reductions; sums may vary in low bits with the reduction order.</p>
+<h2 id="atomic-array-updates">Atomic array updates<a class="headerlink" href="#atomic-array-updates" title="Permanent link">&para;</a></h2>
+<p><code>tack.atomic_add(array, index, value)</code>, <code>atomic_min</code> and <code>atomic_max</code> update
+one element of a global array indivisibly. An atomic is a statement, or an
+expression whose value is the element's value immediately before the
+update (<code>slot = tack.atomic_add(counter, 0, 1)</code>); as an expression it is
+lowered to a temporary among the statement's pre-statements, so it takes
+effect in source order among the operands.</p>
 <h3 id="per-backend-domain">Per-backend domain<a class="headerlink" href="#per-backend-domain" title="Permanent link">&para;</a></h3>
 <p><code>Backend.supported_atomic_dtypes</code> is a derived property: the backend's entry
 in <code>ATOMIC_DTYPES</code> (<code>lang/atomic_support.py</code>) intersected with its
@@ -3600,7 +4204,7 @@ in <code>ATOMIC_DTYPES</code> (<code>lang/atomic_support.py</code>) intersected 
 <thead>
 <tr>
 <th>Backend</th>
-<th>Atomic field types</th>
+<th>Atomic array types</th>
 </tr>
 </thead>
 <tbody>
@@ -3620,23 +4224,23 @@ in <code>ATOMIC_DTYPES</code> (<code>lang/atomic_support.py</code>) intersected 
 </table>
 <p>The domain is independent of <code>supports_workgroups</code>: atomics work on CPU, and
 atomic-only kernels need neither complete groups nor uniform control.
-Widths outside the domain are rejected even where ordinary fields of that
+Widths outside the domain are rejected even where ordinary arrays of that
 width work. Emulating an 8- or 16-bit atomic with a compare-and-swap on the
 containing 32-bit word was rejected: it would atomically rewrite
 neighboring elements that ordinary stores may be writing at the same time.
 Portable code stays within i32, u32 and f32.</p>
 <h3 id="target-tracing">Target tracing<a class="headerlink" href="#target-tracing" title="Permanent link">&para;</a></h3>
 <p><code>check_atomic_support</code> requires that the first argument resolve to exactly
-one <strong>global field parameter</strong>. It records, for every name, the set of
+one <strong>global array parameter</strong>. It records, for every name, the set of
 places its value can come from: a parameter is its own source; an
 assignment <code>g = f</code> copies <code>f</code>'s sources to <code>g</code>; any other assignment, a
 loop variable, or a local or shared allocation adds an unknown source. The
 copies are propagated to a fixed point, which follows the pointer copies
 that device-function inlining introduces. The target is accepted only when
-it has a single source, that source is a parameter, the parameter is a field
+it has a single source, that source is a parameter, the parameter is an array
 and it is not a texture. Local arrays, shared memory, textures, scalars, and
-names that could refer to more than one field all raise <code>TypeError</code>
-("requires a global field parameter target"). An unsupported operation or
+names that could refer to more than one array all raise <code>TypeError</code>
+("requires a global array parameter target"). An unsupported operation or
 element type also raises <code>TypeError</code>. The check sets each atomic node's
 dtype from the parameter rather than trusting an earlier annotation.</p>
 <p>It runs before optimization in <code>resolve_variant</code>, in every inspection mode,
@@ -3645,8 +4249,8 @@ code, or in a kernel launched with an empty range, is still checked.
 <code>Kernel.__call__</code> re-raises <code>TypeError</code> with the kernel name prefixed.</p>
 <h3 id="alignment">Alignment<a class="headerlink" href="#alignment" title="Permanent link">&para;</a></h3>
 <p>An atomic target must be naturally aligned: 1, 2, 4 or 8 bytes for its
-width. Fields Tack allocates always are; imported pointers
-(<code>tack.field_from_ptr</code>, DLPack) need not be. <code>check_atomic_support</code> returns
+width. Arrays Tack allocates always are; imported pointers
+(<code>tack.array_from_ptr</code>, DLPack) need not be. <code>check_atomic_support</code> returns
 <code>(parameter index, alignment)</code> pairs, which the variant stores as
 <code>atomic_targets</code>. <code>check_atomic_alignment</code> checks each target's
 <code>_buffer.address</code> before the cold compile and again on every cached
@@ -3659,17 +4263,18 @@ launch: CPU worker threads, or all workgroups on the executing GPU. The
 memory order is <strong>relaxed</strong>. An atomic is not a fence and cannot publish
 other data: writing a result, then atomically setting a flag, does not make
 the result visible to a reader that sees the flag. There is no system scope
-spanning the host or other devices. Dispatch is synchronous, so the
-supported way to consume a cross-workgroup result is to read it after the
-kernel returns, from the host or from the next kernel. Floating <code>atomic_add</code>
-rounds at the field's precision in an unspecified interleaving, so its
+spanning the host or other devices. The supported way to consume a
+cross-workgroup result is from the next kernel, which a backend runs after
+this one completes, or from the host, whose read of the array waits for
+the launch. Floating <code>atomic_add</code>
+rounds at the array's precision in an unspecified interleaving, so its
 result is not bitwise reproducible.</p>
-<p>The contributed value is converted to the field's dtype once, before the
+<p>The contributed value is converted to the array's dtype once, before the
 read-modify-write; integer addition wraps; integer extrema compare with the
-field's signedness. Floating atomic extrema are defined only for finite
+array's signedness. Floating atomic extrema are defined only for finite
 values, including zeros (the sign of a zero tie is unspecified); NaN and
 infinity are outside their domain. They do <strong>not</strong> inherit the stronger
-NaN and signed-zero rules of field and block reductions.</p>
+NaN and signed-zero rules of array and block reductions.</p>
 <h3 id="lowering">Lowering<a class="headerlink" href="#lowering" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3716,7 +4321,11 @@ not re-evaluated.</p>
 functions guarantee only workgroup scope in the specification, which is not
 enough for updates from different workgroups to the same element. The C11
 <code>*_explicit</code> forms with <code>memory_scope_device</code> state the required scope;
-the native field reduction's final combine uses them too.</p>
+the native array reduction's final combine uses them too.</p>
+<h2 id="library-algorithms-scans-and-sorts">Library algorithms: scans and sorts<a class="headerlink" href="#library-algorithms-scans-and-sorts" title="Permanent link">&para;</a></h2>
+<p>How <code>tack.algorithms</code> parallelizes, with the measurements that shaped it.</p>
+<p><code>exclusive_scan</code> and <code>inclusive_scan</code> (<code>algorithms/scan.py</code>) reduce, then scan, by chunks of <code>_CHUNK</code> (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A level of at most <code>_SERIAL_MAX</code> (4096) elements on the CPU, or one tile on GPU backends, is one launch that one thread scans in order (<code>_scan_serial</code>, which also leaves the total in a one-element array): a million elements take three launches on the CPU, where the two levels below the chunk totals took five launches of microseconds of work each and most of a contour's host time between launches; the Blelloch scan before that made two launches per factor of two. In place (<code>input is output</code>) works; the total is read as one element (<code>array[n - 1]</code>, no launch). On backends with workgroups the chunk is a 2048-element tile scanned by a workgroup (<code>_tile_sums</code>/<code>_tile_apply</code>: eight per lane, lane totals Hillis-Steele in shared memory, a lane's exclusive prefix read from its neighbour rather than subtracted), since one thread per chunk is slow on GPUs (Metal, 1M elements: 4.6 -&gt; 1.1 ms); floating sums then combine lanes in tree order.</p>
+<p><code>argsort</code>/<code>sort_by_key</code> (<code>algorithms/sort.py</code>) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped. On the CPU, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. On backends with workgroups (<code>supports_workgroups</code>) a pass instead sorts 4096-key tiles in shared memory (<code>_sort_tiles</code>: eight stable one-bit splits by workgroup prefix sums, no shared atomics, u8 digits and u16 positions to fit Metal's 32 KB), takes each tile's digit counts from the runs, scans them and scatters runs (<code>_scatter_tiles</code>); per-lane private tables spilled on GPUs, which made Metal's sort 3.5x slower than 8 CPU threads. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (<code>_key_range</code>). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. <code>unique</code>/<code>reduce_by_key</code> flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty arrays (<code>shape=(0,)</code>) are valid outputs and allocate on every backend.</p>
 <h2 id="exceptions-summary">Exceptions summary<a class="headerlink" href="#exceptions-summary" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3728,7 +4337,7 @@ the native field reduction's final combine uses them too.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>break</code> in the parallel loop, <code>return</code> in a kernel, atomic or barrier used as a value</td>
+<td><code>break</code> in the parallel loop, <code>return</code> in a kernel anywhere but last, barrier used as a value</td>
 <td><code>UnsupportedSyntaxError</code> (a <code>NotImplementedError</code>)</td>
 <td><code>lang/source_validation.py</code></td>
 </tr>
@@ -3793,7 +4402,7 @@ per-iteration outer locals), <code>test_launch_limits.py</code>,
 <code>test_workgroup_contract.py</code> (CPU rejection in dispatch, every inspection
 mode and direct LLVM, before any side effect), <code>test_workgroup_participation.py</code>
 (every rejected pattern above on all four generators and on dispatch,
-partial-group rejection cold and cached, stepped and <code>ndrange</code> counts,
+partial-group rejection cold and cached, stepped and <code>ndindex</code> counts,
 Metal and Level Zero group-limit enforcement, repeated reductions in loops),
 <code>test_block_reduce.py</code>, <code>test_shared_like.py</code>, and <code>test_atomic_contract.py</code>
 (unsigned boundaries, wrapping, contended CPU workers, updates across groups

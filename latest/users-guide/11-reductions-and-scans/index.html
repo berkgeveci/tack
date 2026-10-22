@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/11-reductions-and-scans/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/11-reductions-and-scans/">
       
       
-        <link rel="prev" href="../07-advanced/">
+        <link rel="prev" href="../13-memory-and-parallelism/">
       
       
-        <link rel="next" href="../08-backends/">
+        <link rel="next" href="../07-advanced/">
       
       
         
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -509,6 +521,61 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../01-getting-started/" class="md-nav__link">
         
@@ -566,14 +633,105 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -755,21 +913,50 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+  
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -777,11 +964,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -850,10 +1045,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#field-reductions" class="md-nav__link">
+  <a href="#array-reductions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Field reductions
+        Array reductions
       
     </span>
   </a>
@@ -888,6 +1083,17 @@
     <span class="md-ellipsis">
       
         Dtypes on each backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-example-check-accumulation-precision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete example: check accumulation precision
       
     </span>
   </a>
@@ -998,6 +1204,384 @@
   
   
     <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../08-backends/" class="md-nav__link">
         
   
@@ -1054,62 +1638,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1126,6 +1654,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1154,10 +1718,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1175,8 +1739,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1382,34 +1946,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1520,6 +2056,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1716,6 +2280,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2528,10 +3120,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#field-reductions" class="md-nav__link">
+  <a href="#array-reductions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Field reductions
+        Array reductions
       
     </span>
   </a>
@@ -2566,6 +3158,17 @@
     <span class="md-ellipsis">
       
         Dtypes on each backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-example-check-accumulation-precision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete example: check accumulation precision
       
     </span>
   </a>
@@ -2692,24 +3295,24 @@
 </thead>
 <tbody>
 <tr>
-<td><a href="#field-reductions">Field reductions</a></td>
-<td><code>field.sum()</code>, <code>.min()</code>, <code>.max()</code>, <code>.mean()</code></td>
-<td>Called from Python; the device or NumPy, depending on backend and dtype</td>
+<td><a href="#array-reductions">Array reductions</a></td>
+<td><code>array.sum()</code>, <code>.min()</code>, <code>.max()</code>, <code>.mean()</code></td>
+<td>Called from Python; the array's device or NumPy, depending on backend and dtype</td>
 </tr>
 <tr>
 <td><a href="#statistics">Statistics</a></td>
 <td><code>var</code>, <code>std</code>, <code>norm</code>, <code>absmax</code>, <code>count_nonzero</code>, <code>dot</code>, <code>histogram</code> in <code>tack.algorithms</code></td>
-<td>Called from Python; terms formed on the active backend and reduced as fields are</td>
+<td>Called from Python; terms formed on the inputs' device and reduced as arrays are</td>
 </tr>
 <tr>
 <td><a href="#prefix-scans">Prefix scans</a></td>
 <td><code>exclusive_scan</code>, <code>inclusive_scan</code> (plus <code>copy</code>, <code>fill_value</code>) in <code>tack.algorithms</code></td>
-<td>Called from Python; a sequence of kernels on the active backend</td>
+<td>Called from Python; a sequence of kernels on the inputs' device</td>
 </tr>
 <tr>
 <td><a href="#sorting-and-segmented-reductions">Sorting and segmented reductions</a></td>
 <td><code>argsort</code>, <code>sort_by_key</code>, <code>gather</code>, <code>unique</code>, <code>reduce_by_key</code> in <code>tack.algorithms</code></td>
-<td>Called from Python; a sequence of kernels on the active backend</td>
+<td>Called from Python; a sequence of kernels on the inputs' device</td>
 </tr>
 <tr>
 <td><a href="#block-reductions-inside-kernels">Block reductions</a></td>
@@ -2719,34 +3322,40 @@
 </tbody>
 </table>
 <p>Every family runs on all five backends except block reductions, which need
-a workgroup execution model and are rejected on CPU. All of them return to
-Python only after the work has finished: dispatch is synchronous.</p>
+a workgroup execution model and are rejected on CPU. A call that returns a
+Python value (an array reduction, a statistic, a scan's total) waits for the
+work it reads. On GPU backends launches are queued, so a scan without its
+total, a sort, or a kernel using block reductions may return before the
+device has finished; the next read of an array waits for it (see
+<a href="../08-backends/#when-a-call-returns">When a call returns</a>).</p>
 <p>The behavior below is stated per backend. Where it is the current
 implementation rather than a promise, the page says so; the
-<a href="../../reference/language-contract/#field-and-parallel-reductions">reduction contract</a>
+<a href="../../reference/language-contract/#array-and-parallel-reductions">reduction contract</a>
 is the normative text.</p>
-<h2 id="field-reductions">Field reductions<a class="headerlink" href="#field-reductions" title="Permanent link">&para;</a></h2>
+<h2 id="array-reductions">Array reductions<a class="headerlink" href="#array-reductions" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
 
-<span class="n">tack</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">arch</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">cuda</span><span class="p">)</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>   <span class="c1"># or a configured GPU backend</span>
 
-<span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">1024</span><span class="p">,))</span>
-<span class="n">data</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mi">1024</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
 
 <span class="n">total</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>       <span class="c1"># Python float</span>
 <span class="n">lo</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
 <span class="n">hi</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
 <span class="n">average</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>    <span class="c1"># data.sum() / data.size</span>
+<span class="k">assert</span> <span class="p">(</span><span class="n">total</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">,</span> <span class="n">average</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="mf">28.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">7.0</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">)</span>
 </code></pre></div>
-<p>Each method reduces <strong>every element</strong> of the field, whatever its shape; a
-reshaped field reduces the same elements, and there is no axis argument.
-The result is always a Python <code>float</code>, including for integer fields.</p>
+<p>Each method reduces <strong>every scalar component</strong>, whatever the array's shape
+or element dtype. A reshape preserves the result; there is no axis argument.
+For a <code>(n,)</code> array with dtype <code>vec3(f32)</code>, <code>size</code> is <code>n</code>, but the reduction
+includes <code>3 * n</code> components.
+The result is always a Python <code>float</code>, including for integer arrays.</p>
 <p><strong>Where it runs.</strong> CPU always reduces with NumPy. Metal, CUDA, HIP and Level
-Zero reduce <code>f32</code> fields on the device with a 256-lane tree per group and an
+Zero reduce <code>f32</code> arrays on the device with a 256-lane tree per group and an
 atomic combine of the group results. Every other dtype is copied to the
-host with <code>to_numpy()</code> and reduced with NumPy. Two further host fallbacks
-exist for <code>f32</code>: Metal reduces fields of 2^32 or more elements with NumPy
+host with <code>numpy()</code> and reduced with NumPy. Two further host fallbacks
+exist for <code>f32</code>: Metal reduces arrays of 2^32 or more elements with NumPy
 over its shared buffer, and Level Zero uses NumPy when the device cannot
 run 256-lane groups.</p>
 <p><strong>Accumulator and result.</strong></p>
@@ -2783,17 +3392,16 @@ run 256-lane groups.</p>
 </table>
 <p>The accumulated value is then converted to a Python <code>float</code>, so integer
 results beyond 2^53 can round. <code>mean()</code> divides the returned sum by
-<code>field.size</code> in Python (binary64); it does not use a wider accumulator, and
+<code>array.scalar_size</code> in Python (binary64); it does not use a wider accumulator, and
 an integer mean inherits any wrapping of the integer sum.</p>
 <p><strong>NaN, infinities and zeros.</strong> A NaN anywhere makes <code>sum()</code>, <code>min()</code> and
 <code>max()</code> return NaN. Sums combine infinities by ordinary floating addition:
 <code>inf + 1</code> is <code>inf</code>, <code>inf + -inf</code> is NaN. <code>min()</code> of <code>0.0</code> and <code>-0.0</code> is
 <code>-0.0</code>, <code>max()</code> is <code>0.0</code>, whatever their order.</p>
-<p><strong>Empty fields.</strong> <code>sum()</code> returns <code>0.0</code>, <code>mean()</code> returns NaN, and <code>min()</code>
-and <code>max()</code> raise <code>ValueError</code> ("min reduction requires a nonempty field").
-None of these launches anything. Whether a zero-element field can be
-allocated at all depends on the backend: CUDA's allocator refuses it with a
-<code>RuntimeError</code>.</p>
+<p><strong>Empty arrays.</strong> <code>sum()</code> returns <code>0.0</code>, <code>mean()</code> returns NaN, and <code>min()</code>
+and <code>max()</code> raise <code>ValueError</code> ("min reduction requires a nonempty array").
+None of these launches anything. Every backend allocates a zero-element
+array.</p>
 <p><strong>Run-to-run repeatability.</strong></p>
 <table>
 <thead>
@@ -2830,12 +3438,18 @@ allocated at all depends on the backend: CUDA's allocator refuses it with a
 contract does not promise that floating sums are reproducible on any
 backend. The accuracy that <em>is</em> promised is an absolute error budget,
 stated in the
-<a href="../../reference/language-contract/#field-and-parallel-reductions">reduction contract</a>.</p>
+<a href="../../reference/language-contract/#array-and-parallel-reductions">reduction contract</a>.</p>
 <div class="admonition note">
 <p class="admonition-title">What crosses to the host</p>
 <p>On a GPU backend an <code>f32</code> reduction reads back one value. Any other
-dtype copies the whole field to the host first, on every call.</p>
+dtype copies the whole array to the host first, on every call.</p>
 </div>
+<p>The implicit arrays of <code>tack.arrays</code> reduce the same way, with the same
+semantics: <code>tack.arrays.CountingArray(8).sum()</code> is 28. Their values are
+computed into a temporary array first, which is then reduced as a stored
+array is. The algorithms below also take implicit arrays as inputs, read
+in their kernels without a temporary: <code>exclusive_scan(CountingArray(n),
+offsets, n)</code> scans 0, 1, 2, ... without storing them.</p>
 <h2 id="statistics">Statistics<a class="headerlink" href="#statistics" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">var</span><span class="p">,</span> <span class="n">std</span><span class="p">,</span> <span class="n">norm</span><span class="p">,</span> <span class="n">absmax</span><span class="p">,</span> <span class="n">count_nonzero</span><span class="p">,</span> <span class="n">dot</span><span class="p">,</span> <span class="n">histogram</span>
 
@@ -2847,17 +3461,17 @@ dtype copies the whole field to the host first, on every call.</p>
 <span class="n">m</span> <span class="o">=</span> <span class="n">absmax</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>                      <span class="c1"># same as norm(data, ord=float(&quot;inf&quot;))</span>
 <span class="n">nz</span> <span class="o">=</span> <span class="n">count_nonzero</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 <span class="n">d</span> <span class="o">=</span> <span class="n">dot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
-<span class="n">counts</span><span class="p">,</span> <span class="n">edges</span> <span class="o">=</span> <span class="n">histogram</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="nb">range</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+<span class="n">counts</span><span class="p">,</span> <span class="n">edges</span> <span class="o">=</span> <span class="n">histogram</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="nb">range</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">))</span>
 </code></pre></div>
 <p>These functions live in the <code>tack.algorithms</code> package, which <code>import tack</code>
 does not load. Import them as above, or <code>import tack.algorithms</code> before
 writing <code>tack.algorithms.var(...)</code>.</p>
 <p>Each statistic forms its terms -- |x|, x², (x − mean)², a·b -- in a
-temporary field of the inputs' precision, f64 if any input is f64 and
+temporary array of the inputs' precision, f64 if any input is f64 and
 otherwise f32 (an integer input converts before any arithmetic), and
-reduces that field with <code>Field.sum()</code> or <code>Field.max()</code>. So the
-<a href="#field-reductions">field-reduction rules</a> apply to them: their accuracy,
-repeatability and host traffic are those of field reductions.
+reduces that array with <code>Array.sum()</code> or <code>Array.max()</code>. So the
+<a href="#array-reductions">array-reduction rules</a> apply to them: their accuracy,
+repeatability and host traffic are those of array reductions.
 <code>count_nonzero</code> scans its 0/1 flags into <code>i64</code> on the device and reads only
 the total. <code>histogram</code> bins with <code>tack.atomic_add</code>, which gives exact
 counts in any order.</p>
@@ -2874,9 +3488,9 @@ counts in any order.</p>
 <tbody>
 <tr>
 <td><code>var(data, n=None)</code></td>
-<td>the data's precision, <code>Field.sum()</code></td>
+<td>the data's precision, <code>Array.sum()</code></td>
 <td>Python <code>float</code></td>
-<td>Mean is <code>data.sum() / n</code>, then Σ(x − mean)² / n; NaN when empty</td>
+<td>Mean of the first <code>n</code> values, then Σ(x − mean)² / n; integers convert to floating point first; NaN when empty</td>
 </tr>
 <tr>
 <td><code>std(data, n=None)</code></td>
@@ -2886,7 +3500,7 @@ counts in any order.</p>
 </tr>
 <tr>
 <td><code>norm(data, ord=2, n=None)</code></td>
-<td>the data's precision; <code>Field.sum()</code> for <code>ord</code> 1 and 2, <code>Field.max()</code> for infinity</td>
+<td>the data's precision; <code>Array.sum()</code> for <code>ord</code> 1 and 2, <code>Array.max()</code> for infinity</td>
 <td>Python <code>float</code></td>
 <td><code>ord</code> must equal <code>1</code>, <code>2</code> or <code>float("inf")</code>; anything else raises <code>ValueError: Unsupported norm order</code> before any launch. <code>0.0</code> when empty</td>
 </tr>
@@ -2894,7 +3508,7 @@ counts in any order.</p>
 <td><code>absmax(data, n=None)</code></td>
 <td>as <code>norm(data, float("inf"))</code></td>
 <td>Python <code>float</code></td>
-<td><code>0.0</code> when empty; a NaN propagates, as in <code>Field.max()</code></td>
+<td><code>0.0</code> when empty; a NaN propagates, as in <code>Array.max()</code></td>
 </tr>
 <tr>
 <td><code>count_nonzero(data, n=None)</code></td>
@@ -2904,35 +3518,33 @@ counts in any order.</p>
 </tr>
 <tr>
 <td><code>dot(a, b, n=None)</code></td>
-<td>f64 if either input is f64, otherwise f32; <code>Field.sum()</code></td>
+<td>f64 if either input is f64, otherwise f32; <code>Array.sum()</code></td>
 <td>Python <code>float</code></td>
 <td>Σ a[i]·b[i]; <code>0.0</code> when empty</td>
 </tr>
 <tr>
 <td><code>histogram(data, bins=10, range=None, n=None)</code></td>
 <td><code>i32</code> per bin, <code>atomic_add</code></td>
-<td><code>(counts, edges)</code>: an <code>i32</code> <strong>field</strong> of <code>bins</code> counts, still on the device, and a NumPy <code>float64</code> array of <code>bins + 1</code> edges</td>
+<td><code>(counts, edges)</code>: an <code>i32</code> <strong>array</strong> of <code>bins</code> counts, still on the device, and a NumPy <code>float64</code> array of <code>bins + 1</code> edges</td>
 <td>See below</td>
 </tr>
 </tbody>
 </table>
 <p><strong><code>n</code></strong> is the number of elements to read, in flat (row-major) order, so
-multi-dimensional fields work. <code>n=None</code> means <code>data.size</code> (for <code>dot</code>,
-<code>a.size</code>). Every function checks <code>n</code> against each field it reads and
-raises <code>ValueError</code> when <code>n</code> is negative or larger than a field, so
+multi-dimensional arrays work. <code>n=None</code> means <code>data.size</code> (for <code>dot</code>,
+<code>a.size</code>). Every function checks <code>n</code> against each array it reads and
+raises <code>ValueError</code> when <code>n</code> is negative or larger than an array, so
 <code>dot(a, b)</code> with a shorter <code>b</code> is refused rather than reading past it.</p>
-<p>With an <code>n</code> smaller than the field, everything covers the first <code>n</code>
+<p>With an <code>n</code> smaller than the array, everything covers the first <code>n</code>
 elements only: <code>var</code> and <code>std</code> take the mean of those elements, and
 <code>histogram</code> without <code>range</code> takes its range from them. To do that they copy
-the first <code>n</code> elements into a temporary field and reduce it with
-<code>Field.sum()</code>, <code>min()</code> and <code>max()</code>, so the mean and range follow the
-<a href="#field-reductions">field-reduction rules</a>.</p>
+the first <code>n</code> elements into a temporary array and reduce it with
+<code>Array.sum()</code>, <code>min()</code> and <code>max()</code>, so the mean and range follow the
+<a href="#array-reductions">array-reduction rules</a>.</p>
 <h3 id="dtypes-on-each-backend">Dtypes on each backend<a class="headerlink" href="#dtypes-on-each-backend" title="Permanent link">&para;</a></h3>
-<p>Every input dtype the backend can allocate works. The accumulators are
-always <code>f32</code> or <code>i32</code>, which are inside every backend's
-<a href="../../reference/language-contract/#atomic-field-updates">atomic domain</a>,
-so no backend rejects a statistics call because of the input dtype —
-Metal and Level Zero, which have no 64-bit atomics, included.</p>
+<p>Every input dtype the backend can allocate works. <code>var</code>, <code>std</code>, <code>norm</code>,
+<code>absmax</code> and <code>dot</code> form terms in a temporary array, then use array reductions.
+They do not require floating-point atomics in the input's dtype.</p>
 <table>
 <thead>
 <tr>
@@ -2953,10 +3565,10 @@ Metal and Level Zero, which have no 64-bit atomics, included.</p>
 </tr>
 <tr>
 <td><code>f64</code></td>
-<td>runs, accumulates in <code>f32</code></td>
-<td>runs, accumulates in <code>f32</code></td>
-<td>no <code>f64</code> fields</td>
-<td>runs where the device has <code>f64</code>, accumulates in <code>f32</code>; elsewhere the field cannot be allocated</td>
+<td><code>f64</code> terms and sums</td>
+<td><code>f64</code> terms and sums; host reduction</td>
+<td>no <code>f64</code> arrays</td>
+<td><code>f64</code> terms and sums where supported; host reduction</td>
 </tr>
 <tr>
 <td>integers</td>
@@ -2967,14 +3579,34 @@ Metal and Level Zero, which have no 64-bit atomics, included.</p>
 </tr>
 </tbody>
 </table>
-<p>So an <code>f64</code> input does not give an <code>f64</code> result: each term is rounded to
-<code>f32</code> before it is added. For example <code>dot</code> of <code>[1.0, 1e-9, 1e-9, 1e-9]</code>
-with itself returns exactly <code>1.0</code>.</p>
-<p>Integer inputs follow the kernel language's integer rules before the value
-reaches the accumulator. Products in <code>dot</code> and <code>norm(ord=2)</code> are computed
-in the input's integer type and wrap: for an <code>i32</code> field holding <code>100000</code>,
-<code>dot(x, x)</code> is <code>1410065408.0</code>, not <code>1e10</code>. <code>var</code>, <code>norm(ord=1)</code> and
-<code>absmax</code> subtract or negate in floating point and do not wrap.</p>
+<p>Integer inputs convert to the accumulation precision <strong>before</strong> products,
+subtraction or absolute values. This avoids integer overflow in a product
+such as <code>100000 * 100000</code>, though large integers can round on conversion
+to floating point. <code>dot</code> uses <code>f64</code> if either input is <code>f64</code>; otherwise these
+statistics use <code>f32</code>.</p>
+<h3 id="complete-example-check-accumulation-precision">Complete example: check accumulation precision<a class="headerlink" href="#complete-example-check-accumulation-precision" title="Permanent link">&para;</a></h3>
+<p>This CPU example checks both conversion before multiplication and double-precision
+accumulation. Save it as a <code>.py</code> file:</p>
+<!-- tack-check: statistics-precision -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tack.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">absmax</span><span class="p">,</span> <span class="n">dot</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="n">integers</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">100000</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span>
+<span class="k">assert</span> <span class="n">dot</span><span class="p">(</span><span class="n">integers</span><span class="p">,</span> <span class="n">integers</span><span class="p">)</span> <span class="o">==</span> <span class="mf">10_000_000_000.0</span>
+
+<span class="n">precise</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-4</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+<span class="n">actual</span> <span class="o">=</span> <span class="n">dot</span><span class="p">(</span><span class="n">precise</span><span class="p">,</span> <span class="n">precise</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="mf">1.00000003</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">actual</span><span class="p">)</span>                              <span class="c1"># approximately 1.00000003</span>
+
+<span class="n">with_nan</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">absmax</span><span class="p">(</span><span class="n">with_nan</span><span class="p">))</span>
+</code></pre></div>
+<p>The same <code>f64</code> calculation requires a backend that supports <code>f64</code> arrays.
+On a GPU it currently copies the temporary <code>f64</code> terms to the host for the sum,
+as described under <a href="#array-reductions">array reductions</a>.</p>
 <h3 id="nan-infinity-and-empty-inputs">NaN, infinity and empty inputs<a class="headerlink" href="#nan-infinity-and-empty-inputs" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2990,7 +3622,7 @@ in the input's integer type and wrap: for an <code>i32</code> field holding <cod
 <td><code>var</code>, <code>std</code></td>
 <td>NaN</td>
 <td>NaN</td>
-<td>NaN, as <code>Field.mean()</code> of an empty field</td>
+<td>NaN, as <code>Array.mean()</code> of an empty array</td>
 </tr>
 <tr>
 <td><code>norm(ord=1)</code>, <code>norm(ord=2)</code>, <code>dot</code></td>
@@ -3000,8 +3632,8 @@ in the input's integer type and wrap: for an <code>i32</code> field holding <cod
 </tr>
 <tr>
 <td><code>norm(ord=inf)</code>, <code>absmax</code></td>
-<td>not supported (see below)</td>
-<td>not supported (see below)</td>
+<td>NaN</td>
+<td><code>inf</code></td>
 <td><code>0.0</code></td>
 </tr>
 <tr>
@@ -3018,17 +3650,14 @@ in the input's integer type and wrap: for an <code>i32</code> field holding <cod
 </tr>
 </tbody>
 </table>
-<p><code>absmax</code> and <code>norm(ord=inf)</code> use atomic maximum, whose portable domain is
-finite values: NaNs and infinities are outside it. In probes on CPU and
-CUDA a NaN was skipped and an infinity gave <code>inf</code>, but no backend promises
-that.
-Use <code>field.max()</code> on <code>abs</code> values written by a kernel when NaNs must
-propagate.</p>
-<p>An empty field (<code>data.size == 0</code>) behaves like <code>n == 0</code>, where the backend
-can allocate one.</p>
+<p><code>absmax</code> and <code>norm(ord=inf)</code> reduce absolute values with <code>Array.max()</code>, including
+its NaN propagation. Histogram inputs still need finite, representable bin
+coordinates. With no explicit range, a nonfinite autodetected range raises
+<code>ValueError</code>; passing a finite range does not make a NaN input valid.</p>
+<p>An empty array (<code>data.size == 0</code>) behaves like <code>n == 0</code>.</p>
 <h3 id="histogram-binning">Histogram binning<a class="headerlink" href="#histogram-binning" title="Permanent link">&para;</a></h3>
 <p>The bin of each value is <code>int((x - lo) * (1 / width))</code>, computed in <code>f32</code>
-(<code>f64</code> for an <code>f64</code> field), where <code>width = (hi - lo) / bins</code>, then clamped
+(<code>f64</code> for an <code>f64</code> array), where <code>width = (hi - lo) / bins</code>, then clamped
 into <code>[0, bins - 1]</code>:</p>
 <ul>
 <li>values below <code>lo</code> are counted in the <strong>first</strong> bin and values above <code>hi</code>
@@ -3041,30 +3670,27 @@ into <code>[0, bins - 1]</code>:</p>
   backend-dependent: a value of <code>1e12</code> with <code>range=(0, 1)</code> lands in the first
   bin on CPU and in the last on CUDA. Filter such values first.</li>
 </ul>
-<p><code>bins</code> must be at least 1 (<code>bins=0</code> raises <code>ZeroDivisionError</code>), and
-<code>range</code> is not checked: <code>lo &gt; hi</code> produces meaningless counts. Because the
-bin index is computed in <code>f32</code> while <code>edges</code> is <code>float64</code>, a value lying
-exactly on an interior edge can land on either side of it. <code>counts</code> stays
-on the device; call <code>counts.to_numpy()</code> to read it.</p>
+<p>Use an integer <code>bins</code> of at least 1. <code>bins=0</code> raises <code>ValueError</code>, as does a
+range with a nonfinite endpoint or <code>lo &gt; hi</code>. Equal endpoints are expanded
+by setting <code>hi = lo + 1</code>. For an <code>f32</code> input the bin arithmetic uses <code>f32</code>
+while <code>edges</code> is <code>float64</code>, so a value lying exactly on an interior edge can
+land on either side of it. <code>counts</code> stays on the device; call
+<code>counts.numpy()</code> to read it. Counts must fit in each bin's <code>i32</code> accumulator.</p>
 <h3 id="accuracy-and-repeatability">Accuracy and repeatability<a class="headerlink" href="#accuracy-and-repeatability" title="Permanent link">&para;</a></h3>
-<p>Every term is added into a single <code>f32</code> value, in whatever order the
-iterations reach the atomic. Two consequences:</p>
-<ul>
-<li><strong>The low bits can change from run to run</strong> for <code>var</code>, <code>std</code>,
-  <code>norm(ord=1)</code>, <code>norm(ord=2)</code> and <code>dot</code>, on CPU when it uses worker
-  threads as well as on GPUs. <code>count_nonzero</code>, <code>histogram</code> counts,
-  <code>absmax</code> and <code>norm(ord=inf)</code> on finite inputs are exact and repeatable.</li>
-<li><strong>Error grows with <code>n</code>.</strong> These are not compensated or tree sums. In a
-  2^20-element <code>dot</code> of normally distributed <code>f32</code> values, the relative error
-  against a <code>float64</code> reference was about 4·10⁻⁴. When accuracy matters,
-  write the terms into a field with a kernel and call <code>field.sum()</code>, whose
-  error budget is stated in the contract.</li>
-</ul>
+<p>The sum's order and error budget are those of <a href="#array-reductions">array reductions</a>.
+On GPUs, the <code>f32</code> tree sums combine group results atomically, so their low bits
+can vary. The current CPU and <code>f64</code> host reductions use NumPy; portable code
+should still compare floating sums with a suitable tolerance.</p>
+<p>The reduction budget covers summing the terms. Rounding when forming products,
+squares or deviations from a mean also contributes to a statistic's error.
+Check against an independent reference in the precision appropriate for the
+problem. <code>count_nonzero</code> is exact, and histogram counts are exact while they fit
+their <code>i32</code> bins. Extrema are order-independent and propagate NaNs as above.</p>
 <h2 id="prefix-scans">Prefix scans<a class="headerlink" href="#prefix-scans" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">exclusive_scan</span><span class="p">,</span> <span class="n">inclusive_scan</span>
 
-<span class="n">counts</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
-<span class="n">offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+<span class="n">offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
 <span class="c1"># ... a kernel fills counts ...</span>
 
 <span class="n">total</span> <span class="o">=</span> <span class="n">exclusive_scan</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>  <span class="c1"># offsets[i] = counts[0] + ... + counts[i-1]</span>
@@ -3072,33 +3698,35 @@ iterations reach the atomic. Two consequences:</p>
 </code></pre></div>
 <p>The classic use is stream compaction: one kernel counts how many outputs
 each item produces, an exclusive scan turns the counts into write offsets,
-and the returned total sizes the output field. When the output can exceed
+and the returned total sizes the output array. When the output can exceed
 2^31 − 1 elements, keep the counts <code>i32</code> but make the offsets <code>i64</code>: the
 scan runs in the output's dtype, so the running sums are formed in <code>i64</code>
 and the total comes back exact.</p>
-<div class="highlight"><pre><span></span><code><span class="n">offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
+<div class="highlight"><pre><span></span><code><span class="n">offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">)</span>
 <span class="n">total</span> <span class="o">=</span> <span class="n">exclusive_scan</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>  <span class="c1"># i32 counts, i64 offsets and total</span>
 </code></pre></div>
 <p>Both functions run on every backend, by chunks: each chunk is copied into
 the output and totalled, the chunk totals are scanned the same way,
 recursively, and each chunk then writes its running sums from its offset.
-That is two launches per level. On the CPU a chunk is 256 elements, one
-thread each: three levels, eight launches, for a million elements. On GPU
-backends a chunk is a tile of 2048 elements scanned by one workgroup --
-eight elements to each of its 256 lanes, the lane totals scanned in shared
-memory -- so a million elements take two levels. Launches on the CPU, CUDA,
-HIP and Level Zero complete before returning; Metal queues them and waits
-when the host next reads a field. For small arrays, copying to NumPy,
-calling <code>np.cumsum</code> and copying back can still be faster.</p>
+That is two launches per level, and a level small enough for one thread
+-- 4096 elements on the CPU, one tile on GPU backends -- is one launch
+that scans it in order. On the CPU a chunk is 256 elements, one thread
+each: a million elements take a chunked level and a serial one, three
+launches. On GPU backends a chunk is a tile of 2048 elements scanned by
+one workgroup -- eight elements to each of its 256 lanes, the lane totals
+scanned in shared memory -- so a million elements take a tiled level and
+a serial one. Launches on the CPU complete before returning; Metal, CUDA,
+HIP and Level Zero queue them and wait when the host next reads an array.
+For small arrays, copying to NumPy, calling <code>np.cumsum</code> and copying
+back can still be faster.</p>
 <p><strong>Return value.</strong> Both return the sum of the first <code>n</code> inputs, in the
-output field's dtype, as a Python <code>int</code> (integer outputs) or <code>float</code>
-(floating outputs). It is read by a one-element kernel that copies the last
-inclusive sum into a one-element field, so only that element comes back to
-the host, not the whole output.</p>
+output array's dtype, as a Python <code>int</code> (integer outputs) or <code>float</code>
+(floating outputs). It is read as one element from the device, so only
+that element comes back to the host, not the whole output.</p>
 <p><strong>Behavior.</strong></p>
 <ul>
 <li>Any dtype the backend allocates works. The scan runs in the <strong>output</strong>
-  field's dtype; input values convert to it on the copy, as
+  array's dtype; input values convert to it on the copy, as
   <code>numpy.cumsum</code> does with an output dtype (an <code>i32</code> input scanned into an
   <code>f32</code> output gives <code>f32</code> sums). Integer sums wrap at the output's width,
   and so does the returned total.</li>
@@ -3106,25 +3734,26 @@ the host, not the whole output.</p>
   work <strong>in place</strong>: <code>exclusive_scan(f, f, n)</code> and <code>inclusive_scan(f, f, n)</code>
   are correct.</li>
 <li>Only the first <code>n</code> elements are read and written; later output elements
-  are left alone. <code>n</code> must be at most the size of both fields; a larger or
+  are left alone. <code>n</code> must be at most the size of both arrays; a larger or
   negative <code>n</code> raises <code>ValueError</code>. <code>n = 0</code> writes nothing and returns <code>0</code>,
   the empty sum.</li>
 <li>Returning the total means reading it to the host, which waits for the
-  device (on Metal, for every launch queued so far). A caller that needs
+  device (on GPU backends, for every launch queued so far). A caller that needs
   only the offsets passes <code>total=False</code>: the scan returns <code>None</code>, reads
   nothing, and stays queued with whatever follows.</li>
-<li>Each call allocates two fields of the output's dtype per level, the
-  chunk totals and their offsets, one element per chunk: about <code>n / 128</code>
-  elements in all on the CPU, <code>n / 1024</code> on GPUs, not a copy of the input.</li>
+<li>Each call allocates two arrays of the output's dtype per chunked level,
+  the chunk totals and their offsets, one element per chunk: about
+  <code>n / 128</code> elements in all on the CPU, <code>n / 1024</code> on GPUs, not a copy of
+  the input, and a one-element array for the total.</li>
 <li>Integer results are exact (modulo wrapping) and identical on every
   backend and every run.</li>
-<li>Floating results are deterministic for a given <code>n</code> and backend. On the
-  CPU, through 512 elements (two chunks) they are added in <code>np.cumsum</code>'s
-  order and match it bit for bit; from the third chunk on, a chunk starts
-  from the sum of the earlier chunks' totals rather than from the previous
-  element's running sum, so results can differ from <code>np.cumsum</code> in the last
-  bits. On GPUs that happens from the ninth element: a tile's lanes start
-  from their predecessors' totals, combined in tree order.</li>
+<li>Floating results are deterministic for a given <code>n</code> and backend. Through
+  the serial level's size -- 4096 elements on the CPU, 2048 on GPUs --
+  they are added in <code>np.cumsum</code>'s order and match it bit for bit; beyond
+  it a chunk starts from the sum of the earlier chunks' totals rather than
+  from the previous element's running sum (on GPUs a tile's lanes from
+  their predecessors' totals, combined in tree order), so results can
+  differ from <code>np.cumsum</code> in the last bits.</li>
 </ul>
 <h3 id="copy-and-fill-utilities">Copy and fill utilities<a class="headerlink" href="#copy-and-fill-utilities" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">copy</span><span class="p">,</span> <span class="n">fill_value</span>
@@ -3132,20 +3761,20 @@ the host, not the whole output.</p>
 <span class="n">copy</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>          <span class="c1"># dst[i] = src[i] for i &lt; n</span>
 <span class="n">fill_value</span><span class="p">(</span><span class="n">dst</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>      <span class="c1"># dst[i] = 0 for i &lt; n</span>
 </code></pre></div>
-<p>Both are single kernels on the active backend and return <code>None</code>. They work
+<p>Both are single kernels on their arrays' device and return <code>None</code>. They work
 on the first <code>n</code> elements in flat order and do not check <code>n</code> against either
-field.</p>
+array.</p>
 <ul>
 <li><code>copy</code> converts on store into <code>dst</code>'s dtype with the kernel language's
   rules: floats truncate toward zero (<code>2.7</code> → <code>2</code>, <code>-2.7</code> → <code>-2</code>) and must
-  fit the target; integers wrap. Unlike <code>field.copy()</code>, it writes into an
-  existing field rather than allocating one.</li>
+  fit the target; integers wrap. Unlike <code>array.copy()</code>, it writes into an
+  existing array rather than allocating one.</li>
 <li><code>fill_value</code> passes <code>value</code> as a kernel scalar argument (a Python float is
   <code>f32</code>, or <code>f64</code> when <code>dst</code> is <code>f64</code>; an int is <code>i32</code>, or <code>i64</code>/<code>u64</code> by
-  magnitude) and converts it on store: <code>2.5</code> fills an <code>i32</code> field with <code>2</code>,
-  and <code>300</code> fills a <code>u8</code> field with <code>44</code>. Unlike <code>field.fill(value)</code>, which
-  fills the whole field through a host-side NumPy array, it fills a prefix
-  with a kernel.</li>
+  magnitude) and converts it on store: <code>2.5</code> fills an <code>i32</code> array with <code>2</code>,
+  and <code>300</code> fills a <code>u8</code> array with <code>44</code>. Unlike <code>array.fill(value)</code>, which
+  converts the value as NumPy's <code>ndarray.fill</code> does and fills the whole
+  array, it fills a prefix.</li>
 <li><code>copy_with_offset(src, dst, dst_offset, n)</code> writes
   <code>dst[dst_offset + i] = src[i]</code>. It is not re-exported from
   <code>tack.algorithms</code>; write <code>from tack.algorithms.copy import copy_with_offset</code>.
@@ -3155,8 +3784,8 @@ field.</p>
 <h2 id="sorting-and-segmented-reductions">Sorting and segmented reductions<a class="headerlink" href="#sorting-and-segmented-reductions" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">argsort</span><span class="p">,</span> <span class="n">gather</span><span class="p">,</span> <span class="n">reduce_by_key</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="p">,</span> <span class="n">unique</span>
 
-<span class="n">perm</span> <span class="o">=</span> <span class="n">argsort</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span>                           <span class="c1"># index field: keys[perm] ascending, stable</span>
-<span class="n">skeys</span><span class="p">,</span> <span class="n">svals</span> <span class="o">=</span> <span class="n">sort_by_key</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>       <span class="c1"># new fields, values carried along</span>
+<span class="n">perm</span> <span class="o">=</span> <span class="n">argsort</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span>                           <span class="c1"># index array: keys[perm] ascending, stable</span>
+<span class="n">skeys</span><span class="p">,</span> <span class="n">svals</span> <span class="o">=</span> <span class="n">sort_by_key</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>       <span class="c1"># new arrays, values carried along</span>
 <span class="n">ukeys</span><span class="p">,</span> <span class="n">counts</span> <span class="o">=</span> <span class="n">unique</span><span class="p">(</span><span class="n">skeys</span><span class="p">)</span>                  <span class="c1"># each distinct key once, and its run length</span>
 <span class="n">ukeys</span><span class="p">,</span> <span class="n">sums</span> <span class="o">=</span> <span class="n">reduce_by_key</span><span class="p">(</span><span class="n">skeys</span><span class="p">,</span> <span class="n">svals</span><span class="p">)</span>      <span class="c1"># one value per distinct key; op=&quot;sum&quot;|&quot;min&quot;|&quot;max&quot;</span>
 <span class="n">picked</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">perm</span><span class="p">)</span>                  <span class="c1"># picked[i] = values[perm[i]]</span>
@@ -3170,15 +3799,15 @@ always <em>make a key per item, sort, then walk the runs of equal keys</em>:</p>
 <span class="c1"># ids of each cell&#39;s corners; cell_of holds the cell id of each entry.</span>
 <span class="n">points</span><span class="p">,</span> <span class="n">cells</span> <span class="o">=</span> <span class="n">sort_by_key</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">cell_of</span><span class="p">)</span>     <span class="c1"># entries grouped by point</span>
 <span class="n">upoints</span><span class="p">,</span> <span class="n">counts</span> <span class="o">=</span> <span class="n">unique</span><span class="p">(</span><span class="n">points</span><span class="p">)</span>               <span class="c1"># each point and its cell count</span>
-<span class="n">offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">upoints</span><span class="o">.</span><span class="n">size</span><span class="p">,))</span>
+<span class="n">offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">upoints</span><span class="o">.</span><span class="n">size</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
 <span class="n">exclusive_scan</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">upoints</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>  <span class="c1"># cells[offsets[p]:offsets[p]+counts[p]]</span>
 </code></pre></div>
-<p>All five functions allocate and return new fields rather than writing into
-the caller's, and take an optional <code>n</code> (default: the whole field) with the
-same bounds check as the scans: <code>n</code> past any field involved raises
-<code>ValueError</code>, and <code>n = 0</code> returns empty fields.</p>
+<p>All five functions allocate and return new arrays rather than writing into
+the caller's, and take an optional <code>n</code> (default: the whole array) with the
+same bounds check as the scans: <code>n</code> past any array involved raises
+<code>ValueError</code>, and <code>n = 0</code> returns empty arrays.</p>
 <p><strong>Sorting</strong> (<code>argsort</code>, <code>sort_by_key</code>). Keys are <code>i32</code>, <code>u32</code>, <code>i64</code> or
-<code>u64</code> fields; any other key dtype raises <code>TypeError</code>. The sort is
+<code>u64</code> arrays; any other key dtype raises <code>TypeError</code>. The sort is
 <strong>stable</strong>, so equal keys keep their original order, and <code>sort_by_key</code>'s
 values keep theirs. Values can be any dtype; they are gathered once by the
 final permutation, so <code>sort_by_key(keys, values)</code> costs an <code>argsort</code> plus
@@ -3203,8 +3832,8 @@ are already grouped — sorted, or merely with equal keys adjacent — and
 work on any key dtype that supports <code>!=</code>, floats included. They return the
 first key of each run in order of appearance, so an unsorted input such as
 <code>[7, 7, 2, 2, 7]</code> gives <code>[7, 2, 7]</code>; sort first for a true set of distinct
-keys. <code>unique</code> returns the run lengths as an <code>i32</code> field. <code>reduce_by_key</code>
-reduces each run's values with <code>"sum"</code>, <code>"min"</code> or <code>"max"</code> into a field of
+keys. <code>unique</code> returns the run lengths as an <code>i32</code> array. <code>reduce_by_key</code>
+reduces each run's values with <code>"sum"</code>, <code>"min"</code> or <code>"max"</code> into an array of
 the values' dtype, running one thread per run <strong>serially in element
 order</strong>: integer sums are exact modulo the values' width, and floating
 results are reproducible and equal to a sequential sum of the run. The
@@ -3222,8 +3851,8 @@ the result. Use them to reduce within a kernel without a separate pass:</p>
             <span class="n">partial</span><span class="p">[</span><span class="n">i</span> <span class="o">//</span> <span class="mi">256</span><span class="p">]</span> <span class="o">=</span> <span class="n">s</span>       <span class="c1"># one lane writes the group&#39;s result</span>
 
 <span class="n">n</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span>                             <span class="c1"># a multiple of 256</span>
-<span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
-<span class="n">partial</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span> <span class="o">//</span> <span class="mi">256</span><span class="p">,))</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>
+<span class="n">partial</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span> <span class="o">//</span> <span class="mi">256</span><span class="p">,))</span>
 <span class="n">group_sums</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">partial</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
 <span class="n">total</span> <span class="o">=</span> <span class="n">partial</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
 </code></pre></div>
@@ -3235,7 +3864,7 @@ never runs: calling it raises <code>RuntimeError</code> ("Kernel 'group_sums' fa
 on CPUBackend: CPU backend does not support workgroup execution required
 by block_sum, thread_id ..."), and <code>tack.inspect</code> raises
 <code>NotImplementedError</code>. Check <code>get_backend().supports_workgroups</code> to choose
-a path, and use the field reductions or statistics above on CPU.</p>
+a path, and use the array reductions or statistics above on CPU.</p>
 <p><strong>Rules.</strong> The <a href="../../reference/language-contract/#workgroups-and-synchronization">workgroup contract</a>
 has the full conservative domain; in short:</p>
 <ul>
@@ -3244,15 +3873,15 @@ has the full conservative domain; in short:</p>
   explicit f32 cast") on the first call. Write <code>tack.block_sum(tack.f32(x))</code>
   for an integer or <code>f64</code> value.</li>
 <li><strong>Complete groups.</strong> A positive iteration count must be a multiple of
-  256, including stepped ranges and the total of a <code>tack.ndrange</code>.
+  256, including stepped ranges and the total of a <code>tack.ndindex</code>.
   Otherwise the call raises <code>ValueError</code> ("... require complete 256-lane
   groups; iteration count 1000 would create a partial workgroup") before
   anything runs. A count of zero runs nothing. Tack does not pad; pad the
   data to a multiple of 256 with the reduction's identity (<code>0.0</code> for a sum,
   <code>inf</code> for a minimum, <code>-inf</code> for a maximum).</li>
 <li><strong>Every lane participates.</strong> The reduction must be reached by all lanes
-  of the group: not under a condition that depends on the loop index, a
-  field value or <code>thread_id()</code>, not after a lane-dependent <code>break</code> or
+  of the group: not under a condition that depends on the loop index, an
+  array value or <code>thread_id()</code>, not after a lane-dependent <code>break</code> or
   <code>continue</code>, and not in a conditional expression, the second operand of
   <code>and</code>/<code>or</code>, or a <code>while</code> condition. Conditions on scalar arguments and
   on earlier block-reduction results are fine. Violations raise
@@ -3262,10 +3891,10 @@ has the full conservative domain; in short:</p>
 <li>The generated reduction includes its own barriers, including one after
   the result is read, so no extra <code>tack.barrier()</code> is needed around it.</li>
 </ul>
-<p><strong>Values.</strong> <code>block_min</code> and <code>block_max</code> follow the field-reduction rules: a
+<p><strong>Values.</strong> <code>block_min</code> and <code>block_max</code> follow the array-reduction rules: a
 NaN in the group gives NaN, and zero ties give <code>-0.0</code> for the minimum and
 <code>0.0</code> for the maximum. <code>block_sum</code> adds in a tree whose order may vary, with
-the same error budget as field sums over the group's terms. Combining the
+the same error budget as array sums over the group's terms. Combining the
 group sums with <code>tack.atomic_add</code> adds in arrival order, so such a total
 can change in its low bits from run to run.</p>
 

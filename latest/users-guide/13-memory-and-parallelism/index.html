@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/13-memory-and-parallelism/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/13-memory-and-parallelism/">
       
       
         <link rel="prev" href="../06-templates/">
       
       
-        <link rel="next" href="../07-advanced/">
+        <link rel="next" href="../11-reductions-and-scans/">
       
       
         
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -509,6 +521,61 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../01-getting-started/" class="md-nav__link">
         
@@ -566,14 +633,107 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -879,21 +1039,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -901,11 +1088,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -934,6 +1129,384 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -998,62 +1571,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1070,6 +1587,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1098,10 +1651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1119,8 +1672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1326,34 +1879,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1464,6 +1989,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1660,6 +2213,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2573,44 +3154,56 @@
 owns each output, and what can it read while other iterations are writing?</strong>
 Start with independent writes. Add sharing only when the algorithm requires it.</p>
 <h2 id="describe-your-layout-explicitly">Describe your layout explicitly<a class="headerlink" href="#describe-your-layout-explicitly" title="Permanent link">&para;</a></h2>
-<p>A scalar field with <code>shape=(height, width)</code> stores <code>height * width</code> values in
+<p>A scalar array with <code>shape=(height, width)</code> stores <code>height * width</code> values in
 row-major order: the last index varies fastest. <code>image[row, column]</code> is the same
 scalar as <code>image[row * width + column]</code> in a kernel.</p>
-<p>A vector field adds components to each logical element:</p>
+<p>For a two-row, three-column array, the last index runs fastest:</p>
+<pre class="mermaid"><code>flowchart TB
+    A["Logical grid: shape = (2, 3)"] --&gt; B["Row 0: a[0,0] · a[0,1] · a[0,2]"]
+    A --&gt; C["Row 1: a[1,0] · a[1,1] · a[1,2]"]
+    B --&gt; D["Flat storage: row 0, then row 1"]
+    C --&gt; D
+    D --&gt; E["Scalar offsets: 0 · 1 · 2 · 3 · 4 · 5"]</code></pre>
+<p>A vector array adds components to each logical element:</p>
 <table>
 <thead>
 <tr>
 <th>Allocation</th>
 <th>Logical element</th>
-<th><code>to_numpy(vectors=True)</code></th>
+<th><code>numpy()</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>tack.field(f32, shape=(h, w))</code></td>
-<td>One scalar per pixel</td>
+<td><code>tack.empty((h, w))</code></td>
+<td>One f32 scalar per pixel</td>
 <td><code>(h, w)</code></td>
 </tr>
 <tr>
-<td><code>tack.Vector.field(3, f32, shape=(h, w))</code></td>
+<td><code>tack.empty((h, w), tack.vec3())</code></td>
 <td>One RGB vector per pixel</td>
 <td><code>(h, w, 3)</code></td>
 </tr>
 <tr>
-<td><code>tack.Matrix.field(2, 2, f32, shape=(n,))</code></td>
+<td><code>tack.empty((n,), tack.mat2())</code></td>
 <td>One 2×2 matrix per particle</td>
 <td><code>(n, 2, 2)</code></td>
 </tr>
 </tbody>
 </table>
-<p>The first row uses plain <code>to_numpy()</code>; the option matters for vector/matrix fields.
-Their plain <code>to_numpy()</code> returns flat component storage. Host indexing reads a
-logical element; flat component indexing is a device-code convention.</p>
-<p>Some examples instead use <code>(width, height)</code> and index <code>[x, y]</code>. Both conventions
-are valid. State yours, and transpose for an image library expecting <code>[row, column]</code>.
+<p>Every row uses the same constructor and download method. The dtype determines
+the component dimensions, which are appended to the array shape in NumPy.
+Host indexing reads a logical element; flat component indexing is an internal
+storage convention.</p>
+<p>For an RGB array, the flat order is <code>R00, G00, B00, R01, G01, B01, …</code>:
+components stay together, then the column advances, then the row.</p>
+<p>The introductory grid examples use <code>(height, width)</code> and <code>[row, column]</code>.
+The <a href="../tutorials/dye/">dye tutorial</a> instead uses <code>(width, height)</code> and <code>[x, y]</code>
+to match its coordinate arithmetic; it transposes for image output. Both
+conventions are valid, but conversions must respect which one was used.
 Uniform-grid visualization uses x-fast flat indexing:
 <code>i + nx_points * (j + ny_points * k)</code>. That is a different convention from a
-scalar field with shape <code>(nx_points, ny_points, nz_points)</code>; do not interchange
+scalar array with shape <code>(nx_points, ny_points, nz_points)</code>; do not interchange
 the layouts without arranging the data accordingly.</p>
 <h2 id="one-writer-per-output">One writer per output<a class="headerlink" href="#one-writer-per-output" title="Permanent link">&para;</a></h2>
 <p>This kernel is safe even when it updates its input in place:</p>
@@ -2623,16 +3216,20 @@ the layouts without arranging the data accordingly.</p>
 per-particle velocity updates when each iteration reads completed forces and
 writes only its own particle.</p>
 <p>Tack does not establish race freedom for you. A kernel compiling successfully
-does not mean two iterations cannot interfere. Field accesses are not generally
-bounds-checked either: keep indices within the storage you allocated. Negative
-host indices count from the end; do not assume that rule for kernel field loads.</p>
+does not mean two iterations cannot interfere. Array accesses are not
+bounds-checked either: keep indices within the storage you allocated.
+<a href="../15-debugging-and-timing/#check-every-index-with-debug-mode">Debug mode</a>
+(<code>tack.set_debug(True)</code> or <code>TACK_DEBUG=1</code>) checks every array
+index and raises <code>IndexError</code> naming the access, for finding such a bug.
+Negative host indices count from the end; do not assume that rule for kernel
+array loads.</p>
 <h2 id="neighbour-reads-need-a-stable-input">Neighbour reads need a stable input<a class="headerlink" href="#neighbour-reads-need-a-stable-input" title="Permanent link">&para;</a></h2>
 <p>A smoothing stencil reads the old values around every cell. Updating the same
-field allows one iteration to see a neighbour already changed by another.
-Use distinct input/output fields:</p>
+array allows one iteration to see a neighbour already changed by another.
+Use distinct input/output arrays:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">smooth</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndrange</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndindex</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
         <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">new</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="p">(</span><span class="n">old</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span> <span class="n">old</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
                                <span class="o">+</span> <span class="n">old</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">old</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
@@ -2643,16 +3240,17 @@ Use distinct input/output fields:</p>
     <span class="n">smooth</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="n">new</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
     <span class="n">old</span><span class="p">,</span> <span class="n">new</span> <span class="o">=</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span>
 </code></pre></div>
-<p>The swap changes Python references and costs no field copy. Both buffers must
+<p>The swap changes Python references and costs no array copy. Both buffers must
 have the same layout. Write every output that the next step will read, including
-the boundary. When using an interior-only <code>ndrange</code>, initialize or explicitly
-maintain the unwritten border of <strong>both</strong> buffers.</p>
+the boundary. When using an interior-only <code>ndindex</code>, initialize or explicitly
+maintain the unwritten border of <strong>both</strong> buffers: a new array's contents are
+unspecified, and <code>tack.zeros</code> is the allocation that starts at zero.</p>
 <p>The <a href="../tutorials/heat/">heat tutorial</a> develops this pattern. In-place numerical
 schemes can be valid when they have an explicit ordering strategy, such as
 red-black updates in separate calls, but that needs an algorithm-specific argument.</p>
 <h2 id="views-still-share-storage">Views still share storage<a class="headerlink" href="#views-still-share-storage" title="Permanent link">&para;</a></h2>
 <p><code>reshape</code> is a view; <code>copy</code> makes independent storage:</p>
-<div class="highlight"><pre><span></span><code><span class="n">grid</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><span class="n">grid</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
 <span class="n">view</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="mi">64</span><span class="p">,))</span>                 <span class="c1"># same allocation</span>
 <span class="n">independent</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>                 <span class="c1"># another allocation</span>
 </code></pre></div>
@@ -2703,14 +3301,17 @@ or check the resulting index.</p>
 input its own output interval and tells Python the exact allocation size. See
 <a href="../tutorials/contours/">Marching squares</a> for a complete example.</p>
 <h2 id="host-access-and-ownership">Host access and ownership<a class="headerlink" href="#host-access-and-ownership" title="Permanent link">&para;</a></h2>
-<p>Allocate fields after <code>tack.init</code>. Fields belong to the backend that created
-them; selecting another backend does not migrate their storage. Start a fresh
-set of fields when changing the backend.</p>
-<p><code>from_numpy</code> and <code>to_numpy</code> transfer complete arrays. On CPU and Metal storage is
-host-addressable, but these methods still copy values. A host read <code>field[i]</code>
+<p>Every array belongs to the device it was allocated on (<code>a.device</code>), and a
+kernel runs on its arrays' device. Changing the default device does not move
+existing arrays; they keep working where they are. Use <code>a.to_device(d)</code> to
+copy one to another device. See <a href="../08-backends/#devices">Devices</a>.</p>
+<p><code>tack.copyto</code> and <code>numpy()</code> transfer complete arrays. On CPU and Metal storage is
+host-addressable, but these calls still copy values. A host read <code>array[i]</code>
 reads one logical element; CUDA, HIP and Level Zero copy just that range, one
-transfer per read. Avoid making it the inner loop of an application.</p>
-<p>For shared storage, <code>field_from_ptr</code> and DLPack have distinct lifetime and
+transfer per read. Avoid making it the inner loop of an application. On
+GPU backends launches are queued, and each of these reads first waits for
+the launches before it; see <a href="../08-backends/#when-a-call-returns">When a call returns</a>.</p>
+<p>For shared storage, <code>array_from_ptr</code> and DLPack have distinct lifetime and
 writability rules. Keep an external pointer's owner alive for as long as its
 Tack view is used. See <a href="../16-interoperability/">Interoperability</a>.</p>
 

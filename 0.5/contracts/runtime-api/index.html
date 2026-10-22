@@ -1,0 +1,4843 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
+      
+      
+      
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/contracts/runtime-api/">
+      
+      
+        <link rel="prev" href="../backend-capabilities/">
+      
+      
+        <link rel="next" href="../conformance/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Runtime API - Tack</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#runtime-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Tack" class="md-header__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Tack
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Runtime API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../users-guide/" class="md-tabs__link">
+          
+  
+  
+  User's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../design/" class="md-tabs__link">
+          
+  
+  
+  Design and Implementation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Contracts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developers-guide/" class="md-tabs__link">
+          
+  
+  
+  Developer's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/backends/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Tack" class="md-nav__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Tack
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack User's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/01-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/12-execution-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From Python to a Tack program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/14-vectors-and-matrices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vectors and Matrices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/03-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/04-control-flow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Flow and Math
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/05-device-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/06-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/13-memory-and-parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Parallel Correctness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/11-reductions-and-scans/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reductions and Scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/08-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/16-interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing Arrays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging and Timing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worked Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Worked Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/heat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heat Diffusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/dye/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advecting Dye
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/physarum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trail-following Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/contours/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Marching Squares
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/mpm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Particle-to-grid Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/nbody/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tiled N-body Forces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design and Implementation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/compilation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compilation Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/specialization-and-caching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specialization and Caching
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/numerical-semantics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Numerical Semantics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/parallel-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallel Execution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/memory-and-aliasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Aliasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/cpu-threading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Threading Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/backend-implementations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contracts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/language-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Language Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backend-capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Capabilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Devices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackdevicespeccpu-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.device(spec="cpu", **options)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackdevice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.Device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackdevice_counttype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.device_count(type)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackset_default_devicespeccpu-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.set_default_device(spec="cpu", **options)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackget_default_device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.get_default_device()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-arrays-live-and-kernels-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where arrays live and kernels run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackset_debugenabledtrue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.set_debug(enabled=True)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#arrays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Arrays
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Arrays">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tacksync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.sync()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reductions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reductions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pointer-interop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pointer interop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pointer interop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackarray_from_ptrptr-shape-dtype-devicenone-writablefalse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.array_from_ptr(ptr, shape, dtype, *, device=None, writable=False)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackmemory_spaceptr-devicenone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.memory_space(ptr, *, device=None)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dlpack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DLPack
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vtk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VTK
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackinspectkernel-args-modesource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.inspect(kernel, *args, mode="source")
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decorators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decorators
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decorators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackkernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @tack.kernel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackfunc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @tack.func
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackdevice_class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @tack.device_class
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calling-a-kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calling a kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackcache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conformance and Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/01-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/02-ast-transform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AST Transform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/03-ir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/04-ir-passes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR Passes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/05-codegen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codegen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/06-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/07-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/08-adding-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Devices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackdevicespeccpu-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.device(spec="cpu", **options)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackdevice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.Device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackdevice_counttype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.device_count(type)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackset_default_devicespeccpu-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.set_default_device(spec="cpu", **options)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackget_default_device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.get_default_device()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-arrays-live-and-kernels-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where arrays live and kernels run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackset_debugenabledtrue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.set_debug(enabled=True)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#arrays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Arrays
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Arrays">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tacksync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.sync()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reductions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reductions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pointer-interop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pointer interop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pointer interop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackarray_from_ptrptr-shape-dtype-devicenone-writablefalse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.array_from_ptr(ptr, shape, dtype, *, device=None, writable=False)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackmemory_spaceptr-devicenone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.memory_space(ptr, *, device=None)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dlpack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DLPack
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vtk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VTK
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackinspectkernel-args-modesource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.inspect(kernel, *args, mode="source")
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decorators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decorators
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decorators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackkernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @tack.kernel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackfunc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @tack.func
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tackdevice_class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @tack.device_class
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calling-a-kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calling a kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tackcache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="runtime-api">Runtime API<a class="headerlink" href="#runtime-api" title="Permanent link">&para;</a></h1>
+<p>This page is the contract for Tack's host-side surface: choosing
+devices, creating and moving arrays, reductions, sharing memory with other
+libraries, inspecting generated code, the decorators, and the rules for
+calling a kernel. Each entry gives the signature, what is guaranteed, what
+the caller must ensure, and which exception a violation raises. What a
+kernel <em>computes</em> is defined by the
+<a href="../../reference/language-contract/">kernel language contract</a>. What each
+backend supports is defined in <a href="../backend-capabilities/">Backend capabilities</a>.</p>
+<p>All statements describe release candidate <code>23d6e1d</code>, updated for the
+queued launches, disk cache, debug mode and CPU pool merged through
+<code>b94af23</code>, and for the device model of <code>bba0846</code>. They use the labels
+defined in <a href="../#how-to-read-a-contract">Contracts</a>.</p>
+<h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
+<p>Defined in <code>packages/tack-core/src/tack/runtime/dispatch.py</code> and
+re-exported as <code>tack.device</code>, <code>tack.Device</code>, <code>tack.device_count</code>, <code>tack.set_default_device</code>,
+<code>tack.get_default_device</code>, <code>tack.set_debug</code>, <code>tack.sync</code> and
+<code>tack.sync_async</code>.</p>
+<h3 id="tackdevicespeccpu-options"><code>tack.device(spec="cpu", **options)</code><a class="headerlink" href="#tackdevicespeccpu-options" title="Permanent link">&para;</a></h3>
+<p>Returns the <code>tack.Device</code> that <code>spec</code> names. A <code>Device</code> passed as <code>spec</code> is
+returned as it is.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec</code></td>
+<td><code>"cpu"</code>, <code>"metal"</code>, <code>"cuda"</code>, <code>"hip"</code> or <code>"level_zero"</code>. The numbered types (<code>cuda</code>, <code>hip</code>, <code>level_zero</code>) also take <code>"type:N"</code>, such as <code>"cuda:1"</code>: device N as its runtime numbers it (the CUDA device ordinal, the HIP device id, the index among the first Level Zero driver's devices). A bare <code>"cuda"</code> or <code>"hip"</code> is the device the calling thread already uses: the device of a CUDA context another library made current on the thread, or HIP's current device (<code>hipGetDevice()</code>), else 0. <code>"level_zero"</code> means <code>"level_zero:0"</code>. <code>cpu</code> and <code>metal</code> are written bare</td>
+</tr>
+<tr>
+<td><code>**options</code></td>
+<td>Forwarded to the backend constructor. Each option must be in that backend's <code>device_options</code>. CPU declares <code>num_threads</code>, which takes precedence over <code>TACK_CPU_THREADS</code>, and Level Zero declares <code>external_context</code> (the driver, device and context handles of a context owned by another library). The other backends declare none</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Current behavior:</strong></p>
+<ul>
+<li>Without options, each <code>(type, index)</code> is made on first use and is the
+  same <code>Device</code> on every later call. Its compiled kernels and its arrays
+  are shared by everything that asks for it.</li>
+<li>With options, every call makes a new device, which is not equal to the
+  one without options or to another made with the same options.</li>
+<li>Every device of <code>cuda</code>, <code>hip</code> and <code>level_zero</code> is reachable;
+  <code>tack.device_count(type)</code> says how many there are. A bare spec is
+  resolved at each call, so after another library changes the thread's
+  device, <code>"cuda"</code> or <code>"hip"</code> names the other device.</li>
+<li>Each CUDA device has its own context, and each Level Zero device its own
+  context unless <code>external_context</code> names one. A CUDA context already
+  current on the calling thread, such as one an embedding framework
+  created, is adopted for its device and never destroyed. It must be
+  current before the first call that names that device: the device is made
+  once, so a context made current later is not adopted.</li>
+<li>A CUDA context that Tack creates while no context is current stays
+  current on that thread; one created while another is current is not, and
+  the thread keeps its own. As long as Tack holds one context and it is
+  current where it was made, nothing is switched. Once it holds two, or a
+  context is not current on the thread that made its device, every CUDA
+  operation makes its own context current for its duration and restores
+  the thread's afterwards. HIP does the same with its current device once a
+  device other than 0, or two devices, are in use. See
+  <a href="#calling-a-kernel">Calling a kernel</a>.</li>
+</ul>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Exception</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec</code> neither a string nor a <code>Device</code></td>
+<td><code>TypeError</code>: "a device is a Device or a string such as 'cpu' or 'cuda:0', not ..."</td>
+</tr>
+<tr>
+<td>Options with a <code>Device</code></td>
+<td><code>TypeError</code>: "options make a new device: pass a device spec, not a Device"</td>
+</tr>
+<tr>
+<td>Unknown type</td>
+<td><code>ValueError</code>: "Unknown device type: '<code>vulkan</code>'. Available: cpu, cuda, hip, level_zero, metal"</td>
+</tr>
+<tr>
+<td>A number on <code>cpu</code> or <code>metal</code>, or a non-numeric suffix</td>
+<td><code>ValueError</code>: "'<code>cpu:0</code>' is not a device: write '<code>cpu</code>'" (with "or '<code>cuda:N</code>'" for numbered types)</td>
+</tr>
+<tr>
+<td>A device past the last</td>
+<td><code>ValueError</code>: "<code>cuda:2</code>: this machine has 2 CUDA devices" (Level Zero: "the first Level Zero driver has ..."). Raised by the constructor, so it propagates unwrapped</td>
+</tr>
+<tr>
+<td><code>external_context</code> with a number other than its device's</td>
+<td><code>ValueError</code>: "<code>level_zero:1</code>: the external_context's device is <code>level_zero:0</code>; ..."</td>
+</tr>
+<tr>
+<td>Missing Python dependency (an <code>ImportError</code> from the backend module or constructor)</td>
+<td><code>RuntimeError</code>: "Cannot start the '<code>hip</code>' device: missing dependency." followed by the original error and install instructions. The original exception is chained</td>
+</tr>
+<tr>
+<td>Option not in <code>device_options</code></td>
+<td><code>ValueError</code>: "The '<code>metal</code>' device does not accept the option(s) <code>num_threads</code>. Accepted: none." Raised after the backend module is imported, so a missing dependency is reported first</td>
+</tr>
+<tr>
+<td>Device or runtime failure (a <code>RuntimeError</code> from the constructor)</td>
+<td><code>RuntimeError</code>: "Cannot start the '<code>cuda</code>' device on Linux." followed by the original message and install instructions. Chained</td>
+</tr>
+<tr>
+<td>Any other constructor failure, such as <code>ValueError</code> for an incomplete <code>external_context</code> or a non-integer <code>TACK_CPU_THREADS</code></td>
+<td>Propagates unwrapped</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tackdevice"><code>tack.Device</code><a class="headerlink" href="#tackdevice" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>d.type</code></td>
+<td><code>"cpu"</code>, <code>"metal"</code>, <code>"cuda"</code>, <code>"hip"</code> or <code>"level_zero"</code> (the backend's <code>name</code>)</td>
+</tr>
+<tr>
+<td><code>d.index</code></td>
+<td>Which of the type's devices (the backend's <code>ordinal</code>): N in <code>"cuda:N"</code>. A bare spec gives the device it resolved to, so <code>str(tack.device("cuda"))</code> may be <code>"cuda:1"</code>. 0 for <code>cpu</code> and <code>metal</code></td>
+</tr>
+<tr>
+<td><code>d.synchronize()</code></td>
+<td>Waits for every kernel launched on this device so far, and raises a queued launch's error</td>
+</tr>
+<tr>
+<td><code>str(d)</code></td>
+<td>The spec: <code>"cuda:0"</code> for numbered types, <code>"cpu"</code> and <code>"metal"</code> bare. <code>repr(d)</code> is <code>Device('cuda:0')</code></td>
+</tr>
+<tr>
+<td><code>d == e</code></td>
+<td>True when both are the same backend; hashable on the same terms</td>
+</tr>
+<tr>
+<td><code>with d:</code></td>
+<td>Makes <code>d</code> the default device inside the block, on this thread only. Blocks nest; leaving one restores the previous default</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tackdevice_counttype"><code>tack.device_count(type)</code><a class="headerlink" href="#tackdevice_counttype" title="Permanent link">&para;</a></h3>
+<p>Returns how many devices of <code>type</code> the machine has, without making any:
+<code>tack.device(f"{type}:{n}")</code> is valid for <code>n</code> below the count. The CPU
+counts 1, and Metal 1 where there is a Metal GPU. A type whose backend cannot
+load or start (a missing dependency, no driver) counts 0. An unknown type
+raises <code>ValueError</code> as <code>tack.device</code> does.</p>
+<h3 id="tackset_default_devicespeccpu-options"><code>tack.set_default_device(spec="cpu", **options)</code><a class="headerlink" href="#tackset_default_devicespeccpu-options" title="Permanent link">&para;</a></h3>
+<p>Makes <code>tack.device(spec, **options)</code> the default device and returns it. The
+default device is where arrays are allocated when no <code>device=</code> is given,
+and where kernels with no arrays run. It is process-wide; a <code>with</code> block
+overrides it on its own thread.</p>
+<p><strong>Current behavior:</strong></p>
+<ul>
+<li>With nothing set, the default is the CPU, chosen at the first
+  allocation, launch or <code>get_default_device()</code> call.</li>
+<li>Without options, <code>set_default_device</code> builds nothing new: the device is
+  the one <code>tack.device(spec)</code> always returns. Arrays made before a switch
+  keep their device and keep working, and kernels given them run there
+  (below). Compiled kernels survive a switch and back.</li>
+<li><strong><code>TACK_NO_REINIT</code>:</strong> if a default is already set (including the CPU
+  default picked by an earlier allocation or launch) and this variable is
+  switched on, <code>set_default_device</code> returns the current default. It ignores
+  <code>spec</code> and <code>options</code>, and it doesn't validate either. The variable is
+  read by <code>dispatch.env_flag</code>: unset, empty, <code>0</code>, <code>false</code>, <code>no</code> and <code>off</code>
+  (in any case, ignoring surrounding spaces) mean off, and any other value
+  means on. This exists for embedding, for example inside an ANARI device
+  that shares the process.</li>
+</ul>
+<p>Errors are those of <code>tack.device</code>. If the device cannot be made, the
+previous default stays.</p>
+<h3 id="tackget_default_device"><code>tack.get_default_device()</code><a class="headerlink" href="#tackget_default_device" title="Permanent link">&para;</a></h3>
+<p>Returns the default device: the innermost <code>with</code> block's on this thread,
+else the one <code>set_default_device</code> chose, else the CPU.
+<code>tack.runtime.dispatch.get_backend()</code> returns the same device's <code>Backend</code>.</p>
+<h3 id="where-arrays-live-and-kernels-run">Where arrays live and kernels run<a class="headerlink" href="#where-arrays-live-and-kernels-run" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Every array records its device: <code>a.device</code> is a <code>tack.Device</code>. Every
+  constructor takes <code>device=</code> (a <code>Device</code> or a spec): <code>empty</code>, <code>zeros</code>,
+  <code>ones</code>, <code>full</code>, <code>arange</code>, <code>array</code>, <code>asarray</code>, <code>array_from_ptr</code> and
+  <code>memory_space</code>, which default to the default device; <code>empty_like</code>,
+  <code>zeros_like</code>, <code>ones_like</code> and <code>full_like</code>, which default to a Tack
+  prototype's device; and <code>from_dlpack</code>, which defaults to the default
+  device when that can wrap the tensor, else the tensor's own device.</li>
+<li><code>a.to_device(device)</code> returns <code>a</code> itself when its memory is usable on
+  <code>device</code>, else a copy made through the host. <code>tack.array(a, device=...)</code>
+  and <code>tack.asarray(a, device=...)</code> move a Tack array the same way.</li>
+<li>Copies, <code>astype</code>, <code>reshape</code>, reductions, <code>fill</code>, <code>concat</code> (the first
+  array's device) and textures stay on their array's device.</li>
+<li><strong>Launch placement:</strong> a kernel runs on the default device when that
+  device can address all its arrays, or when it has none; otherwise on
+  the arrays' own device. A device can address an array when both are in
+  one memory domain (<code>Backend.memory_domain</code>): two CPU devices with
+  different thread counts share one, so a default
+  <code>tack.device("cpu", num_threads=1)</code> runs kernels on CPU arrays made
+  before it. A <code>@tack.device_class</code> object's arrays choose the device when
+  no plain array does, and must agree with it. <code>tack.inspect</code> makes the
+  same choice.</li>
+<li>Arrays in two memory domains raise <code>ValueError</code>: "Kernel '<code>k</code>' was given
+  arrays on two devices (cpu and cuda:0); a launch runs on one. Copy them
+  to one device first (a.to_device(...))." The check runs on the dispatch
+  fast path too.</li>
+<li><code>tack.algorithms</code> functions allocate their temporaries and launch on
+  their first array argument's device. They, <code>tack.copyto</code> from a Tack
+  array and <code>tack.concat</code> refuse arrays in two memory domains under their
+  own name: "exclusive_scan() was given arrays on two devices (cpu and
+  cuda:0); ...", not the name of an internal kernel.</li>
+<li>An array holds its device, so a device's backend (and a CUDA context it
+  created) lives at least as long as any of its arrays.</li>
+</ul>
+<h3 id="tackset_debugenabledtrue"><code>tack.set_debug(enabled=True)</code><a class="headerlink" href="#tackset_debugenabledtrue" title="Permanent link">&para;</a></h3>
+<p>Turns debug mode on or off for every kernel launched from then on.
+<code>TACK_DEBUG</code> (a boolean flag, read like <code>TACK_NO_REINIT</code>) turns it on when
+Tack is imported. <code>tack.runtime.dispatch.debug_enabled()</code> reports the
+current setting.</p>
+<p><strong>Debug mode</strong> checks every index of every array access, one
+dimension at a time: an array's leading dimension against its length, the
+others against theirs, a flat index against the element count (a component
+count for a scalar atomic on a vector array), and a local or shared array
+index against its size. Constant tables and textures clamp and are not
+checked.</p>
+<ul>
+<li>An access with an index outside its extent is not performed: a load gives
+  0 of its type, an atomic's value is 0, and a store or atomic does nothing.
+  The rest of the launch runs.</li>
+<li>After the launch, <code>Kernel.__call__</code> raises <code>IndexError</code> for the first
+  violation it recorded: the kernel (and the device function an access was
+  inlined from), the file, line and column, the access as written, the
+  index, its dimension when there are several, the extent, and how many
+  more accesses were skipped. Which violation is first is unspecified when
+  several threads go out of bounds.</li>
+<li>Kernels lower and compile separately in debug mode, and the extents are
+  run-time arguments: debug mode compiles no variant per array length.
+  Each launch is checked when it returns, which on the GPU backends means
+  waiting for it, since their launches are otherwise queued. Launches from
+  different threads report their own violations.</li>
+<li><code>tack.inspect</code> shows the code a debug launch runs.</li>
+</ul>
+<p>Implemented in <code>lang/ir_bounds.py</code> (the checks and guards),
+<code>runtime/debug_bounds.py</code> (the hidden arguments and the error) and the
+code generators (<code>codegen/bounds.py</code>, <code>llvm_gen.py</code>).</p>
+<h2 id="arrays">Arrays<a class="headerlink" href="#arrays" title="Permanent link">&para;</a></h2>
+<p><code>tack.Array</code> is defined in <code>packages/tack-core/src/tack/lang/array.py</code>.
+Its <code>dtype</code> describes one scalar, vector or matrix element; <code>shape</code> is the
+array's dimensions, excluding component dimensions. <code>size</code> counts elements.
+<code>scalar_dtype</code>, <code>scalar_size</code> and <code>storage_shape</code> describe the scalar storage.
+The buffer belongs to the array's device (<code>a.device</code>; see
+<a href="#where-arrays-live-and-kernels-run">Where arrays live and kernels run</a>).
+<code>tack.dataset.Field</code> is a separate class coupling a space with coefficient values.</p>
+<h3 id="creation">Creation<a class="headerlink" href="#creation" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tack.empty(shape, dtype=f32, *, device=None, exportable=False)</code></td>
+<td>Allocates on <code>device</code>, by default the default device. An <code>int</code> shape becomes a 1-tuple. <code>exportable=True</code> requests memory that can be exported without a copy (CUDA only)</td>
+</tr>
+<tr>
+<td><code>tack.zeros(shape, dtype=f32, *, device=None)</code>, <code>tack.ones(...)</code>, <code>tack.full(shape, fill_value, dtype=None, *, device=None)</code></td>
+<td><code>empty()</code> followed by <code>fill()</code>. <code>zeros</code> skips the fill where the buffer starts zeroed (<code>starts_zeroed</code>: Metal, which clears new buffers). <code>full</code> without a dtype makes f32 from a Python float and i32 from an int (i64 if the value needs it); a sequence <code>fill_value</code> needs an element dtype</td>
+</tr>
+<tr>
+<td><code>tack.arange([start,] stop[, step], dtype=None, *, device=None)</code></td>
+<td>Built in NumPy and copied in. Without a dtype, integer arguments give i32 (i64 if a value needs it) and a float argument gives f32</td>
+</tr>
+<tr>
+<td><code>tack.array(obj, dtype=None, *, device=None)</code></td>
+<td>Copies values into independent storage. Without dtype, uses all input dimensions; a NumPy array keeps its dtype, Python floats give f32 and Python ints i32 (i64 if a value needs it). An element dtype consumes matching trailing component dimensions; a mismatch raises <code>ValueError</code>. Existing Tack arrays copy on their device, or through the host to another <code>device</code></td>
+</tr>
+<tr>
+<td><code>tack.asarray(obj, dtype=None, *, device=None)</code></td>
+<td><code>obj</code> itself when it is a Tack array, <code>dtype</code> is <code>None</code> or equals its dtype, and <code>device</code> is <code>None</code> or can address it; otherwise a converted or moved array</td>
+</tr>
+<tr>
+<td><code>tack.empty_like(prototype, dtype=None, *, device=None)</code></td>
+<td>Allocates independent, writable storage on <code>device</code>, by default a Tack prototype's device (else the default device), without reading or copying values. Accepts a NumPy array or Tack array; takes its dtype unless overridden. A scalar override of a vector/matrix prototype keeps the element dimensions. NumPy arrays produce scalar arrays with the array's shape. Contents are unspecified</td>
+</tr>
+<tr>
+<td><code>tack.zeros_like</code>, <code>tack.ones_like</code>, <code>tack.full_like(prototype, fill_value, dtype=None)</code></td>
+<td><code>empty_like()</code> followed by <code>fill()</code>, as for <code>zeros</code>, <code>ones</code> and <code>full</code></td>
+</tr>
+<tr>
+<td><code>tack.concat(arrays)</code></td>
+<td>A new 1-D array holding all elements in order, copied on the first array's device</td>
+</tr>
+<tr>
+<td><code>tack.texture3d(array, shape=None, interp="linear")</code></td>
+<td>A <code>Texture3D</code> holding a copy of the array taken at creation, for <code>sample(u, v, w)</code> in kernels. <code>tex.update()</code> copies the array again. See <a href="../backend-capabilities/#textures">Textures</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Current behavior:</strong></p>
+<ul>
+<li>A new array's contents are unspecified until a kernel, <code>tack.copyto</code> or
+  <code>fill</code> writes them (the
+  <a href="../../reference/language-contract/#memory-and-aliasing">language contract</a>);
+  use <code>tack.zeros</code> for zeros. The CPU leaves a new array untouched, so that
+  the kernel that writes it touches its pages first; the GPU backends
+  currently zero new buffers, which is not a promise.</li>
+<li>On the CPU, a fill of 256 KiB or more runs as a kernel through the
+  dispatch, in parallel when the threading policy fans it out, and stores
+  and refuses exactly what <code>ndarray.fill</code> would.</li>
+<li>Allocation doesn't check the dtype against <code>supported_dtypes</code>. An <code>f64</code>
+  array can be allocated on Metal, and the
+  <a href="../backend-capabilities/#what-each-capability-gates">dispatch check</a>
+  rejects it when a kernel uses it.</li>
+<li>There is no <code>tack.fields()</code> function.</li>
+<li>Vector/matrix arrays expose their array shape and element dtype on
+  both host and device. <code>numpy()</code> appends component dimensions.</li>
+</ul>
+<p><strong>Required caller constraints:</strong></p>
+<ul>
+<li><code>dtype</code> is a Tack scalar or element type, or anything <code>np.dtype()</code>
+  accepts that maps to a Tack scalar type (<code>np.float32</code>, <code>"int64"</code>;
+  <code>float</code> means f64, as in NumPy). Other values raise <code>TypeError</code>.</li>
+<li>Shapes contain integer, nonnegative extents. Noninteger extents raise
+  <code>TypeError</code>; negative extents raise <code>ValueError</code>.</li>
+</ul>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Exception</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A dtype, given or inferred, that has no Tack type, such as <code>float16</code></td>
+<td><code>TypeError</code>: "Unsupported numpy dtype: float16"</td>
+</tr>
+<tr>
+<td>Boolean host values without a dtype</td>
+<td><code>TypeError</code>: "Tack has no boolean arrays; ..."</td>
+</tr>
+<tr>
+<td><code>empty_like</code> (or another <code>*_like</code>) with a prototype other than a NumPy array or Tack array</td>
+<td><code>TypeError</code>: "expected a Tack array or NumPy array as the prototype"</td>
+</tr>
+<tr>
+<td><code>concat([])</code></td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td><code>concat</code> with mixed dtypes</td>
+<td><code>TypeError</code></td>
+</tr>
+<tr>
+<td><code>texture3d</code> on an array that isn't <code>f32</code></td>
+<td><code>ValueError</code>: "texture3d requires an f32 array, got f64; convert it first with array.astype(tack.f32)"</td>
+</tr>
+<tr>
+<td><code>texture3d</code> without a 3-D shape</td>
+<td><code>ValueError</code>: "texture3d requires a 3D shape"</td>
+</tr>
+<tr>
+<td><code>texture3d</code> with a shape whose <code>W*H*D</code> differs from the array's size</td>
+<td><code>ValueError</code> naming both element counts</td>
+</tr>
+<tr>
+<td><code>texture3d</code> with <code>interp</code> other than <code>"linear"</code></td>
+<td><code>ValueError</code>: "texture3d supports interp='linear' only, ..."</td>
+</tr>
+</tbody>
+</table>
+<h3 id="host-operations">Host operations<a class="headerlink" href="#host-operations" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Guarantee</th>
+<th>Errors</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tack.copyto(a, src)</code></td>
+<td>With host <code>src</code> (a NumPy array, sequence or scalar): converts it to <code>a</code>'s scalar dtype with <code>np.asarray</code>, an unchecked cast, and copies it in. Its shape must be <code>a.numpy()</code>'s shape or broadcast to it, as in <code>np.copyto</code>; a flat array is not accepted for a vector or matrix array. Works on reshaped views. With a Tack array <code>src</code> of the same shape and scalar count on <code>a</code>'s device: a device copy (<code>src.to_device(a.device)</code> brings one from another device)</td>
+<td><code>RuntimeError</code> if <code>a</code> is read-only. <code>ValueError</code> "copyto() into an array whose values have shape (8,): cannot broadcast shape (4,)", for a Tack <code>src</code> of another shape, or "copyto() was given arrays on two devices ..." for one on another device. <code>TypeError</code> if <code>a</code> is not a Tack array</td>
+</tr>
+<tr>
+<td><code>a.numpy()</code>, <code>np.asarray(a)</code></td>
+<td>Returns a <strong>new</strong> NumPy array with the scalar component dtype and component axes appended to <code>a.shape</code>. Never a view, including on Metal; <code>np.asarray(a, copy=False)</code> raises <code>ValueError</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>a.fill(value)</code></td>
+<td>Sets every element to a scalar, or, for a vector or matrix array, to one element's components</td>
+<td><code>RuntimeError</code> if read-only. <code>TypeError</code> for a sequence on a scalar array; <code>ValueError</code> for a sequence of the wrong element shape</td>
+</tr>
+<tr>
+<td><code>a[i]</code>, <code>a[i, j]</code>, <code>a[()]</code></td>
+<td>Reads one element: a Python number, or a NumPy array for a vector or matrix element. <code>a[()]</code> reads a 0-d array, as in NumPy. There is no host assignment: <code>a[i] = x</code> and iteration raise <code>TypeError</code></td>
+<td><code>TypeError</code> for anything but one integer per dimension, including <code>a[None]</code>, whose message names <code>a[()]</code>; <code>IndexError</code> out of range</td>
+</tr>
+<tr>
+<td><code>a.reshape(*shape)</code></td>
+<td>A metadata-only view that shares the buffer, the element type, the writability and any DLPack hold. Takes a tuple or separate integers; one extent may be <code>-1</code></td>
+<td><code>ValueError</code> if the element count differs or more than one extent is <code>-1</code></td>
+</tr>
+<tr>
+<td><code>a.copy()</code> / <code>a.astype(dtype)</code></td>
+<td>A new array on <code>a</code>'s device, filled by a device copy kernel. <code>astype</code> converts with the kernel language's conversion rules; a scalar dtype keeps a vector or matrix element's dimensions</td>
+<td>Kernel errors, if any. <code>TypeError</code> if <code>astype</code> would change element dimensions</td>
+</tr>
+<tr>
+<td><code>a.shape</code>, <code>a.ndim</code>, <code>a.size</code>, <code>len(a)</code>, <code>a.nbytes</code></td>
+<td><code>shape</code>, <code>ndim</code> and <code>size</code> count elements, not components. <code>len</code> is <code>shape[0]</code>. <code>nbytes</code> is the storage in bytes</td>
+<td><code>TypeError</code> from <code>len</code> of a 0-d array</td>
+</tr>
+<tr>
+<td><code>a.export_memory()</code></td>
+<td>Returns an <code>ExportedMemory</code> handle for cross-API sharing. On CUDA, an array allocated without <code>exportable=True</code> is copied <strong>once</strong> into exportable memory, so the export is a snapshot</td>
+<td><code>RuntimeError</code> on CPU, HIP and Level Zero</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Current behavior:</strong> on Metal, CUDA, HIP and Level Zero a kernel call
+returns once the launch is queued, not once it has run. Host operations
+keep this invisible: <code>numpy</code>, <code>a[i]</code> and reductions wait for the
+launches before them; <code>copyto</code> and <code>fill</code> take effect after them (on
+CUDA, HIP and Level Zero they are queued in order; on Metal they wait
+first). A queued launch's error, such as a device fault, is raised at the
+next wait rather than by its own call. An array dropped while a queued
+launch uses it is freed after that launch.</p>
+<p><strong>Required caller constraint:</strong> an array is synchronized at kernel-call
+and host-operation boundaries only. Host reads and writes between calls
+are safe. Host access during a call from another thread is not. Memory
+that another library reads or writes without a Tack call in between must
+be ordered with <code>tack.sync()</code>, except where Tack does it: a DLPack export
+and a wrapped pointer make every launch that uses them complete before it
+returns (see <a href="#dlpack">DLPack</a>).</p>
+<h3 id="tacksync"><code>tack.sync()</code><a class="headerlink" href="#tacksync" title="Permanent link">&para;</a></h3>
+<p>Defined in <code>runtime/dispatch.py</code> (<code>sync</code>). Waits until every kernel
+launched so far, on every device, has finished, by calling each backend's
+<code>Backend.synchronize()</code>; a no-op on the CPU, whose launches complete before
+returning. <code>d.synchronize()</code> waits for one device. Most code never needs it, since reading an array waits already.
+It is for timing kernels, and for memory shared with another library that
+reads it without Tack. It raises the error of a queued launch that
+failed.</p>
+<p><code>tack.sync_async()</code> (<code>runtime/aio.py</code>) is the <code>asyncio</code> form, for every
+device as <code>tack.sync</code> is: awaited, it waits in one of Tack's worker threads for the launches made before the
+call, not for later ones, and raises a queued launch's error at the
+<code>await</code>, after waiting for the other devices; <code>await a.numpy_async()</code> does the same for a read. A backend
+waits off the loop through <code>Backend.async_marker()</code>; without one (the
+CPU), the wait is inline.</p>
+<h3 id="reductions">Reductions<a class="headerlink" href="#reductions" title="Permanent link">&para;</a></h3>
+<p><code>f.sum()</code>, <code>f.min()</code>, <code>f.max()</code> and <code>f.mean()</code> reduce every element and
+return a Python <code>float</code>. Integer arrays included.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>sum</code></th>
+<th><code>min</code> / <code>max</code></th>
+<th><code>mean</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Empty array</td>
+<td><code>0.0</code></td>
+<td><code>ValueError</code>: "min reduction requires a nonempty array"</td>
+<td><code>nan</code></td>
+</tr>
+<tr>
+<td>Path</td>
+<td>On the device when the array's device has <code>supports_device_reductions</code> and the array is <code>f32</code>. Otherwise NumPy on the host</td>
+<td>same</td>
+<td><code>sum() / size</code> in host binary64</td>
+</tr>
+</tbody>
+</table>
+<p>Accumulation precision, NaN and signed-zero rules, permitted reordering and
+the error budget are <strong>Required</strong> items of the
+<a href="../../reference/language-contract/#array-and-parallel-reductions">reduction contract</a>.
+A reduction runs on the array's device, whatever the default.</p>
+<h2 id="pointer-interop">Pointer interop<a class="headerlink" href="#pointer-interop" title="Permanent link">&para;</a></h2>
+<h3 id="tackarray_from_ptrptr-shape-dtype-devicenone-writablefalse"><code>tack.array_from_ptr(ptr, shape, dtype, *, device=None, writable=False)</code><a class="headerlink" href="#tackarray_from_ptrptr-shape-dtype-devicenone-writablefalse" title="Permanent link">&para;</a></h3>
+<p>Wraps existing memory as an array without copying. <code>shape</code> counts
+elements; <code>dtype</code> may be an element type such as <code>tack.vec3()</code>. Tack never frees it.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>What <code>ptr</code> must be</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>An integer address or a NumPy array</td>
+</tr>
+<tr>
+<td>Metal</td>
+<td>An <code>MTLBuffer</code> object. Any other value raises <code>TypeError</code> ("the Metal backend wraps an MTLBuffer object, not int ...")</td>
+</tr>
+<tr>
+<td>CUDA, HIP</td>
+<td>A device address: an <code>int</code>, or anything <code>int()</code> accepts, such as a NumPy integer or a <code>CUdeviceptr</code></td>
+</tr>
+<tr>
+<td>Level Zero</td>
+<td>A USM device or shared address in the same forms, allocated in Tack's context</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Guarantee:</strong> on a backend that declares <code>device_memory_spaces</code> (CUDA,
+HIP and Level Zero), every pointer is converted with <code>as_address</code>
+(<code>runtime/kernel_utils.py</code>) and classified with <code>memory_space()</code>. A value
+that isn't an address raises <code>TypeError</code> ("array_from_ptr() on the CUDA
+backend takes a device address ..."), and a pointer outside those spaces
+raises <code>ValueError</code> ("Pointer is in 'cpu' memory but the device is
+'CUDA'. ..."). On Level Zero the driver answers for pointers from any
+context on the device, so the check can't detect a pointer from a
+different context.</p>
+<p><strong>Guarantee:</strong> an array created with <code>writable=False</code>, the default, is
+read-only on the host and in kernels. <code>fill()</code> and <code>tack.copyto()</code> raise
+<code>RuntimeError</code>. A dispatch that binds it to a parameter the kernel may
+store to, or use as an atomic target, raises <code>ValueError</code> before the
+launch: "Kernel '<code>k</code>': parameter '<code>out</code>' may be written, but its array is
+read-only. ...". A parameter whose stores can't be traced counts as
+written.</p>
+<p><strong>Required caller constraints:</strong></p>
+<ul>
+<li>Keep the memory alive and unmoved for the array's lifetime.</li>
+<li>Provide at least <code>prod(shape) * itemsize</code> contiguous bytes.</li>
+</ul>
+<h3 id="tackmemory_spaceptr-devicenone"><code>tack.memory_space(ptr, *, device=None)</code><a class="headerlink" href="#tackmemory_spaceptr-devicenone" title="Permanent link">&para;</a></h3>
+<p>Delegates to <code>device</code>'s <code>memory_space()</code> (by default the default device's). CPU and Metal always
+answer <code>"cpu"</code>. CUDA answers <code>"cuda"</code>, <code>"cuda_pinned"</code>, <code>"cuda_managed"</code> or
+<code>"cpu"</code>. HIP answers <code>"hip"</code>, <code>"hip_pinned"</code>, <code>"hip_managed"</code> or <code>"cpu"</code>.
+Level Zero answers <code>"level_zero"</code> or <code>"cpu"</code>. A value that can't be a
+64-bit address answers <code>"cpu"</code> without querying the driver. On Level Zero,
+a failed driver query raises <code>RuntimeError</code> instead of being reported as
+host memory.</p>
+<h3 id="dlpack">DLPack<a class="headerlink" href="#dlpack" title="Permanent link">&para;</a></h3>
+<p>Defined in <code>packages/tack-core/src/tack/lang/dlpack.py</code>.</p>
+<p><strong>Export:</strong> <code>Array.__dlpack__(*, stream=None, max_version=None, dl_device=None, copy=None)</code>
+and <code>Array.__dlpack_device__()</code>.</p>
+<ul>
+<li>Zero-copy. The capsule keeps the array alive until the consumer calls
+  the deleter.</li>
+<li>A consumer passing <code>max_version &gt;= (1, 0)</code> receives a versioned capsule
+  that carries the read-only flag for non-writable arrays. The legacy
+  capsule can't express read-only.</li>
+<li>The device type is <code>kDLCPU</code> on CPU and Metal, <code>kDLCUDA</code> on CUDA,
+  <code>kDLROCM</code> on HIP, and <code>kDLOneAPI</code> on Level Zero. The device id is always
+  <code>0</code>.</li>
+<li>Strides are C-contiguous. All ten Tack dtypes are exported.</li>
+<li><code>copy=True</code> raises <code>BufferError</code>. <code>stream</code> and <code>dl_device</code> are ignored.</li>
+<li>On Metal, CUDA, HIP and Level Zero the export waits for the launches
+  queued so far, and from then on every launch that uses the array
+  completes before it returns (<code>DeviceBuffer.share()</code>), so the consumer
+  may read the memory at once and after later launches.</li>
+</ul>
+<p><strong>Import:</strong> <code>tack.from_dlpack(source, *, device=None, copy=False)</code>. The array
+belongs to <code>device</code>. By default that is the default device when it can wrap
+the tensor, else the tensor's own device, as the array API's <code>from_dlpack</code>
+keeps an array on its device: CUDA memory imported with the CPU as default
+is a CUDA array, and host memory imported with Metal as default (which
+cannot wrap a host pointer) is a CPU array. Neither is copied.</p>
+<ul>
+<li><code>source</code> is a capsule or an object with <code>__dlpack__</code>. A versioned
+  capsule is requested first.</li>
+<li>With <code>copy=False</code>, the array shares the tensor's memory and holds the
+  capsule until the array and every view of it are collected. Then the
+  producer's deleter runs exactly once.</li>
+<li>A read-only versioned tensor produces a non-writable array, which
+  host writes and kernel stores refuse as for <code>array_from_ptr</code>.</li>
+<li>As for <code>array_from_ptr</code>, a launch that uses the imported array completes
+  before it returns.</li>
+<li>With <code>copy=True</code>, the source is read through <code>np.from_dlpack</code> and copied
+  into a new array with <code>tack.array</code>. That works only for sources that
+  NumPy can read on the host.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Exception</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Capsule already consumed</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td>Null data pointer</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td>Non-C-contiguous strides</td>
+<td><code>ValueError</code>: "only C-contiguous tensors can be wrapped without copying; ..."</td>
+</tr>
+<tr>
+<td>DLPack dtype without a Tack type, or <code>lanes != 1</code></td>
+<td><code>TypeError</code></td>
+</tr>
+<tr>
+<td>Unknown device type</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td><code>kDLMetal</code> tensor</td>
+<td><code>ValueError</code>: "Metal DLPack tensors (kDLMetal) cannot be imported: ..."</td>
+</tr>
+<tr>
+<td>Device type that <code>device</code> can't wrap</td>
+<td><code>RuntimeError</code> naming the backend and the device type, followed by <code>dlpack_refusal_note</code></td>
+</tr>
+<tr>
+<td>Wrapped pointer outside <code>device_memory_spaces</code></td>
+<td><code>ValueError</code> from <code>array_from_ptr</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Current behavior:</strong> Metal has no zero-copy import. Host tensors
+(<code>kDLCPU</code>) are refused with an explanation, because wrapping a host pointer
+as an <code>MTLBuffer</code> without a copy needs page alignment. <code>kDLMetal</code> tensors
+are refused up front on every backend, because their data is an opaque
+<code>MTLBuffer</code> handle plus a byte offset, which nothing in Tack can wrap yet.
+On Metal, use <code>copy=True</code> with a host tensor.</p>
+<h3 id="vtk">VTK<a class="headerlink" href="#vtk" title="Permanent link">&para;</a></h3>
+<p><code>tack.interop.vtk</code> (package <code>tack-vis</code>) provides <code>vtk_to_array(vtk_array, flatten=False)</code>,
+<code>array_to_vtk(array, n_components=None, name=None)</code> and <code>init_level_zero()</code>.
+Both directions are zero-copy through DLPack and need VTK with
+<code>vtkmodules.util.dlpack_support</code>. Without it they raise <code>RuntimeError</code>.
+<code>array_to_vtk</code> validates the layout before importing VTK and raises
+<code>ValueError</code> for a contradictory <code>n_components</code> or for arrays with more
+than two dimensions.</p>
+<p><strong>Required for Level Zero:</strong> start Tack with
+<code>tack.interop.vtk.init_level_zero()</code> instead of
+<code>tack.set_default_device("level_zero")</code>. It makes a Level Zero device in
+the context that VTK's device uses the default, and returns it, so that
+Tack allocates there. Exporting an array of a Level Zero device in another
+context, or importing while the default Level Zero device is in one,
+raises <code>RuntimeError</code>. The
+check is necessary because the driver accepts pointers from any context.
+See <a href="../../design/interoperability/">Interoperability</a>.</p>
+<h2 id="inspection">Inspection<a class="headerlink" href="#inspection" title="Permanent link">&para;</a></h2>
+<h3 id="tackinspectkernel-args-modesource"><code>tack.inspect(kernel, *args, mode="source")</code><a class="headerlink" href="#tackinspectkernel-args-modesource" title="Permanent link">&para;</a></h3>
+<p>Defined in <code>packages/tack-core/src/tack/lang/inspect_kernel.py</code>. Runs the
+compilation pipeline for these arguments on the device a call would run on
+(see <a href="#where-arrays-live-and-kernels-run">launch placement</a>) and returns
+a string. It doesn't execute the kernel, doesn't compile a GPU variant, and
+doesn't populate the backend's variant cache.</p>
+<table>
+<thead>
+<tr>
+<th><code>mode</code></th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"ir"</code></td>
+<td>Tack IR after resolution, inference, scalar localization, optimization and type annotation (<code>ir.dump</code>), before GPU scalar packing</td>
+</tr>
+<tr>
+<td><code>"source"</code></td>
+<td>The backend's source. On CPU, LLVM IR for the variant these arguments would select, including the disjoint-array specialization. On Metal, CUDA, HIP and Level Zero, MSL, CUDA C, HIP C or OpenCL C after scalar packing</td>
+</tr>
+<tr>
+<td><code>"optimized"</code></td>
+<td>CPU only: the LLVM module after the backend's O3 pipeline. On any other backend it raises <code>ValueError</code> ("inspect mode 'optimized' is CPU only: ..."), after the kernel's own checks have run, because the GPU backends' optimizers run inside vendor compilers whose output is never shown</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Guarantees:</strong> inspection enforces the same dtype, workgroup-support,
+atomic, alignment, participation and workgroup launch-count checks as
+dispatch, and it raises the frontend's errors. It records texture extents through the
+backend's <code>_store_texture_shapes()</code>, so on HIP and Level Zero devices
+without texture hardware the source it shows uses software sampling, as
+dispatch would. See
+<a href="../backend-capabilities/#what-each-capability-gates">the note on inspection</a>
+for the dispatch checks it skips.</p>
+<p><strong>Errors:</strong> <code>TypeError</code> "Expected a @tack.kernel, got function" when the
+first argument isn't a <code>Kernel</code>. <code>ValueError</code> "Unknown inspect mode:
+'<code>ptx</code>'. Use 'ir', 'source', or 'optimized'." Unlike dispatch, inspection
+doesn't wrap errors. For example, a workgroup primitive on CPU raises
+<code>NotImplementedError</code> directly, and an unsupported array dtype raises the
+dtype check's <code>TypeError</code>.</p>
+<h2 id="decorators">Decorators<a class="headerlink" href="#decorators" title="Permanent link">&para;</a></h2>
+<h3 id="tackkernel"><code>@tack.kernel</code><a class="headerlink" href="#tackkernel" title="Permanent link">&para;</a></h3>
+<p>Returns a <code>Kernel</code> (<code>lang/kernel.py</code>). Decoration reads the function's
+source with <code>read_source</code> (<code>lang/func.py</code>, a wrapper around
+<code>inspect.getsource</code>) and parses it. <strong>Current behavior:</strong>
+nothing is validated or compiled at decoration. Source validation, name
+resolution and lowering happen at the first dispatch or inspection, and
+their errors are raised there.</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Exception, and when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source isn't readable (<code>exec()</code>, a bare REPL, <code>python -c</code> before Python 3.13)</td>
+<td><code>RuntimeError</code> at decoration, which explains where kernels must be defined</td>
+</tr>
+<tr>
+<td>Unsupported construct, including calls to functions that aren't statically bound <code>@tack.func</code>s or intrinsics</td>
+<td><code>UnsupportedSyntaxError</code> at first dispatch or inspection: "Kernel '<code>k</code>': unsupported Assert at line 4, column 9". Lines refer to the dedented captured source</td>
+</tr>
+<tr>
+<td>Free name that is neither a parameter nor assigned</td>
+<td><code>NameError</code> at first dispatch or inspection, naming the kernel or inlined device function and its position</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tackfunc"><code>@tack.func</code><a class="headerlink" href="#tackfunc" title="Permanent link">&para;</a></h3>
+<p>Returns a <code>Func</code> (<code>lang/func.py</code>) that is inlined at each call site in a
+kernel. Device-function binding, return restructuring and recursion
+rejection are <strong>Required</strong> items of the language contract. See
+<a href="../../reference/language-contract/#source-and-supported-constructs">Source and supported constructs</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Exception</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Decorating something that isn't a <code>def</code>, such as a lambda</td>
+<td><code>TypeError</code> at decoration</td>
+</tr>
+<tr>
+<td>Source isn't readable</td>
+<td><code>RuntimeError</code> at decoration, the same explanation as for kernels, naming the device function. The <code>OSError</code> is chained</td>
+</tr>
+<tr>
+<td>Calling the function from Python</td>
+<td><code>RuntimeError</code>: "@tack.func '<code>f</code>' cannot be called from Python. ..."</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tackdevice_class"><code>@tack.device_class</code><a class="headerlink" href="#tackdevice_class" title="Permanent link">&para;</a></h3>
+<p><code>@tack.device_class</code> (<code>lang/device_class.py</code>) marks a class so that its
+instances can be passed as kernel arguments, and it collects the class's
+<code>@tack.func</code> methods. When an instance is passed:</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Becomes</th>
+<th>Recompiles when changed?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Class-level <code>int</code> or <code>float</code> defined on the class itself</td>
+<td>A compile-time constant</td>
+<td>Yes. The value, with its type and float bit pattern, is part of the key</td>
+</tr>
+<tr>
+<td>Instance attribute that shadows such a class attribute</td>
+<td>A compile-time constant with the instance's value</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Instance <code>int</code> or <code>float</code></td>
+<td>A runtime scalar parameter</td>
+<td>Only when its inferred type changes. The attribute <em>names</em> are in the key, and the values are not</td>
+</tr>
+<tr>
+<td>Instance <code>Array</code></td>
+<td>An extra array parameter</td>
+<td>Only when dtype, shape or vector width changes</td>
+</tr>
+<tr>
+<td>Names starting with <code>_</code>, and attributes of other types</td>
+<td>Ignored</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Calling a method that isn't a <code>@tack.func</code>, or referencing a <code>self.</code>
+attribute that is none of the above, raises <code>ValueError</code> at first
+dispatch. Specializations are keyed on the class object itself, so two
+classes with the same name don't share variants. When a class is garbage
+collected, its variants are dropped.</p>
+<p>Instances are recognized by argument type (the class's <code>_device_class</code>
+flag), so a parameter that takes one needs no annotation.</p>
+<h2 id="calling-a-kernel">Calling a kernel<a class="headerlink" href="#calling-a-kernel" title="Permanent link">&para;</a></h2>
+<p><code>Kernel.__call__(*args)</code> dispatches on the device its arrays choose (see
+<a href="#where-arrays-live-and-kernels-run">launch placement</a>) and returns
+<code>None</code>, or, for a kernel that ends in an annotated <code>return</code>, that value,
+read from a hidden one-element array (which waits for the launch). On the
+CPU the call returns after the kernel completes; on the GPU backends once
+it is queued (see <a href="#host-operations">Host operations</a>).</p>
+<p><strong>Arguments</strong>, matched positionally against the parameters:</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Treated as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Array</code></td>
+<td>An array parameter. Its dtype must be in <code>supported_dtypes</code></td>
+</tr>
+<tr>
+<td><code>Texture3D</code></td>
+<td>A sampled texture parameter. The kernel samples the texture's own copy, not its array</td>
+</tr>
+<tr>
+<td><code>int</code>, <code>bool</code> or NumPy integer</td>
+<td>A scalar: <code>i32</code> if it fits, else <code>i64</code>, else <code>u64</code>. Outside the <code>u64</code> range raises <code>TypeError</code></td>
+</tr>
+<tr>
+<td><code>float</code> or NumPy floating</td>
+<td>A scalar: <code>f64</code> if any array argument is <code>f64</code>, otherwise <code>f32</code>. Textures are always <code>f32</code>. A NumPy <code>float64</code> with only <code>f32</code> arrays becomes <code>f32</code></td>
+</tr>
+<tr>
+<td><code>@tack.device_class</code> instance</td>
+<td>Expanded as described above</td>
+</tr>
+<tr>
+<td>Anything else</td>
+<td><code>TypeError</code>: "Unsupported argument type for parameter '<code>a</code>': <class 'str'>"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Current behavior:</strong></p>
+<ul>
+<li>Changing a scalar's <em>value</em> never recompiles. Changing its inferred
+  <em>type</em>, an array's dtype or vector width, a baked shape dimension, or a
+  texture extent compiles a new variant. See
+  <a href="../../reference/language-contract/#specialization-and-compilation-identity">Specialization and compilation identity</a>.</li>
+<li>One kernel may be dispatched from several threads concurrently. Each
+  thread's dispatch uses its own arguments. On CUDA and HIP, dispatches of
+  the same compiled variant are serialized by a per-variant lock,
+  <code>KernelVariant.dispatch_lock</code>, held from packing the scalars until the
+  launch is queued, so different variants still dispatch concurrently.
+  Metal launches own their argument buffer and scalars and are encoded
+  one at a time under the backend's batch lock. Level Zero serializes all
+  launches, reductions and copies on one backend lock (<code>_launch_lock</code>).
+  CPU binds arguments per call and takes no lock, but fan-outs through its
+  JIT'd pool run one at a time. <code>test_concurrent_dispatch.py</code> covers
+  this.</li>
+<li><strong>Required caller constraint:</strong> on CUDA with one device in use, Tack's
+  context is current only on the thread that made the device (the first
+  <code>tack.device("cuda")</code>, <code>set_default_device("cuda")</code> or allocation on it).
+  Another thread must make it current, for example with
+  <code>cuCtxSetCurrent(backend._context)</code>, before dispatching. Otherwise the
+  launch fails with <code>CUDA_ERROR_INVALID_CONTEXT</code>. Once Tack switches
+  contexts (two devices; see <a href="#devices">Devices</a>),
+  every operation makes its own context current, from any thread.</li>
+</ul>
+<p><strong>Rejected:</strong></p>
+<ul>
+<li><strong>Keyword arguments.</strong> <code>resolve_variant</code> raises
+  <code>NotImplementedError("Keyword arguments not supported in kernels")</code>,
+  which reaches the caller as <code>RuntimeError</code>: "Kernel '<code>k</code>' failed on
+  CPUBackend: Keyword arguments not supported in kernels".</li>
+<li><strong>A wrong argument count.</strong> <code>TypeError</code>: "Kernel '<code>k</code>' expects 2
+  arguments, got 1". Arguments are counted after template expansion.</li>
+<li><strong>A read-only array where the kernel may store.</strong> <code>ValueError</code> before
+  the launch. See <a href="#pointer-interop">Pointer interop</a>.</li>
+</ul>
+<h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Read by</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TACK_CPU_THREADS</code></td>
+<td><code>CPUBackend.__init__</code></td>
+<td>CPU worker count. Read each time a CPU backend is constructed, unless <code>tack.device("cpu", num_threads=...)</code> gives one. Values below 1 become 1. <code>1</code> runs everything on the calling thread. A non-integer raises <code>ValueError</code> from <code>tack.device</code></td>
+</tr>
+<tr>
+<td><code>TACK_CPU_POLICY</code></td>
+<td><code>CPUBackend.__init__</code></td>
+<td>Accepted for old scripts only: unset, empty or <code>v2</code>, the one threading policy since <code>v1</code> was removed. Any other value, <code>v1</code> included, raises <code>ValueError</code> from <code>tack.device</code></td>
+</tr>
+<tr>
+<td><code>TACK_CPU_MARGIN</code></td>
+<td><code>CPUBackend.__init__</code></td>
+<td>Float override of the threading decision's safety margin</td>
+</tr>
+<tr>
+<td><code>TACK_CPU_POOL</code></td>
+<td><code>CPUBackend.__init__</code></td>
+<td><code>python</code> (or <code>0</code>, <code>off</code>, <code>no</code>, <code>false</code>) fans out through a <code>ThreadPoolExecutor</code> instead of the JIT'd pool, which is the default wherever it can be made (not on Windows)</td>
+</tr>
+<tr>
+<td><code>TACK_CPU_POOL_SPIN</code></td>
+<td>The JIT'd pool, when it is made</td>
+<td>How many pause iterations a pool worker spins before sleeping (default 20000). For experiments</td>
+</tr>
+<tr>
+<td><code>TACK_CPU_MALLOC</code></td>
+<td><code>CPUBackend.__init__</code></td>
+<td><strong>Linux.</strong> A boolean flag read like <code>TACK_NO_REINIT</code>. When on, the first CPU backend sets glibc's <code>malloc</code> thresholds so freed blocks keep their pages (<code>cpu._tune_malloc</code>), process-wide. Off by default</td>
+</tr>
+<tr>
+<td><code>TACK_DEBUG</code></td>
+<td><code>import tack</code> (<code>runtime/dispatch.py</code>)</td>
+<td>A boolean flag read like <code>TACK_NO_REINIT</code>: turns on debug mode's bounds checks. <code>tack.set_debug</code> overrides it (above)</td>
+</tr>
+<tr>
+<td><code>TACK_NO_REINIT</code></td>
+<td><code>tack.set_default_device</code></td>
+<td>A boolean flag (<code>dispatch.env_flag</code>): when on, <code>set_default_device</code> leaves an existing default alone. <code>0</code>, <code>false</code>, <code>no</code>, <code>off</code> and empty mean off. See above</td>
+</tr>
+<tr>
+<td><code>TACK_CACHE</code></td>
+<td>The disk cache, at the first kernel compiled</td>
+<td><code>write</code> (default), <code>read</code>, <code>bundle</code> (default under MPI) or <code>off</code>; also <code>0</code>, <code>false</code>, <code>no</code>, <code>none</code> for off. Any other value raises <code>ValueError</code>. See <a href="../../users-guide/17-kernel-cache/">The Kernel Cache</a></td>
+</tr>
+<tr>
+<td><code>TACK_CACHE_SIZE</code></td>
+<td>The disk cache, at the first kernel compiled</td>
+<td>The most the entries of every Tack version may take: bytes, a size such as <code>500M</code> or <code>2G</code> (binary units), or <code>unlimited</code>; default <code>1G</code>. Past it, a process that stores entries deletes the least recently used, at most once an hour. Any other value raises <code>ValueError</code></td>
+</tr>
+<tr>
+<td><code>TACK_CACHE_DIR</code></td>
+<td>The disk cache, at the first kernel compiled</td>
+<td>The cache directory. Default: the platform's per-user cache directory. It must belong to the user and be writable by nobody else, or it is not used (with a <code>RuntimeWarning</code>)</td>
+</tr>
+<tr>
+<td><code>TACK_DUMP_MSL</code></td>
+<td>Metal kernel compilation</td>
+<td><strong>Metal only.</strong> A boolean flag read like <code>TACK_NO_REINIT</code>. When on, writes each compiled kernel's MSL to <code>/tmp/tack_&lt;entry&gt;.msl</code> and prints the path. A variant loaded from the disk cache is not generated, so not dumped. Other backends ignore it. Use <code>tack.inspect</code> instead</td>
+</tr>
+<tr>
+<td><code>TACK_REQUIRE_CLANG</code></td>
+<td>Test suite (<code>tests/compiler_tools.py</code>)</td>
+<td>Any value other than empty or <code>0</code> turns missing or unusable Clang tooling into a test failure instead of a skip</td>
+</tr>
+<tr>
+<td><code>TACK_CLANG</code>, <code>TACK_CLANGXX</code></td>
+<td>Test suite</td>
+<td>An explicit Clang driver for OpenCL/C and C++ host checks. An explicit choice that fails its preflight is a failure, and there is no fallback to <code>PATH</code></td>
+</tr>
+<tr>
+<td><code>TACK_EXAMPLES_ARCH</code></td>
+<td>Test suite (<code>tests/test_examples.py</code>)</td>
+<td>Backend for the slow example sweep. The default is <code>cpu</code></td>
+</tr>
+</tbody>
+</table>
+<p>The CPU threading variables are tuning controls, not part of the language
+contract. They change scheduling and never change results of race-free
+programs. See <a href="../../design/cpu-threading/">CPU Threading Policy</a>.</p>
+<h3 id="tackcache"><code>tack.cache</code><a class="headerlink" href="#tackcache" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>configure(directory=None, mode=None, max_size=None)</code></td>
+<td>Sets the directory, mode and size limit for this process over <code>TACK_CACHE_DIR</code>, <code>TACK_CACHE</code> and <code>TACK_CACHE_SIZE</code>; <code>None</code> leaves one to the environment. Takes effect at the next kernel compiled</td>
+</tr>
+<tr>
+<td><code>settings()</code></td>
+<td><code>(directory, mode, MPI rank or None)</code> as they apply now</td>
+</tr>
+<tr>
+<td><code>size_limit()</code></td>
+<td>The size limit in bytes as it applies now, or <code>None</code> for no limit</td>
+</tr>
+<tr>
+<td><code>load_bundle(path=None, comm=None)</code></td>
+<td>Reads a bundle (by default the directory's, for this Tack version) into the process. With an mpi4py communicator it is collective: rank 0 reads and broadcasts. Returns the number of entries</td>
+</tr>
+<tr>
+<td><code>pack(directory=None)</code></td>
+<td>Writes this Tack version's entries into one bundle file; returns <code>(path, count)</code></td>
+</tr>
+<tr>
+<td><code>prune(directory=None, max_size=None)</code></td>
+<td>Deletes the least recently used entries of every Tack version until they take at most 90% of <code>max_size</code> (default: the size limit), and abandoned temporary files; keeps bundles. Returns <code>(files removed, bytes left)</code></td>
+</tr>
+<tr>
+<td><code>clear(directory=None, all_versions=False)</code></td>
+<td>Deletes this Tack version's entries and bundle, or every version's (only the names the cache makes); returns the number of files removed</td>
+</tr>
+<tr>
+<td><code>describe(directory=None)</code></td>
+<td>The settings, entry count, size and bundle, as a dict</td>
+</tr>
+<tr>
+<td><code>stats()</code>, <code>reset_stats()</code></td>
+<td>Hit, miss and write counters for this process</td>
+</tr>
+</tbody>
+</table>
+<p><code>python -m tack.cache info | pack | prune [--max-size SIZE] | clear [--all]</code> runs the same from a shell.</p>
+<h2 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h2>
+<p>Tack defines one exception class of its own, <code>UnsupportedSyntaxError</code>
+(<code>lang/source_validation.py</code>). It subclasses <code>NotImplementedError</code>, which
+in Python subclasses <code>RuntimeError</code>.</p>
+<p><code>Kernel.__call__</code> translates exceptions as follows:</p>
+<ul>
+<li>It re-raises <code>UnsupportedSyntaxError</code> unchanged.</li>
+<li>It re-raises a <code>TypeError</code> as a <code>TypeError</code> prefixed with
+  <code>Kernel '&lt;name&gt;':</code>, unless the message already starts with that name,
+  so the kernel is named once.</li>
+<li>It re-raises any other <code>RuntimeError</code>, including <code>NotImplementedError</code>,
+  as <code>RuntimeError("Kernel '&lt;name&gt;' failed on &lt;BackendClass&gt;: ...")</code>,
+  dropping an inner <code>Kernel '&lt;name&gt;':</code> prefix. For compiler failures, it
+  uses a short "failed to compile" form that lists the error lines.</li>
+<li>It passes everything else through unchanged, notably <code>ValueError</code> and
+  <code>NameError</code>.</li>
+</ul>
+<p>Translated exceptions keep the original as <code>__cause__</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Exception</th>
+<th>Raised for</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UnsupportedSyntaxError</code></td>
+<td>Syntax outside the kernel language, in a kernel or a device function, including unreachable statements; a kernel without exactly one parallel loop directly in its body; a store, atomic, barrier, block reduction or <code>print</code> outside the parallel loop, including through an inlined device function or template method</td>
+<td>First dispatch or inspection (frontend)</td>
+</tr>
+<tr>
+<td><code>NameError</code></td>
+<td>A name that is neither a parameter nor assigned. Kernels don't capture Python globals</td>
+<td>First dispatch or inspection (frontend)</td>
+</tr>
+<tr>
+<td><code>TypeError</code></td>
+<td>A device spec that is neither a string nor a <code>Device</code>, options with a <code>Device</code>, argument count or type, an integer outside 64 bits, an array dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving <code>f64</code>, <code>inspect</code> of a non-kernel, <code>@tack.func</code> on a non-function, a dtype argument that is neither a Tack type nor a NumPy dtype with a Tack type, <code>array</code>, <code>empty_like</code> or DLPack dtypes, an invalid <code>*_like</code> prototype, <code>concat</code> dtypes, <code>copyto</code> into a non-array, host element assignment or iteration, a non-<code>MTLBuffer</code> on Metal, an <code>array_from_ptr</code> pointer that isn't an address on CUDA, HIP or Level Zero</td>
+<td>Dispatch (cold), inspection, host calls</td>
+</tr>
+<tr>
+<td><code>ValueError</code></td>
+<td>Unknown device type, device number or option, arrays on two devices in one launch, an unknown <code>TACK_CPU_POLICY</code>, incomplete <code>external_context</code>, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only array the kernel may store to, <code>array_from_ptr</code> memory space, shape mismatches (including <code>copyto</code> shapes that do not broadcast), <code>reshape</code>, <code>texture3d</code> arguments, empty <code>min</code>/<code>max</code>, empty <code>concat</code>, unknown inspect mode or <code>"optimized"</code> off CPU, template method or attribute errors, malformed or <code>kDLMetal</code> DLPack tensors</td>
+<td>Device creation, dispatch (cold or every call), inspection, host calls</td>
+</tr>
+<tr>
+<td><code>NotImplementedError</code></td>
+<td>Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as <code>UnsupportedSyntaxError</code></td>
+<td>Raised directly by inspection. Wrapped in <code>RuntimeError</code> at dispatch</td>
+</tr>
+<tr>
+<td><code>RuntimeError</code></td>
+<td>Device start-up failures, compilation and launch failures, unreadable kernel or device-function source, host writes to read-only arrays, calling device-only functions (<code>tack.shared</code>, <code>tack.atomic_add</code>, <code>@tack.func</code>s) from Python, DLPack device refusals, <code>export_memory</code> on unsupported backends, <code>tack.interop.vtk</code> requirements, and IR verification failures (<code>IRVerificationError</code>, a <code>RuntimeError</code> subclass, raised when a pass leaves IR that breaks a structural invariant)</td>
+<td>Everywhere</td>
+</tr>
+<tr>
+<td><code>BufferError</code></td>
+<td><code>__dlpack__(copy=True)</code></td>
+<td>Export</td>
+</tr>
+<tr>
+<td><code>IndexError</code></td>
+<td>In debug mode, a launch that indexed an array out of bounds; host indexing <code>f[i]</code> outside the array</td>
+<td>After the launch, from <code>Kernel.__call__</code>; host calls</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Current behavior:</strong> every dispatch rejection listed on this page and in
+<a href="../backend-capabilities/">Backend capabilities</a> is raised before the kernel
+launches, so a rejected call leaves array storage unchanged.
+<code>test_workgroup_contract.py</code> tests this property for workgroup rejections,
+<code>test_atomic_contract.py</code> for alignment, <code>test_launch_limits.py</code> for
+oversized launches, and <code>test_outside_parallel_loop.py</code> for effects outside
+the parallel loop.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/berkgeveci/tack" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "content.code.copy", "content.code.annotate", "content.tabs.link", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -6,14 +6,14 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/design/compilation-pipeline/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/design/compilation-pipeline/">
       
       
-        <link rel="prev" href="../principles/">
+        <link rel="prev" href="../array-api/">
       
       
         <link rel="next" href="../specialization-and-caching/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -504,6 +516,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../users-guide/01-getting-started/" class="md-nav__link">
         
@@ -561,14 +625,102 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/02-fields-and-types/" class="md-nav__link">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -750,21 +902,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -772,11 +948,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -805,6 +989,378 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -869,62 +1425,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -952,6 +1452,42 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -966,10 +1502,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
             
   
   
@@ -987,8 +1523,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1194,34 +1730,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1337,6 +1845,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1824,6 +2360,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2940,23 +3504,35 @@ design follows from keeping them apart:</p>
 </tbody>
 </table>
 <p>A warm call touches only the third tier and the key derivation that leads
-to it. Validation, lowering, the IR passes, verification, code generation
-and native compilation run only when something new is needed.</p>
+to it, and a call whose argument signature was seen before skips the key
+derivation too (<code>_fast_resolve</code>; see
+<a href="../specialization-and-caching/#the-dispatch-fast-path">Specialization and Caching</a>).
+Validation, lowering, the IR passes, verification, code generation
+and native compilation run only when something new is needed, and the
+first two tiers are also kept on disk across processes
+(<a href="../specialization-and-caching/#the-disk-cache">the disk cache</a>), so a new
+process may load both instead of building them.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>flowchart TD
     call["Kernel.__call__&lt;br/&gt;(lang/kernel.py)"] --&gt; exec["backend.execute()"]
     exec --&gt; rv["resolve_variant()&lt;br/&gt;(runtime/kernel_utils.py)"]
-    rv --&gt; args["classify arguments:&lt;br/&gt;templates, vectors, textures"]
+    rv --&gt; fast{"signature seen before?&lt;br/&gt;(_fast_resolve)"}
+    fast -- yes --&gt; launch
+    fast -- no --&gt; args["classify arguments:&lt;br/&gt;templates, vectors, textures"]
     args --&gt; getir{"Kernel.get_ir():&lt;br/&gt;IR template cached?"}
-    getir -- no --&gt; tr["template_rewrite&lt;br/&gt;(device-class args only)"]
+    getir -- no --&gt; dir{".ir entry on disk?"}
+    dir -- yes --&gt; store
+    dir -- no --&gt; tr["template_rewrite&lt;br/&gt;(device-class args only)"]
     tr --&gt; val["source_validation&lt;br/&gt;validate_source()"]
     val --&gt; ast["ast_transform&lt;br/&gt;transform_kernel()"]
     ast --&gt; vlow["verify_ir('lowered')"]
     vlow --&gt; store["store IR template"]
     store --&gt; key
-    getir -- yes --&gt; key["derive variant key&lt;br/&gt;(_KeyProbe, shape_signature,&lt;br/&gt;fields_disjoint on CPU)"]
+    getir -- yes --&gt; key["derive variant key&lt;br/&gt;(_KeyProbe, shape_signature,&lt;br/&gt;arrays_disjoint on CPU)"]
     key --&gt; hit{"variant cached?"}
-    hit -- no --&gt; clone["clone_ir(template)"]
+    hit -- no --&gt; dvar{".variant entry on disk?"}
+    dvar -- "yes: backend.load_variant" --&gt; cache
+    dvar -- no --&gt; clone["clone_ir(template)"]
     clone --&gt; passes["resolve → infer → check types →&lt;br/&gt;localize scalars → atomics/workgroups →&lt;br/&gt;optimize (verify after each)"]
     passes --&gt; build["backend build callback:&lt;br/&gt;[GPU: clone + pack_scalars] →&lt;br/&gt;annotate_types → codegen → native compile"]
     build --&gt; cache["store KernelVariant"]
@@ -2973,8 +3549,14 @@ Python 3.13), <code>read_source</code> raises <code>RuntimeError</code> at once,
 function and chaining the <code>OSError</code>. A kernel is compiled from its source
 text, so there is nothing to fall back on. <code>@tack.func</code> reads device
 functions through the same helper.</p>
-<p><strong><code>Kernel.__call__</code></strong> asks <code>tack.runtime.dispatch.get_backend()</code> for the
-active backend (initializing the CPU backend if none was chosen) and calls
+<p><strong><code>Kernel.__call__</code></strong> asks <code>tack.runtime.dispatch.launch_backend(name, args)</code>
+which backend runs the launch: the default device's (<code>get_backend()</code>, the
+CPU if none was chosen) when it can address every array argument (an equal
+<code>Backend.memory_domain</code>) or there are none, otherwise the arrays' own
+device's. Arrays in two memory domains raise <code>ValueError</code> naming both. A
+<code>@tack.device_class</code> argument's arrays decide only when no plain array
+does, and <code>resolve_variant</code> checks them all against the chosen backend
+(<code>check_devices</code>, on the slow and the fast path). It then calls
 <code>backend.execute(self, args, kwargs)</code>. Every backend's <code>execute</code> begins with
 <code>resolve_variant()</code> in <code>packages/tack-core/src/tack/runtime/kernel_utils.py</code>
 and passes it a backend-specific <code>build</code> callback. The CPU backend also
@@ -3003,10 +3585,6 @@ translates them by exception type:</p>
 <td><code>RuntimeError("Kernel '&lt;name&gt;' failed on &lt;BackendClass&gt;: …")</code>, chained, with any inner <code>Kernel '&lt;name&gt;':</code> prefix removed. A message containing "compilation failed" is shortened to its <code>error:</code> lines</td>
 </tr>
 <tr>
-<td><code>AttributeError</code> caused by fields allocated by a different backend</td>
-<td><code>RuntimeError</code> explaining that <code>tack.init()</code> replaced the backend</td>
-</tr>
-<tr>
 <td>anything else (<code>NameError</code>, <code>ValueError</code>, …)</td>
 <td>unchanged</td>
 </tr>
@@ -3020,31 +3598,42 @@ It then classifies the positional arguments. This runs on every dispatch:</p>
 <li><code>_detect_template_args</code> finds <code>@tack.device_class</code> objects (anything
   with a true <code>_device_class</code> attribute) and records their parameter
   indices.</li>
-<li><code>_expand_template_args</code> removes them and appends each template's field
+<li><code>_expand_template_args</code> removes them and appends each template's array
   attributes and then its runtime (instance) scalars, each group sorted by
   attribute name, taking templates from the highest index down. This order
   matches the parameters that <code>rewrite_templates</code> appends, which is what
   lines the expanded argument tuple up with the IR's parameter list.</li>
-<li><code>_detect_vector_fields_from_args</code> maps parameter names to <code>_vector_n</code> for
-  <code>tack.Vector.field</code> arguments. <code>_detect_texture_fields</code> maps parameter
+<li><code>_detect_vector_arrays_from_args</code> maps parameter names to <code>_vector_n</code> for
+  <code>tack.Array</code> with a vector element dtype arguments. <code>_detect_texture_arrays</code> maps parameter
   names to <code>Texture3D.shape_3d</code>.</li>
 </ul>
 <h2 id="stage-3-the-ir-template">Stage 3: the IR template<a class="headerlink" href="#stage-3-the-ir-template" title="Permanent link">&para;</a></h2>
-<p><code>Kernel.get_ir(vector_fields, template_args, texture_fields)</code> returns the
+<p><code>Kernel.get_ir(vector_arrays, template_args, texture_arrays, debug)</code> returns the
 lowered, verified IR for this <em>lowering specialization</em>. Vector widths,
-texture extents and template objects change what the frontend emits
-(scalarized component loads, sampling code, inlined method bodies,
-constants), so each combination gets its own template:</p>
+texture extents, template objects and debug mode change what the frontend
+emits (scalarized component loads, sampling code, inlined method bodies,
+constants, bounds checks), so each combination gets its own template:</p>
 <ul>
-<li>with no vectors, textures or templates, the single <code>Kernel._ir</code>;</li>
+<li>with no vectors, textures or templates, and debug mode off, the single
+  <code>Kernel._ir</code>;</li>
 <li>otherwise <code>Kernel._ir_cache[key]</code>, with
-  <code>key = Kernel._make_cache_key(vector_fields, template_args, texture_fields)</code>.</li>
+  <code>key = Kernel._make_cache_key(vector_arrays, template_args, texture_arrays, debug)</code>.</li>
 </ul>
 <p>Lookups are lock-free. A miss takes the module-level <code>_transform_lock</code> (an
 <code>RLock</code>) and checks again before building, so concurrent first calls lower
-a template once. Building is <code>_verified_transform</code>: <code>transform_kernel(...)</code>
-followed by <code>verify_ir(function, 'lowered')</code>. A template that fails
-verification raises before it is stored, so it is never cached.</p>
+a template once. Building is <code>Kernel._lower</code>, which asks the disk cache
+(<code>disk_cache.lowered</code>) for a <code>.ir</code> entry first and otherwise runs
+<code>_verified_transform</code>: <code>transform_kernel(...)</code> followed by
+<code>verify_ir(function, 'lowered')</code>. A template that fails verification
+raises before it is stored, so it is never cached, in memory or on disk.</p>
+<p>In debug mode (<code>tack.set_debug(True)</code> or <code>TACK_DEBUG=1</code>) lowering wraps
+each array access's flat index in an <code>IRBoundsCheck</code>, which is
+<code>-1</code> when an index is out of bounds, after recording the first violation
+in a hidden errors array; leading and flat extents are <code>IRArrayExtent</code>
+loads from a hidden extents array, so no extent is compiled in. The two
+hidden array parameters (<code>__tack_errors__</code>, <code>__tack_extents__</code>) follow the
+kernel's own; dispatch appends them per thread (<code>runtime/debug_bounds.py</code>).
+The helpers are in <code>lang/ir_bounds.py</code>.</p>
 <h3 id="3a-template-rewrite">3a. Template rewrite<a class="headerlink" href="#3a-template-rewrite" title="Permanent link">&para;</a></h3>
 <p>For <code>@tack.device_class</code> arguments, <code>rewrite_templates</code> in
 <code>packages/tack-core/src/tack/lang/template_rewrite.py</code> works on a deep copy
@@ -3053,7 +3642,7 @@ sorts the object's public attributes three ways:</p>
 <ul>
 <li>class-level numeric attributes become <code>ast.Constant</code>s (compile-time
   constants);</li>
-<li>instance numeric attributes and <code>Field</code> attributes become synthetic
+<li>instance numeric attributes and <code>Array</code> attributes become synthetic
   parameters;</li>
 <li><code>@tack.func</code> methods are resolved with <code>self</code> removed, into a map local
   to this transformation.</li>
@@ -3076,11 +3665,14 @@ depends on context. Among other things it rejects:</p>
 <li>parameters that are not plain positional ones, and default values;</li>
 <li>non-numeric constants, except docstrings and <code>print</code> labels;</li>
 <li>expression statements that are not calls, and keyword arguments;</li>
-<li>atomics and <code>barrier()</code> used as values, and <code>barrier()</code>/<code>thread_id()</code>
-  with arguments;</li>
+<li><code>barrier()</code> used as a value, and <code>barrier()</code>/<code>thread_id()</code> with
+  arguments (an atomic may be a value: the element's old value);</li>
 <li><code>for</code>/<code>while</code> with <code>else</code>, and literal zero or negative <code>range</code> steps;</li>
 <li><code>break</code> out of the parallel loop, and <code>continue</code> outside a loop;</li>
-<li><code>return</code> in a kernel, and <code>return</code> inside a loop in a device function;</li>
+<li><code>return</code> in a kernel, and <code>return</code> inside a loop in a device function. A
+  kernel's final <code>return</code>, with a return annotation, is split off before
+  validation (<code>Kernel._split_result</code>) into a one-thread epilogue kernel that
+  stores the value in a hidden one-element array;</li>
 <li>calls that are neither a statically bound <code>@tack.func</code> nor a kernel
   intrinsic (resolved through <code>CallBindings</code>, below).</li>
 </ul>
@@ -3096,8 +3688,8 @@ own fallbacks, also catches constructs the transformer would never visit,
 such as statements after a <code>return</code> in a device function. See the
 <a href="../../reference/language-contract/#source-and-supported-constructs">source contract</a>.</p>
 <h3 id="3c-ast-transform">3c. AST transform<a class="headerlink" href="#3c-ast-transform" title="Permanent link">&para;</a></h3>
-<p><code>KernelTransformer</code> (<code>packages/tack-core/src/tack/lang/ast_transform.py</code>)
-lowers the validated AST to the tree of nodes defined in
+<p><code>KernelTransformer</code> (<code>packages/tack-core/src/tack/lang/ast_transform.py</code>,
+with its parts in <code>lang/lowering/</code>) lowers the validated AST to the tree of nodes defined in
 <code>packages/tack-core/src/tack/lang/ir.py</code>. The decisions that matter for the
 rest of the pipeline are these:</p>
 <ul>
@@ -3110,16 +3702,16 @@ rest of the pipeline are these:</p>
   launches its grid over <code>[0, n)</code> and never sees the start (regression
   <strong>LC5</strong>). Nested loops become <code>IRSequentialFor</code>, and their <code>range</code>
   arguments are captured into temporaries so they are evaluated once, on
-  entry. <code>tack.ndrange(a, b)</code> or <code>(a, b, c)</code> becomes one parallel loop
+  entry. <code>tack.ndindex(a, b)</code> or <code>(a, b, c)</code> becomes one parallel loop
   that keeps its dimensions (<code>dims</code>, <code>extents</code>), which each backend binds
   from a launch of that shape; workgroup kernels and four or more
   dimensions use a loop over the product with the indices recovered by
   <code>//</code> and <code>%</code> in the body (<code>lang/parallel_dims.py</code>).</li>
-<li><strong>Field indexing.</strong> <code>f[i, j]</code> linearizes to <code>i * IRDimSize(f, 1) + j</code>.
+<li><strong>Array indexing.</strong> <code>f[i, j]</code> linearizes to <code>i * IRDimSize(f, 1) + j</code>.
   <code>f.shape[k]</code> and <code>len(f)</code> lower to <code>IRDimSize</code>. A dimension index that is
   not a literal is rejected.</li>
 <li><strong>Vectors.</strong> Vector expressions are scalarized into per-component names
-  (<code>_component_name</code>), and a vector-field load expands into one load per
+  (<code>_component_name</code>), and a vector-array load expands into one load per
   component.</li>
 <li><strong>Evaluation order.</strong> <code>_visit_ordered</code> and <code>_capture_value</code> hoist the
   statements produced by expression-level inlining (<code>_pre_stmts</code>). When a
@@ -3127,7 +3719,7 @@ rest of the pipeline are these:</p>
   temporaries first. Together they preserve left-to-right evaluation.</li>
 <li><strong>Statements outside the loop.</strong> <code>_visit_body</code> checks each statement
   lowered outside the parallel loop with <code>_check_outside_parallel_loop</code>.
-  A field or array store, atomic, barrier, block reduction or <code>print</code>
+  An array or array store, atomic, barrier, block reduction or <code>print</code>
   there raises <code>UnsupportedSyntaxError</code> at its source position, since such
   statements may run any number of times per launch. The check runs on the
   lowered statement, so effects arriving through inlined device functions,
@@ -3204,6 +3796,15 @@ therefore keeps Python's own names and never collides with a user binding.</p>
 <a href="#verification-at-pass-boundaries">the verifier table</a>). Its failures are
 compiler bugs rather than user errors. It runs once per IR template.</p>
 <h2 id="stage-4-variant-key-derivation-every-dispatch">Stage 4: variant key derivation (every dispatch)<a class="headerlink" href="#stage-4-variant-key-derivation-every-dispatch" title="Permanent link">&para;</a></h2>
+<p>Before any of this, <code>resolve_variant</code> tries the dispatch fast path
+(<code>_fast_resolve</code>): when the call's signature (<code>_call_signature</code>, read off
+the arguments) was seen before on this backend and kernel, it reuses the
+template expansion plan and the variants that call resolved, decides
+disjointness, runs the per-call checks of stage 6 and returns. Calls with
+keyword arguments, arguments the signature cannot describe, and every call
+in debug mode take the steps below, the slow path, which records what it
+resolved for the next call
+(<a href="../specialization-and-caching/#the-dispatch-fast-path">details</a>).</p>
 <p>With the template in hand, <code>resolve_variant</code> takes these steps:</p>
 <ol>
 <li>It calls <code>check_workgroup_support</code> on the template. Backends that
@@ -3217,15 +3818,20 @@ compiler bugs rather than user errors. It runs once per IR template.</p>
    are not written to. Otherwise two threads dispatching the same kernel
    with different dtypes could read each other's annotations between write
    and read, and fetch a variant compiled for the other call's types.</li>
-<li>It computes <code>shape_signature(template, name_to_field)</code> and, on the CPU,
-   <code>fields_disjoint(template, effective_args)</code>.</li>
+<li>It computes <code>shape_signature(template, name_to_array)</code> and, on the CPU,
+   <code>arrays_disjoint(template, effective_args)</code>.</li>
 <li>It builds the key with <code>kernel_variant_key</code> and looks it up in the
    kernel's slot of <code>backend._cache</code>.</li>
 </ol>
 <p>What goes into the key, and why, is the subject of
 <a href="../specialization-and-caching/">Specialization and Caching</a>.</p>
 <h2 id="stage-5-variant-construction-miss-only">Stage 5: variant construction (miss only)<a class="headerlink" href="#stage-5-variant-construction-miss-only" title="Permanent link">&para;</a></h2>
-<p>On a miss, <code>resolve_variant</code> runs the common passes on a private copy. The
+<p>On a miss, <code>resolve_variant</code> first asks the disk cache for a <code>.variant</code>
+entry (<code>_stored_variant</code>): its post-pass IR and the backend's artifact,
+rebuilt by <code>backend.load_variant</code>, skip everything below, and a damaged or
+unloadable entry is ignored. Otherwise it runs the common passes on a
+private copy, and afterwards stores the new variant on disk
+(<code>_store_variant</code>) when the backend has a <code>cache_target()</code>. The
 order matters: each step relies on annotations an earlier one established,
 and each verification boundary rechecks the whole tree.</p>
 <table>
@@ -3250,8 +3856,8 @@ and each verification boundary rechecks the whole tree.</p>
 <td>2</td>
 <td>Resolve</td>
 <td><code>resolve_ir</code> (<code>lang/ir_resolve.py</code>)</td>
-<td>every <code>IRDimSize</code> outside the parallel loop's end becomes a constant, following <code>@tack.func</code> field aliases; <code>shared_like</code>/<code>local_array_like</code> dtypes and texture extents are filled in</td>
-<td>unknown field: <code>RuntimeError</code></td>
+<td>every <code>IRDimSize</code> outside the parallel loop's end becomes a constant, following <code>@tack.func</code> array aliases; <code>shared_like</code>/<code>local_array_like</code> dtypes and texture extents are filled in</td>
+<td>unknown array: <code>RuntimeError</code></td>
 </tr>
 <tr>
 <td></td>
@@ -3264,7 +3870,7 @@ and each verification boundary rechecks the whole tree.</p>
 <td>3</td>
 <td>Infer</td>
 <td><code>infer_param_types</code> (<code>lang/type_inference.py</code>), <code>store_texture_shapes</code></td>
-<td><code>type_annotation</code>, <code>_is_field</code>, <code>_is_texture</code> and <code>_texture_shape</code> on every parameter</td>
+<td><code>type_annotation</code>, <code>_is_array</code>, <code>_is_texture</code> and <code>_texture_shape</code> on every parameter</td>
 <td>wrong argument count or unsupported argument type: <code>TypeError</code></td>
 </tr>
 <tr>
@@ -3278,7 +3884,7 @@ and each verification boundary rechecks the whole tree.</p>
 <td>4</td>
 <td>Check types</td>
 <td><code>check_dispatch_types</code></td>
-<td>every field dtype is in <code>backend.supported_dtypes</code></td>
+<td>every array dtype is in <code>backend.supported_dtypes</code></td>
 <td><code>TypeError</code> naming the kernel, parameter, dtype and backend</td>
 </tr>
 <tr>
@@ -3299,7 +3905,7 @@ and each verification boundary rechecks the whole tree.</p>
 <td>6</td>
 <td>Atomics</td>
 <td><code>check_atomic_support</code>, <code>check_atomic_alignment</code> (<code>lang/atomic_support.py</code>)</td>
-<td>each atomic target is a global field parameter of a dtype the backend supports, and suitably aligned</td>
+<td>each atomic target is a global array parameter of a dtype the backend supports, and suitably aligned</td>
 <td><code>TypeError</code> (target or dtype), <code>ValueError</code> (alignment)</td>
 </tr>
 <tr>
@@ -3326,7 +3932,7 @@ and each verification boundary rechecks the whole tree.</p>
 <tr>
 <td>9</td>
 <td>Record</td>
-<td><code>ir_func.disjoint_fields = disjoint</code></td>
+<td><code>ir_func.disjoint_arrays = disjoint</code></td>
 <td>the CPU no-overlap promise, for codegen</td>
 <td>—</td>
 </tr>
@@ -3339,7 +3945,7 @@ and each verification boundary rechecks the whole tree.</p>
 </tr>
 </tbody>
 </table>
-<p>Scalar localization runs after inference because it needs <code>_is_field</code>. It
+<p>Scalar localization runs after inference because it needs <code>_is_array</code>. It
 runs before packing because packing rewrites every read of a scalar
 parameter into a load from the pack buffer, so on GPU an assignment to that
 name would otherwise be lost. Outer locals are renamed for a different
@@ -3401,16 +4007,20 @@ describes each pass in detail.</p>
 parameter list, and dispatch needs the unpacked IR to evaluate the launch
 range against the original arguments. <code>KernelVariant.ir</code> keeps the
 pre-packing IR. The payload holds the compiled kernel, the <code>pack_info</code>,
-and the pack buffers, which are allocated once per variant. The CPU
-annotates the variant's IR in place, since nothing else reads it.</p>
+and on CUDA, HIP and Level Zero the pack buffers, which are allocated once
+per variant (Metal makes a buffer of a launch's scalars per launch). The
+CPU annotates the variant's IR in place, since nothing else reads it.
+In debug mode <code>annotate_types</code> ends with <code>ir_bounds.guard_accesses</code>, which
+skips each access whose checked index is negative: a load yields a zero of
+its type, and a store or atomic runs under <code>if index &gt;= 0</code>.</p>
 <p>Annotation (<code>annotate_types</code> in <code>lang/ir_type_annotate.py</code>) can still
 reject a program: a negative literal integer exponent and a non-f32 block
 reduction both raise <code>TypeError</code>. Code generators re-check atomic support
 and workgroup participation on their own input, because direct generation
 can receive IR that no dispatch prepared.</p>
 <p>The finished <code>KernelVariant(ir, payload, requires_full_workgroups,
-atomic_targets, written_fields)</code> is stored under its key. <code>written_fields</code>
-lists the index and name of each field argument the kernel may store to
+atomic_targets, written_arrays, has_textures)</code> is stored under its key. <code>written_arrays</code>
+lists the index and name of each array argument the kernel may store to
 (all of them when a store can't be traced), and the variant carries its
 own <code>dispatch_lock</code>. If any step raised, nothing is
 stored. The next call retries the variant (and fails the same way) rather
@@ -3420,26 +4030,31 @@ than finding it cached in a broken state.</p>
 this call's <em>values</em>. When the variant needs full workgroups,
 <code>check_workgroup_launch</code> requires the logical count to be a multiple of
 256. <code>check_atomic_alignment</code> checks the alignment of the current atomic
-targets' storage, and <code>check_writable_fields</code> refuses a read-only field
-(from <code>field_from_ptr</code> without <code>writable=True</code>, or a read-only DLPack
-import) bound to a parameter in <code>written_fields</code>, with <code>ValueError</code>. The
+targets' storage, and <code>check_writable_arrays</code> refuses a read-only array
+(from <code>array_from_ptr</code> without <code>writable=True</code>, or a read-only DLPack
+import) bound to a parameter in <code>written_arrays</code>, with <code>ValueError</code>. The
 backend then takes over:</p>
 <ol>
 <li>It evaluates the launch count with <code>_get_loop_range(variant.ir, args)</code>.
    This interprets the parallel loop's <code>end</code> against the arguments, with a
-   texture standing for its source field; it understands constants, scalar parameters, <code>IRDimSize</code>, and <code>+ - * //</code>
+   texture standing for its source array; it understands constants, scalar parameters, <code>IRDimSize</code>, and <code>+ - * //</code>
    over those. GPU backends return without launching when the count is not
    positive, and refuse a count past what one grid can index with
    <code>check_launch_size()</code> (<code>ValueError</code>).</li>
 <li>It replaces each <code>Texture3D</code> argument with the storage the texture owns,
-   its hardware image or private field (<code>bind_textures</code>).</li>
+   its hardware image or private array (<code>bind_textures</code>).</li>
 <li>On GPU, it writes the scalar values into the cached pack buffers
-   (<code>_update_pack_fields</code>) and appends those buffers to the argument list.
-   CUDA, HIP and Metal do this and the launch under the variant's
-   <code>dispatch_lock</code>; Level Zero under its backend <code>_launch_lock</code>.</li>
+   (<code>_update_pack_arrays</code>) and appends those buffers to the argument list.
+   CUDA and HIP do this and the launch under the variant's
+   <code>dispatch_lock</code>, Level Zero under its backend <code>_launch_lock</code>; Metal
+   copies the values into a buffer the launch owns.</li>
 <li>It launches. The CPU backend chooses between a serial call and its
-   thread pool (see <a href="../cpu-threading/">CPU Threading Policy</a>); GPU
-   backends launch a grid.</li>
+   thread pool (see <a href="../cpu-threading/">CPU Threading Policy</a>) and returns
+   once the range has run; GPU backends queue a grid and return (see
+   <a href="../backend-implementations/#launches-are-queued">Backend Implementations</a>).
+   In debug mode <code>Kernel.__call__</code> then reads the errors array, which
+   waits for the launch, and raises <code>IndexError</code> for a recorded
+   violation.</li>
 </ol>
 <h2 id="verification-at-pass-boundaries">Verification at pass boundaries<a class="headerlink" href="#verification-at-pass-boundaries" title="Permanent link">&para;</a></h2>
 <p><code>verify_ir(function, stage)</code> in
@@ -3460,7 +4075,7 @@ example <code>function.body[0].body[2].value</code>.</p>
 <tr>
 <td><em>(all)</em></td>
 <td>—</td>
-<td>every node is a registered kind in a valid role (statement, expression, parameter); required attributes are present; names are nonempty; operators come from the known sets; constants are numeric; no cycles; parameter names are unique; exactly one top-level <code>IRParallelFor</code>, starting at constant <code>0</code>; no field store, atomic, block reduction, barrier or print outside it; sequential loops sit inside it; <code>break</code> targets a sequential loop; each <code>continue</code>'s <code>outermost</code> flag matches its loop; no <code>IRReturn</code>; every name read is bound somewhere in the function</td>
+<td>every node is a registered kind in a valid role (statement, expression, parameter); required attributes are present; names are nonempty; operators come from the known sets; constants are numeric; no cycles; parameter names are unique; exactly one top-level <code>IRParallelFor</code>, starting at constant <code>0</code>; no array store, atomic, block reduction, barrier or print outside it; sequential loops sit inside it; <code>break</code> targets a sequential loop; each <code>continue</code>'s <code>outermost</code> flag matches its loop; no <code>IRReturn</code>; every name read is bound somewhere in the function</td>
 </tr>
 <tr>
 <td><code>lowered</code></td>
@@ -3475,7 +4090,7 @@ example <code>function.body[0].body[2].value</code>.</p>
 <tr>
 <td><code>inferred</code></td>
 <td><code>resolve_variant</code>, <code>inspect</code></td>
-<td>every parameter has a <code>ScalarType</code> and a boolean <code>_is_field</code>; every field load, store and atomic names a field parameter, an allocation, or a pointer copy of one</td>
+<td>every parameter has a <code>ScalarType</code> and a boolean <code>_is_array</code>; every array load, store and atomic names an array parameter, an allocation, or a pointer copy of one</td>
 </tr>
 <tr>
 <td><code>localized</code></td>
@@ -3524,7 +4139,7 @@ variant built from it. Passes mutate IR in place: <code>resolve_ir</code> <em>re
 parameters, and packing rewrites the parameter list. Running them on the
 template had two failure modes, both seen before the current design:</p>
 <ul>
-<li><strong>Consumed nodes.</strong> Once the first call had resolved a 2-D field's row
+<li><strong>Consumed nodes.</strong> Once the first call had resolved a 2-D array's row
   stride into a literal, no <code>IRDimSize</code> remained for a second shape to
   resolve. The IR itself was stale, not only the compiled code.</li>
 <li><strong>Published annotations.</strong> Annotations written onto shared parameters
@@ -3548,7 +4163,7 @@ the same result as a deep copy, faster for this kind of data:</p>
   graph.</li>
 <li>One identity memo spans the whole graph, so shared nodes stay shared and
   cycles are preserved rather than duplicated. The sharing is real: an
-  <code>ndrange</code> dimension node appears both in the loop's end and in its
+  <code>ndindex</code> dimension node appears both in the loop's end and in its
   <code>extents</code>, and a range's start both in an extent and in the body.</li>
 <li><code>ScalarType</code> instances keep their identity, because type maps compare by
   identity. This matches <code>ScalarType.__deepcopy__</code>. Other metadata falls
@@ -3577,7 +4192,7 @@ template and runs resolve, infer, the backend's <code>_store_texture_shapes</cod
 optimize and annotate, with the same verification stages, so it rejects
 what dispatch would and makes the same texture decision. For
 <code>mode="source"</code> on a GPU backend it then packs and re-annotates (<code>packed</code>,
-<code>typed</code>). On the CPU it computes the disjoint-fields bit for the given
+<code>typed</code>). On the CPU it computes the disjoint-arrays bit for the given
 arguments, so the LLVM it shows is the variant those arguments would run.
 <code>mode="optimized"</code> is the CPU module after O3; on other backends it raises
 <code>ValueError</code> once the kernel's own checks have passed. Inspection never

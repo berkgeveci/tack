@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/12-execution-model/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/12-execution-model/">
       
       
         <link rel="prev" href="../01-getting-started/">
       
       
-        <link rel="next" href="../02-fields-and-types/">
+        <link rel="next" href="../quick-reference/">
       
       
         
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -507,6 +519,63 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -628,6 +697,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Separate stages into separate kernels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waiting-from-asyncio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waiting from asyncio
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -679,14 +765,105 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -868,21 +1045,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -890,11 +1094,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -923,6 +1135,384 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -987,62 +1577,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1059,6 +1593,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1087,10 +1657,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1108,8 +1678,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1315,34 +1885,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1453,6 +1995,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1649,6 +2219,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2491,6 +3089,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Separate stages into separate kernels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waiting-from-asyncio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waiting from asyncio
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2548,7 +3163,7 @@
 
 <h1 id="from-python-to-a-tack-program">From Python to a Tack program<a class="headerlink" href="#from-python-to-a-tack-program" title="Permanent link">&para;</a></h1>
 <p>A Tack application contains two kinds of code. <strong>Host code</strong> is ordinary Python:
-it allocates fields, prepares data, chooses which kernels to run, repeats timesteps,
+it allocates arrays, prepares data, chooses which kernels to run, repeats timesteps,
 and displays the results. <strong>Device code</strong> is the body of a <code>@tack.kernel</code> or
 <code>@tack.func</code>: Tack reads that source and compiles its supported numerical operations
 for the selected backend. On the CPU, device code still means compiled code.</p>
@@ -2561,10 +3176,10 @@ iteration space:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
 
-<span class="n">tack</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">arch</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">cpu</span><span class="p">)</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field_like</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field_like</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
-<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,))</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">8</span><span class="p">,))</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">saxpy</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">alpha</span><span class="p">):</span>
@@ -2572,7 +3187,7 @@ iteration space:</p>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">alpha</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">y</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
 
 <span class="n">saxpy</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">)</span>
-<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 <p>The allocation, call and assertion run in Python. The arithmetic in <code>saxpy</code> runs
 as compiled code. The loop has eight independent iterations. Tack may schedule
@@ -2593,7 +3208,7 @@ iteration walk its columns:</p>
 between threads. Sequential statement order inside an iteration is preserved;
 it does not establish an order between rows.</p>
 <p>For a serial recurrence, use <code>for _ in range(1)</code> with an ordinary loop inside it.
-For multidimensional work, use <code>tack.ndrange</code>. See <a href="../03-kernels/">Kernels</a> for
+For multidimensional work, use <code>tack.ndindex</code>. See <a href="../03-kernels/">Kernels</a> for
 stepped ranges, interior ranges and variable-length inner loops.</p>
 <h2 id="separate-stages-into-separate-kernels">Separate stages into separate kernels<a class="headerlink" href="#separate-stages-into-separate-kernels" title="Permanent link">&para;</a></h2>
 <p>Consider particle motion: first compute every force from the old positions,
@@ -2614,10 +3229,33 @@ them mixes old and new state. Put the two stages in separate kernels:</p>
     <span class="n">compute_force</span><span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">force</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
     <span class="n">integrate</span><span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">vel</span><span class="p">,</span> <span class="n">force</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
 </code></pre></div>
-<p>Tack dispatch is synchronous: a call completes before Python continues. The
-second kernel therefore sees the completed force field. Host reads after the
-call also see completed results. There is no public asynchronous launch/stream
-API to manage in these examples.</p>
+<p>Every launch sees the results of the launches before it, and every host
+access to an array -- <code>numpy()</code>, <code>tack.copyto</code>, indexing, reductions -- sees
+the results of every launch before it. So the second kernel sees the
+completed force array, and so does a read after the loop. On the CPU a
+call completes before Python continues; on CUDA, HIP, Metal and Level Zero
+it is queued and returns at once, and the host access waits. The program
+above behaves the same either way, and there is no stream or event to
+manage. <code>tack.sync()</code> waits for everything launched so far on every device, for timing
+kernels or for memory another library reads without Tack.</p>
+<h3 id="waiting-from-asyncio">Waiting from <code>asyncio</code><a class="headerlink" href="#waiting-from-asyncio" title="Permanent link">&para;</a></h3>
+<p>A host access that waits blocks its thread. In an application with an
+event loop -- a trame or web server, a Jupyter kernel -- that thread is the
+loop, and nothing else runs while the device works. Two coroutines wait in
+a worker thread instead:</p>
+<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">frame</span><span class="p">():</span>
+    <span class="n">advance</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>                        <span class="c1"># queued; returns at once</span>
+    <span class="k">await</span> <span class="n">tack</span><span class="o">.</span><span class="n">sync_async</span><span class="p">()</span>                   <span class="c1"># the loop runs while it works</span>
+    <span class="n">pixels</span> <span class="o">=</span> <span class="k">await</span> <span class="n">image</span><span class="o">.</span><span class="n">numpy_async</span><span class="p">()</span>        <span class="c1"># wait, then copy, off the loop</span>
+    <span class="k">return</span> <span class="n">pixels</span>
+</code></pre></div>
+<p><code>tack.sync_async()</code> waits for the launches made on every device
+before the call, not for ones another task queues while it waits. <code>numpy_async</code> returns every
+write queued before the call; one queued later by another task may or may
+not be in it, so order the two with <code>await</code> if it matters. A launch's error
+is raised at the <code>await</code>. On CUDA, HIP, Metal and Level Zero the wait runs
+in a worker thread; on the CPU, whose launches complete before returning,
+both return at once.</p>
 <p>A <code>tack.barrier()</code> synchronizes only a GPU workgroup. It cannot turn two stages
 over a whole grid into one ordered launch. Use completed kernel calls for that.
 The <a href="../13-memory-and-parallelism/">memory chapter</a> explains stencil buffers,
@@ -2645,7 +3283,7 @@ scatter operations, and the cases where atomics are appropriate.</p>
 </tr>
 <tr>
 <td>An array of state</td>
-<td>Field argument or device-class attribute</td>
+<td>Array argument or device-class attribute</td>
 <td>Particle positions, a grid, a counter</td>
 </tr>
 </tbody>
@@ -2654,19 +3292,19 @@ scatter operations, and the cases where atomics are appropriate.</p>
 Declare a constant or pass it. Changing a runtime argument changes the next call
 without changing the kernel source. Constants are fixed when the specialization
 is first lowered; rebinding a Python name later does not update cached code.</p>
-<p><code>@tack.device_class</code> gathers fields and parameters into an object. Its instance
+<p><code>@tack.device_class</code> gathers arrays and parameters into an object. Its instance
 scalars are runtime arguments; its class constants and method structure help
 define the compiled specialization. The <a href="../06-templates/">Templates</a> chapter
 shows how to use this to organize a solver.</p>
 <h2 id="shapes-values-and-compilation">Shapes, values and compilation<a class="headerlink" href="#shapes-values-and-compilation" title="Permanent link">&para;</a></h2>
 <p>The first call includes compilation. Later compatible calls reuse the compiled
 variant. Changing a scalar value usually reuses it. Changing the scalar's dtype,
-field dtype, vector width, template structure or a baked-in dimension may create
+array dtype, vector width, template structure or a baked-in dimension may create
 another variant.</p>
 <p>This distinction matters for a grid. A 1-D length used only as the launch bound
 can vary without recompilation; multidimensional indexing uses row strides that
 depend on the shape. Two grids with different shapes may need different code
-even when the Python kernel is identical. Prefer fixed working fields during a
+even when the Python kernel is identical. Prefer fixed working arrays during a
 simulation; allocate once and update them each frame.</p>
 <p>See <a href="../03-kernels/#kernel-caching">Kernel Caching</a> for examples and
 <a href="../15-debugging-and-timing/">Debugging and timing</a> for how to measure warm calls.</p>
@@ -2674,10 +3312,10 @@ simulation; allocate once and update them each frame.</p>
 <p>Many familiar constructs work: arithmetic, <code>if</code>, sequential <code>for</code> and <code>while</code>,
 vectors, matrices and device-function calls. Arbitrary Python objects, NumPy
 calls and file operations do not run inside a kernel. For example, generate an
-initial state with NumPy on the host, upload it, then work on the field:</p>
+initial state with NumPy on the host, upload it, then work on the array:</p>
 <div class="highlight"><pre><span></span><code><span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <span class="n">initial</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>  <span class="c1"># Python / NumPy</span>
-<span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field_like</span><span class="p">(</span><span class="n">initial</span><span class="p">)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">initial</span><span class="p">)</span>
 </code></pre></div>
 <p>Use <code>tack.random</code> for random draws within a kernel. Use <code>@tack.func</code> for reusable
 compiled helpers. Such helpers can be called from kernels and other device

@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/15-debugging-and-timing/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/15-debugging-and-timing/">
       
       
-        <link rel="prev" href="../10-rendering/">
+        <link rel="prev" href="../16-interoperability/">
       
       
-        <link rel="next" href="../tutorials/">
+        <link rel="next" href="../17-kernel-cache/">
       
       
         
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -509,6 +521,61 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../01-getting-started/" class="md-nav__link">
         
@@ -566,14 +633,105 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -755,21 +913,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -777,11 +962,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -810,6 +1003,386 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -854,62 +1427,6 @@
     
   
     Sharing Arrays
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
   
 
     
@@ -1023,6 +1540,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#check-every-index-with-debug-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check every index with debug mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#measure-first-call-and-warm-time-separately" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1059,6 +1587,42 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -1076,10 +1640,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1097,8 +1661,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1304,34 +1868,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1442,6 +1978,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1638,6 +2202,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2483,6 +3075,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#check-every-index-with-debug-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check every index with debug mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#measure-first-call-and-warm-time-separately" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2534,11 +3137,11 @@ separate.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
 
-<span class="n">tack</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">arch</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">cpu</span><span class="p">)</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
 <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <span class="n">host_x</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field_like</span><span class="p">(</span><span class="n">host_x</span><span class="p">)</span>
-<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">host_x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">host_x</span><span class="p">)</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">host_x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
@@ -2546,7 +3149,7 @@ separate.</p>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
 
 <span class="n">transform</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
-<span class="n">actual</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+<span class="n">actual</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
 <span class="n">expected</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">host_x</span><span class="p">))</span>
 <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">actual</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
 <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="n">expected</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">2e-6</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">)</span>
@@ -2577,12 +3180,14 @@ can change summation order even between runs on one backend. A simulation may
 amplify those differences over many steps. Check an early timestep as well as
 the final result, and consider physical properties such as mass conservation,
 residuals or bounded temperatures when a long trajectory is sensitive.</p>
-<p>Do not increase a tolerance merely to hide a discrepancy. First check field
+<p>Do not increase a tolerance merely to hide a discrepancy. First check array
 layout, boundaries, initialization, dtype conversions and cross-iteration races.
-Use <a href="../02-fields-and-types/">Fields and Types</a> for literal precision and integer
+Use <a href="../02-arrays-and-types/">Arrays and Types</a> for literal precision and integer
 rules, and <a href="../11-reductions-and-scans/">Reductions and Scans</a> for accumulator
-precision. For example, a statistics <code>dot</code> currently accumulates in <code>f32</code> even
-when its inputs are <code>f64</code>.</p>
+precision. Statistics such as <code>dot</code> form their terms in <code>f64</code> if either input
+is <code>f64</code>, and otherwise in <code>f32</code>, then use array reductions. For <code>f32</code> inputs,
+a <code>float64</code> reference is useful for measuring accumulated error; it is not a
+promise that the <code>f32</code> result will agree in every bit.</p>
 <h2 id="diagnose-the-failing-stage">Diagnose the failing stage<a class="headerlink" href="#diagnose-the-failing-stage" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2597,7 +3202,7 @@ when its inputs are <code>f64</code>.</p>
 <td>Pass a runtime value or declare <code>tack.constant</code>; check the defining namespace</td>
 </tr>
 <tr>
-<td>Field has unexpected values or shape</td>
+<td>Array has unexpected values or shape</td>
 <td>Compare NumPy shapes and dtype; distinguish vectors from flat components</td>
 </tr>
 <tr>
@@ -2606,7 +3211,11 @@ when its inputs are <code>f64</code>.</p>
 </tr>
 <tr>
 <td>Only boundary cells are wrong</td>
-<td>Bounds and initialization of both timestep buffers</td>
+<td>Bounds and initialization of both timestep buffers: run in debug mode (below)</td>
+</tr>
+<tr>
+<td>A crash, or garbage that moves with the input size</td>
+<td>An index out of bounds: run in debug mode (below)</td>
 </tr>
 <tr>
 <td>Kernel rejected on CPU</td>
@@ -2618,14 +3227,33 @@ when its inputs are <code>f64</code>.</p>
 </tr>
 <tr>
 <td>Every call seems slow</td>
-<td>Compilation/specialization, allocation, readback, or small synchronous launches</td>
+<td>Compilation/specialization, allocation, readback after every launch, or many small launches</td>
 </tr>
 </tbody>
 </table>
 <p><code>print</code> in a kernel is useful on CPU, CUDA and HIP. Limit it to a few iterations
 and remove it when timing. Metal does not provide this printing facility. For
-portable inspection, write diagnostic values to a field and read it after the
+portable inspection, write diagnostic values to an array and read it after the
 call.</p>
+<h2 id="check-every-index-with-debug-mode">Check every index with debug mode<a class="headerlink" href="#check-every-index-with-debug-mode" title="Permanent link">&para;</a></h2>
+<p>An index out of bounds is the usual cause of a kernel that crashes, or that
+gives wrong values near the edges of an array. Kernels do not check indices,
+so <code>a[i, j + 1]</code> at the last column quietly reads the first element of the
+next row. Turn on debug mode to find it:</p>
+<div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">set_debug</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>    <span class="c1"># or run with TACK_DEBUG=1 in the environment</span>
+</code></pre></div>
+<p>Every array index is then checked, one dimension at a time. An
+access out of bounds is skipped (a load gives 0) and the call raises
+<code>IndexError</code> naming the first one:</p>
+<div class="highlight"><pre><span></span><code>IndexError: Kernel &#39;blur&#39;: a[i, j + 1] at blur.py:14, column 19: index 64 of
+dimension 1 is outside [0, 64). The access was skipped (a load gives 0).
+63 more out-of-bounds accesses in the launch were skipped too.
+</code></pre></div>
+<p>An access in a <code>@tack.func</code> names the device function and its line. Debug
+mode works on every backend and compiles kernels anew, so it is for finding
+bugs, not for timing: each launch waits for its result.
+<code>tack.set_debug(False)</code> turns it off again. <code>TACK_DEBUG</code> is read once, when
+Tack is imported.</p>
 <p>To inspect compilation without running the kernel:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">print</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">inspect</span><span class="p">(</span><span class="n">transform</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;ir&quot;</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">inspect</span><span class="p">(</span><span class="n">transform</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;source&quot;</span><span class="p">))</span>
@@ -2634,8 +3262,13 @@ call.</p>
 same specialization and applies the backend's capability checks. <code>mode="optimized"</code>
 shows optimized LLVM IR on CPU only. See <a href="../03-kernels/#inspecting-generated-code">Inspecting Generated Code</a>.</p>
 <h2 id="measure-first-call-and-warm-time-separately">Measure first-call and warm time separately<a class="headerlink" href="#measure-first-call-and-warm-time-separately" title="Permanent link">&para;</a></h2>
-<p>Tack launches synchronously, so elapsed time around a completed call includes its
-execution. The first call also includes compilation. Record these separately:</p>
+<p>On the CPU a call returns when the kernel has finished. On Metal, CUDA, HIP
+and Level Zero it returns once the launch is queued, and the host waits only
+when it reads an array or calls <code>tack.sync()</code>. Call <code>tack.sync()</code> before
+reading the clock, or a GPU time measures only the launch. The first call
+also includes compilation, unless an earlier process left the kernel in the
+<a href="../17-kernel-cache/">disk cache</a>; run with <code>TACK_CACHE=off</code> to time a cold
+compile. Record these separately:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">time</span><span class="w"> </span><span class="kn">import</span> <span class="n">perf_counter</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
@@ -2645,33 +3278,36 @@ execution. The first call also includes compilation. Record these separately:</p
 
 <span class="n">start</span> <span class="o">=</span> <span class="n">perf_counter</span><span class="p">()</span>
 <span class="n">timed_transform</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>                    <span class="c1"># this kernel has not been called yet</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">sync</span><span class="p">()</span>                                <span class="c1"># wait for a queued GPU launch</span>
 <span class="n">first_call</span> <span class="o">=</span> <span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
 
 <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
     <span class="n">timed_transform</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>                 <span class="c1"># warm compilation and CPU scheduling</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">sync</span><span class="p">()</span>
 
 <span class="n">times</span> <span class="o">=</span> <span class="p">[]</span>
 <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">30</span><span class="p">):</span>
     <span class="n">start</span> <span class="o">=</span> <span class="n">perf_counter</span><span class="p">()</span>
     <span class="n">timed_transform</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+    <span class="n">tack</span><span class="o">.</span><span class="n">sync</span><span class="p">()</span>
     <span class="n">times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;First call: </span><span class="si">{</span><span class="n">first_call</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1e3</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Warm median: </span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">times</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1e3</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p>The 32-element diagnostic example is intentionally small; use a larger field
+<p>The 32-element diagnostic example is intentionally small; use a larger array
 when studying throughput. Keep its shape and dtype fixed during measurement.
 On CPU the scheduler measures whether worker threads help; several warm calls
 allow that policy to settle. A single-thread run can help distinguish scheduling
-cost from compiled arithmetic: <code>tack.init(arch=tack.cpu, num_threads=1)</code>.</p>
+cost from compiled arithmetic: <code>tack.set_default_device("cpu", num_threads=1)</code>.</p>
 <p>Measure end-to-end application time separately, including upload, preprocessing,
-kernel stages and readback. Allocate working fields outside the timed loop when
+kernel stages and readback. Allocate working arrays outside the timed loop when
 studying kernel execution, and describe which costs a reported number includes.
 There is no portable speedup factor for all problem sizes and machines.</p>
 <h2 id="improvements-to-try-in-order">Improvements to try in order<a class="headerlink" href="#improvements-to-try-in-order" title="Permanent link">&para;</a></h2>
-<p>Keep intermediate data in fields, reuse allocations, swap timestep buffers, and
+<p>Keep intermediate data in arrays, reuse allocations, swap timestep buffers, and
 read back only at checkpoints. Combine independent per-element operations in one
-kernel when that avoids launches and temporary fields. Keep dependent global
+kernel when that avoids launches and temporary arrays. Keep dependent global
 stages separate. After measuring a clear memory bottleneck, consider tiling;
 <a href="../tutorials/nbody/">N-body</a> shows how to preserve both barriers and a CPU path.</p>
 <p>Compare a change using identical inputs, backend, shape and measurement procedure.

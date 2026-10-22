@@ -6,11 +6,11 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/03-kernels/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/03-kernels/">
       
       
         <link rel="prev" href="../14-vectors-and-matrices/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -509,6 +521,61 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../01-getting-started/" class="md-nav__link">
         
@@ -566,14 +633,107 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -715,10 +875,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#field-dimensions" class="md-nav__link">
+  <a href="#array-dimensions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Field Dimensions
+        Array Dimensions
       
     </span>
   </a>
@@ -935,21 +1095,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -957,11 +1144,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -990,6 +1185,384 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1054,62 +1627,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1126,6 +1643,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1154,10 +1707,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1175,8 +1728,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1382,34 +1935,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1520,6 +2045,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1716,6 +2269,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2561,10 +3142,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#field-dimensions" class="md-nav__link">
+  <a href="#array-dimensions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Field Dimensions
+        Array Dimensions
       
     </span>
   </a>
@@ -2709,8 +3290,8 @@ ordinary loops inside:</p>
 </code></pre></div>
 <p>Code before or after the parallel loop may run any number of times per
 launch (once per GPU thread, once per CPU chunk), so it may only assign
-local variables, read fields, and declare <code>tack.shared</code> or
-<code>tack.local_array</code> arrays. Field stores, atomics, barriers, block
+local variables, read arrays, and declare <code>tack.shared</code> or
+<code>tack.local_array</code> arrays. Array stores, atomics, barriers, block
 reductions and <code>print</code> there are rejected; move them into the loop body.
 Each iteration starts from the values the code before the loop assigned:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
@@ -2721,7 +3302,7 @@ Each iteration starts from the values the code before the loop assigned:</p>
 </code></pre></div>
 <p>The loop bound can come from:
 - A scalar argument: <code>range(n)</code>
-- A field shape: <code>range(data.shape[0])</code>
+- An array shape: <code>range(data.shape[0])</code>
 - <code>len(data)</code></p>
 <h2 id="constants">Constants<a class="headerlink" href="#constants" title="Permanent link">&para;</a></h2>
 <p>A kernel is compiled from its own source and does not see Python variables
@@ -2743,7 +3324,7 @@ name raises <code>NameError</code>. Declare the value with <code>tack.constant</
 </code></pre></div>
 <p>The kernel reads <code>DT</code> as the literal <code>0.01</code>. The constant is still an
 ordinary Python number, so host code uses the same name: <code>range(GRID)</code>,
-<code>np.float32(DT)</code>, <code>tack.field(dtype=tack.f32, shape=(GRID,))</code>. Constants
+<code>np.float32(DT)</code>, <code>tack.empty((GRID,))</code>. Constants
 work from another module too (<code>from params import DT</code>, or <code>params.DT</code>),
 and inside device functions.</p>
 <p>A second argument gives the constant a type, which matters in two places:</p>
@@ -2791,8 +3372,8 @@ as device functions that work on scalars and vectors alike: <code>fract</code>,
 <p>The definitions are GLSL's (<code>mix(x, y, a)</code> is <code>x * (1 - a) + y * a</code>, and
 <code>smoothstep</code> with its edges reversed reverses the step). They are only
 callable from kernels and device functions.</p>
-<h2 id="field-dimensions">Field Dimensions<a class="headerlink" href="#field-dimensions" title="Permanent link">&para;</a></h2>
-<p><code>field.shape[k]</code> and <code>len(field)</code> work anywhere in a kernel — not only as
+<h2 id="array-dimensions">Array Dimensions<a class="headerlink" href="#array-dimensions" title="Permanent link">&para;</a></h2>
+<p><code>array.shape[k]</code> and <code>len(array)</code> work anywhere in a kernel — not only as
 the loop bound:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">reverse</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
@@ -2801,7 +3382,7 @@ the loop bound:</p>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">normalize_rows</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndrange</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndindex</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
 </code></pre></div>
 <p>The dimension index must be a literal: <code>x.shape[0]</code> is fine, <code>x.shape[d]</code>
@@ -2818,11 +3399,11 @@ would rather not specialize, pass the length as a scalar argument:</p>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">i</span><span class="p">]</span>
 </code></pre></div>
 <h2 id="multi-dimensional-iteration">Multi-Dimensional Iteration<a class="headerlink" href="#multi-dimensional-iteration" title="Permanent link">&para;</a></h2>
-<p>Use <code>tack.ndrange</code> for 2D or 3D parallel iteration:</p>
+<p>Use <code>tack.ndindex</code> for 2D or 3D parallel iteration:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">fill_2d</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">height</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndrange</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="n">height</span><span class="p">):</span>
-        <span class="n">grid</span><span class="p">[</span><span class="n">j</span> <span class="o">*</span> <span class="n">width</span> <span class="o">+</span> <span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="n">j</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fill_2d</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">height</span><span class="p">,</span> <span class="n">width</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">row</span><span class="p">,</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndindex</span><span class="p">(</span><span class="n">height</span><span class="p">,</span> <span class="n">width</span><span class="p">):</span>
+        <span class="n">grid</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">column</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">row</span> <span class="o">+</span> <span class="n">column</span><span class="p">)</span>
 </code></pre></div>
 <p>This launches <code>width * height</code> threads. Each thread gets its <code>(i, j)</code> pair
 via index decomposition.</p>
@@ -2830,7 +3411,7 @@ via index decomposition.</p>
 visits the interior of a grid and leaves the boundary alone:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">smooth</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndrange</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)):</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">tack</span><span class="o">.</span><span class="n">ndindex</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)):</span>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
 </code></pre></div>
 <p>Sizes and pairs can be mixed. An empty or reversed pair makes the loop
@@ -2846,11 +3427,11 @@ run no iterations.</p>
         <span class="n">out</span><span class="p">[</span><span class="n">row</span><span class="p">]</span> <span class="o">=</span> <span class="n">total</span>
 </code></pre></div>
 <p>Sequential loops support:
-- <code>range(n)</code> with runtime bounds (including field loads)
+- <code>range(n)</code> with runtime bounds (including array loads)
 - <code>range(start, end)</code>
 - <code>range(start, end, step)</code></p>
 <h3 id="variable-length-inner-loops">Variable-Length Inner Loops<a class="headerlink" href="#variable-length-inner-loops" title="Permanent link">&para;</a></h3>
-<p>The loop bound can come from a field load, enabling variable-length
+<p>The loop bound can come from an array load, enabling variable-length
 iteration patterns like Viskores-style connectivity:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sum_segments</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">n_cells</span><span class="p">):</span>
@@ -2875,11 +3456,11 @@ type: <code>-&gt; tack.f32</code>, <code>-&gt; float</code> (f32) or <code>-&gt;
 <span class="n">live</span> <span class="o">=</span> <span class="n">count_live</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">count</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>        <span class="c1"># a Python int</span>
 </code></pre></div>
 <p>The expression is evaluated once, after the launch, by a one-thread
-epilogue kernel that stores it into a hidden field the call reads back.
-So it may use fields, arguments, constants and locals bound before the
+epilogue kernel that stores it into a hidden array the call reads back.
+So it may use arrays, arguments, constants and locals bound before the
 loop, but not a local the loop assigns, which has a value per thread.
-This replaces writing a one-element field and reading it with
-<code>to_numpy()</code> or <code>f[0]</code>; the cost is one extra, tiny launch and one
+This replaces writing a one-element array and reading it with
+<code>numpy()</code> or <code>f[0]</code>; the cost is one extra, tiny launch and one
 element's transfer.</p>
 <h3 id="return-the-length-of-an-atomic-append">Return the length of an atomic append<a class="headerlink" href="#return-the-length-of-an-atomic-append" title="Permanent link">&para;</a></h3>
 <p>An atomic's result and a kernel's result have different roles. Inside the loop,
@@ -2894,12 +3475,12 @@ output slot. After the loop, the kernel returns the completed counter to Python:
     <span class="k">return</span> <span class="n">count</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 </code></pre></div>
 <p>Allocate enough capacity and reset the counter before each call:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">values</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field_like</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>  <span class="c1"># capacity for every input</span>
-    <span class="n">count</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,))</span>
+<div class="highlight"><pre><span></span><code>    <span class="n">values</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>  <span class="c1"># capacity for every input</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
     <span class="n">count</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="n">length</span> <span class="o">=</span> <span class="n">compact_positive</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">count</span><span class="p">,</span> <span class="n">values</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()[:</span><span class="n">length</span><span class="p">]</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[:</span><span class="n">length</span><span class="p">]</span>
     <span class="c1"># Arrival order is unspecified: compare the values after sorting.</span>
     <span class="k">assert</span> <span class="n">length</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">length</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
     <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">result</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
@@ -2915,18 +3496,22 @@ uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </sp
 <h2 id="kernel-caching">Kernel Caching<a class="headerlink" href="#kernel-caching" title="Permanent link">&para;</a></h2>
 <p>Kernels are compiled on first call. A compiled <em>variant</em> is reused by later
 calls that agree on everything the generated code depends on: argument
-dtypes, which arguments are fields, scalars or textures, vector widths,
-texture extents, <code>@tack.device_class</code> class constants and layout, any field
+dtypes, which arguments are arrays, scalars or textures, vector widths,
+texture extents, <code>@tack.device_class</code> class constants and layout, any array
 dimensions the kernel bakes in (for example <code>x.shape[1]</code> used as a row
-stride), and on CPU whether the fields overlap. Anything else is a runtime
+stride), and on CPU whether the arrays overlap. Anything else is a runtime
 parameter.</p>
 <p>So changing scalar values (passing <code>alpha=2.5</code>, then <code>alpha=3.0</code>) does
-<strong>not</strong> recompile, and neither does changing the length of a 1-D field
+<strong>not</strong> recompile, and neither does changing the length of a 1-D array
 used only as the parallel loop bound. Changing a dtype, a vector width or a
 baked-in dimension does. If a kernel recompiles for every array size, pass
 the size as a scalar argument instead of reading it from <code>shape</code> inside the
 body. <a href="../../design/specialization-and-caching/">Specialization and Caching</a>
 lists exactly what goes into the key, with worked examples.</p>
+<p>Compiled variants are also kept on disk, so a later process that calls the
+same kernel the same way starts warm; editing the kernel, a device function
+it calls, a constant or a template class compiles it again. See
+<a href="../17-kernel-cache/">The Kernel Cache</a>.</p>
 <h2 id="inspecting-generated-code">Inspecting Generated Code<a class="headerlink" href="#inspecting-generated-code" title="Permanent link">&para;</a></h2>
 <p><code>tack.inspect()</code> shows the generated code for a kernel without executing it.
 This is useful for debugging, learning, and understanding what the compiler
@@ -2937,9 +3522,9 @@ produces:</p>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">y</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
 
 <span class="n">n</span> <span class="o">=</span> <span class="mi">1024</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
-<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>
 
 <span class="c1"># Tack intermediate representation</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">inspect</span><span class="p">(</span><span class="n">saxpy</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;ir&quot;</span><span class="p">))</span>
@@ -2976,7 +3561,7 @@ produces:</p>
 <p>You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
 them. Inspection applies the same checks as a call, so arguments a call
-would reject (an <code>f64</code> field on Metal, for example) raise here too, and
+would reject (an <code>f64</code> array on Metal, for example) raise here too, and
 on GPUs without texture hardware the source shows the software sampling
 the call would use. Templates and scalar arguments work as expected:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">device_class</span>
@@ -2984,8 +3569,8 @@ the call would use. Templates and scalar arguments work as expected:</p>
     <span class="n">GRAVITY</span> <span class="o">=</span> <span class="o">-</span><span class="mf">9.81</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">vel</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pos</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vel</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">dt</span> <span class="o">=</span> <span class="mf">0.01</span>
 
     <span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>

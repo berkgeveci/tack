@@ -21,14 +21,14 @@ def compact_positive(values, out, count, n) -> int:
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:run]
-    values = tack.field_like(np.array([-2, 1, -0.5, 3, 0, 2], dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=values.shape)  # capacity for every input
-    count = tack.field(dtype=tack.i32, shape=(1,))
+    values = tack.array(np.array([-2, 1, -0.5, 3, 0, 2], dtype=np.float32))
+    out = tack.empty(values.shape)  # capacity for every input
+    count = tack.empty((1,), tack.i32)
     count.fill(0)
     length = compact_positive(values, out, count, values.size)
-    result = out.to_numpy()[:length]
+    result = out.numpy()[:length]
     # Arrival order is unspecified: compare the values after sorting.
     assert length == 3 and isinstance(length, int)
     np.testing.assert_array_equal(np.sort(result), np.array([1, 2, 3], dtype=np.float32))

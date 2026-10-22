@@ -6,14 +6,14 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/design/interoperability/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/design/interoperability/">
       
       
-        <link rel="prev" href="../backend-implementations/">
+        <link rel="prev" href="../vendor-workarounds/">
       
       
         <link rel="next" href="../dataset-api/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -504,6 +516,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../users-guide/01-getting-started/" class="md-nav__link">
         
@@ -561,14 +625,102 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/02-fields-and-types/" class="md-nav__link">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -750,21 +902,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -772,11 +948,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -805,6 +989,378 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -869,62 +1425,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -952,6 +1452,42 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -966,10 +1502,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
             
   
   
@@ -987,8 +1523,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1194,34 +1730,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1337,6 +1845,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1533,6 +2069,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2778,7 +3342,7 @@
 
 
 <h1 id="interoperability">Interoperability<a class="headerlink" href="#interoperability" title="Permanent link">&para;</a></h1>
-<p>Tack rarely owns a whole application. Its fields have to reach PyTorch,
+<p>Tack rarely owns a whole application. Its arrays have to reach PyTorch,
 CuPy, NumPy and VTK, and their arrays have to reach Tack kernels, without a
 copy through the host. This page describes the three mechanisms — DLPack,
 raw pointers and OS-handle export — then the VTK layer built on DLPack, and
@@ -2798,27 +3362,27 @@ Aliasing</a>; this page assumes them.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>field.__dlpack__()</code></td>
+<td><code>array.__dlpack__()</code></td>
 <td>Tack → other</td>
 <td>yes</td>
-<td>Tack pins the field until the consumer's deleter runs</td>
+<td>Tack pins the array until the consumer's deleter runs</td>
 </tr>
 <tr>
 <td><code>tack.from_dlpack(x)</code></td>
 <td>other → Tack</td>
 <td>yes (unless <code>copy=True</code>)</td>
-<td>the field holds the producer's capsule and calls its deleter when collected</td>
+<td>the array holds the producer's capsule and calls its deleter when collected</td>
 </tr>
 <tr>
-<td><code>tack.field_from_ptr(ptr, ...)</code></td>
+<td><code>tack.array_from_ptr(ptr, ...)</code></td>
 <td>other → Tack</td>
 <td>yes</td>
 <td>the caller, by hand</td>
 </tr>
 <tr>
-<td><code>field.export_memory()</code></td>
+<td><code>array.export_memory()</code></td>
 <td>Tack → another graphics/compute API</td>
-<td>Metal: yes; CUDA: yes for <code>exportable=True</code> fields, otherwise one copy</td>
+<td>Metal: yes; CUDA: yes for <code>exportable=True</code> arrays, otherwise one copy</td>
 <td>the exporting buffer</td>
 </tr>
 <tr>
@@ -2830,18 +3394,23 @@ Aliasing</a>; this page assumes them.</p>
 </tbody>
 </table>
 <h2 id="dlpack-export">DLPack export<a class="headerlink" href="#dlpack-export" title="Permanent link">&para;</a></h2>
-<p><code>Field.__dlpack__(*, stream=None, max_version=None, dl_device=None,
-copy=None)</code> (<code>lang/field.py</code>) delegates to <code>field_to_dlpack</code> in
+<p><code>Array.__dlpack__(*, stream=None, max_version=None, dl_device=None,
+copy=None)</code> (<code>lang/array.py</code>) delegates to <code>array_to_dlpack</code> in
 <code>lang/dlpack.py</code>. <code>copy=True</code> raises <code>BufferError</code>: an export is always a
-view. <code>stream</code> and <code>dl_device</code> are accepted and not used; every Tack
-dispatch has already completed when it returns, so there is no pending
-work for a consumer's stream to wait on.</p>
+view. <code>stream</code> and <code>dl_device</code> are accepted and not used. GPU launches
+are queued, so instead of ordering the consumer's stream after Tack's, the
+export calls the buffer's <code>share()</code> (<code>_get_device_info</code>): it waits for the
+launches queued so far, and marks the buffer so that every later launch
+that uses it completes before returning, because the consumer may read
+the memory at once, on its own stream, and keep reading it after later
+launches. There is then no pending work for a consumer's stream to wait
+on. See <a href="../memory-and-aliasing/#queued-launches-and-memory">Memory and Aliasing</a>.</p>
 <p><strong>Legacy or versioned.</strong> A consumer passing <code>max_version &gt;= (1, 0)</code> gets a
 DLPack 1.0 <code>DLManagedTensorVersioned</code> in a <code>"dltensor_versioned"</code> capsule;
 otherwise it gets the legacy <code>DLManagedTensor</code> in a <code>"dltensor"</code> capsule.
 The distinction matters because only the versioned struct has a <code>flags</code>
-field, and so only it can carry <code>DLPACK_FLAG_BITMASK_READ_ONLY</code>, which Tack
-sets for a non-writable field. Exported the legacy way, a read-only field
+array, and so only it can carry <code>DLPACK_FLAG_BITMASK_READ_ONLY</code>, which Tack
+sets for a non-writable array. Exported the legacy way, a read-only array
 arrives as writable — the legacy protocol cannot say otherwise. The two
 structs are never read interchangeably: <code>dl_tensor</code> sits at the <em>end</em> of
 the versioned struct and at the start of the legacy one.</p>
@@ -2884,12 +3453,12 @@ the versioned struct and at the start of the legacy one.</p>
 </table>
 <p>The device id is always <code>0</code>. Shapes are copied into a <code>c_int64</code> array, and
 strides are always C-contiguous element strides with <code>byte_offset = 0</code> —
-there is nothing else to describe, since a field has no slicing. Every
-field dtype maps to a DLPack type; anything else raises <code>TypeError</code>.</p>
+there is nothing else to describe, since an array has no slicing. Every
+array dtype maps to a DLPack type; anything else raises <code>TypeError</code>.</p>
 <h3 id="keeping-an-export-alive">Keeping an export alive<a class="headerlink" href="#keeping-an-export-alive" title="Permanent link">&para;</a></h3>
-<p>An exported capsule points at the field's memory, so the field, the
+<p>An exported capsule points at the array's memory, so the array, the
 managed-tensor struct, and the shape and stride arrays must all outlive the
-consumer. <code>field_to_dlpack</code> pins them in the module dictionary <code>_prevent_gc</code>
+consumer. <code>array_to_dlpack</code> pins them in the module dictionary <code>_prevent_gc</code>
 under a fresh integer key, and stores that key in the struct's
 <code>manager_ctx</code>. The key is the crux: DLPack calls the deleter with only the
 managed-tensor pointer, so the producer's bookkeeping key has to travel
@@ -2914,7 +3483,7 @@ arguments</strong>, and <code>_release</code> does the same for <code>ctypes.cas
 module: a consumer that failed part-way through an import has been seen
 holding one until interpreter exit, when module globals are already torn
 down. A global lookup in the destructor then raised <code>NameError</code> inside an
-ignored ctypes callback, and the field stayed pinned. Defaults are bound
+ignored ctypes callback, and the array stayed pinned. Defaults are bound
 when the function is defined, so they survive the module.
 <code>test_an_unadopted_capsule_is_released_without_module_globals</code> in
 <code>tests/test_dlpack.py</code> runs the destructor with an empty globals dictionary
@@ -2922,11 +3491,11 @@ to hold that line. The helpers also use raw <code>c_void_p</code> pointers rathe
 <code>py_object</code>, so capsule teardown never touches the capsule's reference
 count.</p>
 <h2 id="dlpack-import">DLPack import<a class="headerlink" href="#dlpack-import" title="Permanent link">&para;</a></h2>
-<p><code>tack.from_dlpack(source, copy=False)</code> wraps a tensor without copying. With
+<p><code>tack.from_dlpack(source, *, device=None, copy=False)</code> wraps a tensor without copying. With
 <code>copy=True</code> it instead calls <code>np.from_dlpack(source)</code> (or uses <code>source</code>
-directly if it is a NumPy array) and copies into a new field with
-<code>field_like</code>, so the copying path accepts host tensors.</p>
-<p>The zero-copy path is <code>dlpack_to_field(source, writable=True)</code>:</p>
+directly if it is a NumPy array) and copies into a new array with
+<code>array</code>, so the copying path accepts host tensors.</p>
+<p>The zero-copy path is <code>dlpack_to_array(source, writable=True, device=None)</code>:</p>
 <ol>
 <li><strong>Get a capsule.</strong> <code>_request_capsule</code> calls
    <code>source.__dlpack__(max_version=(1, 0))</code> and falls back to
@@ -2937,7 +3506,7 @@ directly if it is a NumPy array) and copies into a new field with
 <li><strong>Check it is unconsumed.</strong> A capsule not named <code>"dltensor_versioned"</code>
    or <code>"dltensor"</code> has already been taken: <code>ValueError</code>.</li>
 <li><strong>Honor read-only.</strong> A versioned tensor with the read-only flag makes
-   the field non-writable, overriding the default. Host writes to it raise
+   the array non-writable, overriding the default. Host writes to it raise
    <code>RuntimeError</code>, and a dispatch that binds it where the kernel may store
    raises <code>ValueError</code> (see
    <a href="../memory-and-aliasing/#wrapped-buffers">Memory and Aliasing</a>).</li>
@@ -2982,15 +3551,19 @@ back into a PyObjC object and an offset carried through <code>MetalBuffer</code>
 and the argument-buffer binding, neither of which exists. So a
 <code>kDLMetal</code> tensor raises <code>ValueError</code> up front, on any backend, with a
 message saying to move the tensor to host memory and import it with
-<code>copy=True</code>. Any other unknown device type raises <code>ValueError</code>. A known one on the wrong
-backend raises <code>RuntimeError</code> — importing CUDA memory while running the
-CPU backend is a mistake, not something to paper over with a copy. The
-tensor's device id is not compared.
-6. <strong>Wrap.</strong> <code>field_from_ptr(data + byte_offset, dtype, shape,
+<code>copy=True</code>. Any other unknown device type raises <code>ValueError</code>.
+Without <code>device=</code>, the default device imports the tensor when it can
+wrap it, and otherwise the tensor's own device does (the first backend
+in the table, numbered by the tensor's device id), as the array API's
+<code>from_dlpack</code> keeps an array where it is: CUDA memory with the CPU as
+default is a CUDA array, host memory with Metal as default a CPU array.
+A <code>device=</code> that cannot wrap the tensor raises <code>RuntimeError</code> naming
+the device to import it on; it never copies.
+6. <strong>Wrap.</strong> <code>array_from_ptr(data + byte_offset, shape, dtype,
    writable=...)</code>, which runs the backend's
    <a href="../memory-and-aliasing/#memory-space-validation">memory-space check</a>.
 7. <strong>Adopt.</strong> Rename the capsule to its <code>used_</code> name, so no one else
-   releases it, and attach a <code>_CapsuleHold</code> to the field as
+   releases it, and attach a <code>_CapsuleHold</code> to the array as
    <code>_dlpack_hold</code>.</p>
 </li>
 </ol>
@@ -2998,16 +3571,16 @@ tensor's device id is not compared.
 <code>_CapsuleHold</code> keeps the capsule referenced and calls the managed tensor's
 deleter exactly once — from <code>release()</code> or from its own <code>__del__</code>, which
 swallows errors because interpreter teardown can remove <code>ctypes</code> first. The
-hold is on the <code>Field</code>, not the buffer, so <code>Field.reshape()</code> copies it to
-the view; the producer is told the memory is free only when the last field
+hold is on the <code>Array</code>, not the buffer, so <code>Array.reshape()</code> copies it to
+the view; the producer is told the memory is free only when the last array
 over it is collected. The source object itself may be dropped immediately.</p>
-<p>Unlike <code>field_from_ptr</code>, which defaults to read-only, an imported field is
+<p>Unlike <code>array_from_ptr</code>, which defaults to read-only, an imported array is
 writable unless the producer says otherwise: DLPack exchange is meant to
 share memory in both directions, and the versioned flag is how a producer
 opts out.</p>
 <div class="admonition note">
 <p class="admonition-title">Metal and DLPack</p>
-<p>A Metal field exports as <code>kDLCPU</code>, which is correct — its memory is
+<p>A Metal array exports as <code>kDLCPU</code>, which is correct — its memory is
 host-addressable — but the Metal backend does not import <code>kDLCPU</code>
 tensors, including its own. Wrapping a host pointer as an <code>MTLBuffer</code>
 without copying needs a page-aligned address, which host allocations
@@ -3017,18 +3590,20 @@ on how big the array happened to be. The refusal appends Metal's
 <code>kDLMetal</code> tensors are refused before any backend sees them (step 5).</p>
 </div>
 <h2 id="raw-pointers">Raw pointers<a class="headerlink" href="#raw-pointers" title="Permanent link">&para;</a></h2>
-<p><code>tack.field_from_ptr(ptr, dtype, shape, writable=False)</code> is the lowest
+<p><code>tack.array_from_ptr(ptr, dtype, shape, writable=False)</code> is the lowest
 level: no capsule, no deleter, no device type. Tack validates every
 pointer with <code>as_address()</code> and <code>memory_space()</code> where the backend
 distinguishes device memory, wraps them without taking ownership, and leaves lifetime entirely to
-the caller. The per-backend details are in <a href="../memory-and-aliasing/#wrapped-buffers">Memory and
+the caller. A wrapped buffer, and so every DLPack import, is marked shared
+from the start: a launch that uses it completes before it returns, since
+the owning library may touch the memory with no Tack call in between. The per-backend details are in <a href="../memory-and-aliasing/#wrapped-buffers">Memory and
 Aliasing</a>. Use it for in situ
 frameworks and simulation codes that hand over a device pointer, and prefer
 DLPack whenever the producer speaks it, because then lifetime is handled.</p>
 <h2 id="exporting-device-memory-to-other-apis">Exporting device memory to other APIs<a class="headerlink" href="#exporting-device-memory-to-other-apis" title="Permanent link">&para;</a></h2>
 <p>DLPack hands a pointer to another library in the same process and on the
 same API. A renderer on Vulkan or another process needs an OS-level handle
-instead. <code>Field.export_memory()</code> returns an <code>ExportedMemory</code> record of plain
+instead. <code>Array.export_memory()</code> returns an <code>ExportedMemory</code> record of plain
 Python values — <code>backend</code>, <code>size</code>, <code>allocation_size</code>, <code>handle</code>,
 <code>handle_type</code> and <code>device_uuid</code> — so the consumer needs no GPU library to
 read it, and dispatches on <code>handle_type</code>.</p>
@@ -3054,16 +3629,18 @@ read it, and dispatches on <code>handle_type</code>.</p>
 <tr>
 <td>CUDA (Windows)</td>
 <td><code>win32_kmt</code></td>
-<td>a legacy global KMT handle</td>
+<td>a legacy global KMT handle; WDDM mode only, since a GPU in TCC mode has no virtual memory management and cannot export</td>
 </tr>
 </tbody>
 </table>
 <p>Other buffers raise <code>RuntimeError</code> (<code>Backend ... does not support memory
-export</code>). CUDA memory from <code>cuMemAlloc</code> cannot be exported as an OS handle,
-so <code>CUDABuffer.export_memory()</code> copies the field once, device to device,
-into a lazily created <code>ExportableCUDABuffer</code> and exports that — later
-kernel writes to the original are not reflected in the export. A field
-allocated with <code>tack.field(..., exportable=True)</code> is an
+export</code>). CUDA memory from <code>cuMemAllocAsync</code> cannot be exported as an OS handle,
+so <code>CUDABuffer.export_memory()</code> waits for the launches queued on the
+array, copies it once, device to device, into a lazily created
+<code>ExportableCUDABuffer</code> and exports that — later kernel writes to the
+original are not reflected in the export. Metal's <code>export_memory()</code> calls
+<code>share()</code>, as a DLPack export does. An array
+allocated with <code>tack.empty(..., exportable=True)</code> is an
 <code>ExportableCUDABuffer</code> from the start, and its export is zero-copy. The
 exportable buffer is allocated through CUDA's virtual memory management API
 (<code>cuMemCreate</code>, <code>cuMemAddressReserve</code>, <code>cuMemMap</code>, <code>cuMemSetAccess</code>),
@@ -3083,20 +3660,20 @@ kernel handle and is never closed.</p>
 layer over DLPack and VTK's <code>vtkmodules.util.dlpack_support</code>. If that module
 is missing, both functions raise <code>RuntimeError</code> saying so. Host arrays work
 with any VTK that has it; device arrays need VTK built with Viskores.</p>
-<p><strong><code>vtk_to_field(vtk_array, flatten=False)</code></strong> asks VTK for a capsule
+<p><strong><code>vtk_to_array(vtk_array, flatten=False)</code></strong> asks VTK for a capsule
 (<code>dlpack_support.vtk_to_dlpack</code>) and imports it with <code>tack.from_dlpack</code>.
 VTK always exports <code>(tuples, components)</code>. A single-component array comes
-back 1-D, and <code>flatten=True</code> returns a flat <code>(tuples * components,)</code> field —
+back 1-D, and <code>flatten=True</code> returns a flat <code>(tuples * components,)</code> array —
 the interleaved layout Tack's own visualization algorithms take. Both are
 <code>reshape()</code> views, which carry the DLPack hold, so the VTK array may be
 dropped as soon as the call returns.</p>
-<p><strong><code>field_to_vtk(field, n_components=None, name=None)</code></strong> works out the
+<p><strong><code>array_to_vtk(array, n_components=None, name=None)</code></strong> works out the
 layout first, before touching VTK, so a shape mistake is reported as one
-(<code>ValueError</code> for a contradictory or non-dividing <code>n_components</code>, or for a
-field of three or more dimensions without one). It reshapes the field to
+(<code>ValueError</code> for a contradictory or non-dividing <code>n_components</code>, or for an
+array of three or more dimensions without one). It reshapes the array to
 <code>(tuples, components)</code> if needed and passes it to
-<code>dlpack_support.dlpack_to_vtk</code>, which consumes the field's <code>__dlpack__</code>.
-Tack's pin keeps the field alive until VTK calls the deleter, which is
+<code>dlpack_support.dlpack_to_vtk</code>, which consumes the array's <code>__dlpack__</code>.
+Tack's pin keeps the array alive until VTK calls the deleter, which is
 VTK's responsibility when the array is released.</p>
 <h3 id="cuda-and-hip">CUDA and HIP<a class="headerlink" href="#cuda-and-hip" title="Permanent link">&para;</a></h3>
 <p>On CUDA and HIP, Tack relies on the pointer alone. The DLPack device type
@@ -3109,17 +3686,17 @@ process, so a device pointer means the same thing to every library.</p>
     participant Tack
     participant VTK
     participant Driver as CUDA / HIP driver
-    App-&gt;&gt;Tack: tack.init(arch=tack.cuda)
+    App-&gt;&gt;Tack: tack.set_default_device("cuda")
     App-&gt;&gt;VTK: run a Viskores filter (device array)
-    App-&gt;&gt;Tack: vtk_to_field(vtk_array)
+    App-&gt;&gt;Tack: vtk_to_array(vtk_array)
     Tack-&gt;&gt;VTK: dlpack_support.vtk_to_dlpack(vtk_array)
     VTK--&gt;&gt;Tack: capsule (kDLCUDA, device pointer)
     Tack-&gt;&gt;Driver: memory_space(pointer) via cuPointerGetAttribute
     Driver--&gt;&gt;Tack: "cuda"
-    Tack--&gt;&gt;App: Field (wrapped, holds the capsule)
-    App-&gt;&gt;Tack: kernel(field, ...)
-    App-&gt;&gt;Tack: field_to_vtk(field)
-    Tack-&gt;&gt;VTK: dlpack_to_vtk(field) — consumes field.__dlpack__()
+    Tack--&gt;&gt;App: Array (wrapped, holds the capsule)
+    App-&gt;&gt;Tack: kernel(array, ...)
+    App-&gt;&gt;Tack: array_to_vtk(array)
+    Tack-&gt;&gt;VTK: dlpack_to_vtk(array) — consumes array.__dlpack__()
     VTK--&gt;&gt;App: vtkDataArray over the same allocation</code></pre>
 <p><code>CUDABackend</code> adopts whatever context is current on the calling thread when
 it starts and creates its own with <code>cuCtxCreate</code> only if there is none; see
@@ -3153,10 +3730,9 @@ band</em>: the other library reports the handles of the context its device
 queue uses, and Tack allocates in that context instead of its own. DLPack
 itself is unchanged.</p>
 <h3 id="adopting-a-context">Adopting a context<a class="headerlink" href="#adopting-a-context" title="Permanent link">&para;</a></h3>
-<p><code>LevelZeroBackend</code> declares <code>init_options = frozenset({"external_context"})</code>,
+<p><code>LevelZeroBackend</code> declares <code>device_options = frozenset({"external_context"})</code>,
 so</p>
-<div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">arch</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">level_zero</span><span class="p">,</span>
-          <span class="n">external_context</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;driver&quot;</span><span class="p">:</span> <span class="n">d</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="n">dev</span><span class="p">,</span> <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">ctx</span><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;level_zero&quot;</span><span class="p">,</span> <span class="n">external_context</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;driver&quot;</span><span class="p">:</span> <span class="n">d</span><span class="p">,</span> <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="n">dev</span><span class="p">,</span> <span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">ctx</span><span class="p">})</span>
 </code></pre></div>
 <p>passes the dictionary to <code>LevelZeroBackend.__init__</code>. All three handles are
 required and must be non-null; otherwise <code>ValueError</code> names the missing
@@ -3164,24 +3740,30 @@ ones. Tack does not fill in a driver or device of its own, because a driver
 or device found separately need not be the one the context was created
 against. With the handles adopted, <code>_query_device</code> runs against the given
 device, <code>self._context</code> wraps the given context, and <code>_create_queues</code>
-creates Tack's command queue and lists <em>in</em> that context. Every later
-<code>zeMemAllocDevice</code> — every <code>tack.field()</code> — allocates there.
+creates Tack's command list <em>in</em> that context. Every later
+<code>zeMemAllocDevice</code> — every <code>tack.empty()</code> on that device — allocates there.
+<code>tack.device("level_zero", external_context=...)</code> makes the same device
+without making it the default. Either way it is a device of its own, not
+the registry's plain <code>tack.device("level_zero")</code>: its <code>memory_domain</code>
+includes the context handle, so its arrays and the plain device's never
+meet in one launch (<code>ValueError</code>).
 <code>LevelZeroBackend.shares_external_context</code> reports whether this happened.</p>
-<p>The rejection of unknown options lives in <code>tack.init()</code>
+<p>The rejection of unknown options lives in <code>tack.device()</code>
 (<code>runtime/dispatch.py</code>), which compares the keywords against the
-constructor class's <code>init_options</code> before constructing it. The reason is
-specific to this feature: if <code>tack.init(arch=tack.cpu,
+constructor class's <code>device_options</code> before constructing it. The reason is
+specific to this feature: if <code>tack.device("cpu",
 external_context=...)</code> or a misspelled keyword were silently ignored, Tack
 would start a private context while the caller believed memory was shared —
 exactly the failure no runtime check can detect later.</p>
 <p><strong>An adopted context is never destroyed.</strong> In fact Tack destroys no Level
 Zero object at all: <code>LevelZeroBackend.__del__</code> skips cleanup, because the
-driver may already be unloaded at interpreter shutdown. The command queue
-and lists Tack created inside the adopted context are likewise left alone.</p>
+driver may already be unloaded at interpreter shutdown. The command list
+Tack created inside the adopted context is likewise left alone.</p>
 <h3 id="from-vtk">From VTK<a class="headerlink" href="#from-vtk" title="Permanent link">&para;</a></h3>
 <p><code>tack.interop.vtk.init_level_zero()</code> is the convenience form. It calls
-<code>dlpack_support.level_zero_handles()</code> and passes the result to
-<code>tack.init(arch=tack.level_zero, external_context=handles)</code>. If that
+<code>dlpack_support.level_zero_handles()</code>, passes the result to
+<code>tack.set_default_device("level_zero", external_context=handles)</code> and
+returns that device. If that
 function is absent or returns nothing, it raises <code>RuntimeError</code>: the VTK is
 too old, was built without Viskores on Kokkos' SYCL backend, or is not
 running on a Level Zero device.</p>
@@ -3203,24 +3785,27 @@ every exchange.</p>
     VTK--&gt;&gt;Tack: {driver, device, context}
     Tack-&gt;&gt;L0: queries on that device; queues in that context
     Note over Tack: shares_external_context is True
-    App-&gt;&gt;Tack: f = tack.field(...)
+    App-&gt;&gt;Tack: f = tack.empty(...)
     Tack-&gt;&gt;L0: zeMemAllocDevice(shared context)
-    App-&gt;&gt;Tack: field_to_vtk(f)
+    App-&gt;&gt;Tack: array_to_vtk(f)
     Tack-&gt;&gt;VTK: level_zero_handles() — same context? yes
     Tack-&gt;&gt;VTK: dlpack_to_vtk(f) — kDLOneAPI pointer
     VTK--&gt;&gt;App: device vtkDataArray over Tack's allocation
-    App-&gt;&gt;Tack: vtk_to_field(vtk_array)
+    App-&gt;&gt;Tack: vtk_to_array(vtk_array)
     Tack-&gt;&gt;VTK: same-context check, then vtk_to_dlpack
     Tack-&gt;&gt;L0: memory_space(pointer) via zeMemGetAllocProperties
-    Tack--&gt;&gt;App: Field over VTK's allocation</code></pre>
+    Tack--&gt;&gt;App: Array over VTK's allocation</code></pre>
 <h3 id="the-guard-and-why-only-tack-can-enforce-it">The guard, and why only Tack can enforce it<a class="headerlink" href="#the-guard-and-why-only-tack-can-enforce-it" title="Permanent link">&para;</a></h3>
-<p>Both <code>vtk_to_field</code> and <code>field_to_vtk</code> call
-<code>_require_shared_level_zero_context</code> before exchanging anything. When the
-active backend is Level Zero, it asks VTK for its handles again and compares
-the context with <code>backend._context</code>. If VTK has no handles, or the contexts
-differ, it raises <code>RuntimeError</code> and tells the caller to start Tack with
-<code>init_level_zero()</code> instead of <code>tack.init(arch=tack.level_zero)</code>. On other
-backends it does nothing.</p>
+<p>Both <code>vtk_to_array</code> and <code>array_to_vtk</code> call
+<code>_require_shared_level_zero_context</code> before exchanging anything, with the
+backend whose memory is exchanged: the exported array's device for
+<code>array_to_vtk</code>, the device the imported array landed on for
+<code>vtk_to_array</code>. When that backend is
+Level Zero, it asks VTK for its handles again and compares the context with
+<code>backend._context</code>. If VTK has no handles, or the contexts differ, it
+raises <code>RuntimeError</code> and tells the caller to start Tack with
+<code>init_level_zero()</code> instead of <code>tack.set_default_device('level_zero')</code>. On
+other backends it does nothing.</p>
 <p>The check has to live in Tack. VTK cannot detect the mistake, because the
 driver vouches for a pointer from any context, so VTK's own pointer-type
 check passes; and on some drivers the memory even reads correctly, which
@@ -3235,22 +3820,25 @@ with <code>external_context</code> first.</p>
 <p>Sharing a context couples lifetimes in a direction Tack cannot see.</p>
 <ul>
 <li><strong>The owner must outlive Tack's use of the context.</strong> Tack allocates
-  with <code>zeMemAllocDevice</code> and frees with <code>zeMemFree</code> in the adopted
+  with <code>zeMemAllocDevice</code> and frees with <code>zeMemFreeExt</code> (deferred until
+  the queued work is done) or <code>zeMemFree</code> in the adopted
   context, and it holds no reference that keeps the context alive. If the
-  owning library destroys the context while Tack fields or the backend
+  owning library destroys the context while Tack arrays or the backend
   still exist, those frees and any further dispatch act on a destroyed
   context. The owning library must keep its context alive until Tack's
-  fields and backend are gone.</li>
-<li><strong>Fields from before <code>init_level_zero()</code> belong to the old context.</strong> A
-  field allocated under a plain <code>tack.init(arch=tack.level_zero)</code> keeps a
-  reference to the backend that allocated it, so its memory remains valid
-  in that private context — but it cannot be exchanged with VTK, and the
-  guard refuses it. Allocate fields after adopting the context.</li>
+  arrays and backend are gone.</li>
+<li><strong>Arrays from before <code>init_level_zero()</code> belong to the old context.</strong> An
+  array allocated on the plain <code>tack.device("level_zero")</code> keeps its
+  device, so its memory remains valid in that private context and kernels
+  given it run there — but it cannot be exchanged with VTK (the guard
+  refuses it) or passed to one launch with the shared device's arrays.
+  Allocate arrays after adopting the context, or copy one over with
+  <code>a.to_device(shared)</code>, which goes through the host.</li>
 </ul>
 <p>This design was validated on 2026-10-05 on the Intel Data Center GPU Max
 1100, with a VTK build carrying <code>level_zero_handles</code>: Tack's VTK interop,
 Level Zero context and DLPack tests ran their device cases, and Viskores
-operated on a Tack-allocated field with writes through VTK visible to Tack.</p>
+operated on a Tack-allocated array with writes through VTK visible to Tack.</p>
 <h2 id="summary-of-failures">Summary of failures<a class="headerlink" href="#summary-of-failures" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3263,37 +3851,37 @@ operated on a Tack-allocated field with writes through VTK visible to Tack.</p>
 <tbody>
 <tr>
 <td><code>copy=True</code> passed to <code>__dlpack__</code></td>
-<td><code>Field.__dlpack__</code></td>
+<td><code>Array.__dlpack__</code></td>
 <td><code>BufferError</code></td>
 </tr>
 <tr>
 <td>Dtype with no DLPack equivalent on export</td>
-<td><code>field_to_dlpack</code></td>
+<td><code>array_to_dlpack</code></td>
 <td><code>TypeError</code></td>
 </tr>
 <tr>
 <td>Capsule already consumed</td>
-<td><code>dlpack_to_field</code></td>
+<td><code>dlpack_to_array</code></td>
 <td><code>ValueError</code></td>
 </tr>
 <tr>
 <td>Null data, non-contiguous strides, unknown device type</td>
-<td><code>dlpack_to_field</code></td>
+<td><code>dlpack_to_array</code></td>
 <td><code>ValueError</code></td>
 </tr>
 <tr>
 <td>Unknown dtype or <code>lanes != 1</code></td>
-<td><code>dlpack_to_field</code></td>
+<td><code>dlpack_to_array</code></td>
 <td><code>TypeError</code></td>
 </tr>
 <tr>
-<td>Tensor on a device the active backend cannot wrap</td>
-<td><code>dlpack_to_field</code></td>
+<td>Tensor on a device that the importing device cannot wrap</td>
+<td><code>dlpack_to_array</code></td>
 <td><code>RuntimeError</code></td>
 </tr>
 <tr>
 <td>Integer pointer in the wrong memory space</td>
-<td><code>field_from_ptr</code></td>
+<td><code>array_from_ptr</code></td>
 <td><code>ValueError</code></td>
 </tr>
 <tr>
@@ -3303,12 +3891,12 @@ operated on a Tack-allocated field with writes through VTK visible to Tack.</p>
 </tr>
 <tr>
 <td>Export from HIP, Level Zero or CPU</td>
-<td><code>Field.export_memory</code></td>
+<td><code>Array.export_memory</code></td>
 <td><code>RuntimeError</code></td>
 </tr>
 <tr>
-<td>Unknown option to <code>tack.init</code></td>
-<td><code>tack.init</code></td>
+<td>Unknown option to <code>tack.device</code></td>
+<td><code>tack.device</code></td>
 <td><code>ValueError</code></td>
 </tr>
 <tr>

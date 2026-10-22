@@ -6,11 +6,11 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/">
       
       
         <link rel="prev" href="..">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL(".."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -542,10 +554,21 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#a-first-reading-path" class="md-nav__link">
+  <a href="#start-with-kernels" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A first reading path
+        Start with kernels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#find-the-task-you-have" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Find the task you have
       
     </span>
   </a>
@@ -564,10 +587,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#algorithms-and-applications" class="md-nav__link">
+  <a href="#kernel-algorithms" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Algorithms and applications
+        Kernel algorithms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#datasets-and-visualization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Datasets and visualization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-and-diagnose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run and diagnose
       
     </span>
   </a>
@@ -593,6 +638,61 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -657,14 +757,105 @@
   
   
     <li class="md-nav__item">
-      <a href="02-fields-and-types/" class="md-nav__link">
+      <a href="quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -846,21 +1037,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -868,11 +1086,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -901,6 +1127,384 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -965,62 +1569,6 @@
   
   
     <li class="md-nav__item">
-      <a href="09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1037,6 +1585,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1065,10 +1649,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1086,8 +1670,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1293,34 +1877,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1431,6 +1987,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1627,6 +2211,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2439,10 +3051,21 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#a-first-reading-path" class="md-nav__link">
+  <a href="#start-with-kernels" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A first reading path
+        Start with kernels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#find-the-task-you-have" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Find the task you have
       
     </span>
   </a>
@@ -2461,10 +3084,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#algorithms-and-applications" class="md-nav__link">
+  <a href="#kernel-algorithms" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Algorithms and applications
+        Kernel algorithms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#datasets-and-visualization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Datasets and visualization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-and-diagnose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run and diagnose
       
     </span>
   </a>
@@ -2503,23 +3148,85 @@
 
 
 <h1 id="tack-users-guide">Tack User's Guide<a class="headerlink" href="#tack-users-guide" title="Permanent link">&para;</a></h1>
-<p>Learn how to turn a numerical calculation into a Tack application: allocate
-fields, write a kernel, organize its stages, and check the result. Tack compiles
-one supported kernel source for CPU, Metal, CUDA, HIP and Level Zero, within
+<p>Learn how to compute on scientific datasets, build visualization pipelines,
+and write the kernels that extend them. Tack's mesh algorithms and your own
+kernels run on CPU, Metal, CUDA, HIP and Level Zero, within
 <a href="08-backends/#capabilities">each backend's capabilities</a>.</p>
-<p><code>tack-core</code> provides the language, fields and algorithms; <code>tack-vis</code> adds
-scientific visualization; <code>tack-rendering</code> adds surface and volume rendering.
+<p><code>tack-core</code> provides the language, arrays and algorithms; <code>tack-vis</code> adds
+datasets and scientific visualization.
 The guide describes the current checkout. See <a href="01-getting-started/">Getting Started</a>
 for installation and the relationship to released APIs.</p>
-<h2 id="a-first-reading-path">A first reading path<a class="headerlink" href="#a-first-reading-path" title="Permanent link">&para;</a></h2>
-<p>Read <a href="01-getting-started/">Getting Started</a>,
-<a href="12-execution-model/">From Python to a Tack program</a>, and
-<a href="02-fields-and-types/">Fields and Types</a>. Then run
-<a href="tutorials/heat/">Heat diffusion</a>: it is a complete program with a small
-independent numerical check and a figure showing its output.</p>
-<p>If you already write GPU kernels, focus on <a href="03-kernels/">Kernels</a>,
-<a href="13-memory-and-parallelism/">Memory and parallel correctness</a>, and
-<a href="08-backends/#capabilities">Backend capabilities</a>.</p>
+<h2 id="start-with-kernels">Start with kernels<a class="headerlink" href="#start-with-kernels" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Run one kernel.</strong> <a href="01-getting-started/">Getting Started</a> takes you from
+   installation to a checked result on the CPU. Then choose your GPU backend.</li>
+<li><strong>Understand a program.</strong> <a href="12-execution-model/">From Python to a Tack program</a>
+   explains which code runs in Python, which code is compiled, and how to order
+   calculation stages.</li>
+<li><strong>Build a simulation.</strong> <a href="tutorials/heat/">Heat diffusion</a> combines arrays,
+   a stencil, buffer swapping and an independent NumPy check in one complete script.</li>
+</ol>
+<p>You can follow this path before reading the language chapters in detail. Keep
+the <a href="quick-reference/">quick reference</a> nearby as you write your own program.</p>
+<h2 id="find-the-task-you-have">Find the task you have<a class="headerlink" href="#find-the-task-you-have" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>I want to…</th>
+<th>Start with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Turn a NumPy expression into a kernel</td>
+<td><a href="12-execution-model/#start-with-one-operation-per-element">One operation per element</a></td>
+</tr>
+<tr>
+<td>Allocate arrays and exchange data with NumPy</td>
+<td><a href="02-arrays-and-types/">Arrays and Types</a></td>
+</tr>
+<tr>
+<td>Store positions, colours or local matrices</td>
+<td><a href="14-vectors-and-matrices/">Vectors and Matrices</a></td>
+</tr>
+<tr>
+<td>Update a grid over many timesteps</td>
+<td><a href="tutorials/heat/">Heat diffusion</a> and <a href="13-memory-and-parallelism/#neighbour-reads-need-a-stable-input">stable stencil inputs</a></td>
+</tr>
+<tr>
+<td>Combine contributions from many particles</td>
+<td><a href="13-memory-and-parallelism/#gather-and-scatter">Gather and scatter</a>, then <a href="tutorials/mpm/">MPM</a></td>
+</tr>
+<tr>
+<td>Filter items into a variable-size output</td>
+<td><a href="tutorials/contours/">Count, scan, write</a></td>
+</tr>
+<tr>
+<td>Organize several kernels around shared state</td>
+<td><a href="06-templates/">Templates</a> and <a href="tutorials/physarum/">trail-following agents</a></td>
+</tr>
+<tr>
+<td>Understand a discontinuous solution or a face flux</td>
+<td><a href="data/03-fields-and-spaces/">Fields and Spaces</a></td>
+</tr>
+<tr>
+<td>Sample a mesh at measurement locations</td>
+<td><a href="data/06-pipelines/#sample-at-physical-positions">Probing</a></td>
+</tr>
+<tr>
+<td>Share memory with another library</td>
+<td><a href="16-interoperability/">Sharing arrays</a></td>
+</tr>
+<tr>
+<td>Investigate wrong results or slow calls</td>
+<td><a href="15-debugging-and-timing/">Debugging and Timing</a></td>
+</tr>
+</tbody>
+</table>
+<p>If you already write GPU kernels, read <a href="03-kernels/">Kernels</a>,
+<a href="13-memory-and-parallelism/">Memory and Parallel Correctness</a>, and
+<a href="08-backends/#capabilities">Backend capabilities</a>. The
+<a href="tutorials/nbody/">N-body tutorial</a> shows workgroup cooperation with a portable CPU path.</p>
 <h2 id="language-and-program-structure">Language and program structure<a class="headerlink" href="#language-and-program-structure" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2538,12 +3245,12 @@ independent numerical check and a figure showing its output.</p>
 <td>Host/device boundary, stages and compilation</td>
 </tr>
 <tr>
-<td><a href="02-fields-and-types/">Fields and Types</a></td>
+<td><a href="02-arrays-and-types/">Arrays and Types</a></td>
 <td>Storage, NumPy exchange, scalar types and precision</td>
 </tr>
 <tr>
 <td><a href="14-vectors-and-matrices/">Vectors and matrices</a></td>
-<td>Component values, masks, products and fields</td>
+<td>Component values, masks, products and arrays</td>
 </tr>
 <tr>
 <td><a href="03-kernels/">Kernels</a></td>
@@ -2567,7 +3274,7 @@ independent numerical check and a figure showing its output.</p>
 </tr>
 </tbody>
 </table>
-<h2 id="algorithms-and-applications">Algorithms and applications<a class="headerlink" href="#algorithms-and-applications" title="Permanent link">&para;</a></h2>
+<h2 id="kernel-algorithms">Kernel algorithms<a class="headerlink" href="#kernel-algorithms" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -2577,39 +3284,92 @@ independent numerical check and a figure showing its output.</p>
 </thead>
 <tbody>
 <tr>
-<td><a href="07-advanced/">Advanced Features</a></td>
-<td>Private arrays, random state, atomics, shared memory and textures</td>
-</tr>
-<tr>
 <td><a href="11-reductions-and-scans/">Reductions and Scans</a></td>
 <td>Statistics, output offsets, sorting and block reductions</td>
 </tr>
 <tr>
+<td><a href="07-advanced/">Advanced Features</a></td>
+<td>Private arrays, random state, atomics, shared memory and textures</td>
+</tr>
+</tbody>
+</table>
+<h2 id="datasets-and-visualization">Datasets and visualization<a class="headerlink" href="#datasets-and-visualization" title="Permanent link">&para;</a></h2>
+<p>You can use the dataset algorithms before writing a kernel. Begin with the
+<a href="09-visualization/#quick-start">visualization quick start</a>, then follow
+<a href="data/00-function-spaces/">Function Space Fundamentals</a>,
+<a href="data/01-datasets/">Understand a Dataset</a>, and <a href="data/04-filters/">Filter and Analyze</a>. The examples start with analytic
+arrays so you can check what each filter means, as well as view its output.</p>
+<table>
+<thead>
+<tr>
+<th>Chapter</th>
+<th>What you will learn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="data/00-function-spaces/">Function Space Fundamentals</a></td>
+<td>H1, H2, L2, polynomial order, coefficients and continuity</td>
+</tr>
+<tr>
+<td><a href="data/01-datasets/">Understand a Dataset</a></td>
+<td>Topology, geometry, associated fields and named selections</td>
+</tr>
+<tr>
+<td><a href="data/02-meshes/">Build Meshes</a></td>
+<td>Structured and mixed meshes, polyhedra, polygons, lines and ids</td>
+</tr>
+<tr>
+<td><a href="data/03-fields-and-spaces/">Fields and Spaces</a></td>
+<td>Continuous and discontinuous values, projection, traces and implicit arrays</td>
+</tr>
+<tr>
+<td><a href="data/04-filters/">Filter and Analyze</a></td>
+<td>Selection versus cutting, array propagation, gradients and statistics</td>
+</tr>
+<tr>
+<td><a href="data/05-mesh-kernels/">Write Mesh Algorithms</a></td>
+<td>Per-shape cell kernels, subsets, faces and oriented flux balances</td>
+</tr>
+<tr>
+<td><a href="data/06-pipelines/">Sample and Connect Simulations</a></td>
+<td>Probes, streamlines, retained geometry, VTK/MFEM and repeated pipelines</td>
+</tr>
+</tbody>
+</table>
+<p>Read the kernel chapters when you want to initialize data on the device, write
+a custom operation, or connect a simulation's working arrays to the dataset.</p>
+<h2 id="run-and-diagnose">Run and diagnose<a class="headerlink" href="#run-and-diagnose" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Chapter</th>
+<th>What it explains</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td><a href="08-backends/">Backends</a></td>
-<td>Setup, capabilities and device differences</td>
+<td>Setup, capabilities, queued launches and device differences</td>
 </tr>
 <tr>
 <td><a href="16-interoperability/">Sharing arrays</a></td>
 <td>NumPy copies, external pointers, DLPack and VTK</td>
 </tr>
 <tr>
-<td><a href="09-visualization/">Datasets and visualization</a></td>
-<td>Meshes, fields and sets; contour, threshold, projections, streamlines; your own mesh kernels</td>
-</tr>
-<tr>
-<td><a href="10-rendering/">Rendering</a></td>
-<td>Mesh scenes, cameras, materials, volumes and output</td>
-</tr>
-<tr>
 <td><a href="15-debugging-and-timing/">Debugging and timing</a></td>
-<td>Independent checks, numerical tolerance and warm measurements</td>
+<td>Independent checks, bounds checks, numerical tolerance and warm measurements</td>
+</tr>
+<tr>
+<td><a href="17-kernel-cache/">The Kernel Cache</a></td>
+<td>Compiled kernels kept on disk, settings and MPI jobs</td>
 </tr>
 </tbody>
 </table>
 <h2 id="worked-examples">Worked examples<a class="headerlink" href="#worked-examples" title="Permanent link">&para;</a></h2>
-<p>The <a href="tutorials/">tutorial gallery</a> includes seven complete programs:
-heat diffusion, coloured dye, trail-following agents, marching squares, MPM,
-tiled N-body forces and isosurface rendering. Each page explains its data and
+<p>The <a href="tutorials/">tutorial gallery</a> includes six complete programs:
+heat diffusion, coloured dye, trail-following agents, marching squares, MPM
+and tiled N-body forces. Each page explains its data and
 kernels, includes the complete script, shows output generated from that script,
 and credits its origin. All sources are included in this documentation.</p>
 <p>Use the <a href="../contracts/">Contracts</a> when you need precise guarantees,

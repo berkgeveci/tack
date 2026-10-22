@@ -6,11 +6,11 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/design/cpu-threading/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/design/cpu-threading/">
       
       
         <link rel="prev" href="../memory-and-aliasing/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -504,6 +516,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../../users-guide/01-getting-started/" class="md-nav__link">
         
@@ -561,14 +625,102 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/02-fields-and-types/" class="md-nav__link">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -750,21 +902,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -772,11 +948,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -805,6 +989,378 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -869,62 +1425,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../users-guide/09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -952,6 +1452,42 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -966,10 +1502,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
             
   
   
@@ -987,8 +1523,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1194,34 +1730,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../users-guide/tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1337,6 +1845,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1791,10 +2327,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#v1-and-v2" class="md-nav__link">
+  <a href="#history-policy-v1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        v1 and v2
+        History: policy v1
       
     </span>
   </a>
@@ -1825,6 +2361,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation notes
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1889,6 +2436,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#a-thread-count-per-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A thread count per launch
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1913,6 +2471,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2959,10 +3545,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#v1-and-v2" class="md-nav__link">
+  <a href="#history-policy-v1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        v1 and v2
+        History: policy v1
       
     </span>
   </a>
@@ -2993,6 +3579,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation notes
+      
+    </span>
+  </a>
   
 </li>
       
@@ -3057,6 +3654,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#a-thread-count-per-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A thread count per launch
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3100,19 +3708,68 @@ executes each loop index exactly once, so the decision affects speed only.</p>
 </div>
 <h2 id="the-problem">The problem<a class="headerlink" href="#the-problem" title="Permanent link">&para;</a></h2>
 <h3 id="what-a-fan-out-costs">What a fan-out costs<a class="headerlink" href="#what-a-fan-out-costs" title="Permanent link">&para;</a></h3>
-<p><code>CPUBackend._parallel_execute</code> divides <code>[start, end)</code> into <code>num_threads</code>
-contiguous chunks of <code>ceil(total / num_threads)</code> elements and submits one
-<code>call_range</code> per chunk to a <code>ThreadPoolExecutor</code>. The compiled kernel is
-called through ctypes, which releases the GIL for the call, so chunks run
-concurrently while the calling thread waits on the futures. Arguments are
-marshalled once per dispatch (<code>CompiledKernel.bind</code>); only the loop bounds
-differ between chunks.</p>
-<p>Creating futures, waking threads, re-acquiring the GIL and joining costs on
-the order of a hundred microseconds or more. <code>_calibrate_fan_out</code>'s
-docstring records an empty probe at 223 µs against a real 1024-element
-fan-out at 235 µs, on the 10-core Apple silicon machine the policy was first
-written on (August 2026). A fan-out pays only when the serial run it
-replaces takes meaningfully longer.</p>
+<p><code>CPUBackend._parallel_execute</code> divides <code>[start, end)</code> among the backend's
+<code>num_threads</code> threads (see "A thread count per launch" below for the
+alternative that was tried).
+Arguments are marshalled once per dispatch (<code>CompiledKernel.bind</code>); only
+the loop bounds differ between chunks.</p>
+<p>The chunks run through one of two pools. The default is the pool in
+<code>cpu_pool.py</code>: a small program in LLVM IR, built with <code>llvmlite.ir</code> and
+JIT'd beside the kernels, whose <code>N - 1</code> detached pthreads each wait on
+their own mailbox, a launch count (spinning for a while, then sleeping:
+on a futex on Linux, on <code>os_sync_wait_on_address</code> on macOS 14.4 and
+later, and elsewhere in <code>nanosleep</code> polls that back off to a
+millisecond). macOS used to poll, and every launch then waited for its
+slowest sleeper: the policy measured a 1 ms fan-out, kept mid-size
+launches serial, and the pool made the dataset filters 1.3–2.6× slower
+than the executor on an M1 Max; blocking on an address, its fan-out
+measured 73 µs. A fan-out is one ctypes call:
+<code>pool_run</code> posts to workers <code>0 .. k - 2</code>, wakes those of them that sleep,
+runs as worker <code>k - 1</code> itself and leaves the rest asleep, so a launch of
+two on a pool of sixteen costs two wake-ups (4.4 µs hot on a 2 GHz Xeon,
+against 11 when every worker was woken) and the <code>k</code> threads of every
+launch are the same <code>k</code>. Workers are not pinned to cores. Pinning was
+tried and dropped (2026-10-14): on a two-socket Xeon it was parity on 8
+threads of 8 cores and a loss on 16 (every worker pinned: a 1M contour
+33 ms against 19; one per core: still behind unpinned on most filters),
+and on a 28-core EPYC it lost 5-9% on the dataset filters, because a
+pinned worker cannot move off a busy core. The workers and the
+caller claim chunks from a shared
+counter (<code>GRAIN</code> per worker, each at least <code>MIN_CHUNK</code> elements) and run
+them through a wrapper JIT'd once per kernel that loads the arguments
+from 8-byte slots, and the workers never touch Python. Claimed rather
+than assigned because the dispatch waits for its slowest worker: with
+one equal chunk each, a worker the scheduler put on the sibling
+hyperthread of a busy core ran 1.7× slower and a compute-bound kernel
+over a million cells took 29 or 50 ms from run to run; claiming, it
+takes fewer chunks and the run takes 38 ms every time. Each worker
+reports the time and the elements it ran, which is what the rate and
+floor bookkeeping below reads. The pool is one
+per process (<code>CPool.get</code>), sized by the CPUs the process may run on (its
+affinity mask on Linux, the performance cores on Apple silicon), or by the
+first backend's thread count if that is larger; a dispatch uses as many of
+its threads as its backend has, and a backend asking for more threads than
+the pool has falls back to the executor. The pool's launch state is one
+set of JIT'd globals, so a run holds <code>CPool._txn</code> from the call through
+the read of its report: two Python threads fanning out at once otherwise
+ran each other's function and argument pack. A pool whose workers cannot
+all be started is dismantled, its workers joined, before the backend falls
+back. <code>TACK_CPU_POOL=python</code> selects the
+other pool, a <code>ThreadPoolExecutor</code> with one <code>call_range</code> task per chunk,
+which is also the fallback on Windows or when the JIT'd pool cannot be
+made.</p>
+<p>What a fan-out costs differs by an order of magnitude between the two.
+Through the executor every worker wakes, takes the GIL to reach its ctypes
+call and takes it again to return, and the handoffs serialize: about 60 µs
+per worker on a 2 GHz Xeon (490 µs for eight, 1.2 ms after an idle gap of
+2 ms or more, when the cores have entered C6); <code>_calibrate_fan_out</code>'s
+docstring records 223 µs on the 10-core Apple silicon machine the policy
+was first written on (August 2026). Through the JIT'd pool it is 3–5 µs
+hot and about 100 µs after an idle gap (the C-state exit). Either way the
+policy measures the pool it uses and a fan-out pays only when the serial
+run it replaces takes meaningfully longer; with the JIT'd pool that is far
+more often. Measured on the Xeon, the dataset filters at a million cells
+went from a median 1.05× to 1.9× on eight threads.</p>
 <h3 id="why-no-fixed-threshold-works">Why no fixed threshold works<a class="headerlink" href="#why-no-fixed-threshold-works" title="Permanent link">&para;</a></h3>
 <p>The module docstring records the crossover — the range above which a fan-out
 wins — for three f32 kernels on that machine:</p>
@@ -3185,9 +3842,11 @@ parallel rate <code>r_p</code> (ns per element of the whole range when fanned ou
 </code></pre></div>
 <p><code>CPUBackend._min_elems</code> stores the crossover scaled by a margin <code>M</code>:</p>
 <div class="highlight"><pre><span></span><code>parallel_min_elems = max(num_threads, int(F · M / rate))
-    v1: rate = r_s        v2: rate = r_s − min(r_p, 0.9 · r_s)
+    rate = r_s − min(r_p, 0.9 · r_s)
 </code></pre></div>
-<p><strong>v1</strong> assumes perfect division of the work, <code>parallel ≈ F + T_serial / P</code>,
+<p>The rate keeps <code>r_p</code> because real kernels do not divide perfectly. The
+removed policy v1 (see <a href="#history-policy-v1">History</a>) used <code>rate = r_s</code>: it
+assumed perfect division of the work, <code>parallel ≈ F + T_serial / P</code>,
 and drops <code>r_p</code>. Its margin of 2.0 (<code>_PARALLEL_BREAK_EVEN</code>) covers the
 break-even factor <code>P / (P − 1)</code> for any thread count. But real kernels do not
 reach speedup <code>P</code>: the effective speedup <code>P_eff = r_s / r_p</code> ranged from 1.5
@@ -3195,49 +3854,43 @@ to 9.2 across the kernels measured in the module's comments, and the margin
 v1 really applies is <code>M · (1 − 1/P_eff)</code>. For a bandwidth-bound kernel with
 <code>P_eff ≈ 1.5</code> that is 0.67 — below break-even, so the fan-outs it permits
 near the crossover lose.</p>
-<p><strong>v2</strong> keeps <code>r_p</code>. Until a fan-out has measured it, <code>r_p</code> is 0.0 and the
-expression is exactly v1's, so "not measured yet" needs no special case. The
-<code>0.9 · r_s</code> clamp keeps the denominator positive when a noisy <code>r_p</code>
-approaches <code>r_s</code>, and caps a v2 threshold at ten times v1's for the same
-inputs.</p>
+<p>Until a fan-out has measured it, <code>r_p</code> is 0.0 and the rate is <code>r_s</code>, so
+"not measured yet" needs no special case. The <code>0.9 · r_s</code> clamp keeps the
+denominator positive when a noisy <code>r_p</code> approaches <code>r_s</code>, and caps the
+threshold at ten times the serial-rate-only one for the same inputs.</p>
 <p>The <code>max(num_threads, …)</code> floor keeps chunks at one element or more. An
 unmeasured kernel, or a one-thread backend, gets <code>_NEVER</code> (<code>1 &lt;&lt; 62</code>).</p>
 <h3 id="the-margin">The margin<a class="headerlink" href="#the-margin" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Policy</th>
+<th>Case</th>
 <th><code>_margin()</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>v1</td>
-<td><code>_PARALLEL_BREAK_EVEN</code> = 2.0</td>
-</tr>
-<tr>
-<td>v2</td>
+<td>default</td>
 <td><code>clamp(1 + _MARGIN_K · cv, _MARGIN_MIN, _MARGIN_MAX)</code> = <code>clamp(1 + 1.3 · cv, 1.0, 2.5)</code></td>
 </tr>
 <tr>
-<td>either, with <code>TACK_CPU_MARGIN</code> set</td>
+<td><code>TACK_CPU_MARGIN</code> set</td>
 <td>that value</td>
 </tr>
 </tbody>
 </table>
-<p>A margin insures against mis-estimates, so v2 sizes it by how unreliable the
+<p>A margin insures against mis-estimates, so it is sized by how unreliable the
 estimates currently are. <code>cv</code> is a smoothed relative deviation of new fan-out
 samples from the stored estimate (<code>_update_fan_out_knot</code>; weight
 <code>_CV_SMOOTHING</code> = 0.10, one sample capped at <code>_CV_SAMPLE_CAP</code> = 3.0).
 <code>_margin()</code>'s docstring records why: on one machine, a quiet run wanted the
 smallest margin tried while a loaded run needed at least 1.5.</p>
-<p>Before any fan-out sample has been compared, <code>cv</code> is 0 and v2's margin is
-1.0. <code>_V2_MARGIN</code> (1.5) is stored as <code>CPUBackend.margin</code> under v2, but
-<code>_margin()</code> returns that attribute only under v1.</p>
+<p>Before any fan-out sample has been compared, <code>cv</code> is 0 and the margin is
+1.0. (v1 used a constant 2.0, <code>_PARALLEL_BREAK_EVEN</code>.)</p>
 <h3 id="one-integer-compare-on-the-hot-path">One integer compare on the hot path<a class="headerlink" href="#one-integer-compare-on-the-hot-path" title="Permanent link">&para;</a></h3>
 <p><code>parallel_min_elems</code> is stored on the <code>CompiledKernel</code>, so the common case in
 <code>_run</code> is a single <code>loop_end &gt;= compiled.parallel_min_elems</code>. <code>_set_serial_cost</code>
-recomputes it after every timed serial run and every v2 fan-out (through
+recomputes it after every timed serial run and every fan-out (through
 <code>_record_parallel_cost</code>); <code>_run</code> recomputes it after the first calibration.</p>
 <p>Being cached, the threshold is priced with the fan-out estimate <em>at the
 moment it was recomputed</em>. The comment in <code>_dispatch</code> makes the trade
@@ -3291,7 +3944,7 @@ with weight <code>_COST_SMOOTHING</code> (0.25) and outlier ratio <code>_MAX_SAM
 </tr>
 </tbody>
 </table>
-<p>Under v2, two more rules depend on whether the range was <strong>scattered</strong>.
+<p>Two more rules depend on whether the range was <strong>scattered</strong>.
 <code>CompiledKernel.scattered</code> is true initially and after any fan-out, and is
 cleared when a serial run covers the whole range. A serial run over a
 scattered range first pulls data back from other cores' caches, or faults in
@@ -3334,18 +3987,18 @@ guards override the target:</p>
 and stores the minimum as <code>_fan_out_ns</code>. A pure-Python no-op probe would
 understate it (the docstring: 122 µs against the real path's 223 µs). Until
 then <code>_DEFAULT_FAN_OUT_NS</code> (200 µs) stands in, high on purpose so being wrong
-only delays the first fan-out. Under v1, <code>_fan_out_ns</code> is the fan-out cost
-for the life of the backend.</p>
-<p><strong>The idle curve (v2).</strong> A dispatch after a pause pays more than one after
+only delays the first fan-out. (Under the removed v1, <code>_fan_out_ns</code> was the
+fan-out cost for the life of the backend.)</p>
+<p><strong>The idle curve.</strong> A dispatch after a pause pays more than one after
 another fan-out, because idle cores descend into deeper sleep states, and the
 shape differs by machine. The comment on <code>_FAN_OUT_GAPS_MS</code> records idle
 fan-outs at 2.45x the back-to-back cost on a 2-socket Xeon and 3.81x on an
 M1 Max (August 2026), the Xeon's penalty complete by 10 ms and the M1 Max's
 still growing at 50 ms; <code>_FAN_OUT_IDLE_PRIOR</code>'s comment adds 2.1x on a
-1-socket Xeon (October 2026). So v2 keeps the cost as a curve over
+1-socket Xeon (October 2026). So the backend keeps the cost as a curve over
 <em>idleness</em>, with knots at 0, 10 and 50 ms.</p>
 <p><code>_fan_out_estimate()</code> takes the gap since <code>_last_dispatch_ns</code> — set at the end
-of every v2 fan-out and refresh, and not by serial runs, which leave the
+of every fan-out and refresh, and not by serial runs, which leave the
 workers idle — and interpolates piecewise-linearly with two rules on read:</p>
 <ul>
 <li><strong>Monotone.</strong> A longer pause cannot make threads wake faster. This is
@@ -3367,12 +4020,12 @@ first looked worth threading.</p>
 <p><strong>Keeping it current.</strong> A startup measurement records whatever the machine
 was doing at startup, so two paths refine the curve:</p>
 <ul>
-<li><strong>Free samples:</strong> <code>_record_fan_out</code>, after every v2 fan-out, takes elapsed
+<li><strong>Free samples:</strong> <code>_record_fan_out</code>, after every fan-out, takes elapsed
   time minus the slowest worker's span — both measured — when the work is at
   most <code>_FAN_OUT_MAX_WORK_SHARE</code> (35%) of the dispatch, where the subtraction
   is well conditioned. It updates the nearest knot with weight
   <code>_FAN_OUT_SMOOTHING</code> (0.15).</li>
-<li><strong>Scheduled samples:</strong> <code>_refresh_fan_out</code>, after every v2 dispatch once a
+<li><strong>Scheduled samples:</strong> <code>_refresh_fan_out</code>, after every dispatch once a
   curve exists. If <code>_FAN_OUT_REFRESH_NS</code> (100 ms) has passed since the last
   measurement, or the knot nearest the current gap still holds its prior, it
   times one empty fan-out at the current gap. If the dispatch arrived cold
@@ -3386,13 +4039,17 @@ fan-out has no work to subtract, so it can always be measured. The refresh
 runs after the dispatch, never before, so it neither delays the caller nor
 disturbs what the dispatch measures.</p>
 <h3 id="parallel-rate-ns_per_elem_parallel">Parallel rate: <code>ns_per_elem_parallel</code><a class="headerlink" href="#parallel-rate-ns_per_elem_parallel" title="Permanent link">&para;</a></h3>
-<p>Under v2, <code>_parallel_execute</code> times each worker <em>inside</em> the worker, around
-its <code>call_range</code> only. A worker's own rate is roughly the serial rate — the
+<p>Each worker is timed <em>inside</em> the worker, around its kernel calls
+only: through the JIT'd pool every worker reports its span and the
+elements it claimed (<code>CPool.run(..., measure=True)</code>, read in
+<code>_pool_execute</code>), and through the executor each task times its own
+<code>call_range</code>. A worker's own rate is roughly the serial rate — the
 speedup comes from running chunks together, not from cheaper elements — so
 <code>_record_parallel_cost</code> converts and smooths (weight 0.25):</p>
 <div class="highlight"><pre><span></span><code>r_p sample = median(worker ns/element) / workers_that_ran
 </code></pre></div>
-<p>counting only workers whose span reached <code>_RP_MIN_WORKER_NS</code> (1 µs).</p>
+<p>counting only workers whose span reached <code>_RP_MIN_WORKER_NS</code> (1 µs); a
+pool worker that claimed no chunk is not counted.</p>
 <ul>
 <li><strong>Why in-worker timing.</strong> <code>r_p</code> used to be inferred as
   <code>(elapsed − fan_out_estimate) / elements</code>, charging every fan-out error to
@@ -3402,9 +4059,10 @@ speedup comes from running chunks together, not from cheaper elements — so
   load the max is whichever worker was descheduled: <code>_record_parallel_cost</code>'s
   docstring records the max at 10–134x the fitted rate on a loaded M1 Max
   (August 2026), the median at 0.5–6.3x. The minimum worker and per-thread
-  CPU time were tried on a 1-socket Xeon (October 2026) and scored worse;
-  workers returning from ctypes together queue for the GIL, a real cost the
-  median tracks.
+  CPU time were tried on a 1-socket Xeon (October 2026), with the
+  executor, and scored worse; its workers returning from ctypes together
+  queue for the GIL, a real cost the median tracks. The pool's workers
+  never take the GIL.
   For an even number of workers it is the lower of the two middle values
   (<code>_worker_median</code>). The upper one of two workers is the slower worker,
   the max again: on a two-thread machine, stalling one worker for 2 ms
@@ -3431,7 +4089,7 @@ rate, and the smoothed rate carries samples from short fan-outs.
 cheap region is corrected on the first fan-out. The floor is still <code>P_eff</code>
 below the true serial rate; it only stops a range the kernel has shown to
 thread well from flipping to "too small to thread".</p>
-<p><strong>Retiring the floor.</strong> Runtime scalars and field contents can change the
+<p><strong>Retiring the floor.</strong> Runtime scalars and array contents can change the
 work without a new compiled variant. When a whole-range fan-out
 (<code>whole_range=True</code>) finishes with <em>every</em> worker span below <code>trusted_span</code> —
 including spans too short to yield a rate — <code>_record_parallel_cost</code> clears
@@ -3443,7 +4101,7 @@ or a fast head or tail of a recheck, cannot retire it.</p>
 <code>_CONFIRM_BAND · margin · fan_out</code> (band 4) serially, priced from the serial
 estimate alone; the docstring records two dearer prices that each switched
 the mechanism off for the kernel it was built for.</p>
-<p><code>_needs_confirmation</code> (v2) uses it: while a kernel has never had a clean
+<p><code>_needs_confirmation</code> uses it: while a kernel has never had a clean
 sample, an affordable range above the threshold runs serially instead. A
 first sample is never clean, and <code>_CONFIRM_BAND</code>'s comment records such
 samples reading a bandwidth-bound kernel 3–4x dear on a 1-socket Xeon, a
@@ -3451,7 +4109,7 @@ first sample up to 15x. Confirmation costs at most two serial dispatches per
 kernel and is checked before calibration, so a cheap kernel with a dear first
 sample never pays to calibrate a fan-out it will not use.</p>
 <h2 id="the-decision-procedure">The decision procedure<a class="headerlink" href="#the-decision-procedure" title="Permanent link">&para;</a></h2>
-<p><code>_dispatch</code> binds the arguments once, calls <code>_run</code>, and afterwards (v2, once
+<p><code>_dispatch</code> binds the arguments once, calls <code>_run</code>, and afterwards (once
 a curve exists) calls <code>_refresh_fan_out</code>. <code>_run</code> decides:</p>
 <pre class="mermaid"><code>flowchart TD
     A["_run(compiled, prefix, loop_end)"] --&gt; B{"loop_end &gt;= parallel_min_elems?"}
@@ -3467,7 +4125,7 @@ a curve exists) calls <code>_refresh_fan_out</code>. <code>_run</code> decides:<
     F -- yes --&gt; G{"_sample_elems covers the range?"}
     G -- yes --&gt; WS
     G -- no --&gt; H["head: _run_untimed(0, start)&lt;br/&gt;slice: _run_serial(start, start + probe)"]
-    H --&gt; I{"v2, slice over 8x below the estimate,&lt;br/&gt;and room for two more slices?"}
+    H --&gt; I{"slice over 8x below the estimate,&lt;br/&gt;and room for two more slices?"}
     I -- yes --&gt; J["_second_opinion"]
     I -- no --&gt; K["_parallel_execute(rest of range)"]
     J --&gt; K
@@ -3497,7 +4155,7 @@ a curve exists) calls <code>_refresh_fan_out</code>. <code>_run</code> decides:<
   <code>start · r_s</code> exceeds the current fan-out estimate, otherwise untimed on
   this thread;</li>
 <li>times the slice with <code>_run_serial</code>;</li>
-<li>under v2, calls <code>_second_opinion</code> if the slice read more than 8x below
+<li>calls <code>_second_opinion</code> if the slice read more than 8x below
   the previous estimate and two slices' worth of range remain;</li>
 <li>fans out the remainder.</li>
 </ul>
@@ -3512,7 +4170,7 @@ reading stands; otherwise the range is uneven, and the estimate moves a
 quarter of the way from the old value toward the mean of the two slices.</p>
 <h3 id="below-the-threshold">Below the threshold<a class="headerlink" href="#below-the-threshold" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>Parallel recheck (v2).</strong> <code>_parallel_recheck_due</code> fires when the kernel is
+<li><strong>Parallel recheck.</strong> <code>_parallel_recheck_due</code> fires when the kernel is
    confirmed, <code>r_p</code> and the fan-out have been measured, and the range <em>would</em>
    fan out on the serial rate alone (<code>loop_end · r_s ≥ margin · fan_out</code>) —
    when <code>r_p</code> is what keeps it serial. It uses the same 1, 2, 4 … 1024
@@ -3594,18 +4252,19 @@ quarter of the way from the old value toward the mean of the two slices.</p>
 </tbody>
 </table>
 <h2 id="policies-environment-and-hardware">Policies, environment and hardware<a class="headerlink" href="#policies-environment-and-hardware" title="Permanent link">&para;</a></h2>
-<h3 id="v1-and-v2">v1 and v2<a class="headerlink" href="#v1-and-v2" title="Permanent link">&para;</a></h3>
-<p><code>TACK_CPU_POLICY</code> is read once, when the backend is created. <code>v2</code> is the
-default (since 2026-08-10), selected when the variable is unset or empty;
-<code>v1</code> selects the earlier policy. Any other value raises <code>ValueError</code> from
-the constructor, naming the accepted values (<code>_CPU_POLICIES</code>), so a
-misspelling cannot select a policy silently.</p>
+<h3 id="history-policy-v1">History: policy v1<a class="headerlink" href="#history-policy-v1" title="Permanent link">&para;</a></h3>
+<p>The policy described here was "v2" while an earlier one, v1, could still be
+selected with <code>TACK_CPU_POLICY=v1</code>. v2 became the default on 2026-08-10 and
+v1 was removed on 2026-10-15. <code>TACK_CPU_POLICY</code> is still read once, when the
+backend is created: unset, empty or <code>v2</code> is accepted, and anything else,
+<code>v1</code> included, raises <code>ValueError</code>, so a script that relied on v1 says so.
+What v1 lacked:</p>
 <table>
 <thead>
 <tr>
 <th>Mechanism</th>
 <th>v1</th>
-<th>v2</th>
+<th>v2 (now the policy)</th>
 </tr>
 </thead>
 <tbody>
@@ -3670,15 +4329,27 @@ speedups not taken. The module docstring keeps that reasoning.</p>
 <tbody>
 <tr>
 <td><code>TACK_CPU_THREADS</code></td>
-<td>Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is <code>_NEVER</code>. An explicit <code>num_threads</code>, from <code>tack.init(arch="cpu", num_threads=…)</code> or <code>CPUBackend(num_threads=…)</code>, takes precedence.</td>
+<td>Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is <code>_NEVER</code>. An explicit <code>num_threads</code>, from <code>tack.device("cpu", num_threads=…)</code> or <code>CPUBackend(num_threads=…)</code>, takes precedence.</td>
 </tr>
 <tr>
 <td><code>TACK_CPU_POLICY</code></td>
-<td><code>v2</code> (default, also when unset or empty) or <code>v1</code>. Anything else raises <code>ValueError</code>.</td>
+<td>Accepted for old scripts only: unset, empty or <code>v2</code>. Anything else, <code>v1</code> included, raises <code>ValueError</code>.</td>
 </tr>
 <tr>
 <td><code>TACK_CPU_MARGIN</code></td>
-<td>A float that replaces the margin under either policy, switching off v2's derived margin. For experiments.</td>
+<td>A float that replaces the derived margin. For experiments.</td>
+</tr>
+<tr>
+<td><code>TACK_CPU_POOL</code></td>
+<td><code>python</code> (also <code>0</code>, <code>off</code>, <code>no</code>, <code>false</code>) fans out through a <code>ThreadPoolExecutor</code> instead of the JIT'd pool. Anything else, or unset, uses the pool where it can be made.</td>
+</tr>
+<tr>
+<td><code>TACK_CPU_POOL_SPIN</code></td>
+<td>How many pause iterations a pool worker spins before sleeping (default 20000). For experiments.</td>
+</tr>
+<tr>
+<td><code>TACK_CPU_MALLOC</code></td>
+<td>Linux only, off by default (read by <code>dispatch.env_flag</code>). When on, the first CPU backend tells glibc to keep freed pages (<code>_tune_malloc</code>: <code>mallopt</code> sets the mmap threshold to its 32 MiB cap, the trim threshold to 4 GiB and the top pad to 256 MiB), process-wide. A filter that frees and reallocates the same temporaries otherwise takes their page faults on every call: threshold at 5M cells on 8 threads of one bound NUMA node 126 → 104 ms. Opt-in because it changes <code>malloc</code> for NumPy and every other library, and unbound on a 28-core EPYC it gained nothing (6–8% slower, within noise); a reused block also keeps the placement of its first touch.</td>
 </tr>
 </tbody>
 </table>
@@ -3706,7 +4377,7 @@ asked for physical cores, falling back to <code>os.cpu_count()</code>:</p>
 <tr>
 <td><code>_macos_core_count</code></td>
 <td><code>sysctlbyname("hw.perflevel0.physicalcpu")</code>, then <code>hw.physicalcpu</code></td>
-<td>Performance cores only: chunks are equal, so an efficiency core would pace the whole dispatch (the docstring: 8 threads beat 10 on an 8+2 machine)</td>
+<td>Performance cores only: with equal chunks an efficiency core paced the whole dispatch (the docstring: 8 threads beat 10 on an 8+2 machine). The JIT'd pool is sized the same way (<code>cpu_pool._performance_cores</code>): a pool of <code>os.cpu_count()</code> had two workers more than any launch used</td>
 </tr>
 <tr>
 <td><code>_windows_core_count</code></td>
@@ -3715,17 +4386,55 @@ asked for physical cores, falling back to <code>os.cpu_count()</code>:</p>
 </tr>
 </tbody>
 </table>
-<p>On x86-64 Linux with libnuma and two or more memory nodes, <code>allocate_field</code>
-allocates under an interleave policy and touches every page, so pages spread
-across nodes. <code>_init_numa</code> reads the policy back with <code>get_mempolicy</code> and
+<p>A new array is not filled: <code>allocate_array</code> returns uninitialized
+storage, and its pages are first touched by the kernel that writes it, in
+parallel when the policy fans that kernel out. Filling at allocation was
+serial, and dearer after a fan-out, while the workers' caches owned the
+lines: at 5M cells on eight threads of a 2 GHz Xeon it was 130 of
+threshold's 276 ms and 77 of cell-to-point's 135. A fill of 256 KiB or
+more (<code>_PARALLEL_FILL_MIN_BYTES</code>; <code>tack.zeros</code>, <code>ones</code> and <code>full</code> among
+them) runs <code>tack.algorithms.copy._fill_kernel</code> through the normal dispatch
+(<code>CPUBackend.fill_array</code>, offered first by <code>Array.fill</code>), after NumPy has
+converted the value, so it stores and refuses what <code>ndarray.fill</code> would.
+Smaller fills, a one-thread backend and another backend's buffers fill in
+place.</p>
+<p>On x86-64 Linux with libnuma and two or more memory nodes, the JIT'd
+pool's and the executor's threads are made under an interleave policy,
+which they inherit (<code>_jit_pool</code>, <code>_get_pool</code>; the executor's threads are
+all started there rather than lazily by whichever dispatch first needs
+one), so the pages they first touch spread across nodes.
+<code>_init_numa</code> reads the policy back with <code>get_mempolicy</code> and
 stays off unless the kernel confirms it; wrapped external memory is not
-affected. The threading policy has no NUMA term — remote-memory effects show
-up in the measured rates — and workers are not pinned.</p>
+affected. Only a thread whose policy is the default is changed, and the
+policy found is put back: a process started under <code>numactl --membind</code> (or
+bound through libnuma) keeps its binding and its arrays stay on its nodes.
+The threading
+policy has no NUMA term — remote-memory effects show up in the measured
+rates — and workers are not pinned.</p>
+<h2 id="implementation-notes">Implementation notes<a class="headerlink" href="#implementation-notes" title="Permanent link">&para;</a></h2>
+<p>The developer guide's summary of the mechanism, kept here with its
+measurements when the guide was shortened to its rules.</p>
+<p>The CPU backend fans a loop range out to its thread pool only when the serial run would cost meaningfully more than the fan-out. Both sides are measured, not assumed:</p>
+<ul>
+<li>
+<p>The fan-out itself is one ctypes call into a pool JIT'd by <code>runtime/cpu_pool.py</code> (LLVM IR built with <code>llvmlite.ir</code>, no C compiler): <code>N - 1</code> detached pthreads each wait on their own mailbox, a launch count (spinning briefly, then blocking on a futex on Linux or <code>os_sync_wait_on_address</code> on macOS 14.4+, woken only if asleep; <code>nanosleep</code> polls backing off to 1 ms elsewhere, which on the Mac made every launch wait for its slowest sleeper and kept mid-size launches serial); a launch of <code>k</code> threads posts to workers <code>0 .. k - 2</code> only and runs as worker <code>k - 1</code> itself, so the others are not woken and the <code>k</code> of every launch are the same <code>k</code> (the hot fan-out is 3 + 0.3k µs on a 2 GHz Xeon, where waking all 16 for a launch of 2 cost 11; workers are not pinned: pinning lost on a two-socket Xeon and on jura's EPYC, since a pinned worker cannot move off a busy core); the workers and the caller claim chunks from a counter (<code>GRAIN</code> per worker, at least <code>MIN_CHUNK</code> elements) and run them through a per-kernel wrapper that unpacks the arguments from 8-byte slots (<code>chunk_wrapper</code>, <code>pack_args</code>); a worker on a busy core's sibling hyperthread, or over the dear part of an uneven range, simply takes fewer (one equal chunk per worker made a compute-bound 1M-cell kernel take 29 or 50 ms as the scheduler placed the workers). The pool is one per process, sized by the CPUs the process may run on (on Apple silicon the performance cores, <code>hw.perflevel0.physicalcpu</code>, so no idle efficiency-core workers are woken and waited for), and a dispatch uses as many of its threads as its backend has. The pool program uses inline asm (arm64 <code>yield</code>), so <code>_target_machine</code> initializes the native asm parser: without it LLVM aborts the process on Apple silicon instead of raising. Its launch state (function, pack, range, counters, the spans and counts a run leaves) is one set of JIT'd globals, so a run is a transaction under <code>CPool._txn</code>, held from the ctypes call through the read of its report: two Python threads dispatching at once each wrote the other's run and read its results (TA-45). A start whose <code>pthread_create</code> fails part way sets <code>quit</code>, wakes the workers it did make and joins them before returning failure, since they were waiting in code the constructor was about to free (TA-46, a SIGSEGV). Its workers, like the executor's (<code>_get_pool</code>, which starts them all at once), are made under the interleave policy, or keep a bound task's binding, so the pages of a new array they first-touch are spread the way a buffer filled under the policy was. Through <code>ThreadPoolExecutor</code> a fan-out cost ~60 µs per worker on a 2 GHz Xeon (490 µs for 8, 1.2 ms after an idle gap), because every worker's wake-up and GIL handoff serialized; through the pool it is 3–5 µs hot and ~100 µs after an idle gap, and the dataset filters at 1M cells went from 1.05× to 1.9× on 8 threads there. <code>TACK_CPU_POOL=python</code> keeps the executor path, which is also the fallback on Windows or if the pool cannot be made (<code>CPUBackend.pool_kind</code>). Tests that simulate workers through <code>call_range</code> or <code>_get_pool</code> must set the Python path; <code>test_cpu_threading.py</code> does so for its whole module.</p>
+</li>
+<li>
+<p>Each <code>CompiledKernel</code> carries <code>ns_per_elem</code>, a smoothed estimate of its serial cost, updated on every serial dispatch. From it the backend precomputes <code>parallel_min_elems</code>, so the dispatch hot path is one integer compare.</p>
+</li>
+<li>The backend measures its own fan-out cost by dispatching <em>empty</em> ranges through the real path — no loop iterations, so the probe has no side effects. That is a curve over idle gaps, interpolated on the actual idleness at dispatch, refined from real fan-outs, and re-measured directly at most every 100 ms. Only its hot end is measured at the first fan-out; each idle knot starts as a pessimistic prior (<code>_FAN_OUT_IDLE_PRIOR</code>, 4× hot, applied as a step) and is replaced, and moved, by the first fan-out measured at a pause the program actually took — measured at once rather than on the 100 ms clock. Nothing sleeps: calibrating by sleeping through each gap cost 180 ms inside whichever dispatch first looked worth threading (P8).</li>
+<li>The first time a kernel is seen at a range large enough to matter, a small slice is timed serially and the rest is decided on that sample. The slice comes from inside the range (the same golden-ratio walk as the rechecks), not its prefix.</li>
+<li>Once a kernel threads, occasional rechecks (dispatches 1, 2, 4, … 1024, then every 1024) re-time a serial slice. The slice walks the range in golden-ratio steps rather than always sampling the prefix, because an image kernel's first rows are background and a prefix sample read a volume render 10–70× too cheap. A range whose serial run costs no more than a fan-out is re-timed whole; sufficiently long worker spans establish a floor under the serial estimate. Worker spans and rates are summarized by <code>_worker_median</code>, the lower middle value for an even count: the upper one of two workers is the slower worker, so one descheduled thread set the floor on two-thread machines. If every worker of a complete dispatch later finishes below that duration, the old floor is retired and the next call rechecks serial cost. Cheap partial slices or a short median alone cannot retire it.</li>
+<li>A serial sample is <em>clean</em> only when a serial run laid the range out before it (<code>CompiledKernel.scattered</code> is false). One taken on untouched pages, or straight after a fan-out while other cores own the lines, reads a bandwidth-bound kernel 3–5× dear, and believing it was a fixed point: it kept the kernel fanning out, which kept the next sample dear (P7 in the audit). A scattered sample may lower the estimate but not raise it, wherever a serial run of the range costs at most <code>_CONFIRM_BAND</code> margin-weighted fan-outs; and until a kernel has one clean sample, a fan-out inside that budget runs serially instead, at most twice per kernel. The first clean sample is believed outright when it is lower, since everything before it was an upper bound; smoothing it in left the estimate stuck near 3× in two harness runs of three. Outside the budget a rise is real evidence (an image kernel's estimate starts low) and is believed as before. A recheck slice reading 8× under the estimate is believed outright only if a second slice from later in the range agrees (<code>_second_opinion</code>); otherwise one background-row slice could send an image kernel's whole frame serial.</li>
+<li>The parallel rate has the same one-way door from the other side (P9): only fan-outs measure <code>r_p</code>, so a high one holds a kernel serial and nothing corrects it. When a range would fan out on the serial rate alone but <code>r_p</code> keeps it serial, the backend fans out anyway on the recheck back-off schedule (<code>_parallel_recheck_due</code>). The serial floor takes the lesser of the qualifying sample and the smoothed <code>r_p</code>: worker rates for identical fan-outs spread 8× run to run, and a floor from one high draw raised <code>r_s</code> to <code>r_p</code>, where the formula credits threading with no gain. <code>scattered</code> is cleared by <code>_run_whole_serial</code> around <code>_run_serial</code>, not inside it, because tests replace <code>_run_serial</code> with a four-argument lambda.</li>
+</ul>
+<p>A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for <code>out[i] = x[i]*2+1</code>, ~130K for a <code>sqrt</code>/<code>sin</code> expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.</p>
 <h2 id="the-contract">The contract<a class="headerlink" href="#the-contract" title="Permanent link">&para;</a></h2>
 <h3 id="guaranteed-the-decision-does-not-change-results">Guaranteed: the decision does not change results<a class="headerlink" href="#guaranteed-the-decision-does-not-change-results" title="Permanent link">&para;</a></h3>
 <p>Every path through <code>_run</code> executes each index of <code>[0, loop_end)</code> exactly
 once. <code>_parallel_execute</code> chunks are contiguous, disjoint, and cover
-<code>[start, end)</code>. First sight and rechecks split the range into head, slice and
+<code>[start, end)</code>, whether the executor assigns them or the pool's workers
+claim them from a counter. First sight and rechecks split the range into head, slice and
 tail (plus the second opinion's head and slice), each starting where the last
 ended. Every probe that is not real work — <code>_measure_call_overhead</code>,
 <code>_calibrate_fan_out</code>, <code>_refresh_fan_out</code> — runs on an empty range, which
@@ -3737,9 +4446,9 @@ iteration fresh copies of the outer locals it assigns (see
 <p>So for any program that meets the
 <a href="../../reference/language-contract/#execution-and-ordering">execution contract</a>
 — no conflicting cross-iteration accesses — serial execution, a fan-out, and
-every split between them produce the same field contents. Atomic updates are
+every split between them produce the same array contents. Atomic updates are
 applied once per iteration under every decision. The contract leaves
-<a href="../../reference/language-contract/#atomic-field-updates">atomic accumulation order</a>
+<a href="../../reference/language-contract/#atomic-array-updates">atomic accumulation order</a>
 unspecified and a fan-out changes it, so floating-point atomic sums may round
 differently between dispatches.</p>
 <h3 id="not-guaranteed-performance">Not guaranteed: performance<a class="headerlink" href="#not-guaranteed-performance" title="Permanent link">&para;</a></h3>
@@ -3747,11 +4456,19 @@ differently between dispatches.</p>
 processes or machines; decisions near a crossover flip on noise. Some
 dispatches take a slower path on purpose: rechecks run part of a range
 serially, and parallel rechecks fan out a range the policy believes is better
-serial. Under v2, refreshes add about one empty fan-out per 100 ms of
+serial. Refreshes add about one empty fan-out per 100 ms of
 dispatching, plus the hot knot's probe at most once a second. The policy
 promises to keep measuring, not to be right.</p>
 <h3 id="how-it-is-tested">How it is tested<a class="headerlink" href="#how-it-is-tested" title="Permanent link">&para;</a></h3>
-<p><code>packages/tack-core/tests/test_cpu_threading.py</code> has three kinds of check.</p>
+<p><code>packages/tack-core/tests/test_cpu_threading.py</code> has three kinds of check.
+Its tests drive the policy through the Python path's seams (a patched
+<code>call_range</code>, an inline pool, a fake clock), so an autouse fixture sets
+<code>TACK_CPU_POOL=python</code> and every backend they make fans out through the
+executor. The JIT'd pool has its own tests in <code>test_cpu_pool.py</code> (whole
+chunks covering the range, a launch of <code>k</code> using only the first <code>k</code>
+workers, concurrent fan-outs, a failed start that falls back and exits
+cleanly), the fills in <code>test_cpu_fill.py</code>, and first-touch placement in
+<code>test_numa.py</code>.</p>
 <p><strong>Correctness through every path.</strong> Results against a reference for ranges of
 1 to 300,000 elements and over repeated dispatches; an atomic accumulation
 that must count each element once; a first-sight dispatch that must visit
@@ -3847,6 +4564,20 @@ and on the scheduler's wake-up behavior; neither has been measured on Windows.</
 <p><strong>CI checks the logic, not the tuning.</strong> The controlled tests pin the decision
 for given measurements. Whether the measurements and ratios suit a machine is
 checked only by running <code>benchmarks/threading_decisions.py</code> on it.</p>
+<h2 id="a-thread-count-per-launch">A thread count per launch<a class="headerlink" href="#a-thread-count-per-launch" title="Permanent link">&para;</a></h2>
+<p>Tried and dropped (2026-10-14). <code>TACK_CPU_SUBSETS=1</code> let a fan-out use
+the first <code>k</code> of the <code>N</code> threads: each worker's chunk had to cost ten
+shares of the hot fan-out, and a kernel whose full fan-out reached a
+speedup <code>S</code> of at most <code>N / 4</code> got <code>ceil(2 S)</code> threads, with full runs
+on a back-off schedule to keep <code>r_p</code> at <code>N</code> current. On 16 threads of a
+hyperthreaded Xeon it lost nothing to always-<code>N</code>. On jura's 28 cores it
+lost: the dataset filters ran 12% slower with it, its own score (every
+<code>k</code> timed directly) had rows losing over 5% to always-<code>N</code> and 2.4-3.2 ms
+of regret, it kept 28 threads for bandwidth-bound launches that run
+10-16% faster on 4-6, and through the rates it fed back it turned the
+serial-or-parallel decision under-eager (14 of 18 rows wrong at
+<code>threading_decisions.py --scale 1</code>). The per-worker mailboxes it came
+with stayed: a launch still wakes only the workers it uses.</p>
 
 
 

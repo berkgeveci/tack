@@ -35,31 +35,31 @@ def bilerp(dye, p, n):
 # --8<-- [start:advect]
 @tack.kernel
 def advect(old, new, angular_speed, dt, n):
-    for i, j in tack.ndrange(n, n):
-        p = tack.Vector([float(i), float(j)])
+    for i, j in tack.ndindex(n, n):
+        p = tack.vec2(float(i), float(j))
         r = p - (n - 1) * 0.5
-        velocity = angular_speed * tack.Vector([-r.y, r.x])
+        velocity = angular_speed * tack.vec2(-r.y, r.x)
         departure = p - dt * velocity
         new[i, j] = bilerp(old, departure, n)
 # --8<-- [end:advect]
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, steps = (24, 5) if check else (96, 90)
     ii, jj = np.mgrid[:n, :n]
     blob = np.exp(-((ii - 0.65 * n) ** 2 + (jj - 0.5 * n) ** 2) / (0.08 * n) ** 2)
     initial = (blob[..., None] * np.array([0.1, 0.7, 1.0])).astype(np.float32)
-    old = tack.Vector.field(3, dtype=tack.f32, shape=(n, n))
-    new = tack.Vector.field(3, dtype=tack.f32, shape=(n, n))
-    old.from_numpy(initial)
+    old = tack.empty((n, n), tack.vec3(tack.f32))
+    new = tack.empty((n, n), tack.vec3(tack.f32))
+    tack.copyto(old, initial)
     reference = initial.copy()
     snapshots = [initial.copy()]
     for step in range(steps):
         advect(old, new, 0.025, 1.0, n)
         old, new = new, old
         if (step + 1) % (steps // 3 if not check else steps) == 0:
-            snapshots.append(old.to_numpy(vectors=True))
+            snapshots.append(old.numpy())
         if check:
             # Independent array implementation of the interpolation and backtrace.
             u = ii - 0.025 * (-(jj - (n - 1) * 0.5))
@@ -70,7 +70,7 @@ def run(arch="cpu", check=False):
             y0, y1 = np.clip(y, 0, n - 1), np.clip(y + 1, 0, n - 1)
             reference = ((reference[x0, y0] * (1 - fx) + reference[x1, y0] * fx) * (1 - fy)
                          + (reference[x0, y1] * (1 - fx) + reference[x1, y1] * fx) * fy).astype(np.float32)
-    result = old.to_numpy(vectors=True)
+    result = old.numpy()
     if check:
         np.testing.assert_allclose(result, reference, atol=3e-6, rtol=3e-5)
         assert np.all(np.isfinite(result)) and result.min() >= 0

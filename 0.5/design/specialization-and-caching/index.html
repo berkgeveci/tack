@@ -1,0 +1,4418 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
+      
+      
+      
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/design/specialization-and-caching/">
+      
+      
+        <link rel="prev" href="../compilation-pipeline/">
+      
+      
+        <link rel="next" href="../numerical-semantics/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Specialization and Caching - Tack</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#specialization-and-caching" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Tack" class="md-header__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Tack
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Specialization and Caching
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../users-guide/" class="md-tabs__link">
+          
+  
+  
+  User's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Design and Implementation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contracts/" class="md-tabs__link">
+          
+  
+  
+  Contracts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developers-guide/" class="md-tabs__link">
+          
+  
+  
+  Developer's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/backends/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Tack" class="md-nav__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Tack
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack User's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/01-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/12-execution-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From Python to a Tack program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/14-vectors-and-matrices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vectors and Matrices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/03-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/04-control-flow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Flow and Math
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/05-device-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/06-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/13-memory-and-parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Parallel Correctness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/11-reductions-and-scans/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reductions and Scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/08-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/16-interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing Arrays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging and Timing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worked Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Worked Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/heat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heat Diffusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/dye/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advecting Dye
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/physarum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trail-following Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/contours/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Marching Squares
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/mpm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Particle-to-grid Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/nbody/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tiled N-body Forces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design and Implementation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compilation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compilation Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specialization and Caching
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specialization and Caching
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-variant-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a variant is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-caches-two-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two caches, two keys
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-variant-key-element-by-element" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The variant key, element by element
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The variant key, element by element">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#param_sig-types-and-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        param_sig: types and categories
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vec_sig-vector-widths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vec_sig: vector widths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tmpl_key-template-structure-and-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tmpl_key: template structure and constants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shape_sig-dimensions-baked-into-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        shape_sig: dimensions baked into code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disjoint-the-cpu-no-overlap-bit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        disjoint: the CPU no-overlap bit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-deliberately-not-in-the-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is deliberately not in the key
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-structure-and-lifetime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache structure and lifetime
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cache structure and lifetime">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#template-class-lifetime-_classtoken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template-class lifetime: _ClassToken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concurrency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concurrency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hit-versus-miss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hit versus miss
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Hit versus miss">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-dispatch-fast-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The dispatch fast path
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The dispatch fast path">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-a-warm-call-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a warm call costs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-correctness-argument" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The correctness argument
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#worked-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-disk-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The disk cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#costs-and-advice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Costs and advice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related pages
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../numerical-semantics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Numerical Semantics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parallel-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallel Execution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory-and-aliasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Aliasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cpu-threading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Threading Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backend-implementations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contracts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/language-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Language Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/backend-capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Capabilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/runtime-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conformance and Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/01-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/02-ast-transform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AST Transform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/03-ir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/04-ir-passes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR Passes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/05-codegen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codegen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/06-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/07-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/08-adding-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-variant-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a variant is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-caches-two-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two caches, two keys
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-variant-key-element-by-element" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The variant key, element by element
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The variant key, element by element">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#param_sig-types-and-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        param_sig: types and categories
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vec_sig-vector-widths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vec_sig: vector widths
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tmpl_key-template-structure-and-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tmpl_key: template structure and constants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shape_sig-dimensions-baked-into-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        shape_sig: dimensions baked into code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disjoint-the-cpu-no-overlap-bit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        disjoint: the CPU no-overlap bit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-deliberately-not-in-the-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is deliberately not in the key
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-structure-and-lifetime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache structure and lifetime
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cache structure and lifetime">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#template-class-lifetime-_classtoken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template-class lifetime: _ClassToken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concurrency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concurrency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hit-versus-miss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hit versus miss
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Hit versus miss">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-dispatch-fast-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The dispatch fast path
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The dispatch fast path">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-a-warm-call-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a warm call costs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-correctness-argument" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The correctness argument
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#worked-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-disk-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The disk cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#costs-and-advice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Costs and advice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related pages
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="specialization-and-caching">Specialization and Caching<a class="headerlink" href="#specialization-and-caching" title="Permanent link">&para;</a></h1>
+<p>A Tack kernel is not compiled once. It is compiled once per <strong>variant</strong>: a
+specialization for one combination of the facts that the compiler bakes
+into generated code. This page defines what a variant is, lists exactly
+what goes into its key and why, describes the cache that holds variants
+and how long they live, and gives the user-facing consequences.</p>
+<p>The governing requirement is in the contract's
+<a href="../../reference/language-contract/#specialization-and-compilation-identity">Specialization and compilation identity</a>
+section: <em>reusing compiled code must have the same defined behavior as
+compiling the current call independently.</em> Every fact baked into code or
+its calling convention must therefore be part of the key. Conversely,
+runtime scalar values and the outer launch length alone should not force a
+recompile.</p>
+<h2 id="what-a-variant-is">What a variant is<a class="headerlink" href="#what-a-variant-is" title="Permanent link">&para;</a></h2>
+<p><code>KernelVariant</code> in <code>packages/tack-core/src/tack/runtime/kernel_utils.py</code>
+holds one compiled specialization:</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ir</code></td>
+<td>the post-pass IR (before GPU scalar packing), kept so the launch range can be evaluated on every dispatch without rerunning passes</td>
+</tr>
+<tr>
+<td><code>payload</code></td>
+<td>whatever the backend's <code>build</code> callback returned: the JIT'd function on the CPU; the compiled kernel, <code>pack_info</code> and pack buffers on GPU</td>
+</tr>
+<tr>
+<td><code>requires_full_workgroups</code></td>
+<td>whether every launch must be a multiple of 256 lanes</td>
+</tr>
+<tr>
+<td><code>atomic_targets</code></td>
+<td>atomic parameter indices and their alignments, rechecked against each call's storage</td>
+</tr>
+<tr>
+<td><code>written_arrays</code></td>
+<td><code>(index, name)</code> of each array argument the kernel may store to, so a dispatch can refuse read-only storage without walking IR</td>
+</tr>
+<tr>
+<td><code>has_textures</code></td>
+<td>whether any argument is a <code>Texture3D</code>, so a call without one skips rebinding textures</td>
+</tr>
+<tr>
+<td><code>dispatch_lock</code></td>
+<td>serializes dispatches of this variant on CUDA and HIP, whose payload holds the scalar pack buffers</td>
+</tr>
+</tbody>
+</table>
+<p>Variants are produced and looked up only by <code>resolve_variant()</code>, the
+single entry point all five backends share. The
+<a href="../compilation-pipeline/">Compilation Pipeline</a> page describes the steps
+that build one.</p>
+<h2 id="two-caches-two-keys">Two caches, two keys<a class="headerlink" href="#two-caches-two-keys" title="Permanent link">&para;</a></h2>
+<p>Specialization happens at two levels, because some facts change what the
+<em>frontend</em> emits and others only change what the <em>passes</em> resolve. Both
+levels are also kept on disk, across processes (<a href="#the-disk-cache">below</a>),
+and in front of them a repeated call skips key derivation altogether
+(<a href="#the-dispatch-fast-path">the dispatch fast path</a>).</p>
+<pre class="mermaid"><code>flowchart LR
+    K["Kernel object"] --&gt; IRC["IR template cache&lt;br/&gt;Kernel._ir / Kernel._ir_cache&lt;br/&gt;key: vector widths, texture extents,&lt;br/&gt;template structure"]
+    K --&gt; VC["Variant cache, one per backend&lt;br/&gt;backend._cache[kernel][variant_key]&lt;br/&gt;key: param types and categories, vector widths,&lt;br/&gt;template key, shape signature, disjoint bit"]
+    IRC -- "template (immutable)" --&gt; VC</code></pre>
+<table>
+<thead>
+<tr>
+<th>Cache</th>
+<th>Owner</th>
+<th>Key</th>
+<th>Built by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IR template</td>
+<td><code>Kernel</code> (<code>lang/kernel.py</code>)</td>
+<td><code>Kernel._make_cache_key(vector_arrays, template_args, texture_arrays, debug)</code>, or none at all for the plain <code>Kernel._ir</code> (no vectors, textures or templates, debug mode off)</td>
+<td>template rewrite, source validation, AST transform, <code>verify_ir('lowered')</code></td>
+</tr>
+<tr>
+<td>Compiled variant</td>
+<td>each backend instance (<code>backend._cache</code>)</td>
+<td><code>kernel_variant_key(...)</code></td>
+<td>clone, IR passes, verification, codegen, native compile</td>
+</tr>
+</tbody>
+</table>
+<p>Every input to the IR template key also reaches the variant key, either
+directly (vector widths, template structure) or indirectly (texture
+extents arrive as <code>_texture_shape</code> on the parameter and, through each
+<code>IRTextureSample</code>, in the shape signature; debug mode's template has two
+more parameters, the hidden errors and extents arrays, so its parameter
+signature differs). Two calls that share a variant therefore always share
+an IR template.</p>
+<p><strong>Debug mode.</strong> <code>tack.set_debug(True)</code> (or <code>TACK_DEBUG=1</code>) lowers every
+kernel with bounds checks (<code>lang/ir_bounds.py</code>): <code>("debug",)</code> leads the IR
+template key, and the two hidden array parameters follow the kernel's own.
+The extents are read from an array at run time rather than resolved, so a
+debug kernel compiles no variant per array length. With debug mode off,
+the IR and generated code are those of a build without the feature.</p>
+<h2 id="the-variant-key-element-by-element">The variant key, element by element<a class="headerlink" href="#the-variant-key-element-by-element" title="Permanent link">&para;</a></h2>
+<p><code>kernel_variant_key(ir_func, kernel, vector_arrays, template_args,
+shape_sig, disjoint)</code> returns a five-tuple:</p>
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="n">param_sig</span><span class="p">,</span> <span class="n">vec_sig</span><span class="p">,</span> <span class="n">tmpl_key</span><span class="p">,</span> <span class="n">shape_sig</span><span class="p">,</span> <span class="n">disjoint</span><span class="p">)</span>
+</code></pre></div>
+<p>The kernel itself is not in the tuple: each kernel has its own slot in the
+cache (see <a href="#cache-structure-and-lifetime">below</a>).</p>
+<h3 id="param_sig-types-and-categories"><code>param_sig</code>: types and categories<a class="headerlink" href="#param_sig-types-and-categories" title="Permanent link">&para;</a></h3>
+<p>One entry per IR parameter, computed in a single pass because it runs on
+every dispatch:</p>
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">type_annotation</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">_is_array</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">_is_texture</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">_texture_shape</span><span class="p">)</span>
+</code></pre></div>
+<p>These come from <code>infer_param_types</code> (<code>lang/type_inference.py</code>) and the
+backend's <code>store_texture_shapes</code>, run on a private <code>_KeyProbe</code> rather than
+on the shared template (see <a href="#concurrency">Concurrency</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Values</th>
+<th>What it bakes in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type_annotation</code></td>
+<td>an array's dtype; for a Python <code>int</code>/<code>np.integer</code>, <code>i32</code>, <code>i64</code> or <code>u64</code> chosen by <code>integer_type_for_value</code> from the <em>value</em>; for a <code>float</code>/<code>np.floating</code>, <code>f32</code>, or <code>f64</code> when any array argument is <code>f64</code></td>
+<td>every expression's type, the arithmetic emitted, the C/LLVM parameter type, the pack buffer an argument lands in</td>
+</tr>
+<tr>
+<td><code>_is_array</code></td>
+<td>array (or texture) versus scalar</td>
+<td>the calling convention: pointer versus value on the CPU; buffer binding versus packed scalar on GPU</td>
+</tr>
+<tr>
+<td><code>_is_texture</code></td>
+<td>hardware texture versus not</td>
+<td>sampler code versus loads; HIP and Level Zero set it to <code>False</code> to choose software sampling when the device has no image support or the extent exceeds its 3-D image limit</td>
+</tr>
+<tr>
+<td><code>_texture_shape</code></td>
+<td><code>Texture3D.shape_3d</code></td>
+<td>the extents used in sampling code</td>
+</tr>
+</tbody>
+</table>
+<h3 id="vec_sig-vector-widths"><code>vec_sig</code>: vector widths<a class="headerlink" href="#vec_sig-vector-widths" title="Permanent link">&para;</a></h3>
+<p><code>tuple(sorted(vector_arrays.items()))</code>: the component count of each
+<code>tack.Array</code> with a vector element dtype argument. Width determines how many component loads
+the frontend emits and the stride between vectors, so two widths need two
+lowerings and two compiled kernels. Leaving width out of the key once let a
+width-2 variant serve a width-3 call and return wrong norms; that is
+contract regression <strong>LC3</strong>.</p>
+<h3 id="tmpl_key-template-structure-and-constants"><code>tmpl_key</code>: template structure and constants<a class="headerlink" href="#tmpl_key-template-structure-and-constants" title="Permanent link">&para;</a></h3>
+<p>For calls with <code>@tack.device_class</code> arguments, <code>Kernel._make_cache_key</code>
+contributes one part per template parameter:</p>
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="s2">&quot;tmpl_&lt;index&gt;&quot;</span><span class="p">,</span>
+ <span class="n">_ClassToken</span><span class="p">,</span>                                   <span class="c1"># identity of the class</span>
+ <span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">bits_or_value</span><span class="p">),</span> <span class="o">...</span><span class="p">),</span>         <span class="c1"># class-level constants</span>
+ <span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">vector_n</span><span class="p">),</span> <span class="o">...</span><span class="p">),</span>         <span class="c1"># array attributes</span>
+ <span class="p">(</span><span class="n">runtime_attr_name</span><span class="p">,</span> <span class="o">...</span><span class="p">))</span>                      <span class="c1"># instance scalar names</span>
+</code></pre></div>
+<p>(plus a leading <code>("vec", …)</code> part when vector arrays are present).</p>
+<ul>
+<li><strong>Class identity.</strong> Two classes with the same name can have different
+  methods, so the actual class is keyed, through a <code>_ClassToken</code> (below)
+  rather than the class object itself.</li>
+<li><strong>Constants.</strong> Class-level numeric attributes are inlined as literals,
+  so their values belong in the key. Each is stored with its Python type
+  (<code>1</code> and <code>1.0</code> lower differently). Floats are stored as their
+  <code>struct.pack('!d', v)</code> bit pattern, which distinguishes <code>0.0</code> from
+  <code>-0.0</code> and gives NaN a key equal to itself despite <code>NaN != NaN</code>. An
+  instance attribute that shadows a class attribute keeps the constant
+  role, with the instance's value.</li>
+<li><strong>Array attributes.</strong> Their dtype, full shape and vector width.</li>
+<li><strong>Runtime scalar names.</strong> Instance scalars are runtime parameters, so
+  their <em>values</em> are not keyed. Their <em>names</em> are, because adding or
+  removing one changes the parameter layout.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Template array attributes are keyed by their full shape, which is
+stricter than plain array arguments (those specialize only on the
+dimensions in the shape signature). Changing the length of a template's
+array therefore lowers a new IR template and compiles a new variant even
+when no dimension is baked in. This over-specializes, which is safe; it
+is a cost, not a correctness issue.</p>
+</div>
+<h3 id="shape_sig-dimensions-baked-into-code"><code>shape_sig</code>: dimensions baked into code<a class="headerlink" href="#shape_sig-dimensions-baked-into-code" title="Permanent link">&para;</a></h3>
+<p><code>resolve_ir</code> substitutes array dimensions as literals: <code>a[i, j]</code> becomes
+<code>i * 8 + j</code> when <code>a.shape[1] == 8</code>. That literal is part of the compiled
+code's identity. <code>shape_signature(template, name_to_array)</code> reports
+exactly the dimensions a kernel bakes in, as a tuple of concrete sizes.</p>
+<p>It is built from <code>ir_shape_deps(ir_func)</code>, which scans the template once
+and memoizes the result on it as <code>_shape_deps</code> (it depends on the source,
+not on the arguments):</p>
+<ul>
+<li><code>_dependent_nodes</code> yields every node whose value reaches generated code,
+  <strong>skipping the parallel loop's <code>end</code></strong>.</li>
+<li>Each <code>IRDimSize(array, d)</code> contributes <code>(array, d)</code>. The array name is
+  mapped through <code>_static_array_aliases</code>, which follows the
+  <code>__&lt;func&gt;_&lt;param&gt;_&lt;N&gt;__ = param</code> copies that <code>@tack.func</code> inlining creates.</li>
+<li>Each <code>IRTextureSample</code> contributes all three dimensions of its texture.</li>
+</ul>
+<p><code>shape_signature</code> then looks up each <code>(name, d)</code> in this call's arguments,
+using <code>shape_3d</code> for textures, <code>_logical_shape</code> for vector arrays and
+<code>shape</code> otherwise. A kernel with no baked-in dimensions gets the empty
+tuple, so the common 1-D kernel pays nothing for shape keying.</p>
+<p><strong>Why the parallel loop's end is excluded.</strong> It never reaches generated
+code. Code generators read it from the <code>__loop_end__</code> parameter, and
+<code>_get_loop_range</code> evaluates it against the arguments on every dispatch.
+<code>resolve_ir</code> leaves it unresolved for the same reason. Without the
+exclusion, <code>for i in range(x.shape[0])</code>, the most common line in any
+kernel, would compile a new variant for every array length.</p>
+<table>
+<thead>
+<tr>
+<th>Kernel line</th>
+<th>Baked-in dimensions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>for i in range(x.shape[0]): out[i] = x[i] * 2</code></td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>for i in range(1, x.shape[0] - 1): …x[i-1] + x[i+1]…</code></td>
+<td>none (the start moves into the body as a constant)</td>
+</tr>
+<tr>
+<td><code>out[i] = x[x.shape[0] - 1 - i]</code></td>
+<td><code>x.shape[0]</code></td>
+</tr>
+<tr>
+<td><code>for i, j in tack.ndindex(a.shape[0], a.shape[1]): out[i, j] = a[i, j]</code></td>
+<td><code>a.shape[1]</code>, <code>out.shape[1]</code> (the row count only sets the launch)</td>
+</tr>
+<tr>
+<td><code>v = tex.sample(u, v, w)</code></td>
+<td>all three extents of <code>tex</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="disjoint-the-cpu-no-overlap-bit"><code>disjoint</code>: the CPU no-overlap bit<a class="headerlink" href="#disjoint-the-cpu-no-overlap-bit" title="Permanent link">&para;</a></h3>
+<p>Arrays may share storage: the same array passed twice, two views of one
+allocation, or imported pointers. Generated code therefore never promises
+<code>noalias</code>/<code>restrict</code> unconditionally (contract regression <strong>LC2</strong>; see
+<a href="../memory-and-aliasing/">Memory and Aliasing</a>). Without that promise,
+though, LLVM must reload after every store and cannot vectorize a loop
+that accumulates through an array.</p>
+<p>The CPU backend recovers that case with a second variant. It calls
+<code>resolve_variant(..., specialize_disjoint=True)</code> (the module constant
+<code>_SPECIALIZE_DISJOINT</code> in <code>runtime/cpu.py</code>), and on every dispatch
+<code>arrays_disjoint(template, effective_args)</code> decides whether this call
+qualifies:</p>
+<ol>
+<li><code>written_array_params(template)</code> finds the array parameters the kernel
+   may store to, directly, atomically, or through <code>@tack.func</code> pointer
+   copies, by a fixed point over name copies. If a store goes through a
+   name it cannot trace back to a parameter or a local allocation, it
+   returns <code>None</code> and every array counts as written. The result, and a
+   per-parameter flag tuple, are memoized on the template.</li>
+<li>Each array argument's byte range comes from its buffer's <code>span</code>
+   (<code>NumpyBuffer.span</code>, cached per array). A buffer without a <code>span</code> makes
+   the answer <code>False</code>.</li>
+<li>The call qualifies when no written range overlaps any other array's
+   range. Read-only arrays may overlap each other freely: <code>dot(x, x)</code> still
+   qualifies.</li>
+</ol>
+<p>The answer is the last key element and is stored on the variant's IR as
+<code>disjoint_arrays</code>. <code>LLVMCodeGen</code> then adds <code>noalias</code> to array parameters
+only in that variant. Both variants must agree on every race-free program,
+so overlapping and non-overlapping calls of one kernel each get correct
+code; a kernel that is sometimes called with aliased arrays simply has two
+variants. GPU backends never pass <code>specialize_disjoint</code>, so for them the
+element is always <code>False</code>.</p>
+<p>The check costs a little on every CPU dispatch. Whether that pays for
+itself depends on the host and the kernel; the tradeoff is discussed in
+<a href="../memory-and-aliasing/">Memory and Aliasing</a>.</p>
+<h2 id="what-is-deliberately-not-in-the-key">What is deliberately not in the key<a class="headerlink" href="#what-is-deliberately-not-in-the-key" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Not keyed</th>
+<th>Why that is safe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scalar argument values (within one inferred type)</td>
+<td>scalars are runtime parameters; on GPU they are rewritten into the pack buffers on each dispatch</td>
+</tr>
+<tr>
+<td>The outer launch length</td>
+<td>read from <code>__loop_end__</code>, evaluated per dispatch</td>
+</tr>
+<tr>
+<td>Template instance scalar values</td>
+<td>runtime parameters; only their names are keyed</td>
+</tr>
+<tr>
+<td>Array contents and addresses</td>
+<td>never baked in; the only address-derived fact is the CPU <code>disjoint</code> bit</td>
+</tr>
+<tr>
+<td>The kernel's name</td>
+<td>each <code>Kernel</code> object has its own cache slot</td>
+</tr>
+<tr>
+<td>The backend</td>
+<td>each backend instance has its own cache</td>
+</tr>
+<tr>
+<td>Debug mode, as a flag</td>
+<td>not needed: a debug template has two more parameters, so its <code>param_sig</code> differs; the IR template key and the disk keys name it</td>
+</tr>
+<tr>
+<td>A floating-point math mode</td>
+<td>there is one fixed policy (see <a href="../numerical-semantics/">Numerical Semantics</a>); a selectable mode would have to join the key</td>
+</tr>
+<tr>
+<td>Device-function bindings</td>
+<td>consulted only when an IR template is built; rebinding afterwards is unsupported, so recreate the kernel. The disk cache does record them (below)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cache-structure-and-lifetime">Cache structure and lifetime<a class="headerlink" href="#cache-structure-and-lifetime" title="Permanent link">&para;</a></h2>
+<p>Each backend creates its cache in <code>__init__</code> with <code>new_kernel_cache()</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">backend</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span> <span class="n">WeakKeyDictionary</span><span class="p">[</span><span class="n">Kernel</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="n">variant_key</span><span class="p">,</span> <span class="n">KernelVariant</span><span class="p">]]</span>
+</code></pre></div>
+<p><code>kernel_cache_slot(cache, kernel)</code> returns, or creates, the kernel's inner
+dictionary.</p>
+<p><strong>Keyed on the <code>Kernel</code> object, held weakly.</strong> An earlier cache was keyed
+on <code>id(kernel)</code>. A garbage-collected kernel frees its address, and a new
+kernel allocated there with the same name and argument types silently ran
+the old kernel's code. Keying on the object removes that hazard, and
+holding it weakly releases compiled code and its device modules when the
+kernel goes away. Most kernels are module-level objects that live as long
+as the process, and so do their variants.</p>
+<p><strong>One cache per backend instance.</strong> Each device is one backend with its
+own cache. <code>tack.device(spec)</code> without options returns the same backend
+every time, so switching the default device away and back keeps its
+compiled variants, and arrays made before a switch run on their own device
+with its variants. A device made with options (<code>tack.device("cpu",
+num_threads=1)</code>) is a new backend with a new, empty cache.</p>
+<p><strong>Every cache is registered.</strong> <code>new_kernel_cache</code> appends a weak reference
+to the module-level <code>_kernel_caches</code> list. <code>drop_variants(kernel, is_stale)</code>
+walks every live cache, not only the default device's, which matters for
+template-class retirement.</p>
+<h3 id="template-class-lifetime-_classtoken">Template-class lifetime: <code>_ClassToken</code><a class="headerlink" href="#template-class-lifetime-_classtoken" title="Permanent link">&para;</a></h3>
+<p>Keying a variant on a template class object would keep the class alive as
+long as the kernel. A class defined inside a function and created on every
+call would then leave one IR template and one variant behind per call,
+forever. Instead, <code>lang/kernel.py</code> keys on a <code>_ClassToken</code>:</p>
+<ul>
+<li><code>_class_token(cls)</code> returns the class's token from <code>_class_tokens</code>, a
+  <code>WeakKeyDictionary</code> from class to token, creating it on first use and
+  registering <code>weakref.finalize(cls, _retire_class, token)</code>.</li>
+<li>Each token records the kernels specialized on it (<code>token.kernels</code>, a
+  <code>WeakSet</code>).</li>
+<li>When the class is collected, <code>_retire_class</code> removes every IR template
+  in those kernels' <code>_ir_cache</code> whose key names the token, and calls
+  <code>drop_variants</code> to remove every variant whose template key (the third
+  key element) names it, in every live backend cache.</li>
+</ul>
+<p>The token provides identity without a strong reference: distinct classes
+never share a variant, and a collected class takes its specializations with
+it.</p>
+<h2 id="concurrency">Concurrency<a class="headerlink" href="#concurrency" title="Permanent link">&para;</a></h2>
+<p>The warm path takes no lock: the IR template lookup and the variant lookup
+are dictionary reads.</p>
+<ul>
+<li><strong>IR templates</strong> are built under <code>_transform_lock</code> with a re-check, so a
+  template is lowered once even when several threads miss together.</li>
+<li><strong>Key derivation</strong> writes argument types onto a per-dispatch <code>_KeyProbe</code>
+  rather than the shared template, so concurrent dispatches with different
+  dtypes cannot read each other's annotations.</li>
+<li><strong>Variant construction</strong> is not locked. Two threads that miss on the
+  same key both build. <code>kernel_cache_slot</code> uses <code>setdefault</code>, so neither
+  replaces the other's slot dictionary, and the second <code>slot[key] = variant</code>
+  overwrites the first. Each thread returns the variant it built, and both
+  are correct, so the only cost is a duplicate compile.</li>
+<li><strong>Launching a variant</strong> is serialized where a variant owns launch
+  state. On CUDA and HIP that is the pack buffers its scalars are written
+  into, and they hold the variant's <code>dispatch_lock</code> (a slot of
+  <code>KernelVariant</code>) from the pack update until the launch is queued, so
+  dispatches of <em>different</em> variants still overlap. Level Zero holds one
+  backend-wide <code>_launch_lock</code>, because its command list and kernel
+  argument state are shared by the whole backend. Metal's launches own
+  their argument buffer and scalars and encode under the backend's batch
+  lock. The CPU binds arguments per call and takes no lock, though its
+  JIT'd pool runs one fan-out at a time. See
+  <a href="../backend-implementations/#scalar-arguments-on-the-gpu">Backend Implementations</a>.</li>
+<li><strong>The fast path's entries</strong> are plain dictionary writes; the slot is
+  cleared when it reaches its cap of 256 signatures per kernel and
+  backend.</li>
+</ul>
+<h2 id="hit-versus-miss">Hit versus miss<a class="headerlink" href="#hit-versus-miss" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th style="text-align: center;">Hit</th>
+<th style="text-align: center;">Miss</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>classify arguments (templates, vectors, textures)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>IR template lookup (a template key is built for template/vector/texture calls)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code>check_workgroup_support</code> (memoized on the template on the CPU, immediate on GPU)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>type inference on the <code>_KeyProbe</code>, <code>shape_signature</code>, <code>arrays_disjoint</code> (CPU)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>build the key, look up the variant</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>look up the variant in the disk cache, and load it on a disk hit</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code>clone_ir</code>, resolve, infer, check, localize, atomic/workgroup analysis, optimize (on a disk miss)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code>verify_ir</code> at each boundary</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>GPU clone and scalar packing, <code>annotate_types</code>, codegen, native compile</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code>check_workgroup_launch</code> (collective kernels), <code>check_atomic_alignment</code>, <code>check_writable_arrays</code></td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>evaluate the launch range, <code>check_launch_size</code> (GPU), update pack buffers and queue the launch under the variant's lock (CUDA, HIP)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+</tbody>
+</table>
+<p>A hit clones nothing, runs no passes and performs no verification. The
+memoized template facts (<code>_shape_deps</code>, <code>_written_flags</code>,
+<code>_workgroup_features</code>) and the variant's recorded <code>atomic_targets</code> and
+<code>written_arrays</code> keep the remaining per-dispatch work proportional to
+the parameter count rather than to the kernel's size.</p>
+<h3 id="the-dispatch-fast-path">The dispatch fast path<a class="headerlink" href="#the-dispatch-fast-path" title="Permanent link">&para;</a></h3>
+<p>Even a hit walked the arguments half a dozen times: template detection and
+expansion, vector and texture detection, the IR lookup, type inference on
+the probe, the shape signature, the key. Each took a few microseconds, and
+together they were the largest part of a dispatch's host time (90 of about
+270 µs per launch of a contour's kernels on a 2 GHz Xeon). So
+<code>resolve_variant</code> first tries <code>_fast_resolve</code>: a call whose <em>signature</em>
+was seen before reuses what that call resolved.</p>
+<p>The signature (<code>_call_signature</code>) is read straight off the arguments: an
+array's dtype, shape and element layout (memoized on the array as
+<code>_sig</code>); a texture's extents; a scalar's kind and, for integers, the type
+its value selects; a template object's class token, its class constants'
+current values, and what the key and the expansion read of each
+attribute, nested templates by path. Equal signatures imply an equal
+variant key, so an entry, kept per backend and kernel, holds the
+expansion plan for template arguments, the variants it resolved by
+disjointness, and the array slots for the overlap check. A hit expands the
+templates through the plan, decides disjointness, runs the per-call checks
+(<code>_check_call</code>: full workgroups, atomic alignment, read-only arrays) and
+returns. Entries hold no class, and <code>drop_variants</code> forgets the kernel's
+entries on every backend along with its variants, so a per-call template
+class is still collected and a dropped variant is resolved afresh. A call with keyword arguments,
+an argument the signature cannot describe, or debug mode (its variants
+take hidden arguments, and each launch is noted for the check) takes the
+slow path. Together with the CPU passing array addresses rather than
+typed pointer objects, a warm CPU dispatch went from 70 to 40 µs.</p>
+<h4 id="what-a-warm-call-costs">What a warm call costs<a class="headerlink" href="#what-a-warm-call-costs" title="Permanent link">&para;</a></h4>
+<p>What a warm call pays (<code>_fast_resolve</code>): the call's signature (<code>_call_signature</code>, cached per <code>Array</code> as <code>_sig</code>; per template class the attribute layout <code>_template_layouts</code>, relearned when an instance's attribute names or types differ), one weak lookup for the kernel's entry, the disjointness check over the entry's precomputed array slots (<code>_disjoint_by_slots</code>, one sorted walk), and the per-call checks. It runs outside <code>template_scope</code>, which the slow path enters. <code>NumpyBuffer.address</code> and <code>span</code> are computed once per array. Measured on a 2 GHz Xeon: a warm CPU dispatch 70 → 40 µs from the signature alone, then a serial dispatch with eight array arguments 66 → 34 µs; inside a filter, where launches follow cache-trashing kernels and a third are template views, 149 → 130 µs per launch. Leaving the caller out of the chunks (k workers, caller waits) was tried for its warm caches and lost (161 µs), so the caller still runs chunks.</p>
+<h2 id="the-correctness-argument">The correctness argument<a class="headerlink" href="#the-correctness-argument" title="Permanent link">&para;</a></h2>
+<p>The design rests on one rule: <strong>anything a pass or code generator bakes
+into the compiled code must be named by the key.</strong> Leaving something out
+causes silent wrong numbers, while keying too much only costs compile time.
+The table pairs each baked-in fact with the key element that names it:</p>
+<table>
+<thead>
+<tr>
+<th>Baked into the variant</th>
+<th>By</th>
+<th>Named by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>parameter types, expression types, pack layout</td>
+<td>inference, annotation, packing</td>
+<td><code>param_sig[*].type_annotation</code></td>
+</tr>
+<tr>
+<td>pointer versus value calling convention</td>
+<td>codegen, packing</td>
+<td><code>param_sig[*]._is_array</code></td>
+</tr>
+<tr>
+<td>sampler versus software sampling, texture extents</td>
+<td>codegen, <code>store_texture_shapes</code></td>
+<td><code>param_sig[*]._is_texture</code>, <code>_texture_shape</code>, <code>shape_sig</code></td>
+</tr>
+<tr>
+<td>vector scalarization</td>
+<td>AST transform</td>
+<td><code>vec_sig</code> (and the IR template key)</td>
+</tr>
+<tr>
+<td>inlined template methods, class constants, template parameter layout</td>
+<td>template rewrite</td>
+<td><code>tmpl_key</code></td>
+</tr>
+<tr>
+<td>dimension literals in index arithmetic and loops</td>
+<td><code>resolve_ir</code></td>
+<td><code>shape_sig</code></td>
+</tr>
+<tr>
+<td><code>noalias</code> on array pointers</td>
+<td><code>LLVMCodeGen</code></td>
+<td><code>disjoint</code></td>
+</tr>
+<tr>
+<td>everything derived from the source</td>
+<td>all stages</td>
+<td>the per-kernel slot</td>
+</tr>
+</tbody>
+</table>
+<p>This rule has been learned the hard way. The cache was once keyed on
+<code>id(kernel)</code> (reused addresses ran another kernel's code); then on types
+alone (a new row stride reused code with the old stride baked in); then
+without vector widths (<strong>LC3</strong>). Each was a silent wrong-numbers bug. The
+regression tests for this area are in
+<code>packages/tack-core/tests/test_variant_cache.py</code>, <code>test_kernel_cache.py</code>,
+<code>test_array_shape.py</code> and <code>test_disjoint_arrays.py</code>.</p>
+<h2 id="worked-examples">Worked examples<a class="headerlink" href="#worked-examples" title="Permanent link">&para;</a></h2>
+<p>The variant counts below were observed on the CPU backend at this release
+by inspecting <code>backend._cache[kernel]</code> after each call, starting from an
+empty cache. All arrays are <code>f32</code> unless noted. The disjoint bit is <code>True</code>
+for every call except the aliased one.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">scale</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">a</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">a</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th style="text-align: center;">Variants</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scale(x8, o8, 2.0)</code>, then lengths 16 and 32</td>
+<td style="text-align: center;">1</td>
+<td>the only dimension is the launch bound</td>
+</tr>
+<tr>
+<td><code>scale(x8, o8, 3.5)</code></td>
+<td style="text-align: center;">1</td>
+<td>a new scalar value is a runtime argument</td>
+</tr>
+<tr>
+<td><code>scale(x8, o8, 3)</code></td>
+<td style="text-align: center;">2</td>
+<td><code>int</code> infers <code>i32</code>, not <code>f32</code></td>
+</tr>
+<tr>
+<td><code>scale(x8, o8, 2**40)</code></td>
+<td style="text-align: center;">3</td>
+<td>beyond the <code>i32</code> range, so <code>i64</code></td>
+</tr>
+<tr>
+<td><code>scale(x8_f64, o8_f64, 2.0)</code></td>
+<td style="text-align: center;">4</td>
+<td>new array dtype, and the float scalar becomes <code>f64</code></td>
+</tr>
+<tr>
+<td><code>scale(x, x, 2.0)</code></td>
+<td style="text-align: center;">5</td>
+<td>the written array overlaps another array, so the disjoint bit is <code>False</code></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Kernel</th>
+<th>Calls</th>
+<th style="text-align: center;">Variants</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>out[i] = x[x.shape[0] - 1 - i]</code></td>
+<td>lengths 8, 16, 32</td>
+<td style="text-align: center;">3</td>
+</tr>
+<tr>
+<td>the same with <code>n</code> passed as a scalar: <code>out[i] = x[n - 1 - i]</code></td>
+<td>lengths 8, 16, 32</td>
+<td style="text-align: center;">1</td>
+</tr>
+<tr>
+<td><code>tack.ndindex(a.shape[0], a.shape[1])</code> over 2-D arrays</td>
+<td>shapes <code>(4, 8)</code>, <code>(16, 8)</code>, <code>(4, 9)</code></td>
+<td style="text-align: center;">2</td>
+</tr>
+<tr>
+<td><code>range(1, x.shape[0] - 1)</code> stencil</td>
+<td>lengths 8, 16, 32</td>
+<td style="text-align: center;">1</td>
+</tr>
+<tr>
+<td><code>out[i] = v[i].dot(v[i])</code> with <code>tack.Array</code> with a vector element dtype</td>
+<td>widths 2, then 3</td>
+<td style="text-align: center;">2 (and 2 IR templates)</td>
+</tr>
+</tbody>
+</table>
+<p>For a <code>@tack.device_class</code> class with a class constant <code>factor</code>, an
+instance scalar <code>offset</code> and an instance array <code>data</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th style="text-align: center;">Variants</th>
+<th style="text-align: center;">IR templates</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>first call</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td></td>
+</tr>
+<tr>
+<td>new <code>offset</code> value</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td>instance scalars are runtime parameters</td>
+</tr>
+<tr>
+<td><code>data</code> of a different length</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2</td>
+<td>template array shapes are keyed</td>
+</tr>
+<tr>
+<td><code>s.factor = 3.0</code> on the instance</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3</td>
+<td>it shadows a class constant, so it stays a constant</td>
+</tr>
+<tr>
+<td>an equivalent class defined inside a function</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td>different class identity</td>
+</tr>
+<tr>
+<td>... after that class is garbage-collected</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3</td>
+<td><code>_retire_class</code> dropped its specializations</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-disk-cache">The disk cache<a class="headerlink" href="#the-disk-cache" title="Permanent link">&para;</a></h2>
+<p><code>runtime/disk_cache.py</code> keeps both kinds of cached code across processes.
+The in-memory caches above stay in front of it: the disk is consulted only
+on an in-memory miss, so a warm dispatch never touches it. User-facing
+settings are on <a href="../../users-guide/17-kernel-cache/">The Kernel Cache</a>.</p>
+<p><strong>Why the front end is cached too.</strong> A cold contour of a 21³ grid on an M1
+Max spent about 1.15 s in 18 new kernels: 0.46 s lowering (template
+rewriting included), about 0.25 s in the IR passes and the verifier, 0.19 s
+generating MSL and 0.21 s in Metal's compiler. A cache of binaries alone
+would save the smallest part.</p>
+<p><strong>Two levels.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>Key</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.ir</code></td>
+<td>the kernel's module, qualified name and source; its result type; its closure cells' fingerprints; vector and texture arrays; each template's content; whether debug mode lowered it; Tack's fingerprint</td>
+<td>the pickled <code>IRModule</code>, and the names lowering resolved</td>
+</tr>
+<tr>
+<td><code>.variant</code></td>
+<td>the <code>.ir</code> entry's key and dependency digest; parameter types and categories, texture shapes, vector widths, <code>shape_sig</code>, <code>disjoint</code>; the backend and <code>Backend.cache_target()</code></td>
+<td>the post-pass IR, <code>requires_full_workgroups</code>, the atomic targets, and the backend's artifact</td>
+</tr>
+</tbody>
+</table>
+<p>Debug mode is in the <code>.ir</code> key, and the <code>.variant</code> key follows from the
+<code>.ir</code> entry, so a debug kernel and a plain one never share an entry in
+either direction: without it, a debug process read the plain kernel from
+disk and its launch, missing the hidden arguments, failed. A debug kernel
+read from disk still names the access it caught, because its sites travel
+in the IR.</p>
+<p>A template's content replaces the identities of the in-memory key: each
+class by its method resolution order (module and qualified name), its
+<code>@tack.func</code> methods by source and <code>__tack_iterate__</code>; device functions
+held as attributes by source; constants by value (floats by bit pattern).</p>
+<p><strong>Names lowering resolved.</strong> The in-memory IR cache relies on the
+documented rule that bindings do not change during a process. Across
+processes they do: a device function is edited, a constant changes. Every
+<code>CallBindings.resolve</code> during a lowering is recorded (<code>_Recorder</code>) as the
+owner function, the dotted name, and a fingerprint of what it resolved to:
+a <code>Func</code> by its source, a <code>tack.constant</code> by value, a module by name, and
+"unbound" for a bare intrinsic. On a read, each name is resolved again in
+the current owner (<code>_lookup</code>, which follows <code>CallBindings</code>' rules) and the
+entry is used only if every fingerprint matches. Owners are the kernel,
+its templates' methods and function attributes, and each device function
+a recorded name resolved to, in recording order. A name bound to an object
+with no stable fingerprint, or a lowering with an explicit <code>bindings</code>
+namespace, is not stored. The closure cells are in the key itself, so
+kernels a factory makes over different device functions keep separate
+entries instead of replacing each other on every run.</p>
+<p><strong>Tack's fingerprint</strong> covers everything else lowering and code generation
+depend on: the <code>RECORD</code> of each installed Tack package (one read each), or
+every source file of a source tree on the path (editable installs: 167
+files, 16 ms, once per process), plus the format version and Python's minor
+version. It names the directory the entries live in, so another Tack never
+reads them.</p>
+<p><strong>Artifacts.</strong> <code>Backend.cache_target()</code>, <code>variant_artifact(payload)</code> and
+<code>load_variant(ir_func, artifact, effective_args)</code>; a backend whose
+<code>cache_target()</code> is None stores only the <code>.ir</code> level; every backend
+stores variants now. <code>effective_args</code> are the call's arguments: a GPU variant's
+scalar pack buffers are device memory of the process, so a load makes them
+anew from the call's scalars, as <code>_build_variant</code> does.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Artifact</th>
+<th>Loading it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>the object code MCJIT emitted (<code>set_object_cache</code>)</td>
+<td><code>add_object_file</code> into a new engine: about 0.4 ms, no LLVM optimization or code generation</td>
+</tr>
+<tr>
+<td>Metal</td>
+<td>MSL source, entry name, parameter layout, scalar pack layout</td>
+<td><code>newLibraryWithSource</code>, which macOS's own shader cache makes fast for source it has compiled before</td>
+</tr>
+<tr>
+<td>CUDA</td>
+<td>PTX from NVRTC, entry name, parameter layout, scalar pack layout</td>
+<td><code>cuModuleLoadData</code>: the driver compiles the PTX for the device, so the target names the device and compute capability, the driver version, NVRTC's version and its options</td>
+</tr>
+<tr>
+<td>HIP</td>
+<td>the code object from hipRTC, entry name, parameter layout, scalar pack layout</td>
+<td><code>hipModuleLoadData</code>: machine code for one architecture, so the target names the device and <code>gcnArchName</code> with its feature flags (which also separates devices with and without texture hardware), the ROCm runtime and driver, hipRTC, hip-python and the hipRTC options</td>
+</tr>
+<tr>
+<td>Level Zero</td>
+<td>the native binary IGC made (<code>zeModuleGetNativeBinary</code>), the SPIR-V from ocloc, entry name, parameter layout, workgroup size, scalar pack layout</td>
+<td><code>zeModuleCreate</code> in the backend's context (its own or the adopted one) as <code>ZE_MODULE_FORMAT_NATIVE</code>: about 0.2 ms a kernel. A binary the driver refuses loads from the SPIR-V, which IGC finalizes, about 50 ms a kernel without the driver's own cache. The target names the device and its IP version (stepping), the driver version, ocloc's version, the ocloc and module options, and f64 support</td>
+</tr>
+</tbody>
+</table>
+<p><strong>File-system rules.</strong> Entries are written to a temporary file in the same
+directory and renamed into place, atomic on POSIX file systems including
+Lustre and GPFS; concurrent writers of one entry write the same bytes. No
+locks. Each entry starts with a magic string and a SHA-256 of its payload,
+and holds its own key; anything else is ignored and counted as <code>bad</code>. The
+directory and the per-version directory must belong to the user and be
+writable by nobody else, since loading an entry unpickles it; the cache
+creates both with mode 0700, since under a umask of 002 a directory it made
+itself was group-writable and then refused. The entries of every Tack
+version share one size limit (<code>TACK_CACHE_SIZE</code>, 1 GiB by default): past
+it, a writing process deletes the least recently used entries until 90%
+of the limit is left, scanning the directory at most once an hour across
+processes (a <code>.pruned</code> mark), never per kernel; a hit refreshes its
+entry's time at most once an hour, and bundles are neither counted nor
+deleted. Under MPI
+(a launcher's rank variable with a world size above one) the default mode
+is <code>bundle</code>: one file per Tack version, read once per process (or by rank 0
+and broadcast, <code>load_bundle(comm=...)</code>), and no per-kernel file is looked up
+or written. In <code>write</code> mode under MPI only rank 0 stores. Nothing compiles
+collectively: ranks reach different kernels, so a collective there could
+deadlock.</p>
+<p><code>conftest.py</code> sets <code>TACK_CACHE=off</code> unless the environment chooses, so the
+suite compiles from scratch; <code>test_disk_cache.py</code> runs its cases in fresh
+processes against a temporary directory. <code>TACK_CACHE=write pytest</code>, run
+twice, serves most of the second run from disk.</p>
+<h2 id="costs-and-advice">Costs and advice<a class="headerlink" href="#costs-and-advice" title="Permanent link">&para;</a></h2>
+<p>Variants multiply: every distinct combination of dtypes, scalar types,
+vector widths, baked-in dimensions, template constants and (on the CPU)
+aliasing produces its own compile. Each cold compile pays for cloning,
+the pass pipeline, verification at every boundary, code generation and
+the native compiler. The first call of a large kernel is noticeably slower
+than a warm one, and a workload that keeps producing new variants never
+reaches the warm path.</p>
+<p>To keep the number of variants down:</p>
+<ul>
+<li><strong>Pass lengths as scalars</strong> when a dimension would otherwise appear
+  inside the body. <code>def reverse(x, out, n)</code> compiles once; reading
+  <code>x.shape[0]</code> in the index compiles once per length. Dimensions that
+  appear only in the outermost <code>range</code> never specialize.</li>
+<li><strong>Keep scalar types stable.</strong> Integer scalars are typed by value: a
+  value that crosses the <code>i32</code> range selects a new <code>i64</code> variant. Float
+  scalars follow the precision of the array arguments.</li>
+<li><strong>Use instance attributes for values that change, class attributes for
+  true constants.</strong> Class constants are baked in, and each new value
+  compiles a new variant.</li>
+<li><strong>Define <code>@tack.device_class</code> classes once, at module level.</strong> A class
+  defined per call is a new identity each time. Its variants are released
+  when it is collected, but each call still pays a cold compile.</li>
+<li><strong>Expect re-specialization when a template's array changes shape.</strong> Its
+  full shape is part of the template key.</li>
+</ul>
+<p>Specializing on baked-in dimensions is usually worth it: a known row
+stride lets LLVM and the vendor compilers fold and vectorize around it.
+The advice above is for the cases where the set of shapes is open-ended.</p>
+<h2 id="related-pages">Related pages<a class="headerlink" href="#related-pages" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../compilation-pipeline/">Compilation Pipeline</a>: what runs on a miss.</li>
+<li><a href="../memory-and-aliasing/">Memory and Aliasing</a>: the overlap policy behind
+  the disjoint bit.</li>
+<li><a href="../principles/">Principles</a>: specialization over generality, and its
+  costs.</li>
+<li><a href="../../developers-guide/07-templates/">Template System</a>: how templates
+  are rewritten.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/berkgeveci/tack" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "content.code.copy", "content.code.annotate", "content.tabs.link", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

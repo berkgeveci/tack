@@ -6,14 +6,14 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Python-first GPU compute framework — one kernel, five backends.">
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
       
       
       
-        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.4/users-guide/14-vectors-and-matrices/">
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.5/users-guide/14-vectors-and-matrices/">
       
       
-        <link rel="prev" href="../02-fields-and-types/">
+        <link rel="prev" href="../02-arrays-and-types/">
       
       
         <link rel="next" href="../03-kernels/">
@@ -90,6 +90,18 @@
     </div>
     
       <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
         
       </div>
     
@@ -509,6 +521,61 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../01-getting-started/" class="md-nav__link">
         
@@ -566,14 +633,107 @@
   
   
     <li class="md-nav__item">
-      <a href="../02-fields-and-types/" class="md-nav__link">
+      <a href="../quick-reference/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Fields and Types
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
   
 
     
@@ -846,21 +1006,48 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../07-advanced/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Advanced Features
+    Kernel Algorithms
   
 
     
@@ -868,11 +1055,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -901,6 +1096,384 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasets and Visualization
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Datasets and Visualization
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-visualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview and Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -965,62 +1538,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../09-visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Datasets and Visualization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../10-rendering/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Rendering
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -1037,6 +1554,42 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1065,10 +1618,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
         
           
-          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="">
             
   
   
@@ -1086,8 +1639,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_18">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1293,34 +1846,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorials/isosurface/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Isosurface to Image
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -1431,6 +1956,34 @@
     
   
     Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
   
 
     
@@ -1627,6 +2180,34 @@
     
   
     Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
   
 
     
@@ -2506,15 +3087,15 @@
 <p>Particles, colours, directions and local deformation all have several components.
 Tack lets you express their arithmetic as small values instead of maintaining one
 scalar name per component. A value lives inside an iteration; a vector or matrix
-<strong>field</strong> stores one such value per element across iterations and launches.</p>
+<strong>array</strong> stores one such value per element across iterations and launches.</p>
 <h2 id="start-with-positions-and-velocities">Start with positions and velocities<a class="headerlink" href="#start-with-positions-and-velocities" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
 
-<span class="n">tack</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">arch</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">cpu</span><span class="p">)</span>
-<span class="n">pos</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">Vector</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,))</span>
-<span class="n">vel</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">Vector</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,))</span>
-<span class="n">pos</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+<span class="n">pos</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">3</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec2</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>
+<span class="n">vel</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">3</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec2</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>
+<span class="n">tack</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
 <span class="n">vel</span><span class="o">.</span><span class="n">fill</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
@@ -2523,20 +3104,21 @@ scalar name per component. A value lives inside an iteration; a vector or matrix
         <span class="n">pos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">vel</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
 
 <span class="n">advance</span><span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">vel</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">vectors</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>    <span class="c1"># [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>    <span class="c1"># [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]</span>
 </code></pre></div>
 <p>Each iteration loads a two-component velocity and updates its own position.
 <code>dt</code> broadcasts to both components. Multiplying two vectors with <code>*</code> multiplies
 corresponding components; use <code>dot</code> or <code>@</code> for a dot product.</p>
 <p>A local assignment <code>p = pos[i]</code> loads a value. Changing <code>p.x</code> changes that local;
-write <code>pos[i] = p</code> to store it back. Writing <code>pos[i].x</code> targets the field directly.
+write <code>pos[i] = p</code> to store it back. Writing <code>pos[i].x</code> targets the array directly.
 Vectors have a fixed width for each compiled specialization. There are no
-runtime-length vector values or swizzle constructors such as <code>v.rgb</code>/<code>vec4(v, 1)</code>;
-construct the components explicitly.</p>
+runtime-length vector values or swizzle constructors such as
+<code>v.rgb</code>/<code>tack.vec4(v, 1.0)</code>; construct the components explicitly.</p>
 <h2 id="vectors">Vectors<a class="headerlink" href="#vectors" title="Permanent link">&para;</a></h2>
-<p>Tack provides a <code>Vector</code> type for multi-component fields. Vector operations
-are scalarized at the IR level:</p>
-<div class="highlight"><pre><span></span><code><span class="n">v</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">Vector</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
+<p>Choose a vector element dtype through <code>vec2</code>, <code>vec3</code>, <code>vec4</code>, or <code>vec(n)</code>.
+The component dtype defaults to f32. The ordinary array constructors allocate
+its storage, and vector operations are scalarized at the IR level:</p>
+<div class="highlight"><pre><span></span><code><span class="n">v</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">normalize_vectors</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
@@ -2557,13 +3139,15 @@ and conditional expressions:</p>
         <span class="n">v</span> <span class="o">=</span> <span class="n">v</span> <span class="k">if</span> <span class="n">pos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">y</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="o">-</span><span class="n">v</span>     <span class="c1"># one condition, whole vectors</span>
         <span class="n">speed</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span>                    <span class="c1"># methods are listed below</span>
         <span class="n">vel</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
-        <span class="n">pos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">v</span> <span class="o">*</span> <span class="n">dt</span>                    <span class="c1"># augmented store to a field element</span>
+        <span class="n">pos</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">v</span> <span class="o">*</span> <span class="n">dt</span>                    <span class="c1"># augmented store to an array element</span>
         <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">grid</span><span class="p">[</span><span class="n">cell</span><span class="p">]</span> <span class="o">*</span> <span class="n">speed</span>         <span class="c1"># grid[cell] is grid[cell[0], cell[1], cell[2]]</span>
 </code></pre></div>
-<p>A list of scalars is a vector, so <code>tack.Vector</code> can be left out wherever
-a vector is expected: <code>pos[i] = [x, y]</code>, <code>v = [0.0, 0.0]</code>,
-<code>w.dot([1.0, 0.0])</code>, <code>p - [1.0, 0.0]</code>. A matrix still needs
-<code>tack.Matrix([[...], [...]])</code>.</p>
+<p>In a kernel the element-type names build vector values: <code>tack.vec3(x, y, z)</code>
+from three scalars, <code>tack.vec3(s)</code> with every component <code>s</code>, and
+<code>tack.vec3(v)</code> from a 3-vector (<code>vec2</code> and <code>vec4</code> likewise). A list of
+scalars is also a vector, of any width, so it can stand wherever a
+vector is expected: <code>pos[i] = [x, y]</code>, <code>v = [0.0, 0.0]</code>,
+<code>w.dot([1.0, 0.0])</code>, <code>p - [1.0, 0.0]</code>.</p>
 <p>The vector methods are <code>norm()</code>, <code>norm_sqr()</code>, <code>dot(w)</code>, <code>cross(w)</code>
 (3-vectors), <code>normalized()</code>, and the reductions over components <code>sum()</code>,
 <code>min()</code> and <code>max()</code>. <code>norm(eps)</code> is <code>sqrt(norm_sqr() + eps)</code>, a length
@@ -2598,23 +3182,26 @@ unpacked at the call:</p>
 
 <span class="n">distance</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="n">closest_hit</span><span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
 </code></pre></div>
-<p>A vector field exchanges data with NumPy flat or with one row per
-vector: <code>v.from_numpy(a)</code> accepts an array of shape <code>(*shape, n)</code> or the
-flat <code>(prod(shape) * n,)</code>, and <code>v.to_numpy(vectors=True)</code> returns
-<code>(*shape, n)</code>. Plain <code>v.to_numpy()</code> returns the flat storage.</p>
+<p>A vector array's shape excludes its component dimension. A vector array
+of shape <code>(n,)</code> and dtype <code>tack.vec3(tack.f32)</code> downloads as <code>(n, 3)</code> with
+<code>numpy()</code>, and <code>tack.copyto</code> takes values of that shape, or values that
+broadcast to it (one <code>(3,)</code> vector, say), not the flat storage shape.
+<code>size</code> is <code>n</code>; <code>scalar_size</code> is <code>3 * n</code>. <code>scalar_dtype</code> gives the
+component type. Copies and reshapes preserve the element type; reshaping
+changes only the array dimensions, without copying storage.</p>
 <p>Two vectors in one operation must have the same number of components.
 An assignment evaluates its whole right side before it stores anything,
 so <code>v = v.cross(w)</code> and <code>pos[i] = pos[i].cross(axis[i])</code> read the old
 components. A tuple assignment does the same and then assigns its targets
-from left to right, and its targets may be field elements:
+from left to right, and its targets may be array elements:
 <code>pos[i], vel[i] = p, v</code>, or <code>a[i], b[i] = b[i], a[i]</code> to swap two.</p>
-<p>A store to a field element must match the field: a vector of the field's
+<p>A store to an array element must match the array: a vector of the array's
 width, or a scalar, which sets every component (<code>vel[i] = 0.0</code>). A vector
-of another width, or a vector stored into a field of scalars, is
+of another width, or a vector stored into an array of scalars, is
 rejected.</p>
 <p>Components are scalars. <code>vec[0]</code> and <code>vec.x</code> read one (<code>x</code>, <code>y</code>, <code>z</code>, <code>w</code>
 name the first four); <code>vec[1] = x</code>, <code>vec.y = x</code> and <code>vec[1] += x</code> write
-one. The same forms work on a field element without naming the vector
+one. The same forms work on an array element without naming the vector
 first: <code>v[i][2]</code> and <code>v[i].z</code> read a component, <code>v[i][2] = x</code> and
 <code>v[i].z += x</code> store one. The index may be a runtime value (<code>vec[k]</code> for a
 loop variable <code>k</code>), which lowers to a chain of selects rather than a
@@ -2624,24 +3211,27 @@ a read gives the last component and a write does nothing, since a kernel
 cannot raise. Only a literal index counts from the end (<code>vec[-1]</code>), and a
 literal out of range is rejected at lowering.</p>
 <h2 id="matrices">Matrices<a class="headerlink" href="#matrices" title="Permanent link">&para;</a></h2>
-<p><code>tack.Matrix</code> gives small fixed-size matrices, up to 4×4. Like vectors
+<p>Matrices are small and fixed-size, up to 4×4. Like vectors
 they are scalarized: a matrix is its entries, and every operation expands
 to scalar arithmetic at lowering.</p>
-<div class="highlight"><pre><span></span><code><span class="n">F</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">Matrix</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>    <span class="c1"># a 2x2 matrix per particle</span>
-<span class="n">C</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">Matrix</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,))</span>
+<div class="highlight"><pre><span></span><code><span class="n">F</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">mat2</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>    <span class="c1"># a 2x2 matrix per particle</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">mat2</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="n">F</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-        <span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">Matrix</span><span class="o">.</span><span class="n">identity</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">C</span><span class="p">[</span><span class="n">p</span><span class="p">])</span> <span class="o">@</span> <span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span>   <span class="c1"># &#39;@&#39; multiplies</span>
+        <span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">identity</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">C</span><span class="p">[</span><span class="n">p</span><span class="p">])</span> <span class="o">@</span> <span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span>   <span class="c1"># &#39;@&#39; multiplies</span>
         <span class="n">J</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">.</span><span class="n">determinant</span><span class="p">()</span>
         <span class="n">stress</span> <span class="o">=</span> <span class="p">(</span><span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">-</span> <span class="n">F</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">.</span><span class="n">inverse</span><span class="p">()</span><span class="o">.</span><span class="n">transpose</span><span class="p">())</span> <span class="o">*</span> <span class="n">J</span>      <span class="c1"># &#39;*&#39; is entry by entry</span>
-        <span class="n">x</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">+=</span> <span class="n">stress</span> <span class="o">@</span> <span class="n">tack</span><span class="o">.</span><span class="n">Vector</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">])</span> <span class="o">*</span> <span class="n">dt</span>        <span class="c1"># matrix @ vector</span>
+        <span class="n">x</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">+=</span> <span class="n">stress</span> <span class="o">@</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec2</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">dt</span>        <span class="c1"># matrix @ vector</span>
 </code></pre></div>
 <ul>
-<li><strong>Building one.</strong> <code>tack.Matrix([[a, b], [c, d]])</code> from rows of scalars,
-  <code>tack.Matrix([u, v])</code> from vectors as rows, <code>tack.Matrix.identity(n)</code>,
-  or <code>u.outer_product(v)</code>.</li>
+<li><strong>Building one.</strong> <code>tack.mat2([a, b], [c, d])</code> from rows of scalars,
+  <code>tack.mat2(u, v)</code> from vectors as rows, <code>tack.mat2(a, b, c, d)</code> from
+  four scalars in row-major order (<code>mat3</code>, <code>mat4</code> likewise);
+  <code>tack.mat(row, ...)</code> for any shape up to 4×4, such as three rows of
+  two; <code>tack.identity(n)</code> for a literal <code>n</code>, as <code>np.identity</code>; or
+  <code>u.outer_product(v)</code>.</li>
 <li><strong>Products.</strong> <code>A @ B</code> for matrices; <code>A @ v</code> and <code>v @ A</code> take a vector as
   a column and as a row and give a vector; <code>u @ v</code> is the dot product.
   Shapes must agree. <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, the math builtins and scalar
@@ -2651,29 +3241,33 @@ to scalar arithmetic at lowering.</p>
   determinant without checking it. <code>norm()</code> and <code>sum()</code> run over all
   entries.</li>
 <li><strong>Entries.</strong> <code>A[i, j]</code> reads one and <code>A[i, j] = x</code> or <code>A[i, j] += x</code>
-  writes one, on a matrix variable or directly on a field element
+  writes one, on a matrix variable or directly on an array element
   (<code>F[p][0, 1]</code>). The indices may be runtime values, which must then be
   in range.</li>
-<li><strong>Fields.</strong> A matrix field stores each matrix in row-major order.
-  <code>from_numpy</code> takes <code>(*shape, n, m)</code> and <code>to_numpy(vectors=True)</code> returns
+<li><strong>Arrays.</strong> A matrix array stores each matrix in row-major order.
+  <code>tack.copyto</code> takes <code>(*shape, n, m)</code> and <code>numpy()</code> returns
   it. <code>F[p] = A</code>, <code>F[p] += A</code>, <code>F[p] *= s</code> and
-  <code>tack.atomic_add(F, p, A)</code> work as they do for vector fields.</li>
+  <code>tack.atomic_add(F, p, A)</code> work as they do for vector arrays.</li>
 <li><strong>Device functions</strong> take and return matrices, alone or among several
   values.</li>
 </ul>
 <p>A matrix and a vector with the same number of entries are different
 things: storing one where the other belongs, or adding them, is rejected.</p>
 <p>The statistics in <code>tack.algorithms</code> (<code>dot</code>, <code>norm</code>, <code>var</code>, ...) accept a
-vector field and reduce over all its components in storage order.</p>
+vector array and reduce over all its components in storage order.</p>
 <h2 id="matrices-in-a-real-computation">Matrices in a real computation<a class="headerlink" href="#matrices-in-a-real-computation" title="Permanent link">&para;</a></h2>
 <p>In <a href="../tutorials/mpm/">MPM</a>, each particle stores a 2×2 affine velocity matrix.
 A matrix-vector product predicts a velocity contribution at a nearby grid node;
 an outer product reconstructs the affine matrix during interpolation. The
-example shows why <code>*</code> and <code>@</code> mean different operations, and why a matrix field
+example shows why <code>*</code> and <code>@</code> mean different operations, and why a matrix array
 is clearer than a four-component vector used as a matrix by hand.</p>
 <p>The <a href="../tutorials/dye/">dye tutorial</a> reuses one interpolation function on RGB
 vectors. <a href="../tutorials/nbody/">N-body</a> accumulates three-component directions.
 Use those examples after the small position update above.</p>
+<p>The same names serve both sides: on the host <code>tack.vec3()</code> and
+<code>tack.mat2()</code> are element dtypes that allocate arrays of vectors and
+matrices, and in a kernel <code>tack.vec3(x, y, z)</code> and <code>tack.mat2(...)</code> build
+values.</p>
 
 
 
