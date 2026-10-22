@@ -1762,7 +1762,7 @@ requires-dist = [
     { name = "tack-core", extras = ["level-zero"], marker = "extra == 'level-zero'", editable = "packages/tack-core" },
     { name = "tack-core", extras = ["metal"], marker = "extra == 'metal'", editable = "packages/tack-core" },
     { name = "tack-vis", editable = "packages/tack-vis" },
-    { name = "vtk", marker = "extra == 'interop'" },
+    { name = "vtk", marker = "extra == 'interop'", specifier = ">=9.7.1" },
 ]
 provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev", "interop", "docs"]
 

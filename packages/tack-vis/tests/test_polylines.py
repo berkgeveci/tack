@@ -151,6 +151,9 @@ def test_vtk_round_trip(backend):
     np.testing.assert_array_equal(back.fields["c"].values.numpy(), [10, 20, 30, 40])
     # A line among polylines is a two-point polyline; a triangle is refused.
     grid.GetCellData().RemoveArray("c")
+    # The export's cell types are a vtkConstantArray (one type), and VTK 9.7.1's
+    # InsertNextCell records every new cell as that type; store them per cell first.
+    grid.cells = (vtk.vtkUnsignedCharArray(np.asarray(grid.cell_types)), grid.cells)
     grid.InsertNextCell(vtk.VTK_LINE, 2, [9, 10])
     assert vtk_to_dataset(grid).num_cells == 5
     grid.InsertNextCell(vtk.VTK_TRIANGLE, 3, [0, 1, 2])
