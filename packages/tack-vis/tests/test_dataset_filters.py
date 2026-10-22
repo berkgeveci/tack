@@ -161,6 +161,17 @@ def test_a_variable_order_field_contours_its_order_one_cells(backend):
     assert _oriented(*_triangles(surface)) == _oriented(points, triangles[from_order_one])
 
 
+def test_an_order_two_field_is_refused(backend):
+    """Its corner values alone are a linear field: a quadratic that rises inside
+    every cell from zero at the corners would have no surface at all."""
+    data = _grid(3, "explicit")
+    space = td.H1(data, order=2)
+    values = np.ones(space.size)
+    values[:data.num_points] = 0.0
+    with pytest.raises(NotImplementedError, match="order-2 H1"):
+        td.contour(data, td.Field(space, _scalars(values)), 0.5)
+
+
 def test_fields_carried_onto_the_surface(backend):
     data = _with_radius(_grid(6, "explicit"))
     positions = data.positions()

@@ -94,8 +94,10 @@ def contour(data, field, value, merge_points=True, fields=None):
     """Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles
     (as polygons on polyhedra); lines of a 2D mesh.
 
-    ``field`` is a scalar field with a basis, or its name: ``H1`` (point
-    data), or ``L2`` (DG, an order per cell too). Each 3D cell contributes the
+    ``field`` is a scalar field with a basis, or its name: ``H1`` of order 1
+    (point data), or ``L2`` (DG, an order per cell too). An order-2 ``H1``
+    field is refused: its cells would need subdividing, and their corner
+    values alone are another, linear field. Each 3D cell contributes the
     triangles of VTK's case tables for its corner values, interpolated along
     its edges; in a mesh with 3D cells, cells of lower dimension contribute
     nothing, and a cell constant has no level set inside its cells.
@@ -118,6 +120,10 @@ def contour(data, field, value, merge_points=True, fields=None):
     """
     field = _field(data, field)
     space = field.space
+    if isinstance(space, H1) and space.order != 1:
+        raise NotImplementedError(
+            f"contour of an order-{space.order} H1 field is not built: it would subdivide "
+            "each cell, and its corner values alone give the contour of a linear field")
     _scalar_floating("contour", field)
     dimension = data.topology.dimension
     if dimension == 2:
