@@ -151,7 +151,9 @@ same = np.asarray(data)                    # also a copy
 `tack.copyto(a, host)` is strict, like `np.copyto`: `host` must have the
 shape of `a.numpy()` or broadcast to it, and its values are converted to
 `a`'s dtype. Given another Tack array, `tack.copyto(dst, src)` copies on the
-device. Arrays are not assigned with `a[...] = values`.
+device. The destination is always a Tack array: `copyto` writes into Tack
+storage, and `numpy()` reads it back into a new NumPy array. Between two NumPy
+arrays, use `np.copyto`. Arrays are not assigned with `a[...] = values`.
 
 On Metal (Apple Silicon), arrays use shared memory — `copyto`/`numpy`
 are simple memory copies with no DMA transfers. On CUDA, HIP and Level Zero,
