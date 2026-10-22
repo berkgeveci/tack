@@ -1,6 +1,6 @@
 [project]
 name = "tack-vis"
-version = "0.4.0"
+version = "0.5.0"
 description = "Tack — datasets and scientific visualization"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Visualization",
 ]
 dependencies = [
-    "tack-core>=0.4.0",
+    "tack-core>=0.5.0",
 ]
 
 [build-system]

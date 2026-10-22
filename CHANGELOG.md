@@ -3,10 +3,39 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
-## Unreleased
+## 0.5.0 — 2026-10-22
+
+The headline: the API freeze. Arrays are NumPy-style (`tack.Array` is
+storage; "field" means a dataset's field only), devices are values
+(`tack.device("cuda:1")`), kernels use NumPy's and GLSL's names in place
+of Taichi's, and the dataset package is `tack.dataset`, with one name per
+operation: see the **Breaking** entries under *Changed*. Around it:
+several devices of one type in one process, datasets that compute on their
+own device, launches queued on every GPU backend with `asyncio` waits,
+compiled kernels kept on disk, a debug mode that checks every array index,
+a CPU thread pool compiled from LLVM IR, indexable device classes with
+`tack.arrays`' implicit arrays in the core, and structure-of-arrays
+storage. Windows works for the first time, on the CPU and on CUDA.
+
+Validated on Linux (CPU; CUDA on an RTX 4060 Ti, an RTX 6000 Ada, an H100
+and four A100s in one process; HIP on two MI210s; Level Zero on an Intel
+Max 1100), macOS (CPU and Metal on an M1 Max) and Windows Server 2022 (CPU,
+and CUDA on a T4), with debug mode and both id widths of the dataset tests,
+together with tack-examples' 57 examples. The dataset filters agree with
+VTK's at 10k to 1M cells and with Viskores' on CUDA, and run faster than
+0.4.0's on the CPU and on CUDA, the backends compared. One thing is untested: memory export
+(`Array.export_memory`) on Windows. A GPU in TCC mode, as Data Center GPUs
+run on Windows Server, cannot export at all.
 
 ### Added
 
+- Windows. The whole suite passes on Windows Server 2022 on the CPU and
+  with CUDA (a T4), after the fixes below: the disk cache stopped writing
+  when Windows refused to replace an open file, and CUDA failed on a GPU
+  without memory pools. The CPU's fan-out takes the `ThreadPoolExecutor` there, as
+  before: the JIT-compiled pool is POSIX only, so a launch needs more work
+  before it is worth threading (a fan-out costs 70–130 µs on Windows
+  against a few on Linux).
 - Indexable objects. A `@tack.device_class` that defines `__getitem__`,
   `__setitem__` and `__len__` as `@tack.func` methods is indexed in kernels
   as an array is: `obj[i]`, `obj[i] = v`, `obj[i] += v` (the index evaluated
@@ -368,7 +397,41 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   680 ms kernel waited 682 ms, now under 1 ms, and 100 small launches with
   a changing scalar take 5.4 ms rather than 8.7.
 
+- A CPU array of 1 MiB or more takes the NUMA interleave policy for its
+  range when it is allocated (`mbind`), so its pages spread over the
+  memory nodes whichever thread touches them first, a serial launch,
+  `from_numpy` or a NumPy temporary included, and keep spreading when
+  glibc hands the block out again. Pages already placed on a reused block
+  are moved once (`move_pages`, in 2 MiB steps, so no huge page is split).
+  A thread bound with `numactl` keeps its binding. On a two-node EPYC at
+  28 threads, tet contour's and slice's reused blocks had sat 77–89% on
+  one node, and those filters ran 10–20% slower.
+- Allocating a vector or matrix array costs a third of what it did:
+  shape products use `math.prod`, where `np.prod` made a NumPy array of
+  each small shape tuple, six times per vector allocation (10 µs each on
+  a 2 GHz Xeon). The small point filters on CUDA (cylindrical and
+  spherical coordinates, warp, point transform, point elevation) lost
+  80 µs a call at 10k–100k points against 0.4.0, and are now faster than
+  it.
+
 ### Fixed
+
+- CUDA on a GPU without memory pools, such as a Data Center GPU in TCC mode
+  on Windows: every allocation failed, since the backend always used
+  `cuMemAllocAsync`. Such a device allocates with `cuMemAlloc`, and a
+  dropped array is freed once the stream is idle, at the next allocation
+  or sync, because `cuMemFree` waits for the whole device (1.26 s behind
+  an unrelated kernel on a T4). Exporting memory from such a device, which
+  has no virtual memory management either, now says so.
+- The disk cache stopped storing for the rest of the process on Windows
+  when another process had an entry open: Windows refuses to replace an
+  open file, and the cache took that for an unwritable directory. It now
+  keeps the entry already there, since entries are named by their content.
+- On Intel GPUs with IGC 2.7.11 (compute runtime 25.05), a vector or matrix
+  component selected at a runtime index defined by a conditional
+  expression in a sequential loop could read the wrong component: IGC
+  miscompiles a chain of 64-bit compares. The selector is compared as an
+  i32 (recorded in the vendor workarounds).
 
 - The nearest point of a cell, outside a quad, hexahedron, wedge or pyramid,
   was its position at clamped parametric coordinates, exact only for an
