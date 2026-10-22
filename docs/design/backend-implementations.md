@@ -262,7 +262,11 @@ empty grid. Buffers are stream-ordered: `cuMemAllocAsync` and
 `cuMemFreeAsync` on that stream, from the device's default memory pool
 with its release threshold raised, so freed memory is handed back out
 without a device round trip, and an array dropped while a queued launch
-still uses it is freed after that launch. `from_numpy`, `fill` and the
+still uses it is freed after that launch. A device without memory pools
+(a GPU in TCC mode on Windows) allocates with `cuMemAlloc` instead; since
+`cuMemFree` waits for the whole device, a dropped buffer is queued on its
+context and freed once the stream is idle, at the next allocation or sync
+(`_free_dropped`). `from_numpy`, `fill` and the
 allocation's zeroing are queued in order with the launches; `to_numpy` and
 `read_range` queue their copy and wait with `cuStreamSynchronize`.
 

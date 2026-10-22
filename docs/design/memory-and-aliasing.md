@@ -138,7 +138,9 @@ explicitly in `__del__`:
 
 - `CUDABuffer.__del__` calls `cuMemFreeAsync` on the context's stream,
   unless the buffer's context is gone (see
-  [below](#when-the-cuda-context-goes-away)).
+  [below](#when-the-cuda-context-goes-away)). On a device without memory
+  pools (a GPU in TCC mode on Windows) it queues the pointer on the
+  context instead, for a `cuMemFree` once the stream is idle.
 - `HIPBuffer.__del__` calls `hipFreeAsync` on the device's stream, or
   `hipFree` on a device without memory pools.
 - `L0Buffer.__del__` frees through `LevelZeroBackend._free`, against
