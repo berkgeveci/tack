@@ -3562,6 +3562,30 @@ that share everything else: spaces without a basis, fields, sets,
 </tbody>
 </table>
 <p><code>num_points</code> exists because a dataset may have points that no cell uses.</p>
+<p><strong>Implicit topology arrays.</strong> An <code>UnstructuredTopology</code>'s <code>types</code>, <code>offsets</code>
+and <code>connectivity</code> may each be an implicit array from <code>tack.arrays</code>, kept as
+it is and computed where it is read, as Viskores' single-type cell sets keep
+theirs:</p>
+<ul>
+<li>the types of cells all of one shape, a <code>ConstantArray</code> (u8);</li>
+<li>the offsets of cells all of one size, a <code>CountingArray</code> with that size as
+  its step;</li>
+<li>the connectivity of cells that each have their own points (vertex cells,
+  a 2D contour's lines), a <code>CountingArray</code> too.</li>
+</ul>
+<p><code>uniform_cells(shape_id, count, id_dtype)</code> in <code>tack.dataset.topology</code> makes
+the first two. Filters whose output cells are all one shape give them:
+<code>contour</code> and <code>slice</code> (triangles, or lines in 2D), <code>tetrahedralize</code>,
+<code>triangulate</code>, <code>extract_edges</code>, the point extractions and <code>probe</code>'s vertex
+cells (all three implicit), and <code>threshold</code>, <code>extract_cells</code>,
+<code>extract_geometry</code> and <code>mask</code> of a topology of one shape. A topology of one
+shape groups its cells without a histogram of their types. Everything else
+reads them as it reads stored ones; <code>numpy()</code> computes them on the host.</p>
+<p><code>dataset_to_vtk</code> hands them over as VTK's own: a <code>ConstantArray</code> of types
+becomes the cell type given as a number (VTK keeps it as a
+<code>vtkConstantArray</code>), a <code>CountingArray</code> a <code>vtkAffineArray</code>.
+<code>vtk_to_dataset</code> takes VTK's constant and affine arrays back as
+<code>ConstantArray</code> and <code>CountingArray</code>.</p>
 <h3 id="ids">Ids<a class="headerlink" href="#ids" title="Permanent link">&para;</a></h3>
 <p>Every id a topology stores or derives has one integer type,
 <code>topology.id_dtype</code> (also <code>data.id_dtype</code>): point and cell ids, offsets,
