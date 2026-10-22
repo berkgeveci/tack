@@ -192,8 +192,10 @@ def test_a_wait_does_not_hold_the_context(wait):
     let the launcher make one launch per 910 ms wait (H100, driver 595);
     waiting for the stream first, it launches every millisecond."""
     import threading
+    if wait == "exported" and not cuda_backend._has_virtual_memory(get_backend().ordinal):
+        pytest.skip("this CUDA device has no virtual memory management (TCC mode)")
     out = tack.empty((1 << 18,))
-    exported = tack.empty((16,), exportable=True)
+    exported = tack.empty((16,), exportable=(wait == "exported"))
     short = tack.zeros((16,), tack.i32)
     iters = _long_launch(out)
     _add_into(short, 1)                      # compiled before the timing,

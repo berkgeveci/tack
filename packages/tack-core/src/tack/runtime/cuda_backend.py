@@ -315,6 +315,13 @@ def _free_dropped(token, wait=False):
             driver.cuMemFree(ptr)
 
 
+def _has_virtual_memory(ordinal):
+    """Whether device ``ordinal`` has virtual memory management
+    (``cuMemCreate``), which exportable memory is made with. A GPU in TCC
+    mode on Windows has none (the same T4), nor any shareable handle type."""
+    return _device_supports(ordinal, "VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED")
+
+
 def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count, stream=None):
     """Copy elements ``[start, start + count)`` of an allocation to the host.
 
@@ -555,6 +562,13 @@ class ExportableCUDABuffer(DeviceBuffer):
     def _map(self):
         err, self._cuda_device = driver.cuCtxGetDevice()
         _check(err)
+        if not _has_virtual_memory(int(self._cuda_device)):
+            raise RuntimeError(
+                "This CUDA device has no virtual memory management, so it cannot "
+                "allocate exportable memory (a GPU in TCC mode on Windows has none; "
+                "WDDM mode does). Exportable memory is only needed by "
+                "Array.export_memory() for sharing with another API; ordinary "
+                "allocations are unaffected.")
 
         self._create_backing()
 

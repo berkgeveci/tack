@@ -17,6 +17,16 @@ def cuda_backend():
         pytest.skip(f"CUDA not available: {e}")
 
 
+def _skip_without_exportable_memory():
+    """Exportable memory needs virtual memory management, which a GPU in
+    TCC mode on Windows does not have. Anywhere else an export that fails
+    is a failure."""
+    from tack.runtime import cuda_backend
+    from tack.runtime.dispatch import get_backend
+    if not cuda_backend._has_virtual_memory(get_backend().ordinal):
+        pytest.skip("this CUDA device has no virtual memory management (TCC mode)")
+
+
 # --- Basic correctness ---
 
 def test_vector_add():
@@ -222,6 +232,7 @@ def test_export_memory():
     backend shipped asking for a POSIX fd unconditionally and dying on Windows
     with a bare CUDA_ERROR_INVALID_VALUE.
     """
+    _skip_without_exportable_memory()
     n = 256
     f = tack.empty((n,))
     tack.copyto(f, np.arange(n, dtype=np.float32))
@@ -242,6 +253,21 @@ def test_export_memory():
 
     # Exporting copies into VMM-backed memory; the array itself is untouched.
     assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
+
+
+def test_export_without_virtual_memory_says_why():
+    """A device with no virtual memory management (a GPU in TCC mode on
+    Windows) cannot export, and the error says so rather than listing
+    handle types it never had a chance to try."""
+    from tack.runtime import cuda_backend
+    from tack.runtime.dispatch import get_backend
+    if cuda_backend._has_virtual_memory(get_backend().ordinal):
+        pytest.skip("this CUDA device has virtual memory management")
+    f = tack.empty((8,))
+    with pytest.raises(RuntimeError, match="no virtual memory management"):
+        f.export_memory()
+    f.fill(1.0)                             # the array itself still works
+    assert f.numpy().sum() == 8.0
 
 
 # --- Context ownership across re-initialization ---
@@ -434,6 +460,8 @@ def test_an_array_keeps_its_device_and_context_alive(tmp_path, verb, action):
     """An array whose device Tack has let go of still works: it holds the
     device, so its context and its pointers stay valid. A launch runs on
     the array's device, not the new default's."""
+    if verb == "export":
+        _skip_without_exportable_memory()
     body = f"""
 {action}
 print("OK")
@@ -618,14 +646,15 @@ def test_host_element_reads_copy_one_element():
     v._buffer.to_numpy = None
     np.testing.assert_array_equal(v[5], [15, 16, 17])
 
-    exportable = ExportableCUDABuffer(np.dtype(np.float32), (8,))
-    exportable.from_numpy(np.arange(8, dtype=np.float32) * 2)
-    np.testing.assert_array_equal(exportable.read_range(6, 2), [12.0, 14.0])
-
     with pytest.raises(IndexError, match="outside a buffer of 20 elements"):
         f._buffer.read_range(19, 2)
     with pytest.raises(IndexError, match="outside"):
         f._buffer.read_range(-1, 1)
+
+    _skip_without_exportable_memory()
+    exportable = ExportableCUDABuffer(np.dtype(np.float32), (8,))
+    exportable.from_numpy(np.arange(8, dtype=np.float32) * 2)
+    np.testing.assert_array_equal(exportable.read_range(6, 2), [12.0, 14.0])
 
 
 def test_device_memory_imported_with_the_cpu_as_default_stays_on_its_device():
