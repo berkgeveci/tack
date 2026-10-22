@@ -1,6 +1,7 @@
 """`tack.sync_async` and `Array.numpy_async`: waiting for the device from
 ``asyncio`` without blocking the event loop (`tack.runtime.aio`)."""
 import asyncio
+import sys
 import time
 
 import numpy as np
@@ -11,6 +12,14 @@ from tack.runtime import aio
 from tack.runtime.dispatch import get_backend
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
+# The tasks below tick on 1 ms asyncio sleeps, which last a tick of the event
+# loop's clock: about 1 ms on Linux and macOS, but 15.6 ms on Windows (13 ms
+# idle on aws-windows, 41 ms with four pytest workers). There a free wait is
+# asked for fewer ticks per ms, and waits are made longer so that it still
+# stands clear of a blocked wait's 2.
+_TICKS_PER_MS = 0.01 if sys.platform == "win32" else 0.05
+_MIN_WAIT = 0.4 if sys.platform == "win32" else 0.1
 
 
 @tack.kernel
@@ -81,17 +90,17 @@ def _long_launch(out):
 
 def _long_enough(run, iters, attempts=4):
     """``run(iters)``, which returns a result and the waits it measured,
-    with iterations doubled until every wait lasts 100 ms. Other processes
+    with iterations doubled until every wait lasts `_MIN_WAIT`. Other processes
     on the device (pytest-xdist workers) can slow the calibration far more
     than the run: on Level Zero with four workers a launch calibrated at
     300 ms later ran in 44. They only ever lengthen a wait, so a retry
     settles it."""
     for _ in range(attempts):
         result, waits = run(iters)
-        if min(waits) >= 0.1:
+        if min(waits) >= _MIN_WAIT:
             return result
         iters *= 2
-    pytest.fail(f"waits under 100 ms after {attempts} doublings: {waits}")
+    pytest.fail(f"waits under {_MIN_WAIT * 1000:.0f} ms after {attempts} doublings: {waits}")
 
 
 @pytest.mark.usefixtures("no_debug")
@@ -144,8 +153,9 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
     # (Level Zero, load 115, four workers: 50 ticks in 207 ms), and up to
     # ~10 ms (HIP on illyad, load 120-185).
     assert blocked_ticks <= 2, blocked_ticks
-    # 0.05 per ms keeps the free wait clear of the blocked one's 2 at 100 ms.
-    assert free_ticks >= free_s * 1000 * 0.05, (free_ticks, free_s)
+    # 0.05 per ms keeps the free wait clear of the blocked one's 2 at 100 ms
+    # (0.01 at 400 ms on Windows).
+    assert free_ticks >= free_s * 1000 * _TICKS_PER_MS, (free_ticks, free_s)
 
 
 @pytest.mark.usefixtures("no_debug")
@@ -190,8 +200,9 @@ def test_the_loop_launches_while_a_read_waits(backend):
     launched, elapsed = _long_enough(once, iters)
     # At least one per 20 ms of a 1 ms cadence: a loaded host's 1 ms sleep
     # takes ~10 ms (illyad at load 120-185 reached 0.09 per ms), and a wait
-    # that blocks launches allows about one per wait (0.003 per ms).
-    assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
+    # that blocks launches allows about one per wait (0.003 per ms). Windows
+    # asks for one per 100 ms (`_TICKS_PER_MS`).
+    assert launched >= elapsed * 1000 * _TICKS_PER_MS, (launched, elapsed)
 
 
 @pytest.mark.usefixtures("no_debug")
