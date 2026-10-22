@@ -13,7 +13,6 @@ from tack.dataset.algorithms.implicit_values import _implicit_values
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 except ImportError:
@@ -28,74 +27,41 @@ KINDS = {"hexahedron": 12, "tetra": 10, "wedge": 13}
 # filters, which agree with Tack. test_no_point_is_near_a_zero checks it.
 FUNCTIONS = {
     "plane": (lambda: td.Plane((3.03, 2.97, 3.1), (1, 0.4, 0.2)),
-              lambda: _vtk_plane((3.03, 2.97, 3.1), (1, 0.4, 0.2))),
+              lambda: vtk.vtkPlane(origin=(3.03, 2.97, 3.1), normal=_unit((1, 0.4, 0.2)))),
     "sphere": (lambda: td.Sphere((3.1, 2.9, 3.05), 2.3),
-               lambda: _vtk(vtk.vtkSphere, SetCenter=(3.1, 2.9, 3.05), SetRadius=2.3)),
+               lambda: vtk.vtkSphere(center=(3.1, 2.9, 3.05), radius=2.3)),
     "box": (lambda: td.Box((1.1, 0.9, 1.3), (4.7, 5.1, 3.9)),
-            lambda: _vtk(vtk.vtkBox, SetBounds=(1.1, 4.7, 0.9, 5.1, 1.3, 3.9))),
+            lambda: vtk.vtkBox(bounds=(1.1, 4.7, 0.9, 5.1, 1.3, 3.9))),
     "cylinder": (lambda: td.Cylinder((3.05, 3.1, 0.0), (0.2, 0.1, 1.0), 1.9),
-                 lambda: _vtk(vtk.vtkCylinder, SetCenter=(3.05, 3.1, 0.0),
-                              SetAxis=tuple(np.array([0.2, 0.1, 1.0]) / np.linalg.norm(
-                                  [0.2, 0.1, 1.0])), SetRadius=1.9)),
+                 lambda: vtk.vtkCylinder(center=(3.05, 3.1, 0.0), axis=_unit((0.2, 0.1, 1.0)),
+                                         radius=1.9)),
     "planes": (lambda: td.Planes([(2.07, 0, 0), (4.13, 0, 0)], [(-1, 0.1, 0), (1, 0, 0.2)]),
                lambda: _vtk_planes([(2.07, 0, 0), (4.13, 0, 0)], [(-1, 0.1, 0), (1, 0, 0.2)])),
 }
-
-
-def _vtk(cls, **settings):
-    f = cls()
-    for name, value in settings.items():
-        getattr(f, name)(*value) if isinstance(value, tuple) else getattr(f, name)(value)
-    return f
 
 
 def _unit(v):
     return tuple(np.asarray(v, float) / np.linalg.norm(v))
 
 
-def _vtk_plane(origin, normal):
-    return _vtk(vtk.vtkPlane, SetOrigin=origin, SetNormal=_unit(normal))
-
-
 def _vtk_planes(origins, normals):
-    points = vtk.vtkPoints()
-    vectors = vtk.vtkDoubleArray()
-    vectors.SetNumberOfComponents(3)
-    for o, n in zip(origins, normals):
-        points.InsertNextPoint(*o)
-        vectors.InsertNextTuple3(*_unit(n))
-    planes = vtk.vtkPlanes()
-    planes.SetPoints(points)
-    planes.SetNormals(vectors)
-    return planes
+    # vtkPoints' default storage, f32, as InsertNextPoint filled it.
+    points = vtk.vtkPoints(data=vtk.vtkFloatArray(np.asarray(origins, np.float32)))
+    return vtk.vtkPlanes(points=points,
+                         normals=vtk.vtkDoubleArray(np.array([_unit(n) for n in normals])))
 
 
 def _grid(kind):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(KINDS[kind])
-    source.SetBlocksDimensions(6, 6, 6)
-    source.Update()
-    grid = source.GetOutput()
-    x = vtk_to_numpy(grid.GetPoints().GetData())
-    height = numpy_to_vtk(
-        (x[:, 2] + 0.3 * np.sin(x[:, 0])).astype(np.float32), deep=True)
-    height.SetName("h")
-    grid.GetPointData().AddArray(height)
+    grid = vtk.vtkCellTypeSource(cell_type=KINDS[kind], blocks_dimensions=(6, 6, 6))()
+    x = np.asarray(grid.points.data)
+    grid.point_data["h"] = (x[:, 2] + 0.3 * np.sin(x[:, 0])).astype(np.float32)
     return grid
 
 
 def _measure(grid, what):
-    integrate = vtk.vtkIntegrateAttributes()
-    integrate.SetInputData(grid)
-    integrate.Update()
-    array = integrate.GetOutput().GetCellData().GetArray(what)
-    return array.GetValue(0) if array is not None else 0.0
-
-
-def _run(algorithm, grid):
-    algorithm.SetInputData(grid)
-    algorithm.Update()
-    return algorithm.GetOutput()
+    cell_data = vtk.vtkIntegrateAttributes()(grid).cell_data
+    # A missing name reads as a NoneArray, not None, so ask first.
+    return cell_data[what].GetValue(0) if what in cell_data.keys() else 0.0
 
 
 @needs_vtk
@@ -115,13 +81,10 @@ def test_values_are_vtks(backend, name):
 def test_slice_is_vtks_cutter(backend, kind, name):
     ours, theirs = FUNCTIONS[name]
     grid = _grid(kind)
-    cutter = vtk.vtkCutter()
-    cutter.SetCutFunction(theirs())
-    cutter.GenerateTrianglesOn()
-    reference = _run(cutter, grid)
+    reference = vtk.vtkCutter(cut_function=theirs(), generate_triangles=True)(grid)
     out = td.slice(vtk_to_dataset(grid), ours())
-    assert (out.num_cells, out.num_points) == (reference.GetNumberOfCells(),
-                                               reference.GetNumberOfPoints())
+    assert (out.num_cells, out.num_points) == (reference.number_of_cells,
+                                               reference.number_of_points)
     np.testing.assert_allclose(_measure(dataset_to_vtk(out), "Area"),
                                _measure(reference, "Area"), rtol=1e-4)
     # The point data comes along, interpolated.
@@ -135,14 +98,11 @@ def test_slice_is_vtks_cutter(backend, kind, name):
 def test_extract_geometry_is_vtks(backend, kind, name, inside, boundary):
     ours, theirs = FUNCTIONS[name]
     grid = _grid(kind)
-    extract = vtk.vtkExtractGeometry()
-    extract.SetImplicitFunction(theirs())
-    extract.SetExtractInside(inside)
-    extract.SetExtractBoundaryCells(boundary)
-    reference = _run(extract, grid)
+    reference = vtk.vtkExtractGeometry(implicit_function=theirs(), extract_inside=inside,
+                                       extract_boundary_cells=boundary)(grid)
     out = td.extract_geometry(vtk_to_dataset(grid), ours(), inside=inside, boundary=boundary)
-    assert (out.num_cells, out.num_points) == (reference.GetNumberOfCells(),
-                                               reference.GetNumberOfPoints())
+    assert (out.num_cells, out.num_points) == (reference.number_of_cells,
+                                               reference.number_of_points)
     if out.num_cells:
         np.testing.assert_allclose(_measure(dataset_to_vtk(out), "Volume"),
                                    _measure(reference, "Volume"), rtol=1e-5)
@@ -154,30 +114,27 @@ def test_extract_geometry_is_vtks(backend, kind, name, inside, boundary):
 def test_extract_points_is_vtks(backend, name, inside):
     ours, theirs = FUNCTIONS[name]
     grid = _grid("hexahedron")
-    extract = vtk.vtkExtractPoints()
-    extract.SetImplicitFunction(theirs())
-    extract.SetExtractInside(inside)
-    extract.GenerateVerticesOn()
-    reference = _run(extract, grid)
+    # A point cloud filter has two outputs, the points and the outliers: a tuple.
+    reference, _ = vtk.vtkExtractPoints(implicit_function=theirs(), extract_inside=inside,
+                                        generate_vertices=True)(grid)
     out = td.extract_points(vtk_to_dataset(grid), ours(), inside=inside)
-    assert out.num_points == out.num_cells == reference.GetNumberOfPoints()
+    assert out.num_points == out.num_cells == reference.number_of_points
     np.testing.assert_allclose(
         np.sort(out.positions(), axis=0),
-        np.sort(vtk_to_numpy(reference.GetPoints().GetData()), axis=0))
+        np.sort(np.asarray(reference.points.data), axis=0))
     assert "h" in out.fields
 
 
 @needs_vtk
 def test_threshold_points_is_vtks(backend):
     grid = _grid("tetra")
-    threshold = vtk.vtkThresholdPoints()
+    threshold = vtk.vtkThresholdPoints(
+        threshold_function=vtk.vtkThresholdPoints.THRESHOLD_BETWEEN, lower_threshold=2.05,
+        upper_threshold=3.95)
     threshold.SetInputArrayToProcess(0, 0, 0, 0, "h")
-    threshold.SetThresholdFunction(vtk.vtkThresholdPoints.THRESHOLD_BETWEEN)
-    threshold.SetLowerThreshold(2.05)
-    threshold.SetUpperThreshold(3.95)
-    reference = _run(threshold, grid)
+    reference = threshold(grid)
     out = td.threshold_points(vtk_to_dataset(grid), "h", 2.05, 3.95)
-    assert out.num_points == reference.GetNumberOfPoints() > 0
+    assert out.num_points == reference.number_of_points > 0
     values = out.fields["h"].values.numpy()
     assert (values >= 2.05).all() and (values <= 3.95).all()
 
@@ -186,18 +143,12 @@ def test_threshold_points_is_vtks(backend):
 @pytest.mark.parametrize("stride", [1, 3, 7])
 def test_mask_points_is_vtks(backend, stride):
     grid = _grid("wedge")
-    masker = vtk.vtkMaskPoints()
-    masker.SetOnRatio(stride)
-    masker.RandomModeOff()
-    masker.SetOffset(0)
-    masker.GenerateVerticesOn()
-    masker.SetMaximumNumberOfPoints(10 ** 9)
-    reference = _run(masker, grid)
+    reference = vtk.vtkMaskPoints(on_ratio=stride, random_mode=False, offset=0,
+                                  generate_vertices=True, maximum_number_of_points=10 ** 9)(grid)
     data = vtk_to_dataset(grid)
     out = td.mask_points(data, stride)
     np.testing.assert_allclose(out.positions(), data.positions()[::stride])
-    np.testing.assert_allclose(
-        out.positions(), vtk_to_numpy(reference.GetPoints().GetData()))
+    np.testing.assert_allclose(out.positions(), np.asarray(reference.points.data))
 
 
 @needs_vtk
@@ -205,16 +156,14 @@ def test_extract_cells_and_mask_are_vtks(backend):
     grid = _grid("tetra")
     data = vtk_to_dataset(grid)
     ids = np.arange(0, data.num_cells, 5)
-    cell_list = vtk.vtkIdList()
+    cell_list = vtk.vtkIdList()   # vtkIdList(ids) makes an empty list
     for i in ids:
         cell_list.InsertNextId(int(i))
-    extract = vtk.vtkExtractCells()
-    extract.SetCellList(cell_list)
-    reference = _run(extract, grid)
+    reference = vtk.vtkExtractCells(cell_list=cell_list)(grid)
     for out in (td.extract_cells(data, ids), td.extract_cells(data, ids[::-1].copy()),
                 td.mask(data, 5)):
-        assert (out.num_cells, out.num_points) == (reference.GetNumberOfCells(),
-                                                   reference.GetNumberOfPoints())
+        assert (out.num_cells, out.num_points) == (reference.number_of_cells,
+                                                   reference.number_of_points)
         np.testing.assert_allclose(_measure(dataset_to_vtk(out), "Volume"),
                                    _measure(reference, "Volume"), rtol=1e-5)
     with pytest.raises(IndexError):
@@ -282,7 +231,7 @@ def test_moving_a_function_compiles_nothing_new(backend):
 @pytest.mark.parametrize("kind", KINDS)
 def test_no_point_is_near_a_zero(kind):
     """The comparisons above need every grid point clearly on one side."""
-    points = vtk_to_numpy(_grid(kind).GetPoints().GetData())
+    points = np.asarray(_grid(kind).points.data)
     for name, (_, theirs) in FUNCTIONS.items():
         f = theirs()
         nearest = min(abs(f.EvaluateFunction(*p)) for p in points)

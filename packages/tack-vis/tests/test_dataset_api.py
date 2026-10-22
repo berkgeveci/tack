@@ -24,7 +24,6 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 try:
     from vtkmodules import vtkCommonCore, vtkCommonDataModel, vtkFiltersCore
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
     from vtkmodules.vtkFiltersCore import vtkExtractEdges
     from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
     from vtkmodules.vtkFiltersSources import vtkCellTypeSource
@@ -168,22 +167,18 @@ def test_cells_know_their_edges(backend):
 # ── Faces and edges, against VTK ────────────────────────────────────
 
 def _vtk_cells(kind, blocks=(3, 2, 2)):
-    source = vtkCellTypeSource()
-    source.SetCellType(SOLID_TYPES[kind])
-    source.SetBlocksDimensions(*blocks)
-    source.Update()
-    return source.GetOutput()
+    return vtkCellTypeSource(cell_type=SOLID_TYPES[kind], blocks_dimensions=blocks)()
 
 
 def _vtk_faces(grid):
     """Every face of every cell: {sorted ids: [(cell, local face, outward ids)]}."""
     faces = {}
-    for c in range(grid.GetNumberOfCells()):
+    for c in range(grid.number_of_cells):
         cell = grid.GetCell(c)
-        for f in range(cell.GetNumberOfFaces()):
+        for f in range(cell.number_of_faces):
             face = cell.GetFace(f)
-            ids = [face.GetPointId(k) for k in range(face.GetNumberOfPoints())]
-            if face.GetCellType() == 8:                  # a pixel, as a quad
+            ids = [face.GetPointId(k) for k in range(face.number_of_points)]
+            if face.cell_type == 8:                  # a pixel, as a quad
                 ids = [ids[0], ids[1], ids[3], ids[2]]
             faces.setdefault(tuple(sorted(ids)), []).append((c, f, ids))
     return faces
@@ -211,10 +206,7 @@ def test_faces_match_vtk(backend, kind):
         assert {(c, f) for c, f, _ in owners} == {(side[0], side[1]), (side[2], side[3])} - {(-1, -1)}
         outward = next(o for c, f, o in owners if (c, f) == (side[0], side[1]))
         assert _same_cycle(ids, outward)
-    surface = vtkGeometryFilter()
-    surface.SetInputData(grid)
-    surface.Update()
-    assert len(alg.boundary_faces(data)) == surface.GetOutput().GetNumberOfCells()
+    assert len(alg.boundary_faces(data)) == vtkGeometryFilter()(grid).number_of_cells
     _closed_cells_check(data)
 
 
@@ -223,12 +215,9 @@ def test_faces_match_vtk(backend, kind):
 def test_edges_match_vtk(backend, kind):
     grid = _vtk_cells(kind)
     data = vtk_to_dataset(grid)
-    edges = vtkExtractEdges()
-    edges.SetInputData(grid)
-    edges.Update()
-    lines = edges.GetOutput()
-    expected = {tuple(sorted(lines.GetCell(i).GetPointIds().GetId(k) for k in range(2)))
-                for i in range(lines.GetNumberOfCells())}
+    lines = vtkExtractEdges()(grid)
+    expected = {tuple(sorted(lines.GetCell(i).point_ids.GetId(k) for k in range(2)))
+                for i in range(lines.number_of_cells)}
     rows = data.topology.edges().rows.numpy()
     assert {tuple(r) for r in rows} == expected
     assert len(rows) == len(expected)
@@ -240,10 +229,7 @@ def test_edges_match_vtk(backend, kind):
 @pytest.mark.parametrize("kind", ["tetra", "hexahedron", "wedge", "pyramid"])
 def test_cell_centers_match_vtk(backend, kind):
     grid = _vtk_cells(kind, (2, 2, 1))
-    centers = vtk.vtkCellCenters()
-    centers.SetInputData(grid)
-    centers.Update()
-    expected = vtk_to_numpy(centers.GetOutput().GetPoints().GetData())
+    expected = np.asarray(vtk.vtkCellCenters()(grid).points.data)
     got = alg.cell_centers(vtk_to_dataset(grid)).values.numpy()
     np.testing.assert_allclose(got, expected, atol=1e-5 if kind == "wedge" else 1e-6)
 
@@ -251,14 +237,8 @@ def test_cell_centers_match_vtk(backend, kind):
 @needs_vtk
 def test_cell_to_point_matches_vtk(backend):
     grid = _vtk_cells("tetra", (2, 2, 2))
-    values = np.random.default_rng(3).random(grid.GetNumberOfCells())
-    array = numpy_to_vtk(values, deep=1)
-    array.SetName("v")
-    grid.GetCellData().AddArray(array)
-    to_points = vtk.vtkCellDataToPointData()
-    to_points.SetInputData(grid)
-    to_points.Update()
-    expected = vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("v"))
+    grid.cell_data["v"] = np.random.default_rng(3).random(grid.number_of_cells)
+    expected = np.asarray(vtk.vtkCellDataToPointData()(grid).point_data["v"])
     data = vtk_to_dataset(grid)
     assert data.fields["v"].space is td.Constant(data)
     got = alg.project(data, data.fields["v"], td.H1(data))
@@ -325,15 +305,12 @@ def test_surface_of_a_side_set(backend):
     data.sets["boundary"] = alg.boundary_faces(data)
     surface = alg.extract_surface(data, "boundary")
     assert surface.fields["area"].space is td.Values(surface, "cells")
-    reference = vtkGeometryFilter()
-    reference.SetInputData(grid)
-    reference.Update()
-    assert surface.num_cells == reference.GetOutput().GetNumberOfCells()
+    assert surface.num_cells == vtkGeometryFilter()(grid).number_of_cells
     # The surface's own faces, as cells of a 2D mesh, cover the same area.
     total = areas.values.numpy()[data.sets["boundary"].numpy()].sum()
     np.testing.assert_allclose(surface.fields["area"].values.numpy().sum(), total)
     out = dataset_to_vtk(surface)
-    assert out.GetCellData().GetArray("area").GetNumberOfTuples() == surface.num_cells
+    assert out.cell_data["area"].number_of_tuples == surface.num_cells
 
 
 @tack.kernel
@@ -365,8 +342,8 @@ def test_rectilinear_round_trip(backend):
     data.fields["h"] = _height(data)
     data.fields["c"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     grid = dataset_to_vtk(data)
-    assert grid.IsA("vtkRectilinearGrid")
-    assert grid.GetPointData().GetArray("shape") is None      # the geometry is the grid's
+    assert isinstance(grid, vtk.vtkRectilinearGrid)
+    assert "shape" not in grid.point_data.keys()      # the geometry is the grid's
     back = vtk_to_dataset(grid)
     assert back.fields["h"].space is td.H1(back) and back.fields["c"].space is td.Constant(back)
     np.testing.assert_allclose(back.positions(), data.positions())
@@ -412,7 +389,7 @@ def test_explicit_structured_round_trip(backend, make):
     assert isinstance(data.topology, td.StructuredTopology)
     data.fields["h"] = _height(data)
     grid = dataset_to_vtk(data)
-    assert grid.IsA("vtkStructuredGrid") and grid.GetNumberOfCells() == data.num_cells
+    assert isinstance(grid, vtk.vtkStructuredGrid) and grid.number_of_cells == data.num_cells
     back = vtk_to_dataset(grid)
     assert isinstance(back.topology, td.StructuredTopology)
     assert back.topology.point_dims == data.topology.point_dims
@@ -1012,14 +989,8 @@ def test_to_cells_refuses(backend):
 @pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
 def test_to_cells_is_vtks(f64_backend, kind):
     grid = _vtk_cells(kind, (2, 2, 2))
-    values = np.random.default_rng(5).uniform(-1, 1, grid.GetNumberOfPoints())
-    array = numpy_to_vtk(values, deep=1)
-    array.SetName("p")
-    grid.GetPointData().AddArray(array)
-    to_cells = vtk.vtkPointDataToCellData()
-    to_cells.SetInputData(grid)
-    to_cells.Update()
-    want = vtk_to_numpy(to_cells.GetOutput().GetCellData().GetArray("p"))
+    grid.point_data["p"] = np.random.default_rng(5).uniform(-1, 1, grid.number_of_points)
+    want = np.asarray(vtk.vtkPointDataToCellData()(grid).cell_data["p"])
     data = vtk_to_dataset(grid, dtype=tack.f64)
     np.testing.assert_allclose(alg.project(data, data.fields["p"], td.Constant(data)).values.numpy(), want,
                                atol=1e-12)
@@ -1038,7 +1009,7 @@ def test_vtk_edge_cases(backend):
     nodes = td.project(data, data.geometry, space).values.numpy()
     data.fields["u"] = td.Field(space, _scalars(nodes[:, 0] + 2.0 * nodes[:, 1]))
     grid = dataset_to_vtk(data)
-    assert grid.GetPointData().GetArray("u").GetNumberOfTuples() == data.num_points
+    assert grid.point_data["u"].number_of_tuples == data.num_points
     back = vtk_to_dataset(grid)
     x = back.positions()
     np.testing.assert_allclose(back.fields["u"].values.numpy(), x[:, 0] + 2.0 * x[:, 1],
@@ -1066,3 +1037,44 @@ def test_view_mixins_may_not_share_a_name():
         views.view_class(views._Cells, shapes.Tetra, First, Second)
     # The same definition reached twice is one name, not two.
     assert views.view_class(views._Cells, shapes.Tetra, Third, First)
+
+
+@needs_vtk
+def test_vtk_char_arrays_come_across_as_i8():
+    """A vtkCharArray (vtkProbeFilter's valid mask, readers' flags) has no
+    numpy-compatible wrapper in VTK 9.7.1, and NumPy reads it as bytes; its
+    values are signed 8-bit integers."""
+    from vtkmodules.vtkCommonCore import vtkCharArray
+
+    image = vtk.vtkImageData(dimensions=(2, 2, 1))
+    mask = vtkCharArray()
+    mask.SetNumberOfTuples(4)
+    for i, v in enumerate((0, 1, -1, 1)):
+        mask.SetTuple1(i, v)
+    mask.SetName("mask")
+    image.GetPointData().AddArray(mask)      # point_data[...] = refuses a vtkCharArray
+    data = vtk_to_dataset(image)
+    assert data.fields["mask"].values.dtype == tack.i8
+    np.testing.assert_array_equal(data.fields["mask"].values.numpy(), [0, 1, -1, 1])
+
+
+@needs_vtk
+def test_vtk_constant_and_affine_fields_stay_implicit():
+    """VTK's implicit arrays in point and cell data are Tack's implicit arrays, and
+    back: nothing stored on either side."""
+    from vtkmodules.vtkCommonCore import vtkAffineArray, vtkConstantArray
+
+    from tack.arrays import ConstantArray, CountingArray
+
+    image = vtk.vtkImageData(dimensions=(3, 3, 1))
+    image.point_data["c"] = vtkConstantArray[np.float32](9, 2.5)
+    image.cell_data["r"] = vtkAffineArray[np.int32](4, 3, 10)
+    data = vtk_to_dataset(image)
+    c, r = data.fields["c"].values, data.fields["r"].values
+    assert isinstance(c, ConstantArray) and isinstance(r, CountingArray)
+    np.testing.assert_array_equal(np.asarray(c), np.full(9, 2.5, np.float32))
+    np.testing.assert_array_equal(np.asarray(r), [10, 13, 16, 19])
+    back = dataset_to_vtk(data)
+    assert "Constant" in back.point_data["c"].class_name
+    assert "Affine" in back.cell_data["r"].class_name
+    np.testing.assert_array_equal(np.asarray(back.cell_data["r"]), [10, 13, 16, 19])

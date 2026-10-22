@@ -243,34 +243,26 @@ def test_missing_vtk_reports_what_is_missing(monkeypatch):
 def test_round_trip_through_real_vtk():
     from vtkmodules.vtkCommonCore import vtkFloatArray
 
-    array = vtkFloatArray()
-    array.SetNumberOfComponents(3)
-    array.SetNumberOfTuples(4)
-    for i in range(12):
-        array.SetValue(i, float(i))
+    array = vtkFloatArray(np.arange(12, dtype=np.float32).reshape(4, 3))
 
     field = interop.vtk_to_array(array)
     assert field.shape == (4, 3)
     np.testing.assert_array_equal(field.numpy(), np.arange(12).reshape(4, 3))
 
     back = interop.array_to_vtk(field, name="round")
-    assert back.GetNumberOfTuples() == 4
-    assert back.GetNumberOfComponents() == 3
-    assert back.GetName() == "round"
+    assert back.number_of_tuples == 4
+    assert back.number_of_components == 3
+    assert back.name == "round"
 
 
 @needs_vtk
 def test_real_vtk_exchange_is_zero_copy():
     from vtkmodules.vtkCommonCore import vtkFloatArray
 
-    array = vtkFloatArray()
-    array.SetNumberOfComponents(1)
-    array.SetNumberOfTuples(4)
-    for i in range(4):
-        array.SetValue(i, 0.0)
+    array = vtkFloatArray(np.zeros(4, np.float32))
 
     field = interop.vtk_to_array(array)
-    array.SetValue(2, 42.0)
+    array[2] = 42.0
     assert field.numpy()[2] == 42.0
 
 
@@ -303,12 +295,9 @@ def test_a_struct_of_arrays_is_refused_not_flattened():
     """
     from vtkmodules.vtkCommonCore import vtkSOADataArrayTemplate
 
-    soa = vtkSOADataArrayTemplate["float32"]()
-    soa.SetNumberOfComponents(2)
-    soa.SetNumberOfTuples(3)
-    for t in range(3):
-        for c in range(2):
-            soa.SetTypedComponent(t, c, float(t * 2 + c))
+    # One buffer per component: 3 tuples of 2, tuple t's component c is t * 2 + c.
+    soa = vtkSOADataArrayTemplate["float32"]([np.arange(c, 6, 2, dtype=np.float32)
+                                              for c in range(2)])
 
     with pytest.raises(ValueError, match="SoA|contiguous"):
         interop.vtk_to_array(soa)
@@ -319,10 +308,7 @@ def test_an_array_with_no_storage_is_refused():
     """An implicit array computes its values; there is nothing to share."""
     from vtkmodules.vtkCommonCore import vtkConstantArray
 
-    array = vtkConstantArray["float32"]()
-    array.ConstructBackend(3.0)
-    array.SetNumberOfComponents(1)
-    array.SetNumberOfTuples(4)
+    array = vtkConstantArray["float32"](4, 3.0)         # 4 tuples, all 3.0
 
     with pytest.raises(ValueError, match="no memory"):
         interop.vtk_to_array(array)
@@ -341,8 +327,8 @@ def test_kernel_output_reaches_vtk_without_a_copy():
     ramp(out, 9)
 
     array = interop.array_to_vtk(out, n_components=3, name="ramp")
-    assert array.GetNumberOfTuples() == 3
-    assert array.GetTuple3(1) == pytest.approx((6.0, 8.0, 10.0))
+    assert array.number_of_tuples == 3
+    assert tuple(np.asarray(array)[1]) == pytest.approx((6.0, 8.0, 10.0))
 
 
 # ── The device half ──────────────────────────────────────────────────
@@ -412,8 +398,8 @@ def test_device_memory_reaches_vtk_as_device_memory(arch, space):
 
     array = interop.array_to_vtk(field, n_components=1, name="ondevice")
 
-    assert array.GetMemorySpace() == getattr(vtkDataArray, space)
-    assert array.GetMemorySpace() != vtkDataArray.HostMemory
+    assert array.memory_space == getattr(vtkDataArray, space)
+    assert array.memory_space != vtkDataArray.HostMemory
 
 
 @needs_vtk

@@ -56,11 +56,7 @@ def _grid():
 
 
 def _vtk_blocks(cell_type):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(cell_type)
-    source.SetBlocksDimensions(4, 4, 4)
-    source.Update()
-    return vtk_to_dataset(source.GetOutput())
+    return vtk_to_dataset(vtk.vtkCellTypeSource(cell_type=cell_type, blocks_dimensions=(4, 4, 4))())
 
 
 MESHES = {"structured": _grid}

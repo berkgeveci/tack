@@ -143,14 +143,14 @@ def test_vtk_round_trip(backend):
     data = _lines()
     data.fields["c"] = td.Field(td.Constant(data), _scalars([10.0, 20.0, 30.0, 40.0]))
     grid = dataset_to_vtk(data)
-    assert {grid.GetCellType(c) for c in range(grid.GetNumberOfCells())} == {vtk.VTK_POLY_LINE}
+    assert set(np.asarray(grid.cell_types).tolist()) == {vtk.VTK_POLY_LINE}
     back = vtk_to_dataset(grid)
     assert isinstance(back.topology, td.PolylineTopology)
     for a, b in zip(back.topology.lines(), data.topology.lines()):
         np.testing.assert_array_equal(a.numpy(), b.numpy())
     np.testing.assert_array_equal(back.fields["c"].values.numpy(), [10, 20, 30, 40])
     # A line among polylines is a two-point polyline; a triangle is refused.
-    grid.GetCellData().RemoveArray("c")
+    grid.cell_data.RemoveArray("c")
     # The export's cell types are a vtkConstantArray (one type), and VTK 9.7.1's
     # InsertNextCell records every new cell as that type; store them per cell first.
     grid.cells = (vtk.vtkUnsignedCharArray(np.asarray(grid.cell_types)), grid.cells)
