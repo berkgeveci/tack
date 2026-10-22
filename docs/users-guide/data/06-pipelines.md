@@ -103,11 +103,13 @@ fragment assumes `surface` was produced by `td.contour`:
 from tack.interop.vtk import dataset_to_vtk
 from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
 
-writer = vtkXMLUnstructuredGridWriter()
-writer.SetFileName("surface.vtu")
-writer.SetInputData(dataset_to_vtk(surface))
-writer.Write()
+vtkXMLUnstructuredGridWriter(file_name="surface.vtu")(dataset_to_vtk(surface))
 ```
+
+Tack uses VTK's pythonic API (VTK 9.7.1 or later) in its interop and
+examples: keyword constructors, properties, a writer or filter called on
+its input. A contour's cells come across as VTK's own implicit arrays: its
+cell types a `vtkConstantArray`, its offsets a `vtkAffineArray`.
 
 These whole-dataset conversions copy arrays and provide a straightforward
 host boundary. Zero-copy array exchange is a separate route using

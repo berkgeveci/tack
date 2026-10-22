@@ -106,20 +106,17 @@ coord_array = array_to_vtk(points, name="Points")
 scalar_array = array_to_vtk(scalars, name="gyroid")
 
 print("\nVTK arrays (shared memory, not copied):")
-print(f"  {coord_array.GetClassName()}: "
-      f"{coord_array.GetNumberOfTuples():,} x {coord_array.GetNumberOfComponents()}")
-print(f"  {scalar_array.GetClassName()}: "
-      f"{scalar_array.GetNumberOfTuples():,} x {scalar_array.GetNumberOfComponents()}")
+for vtk_array in (coord_array, scalar_array):
+    print(f"  {vtk_array.class_name}: "
+          f"{vtk_array.number_of_tuples:,} x {vtk_array.number_of_components}")
 
-import vtk
+from vtkmodules.vtkCommonCore import vtkPoints
+from vtkmodules.vtkCommonDataModel import vtkDataObject, vtkStructuredGrid
 
-vtk_points = vtk.vtkPoints()
-vtk_points.SetData(coord_array)
-
-grid = vtk.vtkStructuredGrid()
-grid.SetDimensions(NX, NY, NZ)
-grid.SetPoints(vtk_points)
-grid.GetPointData().SetScalars(scalar_array)
+# VTK's pythonic API: the arrays go in as they are, still Tack's memory.
+grid = vtkStructuredGrid(dimensions=(NX, NY, NZ))
+grid.points = vtkPoints(data=coord_array)
+grid.point_data["gyroid"] = scalar_array
 
 
 # ── Step 3: run a VTK filter over Tack's memory ──────────────────────
@@ -127,17 +124,13 @@ grid.GetPointData().SetScalars(scalar_array)
 from vtkmodules.vtkFiltersCore import vtkContourFilter
 
 contour = vtkContourFilter()
-contour.SetInputData(grid)
-contour.SetInputArrayToProcess(
-    0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "gyroid")
-contour.SetValue(0, 0.0)
-contour.Update()
+contour.SetInputArrayToProcess(0, 0, 0, vtkDataObject.FIELD_ASSOCIATION_POINTS, "gyroid")
+contour.SetValue(0, 0.0)                    # indexed values: no keyword form
+output = contour(grid)                      # a filter called on its input runs it
+print(f"\nContour: {output.number_of_points:,} points, "
+      f"{output.number_of_cells:,} triangles")
 
-output = contour.GetOutput()
-print(f"\nContour: {output.GetNumberOfPoints():,} points, "
-      f"{output.GetNumberOfCells():,} triangles")
-
-if output.GetNumberOfPoints() == 0:
+if output.number_of_points == 0:
     raise SystemExit("contour produced nothing")
 
 
@@ -149,16 +142,15 @@ if output.GetNumberOfPoints() == 0:
 # hand a kernel an address it cannot dereference -- so vtk_to_array
 # refuses it, and the copy is made here where it is visible.
 
-from vtkmodules.util.numpy_support import vtk_to_numpy
 from vtkmodules.vtkCommonCore import vtkDataArray
 
-out_array = output.GetPoints().GetData()
+out_array = output.points.data
 on_device = bool(get_backend().device_memory_spaces)
-output_is_host = out_array.GetMemorySpace() == vtkDataArray.HostMemory
+output_is_host = out_array.memory_space == vtkDataArray.HostMemory
 staged_back = on_device and output_is_host
 
 if staged_back:
-    host = vtk_to_numpy(out_array)
+    host = np.asarray(out_array)
     result = tack.empty(host.shape)
     tack.copyto(result, host)
     where = "copied up from the host, because the filter ran there"

@@ -34,40 +34,38 @@ SHAPES = {"TETRA": vtkTetra, "VOXEL": vtkVoxel, "HEXAHEDRON": vtkHexahedron,
 
 def reference_cell(cls):
     cell = cls()
-    n = cell.GetNumberOfPoints()
-    pcoords = cell.GetParametricCoords()
-    for i in range(n):
-        cell.GetPointIds().SetId(i, i)
-        cell.GetPoints().SetPoint(i, [pcoords[3 * i + k] for k in range(3)])
+    pcoords = cell.GetParametricCoords()               # a C array: no pythonic form
+    for i in range(cell.number_of_points):
+        cell.point_ids.SetId(i, i)
+        cell.points.SetPoint(i, [pcoords[3 * i + k] for k in range(3)])
     return cell
 
 
 def cases(cls):
     cell = reference_cell(cls)
-    n = cell.GetNumberOfPoints()
-    points = np.array([cell.GetPoints().GetPoint(i) for i in range(n)])
-    edges = [tuple(cell.GetEdge(e).GetPointIds().GetId(k) for k in range(2))
-             for e in range(cell.GetNumberOfEdges())]
+    n = cell.number_of_points
+    points = np.array(cell.points.data)
+    edges = [tuple(cell.GetEdge(e).point_ids.GetId(k) for k in range(2))
+             for e in range(cell.number_of_edges)]
     midpoints = {tuple(np.round((points[a] + points[b]) / 2, 9)): e
                  for e, (a, b) in enumerate(edges)}
     assert len(midpoints) == len(edges), "edge midpoints must be distinct"
     table = []
     for case in range(2 ** n):
-        scalars = vtkDoubleArray()
-        for i in range(n):
-            scalars.InsertNextValue(float((case >> i) & 1))
+        scalars = vtkDoubleArray(np.array([float((case >> i) & 1) for i in range(n)]))
         out = vtkPoints()
         locator = vtkMergePoints()
         locator.InitPointInsertion(out, [-1, 2, -1, 2, -1, 2])
         verts, lines, polys = vtkCellArray(), vtkCellArray(), vtkCellArray()
         cell.Contour(0.5, scalars, locator, verts, lines, polys, None, None, None, 0, None)
+        positions = np.asarray(out.data)
+        offsets = np.asarray(polys.offsets_array)
+        connectivity = np.asarray(polys.connectivity_array)
         triangles = []
-        offsets = [polys.GetOffsetsArray().GetValue(i) for i in range(polys.GetNumberOfCells() + 1)]
-        connectivity = polys.GetConnectivityArray()
-        for t in range(polys.GetNumberOfCells()):
-            ids = [connectivity.GetValue(i) for i in range(offsets[t], offsets[t + 1])]
+        for t in range(polys.number_of_cells):
+            ids = connectivity[offsets[t]:offsets[t + 1]]
             assert len(ids) == 3, f"case {case}: a polygon of {len(ids)} points"
-            triangles.append([midpoints[tuple(np.round(out.GetPoint(i), 9))] for i in ids])
+            triangles.append([midpoints[tuple(np.round(positions[i], 9))] for i in ids])
         table.append(triangles)
     return table
 

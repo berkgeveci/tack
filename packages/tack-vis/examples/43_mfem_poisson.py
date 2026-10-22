@@ -126,8 +126,6 @@ if args.output:
 
     os.makedirs(args.output, exist_ok=True)
     for name, surface in (("contour", iso), ("slice", cut), ("boundary", outside)):
-        writer = vtkXMLUnstructuredGridWriter()
-        writer.SetFileName(os.path.join(args.output, f"poisson_{name}.vtu"))
-        writer.SetInputData(dataset_to_vtk(surface))
-        writer.Write()
-        print(f"wrote {writer.GetFileName()}")
+        path = os.path.join(args.output, f"poisson_{name}.vtu")
+        vtkXMLUnstructuredGridWriter(file_name=path)(dataset_to_vtk(surface))
+        print(f"wrote {path}")

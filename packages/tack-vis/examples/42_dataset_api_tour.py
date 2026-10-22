@@ -78,21 +78,12 @@ def mixed_grid():
     from vtkmodules.vtkFiltersCore import vtkAppendFilter
     from vtkmodules.vtkFiltersSources import vtkCellTypeSource
 
-    pieces = vtkAppendFilter()
-    pieces.MergePointsOn()
+    pieces = vtkAppendFilter(merge_points=True)
     for cell_type, (dx, dy) in ((12, (0, 0)), (13, (2, 0)), (14, (4, 0)), (10, (0, 3))):
-        source = vtkCellTypeSource()
-        source.SetCellType(cell_type)
-        source.SetBlocksDimensions(2, 2, 1)
-        source.Update()
-        block = source.GetOutput()
-        points = block.GetPoints()
-        for p in range(points.GetNumberOfPoints()):
-            x, y, z = points.GetPoint(p)
-            points.SetPoint(p, x + dx, y + dy, z)
-        pieces.AddInputData(block)
-    pieces.Update()
-    return pieces.GetOutput()
+        block = vtkCellTypeSource(cell_type=cell_type, blocks_dimensions=(2, 2, 1))()
+        np.asarray(block.points.data)[:, :2] += (dx, dy)     # a view of VTK's points
+        pieces.AddInputData(block)                  # several inputs: no >> form
+    return pieces.update().output
 
 
 def show(name, data):
@@ -241,40 +232,39 @@ def explode(data, dg):
     its own values at its corners. An unstructured topology's L2 values are laid out
     like its connectivity, so this is a gather -- or, for an L2 geometry, nothing:
     its values are already one position per cell corner."""
-    from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
-    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonCore import (
+        vtkAffineArray,
+        vtkFloatArray,
+        vtkPoints,
+        vtkUnsignedCharArray,
+    )
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
 
     topology = data.topology
-    connectivity = topology.connectivity.numpy()
-    grid = vtkUnstructuredGrid()
-    points = vtkPoints()
+    connectivity = np.asarray(topology.connectivity)
     if isinstance(data.geometry.space, td.L2):
         corners = tack.arrays.to_host(data.geometry.values)
     else:
         corners = data.positions()[connectivity]
-    points.SetData(numpy_to_vtk(corners, deep=1))
-    grid.SetPoints(points)
-    cells = vtkCellArray()
-    cells.SetData(numpy_to_vtkIdTypeArray(topology.offsets.numpy().astype(np.int64), deep=1),
-                  numpy_to_vtkIdTypeArray(np.arange(len(connectivity), dtype=np.int64),
-                                          deep=1))
-    grid.SetCells(numpy_to_vtk(topology.types.numpy(), deep=1), cells)
-    values = numpy_to_vtk(dg.values.numpy(), deep=1)
-    values.SetName("dg")
-    grid.GetPointData().AddArray(values)
+    grid = vtkUnstructuredGrid()
+    grid.points = vtkPoints(data=vtkFloatArray(np.ascontiguousarray(corners, np.float32)))
+    # Each cell its own copies of its corners: the connectivity is 0, 1, 2, ...
+    grid.cells = (vtkUnsignedCharArray(np.asarray(topology.types, np.uint8)),
+                  vtkCellArray(offsets=np.asarray(topology.offsets, np.int64),
+                               connectivity=vtkAffineArray[np.int64](len(connectivity), 1, 0)))
+    grid.point_data["dg"] = dg.values.numpy()
     return grid
 
 
 def _write(grid, stem):
+    from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid
     from vtkmodules.vtkIOXML import vtkXMLRectilinearGridWriter, vtkXMLUnstructuredGridWriter
 
-    rectilinear = grid.IsA("vtkRectilinearGrid")
-    writer = vtkXMLRectilinearGridWriter() if rectilinear else vtkXMLUnstructuredGridWriter()
-    writer.SetFileName(stem + (".vtr" if rectilinear else ".vtu"))
-    writer.SetInputData(grid)
-    writer.Write()
-    print(f"  wrote {writer.GetFileName()}")
+    rectilinear = isinstance(grid, vtkRectilinearGrid)
+    kind = vtkXMLRectilinearGridWriter if rectilinear else vtkXMLUnstructuredGridWriter
+    path = stem + (".vtr" if rectilinear else ".vtu")
+    kind(file_name=path)(grid)                      # a writer called on its input writes it
+    print(f"  wrote {path}")
 
 
 def _scalars(values):
