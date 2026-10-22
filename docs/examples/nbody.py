@@ -86,14 +86,14 @@ def run(arch="cpu", check=False):
 def save_figure(result, output):
     import vtkmodules.vtkRenderingFreeType
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonCore import VTK_TEXT_CENTERED, VTK_TEXT_TOP, vtkFloatArray, vtkPoints
     from vtkmodules.vtkCommonDataModel import vtkPolyData
-    from vtkmodules.vtkFiltersCore import vtkGlyph3D
+    from vtkmodules.vtkFiltersCore import VTK_SCALE_BY_VECTOR, VTK_USE_VECTOR, vtkGlyph3D
     from vtkmodules.vtkFiltersGeneral import vtkVertexGlyphFilter
     from vtkmodules.vtkFiltersSources import vtkArrowSource
     from vtkmodules.vtkIOImage import vtkPNGWriter
     from vtkmodules.vtkRenderingCore import (
+        VTK_NORMALIZED_VIEWPORT,
         vtkActor,
         vtkPolyDataMapper,
         vtkRenderer,
@@ -106,74 +106,52 @@ def save_figure(result, output):
     # Project both positions and forces into the x-y plane.
     xyz = pos.copy()
     xyz[:, 2] = 0
-    points = vtkPoints()
-    points.SetData(numpy_to_vtk(xyz, deep=True))
-    bodies = vtkPolyData()
-    bodies.SetPoints(points)
-    vertices = vtkVertexGlyphFilter()
-    vertices.SetInputData(bodies)
+    # vtkFloatArray keeps the float32 positions: vtkPoints(data=numpy) would store doubles.
+    bodies = vtkPolyData(points=vtkPoints(data=vtkFloatArray(xyz)))
     mapper = vtkPolyDataMapper()
-    mapper.SetInputConnection(vertices.GetOutputPort())
-    actor = vtkActor()
-    actor.SetMapper(mapper)
-    actor.GetProperty().SetColor(0.15, 0.39, 0.92)
-    actor.GetProperty().SetPointSize(4)
-    actor.GetProperty().RenderPointsAsSpheresOn()
-    samples = vtkPolyData()
-    origins = vtkPoints()
-    origins.SetData(numpy_to_vtk(np.ascontiguousarray(xyz[::8]), deep=True))
-    samples.SetPoints(origins)
+    bodies >> vtkVertexGlyphFilter() >> mapper
+    actor = vtkActor(mapper=mapper)
+    actor.property.color = (0.15, 0.39, 0.92)
+    actor.property.point_size = 4
+    actor.property.render_points_as_spheres = True
+    samples = vtkPolyData(points=vtkPoints(data=vtkFloatArray(np.ascontiguousarray(xyz[::8]))))
     scaled = acceleration / (np.linalg.norm(acceleration, axis=1).max() + 1e-12)
     scaled[:, 2] = 0
-    samples.GetPointData().SetVectors(numpy_to_vtk(np.ascontiguousarray(scaled[::8]), deep=True))
-    arrow = vtkArrowSource()
-    arrow.SetShaftRadius(0.04)
-    arrow.SetTipRadius(0.15)
-    glyphs = vtkGlyph3D()
-    glyphs.SetInputData(samples)
-    glyphs.SetSourceConnection(arrow.GetOutputPort())
-    glyphs.SetVectorModeToUseVector()
-    glyphs.SetScaleModeToScaleByVector()
-    glyphs.SetScaleFactor(0.8)
-    glyphs.OrientOn()
-    arrow_mapper = vtkPolyDataMapper()
-    arrow_mapper.SetInputConnection(glyphs.GetOutputPort())
-    arrow_mapper.ScalarVisibilityOff()
-    arrows = vtkActor()
-    arrows.SetMapper(arrow_mapper)
-    arrows.GetProperty().SetColor(0.92, 0.35, 0.05)
-    arrows.GetProperty().LightingOff()
-    renderer = vtkRenderer()
-    renderer.SetBackground(1, 1, 1)
+    # Attribute data has no settable vectors property: SetVectors makes them active.
+    samples.point_data.SetVectors(vtkFloatArray(np.ascontiguousarray(scaled[::8])))
+    glyphs = vtkGlyph3D(vector_mode=VTK_USE_VECTOR, scale_mode=VTK_SCALE_BY_VECTOR,
+                        scale_factor=0.8, orient=True)
+    arrow = vtkArrowSource(shaft_radius=0.04, tip_radius=0.15)
+    # The glyph source is input port 1, which has no property or >> form.
+    glyphs.SetSourceConnection(arrow.output_port)
+    arrow_mapper = vtkPolyDataMapper(scalar_visibility=False)
+    samples >> glyphs >> arrow_mapper
+    arrows = vtkActor(mapper=arrow_mapper)
+    arrows.property.color = (0.92, 0.35, 0.05)
+    arrows.property.lighting = False
+    renderer = vtkRenderer(background=(1, 1, 1))
     renderer.AddActor(actor)
     renderer.AddActor(arrows)
-    camera = renderer.GetActiveCamera()
-    camera.SetPosition(0, 0, 1)
-    camera.SetFocalPoint(0, 0, 0)
-    camera.ParallelProjectionOn()
-    camera.SetParallelScale(float(np.abs(xyz).max()) * 1.15)
-    title = vtkTextActor()
-    title.SetInput("Bodies and gravitational acceleration (x-y)")
-    title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-    title.SetPosition(0.5, 0.98)
-    title.GetTextProperty().SetJustificationToCentered()
-    title.GetTextProperty().SetVerticalJustificationToTop()
-    title.GetTextProperty().SetFontSize(20)
-    title.GetTextProperty().SetColor(0, 0, 0)
+    camera = renderer.active_camera
+    camera.position = (0, 0, 1)
+    camera.focal_point = (0, 0, 0)
+    camera.parallel_projection = True
+    camera.parallel_scale = float(np.abs(xyz).max()) * 1.15
+    title = vtkTextActor(input="Bodies and gravitational acceleration (x-y)", position=(0.5, 0.98))
+    title.position_coordinate.coordinate_system = VTK_NORMALIZED_VIEWPORT
+    text = title.text_property
+    text.justification = VTK_TEXT_CENTERED
+    text.vertical_justification = VTK_TEXT_TOP
+    text.font_size = 20
+    text.color = (0, 0, 0)
     renderer.AddViewProp(title)
-    window = vtkRenderWindow()
-    window.SetOffScreenRendering(True)
-    window.SetMultiSamples(0)
-    window.SetSize(640, 640)
+    window = vtkRenderWindow(off_screen_rendering=True, multi_samples=0, size=(640, 640))
     window.AddRenderer(renderer)
     window.Render()
-    capture = vtkWindowToImageFilter()
-    capture.SetInput(window)
-    capture.ReadFrontBufferOff()
-    writer = vtkPNGWriter()
-    writer.SetFileName(str(output))
-    writer.SetInputConnection(capture.GetOutputPort())
-    writer.Write()
+    capture = vtkWindowToImageFilter(input=window, read_front_buffer=False)
+    writer = vtkPNGWriter(file_name=str(output))
+    capture >> writer
+    writer.Write()  # calling the writer, or updating it, writes raw pixels instead of a PNG
     window.Finalize()
 
 
