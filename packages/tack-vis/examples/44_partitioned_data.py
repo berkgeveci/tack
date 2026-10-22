@@ -39,7 +39,7 @@ tack.set_default_device(_args.arch)
 # ================================================================
 
 whole = td.wavelet(_args.extent)
-whole.fields["cells"] = td.project(whole, "RTData", td.Constant(whole))
+whole.fields["RTData_cells"] = td.project(whole, "RTData", td.Constant(whole))
 pieces = td.split(whole, _args.pieces)
 print(f"{whole.num_points} points and {whole.num_cells} cells in {pieces}")
 
@@ -84,10 +84,10 @@ assert triangles == td.contour(whole, "RTData", 160.0).num_cells
 # REDUCTIONS OVER THE PIECES: THE WHOLE'S ANSWER
 # ================================================================
 
-for name in ("RTData", "cells"):                    # point data, then cell data
+for name in ("RTData", "RTData_cells"):              # point data, then cell data
     a, b = td.statistics(whole, name), td.statistics(pieces, name)
     e_whole, e_pieces = td.entropy(whole, name), td.entropy(pieces, name)
-    print(f"{name:>6}: n {b.n} (whole {a.n}), mean {b.mean:.6f} (whole {a.mean:.6f}), "
+    print(f"{name:>12}: n {b.n} (whole {a.n}), mean {b.mean:.6f} (whole {a.mean:.6f}), "
           f"stddev {b.population_stddev:.6f} (whole {a.population_stddev:.6f}), "
           f"entropy {e_pieces:.6f} (whole {e_whole:.6f})")
     assert b.n == a.n

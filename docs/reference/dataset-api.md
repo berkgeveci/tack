@@ -451,8 +451,8 @@ valid there (an AMR cell a finer level covers, a blanked cell).
 ```python
 pieces = td.split(td.wavelet(20), 8)                    # 8 image-data pieces
 for piece in pieces:
-    piece.fields["cells"] = td.project(piece, "RTData", td.Constant(piece))
-s = td.statistics(pieces, "cells")                      # the whole grid's
+    piece.fields["RTData_cells"] = td.project(piece, "RTData", td.Constant(piece))
+s = td.statistics(pieces, "RTData_cells")               # the whole grid's
 ```
 
 `packages/tack-vis/examples/44_partitioned_data.py` runs all of it: pieces,
