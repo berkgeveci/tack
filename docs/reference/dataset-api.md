@@ -490,6 +490,8 @@ td.for_each(_jump, data, "faces", cell_values, out)
   that group (`for i in view`). Each `Field` among `args` becomes its view
   for the same group, so `u.value(i, pc)` reads entity `i`. Other arguments
   are passed through unchanged.
+- There is no `"points"` domain. Point data, like any field's values taken
+  one by one, is read by an ordinary kernel over `field.values`.
 
 **What makes a group.** On a shape-based topology, each shape is a group. A
 group is split further, on the device, by:
