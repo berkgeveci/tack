@@ -1,11 +1,12 @@
-"""Partitioned datasets: the container, ``split``, the reductions that combine
-pieces, and VTK's partitioned datasets and collections.
+"""Partitioned datasets: the container, ghost marks, ``split``, the reductions
+that combine pieces, and VTK's partitioned datasets and collections.
 
 ``split``'s pieces are checked against the grid they came from, point by point
-and cell by cell. ``statistics`` and ``entropy`` over pieces must equal the
-whole's for cell data, which no two pieces share, and count each piece's own
-copy of a shared point for point data. VTK's ``vtkRedistributeDataSetFilter``,
-run in this process, makes pieces of an unstructured mesh the same way.
+and cell by cell, and every point they share must have one owner.
+``statistics`` and ``entropy`` count what a piece owns, so over pieces they
+must equal the whole's. VTK's ``vtkRedistributeDataSetFilter`` and
+``vtkGhostCellsGenerator``, run in this process, make pieces of an
+unstructured mesh, with ghost cells, the same way.
 """
 
 import types
@@ -15,6 +16,7 @@ import pytest
 
 import tack
 import tack.dataset as td
+from tack.dataset import Ghosts
 from tack.runtime import dispatch
 from tack.runtime.cpu import CPUBackend
 from tack.runtime.dispatch import env_flag
@@ -22,9 +24,13 @@ from tack.runtime.dispatch import env_flag
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 try:
+    from vtkmodules.util.numpy_support import numpy_to_vtk
     from vtkmodules.vtkCommonDataModel import vtkCompositeDataSet
     from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
-    from vtkmodules.vtkFiltersParallelDIY2 import vtkRedistributeDataSetFilter
+    from vtkmodules.vtkFiltersParallelDIY2 import (
+        vtkGhostCellsGenerator,
+        vtkRedistributeDataSetFilter,
+    )
     from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
@@ -177,6 +183,38 @@ def test_split_cuts_grids_of_fewer_axes(dims):
         np.testing.assert_allclose(piece.positions(), positions[pids], atol=1e-6)
 
 
+@pytest.mark.parametrize("counts", [(2, 1, 1), (3, 2, 2), (2, 2, 2)])
+def test_split_gives_every_shared_point_one_owner(counts):
+    whole = td.uniform_grid((6, 5, 4))
+    n = whole.num_points
+    whole.fields["p"] = td.Field(td.H1(whole), tack.array(np.arange(n, dtype=np.int32)))
+    owned = []
+    for piece in td.split(whole, counts):
+        marks = piece.ghosts.points.numpy()
+        assert set(np.unique(marks)) <= {0, Ghosts.DUPLICATEPOINT}
+        assert piece.ghosts.cells is None
+        owned.extend(_host(piece.fields["p"].values)[marks == 0])
+    np.testing.assert_array_equal(np.sort(owned), np.arange(n))
+
+
+def test_split_carries_the_inputs_ghost_marks():
+    whole = td.uniform_grid((5, 4, 3))
+    cells = np.arange(whole.num_cells) % 3 == 0
+    points = np.arange(whole.num_points) % 5 == 0
+    whole.ghosts = Ghosts(cells=np.where(cells, Ghosts.HIDDENCELL, 0),
+                          points=np.where(points, Ghosts.HIDDENPOINT, 0))
+    whole.fields["c"] = td.Field(td.Constant(whole), tack.array(np.arange(whole.num_cells,
+                                                                          dtype=np.int32)))
+    whole.fields["p"] = td.Field(td.H1(whole), tack.array(np.arange(whole.num_points,
+                                                                     dtype=np.int32)))
+    for piece in td.split(whole, (2, 1, 1)):
+        cids, pids = _host(piece.fields["c"].values), _host(piece.fields["p"].values)
+        np.testing.assert_array_equal(piece.ghosts.cells.numpy(),
+                                      np.where(cells[cids], Ghosts.HIDDENCELL, 0))
+        assert ((piece.ghosts.points.numpy() & Ghosts.HIDDENPOINT) != 0).tolist() == \
+            points[pids].tolist()
+
+
 def test_split_factors_a_count_over_the_axes():
     """Each prime factor, largest first, cuts the axis whose pieces have most cells."""
     grid = td.uniform_grid((13, 7, 4))                   # 12 x 6 x 3 cells
@@ -218,15 +256,70 @@ def test_statistics_and_entropy_of_cell_data_are_the_wholes():
         td.entropy(whole, "cells", bins=17), rel=1e-12)
 
 
-def test_point_data_counts_each_pieces_copy_of_a_shared_point():
+def test_point_data_counts_each_shared_point_once():
+    """A point two pieces share is owned by one and a ghost in the other."""
     whole = td.wavelet(5)
     pieces = td.split(whole, (2, 2, 1))
-    values = np.concatenate([_host(p.fields["RTData"].values) for p in pieces]).astype(float)
-    combined = td.statistics(pieces, "RTData")
-    assert combined.n == len(values) > whole.num_points
-    assert combined.mean == pytest.approx(values.mean(), rel=1e-6)
-    assert combined.population_variance == pytest.approx(values.var(), rel=1e-5)
-    assert combined.min == values.min() and combined.max == values.max()
+    expected, combined = td.statistics(whole, "RTData"), td.statistics(pieces, "RTData")
+    assert combined.n == expected.n == whole.num_points
+    assert combined.mean == pytest.approx(expected.mean, rel=1e-6)
+    assert combined.m2 == pytest.approx(expected.m2, rel=1e-5)
+    assert combined.min == expected.min and combined.max == expected.max
+    assert td.entropy(pieces, "RTData", bins=13) == pytest.approx(
+        td.entropy(whole, "RTData", bins=13), rel=1e-12)
+
+
+def test_reductions_leave_out_ghosts():
+    """Duplicates and hidden cells and points are left out, on one dataset too; an
+    L2 field goes by its cells' marks."""
+    data = td.uniform_grid((5, 4))                       # 12 cells, 20 points
+    c, n = data.num_cells, data.num_points
+    data.fields["c"] = td.Field(td.Constant(data), tack.array(np.arange(c, dtype=np.float32)))
+    data.fields["p"] = td.Field(td.H1(data), tack.array(np.arange(n, dtype=np.float32)))
+    corners = td.L2(data)
+    data.fields["l2"] = td.Field(corners, tack.array(np.repeat(np.arange(c), 4).astype(np.float32)))
+    cell_marks = np.zeros(c, np.uint8)
+    cell_marks[[0, 5]] = Ghosts.DUPLICATECELL
+    cell_marks[7] = Ghosts.HIDDENCELL
+    cell_marks[9] = Ghosts.EXTERIORCELL                  # carried, not read
+    point_marks = np.zeros(n, np.uint8)
+    point_marks[[1, 2]] = Ghosts.DUPLICATEPOINT
+    point_marks[19] = Ghosts.HIDDENPOINT
+    data.ghosts = Ghosts(cells=cell_marks, points=point_marks)
+    kept_cells = np.setdiff1d(np.arange(c), [0, 5, 7]).astype(float)
+    kept_points = np.setdiff1d(np.arange(n), [1, 2, 19]).astype(float)
+    s = td.statistics(data, "c")
+    assert (s.n, s.sum, s.min, s.max) == (9, kept_cells.sum(), 1.0, 11.0)
+    assert td.statistics(data, "p").sum == kept_points.sum()
+    assert td.statistics(data, "l2").sum == 4 * kept_cells.sum()
+    assert td.entropy(data, "c", bins=4) == pytest.approx(
+        _entropy(kept_cells, bins=4, value_range=(1.0, 11.0)))
+    data.fields["f"] = td.Field(td.Values(data, "faces"),
+                                tack.array(np.zeros(data.topology.faces().num_faces,
+                                                    np.float32)))
+    with pytest.raises(NotImplementedError, match="ghost marks"):
+        td.statistics(data, "f")
+
+
+def _entropy(values, bins, value_range):
+    counts, _ = np.histogram(values, bins=bins, range=value_range)
+    p = counts[counts > 0] / counts.sum()
+    return -float((p * np.log2(p)).sum())
+
+
+def test_ghost_marks_are_checked_when_they_are_put_in():
+    data = td.uniform_grid((3, 3))
+    with pytest.raises(ValueError, match="5 ghost marks for 4 cells"):
+        data.ghosts = Ghosts(cells=np.zeros(5))
+    with pytest.raises(ValueError, match="ghost marks for 9 points"):
+        td.DataSet(data.topology, data.geometry.values, ghosts=Ghosts(points=np.zeros(3)))
+    with pytest.raises(TypeError, match="u8 array"):
+        Ghosts(cells=tack.zeros((4,), tack.i32))
+    with pytest.raises(TypeError, match="Ghosts, not ndarray"):
+        data.ghosts = np.zeros(4)
+    data.ghosts = Ghosts(cells=[0, 1, 0, 32])
+    assert data.ghosts.cells.numpy().tolist() == [0, 1, 0, 32] and data.ghosts.points is None
+    data.ghosts = None
 
 
 def test_reductions_skip_pieces_without_values_and_name_what_is_wrong():
@@ -263,7 +356,8 @@ def test_pieces_on_two_devices_are_reduced_where_each_is():
     whole.fields["cells"] = td.project(whole, "RTData", td.Constant(whole))
     first, other = td.split(whole, 2)
     pds = td.PartitionedDataSet([first, other.to_device(second)])
-    assert pds[1].device == second
+    assert pds[1].device == second and pds[1].ghosts.device == second
+    np.testing.assert_array_equal(pds[1].ghosts.points.numpy(), other.ghosts.points.numpy())
     expected = td.statistics(whole, "cells")
     assert td.statistics(pds, "cells").mean == pytest.approx(expected.mean, rel=1e-6)
     assert td.entropy(pds, "cells") == pytest.approx(td.entropy(whole, "cells"))
@@ -285,6 +379,23 @@ def test_split_pieces_go_to_vtk_and_back():
         np.testing.assert_allclose(a.positions(), b.positions())
         np.testing.assert_array_equal(_host(a.fields["RTData"].values),
                                       _host(b.fields["RTData"].values))
+
+
+@needs_vtk
+def test_ghost_marks_go_to_vtk_and_back():
+    pieces = td.split(td.wavelet(4), 2)
+    pieces[0].ghosts = Ghosts(cells=np.arange(pieces[0].num_cells) % 2,
+                              points=pieces[0].ghosts.points)
+    out = dataset_to_vtk(pieces)
+    first = out.GetPartition(0)
+    assert first.GetCellData().GetArray("vtkGhostType").GetDataTypeAsString() == "unsigned char"
+    assert first.GetPointData().GetArray("vtkGhostType") is not None
+    back = vtk_to_dataset(out)
+    for a, b in zip(pieces, back):
+        assert "vtkGhostType" not in b.fields
+        np.testing.assert_array_equal(a.ghosts.points.numpy(), b.ghosts.points.numpy())
+    np.testing.assert_array_equal(back[0].ghosts.cells.numpy(), pieces[0].ghosts.cells.numpy())
+    assert back[1].ghosts.cells is None
 
 
 @needs_vtk
@@ -331,3 +442,36 @@ def test_vtks_redistributed_pieces_reduce_to_the_wholes_statistics():
     assert combined.m2 == pytest.approx(expected.m2, rel=1e-5)
     assert combined.kurtosis == pytest.approx(expected.kurtosis, rel=1e-5)
     assert td.entropy(pieces, "RTData") == pytest.approx(td.entropy(whole, "RTData"))
+
+
+@needs_vtk
+def test_vtks_ghost_cells_give_the_wholes_statistics():
+    """``vtkGhostCellsGenerator`` gives every cell and point of its pieces one owner,
+    so point and cell statistics over pieces with ghost layers are the whole's."""
+    source = vtkRTAnalyticSource()
+    source.SetWholeExtent(-6, 6, -6, 6, -6, 6)
+    source.Update()
+    image = source.GetOutput()
+    n = image.GetNumberOfCells()
+    cell_values = numpy_to_vtk((1.5 + np.sin(np.arange(n) * 0.37)).astype(np.float32), deep=1)
+    cell_values.SetName("C")
+    image.GetCellData().AddArray(cell_values)
+    redistribute = vtkRedistributeDataSetFilter()
+    redistribute.SetInputData(image)
+    redistribute.SetNumberOfPartitions(4)
+    redistribute.PreservePartitionsInOutputOn()
+    ghosts = vtkGhostCellsGenerator()
+    ghosts.SetInputConnection(redistribute.GetOutputPort())
+    ghosts.SetNumberOfGhostLayers(1)
+    ghosts.BuildIfRequiredOff()
+    ghosts.Update()
+    pieces = vtk_to_dataset(ghosts.GetOutputDataObject(0))
+    whole = vtk_to_dataset(image)
+    assert all(p.ghosts is not None and p.ghosts.cells is not None for p in pieces)
+    assert sum(p.num_cells for p in pieces) > whole.num_cells        # ghost layers
+    for name, count in (("RTData", whole.num_points), ("C", whole.num_cells)):
+        expected, combined = td.statistics(whole, name), td.statistics(pieces, name)
+        assert combined.n == expected.n == count
+        assert combined.mean == pytest.approx(expected.mean, rel=1e-6)
+        assert combined.m2 == pytest.approx(expected.m2, rel=1e-5)
+        assert td.entropy(pieces, name) == pytest.approx(td.entropy(whole, name))

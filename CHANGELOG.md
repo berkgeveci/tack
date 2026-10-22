@@ -14,13 +14,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the piece: the caller iterates. `statistics` and `entropy` also take a
   partitioned dataset and a field's name, and combine the pieces (moments
   pairwise; histograms over the whole's range), each piece reduced on its
-  own device; cell data gives the whole's answer, and a point shared by two
-  pieces counts once per piece. `split(data, pieces)` cuts a structured
-  grid by index ranges into pieces that keep the geometry's kind and carry
-  their block of the point, cell and `L2` fields and the sets.
-  `vtk_to_dataset` and `dataset_to_vtk` convert `vtkPartitionedDataSet` and
+  own device. `split(data, pieces)` cuts a structured grid by index ranges
+  into pieces that keep the geometry's kind and carry their block of the
+  point, cell and `L2` fields and the sets. `vtk_to_dataset` and
+  `dataset_to_vtk` convert `vtkPartitionedDataSet` and
   `vtkPartitionedDataSetCollection` (a `dict` of names to partitioned
   datasets).
+- Ghost marks: every cell and point that several pieces hold has one owner,
+  and the other copies are ghosts, marked in `data.ghosts` (a
+  `tack.dataset.Ghosts` of `u8` marks per cell and per point, in
+  VTK's `vtkGhostType` bits). `vtk_to_dataset` takes a `vtkGhostType` array
+  as the marks rather than as a field, and `dataset_to_vtk` writes it back;
+  `split` marks the points its pieces share as duplicates in all but one;
+  `statistics` and `entropy` leave out duplicate and hidden cells and
+  points, so over pieces with one owner per point they give the whole's
+  answer. Filters do not carry the marks yet.
 - Examples: `45_flow.py` (gradients, `flow_quantities`, `advect`,
   `streamlines` and `perot` on a swirl whose answers are known exactly) and
   `46_cut_and_sample.py` (`clip`, `extract_geometry`, `extract_points`,

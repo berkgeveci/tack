@@ -274,6 +274,11 @@ def _array_to_field(array, float_dtype):
     return field
 
 
+#: VTK's ghost array, ``vtkDataSetAttributes::GhostArrayName()``: it becomes
+#: ``data.ghosts``, not a field.
+_GHOST_ARRAY = "vtkGhostType"
+
+
 def _attributes_to_fields(attributes, space, float_dtype):
     from vtkmodules.vtkCommonCore import vtkDataArray
 
@@ -282,10 +287,21 @@ def _attributes_to_fields(attributes, space, float_dtype):
     fields = {}
     for name in attributes.keys():
         array = attributes[name]
-        # Named data arrays: string and other abstract arrays have no values to compute on.
-        if name and isinstance(array, vtkDataArray):
+        # Named data arrays: string and other abstract arrays have no values to compute on,
+        # and the ghost array becomes the ghost marks.
+        if name and name != _GHOST_ARRAY and isinstance(array, vtkDataArray):
             fields[name] = Field(space, _array_to_field(array, float_dtype))
     return fields
+
+
+def _ghost_marks(attributes):
+    """An attributes object's ``vtkGhostType`` array as u8 marks, or ``None``."""
+    import numpy as np
+
+    if _GHOST_ARRAY not in attributes.keys():
+        return None
+    return tack.array(np.ascontiguousarray(np.asarray(attributes[_GHOST_ARRAY]), np.uint8),
+                      tack.u8)
 
 
 def _polyhedral_topology(grid, orient=False, id_dtype=None):
@@ -346,7 +362,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
 
     Points and floating-point arrays become fields of ``dtype``; integer
     arrays keep their type. Named point data become ``H1`` fields and named
-    cell data ``Constant`` fields; a constant or affine array (VTK's implicit
+    cell data ``Constant`` fields; a ``vtkGhostType`` array becomes the ghost marks
+    (``data.ghosts``), not a field; a constant or affine array (VTK's implicit
     arrays) stays implicit, as a ``ConstantArray`` or ``CountingArray``. An
     unstructured grid's cells must all be linear shapes -- unless it holds
     polyhedra (or ``polyhedral`` is true), when it becomes a
@@ -388,6 +405,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         UnstructuredTopology,
     )
     from tack.dataset.dataset import grid_topology
+    from tack.dataset.ghosts import Ghosts
 
     options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype}
     if isinstance(grid, vtkPartitionedDataSetCollection):
@@ -459,7 +477,9 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
     fields = _attributes_to_fields(grid.point_data, H1(topology), dtype)
     fields.update(_attributes_to_fields(grid.cell_data, Constant(topology), dtype))
-    return DataSet(topology, geometry, fields=fields, dtype=dtype)
+    cells, points = _ghost_marks(grid.cell_data), _ghost_marks(grid.point_data)
+    ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
+    return DataSet(topology, geometry, fields=fields, dtype=dtype, ghosts=ghosts)
 
 
 def _to_vtk_types(types):
@@ -570,7 +590,7 @@ def dataset_to_vtk(data):
     all; they are left out. The geometry (``data.geometry``) becomes the
     points, so it must be ``H1``. Implicit types, offsets and connectivity,
     and constant and counting field values, become VTK's constant and affine
-    arrays.
+    arrays. Ghost marks become ``vtkGhostType`` arrays.
     """
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkAffineArray, vtkUnsignedCharArray
@@ -678,6 +698,14 @@ def dataset_to_vtk(data):
             grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points))
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
             grid.cell_data[name] = _to_vtk_values(field.values)
+    if data.ghosts is not None:
+        from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
+
+        for attributes, marks in ((grid.cell_data, data.ghosts.cells),
+                                  (grid.point_data, data.ghosts.points)):
+            if marks is not None:
+                attributes[_GHOST_ARRAY] = vtkUnsignedCharArray(
+                    np.ascontiguousarray(marks.numpy(), np.uint8))
     return grid
 
 

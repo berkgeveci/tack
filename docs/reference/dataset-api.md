@@ -407,9 +407,9 @@ its length; `pds.partitions` is the tuple of pieces.
   - `entropy(pds, "T", bins)` bins the whole's range and sums each piece's
     histogram over it.
 
-  Pieces with no values are skipped. A point on the boundary between two
-  pieces belongs to both, so point data counts it once per piece; cell data,
-  which no two pieces share, gives the whole's answer.
+  Pieces with no values are skipped. Each piece counts only what it owns
+  (below), so where every shared cell and point has one owner, the result
+  is the whole's.
 - **`split(data, pieces)`** cuts a structured grid by index ranges, x
   fastest. `pieces` is a count, factored over the axes (each prime factor,
   largest first, cuts the axis whose pieces have most cells), or a tuple of
@@ -419,8 +419,34 @@ its length; `pds.partitions` is the tuple of pieces.
   coordinates with their origin moved, rectilinear axes cut, explicit
   points taken) and carries its block of every point, cell and `L2` field
   and every set, as filters carry them; fields on faces or edges are left
-  behind. An unstructured mesh is partitioned by VTK
+  behind. A point a piece shares with a piece before it is that piece's, and
+  marked a duplicate in this one; the input's own ghost marks come along.
+  An unstructured mesh is partitioned by VTK
   (`vtkRedistributeDataSetFilter`) or by its host application.
+
+**Ghost marks.** Every cell and point that several pieces hold has exactly one
+owner; every other copy is a ghost. `data.ghosts` is a
+`tack.dataset.Ghosts` (or `None`), kept apart from the fields as the
+geometry is: a `u8` per cell (`cells`) and per point (`points`), either of
+which may be `None`, holding VTK's `vtkGhostType` bits (`Ghosts.DUPLICATECELL`
+1, `HIDDENCELL` 32, `DUPLICATEPOINT` 1, `HIDDENPOINT` 2, and the rest, carried
+unread). A duplicate is a copy of what another piece owns; hidden is data not
+valid there (an AMR cell a finer level covers, a blanked cell).
+
+- `vtk_to_dataset` takes a `vtkGhostType` array as the marks, not as a field,
+  and `dataset_to_vtk` writes them back; `split` makes them;
+  `data.to_device` moves them. Marks of the wrong length or type are refused
+  when they are put in.
+- `statistics` and `entropy` leave out duplicate and hidden cells and points,
+  on one dataset too, so each value counts once across all pieces. An `L2`
+  field goes by its cells' marks; a field on faces or edges, or of order 2,
+  is refused on a dataset with marks until it is decided who owns those.
+- **Not yet:** filters do not carry the marks to their outputs. The plan:
+  filters process duplicates and mark what they make from them, as VTK does,
+  with one owner for every shared point, edge and face (the owner of an
+  edge or face being the owner of its smallest point, by global id or
+  position); they skip hidden cells; `remove_ghosts` removes ghosts before
+  rendering or writing one file.
 
 ```python
 pieces = td.split(td.wavelet(20), 8)                    # 8 image-data pieces
@@ -429,9 +455,8 @@ for piece in pieces:
 s = td.statistics(pieces, "cells")                      # the whole grid's
 ```
 
-**Next** (the partitioned-data proposal's later phases): ghost marks on
-cells and points, with VTK's `vtkGhostType` bits, which the filters
-respect; global ids; ghost cells generated in one process; then MPI.
+**Next** (the partitioned-data proposal's later phases): filters that carry
+ghost marks; global ids; ghost cells generated in one process; then MPI.
 
 ## Kernels
 

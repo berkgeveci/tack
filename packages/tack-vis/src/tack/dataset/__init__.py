@@ -87,6 +87,7 @@ from tack.dataset.dataset import (
     rectilinear_grid,
     uniform_grid,
 )
+from tack.dataset.ghosts import Ghosts
 from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.dataset.locator import CellLocator
 from tack.dataset.partitioned import PartitionedDataSet
@@ -114,6 +115,7 @@ __all__ = [
     "FaceGeometry",
     "Field",
     "FlowQuantities",
+    "Ghosts",
     "ParticleStatus",
     "PartitionedDataSet",
     "Plane",

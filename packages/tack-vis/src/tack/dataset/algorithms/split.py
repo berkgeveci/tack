@@ -4,8 +4,9 @@ import numpy as np
 
 import tack
 from tack.arrays import CartesianProduct, UniformCoordinates, dtype_of
-from tack.dataset.carry import Take, carry
+from tack.dataset.carry import Take, _take, carry
 from tack.dataset.dataset import Field
+from tack.dataset.ghosts import Ghosts
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.spaces import H1
 from tack.dataset.topology import StructuredTopology
@@ -23,6 +24,18 @@ def _block_ids(out, nx, ny, sx, sy, ox, oy, oz):
         j = (n // nx) % ny
         k = n // (nx * ny)
         out[n] = (oz + k) * (sx * sy) + (oy + j) * sx + (ox + i)
+
+
+@tack.kernel
+def _mark_shared(marks, nx, ny, after_x, after_y, after_z):
+    # A point on a block's first layer along an axis where a block comes before
+    # it is that block's: a duplicate here (DUPLICATEPOINT).
+    for n in range(marks.shape[0]):
+        i = n % nx
+        j = (n // nx) % ny
+        k = n // (nx * ny)
+        if (i == 0 and after_x == 1) or (j == 0 and after_y == 1) or (k == 0 and after_z == 1):
+            marks[n] = marks[n] | 1
 
 
 def _ids(dims, start, block, dtype):
@@ -98,7 +111,9 @@ def split(data, pieces):
     coordinates with their origin moved, rectilinear axes cut, explicit
     points taken -- and carries its block of every point, cell and L2 field
     and every set, as filters carry them; fields on faces or edges are left
-    behind. An unstructured mesh is partitioned by VTK
+    behind. Every point has one owner: a point a piece shares with a piece
+    before it is that piece's, and marked a duplicate (``DUPLICATEPOINT`` in
+    ``ghosts``) in this one. The input's own ghost marks come along. An unstructured mesh is partitioned by VTK
     (``vtkRedistributeDataSetFilter``) or by its host application."""
     topology = data.topology
     if not isinstance(topology, StructuredTopology):
@@ -126,8 +141,27 @@ def split(data, pieces):
         if implicit:
             geometry = Field(H1(piece), _block_geometry(coordinates, axes, start,
                                                         block_points, device))
-        out.append(carry(data, piece,
-                         points=Take(_ids(dims, start, block_points, topology.id_dtype)),
-                         cells=Take(_ids(cells, start, block_cells, topology.id_dtype)),
-                         geometry=geometry))
+        point_ids = _ids(dims, start, block_points, topology.id_dtype)
+        cell_ids = _ids(cells, start, block_cells, topology.id_dtype)
+        part = carry(data, piece, points=Take(point_ids), cells=Take(cell_ids),
+                     geometry=geometry)
+        part.ghosts = _block_ghosts(data.ghosts, point_ids, cell_ids, block_points, start)
+        out.append(part)
     return PartitionedDataSet(out)
+
+
+def _block_ghosts(ghosts, point_ids, cell_ids, block_points, start):
+    """A block's ghost marks: the input's, taken, with the points it shares with a
+    block before it marked duplicates, so each point has one owner."""
+    if ghosts is not None and ghosts.points is not None:
+        points = _take(ghosts.points, point_ids)
+    else:
+        points = tack.zeros((point_ids.shape[0],), tack.u8)
+    block = tuple(block_points) + (1,) * (3 - len(block_points))
+    after = tuple(int(s > 0) for s in start) + (0,) * (3 - len(start))
+    if any(after):
+        _mark_shared(points, block[0], block[1], *after)
+    cells = None
+    if ghosts is not None and ghosts.cells is not None:
+        cells = _take(ghosts.cells, cell_ids)
+    return Ghosts(cells=cells, points=points)

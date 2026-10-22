@@ -8,9 +8,9 @@ piece take the partitioned dataset itself: ``statistics`` and ``entropy``
 combine what each piece holds. ``split`` makes one from a structured grid,
 and ``tack.interop.vtk`` converts VTK's partitioned datasets and collections.
 
-A point on the boundary between two pieces belongs to both, so a reduction
-over point data counts it once per piece; ghost marks will say which piece
-owns it.
+Every cell and point that several pieces hold has one owner; the other
+copies are ghosts, marked in each piece's ``ghosts``
+(``tack.dataset.ghosts``), and reductions count only what a piece owns.
 """
 
 from tack.dataset.dataset import DataSet
