@@ -4,6 +4,7 @@ completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
 import gc
+import sys
 import time
 
 import numpy as np
@@ -228,8 +229,13 @@ def test_a_wait_does_not_hold_the_context(wait):
     waiter.join()
     # At least one per 20 ms of a 1 ms cadence: a loaded host's 1 ms sleep
     # takes ~10 ms (illyad at load 120-185 reached 0.09 per ms), and a wait
-    # that blocks launches allows about one per wait (0.003 per ms).
-    assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
+    # that blocks launches allows about one per wait (0.003 per ms). Windows
+    # wakes a 1 ms sleep far later on a busy host: with four CPU-bound
+    # processes on aws-windows' 4 vCPUs a launch loop made 16 per second
+    # (0.016 per ms), and the whole suite's four workers once gave 0.027; it
+    # asks for one per 100 ms.
+    per_ms = 0.01 if sys.platform == "win32" else 0.05
+    assert launched >= elapsed * 1000 * per_ms, (launched, elapsed)
     assert short.numpy()[0] == 1 + launched
 
 
