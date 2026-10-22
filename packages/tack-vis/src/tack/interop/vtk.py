@@ -257,12 +257,16 @@ def _array_to_field(array, float_dtype):
     from tack.arrays import ConstantArray, CountingArray
     from tack.lang.types import from_numpy_dtype
 
-    kind = np.dtype(array.dtype)
-    dtype = float_dtype if kind.kind == "f" else from_numpy_dtype(kind)
+    host = np.asarray(array)
+    if host.dtype.kind == "S":
+        # A vtkCharArray has no numpy-compatible wrapper in 9.7.1, and NumPy reads
+        # it as bytes; its values are signed 8-bit integers, as vtk_to_numpy gave.
+        host = host.view(np.int8)
+    dtype = float_dtype if host.dtype.kind == "f" else from_numpy_dtype(host.dtype)
     values = _from_vtk(array, dtype)
     if isinstance(values, (ConstantArray, CountingArray)):
         return values
-    values = np.ascontiguousarray(values)
+    values = np.ascontiguousarray(host)
     n = array.number_of_components
     field = tack.empty((array.number_of_tuples,), dtype if n == 1 else tack.vec(n, dtype))
     if values.size:
