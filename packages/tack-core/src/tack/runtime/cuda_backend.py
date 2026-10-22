@@ -12,6 +12,7 @@ Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 No per-dispatch copies — data stays on the GPU between kernel calls.
 """
 
+import collections
 import contextlib
 import ctypes
 import functools
@@ -125,7 +126,7 @@ class _ContextToken:
     Tack adopts those but never destroys them, so their token never dies here.
     """
 
-    __slots__ = ("alive", "device", "handle", "owned", "stream", "users")
+    __slots__ = ("alive", "device", "dropped", "handle", "owned", "stream", "users")
 
     def __init__(self, handle, owned, device):
         self.handle = handle
@@ -137,6 +138,10 @@ class _ContextToken:
         # context goes through this one stream, in order, and returns once
         # it is queued. Made on first use, in the context.
         self.stream = None
+        # Buffers dropped on a device without memory pools, not yet freed
+        # (`_free_dropped`). A deque, since a garbage collection on any
+        # thread appends to it.
+        self.dropped = collections.deque()
 
     def queue(self):
         if self.stream is None:
@@ -263,6 +268,53 @@ def _drain(stream):
         _check(driver.cuStreamSynchronize(stream))
 
 
+@functools.cache
+def _device_supports(ordinal, name):
+    """Device ``ordinal``'s CU_DEVICE_ATTRIBUTE_<name>, as a bool."""
+    err, dev = driver.cuDeviceGet(ordinal)
+    _check(err)
+    err, supported = driver.cuDeviceGetAttribute(
+        getattr(driver.CUdevice_attribute, f"CU_DEVICE_ATTRIBUTE_{name}"), dev)
+    _check(err)
+    return bool(supported)
+
+
+def _has_memory_pools(ordinal):
+    """Whether device ``ordinal`` has the stream-ordered allocator
+    (``cuMemAllocAsync``). A GPU in TCC mode on Windows has none: a T4
+    (driver 616.92) reports MEMORY_POOLS_SUPPORTED = 0 and refuses
+    ``cuMemAllocAsync`` with CUDA_ERROR_NOT_SUPPORTED. Its buffers take
+    ``cuMemAlloc``, and are freed by `_free_dropped`."""
+    return _device_supports(ordinal, "MEMORY_POOLS_SUPPORTED")
+
+
+def _free_dropped(token, wait=False):
+    """``cuMemFree`` the buffers dropped in ``token``'s context on a device
+    without memory pools, once its stream is idle, or after waiting for it.
+
+    ``cuMemFree`` waits for the whole device: on the T4 it took 1.26 s
+    behind an unrelated launch. Freeing as a buffer is dropped would make a
+    garbage collection wait for every queued launch, so a dropped buffer is
+    only queued here (`CUDABuffer.__del__`), and freed when the host waits
+    anyway or the stream has nothing left: at the next allocation, at a
+    sync, or when an allocation runs out of memory.
+    """
+    if not token.dropped or not token.alive:
+        return
+    with _in_context(token):
+        stream = token.queue()
+        if wait:
+            _check(driver.cuStreamSynchronize(stream))
+        elif driver.cuStreamQuery(stream)[0] != driver.CUresult.CUDA_SUCCESS:
+            return
+        while True:
+            try:
+                ptr = token.dropped.popleft()
+            except IndexError:
+                return
+            driver.cuMemFree(ptr)
+
+
 def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count, stream=None):
     """Copy elements ``[start, start + count)`` of an allocation to the host.
 
@@ -299,6 +351,8 @@ class CUDABuffer(DeviceBuffer):
     (``cuMemAllocAsync``/``cuMemFreeAsync``), so an array Python drops while
     a queued launch still uses it is freed after that launch, and the
     driver's pool hands the memory back out without a device round trip.
+    A device without the pool (`_has_memory_pools`) allocates with
+    ``cuMemAlloc`` and frees once the stream has finished.
     """
 
     backend_name = "cuda"
@@ -316,7 +370,14 @@ class CUDABuffer(DeviceBuffer):
         with _in_context(token):
             # A zero-byte request is rejected; an empty array gets one byte
             # it never reads, as on Level Zero.
-            err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
+            if _has_memory_pools(token.device):
+                err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
+            else:
+                _free_dropped(token)
+                err, self._device_ptr = driver.cuMemAlloc(max(self._nbytes, 1))
+                if err == driver.CUresult.CUDA_ERROR_OUT_OF_MEMORY and token.dropped:
+                    _free_dropped(token, wait=True)
+                    err, self._device_ptr = driver.cuMemAlloc(max(self._nbytes, 1))
             _check(err)
             _check(driver.cuMemsetD8Async(self._device_ptr, 0, self._nbytes, stream))
 
@@ -453,6 +514,9 @@ class CUDABuffer(DeviceBuffer):
             return
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
+                if not _has_memory_pools(token.device):
+                    token.dropped.append(self._device_ptr)   # `_free_dropped`
+                    return
                 # In stream order: after every launch queued so far, which
                 # may still be using this memory.
                 stream = token.queue()
@@ -1067,6 +1131,7 @@ class CUDABackend(GPUBackend):
         if stream is not None:
             with _in_context(self._token_or_none):
                 _check(driver.cuStreamSynchronize(stream))
+            _free_dropped(self._token)
 
     def async_marker(self):
         """An event after the work queued so far in this context, for

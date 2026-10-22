@@ -229,3 +229,26 @@ def test_a_wait_does_not_hold_the_context(wait):
     # that blocks launches allows about one per wait (0.003 per ms).
     assert launched >= elapsed * 1000 * 0.05, (launched, elapsed)
     assert short.numpy()[0] == 1 + launched
+
+
+@pytest.mark.usefixtures("no_debug")
+def test_dropping_an_array_does_not_wait_for_the_launches():
+    """An array dropped while a long launch is queued is not freed by
+    waiting for it. On a device without memory pools (a GPU in TCC mode on
+    Windows) `cuMemFree` waits for the whole device, so a garbage collection
+    that freed at once took the whole launch (1.1 s on a T4); the free waits
+    for the next allocation or sync that finds the stream idle. (Not timed
+    with `gc.collect`: late in a suite one takes 0.14 s on its own.)"""
+    out = tack.empty((1 << 18,))
+    iters = _long_launch(out)
+    _spin(out, iters)
+    t0 = time.perf_counter()
+    for _ in range(4):
+        tmp = tack.zeros((1 << 16,))
+        del tmp                      # freed here, by its reference count
+    dropped = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    tack.sync()
+    launch = time.perf_counter() - t0
+    assert dropped < launch / 2, (dropped, launch)
+    assert not get_backend()._token.dropped          # freed at the sync
