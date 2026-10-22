@@ -8,6 +8,7 @@ import numpy as np
 import tack
 from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype
+from tack.dataset.partitioned import PartitionedDataSet, fields_of
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['Statistics', 'statistics']
@@ -42,22 +43,17 @@ class Statistics(NamedTuple):
 
 
 @on_inputs_device
-def statistics(data, field):
-    """Descriptive statistics of a scalar field's values, as Viskores' Statistics
-    filter gives them: a ``Statistics`` of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
-    central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance``
-    (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard
-    deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis``
-    (``n m4 / m2^2``, not the excess), the last two 0 for a constant field.
-    Moments are taken about the mean, in a second pass."""
+def _moments(data, field):
+    """``(n, min, max, sum, mean, m2, m3, m4)`` of one dataset's scalar field, the
+    moments about its own mean in a second pass; ``None`` for no values."""
     field = _field(data, field)
     if width_of(field.values):
         raise TypeError("statistics takes a scalar field")
-    source = materialize(field.values)
-    values = _converted(source, _floating_dtype(source))
     n = size_of(field.values)
     if n == 0:
-        raise ValueError("statistics of no values")
+        return None
+    source = materialize(field.values)
+    values = _converted(source, _floating_dtype(source))
     # Integer sums are exact in f64 up to 2**53 and cannot wrap; summing the
     # converted f32 values was off by 57 for a million i32 values of 1001.
     # NumPy reduces integer fields on the host anyway.
@@ -67,13 +63,64 @@ def statistics(data, field):
     # The powers of differences from a mean are fractions, whatever the values are.
     p2, p3, p4 = (tack.empty((n,), values.dtype) for _ in range(3))
     _central_powers(values, mean, p2, p3, p4)
-    m2, m3, m4 = p2.sum(), p3.sum(), p4.sum()
+    return n, source.min(), source.max(), total, mean, p2.sum(), p3.sum(), p4.sum()
+
+
+def _merged(a, b):
+    """The moments of two sets of values from each one's (Pebay's pairwise update,
+    "Formulas for robust, one-pass parallel computation of covariances and
+    arbitrary-order statistical moments", 2008)."""
+    na, mina, maxa, suma, meana, m2a, m3a, m4a = a
+    nb, minb, maxb, sumb, meanb, m2b, m3b, m4b = b
+    n = na + nb
+    d = meanb - meana
+    m2 = m2a + m2b + d * d * na * nb / n
+    m3 = (m3a + m3b + d ** 3 * na * nb * (na - nb) / n ** 2
+          + 3.0 * d * (na * m2b - nb * m2a) / n)
+    m4 = (m4a + m4b + d ** 4 * na * nb * (na * na - na * nb + nb * nb) / n ** 3
+          + 6.0 * d * d * (na * na * m2b + nb * nb * m2a) / n ** 2
+          + 4.0 * d * (na * m3b - nb * m3a) / n)
+    total = suma + sumb
+    # NaN propagates through the extrema, as an array's own do.
+    return (n, float(np.min([mina, minb])), float(np.max([maxa, maxb])), total, total / n,
+            m2, m3, m4)
+
+
+def _summary(n, low, high, total, mean, m2, m3, m4):
     skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
     kurtosis = n * m4 / (m2 * m2) if m2 else 0.0
-    return Statistics(n=n, min=source.min(), max=source.max(), sum=total, mean=mean,
+    return Statistics(n=n, min=low, max=high, sum=total, mean=mean,
                       m2=m2, m3=m3, m4=m4,
                       sample_variance=m2 / (n - 1) if n > 1 else 0.0,
                       population_variance=m2 / n,
                       sample_stddev=math.sqrt(m2 / (n - 1)) if n > 1 else 0.0,
                       population_stddev=math.sqrt(m2 / n),
                       skewness=skewness, kurtosis=kurtosis)
+
+
+@on_inputs_device
+def statistics(data, field):
+    """Descriptive statistics of a scalar field's values, as Viskores' Statistics
+    filter gives them: a ``Statistics`` of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
+    central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance``
+    (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard
+    deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis``
+    (``n m4 / m2^2``, not the excess), the last two 0 for a constant field.
+    Moments are taken about the mean, in a second pass.
+
+    Over a ``PartitionedDataSet``, ``field`` names a field every piece has: each
+    piece's moments are taken on its own device and combined pairwise, so the
+    result is the whole's up to rounding. A point on the boundary between two
+    pieces is in both, and counts once per piece."""
+    if isinstance(data, PartitionedDataSet):
+        fields_of(data, field, "statistics")
+        moments = None
+        for piece in data:
+            part = _moments(piece, field)
+            if part is not None:
+                moments = part if moments is None else _merged(moments, part)
+    else:
+        moments = _moments(data, field)
+    if moments is None:
+        raise ValueError("statistics of no values")
+    return _summary(*moments)

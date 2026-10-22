@@ -7,6 +7,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Partitioned datasets, the first phase of the partitioned-data proposal.
+  `tack.dataset.PartitionedDataSet(partitions)` is a dataset in pieces, an
+  ordered list of `DataSet`s as VTK's `vtkPartitionedDataSet`, each piece
+  with its own topology, fields, sets and device. Work on one piece takes
+  the piece: the caller iterates. `statistics` and `entropy` also take a
+  partitioned dataset and a field's name, and combine the pieces (moments
+  pairwise; histograms over the whole's range), each piece reduced on its
+  own device; cell data gives the whole's answer, and a point shared by two
+  pieces counts once per piece. `split(data, pieces)` cuts a structured
+  grid by index ranges into pieces that keep the geometry's kind and carry
+  their block of the point, cell and `L2` fields and the sets.
+  `vtk_to_dataset` and `dataset_to_vtk` convert `vtkPartitionedDataSet` and
+  `vtkPartitionedDataSetCollection` (a `dict` of names to partitioned
+  datasets).
 - Examples: `45_flow.py` (gradients, `flow_quantities`, `advect`,
   `streamlines` and `perot` on a swirl whose answers are known exactly) and
   `46_cut_and_sample.py` (`clip`, `extract_geometry`, `extract_points`,

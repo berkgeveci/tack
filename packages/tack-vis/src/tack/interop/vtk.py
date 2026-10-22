@@ -360,10 +360,18 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     (``PolyhedralTopology.from_cell_faces``); without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
     ``i32`` unless the grid is too large for it (``tack.dataset.ids``).
+
+    A ``vtkPartitionedDataSet`` becomes a ``PartitionedDataSet``, each piece
+    converted as above (null pieces skipped), and a
+    ``vtkPartitionedDataSetCollection`` a ``dict`` of them, keyed by each
+    partitioned dataset's ``vtkCompositeDataSet.NAME()`` (``"block<i>"`` where
+    it has none, ``"<name>#<i>"`` for a name already taken).
     """
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
         vtkImageData,
+        vtkPartitionedDataSet,
+        vtkPartitionedDataSetCollection,
         vtkRectilinearGrid,
         vtkStructuredGrid,
         vtkUnstructuredGrid,
@@ -374,12 +382,21 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         H1,
         Constant,
         DataSet,
+        PartitionedDataSet,
         PolygonalTopology,
         PolylineTopology,
         UnstructuredTopology,
     )
     from tack.dataset.dataset import grid_topology
 
+    options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype}
+    if isinstance(grid, vtkPartitionedDataSetCollection):
+        return _collection_to_datasets(grid, options)
+    if isinstance(grid, vtkPartitionedDataSet):
+        # Not iterated: that walks the leaves and skips empty partitions.
+        pieces = (grid.GetPartition(i) for i in range(grid.number_of_partitions))
+        return PartitionedDataSet(vtk_to_dataset(piece, **options)
+                                  for piece in pieces if piece is not None)
     if isinstance(grid, vtkUnstructuredGrid):
         # VTK's constant and affine arrays come across as Tack's implicit ones.
         types = _from_vtk(grid.cell_types, tack.u8)
@@ -438,7 +455,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         geometry = _vtk_points(grid)
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkStructuredGrid, "
-                        f"vtkRectilinearGrid or vtkImageData, not {grid.class_name}")
+                        f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
+                        f"vtkPartitionedDataSetCollection, not {grid.class_name}")
     fields = _attributes_to_fields(grid.point_data, H1(topology), dtype)
     fields.update(_attributes_to_fields(grid.cell_data, Constant(topology), dtype))
     return DataSet(topology, geometry, fields=fields, dtype=dtype)
@@ -468,6 +486,29 @@ def _to_vtk_ids(values):
     if isinstance(values, CountingArray):
         return vtkAffineArray[np.int64](values.size, values.step, values.start)
     return np.ascontiguousarray(np.asarray(values), np.int64)
+
+
+def _collection_to_datasets(collection, options):
+    """A ``vtkPartitionedDataSetCollection`` as a ``dict`` of name to
+    ``PartitionedDataSet``."""
+    from vtkmodules.vtkCommonDataModel import vtkCompositeDataSet
+
+    from tack.dataset import PartitionedDataSet
+
+    out = {}
+    for i in range(collection.number_of_partitioned_data_sets):
+        name = None
+        if collection.HasMetaData(i):
+            meta = collection.GetMetaData(i)
+            if meta.Has(vtkCompositeDataSet.NAME()):
+                name = meta.Get(vtkCompositeDataSet.NAME())
+        name = name or f"block{i}"
+        if name in out:
+            name = f"{name}#{i}"
+        pieces = collection.GetPartitionedDataSet(i)
+        out[name] = (vtk_to_dataset(pieces, **options) if pieces is not None
+                     else PartitionedDataSet())
+    return out
 
 
 def _vtk_points(grid):
@@ -509,7 +550,10 @@ def _to_vtk_values(values):
 
 
 def dataset_to_vtk(data):
-    """Copy a ``tack.dataset.DataSet`` into a new VTK dataset.
+    """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; a ``PartitionedDataSet``
+    into a ``vtkPartitionedDataSet`` of its pieces, and a ``dict`` of names to
+    ``PartitionedDataSet``s into a ``vtkPartitionedDataSetCollection`` whose
+    partitioned datasets carry their names (``vtkCompositeDataSet.NAME()``).
 
     A structured topology over uniform coordinates gives a ``vtkImageData`` (with
     the direction matrix), over rectilinear ones a ``vtkRectilinearGrid``, over
@@ -542,6 +586,7 @@ def dataset_to_vtk(data):
     from tack.dataset import (
         H1,
         Constant,
+        PartitionedDataSet,
         PolygonalTopology,
         PolyhedralTopology,
         PolylineTopology,
@@ -550,6 +595,16 @@ def dataset_to_vtk(data):
         Values,
     )
 
+    if isinstance(data, dict):
+        return _datasets_to_collection(data)
+    if isinstance(data, PartitionedDataSet):
+        from vtkmodules.vtkCommonDataModel import vtkPartitionedDataSet
+
+        out = vtkPartitionedDataSet()
+        out.SetNumberOfPartitions(len(data))
+        for i, piece in enumerate(data):
+            out.SetPartition(i, dataset_to_vtk(piece))
+        return out
     topology = data.topology
     coordinates = data.geometry.values
     # A grid of one point or none has a topology without cells (grid_topology),
@@ -624,3 +679,24 @@ def dataset_to_vtk(data):
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
             grid.cell_data[name] = _to_vtk_values(field.values)
     return grid
+
+
+def _datasets_to_collection(datasets):
+    """A ``dict`` of name to ``PartitionedDataSet`` as a
+    ``vtkPartitionedDataSetCollection``, each partitioned dataset named."""
+    from vtkmodules.vtkCommonDataModel import (
+        vtkCompositeDataSet,
+        vtkPartitionedDataSetCollection,
+    )
+
+    from tack.dataset import PartitionedDataSet
+
+    out = vtkPartitionedDataSetCollection()
+    out.SetNumberOfPartitionedDataSets(len(datasets))
+    for i, (name, pieces) in enumerate(datasets.items()):
+        if not isinstance(pieces, PartitionedDataSet):
+            raise TypeError(f"collection entry {name!r} is a {type(pieces).__name__}, not "
+                            "a PartitionedDataSet")
+        out.SetPartitionedDataSet(i, dataset_to_vtk(pieces))
+        out.GetMetaData(i).Set(vtkCompositeDataSet.NAME(), str(name))
+    return out

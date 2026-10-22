@@ -43,6 +43,7 @@ from tack.dataset.algorithms.project import project
 from tack.dataset.algorithms.shrink import shrink
 from tack.dataset.algorithms.slice import slice, slice_plane
 from tack.dataset.algorithms.spherical import spherical
+from tack.dataset.algorithms.split import split
 from tack.dataset.algorithms.statistics import Statistics, statistics
 from tack.dataset.algorithms.streamlines import streamlines
 from tack.dataset.algorithms.tetrahedralize import tetrahedralize
@@ -103,6 +104,7 @@ __all__ = [
     "slice",
     "slice_plane",
     "spherical",
+    "split",
     "statistics",
     "streamlines",
     "tetrahedralize",
