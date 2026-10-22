@@ -41,7 +41,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.arrays import CountingArray
+from tack.arrays import CountingArray, size_of
 from tack.dataset import ids, shapes, views
 from tack.runtime.dispatch import on_inputs_device
 
@@ -340,7 +340,7 @@ class L2(Space):
                 self._size = n
             elif hasattr(topology, "offsets"):
                 self._offsets = topology.offsets          # the connectivity's: shared
-                self._size = int(topology.connectivity.shape[0])
+                self._size = int(size_of(topology.connectivity))
             else:
                 k = topology.groups()[0].shape.NUM_POINTS
                 dtype = ids.at_least(topology.id_dtype, n * k)

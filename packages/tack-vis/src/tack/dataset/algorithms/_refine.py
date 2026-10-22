@@ -7,7 +7,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
 from tack.dataset.carry import Pieces, Same, carry
-from tack.dataset.topology import UnstructuredTopology, _as_field
+from tack.dataset.topology import UnstructuredTopology, _as_field, uniform_cells
 
 _HEX_TETS = [[0, 1, 3, 4], [1, 4, 5, 6], [1, 4, 6, 3], [1, 3, 6, 2], [3, 6, 7, 4]]
 
@@ -67,20 +67,9 @@ def _fans(loop_offsets, loop_points, starts, connectivity, sources):
             sources[at + k] = c
 
 
-@tack.kernel
-def _uniform_cells(types, offsets, shape, width, n):
-    for i in range(n):
-        types[i] = tack.u8(shape)
-        offsets[i] = i * width
-        if i == 0:
-            offsets[n] = n * width
-
-
 def _pieces_topology(data, connectivity, sources, count, shape, width, fields):
-    types = tack.empty((count,), tack.u8)
-    offsets = tack.zeros((count + 1,), connectivity.dtype)
-    if count:
-        _uniform_cells(types, offsets, int(shape), width, int(types.shape[0]))
+    # All tetrahedra, or all triangles: the types and offsets are implicit.
+    types, offsets = uniform_cells(int(shape), count, connectivity.dtype, width)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
     return carry(data, out, points=Same(), cells=Pieces(sources), fields=fields)
 

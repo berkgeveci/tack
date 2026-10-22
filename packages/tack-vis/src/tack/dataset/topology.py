@@ -26,7 +26,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import argsort
-from tack.arrays import CountingArray
+from tack.arrays import Cast, ConstantArray, CountingArray, _Implicit, size_of
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.views import (
@@ -45,7 +45,7 @@ __all__ = ["Edges", "Faces", "StructuredTopology", "UnstructuredTopology"]
 
 
 def _as_field(values, dtype):
-    if isinstance(values, Array):
+    if isinstance(values, (Array, _Implicit)):
         if values.dtype != dtype:
             raise TypeError(f"expected a {dtype.name} field, got {values.dtype.name}")
         return values
@@ -56,11 +56,31 @@ def _as_field(values, dtype):
     return out
 
 
+def uniform_cells(shape_id, count, id_dtype, points_per_cell=None):
+    """``(types, offsets)`` of ``count`` cells of one VTK type, each of
+    ``points_per_cell`` points (the shape's own count by default), as implicit
+    arrays: a ``ConstantArray`` and a ``CountingArray``, computed where they are
+    read and stored nowhere -- VTK's constant and affine arrays, as a filter
+    whose cells are all one shape (a contour's triangles, vertex cells) gives
+    them."""
+    k = points_per_cell or shapes.shape_class(shape_id).NUM_POINTS
+    return (ConstantArray(shape_id, count, dtype=tack.u8),
+            CountingArray(count + 1, start=0, step=k, dtype=id_dtype))
+
+
+def _ids_of(values, id_dtype):
+    """A topology's offsets or connectivity in ``id_dtype``: an implicit array kept
+    implicit (cast if its type differs), anything else stored."""
+    if isinstance(values, _Implicit):
+        return values if values.dtype == id_dtype else Cast(values, id_dtype)
+    return ids.as_ids(values, id_dtype, check=False)
+
+
 # ── Cell groups ─────────────────────────────────────────────────────
 
 @tack.kernel
 def _histogram_types(types, keys, counts):
-    for c in range(types.shape[0]):
+    for c in range(keys.shape[0]):              # types may be implicit: no shape
         t = tack.i32(types[c])
         keys[c] = t
         tack.atomic_add(counts, t, 1)
@@ -206,26 +226,39 @@ class UnstructuredTopology(_Topology):
     ``offsets`` and ``connectivity`` are fields or arrays of ids, kept in
     ``id_dtype``: ``i32`` unless asked for ``tack.i64``, given ``i64`` fields,
     or too large for ``i32`` -- a mesh whose ids, connectivity or derived
-    arrays (twelve edges a cell) pass ``2**31 - 1``."""
+    arrays (twelve edges a cell) pass ``2**31 - 1``.
+
+    Any of the three may be an implicit array (``tack.arrays``), kept as it is:
+    the types of cells all of one shape a ``ConstantArray``, the offsets of
+    cells all of one size a ``CountingArray`` (``uniform_cells`` makes both),
+    the connectivity of cells that each have their own points a
+    ``CountingArray`` too. VTK's constant and affine arrays map onto them."""
 
     _STORED = ("types", "offsets", "connectivity")
 
     @on_inputs_device
     def __init__(self, types, offsets, connectivity, num_points=None, id_dtype=None):
         self.types = _as_field(types, tack.u8)
-        self.num_cells = self.types.shape[0]
-        offsets, connectivity = ids.host_or_field(offsets), ids.host_or_field(connectivity)
-        if offsets.shape != (self.num_cells + 1,):
+        self.num_cells = size_of(self.types)
+        offsets, connectivity = (v if isinstance(v, _Implicit) else ids.host_or_field(v)
+                                 for v in (offsets, connectivity))
+        if size_of(offsets) != self.num_cells + 1:
             raise ValueError(f"offsets must have num_cells + 1 = {self.num_cells + 1} "
-                             f"entries, not {offsets.shape[0]}")
+                             f"entries, not {size_of(offsets)}")
         if num_points is None:
-            used = connectivity.numpy() if isinstance(connectivity, Array) else connectivity
+            used = (connectivity.numpy() if isinstance(connectivity, (Array, _Implicit))
+                    else connectivity)
             num_points = int(used.max()) + 1 if used.size else 0
         self.num_points = int(num_points)
-        extent = max(self.num_points, int(connectivity.shape[0]), 12 * self.num_cells)
-        self.id_dtype = ids.choose(id_dtype, extent, given=(offsets, connectivity))
-        self.offsets = ids.as_ids(offsets, self.id_dtype, check=False)
-        self.connectivity = ids.as_ids(connectivity, self.id_dtype, check=False)
+        extent = max(self.num_points, size_of(connectivity), 12 * self.num_cells)
+        if id_dtype is None and any(isinstance(v, _Implicit) and v.dtype == tack.i64
+                                    for v in (offsets, connectivity)):
+            id_dtype = tack.i64
+        self.id_dtype = ids.choose(id_dtype, extent,
+                                   given=[v for v in (offsets, connectivity)
+                                          if isinstance(v, Array)])
+        self.offsets = _ids_of(offsets, self.id_dtype)
+        self.connectivity = _ids_of(connectivity, self.id_dtype)
         self._groups = None
 
     def _moved(self, target):
@@ -240,7 +273,14 @@ class UnstructuredTopology(_Topology):
             return self._groups
         n = self.num_cells
         groups = []
-        if n:
+        bad = tack.zeros((1,), tack.i32)
+        if n and isinstance(self.types, ConstantArray):
+            # One shape: no histogram of the types and no sort; the cells in order.
+            t = int(self.types.value.numpy().reshape(-1)[0])
+            if t not in shapes._BY_ID:
+                raise ValueError(f"cell types [{t}] are not linear shapes")
+            groups.append(self._gathered(t, CountingArray(n, dtype=self.id_dtype), 0, n, bad))
+        elif n:
             keys = tack.empty((n,), tack.i32)
             counts = tack.zeros((256,), tack.i32)
             _histogram_types(self.types, keys, counts)
@@ -250,22 +290,24 @@ class UnstructuredTopology(_Topology):
             if unknown:
                 raise ValueError(f"cell types {unknown} are not linear shapes")
             order = argsort(keys, index_dtype=self.id_dtype)
-            bad = tack.zeros((1,), tack.i32)
             starts = np.concatenate([[0], np.cumsum(counts)])
             for t in present:
-                shape = shapes.shape_class(t)
-                count = int(counts[t])
-                cell_ids = tack.empty((count,), self.id_dtype)
-                rows = tack.empty((count, shape.NUM_POINTS), self.id_dtype)
-                _gather_shape(order, int(starts[t]), self.offsets, self.connectivity,
-                              cell_ids, rows, bad)
-                groups.append(DomainGroup(_Cells, shape, (rows, cell_ids, count), count,
-                                          int(starts[t])))
-            if bad[0]:
-                raise ValueError(f"{bad[0]} cells have a point count that does not "
-                                 "match their type")
+                groups.append(self._gathered(int(t), order, int(starts[t]), int(counts[t]),
+                                             bad))
+        if bad[0]:
+            raise ValueError(f"{bad[0]} cells have a point count that does not "
+                             "match their type")
         self._groups = groups
         return groups
+
+    def _gathered(self, t, order, start, count, bad):
+        """The group of the ``count`` cells of type ``t``, ``order[start:start +
+        count]``: their ids, and their point ids gathered into rows."""
+        shape = shapes.shape_class(t)
+        cell_ids = tack.empty((count,), self.id_dtype)
+        rows = tack.empty((count, shape.NUM_POINTS), self.id_dtype)
+        _gather_shape(order, start, self.offsets, self.connectivity, cell_ids, rows, bad)
+        return DomainGroup(_Cells, shape, (rows, cell_ids, count), count, start)
 
 
 class StructuredTopology(_Topology):
