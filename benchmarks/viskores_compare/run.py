@@ -130,7 +130,7 @@ def _meta(vtk_threads):
             "python": platform.python_version(), "numpy": np.__version__,
             "vtk": vtkVersion.GetVTKVersionFull(), "vtk path": os.path.dirname(vtkmodules.__file__),
             "viskores device": os.environ.get("VISKORES_DEVICE"),
-            "vtk smp (reference checks)": vtkSMPTools().GetBackend(),
+            "vtk smp (reference checks)": vtkSMPTools().backend,
             "vtk threads (reference checks)": vtk_threads,
             "tack": sha + ("+changes" if dirty else ""), "tack backend": get_backend().label}
 

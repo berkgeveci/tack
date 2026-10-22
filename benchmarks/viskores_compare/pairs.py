@@ -101,10 +101,7 @@ def _contour(grid, mesh):
 def _plane(mesh):
     from vtkmodules.vtkCommonDataModel import vtkPlane
 
-    plane = vtkPlane()
-    plane.SetOrigin(*_center(mesh))
-    plane.SetNormal(*NORMAL)
-    return plane
+    return vtkPlane(origin=tuple(_center(mesh)), normal=tuple(NORMAL))
 
 
 def _slice(grid, mesh):
@@ -140,9 +137,7 @@ def _clip_sphere(grid, mesh):
     from vtkmodules.vtkCommonDataModel import vtkSphere
 
     center, radius = _sphere(mesh)
-    sphere = vtkSphere()
-    sphere.SetCenter(*center)
-    sphere.SetRadius(radius)
+    sphere = vtkSphere(center=tuple(center), radius=radius)
     f = _vf().vtkmClip()
     f.SetInputData(grid)
     f.SetClipFunction(sphere)
@@ -219,8 +214,7 @@ def _coordinates(kind):
 def _point_transform(grid, mesh):
     from vtkmodules.vtkCommonTransforms import vtkTransform
 
-    transform = vtkTransform()
-    transform.SetMatrix(_matrix().ravel())
+    transform = vtkTransform(matrix=_matrix().ravel())
     f = _vf().vtkmPointTransform()
     f.SetInputData(grid)
     f.SetTransform(transform)
@@ -232,95 +226,66 @@ def _point_transform(grid, mesh):
 def _vtk_contour(grid, mesh):
     from vtkmodules.vtkFiltersCore import vtkContour3DLinearGrid
 
-    f = vtkContour3DLinearGrid()
-    f.SetInputData(grid)
+    f = vtkContour3DLinearGrid(input_data=grid, merge_points=True, interpolate_attributes=True,
+                               compute_normals=False, compute_scalars=False,
+                               use_scalar_tree=False, generate_triangles=True)
     f.SetInputArrayToProcess(0, 0, 0, 0, "p")
     f.SetValue(0, CONTOUR_ISOVALUE)
-    f.SetMergePoints(True)
-    f.SetInterpolateAttributes(True)
-    f.SetComputeNormals(False)
-    f.SetComputeScalars(False)
-    f.SetUseScalarTree(False)
-    f.SetGenerateTriangles(True)
     return f
 
 
 def _vtk_slice(grid, mesh):
     from vtkmodules.vtkFiltersCore import vtkPlaneCutter
 
-    f = vtkPlaneCutter()
-    f.SetInputData(grid)
-    f.SetPlane(_plane(mesh))
-    f.SetMergePoints(True)
-    f.SetInterpolateAttributes(True)
-    f.SetComputeNormals(False)
-    f.SetGeneratePolygons(False)
-    f.SetBuildTree(False)
-    f.SetBuildHierarchy(False)
-    return f
+    return vtkPlaneCutter(input_data=grid, plane=_plane(mesh), merge_points=True,
+                          interpolate_attributes=True, compute_normals=False,
+                          generate_polygons=False, build_tree=False, build_hierarchy=False)
 
 
 def _vtk_threshold(grid, mesh):
     from vtkmodules.vtkFiltersCore import vtkThreshold
 
-    f = vtkThreshold()
-    f.SetInputData(grid)
+    f = vtkThreshold(input_data=grid, lower_threshold=THRESHOLD[0],
+                     upper_threshold=THRESHOLD[1],
+                     threshold_function=vtkThreshold.THRESHOLD_BETWEEN)
     f.SetInputArrayToProcess(0, 0, 0, 1, "c")
-    f.SetLowerThreshold(THRESHOLD[0])
-    f.SetUpperThreshold(THRESHOLD[1])
-    f.SetThresholdFunction(vtkThreshold.THRESHOLD_BETWEEN)
     return f
 
 
 def _vtk_clip_field(grid, mesh):
     from vtkmodules.vtkFiltersGeneral import vtkTableBasedClipDataSet
 
-    f = vtkTableBasedClipDataSet()
-    f.SetInputData(grid)
+    f = vtkTableBasedClipDataSet(input_data=grid, value=ISOVALUE, inside_out=False)
     f.SetInputArrayToProcess(0, 0, 0, 0, "p")
-    f.SetValue(ISOVALUE)
-    f.SetInsideOut(False)
     return f
 
 
 def _vtk_geometry(grid, mesh):
     from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
 
-    f = vtkGeometryFilter()
-    f.SetInputData(grid)
-    f.SetMerging(False)
-    f.SetPassThroughCellIds(False)
-    f.SetPassThroughPointIds(False)
-    return f
+    return vtkGeometryFilter(input_data=grid, merging=False, pass_through_cell_ids=False,
+                             pass_through_point_ids=False)
 
 
 def _vtk_point_to_cell(grid, mesh):
     from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
 
-    f = vtkPointDataToCellData()
-    f.SetInputData(grid)
-    f.SetProcessAllArrays(True)
-    f.SetPassPointData(False)
-    return f
+    return vtkPointDataToCellData(input_data=grid, process_all_arrays=True,
+                                  pass_point_data=False)
 
 
 def _vtk_cell_to_point(grid, mesh):
     from vtkmodules.vtkFiltersCore import vtkCellDataToPointData
 
-    f = vtkCellDataToPointData()
-    f.SetInputData(grid)
-    f.SetProcessAllArrays(True)
-    f.SetPassCellData(False)
-    return f
+    return vtkCellDataToPointData(input_data=grid, process_all_arrays=True,
+                                  pass_cell_data=False)
 
 
 def _vtk_gradient(grid, mesh):
     from vtkmodules.vtkFiltersGeneral import vtkGradientFilter
 
-    f = vtkGradientFilter()
-    f.SetInputData(grid)
+    f = vtkGradientFilter(input_data=grid, result_array_name="Gradients")
     f.SetInputArrayToProcess(0, 0, 0, 0, "p")
-    f.SetResultArrayName("Gradients")
     return f
 
 
@@ -329,11 +294,8 @@ def _vtk_elevation(grid, mesh):
     from vtkmodules.vtkFiltersCore import vtkElevationFilter
 
     low, high = _elevation_line(mesh)
-    f = vtkElevationFilter()
-    f.SetInputData(grid)
-    f.SetLowPoint(*low)
-    f.SetHighPoint(*high)
-    f.SetScalarRange(*ELEVATION_RANGE)
+    f = vtkElevationFilter(input_data=grid, low_point=low, high_point=high,
+                           scalar_range=ELEVATION_RANGE)
     return _Renamed(f, "Elevation", "elevation")
 
 
@@ -347,22 +309,18 @@ class _Renamed:
         self.algorithm.Update()
 
     def GetOutput(self):
-        out = self.algorithm.GetOutput()
-        array = out.GetPointData().GetArray(self.name)
-        if array is not None:
-            array.SetName(self.as_name)
+        out = self.algorithm.output
+        if self.name in out.point_data.keys():
+            out.point_data[self.name].name = self.as_name
         return out
 
 
 def _vtk_warp(grid, mesh):
     from vtkmodules.vtkFiltersGeneral import vtkWarpScalar
 
-    f = vtkWarpScalar()
-    f.SetInputData(grid)
+    f = vtkWarpScalar(input_data=grid, use_normal=True, normal=(0.0, 0.0, 1.0),
+                      scale_factor=WARP_SCALE)
     f.SetInputArrayToProcess(0, 0, 0, 0, "p")
-    f.SetUseNormal(True)
-    f.SetNormal(0.0, 0.0, 1.0)
-    f.SetScaleFactor(WARP_SCALE)
     return f
 
 
@@ -370,32 +328,29 @@ def _vtk_point_transform(grid, mesh):
     from vtkmodules.vtkCommonTransforms import vtkTransform
     from vtkmodules.vtkFiltersGeneral import vtkTransformFilter
 
-    transform = vtkTransform()
-    transform.SetMatrix(_matrix().ravel())
-    f = vtkTransformFilter()
-    f.SetInputData(grid)
-    f.SetTransform(transform)
-    return f
+    return vtkTransformFilter(input_data=grid, transform=vtkTransform(matrix=_matrix().ravel()))
 
 
 # ── Reading results ─────────────────────────────────────────────────
 
-def _cell_array(name):
-    from vtkmodules.util.numpy_support import vtk_to_numpy
+def _named(data, name):
+    """``data``'s array ``name`` as NumPy. A missing array raises: VTK reads it
+    as an empty array, which would be checked as values."""
+    if name not in data.keys():
+        raise KeyError(f"the output has no array {name!r}")
+    return np.asarray(data[name])
 
-    return lambda out: vtk_to_numpy(out.GetCellData().GetArray(name))
+
+def _cell_array(name):
+    return lambda out: _named(out.cell_data, name)
 
 
 def _point_array(name):
-    from vtkmodules.util.numpy_support import vtk_to_numpy
-
-    return lambda out: vtk_to_numpy(out.GetPointData().GetArray(name))
+    return lambda out: _named(out.point_data, name)
 
 
 def _points_of(out):
-    from vtkmodules.util.numpy_support import vtk_to_numpy
-
-    return vtk_to_numpy(out.GetPoints().GetData())
+    return np.asarray(out.points.data)
 
 
 def _host(result, vectors=False):
@@ -471,17 +426,13 @@ PAIRS = [
 
 def _measured(dataset, what):
     """The total area or volume of ``dataset``'s cells, each taken unsigned."""
-    from vtkmodules.util.numpy_support import vtk_to_numpy
     from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
 
-    size = vtkCellSizeFilter()
-    size.SetInputData(dataset)
-    for quantity in ("VertexCount", "Length", "Area", "Volume"):
-        getattr(size, f"SetCompute{quantity}")(quantity == what)
-    size.SetComputeSum(False)
-    size.Update()
-    array = size.GetOutput().GetCellData().GetArray(what)
-    return float(np.abs(vtk_to_numpy(array)).sum()) if array is not None else 0.0
+    size = vtkCellSizeFilter(compute_vertex_count=False, compute_length=False,
+                             compute_area=what == "Area", compute_volume=what == "Volume",
+                             compute_sum=False)
+    cell_data = size(dataset).cell_data
+    return float(np.abs(np.asarray(cell_data[what])).sum()) if what in cell_data.keys() else 0.0
 
 
 def summary(pair, vtk_output=None, tack_result=None):
@@ -491,7 +442,7 @@ def summary(pair, vtk_output=None, tack_result=None):
 
         vtk_output = dataset_to_vtk(tack_result)
     what = "Area" if pair.output == "surface" else "Volume"
-    return {"cells": vtk_output.GetNumberOfCells(), "points": vtk_output.GetNumberOfPoints(),
+    return {"cells": vtk_output.number_of_cells, "points": vtk_output.number_of_points,
             "distinct points": _distinct_points(vtk_output), what.lower(): _measured(vtk_output, what)}
 
 
@@ -502,12 +453,10 @@ def _distinct_points(dataset):
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
     from scipy.spatial import cKDTree
-    from vtkmodules.util.numpy_support import vtk_to_numpy
-
-    n = dataset.GetNumberOfPoints()
+    n = dataset.number_of_points
     if n == 0:
         return 0
-    points = vtk_to_numpy(dataset.GetPoints().GetData()).astype(np.float64)
+    points = np.asarray(dataset.points.data).astype(np.float64)
     extent = max(float(np.max(points.max(axis=0) - points.min(axis=0))), 1e-30)
     near = cKDTree(points).query_pairs(1e-6 * extent, output_type="ndarray")
     if len(near) == 0:
