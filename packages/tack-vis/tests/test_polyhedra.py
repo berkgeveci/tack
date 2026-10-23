@@ -913,9 +913,7 @@ def test_reference_element_algorithms_are_refused(backend, make):
         _two_hexes_and_a_pyramid())
     point_data = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
     cell_data = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells, dtype=float)))
-    for call in (lambda: td.algorithms.cell_centers(data),
-                 lambda: td.algorithms.values_at_centers(data, point_data),
-                 lambda: td.project(data, point_data, td.SideTraces(data)),
+    for call in (lambda: td.project(data, point_data, td.SideTraces(data)),
                  lambda: td.algorithms.jump(data, point_data)):
         with pytest.raises(NotImplementedError, match="needs a reference element"):
             call()
@@ -980,6 +978,68 @@ def test_check_winding_takes_cells_that_list_their_faces(backend):
     assert len(td.check_winding(td.as_polyhedra(data))) == 0
     with pytest.raises(TypeError, match="list their faces"):
         td.check_winding(data)
+
+
+# ── Centers without a reference element ─────────────────────────────
+
+def _point_means(data, values):
+    """Each cell's mean over its distinct points, on the host."""
+    offsets, point_ids = (a.numpy() for a in data.topology.cell_points())
+    values = np.asarray(values, float)
+    return np.array([values[point_ids[offsets[c]:offsets[c + 1]]].mean(axis=0)
+                     for c in range(data.num_cells)])
+
+
+@pytest.mark.parametrize("name", ["voronoi", "mixed", "hexahedron", "pyramid", "polygons"])
+def test_polyhedral_centers_are_the_cell_points(backend, name):
+    """With no parametric center, a cell's center is its cell point, the mean of its
+    distinct points, and a field's value there is its interpolant's: the points'
+    mean for point data (so exact for a linear field), its own for cell data."""
+    if name == "polygons":
+        data = td.as_polygons(_plane_mesh())
+    else:
+        meshes = _gradient_meshes()
+        if name not in meshes:
+            pytest.skip("needs VTK for this mesh")
+        data = meshes[name]
+    x = data.positions().astype(np.float64)
+    centers = td.algorithms.cell_centers(data)
+    assert isinstance(centers.space, td.Values) and centers.space.on == "cells"
+    np.testing.assert_allclose(centers.values.numpy(), _point_means(data, x), atol=1e-5)
+    data.fields["u"] = td.Field(td.H1(data), _scalars(x @ _GRADIENT + 3.0))
+    at = td.algorithms.values_at_centers(data, "u").values.numpy()
+    np.testing.assert_allclose(at, centers.values.numpy().astype(float) @ _GRADIENT + 3.0,
+                               atol=1e-4)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(x.astype(np.float32), tack.vec3()))
+    np.testing.assert_allclose(td.algorithms.values_at_centers(data, "v").values.numpy(),
+                               centers.values.numpy(), atol=1e-6)
+    cells = _scalars(np.arange(data.num_cells, dtype=float) * 0.5)
+    data.fields["c"] = td.Field(td.Constant(data), cells)
+    at = td.algorithms.values_at_centers(data, "c").values
+    assert at is not cells
+    np.testing.assert_array_equal(at.numpy(), cells.numpy())
+    faces = np.zeros(data.topology.faces().num_faces)
+    data.fields["f"] = td.Field(td.Values(data, "faces"), _scalars(faces))
+    with pytest.raises(NotImplementedError, match="only point data"):
+        td.algorithms.values_at_centers(data, "f")
+
+
+@pytest.mark.parametrize("name", ["tetra", "hexahedron", "voxel"])
+def test_polyhedral_centers_of_symmetric_shapes_are_the_shape_paths(backend, name):
+    """Where a shape's parametric center maps to the mean of its corners -- a
+    tetrahedron, a parallelepiped -- the two paths agree, for any field."""
+    meshes = _solid_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    np.testing.assert_allclose(td.algorithms.cell_centers(poly).values.numpy(),
+                               td.algorithms.cell_centers(data).values.numpy(), atol=1e-6)
+    x = data.positions().astype(np.float64)
+    values = _scalars(np.sin(2.0 * x[:, 0]) * x[:, 1] ** 2 + x[:, 2] ** 3)
+    ours = td.algorithms.values_at_centers(poly, td.Field(td.H1(poly), values))
+    theirs = td.algorithms.values_at_centers(data, td.Field(td.H1(data), values))
+    np.testing.assert_allclose(ours.values.numpy(), theirs.values.numpy(), atol=1e-6)
 
 
 # ── Gradients without a reference element ───────────────────────────

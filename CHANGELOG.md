@@ -25,6 +25,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   a linear field and, on a parallelepiped, the trilinear gradient at its
   center. At the points it is the average of the cells' gradients, as on
   shapes. Polygons and polylines get zero, as lower-dimensional cells do.
+- `cell_centers` and `values_at_centers` work on polyhedra, polygons and
+  polylines: a cell's center is its cell point, the mean of its distinct
+  points, and point data takes the mean of their values there (the value
+  of an interpolant linear on tetrahedra fanned from that point, so exact
+  for a linear field); cell data is its own value.
 - Implicit topology arrays. An `UnstructuredTopology`'s `types`, `offsets`
   and `connectivity` may be implicit arrays, kept as they are rather than
   stored: a `ConstantArray` of types for cells all of one shape, a
