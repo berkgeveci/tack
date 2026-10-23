@@ -55,6 +55,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Filter and Analyze](data/04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](data/05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
 | [Sample and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
+| [Work with Data in Pieces](data/07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells, on one device or several |
 
 For a first reading, follow the fundamentals, dataset and mesh chapters,
 then the field and filter chapters.
@@ -284,8 +285,10 @@ the mean of its points, and the triangles into tetrahedra from the mean of
 the cell's points; point data is linear on each tetrahedron. Gradients,
 cell centers, probing, advection and streamlines run on polyhedra that way
 (gradients by Green–Gauss over the fanned faces), exactly for linear
-fields; the algorithms that need a reference element (`L2` and order-2
-spaces, side traces) refuse a polyhedral mesh and say so. The ones that
+fields. Polygons are fanned into triangles from their points' mean the
+same way, so probing and advection run on them, and probing locates on a
+polyline's segments. The algorithms that need a reference element (`L2` and
+order-2 spaces, side traces) refuse a polyhedral mesh and say so. The ones that
 work from points and faces run on both kinds: contour (by López's face
 walk), slice, threshold, external faces, cell and face geometry,
 divergence, and moving data between points and cells. A 2D mesh contours into lines, and

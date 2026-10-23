@@ -127,10 +127,13 @@ and therefore waits for the device work it reads.
 |---|---|---|---|
 | Select whole cells; measure cells | Yes | Yes | Yes |
 | Extract boundaries | Yes, subject to line-cell limitations | Yes | Chain ends |
-| Contour or slice | Yes | Yes | Currently unsupported |
+| Contour or slice | Yes, of order-1 and `L2` fields (an order-2 `H1` field is refused) | Yes | Currently unsupported |
 | Clip cells | H1 geometry required | Currently unsupported | Currently unsupported |
 | Project between point and cell data | Yes | Yes | Yes |
-| Basis gradients, probing, streamline integration | Yes, within each algorithm's supported dimension | Currently unsupported | Currently unsupported |
+| Gradients and flow quantities | Yes | Yes: Green–Gauss over each polyhedron's faces (exact for linear fields); zero on polygons | Yes (zero) |
+| Locate cells and probe | Yes | Yes: in sub-tetrahedra or fanned triangles; cells must be star-shaped from their points' mean | Yes, on segments |
+| Advection and streamlines | Yes, 2D and 3D cells | Yes, as probing locates | Currently unsupported |
+| Carry ghost marks over pieces | Yes | Yes | Yes |
 
 An empty supported filter result is a valid dataset. Check `num_cells` before
 assuming an extraction contains visible geometry. Algorithms requiring a

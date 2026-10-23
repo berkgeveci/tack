@@ -65,6 +65,7 @@ them in order. A workgroup barrier cannot synchronize the whole grid. See
 | Work per cell or face without hard-coding connectivity | [Write Mesh Algorithms](data/05-mesh-kernels.md) |
 | Evaluate a field at physical positions | [Probing](data/06-pipelines.md#sample-at-physical-positions) |
 | Trace a steady velocity field or render extracted geometry | [Pipelines](data/06-pipelines.md) |
+| Filter and reduce a dataset in pieces, with ghost cells | [Work with Data in Pieces](data/07-partitioned.md) |
 
 `tack.Array` describes storage. `tack.dataset.Field` associates values with a
 topology through a space. A field's association must be correct before a filter

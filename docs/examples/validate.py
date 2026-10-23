@@ -11,7 +11,7 @@ from pathlib import Path
 
 EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
             "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
-            "data_analysis", "data_mesh_kernels", "data_spaces")
+            "data_analysis", "data_mesh_kernels", "data_spaces", "data_partitioned")
 QUICKSTARTS = (
     "01-getting-started", "02-arrays-and-types", "11-reductions-and-scans",
     "12-execution-model", "14-vectors-and-matrices",

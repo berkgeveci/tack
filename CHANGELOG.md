@@ -14,6 +14,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   table of writers and no sort, and gives the same values; an `L2` geometry,
   which gives a shared node no position of its own, keeps the first cell's.
 
+- A `@tack.device_class` object, or one it holds, can be passed to a
+  `@tack.func` or to another template's method -- `helper(obj, i)`,
+  `b.combine(a, i)`, `helper(self)`, `helper(self.base)` -- not only to a
+  kernel: the callee is specialized for it, as a method is for `self`.
+- A device function may `return f(x)` where `f` returns several values,
+  vectors among them, and a name may hold such a result until it is
+  unpacked (`hit = closest_hit(o, d)`, then `depth, normal, color = hit`).
 - Partitioned datasets, the first phase of the partitioned-data proposal.
   `tack.dataset.PartitionedDataSet(partitions)` is a dataset in pieces, an
   ordered list of `DataSet`s as VTK's `vtkPartitionedDataSet`, each piece
@@ -141,6 +148,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- `contour` read only an order-2 `H1` field's corner values, so a quadratic
+  that rises inside a cell from zero at its corners gave no surface,
+  silently. It now refuses an order-2 field (`NotImplementedError`) on
+  every path, until cells are subdivided for contouring.
 - CUDA: Tack works in the device's primary context (retained, and released
   when its last backend goes) instead of creating its own. PyTorch, CuPy and
   Warp use the primary context, so a launch of Tack's after one of them made

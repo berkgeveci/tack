@@ -24,6 +24,8 @@
 > - `@tack.data_oriented` is now `@tack.device_class` (the old name was an
 >   alias at first and has since been removed), and templates may hold
 >   templates.
+>
+> Partitioned data and ghost marks, added later, are recorded in section 12.
 
 It builds on the prototype on `vis/data-model` (cell shapes, cell sets,
 `for_each_shape`, six filters) and on two studies of prior art: MFEM 4.9's
@@ -746,7 +748,70 @@ threads in a warp wait on the highest. Tensor-product bases make a runtime
 order practical (a 1D Lagrange basis is loops). Keep it for orders spread
 widely (say 1 to 12); group by order otherwise.
 
-## 12. Questions to settle
+## 12. Partitioned data and ghost marks
+
+Added 2026-10-21 to 10-23, after the rest of this record: data in pieces,
+as VTK's partitioned datasets and MPI decompositions give it. The user's
+side is [Work with Data in Pieces](../users-guide/data/07-partitioned.md);
+this section records why it is shaped as it is.
+
+**A list of datasets, and no wrappers.** A `PartitionedDataSet` is an
+ordered list of `DataSet`s, each a whole dataset with its own device.
+Per-piece work takes a piece and the caller loops. There is no
+"partitioned field" and no filter that maps over pieces: a loop computes
+nothing a wrapper would not, and would hide what runs where. Only
+algorithms whose answer needs every piece take the container:
+`statistics`, by mergeable moments, and `entropy`, by histograms over the
+whole's range.
+
+**Marks apart from the fields.** Ghost marks are `data.ghosts`, a `u8` per
+cell and per point in VTK's `vtkGhostType` bits, kept apart from the named
+fields as the geometry is. Kept as a field named `vtkGhostType`, every
+algorithm would have to look them up by name and could carry them as data
+by mistake. A `Set` of owned cells would serve cell loops, but would gather
+ids on every launch and have no place for point marks or the other bits.
+
+**One owner per entity; filters carry the marks.** Every cell and point
+that several pieces hold has one owner, and the other copies are
+duplicates. Filters process the duplicates, as VTK's do, because their
+output is what the next step near a piece's edge needs. What a filter makes
+takes the owner of what it came from (`ghosts.carry_marks`, inside
+`carry`, so every filter that builds its output through `carry` carries
+the marks). An entity several cells share -- an edge, a face, a point on an
+edge -- is owned where its smallest point is. "Smallest" goes by position
+until there are global ids: every copy of a point has the same position,
+so every piece decides alike without communicating.
+
+**Why a ghost layer is required.** The rule gives each output entity one
+owner only if the piece owning a point holds every cell around it, which is
+what one ghost layer guarantees. Without ghost cells it fails in two ways
+found while building it:
+
+- a contour point on an edge in the cut is owned where the edge's smallest
+  point is, and that piece may hold no cell containing the edge;
+- `threshold` keeps the points its kept cells use, and a shared point's
+  owner may keep none of the cells using it (36 of 1028 points lost on a
+  two-piece wavelet).
+
+A piece with duplicate points and no duplicate cells is taken to have no
+ghost layer. Outputs of such pieces that depend on neighbours record that
+they lost the marks, with the reason, and reductions refuse them, rather
+than count shared values wrongly.
+
+**`remove_ghosts` keeps owned points.** Removing the ghost cells and the
+points they alone used would drop a contour point from its owner when that
+piece's triangles around the edge are all ghosts (29 of 847 points, before
+the fix). Keeping every owned point, used or not, keeps each point's one
+owner, so reductions over the result are unchanged.
+
+**Hidden cells by extraction, not by kernel tests.** The first plan gave
+cell views an `is_hidden(c)` test, compiled away without marks. The build
+takes the visible cells first (`visible`) where hidden cells exist, one
+place for every filter, at the cost of one extraction on the rare data
+that has them. Ids the caller chose (faces, edges) and a reused locator
+refer to the whole dataset, so they are refused there instead.
+
+## 13. Questions to settle
 
 1. **Truth for continuity.** This proposal follows MFEM -- continuity
    follows from which entities own DOFs -- and treats vtkCellGrid's

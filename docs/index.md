@@ -2,7 +2,8 @@
 
 A Python framework for scientific data analysis, visualization and GPU compute.
 Build pipelines over structured grids, mixed meshes and polyhedra: associate
-arrays, derive quantities, extract surfaces, sample solutions and render results.
+arrays, derive quantities, extract surfaces, sample solutions and render results,
+on one dataset or on one cut into pieces with ghost cells.
 The dataset algorithms are Tack kernels, and you can write your own as decorated
 Python functions. **The same supported kernel source runs on five backends**, within
 each backend's [capabilities](contracts/backend-capabilities.md). Metal has
