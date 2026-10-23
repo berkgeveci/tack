@@ -407,15 +407,17 @@ class _PolyhedralLocation:
 
     @tack.func
     def locate(self, c, x, slack):
-        """``(t, pc)``: the first sub-tetrahedron holding ``x`` and its coordinates
-        there; failing that, the one whose face triangle is nearest ``x``, if
-        within ``slack``, and the coordinates of ``x`` extrapolated in it (so a
-        linear field stays exact); else ``t`` is -1.
+        """``(t, pc, inside)``: the first sub-tetrahedron holding ``x`` and its
+        coordinates there, ``inside`` 1; failing that, the one whose face
+        triangle is nearest ``x``, if within ``slack``, and the coordinates of
+        ``x`` extrapolated in it (so a linear field stays exact), ``inside`` 0;
+        else ``t`` is -1. Callers rank a cell that holds the point ahead of one
+        it is only near, as the shape path does.
 
         Inverted sub-tetrahedra (of a cell not star-shaped from its cell point)
         hold nothing; ``CellLocator`` refuses such cells."""
-        t, pc = self.locate_from(c, self.cell_point(c), x, slack)
-        return t, pc
+        t, pc, inside = self.locate_from(c, self.cell_point(c), x, slack)
+        return t, pc, inside
 
     @tack.func
     def locate_from(self, c, p, x, slack):
@@ -461,10 +463,11 @@ class _PolyhedralLocation:
                 j += 1
             base += n
             k += 1
+        inside = 1 if tet >= 0 else 0
         if tet < 0 and near >= 0:
             tet = near
             pc = near_pc
-        return tet, pc
+        return tet, pc, inside
 
 
 class _SelectedPolyhedra(_PolyhedralCells):

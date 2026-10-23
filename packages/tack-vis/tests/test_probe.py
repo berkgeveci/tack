@@ -163,6 +163,22 @@ def test_advection_samples_the_cell_that_holds_the_particle(backend):
     assert (out.positions()[:, 0] > _NEAR_THE_FACE[:, 0]).all()
 
 
+def test_polyhedra_rank_the_cell_that_holds_the_point_first(backend):
+    """The same two tetrahedra as polyhedra: located in sub-tetrahedra, the point
+    is only near the first (rank past the ids) and in the second, which wins, for
+    probe and for advection alike."""
+    data = td.as_polyhedra(_two_tets())
+    cells, tets, _ = td.CellLocator(data).find(_NEAR_THE_FACE)
+    np.testing.assert_array_equal(cells.numpy(), [1, 1, 1])
+    assert (tets.numpy() >= 0).all()
+    out = td.probe(data, _NEAR_THE_FACE)
+    np.testing.assert_allclose(out.fields["p"].values.numpy(), _DEPTH * np.sqrt(3) / 2,
+                               atol=1e-6)
+    moved = td.advect(data, "v", _NEAR_THE_FACE, step_size=0.1, steps=1)
+    assert not (moved.fields["status"].values.numpy() & td.ParticleStatus.ZERO_VELOCITY).any()
+    assert (moved.positions()[:, 0] > _NEAR_THE_FACE[:, 0]).all()
+
+
 def test_points_outside_every_cell(backend):
     data = _two_hexes_and_a_pyramid()
     out = td.probe(data, [[10.0, 10.0, 10.0], [-1.0, 0.5, 0.5]])

@@ -167,8 +167,10 @@ def _not_star_shaped(cells, bad):
 
 @tack.kernel
 def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz,
-                              ix, iy, iz, nx, ny, nz, tolerance, write, found, tets, pcs):
-    # As _test_points, locating in the cell's sub-tetrahedra.
+                              ix, iy, iz, nx, ny, nz, tolerance, ncells, write, found, tets,
+                              pcs):
+    # As _test_points, locating in the cell's sub-tetrahedra, and ranking the
+    # same way: holding the point ahead of coming within the tolerance.
     for c in cells:
         e = cells.entity_id(c)
         middle = cells.cell_point(c)
@@ -191,11 +193,12 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
                         if (x[0] >= a[0] - slack and x[0] <= b[0] + slack
                                 and x[1] >= a[1] - slack and x[1] <= b[1] + slack
                                 and x[2] >= a[2] - slack and x[2] <= b[2] + slack):
-                            t, pc = cells.locate_from(c, middle, x, slack)
+                            t, pc, inside = cells.locate_from(c, middle, x, slack)
                             if t >= 0:
+                                rank = e if inside == 1 else e + ncells
                                 if write == 0:
-                                    tack.atomic_min(found, q, e)
-                                elif found[q] == e:
+                                    tack.atomic_min(found, q, rank)
+                                elif found[q] == rank:
                                     tets[q] = t
                                     pcs[q] = pc
 
@@ -374,8 +377,8 @@ class CellLocator:
             for write in (0, 1):
                 if self.polyhedral:
                     for_each(_test_points_in_polyhedra, data, "cells", points, self.lo,
-                             self.hi, starts, order, *self._grid(), _TOLERANCE, write, found,
-                             tets, pcs)
+                             self.hi, starts, order, *self._grid(), _TOLERANCE,
+                             data.num_cells, write, found, tets, pcs)
                 else:
                     for_each(_test_points, data, "cells", points, self.lo, self.hi, starts,
                              order, *self._grid(), _TOLERANCE, data.num_cells, write, found,

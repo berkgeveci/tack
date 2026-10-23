@@ -66,7 +66,7 @@ class _NoPolyhedra:
 
     @tack.func
     def locate(self, e, p, slack):
-        return -1, p - p
+        return -1, p - p, 0
 
     @tack.func
     def velocity_at(self, e, t, pc):
@@ -237,13 +237,17 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
                         kind = mesh.cell_type(e)
                         if (kinds.PRESENT & 256) != 0 and kind == shapes.POLYHEDRON:
                             # No parametric coordinates: a sub-tetrahedron and the
-                            # point's place in it, within the cell's tolerance.
-                            tet, tpc = mesh.locate(e, p, s)
+                            # point's place in it, within the cell's tolerance,
+                            # ranked as the shapes are.
+                            tet, tpc, held = mesh.locate(e, p, s)
                             if tet >= 0:
-                                best = e
-                                best_type = kind
-                                best_tet = tet
-                                best_pc = tpc
+                                rank = e if held == 1 else e + ncells
+                                if rank < best_rank:
+                                    best_rank = rank
+                                    best = e
+                                    best_type = kind
+                                    best_tet = tet
+                                    best_pc = tpc
                             continue
                         for j in range(mesh.num_points(e)):
                             y = positions[mesh.point_id(e, j)]

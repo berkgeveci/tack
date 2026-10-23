@@ -729,8 +729,10 @@ only on its own view, not on a view passed to it. So, as on shapes, the
 cell view locates and the field view evaluates:
 
 - `_PolyhedralLocation`, on polyhedral domain views:
-  - `locate(c, x, slack)` gives `(t, pc)`: the sub-tetrahedron and the
-    point's coordinates in it. `pc` holds the weights of the face point,
+  - `locate(c, x, slack)` gives `(t, pc, inside)`: the sub-tetrahedron, the
+    point's coordinates in it, and whether it holds the point (1) or the
+    point is only within `slack` (0). `CellLocator` and advection rank a cell
+    that holds the point ahead of one it is only near, as on shapes. `pc` holds the weights of the face point,
     *a* and *b*; the cell point's is what is left, a reference tetrahedron
     with the cell point at its origin.
   - The coordinates are triple-product ratios (Cramer's rule). The search
