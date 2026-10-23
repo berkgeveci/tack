@@ -3231,11 +3231,12 @@ fragment assumes <code>surface</code> was produced by <code>td.contour</code>:</
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.interop.vtk</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataset_to_vtk</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">vtkmodules.vtkIOXML</span><span class="w"> </span><span class="kn">import</span> <span class="n">vtkXMLUnstructuredGridWriter</span>
 
-<span class="n">writer</span> <span class="o">=</span> <span class="n">vtkXMLUnstructuredGridWriter</span><span class="p">()</span>
-<span class="n">writer</span><span class="o">.</span><span class="n">SetFileName</span><span class="p">(</span><span class="s2">&quot;surface.vtu&quot;</span><span class="p">)</span>
-<span class="n">writer</span><span class="o">.</span><span class="n">SetInputData</span><span class="p">(</span><span class="n">dataset_to_vtk</span><span class="p">(</span><span class="n">surface</span><span class="p">))</span>
-<span class="n">writer</span><span class="o">.</span><span class="n">Write</span><span class="p">()</span>
+<span class="n">vtkXMLUnstructuredGridWriter</span><span class="p">(</span><span class="n">file_name</span><span class="o">=</span><span class="s2">&quot;surface.vtu&quot;</span><span class="p">)(</span><span class="n">dataset_to_vtk</span><span class="p">(</span><span class="n">surface</span><span class="p">))</span>
 </code></pre></div>
+<p>Tack uses VTK's pythonic API (VTK 9.7.1 or later) in its interop and
+examples: keyword constructors, properties, a writer or filter called on
+its input. A contour's cells come across as VTK's own implicit arrays: its
+cell types a <code>vtkConstantArray</code>, its offsets a <code>vtkAffineArray</code>.</p>
 <p>These whole-dataset conversions copy arrays and provide a straightforward
 host boundary. Zero-copy array exchange is a separate route using
 <code>array_to_vtk</code>, <code>vtk_to_array</code> and a DLPack-enabled VTK build. A standard VTK
