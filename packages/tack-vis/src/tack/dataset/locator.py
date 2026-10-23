@@ -3,7 +3,8 @@
 ``CellLocator(data)`` bins the cells' bounding boxes on a uniform grid over
 the dataset's bounds, about one cell per bin (Viskores' CellLocatorUniformBins
 and VTK's cell locators do the same in spirit). ``find(points)`` returns each
-point's cell -- the smallest id among the cells that hold it, -1 for none --
+point's cell -- of the cells that hold it the smallest id, or, if none does
+but some come within the tolerance, the smallest of those; -1 for none --
 and its parametric coordinates there, found by the shapes' own Newton
 inversion (``world_to_parametric``, VTK's EvaluatePosition) and domain test.
 
@@ -11,8 +12,12 @@ The search runs from the cells, not the points: the points are bucketed into
 the same bins, and every cell, through its own view, tests the points in the
 bins its box overlaps. A view addresses its cells its own way -- a structured
 grid's by (i, j, k) -- so a cell is reached through its group's launch, never
-looked up by id. The smallest holder wins by an atomic minimum, and a second
-pass lets it write the coordinates. ``probe`` evaluates fields the same way:
+looked up by id. The winner is decided by an atomic minimum over a rank: a cell
+that holds the point ranks ahead of one that only comes within the tolerance,
+then the smaller id wins; a second pass lets the winner write the coordinates.
+Without the first part a point just inside a cell went to a lower-numbered
+neighbour within the tolerance, and was extrapolated there (off by the
+tolerance times the jump in gradient). ``probe`` evaluates fields the same way:
 the points are bucketed by the cell found, and each cell evaluates its fields
 at its own points through the fields' bases.
 """
@@ -24,7 +29,7 @@ from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import gather
 from tack.dataset import ids
-from tack.dataset.buckets import bucket_order
+from tack.dataset.buckets import bucket_groups, bucket_order
 from tack.dataset.dataset import for_each
 from tack.runtime.dispatch import on_inputs_device
 
@@ -77,7 +82,7 @@ def _point_bins(points, ox, oy, oz, ix, iy, iz, nx, ny, nz, slack, keys):
 
 @tack.kernel
 def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix, iy, iz,
-                 nx, ny, nz, tolerance, write, found, pcs):
+                 nx, ny, nz, tolerance, ncells, write, found, pcs):
     for c in cells:
         e = cells.entity_id(c)
         pts = tack.local_array_like(lo, 3 * cells.NUM_POINTS)
@@ -117,9 +122,12 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
                                     d = cells.nearest_point(pts, x, pc) - x
                                     near = 1 if d.dot(d) <= slack * slack else 0
                             if near == 1:
+                                # Holding the point ranks ahead of coming within
+                                # the tolerance; then the smaller id.
+                                rank = e if cells.is_inside(pc, 0.0) == 1 else e + ncells
                                 if write == 0:
-                                    tack.atomic_min(found, q, e)
-                                elif found[q] == e:
+                                    tack.atomic_min(found, q, rank)
+                                elif found[q] == rank:
                                     pcs[q] = pc
 
 
@@ -161,10 +169,14 @@ def _bin_entries(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, starts, 
 
 
 @tack.kernel
-def _unfound(found, none):
+def _resolve(found, none, ncells):
+    # A rank back to its cell; -1 for none.
     for q in range(found.shape[0]):
-        if found[q] == none:
+        r = found[q]
+        if r == none:
             found[q] = -1
+        elif r >= ncells:
+            found[q] = r - ncells
 
 
 class CellLocator:
@@ -245,9 +257,10 @@ class CellLocator:
             if len(host):
                 tack.copyto(points, host)
         m = arrays.size_of(points)
-        # The smallest cell holding a point wins by an atomic minimum: in i32 below
-        # 2**31 cells, as every backend has those atomics; in i64 past that.
-        scratch = ids.at_least(tack.i32, data.num_cells)
+        # The best rank wins by an atomic minimum (a cell id, or past the ids for
+        # a cell the point is only near): in i32 below 2**30 cells, as every
+        # backend has those atomics; in i64 past that.
+        scratch = ids.at_least(tack.i32, 2 * data.num_cells)
         none = ids.LIMIT if scratch == tack.i32 else 2**63 - 1
         if scratch == tack.i64:
             from tack.runtime.dispatch import get_backend
@@ -264,12 +277,13 @@ class CellLocator:
             nbins = int(np.prod(self.dims))
             keys = tack.empty((m,), tack.i32)
             _point_bins(points, *self._grid(), float(self.slack), keys)
-            # The extra bin: outside the grid.
-            order, starts = bucket_order(keys, nbins + 1, ids.at_least(data.id_dtype, m))
+            # The extra bin: outside the grid, where no cell looks, so not filled.
+            order, starts = bucket_groups(keys, nbins + 1, ids.at_least(data.id_dtype, m),
+                                          skip=nbins)
             for write in (0, 1):
                 for_each(_test_points, data, "cells", points, self.lo, self.hi, starts, order,
-                         *self._grid(), _TOLERANCE, write, found, pcs)
-            _unfound(found, none)
+                         *self._grid(), _TOLERANCE, data.num_cells, write, found, pcs)
+            _resolve(found, none, data.num_cells)
         elif m:
             found.fill(-1)
         return ids.as_ids(found, data.id_dtype), pcs

@@ -11,7 +11,7 @@ cell holding the point reproduces exactly -- checks the values instead.
 
 import numpy as np
 import pytest
-from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
+from test_dataset_api import _scalars, _two_hexes_and_a_pyramid, _vectors
 
 import tack
 import tack.dataset as td
@@ -118,6 +118,49 @@ def test_probe_keeps_the_probed_dataset_and_evaluates_every_kind(backend):
                                (3 * p[:, 0] + p[:, 2])[valid], atol=1e-5)
     assert set(np.unique(out.fields["c"].values.numpy()[valid])) <= {1.0, 2.0, 3.0}
     assert out.fields["h"].space is td.H1(out)
+
+
+def _two_tets():
+    """Two tetrahedra sharing the face x + y + z = 1, and a field that is 0 on the
+    first and rises to 1 at the second's far corner: a kink at the face."""
+    pts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]], float)
+    topology = td.UnstructuredTopology(np.array([10, 10], np.uint8), [0, 4, 8],
+                                       [0, 1, 2, 3, 1, 2, 3, 4])
+    data = td.DataSet(topology, pts)
+    p = np.array([0.0, 0.0, 0.0, 0.0, 1.0])
+    data.fields["p"] = td.Field(td.H1(data), _scalars(p))
+    data.fields["v"] = td.Field(td.H1(data), _vectors(np.c_[p, np.zeros(5), np.zeros(5)]))
+    return data
+
+
+# Points a little inside the second tetrahedron: within the tolerance (0.1% of
+# the first's box diagonal, 1.7e-3) of the first, which has the lower id.
+_DEPTH = 5e-4
+_NEAR_THE_FACE = (np.array([[1 / 3, 1 / 3, 1 / 3], [0.5, 0.25, 0.25], [0.2, 0.5, 0.3]])
+                  + _DEPTH * np.ones(3) / np.sqrt(3))
+
+
+def test_a_point_in_a_cell_is_found_there_not_in_a_neighbour_within_tolerance(backend):
+    """The cell that holds the point must win over a lower-numbered one that only
+    comes within the tolerance: there the field would be extrapolated across the
+    kink (0 here, where the second gives the true value)."""
+    data = _two_tets()
+    cells, _ = td.CellLocator(data).find(_NEAR_THE_FACE)
+    np.testing.assert_array_equal(cells.numpy(), [1, 1, 1])
+    out = td.probe(data, _NEAR_THE_FACE)
+    # The far corner is 2 / sqrt(3) from the face, so p there is the depth over that.
+    np.testing.assert_allclose(out.fields["p"].values.numpy(), _DEPTH * np.sqrt(3) / 2,
+                               atol=1e-6)
+
+
+def test_advection_samples_the_cell_that_holds_the_particle(backend):
+    """Advection locates as the locator does: the velocity is zero in the first
+    tetrahedron and not in the second, so a particle there must move."""
+    data = _two_tets()
+    out = td.advect(data, "v", _NEAR_THE_FACE, step_size=0.1, steps=1)
+    status = out.fields["status"].values.numpy()
+    assert not (status & td.ParticleStatus.ZERO_VELOCITY).any(), status
+    assert (out.positions()[:, 0] > _NEAR_THE_FACE[:, 0]).all()
 
 
 def test_points_outside_every_cell(backend):
