@@ -8,7 +8,7 @@ import pytest
 
 import tack
 from tack.dataset import buckets
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import bucket_groups, bucket_order, run_offsets
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -97,3 +97,27 @@ def test_a_key_outside_the_buckets_is_refused(backend):
         bucket_order(_keys([[9, 1]], tack.i32), 5)
     with pytest.raises(ValueError, match="outside"):
         bucket_order(_keys([-1], tack.i64), 5)
+
+
+@pytest.mark.parametrize("dtype", ID_TYPES, ids=lambda t: t.name)
+def test_groups_hold_each_buckets_entries(backend, dtype):
+    """bucket_groups: the same buckets as bucket_order, each holding the same
+    entries in some order -- one bucket far past the size bucket_order sorts
+    by insertion, as a locator's points outside its grid are."""
+    rng = np.random.default_rng(2)
+    keys = np.r_[rng.integers(0, 3000, 20_000), np.full(5000, 3000)]
+    rng.shuffle(keys)
+    order, starts = bucket_groups(_keys(keys, dtype), 3001)
+    order, starts = order.numpy(), starts.numpy()
+    counts = np.bincount(keys, minlength=3001)
+    np.testing.assert_array_equal(starts, np.concatenate([[0], np.cumsum(counts)]))
+    assert sorted(order) == list(range(len(keys)))
+    for b in (0, 1234, 2999, 3000):
+        group = order[starts[b]:starts[b + 1]]
+        np.testing.assert_array_equal(np.sort(group), np.flatnonzero(keys == b))
+
+
+def test_no_keys_to_group(backend):
+    order, starts = bucket_groups(_keys(np.zeros(0, int), tack.i32), 5)
+    assert order.shape == (0,)
+    np.testing.assert_array_equal(starts.numpy(), np.zeros(6))

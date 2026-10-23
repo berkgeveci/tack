@@ -235,6 +235,47 @@ def bucket_order(values, nbuckets, index_dtype=None):
     return order, starts
 
 
+@tack.kernel
+def _tally(keys, counts):
+    for i in range(keys.shape[0]):
+        tack.atomic_add(counts, keys[i], 1)
+
+
+@tack.kernel
+def _scatter(keys, starts, fill, order):
+    for i in range(keys.shape[0]):
+        b = keys[i]
+        order[starts[b] + tack.atomic_add(fill, b, 1)] = i
+
+
+@on_inputs_device
+def bucket_groups(keys, nbuckets, index_dtype=None):
+    """``(order, starts)`` as ``bucket_order`` gives them for an id array ``keys``,
+    but with each bucket's entries in no particular order (atomics place them):
+    for grouping that needs only which entries share a bucket, such as points
+    by the bin or the cell they lie in. Counting, a scan and a scatter, without
+    reading anything back; every key must lie in ``[0, nbuckets)``, unchecked.
+
+    ``bucket_order`` sorts each bucket, and a bucket past ``_LARGEST`` entries
+    sends it to the radix sort: the points outside a locator's grid, or in no
+    cell, all share one bucket, so a probe took two radix sorts, 50 of its 57
+    launches."""
+    n = _count(keys)
+    indices = _index_dtype(max(n, nbuckets), index_dtype)
+    starts = tack.empty((nbuckets + 1,), indices)
+    if n == 0:
+        starts.fill(0)
+        return tack.empty((0,), indices), starts
+    counts = tack.zeros((nbuckets,), tack.i32)
+    _tally(keys, counts)
+    exclusive_scan(counts, starts, nbuckets, total=False)
+    _close(starts, nbuckets, n)
+    counts.fill(0)                      # now each bucket's fill
+    order = tack.empty((n,), indices)
+    _scatter(keys, starts, counts, order)
+    return order, starts
+
+
 # ── Runs of equal keys ──────────────────────────────────────────────
 
 @tack.kernel

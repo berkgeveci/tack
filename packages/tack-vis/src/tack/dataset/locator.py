@@ -29,7 +29,7 @@ from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import gather
 from tack.dataset import ids
-from tack.dataset.buckets import bucket_order
+from tack.dataset.buckets import bucket_groups, bucket_order
 from tack.dataset.dataset import for_each
 from tack.runtime.dispatch import on_inputs_device
 
@@ -278,7 +278,7 @@ class CellLocator:
             keys = tack.empty((m,), tack.i32)
             _point_bins(points, *self._grid(), float(self.slack), keys)
             # The extra bin: outside the grid.
-            order, starts = bucket_order(keys, nbins + 1, ids.at_least(data.id_dtype, m))
+            order, starts = bucket_groups(keys, nbins + 1, ids.at_least(data.id_dtype, m))
             for write in (0, 1):
                 for_each(_test_points, data, "cells", points, self.lo, self.hi, starts, order,
                          *self._grid(), _TOLERANCE, data.num_cells, write, found, pcs)

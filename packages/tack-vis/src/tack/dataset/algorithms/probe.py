@@ -7,7 +7,7 @@ from tack import arrays
 from tack.dataset import ids
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _vertices
-from tack.dataset.buckets import bucket_order
+from tack.dataset.buckets import bucket_groups
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.locator import CellLocator
 from tack.dataset.spaces import H1, Constant, Values
@@ -62,7 +62,7 @@ def probe(data, where, fields=None, locator=None):
     if m:
         _found_keys(found, data.num_cells, keys)
     # The extra cell: not found.
-    order, links = bucket_order(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m))
+    order, links = bucket_groups(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m))
 
     out = {}
     for name in selected(data, fields):
