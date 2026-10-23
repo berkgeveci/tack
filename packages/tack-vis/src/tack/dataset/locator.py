@@ -277,8 +277,9 @@ class CellLocator:
             nbins = int(np.prod(self.dims))
             keys = tack.empty((m,), tack.i32)
             _point_bins(points, *self._grid(), float(self.slack), keys)
-            # The extra bin: outside the grid.
-            order, starts = bucket_groups(keys, nbins + 1, ids.at_least(data.id_dtype, m))
+            # The extra bin: outside the grid, where no cell looks, so not filled.
+            order, starts = bucket_groups(keys, nbins + 1, ids.at_least(data.id_dtype, m),
+                                          skip=nbins)
             for write in (0, 1):
                 for_each(_test_points, data, "cells", points, self.lo, self.hi, starts, order,
                          *self._grid(), _TOLERANCE, data.num_cells, write, found, pcs)

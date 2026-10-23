@@ -121,3 +121,22 @@ def test_no_keys_to_group(backend):
     order, starts = bucket_groups(_keys(np.zeros(0, int), tack.i32), 5)
     assert order.shape == (0,)
     np.testing.assert_array_equal(starts.numpy(), np.zeros(6))
+
+
+@pytest.mark.parametrize("dtype", ID_TYPES, ids=lambda t: t.name)
+def test_groups_leave_the_skipped_bucket_empty(backend, dtype):
+    """skip: its entries are not placed, and the other buckets are as without it."""
+    rng = np.random.default_rng(3)
+    keys = np.r_[rng.integers(0, 50, 2000), np.full(700, 50), rng.integers(51, 60, 300)]
+    rng.shuffle(keys)
+    order, starts = bucket_groups(_keys(keys, dtype), 60, skip=50)
+    order, starts = order.numpy(), starts.numpy()
+    counts = np.bincount(keys, minlength=60)
+    counts[50] = 0
+    np.testing.assert_array_equal(starts, np.concatenate([[0], np.cumsum(counts)]))
+    placed = order[:starts[-1]]
+    assert sorted(placed) == sorted(np.flatnonzero(keys != 50))
+    for b in (0, 49, 51, 59):
+        group = order[starts[b]:starts[b + 1]]
+        np.testing.assert_array_equal(np.sort(group), np.flatnonzero(keys == b))
+

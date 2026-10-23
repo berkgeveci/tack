@@ -61,8 +61,9 @@ def probe(data, where, fields=None, locator=None):
     keys = tack.empty((m,), found.dtype)
     if m:
         _found_keys(found, data.num_cells, keys)
-    # The extra cell: not found.
-    order, links = bucket_groups(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m))
+    # The extra cell: not found, never evaluated, so not filled.
+    order, links = bucket_groups(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m),
+                                 skip=data.num_cells)
 
     out = {}
     for name in selected(data, fields):
