@@ -118,6 +118,9 @@ def contour(data, field, value, merge_points=True, fields=None):
     fields (``Constant``, values on cells) onto its triangles, from the cell
     each came from.
     """
+    from tack.dataset.ghosts import visible
+
+    data, field = visible(data, field)
     field = _field(data, field)
     space = field.space
     if isinstance(space, H1) and space.order != 1:

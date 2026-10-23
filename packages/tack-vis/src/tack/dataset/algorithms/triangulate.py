@@ -14,6 +14,9 @@ def triangulate(data, fields=None):
     """Every 2D cell as triangles: a quad or pixel in 2, a polygon in a fan from its
     first point; other cells are left out. The points are the same; cell fields
     go to each cell's triangles."""
+    from tack.dataset.ghosts import visible
+
+    data = visible(data)
     t = data.topology
     if getattr(t, "reference_cells", True):
         return _split(data, "triangles", fields)

@@ -65,6 +65,12 @@ def probe(data, where, fields=None, locator=None):
     evaluated through it in the cell holding the point, values on cells taken
     from that cell, and ``valid`` (1, or 0 where no cell holds the point and the
     values are 0). ``locator`` reuses a ``CellLocator`` of ``data``."""
+    from tack.dataset.ghosts import refuse_hidden, visible
+
+    if locator is None:
+        data = visible(data)
+    else:
+        refuse_hidden(data, "probe with a locator")
     from tack.dataset.carry import _point_values, selected
 
     if not isinstance(where, DataSet):

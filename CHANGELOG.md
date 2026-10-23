@@ -27,6 +27,22 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `dataset_to_vtk` convert `vtkPartitionedDataSet` and
   `vtkPartitionedDataSetCollection` (a `dict` of names to partitioned
   datasets).
+- Filters carry ghost marks, the second phase of the partitioned-data
+  proposal. They process a piece's ghost cells, as VTK's do, and what they
+  make takes the owner of what it came from: an output cell its source
+  cell's, a point on an input edge the edge's, a point inside a cell the
+  cell's, a surface face its cell's, and a face two cells share or an edge
+  the owner of its smallest point, by position. Over pieces with a ghost
+  layer, the owned part of every filter's output is the whole's output, and
+  `statistics` and `entropy` of the outputs are the whole's (checked for
+  every filter that makes cells or points, chained, on polyhedra, in 2D,
+  over `split`'s pieces and VTK's). `split(data, pieces, ghost_layers=n)`
+  adds ghost layers; `remove_ghosts(data)` takes the duplicate and hidden
+  cells out, keeping the points a piece owns, before rendering or writing
+  one file. Filters never process hidden cells. Outputs of pieces without
+  ghost cells, which cannot know what their neighbours make on the faces
+  and edges they share, record that they lost the marks, so reductions
+  refuse them, saying why.
 - Ghost marks: every cell and point that several pieces hold has one owner,
   and the other copies are ghosts, marked in `data.ghosts` (a
   `tack.dataset.Ghosts` of `u8` marks per cell and per point, in

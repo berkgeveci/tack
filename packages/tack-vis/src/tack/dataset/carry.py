@@ -79,12 +79,14 @@ class Interpolate:
     """Output point ``i`` lies between input points ``ends[i]`` (a 2-vector of ids)
     at ``weights[i]`` from the first. ``averages``, ``(offsets, members)``: further
     output points after those, each the average of earlier output points
-    ``members[offsets[k]:offsets[k + 1]]`` (clip's centroid points)."""
+    ``members[offsets[k]:offsets[k + 1]]`` (clip's centroid points), and inside
+    input cell ``average_cells[k]``, whose ghost mark it takes."""
 
-    def __init__(self, ends, weights, averages=None):
+    def __init__(self, ends, weights, averages=None, average_cells=None):
         self.ends = ends
         self.weights = weights
         self.averages = averages
+        self.average_cells = average_cells
 
 
 # ── Values ──────────────────────────────────────────────────────────
@@ -297,6 +299,9 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     geometry field when the filter computed it, otherwise the input's is
     carried like any point (or L2) field.
 
+    Ghost marks go by the same maps (``ghosts.carry_marks``): what the output makes
+    takes the owner of what it came from.
+
     Sets go by the same maps: an output entity is in a set when the input entity
     it comes from is, and a face or edge set becomes a cell set where faces or
     edges become cells (``faces_to_cells``, ``edges_to_cells``). A set whose kind has no map, or one that makes new
@@ -321,9 +326,8 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
                                edges_to_cells)
             if moved is not None:
                 sets[name] = moved
-    from tack.dataset.ghosts import drop_marks, keep_marks
+    from tack.dataset.ghosts import carry_marks
 
-    result = DataSet(out, geometry, fields=carried, sets=sets)
-    if isinstance(points, Same) and isinstance(cells, Same):
-        return keep_marks(data, result)       # the same cells and points
-    return drop_marks(data, result)
+    return carry_marks(data, DataSet(out, geometry, fields=carried, sets=sets), points=points,
+                       cells=cells, faces_to_cells=faces_to_cells,
+                       edges_to_cells=edges_to_cells)

@@ -33,6 +33,12 @@ def extract_edges(data, edges=None, fields=None):
     points, the lines being linear. Cell and face fields are left behind: an
     edge lies on every cell and face around it. The geometry must be ``H1``:
     an ``L2`` one has no shared points for the lines to stand on."""
+    from tack.dataset.ghosts import refuse_hidden, visible
+
+    if edges is None:
+        data = visible(data)
+    else:
+        refuse_hidden(data, "extract_edges of chosen edges")
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_edges keeps the points, so needs an H1 geometry")
     topology = data.topology

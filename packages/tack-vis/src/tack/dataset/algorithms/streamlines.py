@@ -53,6 +53,12 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
     ``time`` on the points. A seed that takes no step has a point and no line."""
+    from tack.dataset.ghosts import refuse_hidden, visible
+
+    if locator is None:
+        data, field = visible(data, field)
+    else:
+        refuse_hidden(data, "streamlines with a locator")
     from tack.dataset.polyhedra import PolylineTopology
 
     _, _, _, _, (trace, trace_times), lengths, capacity = _run(

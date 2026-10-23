@@ -371,13 +371,101 @@ def test_pieces_on_two_devices_are_reduced_where_each_is():
     assert td.entropy(pds, "cells") == pytest.approx(td.entropy(whole, "cells"))
 
 
-# ── Filters and ghost marks (phase 1: kept or refused, never lost silently) ──
+# ── Filters and ghost marks ─────────────────────────────────────────
+
+def _owned(marks, n, skipped):
+    return n if marks is None else int(((marks.numpy() & skipped) == 0).sum())
+
+
+def _owned_counts(data):
+    """The cells and points ``data`` owns."""
+    g = data.ghosts
+    return (_owned(None if g is None else g.cells, data.num_cells, Ghosts.SKIPPED_CELLS),
+            _owned(None if g is None else g.points, data.num_points, Ghosts.SKIPPED_POINTS))
+
+
+_FILTERS = {
+    "contour": lambda d: td.contour(d, "RTData", 160.0),
+    "clip": lambda d: td.clip(d, "RTData", 160.0),
+    "slice": lambda d: td.slice_plane(d, (0.3, 0.2, 0.1), (1.0, 2.0, 3.0)),
+    "threshold": lambda d: td.threshold(d, "RTData", 150.0, 200.0),
+    "extract_surface": td.extract_surface,
+    "extract_edges": td.extract_edges,
+    "tetrahedralize": td.tetrahedralize,
+    "threshold_points": lambda d: td.threshold_points(d, "RTData", 150.0, 200.0),
+    "clip, contour": lambda d: td.contour(td.clip(d, "RTData", 140.0), "RTData", 180.0),
+    "tetrahedralize, surface": lambda d: td.extract_surface(td.tetrahedralize(d)),
+    "as_polyhedra, contour": lambda d: td.contour(td.as_polyhedra(d), "RTData", 160.0),
+    "as_polyhedra, surface": lambda d: td.extract_surface(td.as_polyhedra(d)),
+}
+
+
+def _check_shares(whole, pieces, filter):
+    """What ``filter`` makes of the pieces, the owned part of each, is what it makes
+    of the whole: as many cells and points, and the same statistics."""
+    expected = filter(whole)
+    outputs = [filter(piece) for piece in pieces]
+    owned = np.sum([_owned_counts(out) for out in outputs], axis=0)
+    assert tuple(int(v) for v in owned) == (expected.num_cells, expected.num_points)
+    if "RTData" in expected.fields:
+        a, b = td.statistics(expected, "RTData"), td.statistics(td.PartitionedDataSet(outputs),
+                                                                "RTData")
+        assert b.n == a.n
+        assert b.mean == pytest.approx(a.mean, rel=1e-5)
+        assert b.min == pytest.approx(a.min, rel=1e-6) and b.max == pytest.approx(a.max, rel=1e-6)
+    return outputs
+
+
+@pytest.mark.parametrize("name", list(_FILTERS))
+def test_filters_give_each_piece_its_share_of_the_wholes_output(name):
+    """Each piece marks what it makes from its ghost layers as another's: an output
+    cell takes its source cell's owner, a point on an edge the edge's, a face
+    or an edge shared by cells its smallest point's, a point inside a cell the
+    cell's. So the owned output of the pieces is the whole's output, cell for
+    cell and point for point, with one and with two ghost layers, through
+    chains of filters and on polyhedra."""
+    whole = td.wavelet(8)
+    for layers in (1, 2):
+        _check_shares(whole, td.split(whole, (2, 2, 2), ghost_layers=layers), _FILTERS[name])
+
+
+def test_two_dimensional_pieces_give_their_shares():
+    grid = td.uniform_grid((21, 17), spacing=(0.1, 0.1, 1.0))
+    x = grid.positions()
+    grid.fields["RTData"] = td.Field(td.H1(grid), tack.array(
+        (np.sin(3 * x[:, 0]) + np.cos(4 * x[:, 1])).astype(np.float32)))
+    pieces = td.split(grid, (3, 2), ghost_layers=1)
+    for filter in (lambda d: td.contour(d, "RTData", 0.3), lambda d: td.clip(d, "RTData", 0.3),
+                   td.extract_surface, td.extract_edges, td.triangulate,
+                   lambda d: td.contour(td.as_polygons(d), "RTData", 0.3),
+                   lambda d: td.extract_surface(td.as_polygons(d))):
+        _check_shares(grid, pieces, filter)
+
+
+def test_pieces_without_ghost_cells_refuse_what_their_neighbours_decide():
+    """Without ghost cells a piece cannot tell what its neighbours make or keep from
+    the cells, faces and edges they share: a point on a shared edge, a shared
+    face, a shared point that only a neighbour's kept cells use. Such outputs
+    record that they lost the marks, and reductions refuse them -- over pieces
+    too. Points chosen by their own values, and outputs on the same cells and
+    points, keep the marks."""
+    whole = td.wavelet(4)
+    pieces = td.split(whole, 2)                        # no ghost layers
+    for filter in (_FILTERS["contour"], _FILTERS["threshold"], td.extract_surface):
+        out = [filter(piece) for piece in pieces]
+        with pytest.raises(NotImplementedError, match="no ghost cells"):
+            td.statistics(td.PartitionedDataSet(out), "RTData")
+        with pytest.raises(NotImplementedError, match="no ghost cells"):
+            td.entropy(out[1], "RTData")
+    points = [td.threshold_points(piece, "RTData", 0.0, 1e9) for piece in pieces]
+    assert td.statistics(td.PartitionedDataSet(points), "RTData").n == whole.num_points
+
 
 def test_filters_that_keep_the_cells_keep_the_marks():
     """warp, transform, shrink, as_polyhedra and a probe's target keep their input's
     cells and points, so they keep its marks, and reduce as it does."""
     whole = td.wavelet(4)
-    piece = td.split(whole, 2)[0]
+    piece = td.split(whole, 2)[1]
     marks = piece.ghosts.points.numpy()
     moved = td.transform(piece, np.eye(4))
     shrunk = td.shrink(piece, 0.9)
@@ -391,31 +479,121 @@ def test_filters_that_keep_the_cells_keep_the_marks():
         assert td.statistics(out, "RTData").n == expected.n
 
 
-def test_a_filters_output_that_lost_the_marks_is_not_reduced():
-    """A filter that makes new cells or points does not carry the marks yet: its
-    output remembers that, and statistics and entropy refuse it -- over pieces
-    too -- rather than count shared points once per piece. Filtering it again
-    keeps the record; setting marks clears it; moving it keeps it."""
+def test_a_lost_record_is_kept_until_marks_are_set():
+    """Filtering an output that lost the marks keeps the record; so does moving it;
+    setting marks clears it. Data without marks loses nothing."""
     whole = td.wavelet(4)
-    pieces = td.split(whole, 2)
-    cut = [td.threshold(piece, "RTData", 0.0, 1e9) for piece in pieces]
-    assert all(out.ghosts is None for out in cut)
-    with pytest.raises(NotImplementedError, match="filter's output from data with ghost"):
-        td.statistics(cut[0], "RTData")
-    with pytest.raises(NotImplementedError, match="filter's output"):
-        td.entropy(cut[0], "RTData")
-    with pytest.raises(NotImplementedError, match="filter's output"):
-        td.statistics(td.PartitionedDataSet(cut), "RTData")
-    again = td.tetrahedralize(cut[0])
-    with pytest.raises(NotImplementedError, match="filter's output"):
+    cut = td.threshold(td.split(whole, 2)[1], "RTData", 0.0, 1e9)
+    again = td.tetrahedralize(cut)
+    with pytest.raises(NotImplementedError, match="no ghost cells"):
         td.statistics(again, "RTData")
     moved = again.to_device(dispatch.as_device(_SecondCPU()))
-    with pytest.raises(NotImplementedError, match="filter's output"):
+    with pytest.raises(NotImplementedError, match="no ghost cells"):
         td.statistics(moved, "RTData")
     again.ghosts = Ghosts(points=np.zeros(again.num_points, np.uint8))
     assert td.statistics(again, "RTData").n == again.num_points
-    # Without marks to begin with, nothing is refused.
     assert td.statistics(td.threshold(whole, "RTData", 0.0, 1e9), "RTData").n > 0
+
+
+@pytest.mark.parametrize("counts", [(2, 1, 1), (3, 2, 2)])
+@pytest.mark.parametrize("layers", [1, 2])
+def test_split_adds_ghost_layers(counts, layers):
+    """A piece holds its own block and ``layers`` of its neighbours' cells around it,
+    as far as the grid goes, marked duplicates; its own cells, and its own
+    points, are each in exactly one piece; and the fields are the whole's."""
+    whole = td.uniform_grid((7, 6, 5))
+    whole.fields["p"] = td.Field(td.H1(whole), tack.array(np.arange(whole.num_points,
+                                                                     dtype=np.int32)))
+    whole.fields["c"] = td.Field(td.Constant(whole), tack.array(np.arange(whole.num_cells,
+                                                                          dtype=np.int32)))
+    cells = [d - 1 for d in whole.topology.point_dims]
+    owned_cells, owned_points = [], []
+    pieces = td.split(whole, counts, ghost_layers=layers)
+    plain = td.split(whole, counts)
+    for piece, own in zip(pieces, plain):
+        dims = piece.topology.point_dims
+        assert all(a - b <= 2 * layers for a, b in zip(dims, own.topology.point_dims))
+        assert all(d - 1 <= n for d, n in zip(dims, cells))
+        c, p = piece.ghosts.cells.numpy(), piece.ghosts.points.numpy()
+        assert set(np.unique(c)) <= {0, Ghosts.DUPLICATECELL}
+        cids, pids = _host(piece.fields["c"].values), _host(piece.fields["p"].values)
+        np.testing.assert_array_equal(np.sort(cids[c == 0]),
+                                      np.sort(_host(own.fields["c"].values)))
+        owned_cells.extend(cids[c == 0])
+        owned_points.extend(pids[p == 0])
+        np.testing.assert_allclose(piece.positions(), whole.positions()[pids], atol=1e-6)
+    np.testing.assert_array_equal(np.sort(owned_cells), np.arange(whole.num_cells))
+    np.testing.assert_array_equal(np.sort(owned_points), np.arange(whole.num_points))
+    with pytest.raises(ValueError, match="count of layers"):
+        td.split(whole, 2, ghost_layers=-1)
+
+
+def test_remove_ghosts_keeps_what_a_piece_owns():
+    """remove_ghosts takes out the duplicate and hidden cells: a structured piece
+    stays a structured grid of its own block, the pieces' cells are the
+    whole's, and the points kept keep their owners -- a point a piece owns
+    stays though only ghost triangles used it -- so reductions are unchanged."""
+    whole = td.wavelet(6)
+    pieces = td.split(whole, (2, 2, 1), ghost_layers=1)
+    kept = [td.remove_ghosts(piece) for piece in pieces]
+    for k, own in zip(kept, td.split(whole, (2, 2, 1))):
+        assert isinstance(k.topology, td.StructuredTopology)
+        assert k.topology.point_dims == own.topology.point_dims
+        np.testing.assert_allclose(k.positions(), own.positions(), atol=1e-6)
+    assert td.statistics(td.PartitionedDataSet(kept), "RTData").n == whole.num_points
+    assert td.remove_ghosts(kept[0]) is kept[0]                # nothing left to take out
+    iso = td.contour(whole, "RTData", 160.0)
+    surfaces = [td.remove_ghosts(td.contour(piece, "RTData", 160.0)) for piece in pieces]
+    assert sum(s.num_cells for s in surfaces) == iso.num_cells
+    assert td.statistics(td.PartitionedDataSet(surfaces), "RTData").n == iso.num_points
+    for s in surfaces:
+        assert not (s.ghosts.cells.numpy() & Ghosts.SKIPPED_CELLS).any()
+    with pytest.raises(ValueError, match="lost"):
+        td.remove_ghosts(td.contour(td.split(whole, 2)[1], "RTData", 160.0))
+    assert td.remove_ghosts(whole) is whole                     # no marks
+
+
+def test_hidden_cells_are_never_processed():
+    """Filters leave hidden cells out, as if they were not there: their output is
+    the output of the other cells, a field passed as an object included.
+    Choosing faces or edges by id, or reusing a locator, on such data is
+    refused rather than done with the hidden cells."""
+    whole = td.wavelet(6)
+    marks = np.zeros(whole.num_cells, np.uint8)
+    marks[::3] = Ghosts.HIDDENCELL
+    whole.ghosts = Ghosts(cells=marks)
+    rest = td.extract_cells(td.wavelet(6), np.flatnonzero(marks == 0))
+    for filter in (_FILTERS["contour"], _FILTERS["clip"], _FILTERS["threshold"],
+                   td.extract_surface, td.extract_edges, td.tetrahedralize,
+                   lambda d: td.contour(d, d.fields["RTData"], 160.0),
+                   lambda d: td.extract_cells(d, np.arange(d.num_cells))):
+        a, b = filter(whole), filter(rest)
+        assert (a.num_cells, a.num_points) == (b.num_cells, b.num_points)
+    seeds = np.array([[0.5, 0.5, 0.5]], np.float32)
+    probed = td.probe(whole, seeds)
+    assert probed.num_points == 1
+    with pytest.raises(NotImplementedError, match="hidden cells"):
+        td.extract_surface(whole, np.arange(4))
+    with pytest.raises(NotImplementedError, match="hidden cells"):
+        td.probe(whole, seeds, locator=td.CellLocator(whole))
+
+
+@needs_vtk
+def test_vtks_ghost_cells_give_each_piece_its_share():
+    """The same over VTK's pieces of an unstructured mesh, with ghost cells from
+    vtkGhostCellsGenerator."""
+    image = vtkRTAnalyticSource(whole_extent=(-8, 8, -8, 8, -8, 8))()
+    layered = (vtkRedistributeDataSetFilter(number_of_partitions=4,
+                                            preserve_partitions_in_output=True)
+               >> vtkGhostCellsGenerator(number_of_ghost_layers=1, build_if_required=False))
+    pieces = vtk_to_dataset(layered(image))
+    whole = vtk_to_dataset(image)
+    assert all(isinstance(p.topology, td.UnstructuredTopology) for p in pieces)
+    for name in ("contour", "clip", "threshold", "extract_surface", "extract_edges",
+                 "clip, contour", "as_polyhedra, surface"):
+        outputs = _check_shares(whole, pieces, _FILTERS[name])
+        kept = [td.remove_ghosts(out) for out in outputs]
+        assert sum(_owned_counts(k)[0] for k in kept) == sum(k.num_cells for k in kept)
 
 
 # ── VTK ─────────────────────────────────────────────────────────────
