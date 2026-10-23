@@ -371,16 +371,29 @@ def test_a_point_shared_by_several_cells_goes_to_the_smallest_id(backend, kind):
     for c in range(data.num_cells):
         ids = connectivity[offsets[c]:offsets[c + 1]]
         smallest[ids] = np.minimum(smallest[ids], c)
-    points = np.arange(data.num_points)
-    if kind == "pyramid":
-        # A pyramid's apex is where its parametric map is singular (any r and s
-        # at t = 1): Newton does not converge there and no cell holds the point,
-        # on main before this margin too. A separate fault; leave the apexes out.
-        apexes = {int(connectivity[offsets[c] + 4]) for c in range(data.num_cells)}
-        points = np.array([p for p in points if p not in apexes])
+    points = np.arange(data.num_points)        # pyramids' apexes too
     x = data.positions().astype(np.float64)[points]
     for found, _ in _both_ways(data, x):
         np.testing.assert_array_equal(found.cells.numpy(), smallest[points])
+
+
+@needs_vtk
+def test_a_point_at_a_pyramids_apex_is_found(backend):
+    """The pyramid grid's apexes, one per block shared by its six pyramids, were
+    found by no cell (Newton cannot converge where the pyramid's map is
+    singular). Both searches find them now, and a linear field there is exact."""
+    data = vtk_to_dataset(_grid("pyramid"))
+    offsets = data.topology.offsets.numpy().reshape(-1)
+    connectivity = data.topology.connectivity.numpy().reshape(-1)
+    apexes = sorted({int(connectivity[offsets[c] + 4]) for c in range(data.num_cells)})
+    x = data.positions().astype(np.float64)[apexes]
+    assert len(apexes) == 18
+    for found, probed in _both_ways(data, x):
+        cells = found.cells.numpy()
+        assert (cells >= 0).all(), cells
+        for c, p in zip(cells, apexes):
+            assert p in connectivity[offsets[c]:offsets[c + 1]]
+        np.testing.assert_allclose(probed.fields["lin"].values.numpy(), _linear(x), atol=2e-4)
 
 
 def test_a_first_query_of_few_points_runs_from_the_cells():
