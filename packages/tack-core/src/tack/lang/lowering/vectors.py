@@ -28,8 +28,9 @@ class VectorValues:
     """Lowers vector and matrix values, variables and their components.
 
     Owns `_vector_vars` (variable -> component count), `_matrix_vars`
-    (variable -> (rows, columns)) and `_component_names` (the generated
-    name of each variable's components). Reads the array metadata of
+    (variable -> (rows, columns)), `_component_names` (the generated
+    name of each variable's components) and `_tuple_vars` (a variable
+    holding several values, some of them vectors). Reads the array metadata of
     `ArrayAccess` for vector array elements.
     """
 
@@ -40,6 +41,34 @@ class VectorValues:
         self._matrix_vars: dict[str, tuple] = {}
         # (variable, component) -> the generated name of that component
         self._component_names: dict[tuple[str, int], str] = {}
+        # A name bound to several values, some of them vectors -- a device
+        # function's tuple, kept to unpack or return: name -> its items, each
+        # a temporary's name or a vector's component names
+        self._tuple_vars: dict[str, TupleValue] = {}
+
+    def _bind_tuple(self, name, value):
+        """``name = <a tuple of values, some vectors>``: each item in a temporary of its
+        own, so that unpacking ``name`` or returning it gives the tuple back. A
+        tuple of scalars alone binds as a vector, as it always has."""
+        stmts = []
+        items = []
+        for k, item in enumerate(value):
+            # One temporary per (name, item), as a vector's components have,
+            # so every branch that binds the name writes the same ones.
+            temp = self._component_name(name, f"item{k}")
+            if isinstance(item, list):
+                self._bind_vector(temp, item)
+                for c, component in enumerate(item):
+                    stmts.append(ir.IRAssign(target=self._component_name(temp, c),
+                                             value=component))
+                items.append(self._variable_value(temp))
+            else:
+                stmts.append(ir.IRAssign(target=temp, value=item))
+                items.append(ir.IRName(temp))
+        self._vector_vars.pop(name, None)
+        self._matrix_vars.pop(name, None)
+        self._tuple_vars[name] = TupleValue(items)
+        return stmts
 
     def _component_name(self, name, component):
         key = (name, component)

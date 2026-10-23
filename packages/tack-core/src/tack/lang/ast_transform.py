@@ -317,6 +317,14 @@ class KernelTransformer(
         if self._is_array_component(target):
             return self._assign_array_component(target, visited_value)
 
+        # A device function's tuple holding vectors, bound to one name: kept
+        # item by item, to unpack or return later.
+        if (isinstance(visited_value, TupleValue) and isinstance(target, ast.Name)
+                and any(isinstance(item, list) for item in visited_value)):
+            return self._bind_tuple(target.id, visited_value)
+        if isinstance(target, ast.Name):
+            self._tuple_vars.pop(target.id, None)
+
         # Check if RHS is a vector variable → propagate vector-ness
         if isinstance(visited_value, list):
             if any(isinstance(component, list) for component in visited_value):
@@ -737,6 +745,8 @@ class KernelTransformer(
         # If this name is a vector variable, return its components as a list
         if node.id in self._vector_vars:
             return self._variable_value(node.id)
+        if node.id in self._tuple_vars:
+            return TupleValue(self._tuple_vars[node.id])
         if node.id in self._soa_arrays:
             raise self._source_error(
                 node, "name", f"'{node.id}' is an SOA array (one array per component), "
