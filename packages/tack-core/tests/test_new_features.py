@@ -1170,12 +1170,62 @@ def test_min_max_of_several_values_and_vector_reductions(backend):
 
 
 def _several_values_bound_to_one_name():
+    # Binding the tuple to one name is fine (it unpacks or returns later);
+    # storing it as one value is not.
     @tack.kernel
     def bad(vf, s, out, n):
         for i in range(n):
             hit = _closest_hit(vf[i], 1.0)
-            out[i] = vf[i]
+            out[i] = hit
     return bad
+
+
+@tack.func
+def _three(x):
+    return 2, tack.vec3(x, x + 1.0, x + 2.0), 1
+
+
+@tack.func
+def _three_again(x):
+    return _three(x)                        # the callee's tuple, returned as it is
+
+
+@tack.func
+def _three_or_literal(x):
+    if x > 0.0:
+        return 7, tack.vec3(x, 0.0, 0.0), 0
+    return _three(x)                        # beside a literal tuple
+
+
+@tack.func
+def _three_kept(x):
+    r = _three(x)                           # a name holding the tuple
+    a, v, b = r
+    return a + b, v * 2.0, b
+
+
+@tack.kernel
+def _tuples_through_calls(xs, ints, vecs):
+    for i in range(xs.shape[0]):
+        t, v, s = _three_again(xs[i])
+        u, w, z = _three_or_literal(xs[i])
+        p, q, r = _three_kept(xs[i])
+        r2 = _three(xs[i])
+        r2 = 5                              # the name rebound to a scalar
+        ints[i] = t * 1000 + s * 100 + u * 10 + p + r2 * 0
+        vecs[i] = v + w + q
+
+
+def test_a_tuple_holding_vectors_passes_through_calls_and_names(backend):
+    """A device function may return another call's tuple, in place of or beside a
+    literal one, and a name may hold such a tuple until it is unpacked; every
+    branch that binds it writes the same temporaries."""
+    xs = tack.array(np.array([1.0, -1.0], np.float32))
+    ints = tack.zeros((2,), tack.i32)
+    vecs = tack.zeros((2,), tack.vec3())
+    _tuples_through_calls(xs, ints, vecs)
+    np.testing.assert_array_equal(ints.numpy(), [2173, 2123])
+    np.testing.assert_allclose(vecs.numpy(), [[4, 6, 9], [-4, 0, 4]])
 
 
 def _array_reduced_inside_a_kernel():

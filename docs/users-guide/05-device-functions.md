@@ -69,8 +69,11 @@ def shade(origins, directions, depth, normals, n):
         depth[i], normals[i], color = closest_hit(origins[i], directions[i])
 ```
 
-A result made of several values has to be unpacked into one target each;
-binding it to a single name is rejected.
+A result made of several values is unpacked into one target each. A
+device function may also return another call's result as it is
+(`return closest_hit(o, d)`), and a name may hold it until it is unpacked
+(`hit = closest_hit(o, d)`, then `depth, normal, color = hit`); using such a
+name as one value is rejected.
 
 ## Nested Calls
 

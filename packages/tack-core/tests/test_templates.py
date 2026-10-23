@@ -450,3 +450,116 @@ def test_a_device_class_argument_needs_no_annotation(backend):
     out = tack.empty((3,), tack.i32)
     shift(Offset(10), out)
     assert out.numpy().tolist() == [10, 11, 12]
+
+
+# --- Templates passed to device functions and methods ---
+
+@tack.device_class
+class _Source:
+    def __init__(self, x):
+        self.x = x
+
+    @tack.func
+    def get(self, i):
+        return self.x[i]
+
+    @tack.func
+    def twice(self, i):
+        return _plus_half(self, i) * 2.0                  # self passed on
+
+
+@tack.device_class
+class _Holder:
+    def __init__(self, source, y):
+        self.base = source
+        self.y = y
+
+    @tack.func
+    def combine(self, other, i):
+        return self.y[i] + other.get(i)                   # a template argument
+
+    @tack.func
+    def through(self, i):
+        return _plus_half(self.base, i)                   # a held template passed on
+
+
+@tack.func
+def _plus_half(source, i):
+    return source.get(i) + 0.5
+
+
+@tack.func
+def _both(source, holder, i):
+    return source.get(i) * holder.y[i] + holder.combine(source, i)
+
+
+@tack.kernel
+def _templates_as_arguments(source, holder, out):
+    for i in range(out.shape[0]):
+        out[i] = _both(source, holder, i) + source.twice(i) + holder.through(i)
+
+
+@tack.kernel
+def _method_given_a_later_template(holder, source, out):
+    # holder's method is resolved after source: the call waits, then binds it
+    for i in range(out.shape[0]):
+        out[i] = holder.combine(source, i)
+
+
+def test_device_functions_and_methods_take_templates(backend):
+    """A template, or one it holds, passed to a @tack.func or to a template's
+    method: the callee is specialized with that parameter bound, as self is,
+    with two templates bound one after the other."""
+    x = np.arange(4, dtype=np.float32)
+    source = _Source(tack.array(x))
+    holder = _Holder(source, tack.array(np.full(4, 2.0, np.float32)))
+    out = tack.zeros((4,), tack.f32)
+    _templates_as_arguments(source, holder, out)
+    expected = x * 2 + (2 + x) + (x + 0.5) * 2 + (x + 0.5)
+    np.testing.assert_allclose(out.numpy(), expected)
+    _method_given_a_later_template(holder, source, out)
+    np.testing.assert_allclose(out.numpy(), 2 + x)
+
+
+def _not_a_device_function(source, i):
+    return 0.0
+
+
+@tack.kernel
+def _template_to_python(source, out):
+    for i in range(out.shape[0]):
+        out[i] = _not_a_device_function(source, i)
+
+
+@tack.func
+def _again(source, i):
+    return _again(source, i)
+
+
+@tack.kernel
+def _template_recursion(source, out):
+    for i in range(out.shape[0]):
+        out[i] = _again(source, i)
+
+
+@tack.func
+def _kept(source, i):
+    copy_of = source
+    return copy_of.get(i)
+
+
+@tack.kernel
+def _template_kept(source, out):
+    for i in range(out.shape[0]):
+        out[i] = _kept(source, i)
+
+
+def test_a_template_passed_to_what_cannot_take_it_is_refused(backend):
+    source = _Source(tack.array(np.zeros(2, np.float32)))
+    out = tack.zeros((2,), tack.f32)
+    with pytest.raises(TypeError, match="is given a device-class object, but is not a @tack.func"):
+        _template_to_python(source, out)
+    with pytest.raises(NotImplementedError, match="Recursive"):
+        _template_recursion(source, out)
+    with pytest.raises(TypeError, match="binds to 'copy_of' the device-class object 'source'"):
+        _template_kept(source, out)

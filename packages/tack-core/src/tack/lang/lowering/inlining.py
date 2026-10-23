@@ -83,9 +83,10 @@ class _NameRenamer(ast.NodeTransformer):
                         value=elt,
                     ), node))
                 return stmts
-            # Single expression returned but expected multi — assign to first
+            # A call (or name) giving the tuple: unpack it into the results
             return ast.copy_location(ast.Assign(
-                targets=[ast.Name(id=self._result_var[0], ctx=ast.Store())],
+                targets=[ast.Tuple(elts=[ast.Name(id=var, ctx=ast.Store())
+                                         for var in self._result_var], ctx=ast.Store())],
                 value=value,
             ), node)
 
@@ -288,9 +289,12 @@ class Inlining:
         return self._result_value(result_var)
 
     def _result_value(self, result_var: str):
-        """An inlined call's result: a name, or a vector's component names."""
+        """An inlined call's result: a name, a vector's component names, or the items
+        of a tuple the callee returned from another call."""
         if result_var in self._vector_vars:
             return self._variable_value(result_var)
+        if result_var in self._tuple_vars:
+            return TupleValue(self._tuple_vars[result_var])
         return ir.IRName(result_var)
 
     def _collect_assigned_names(self, stmts) -> set[str]:
@@ -326,9 +330,12 @@ class Inlining:
 
         Returns the number of return values (0 for void, 1 for scalar, >1 for tuple).
         """
+        # A literal tuple anywhere decides, wherever it sits: a return of a call
+        # giving the tuple (``return f(x)``) may come first in the walk.
+        count = 0
         for node in ast.walk(funcdef):
             if isinstance(node, ast.Return) and node.value:
                 if isinstance(node.value, ast.Tuple):
                     return len(node.value.elts)
-                return 1
-        return 0
+                count = 1
+        return count

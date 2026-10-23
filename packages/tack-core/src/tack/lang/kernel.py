@@ -187,7 +187,8 @@ class Kernel:
                     self._ast, vector_arrays=vector_arrays,
                     texture_arrays=texture_arrays, python_func=self.func, debug=debug)
             from tack.lang.template_rewrite import rewrite_templates
-            rewritten_ast, resolved_funcs = rewrite_templates(self._ast, template_args)
+            rewritten_ast, resolved_funcs = rewrite_templates(self._ast, template_args,
+                                                              python_func=self.func)
             return _verified_transform(
                 rewritten_ast, vector_arrays=vector_arrays,
                 texture_arrays=texture_arrays, python_func=self.func,
