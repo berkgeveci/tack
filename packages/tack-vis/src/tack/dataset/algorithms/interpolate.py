@@ -3,7 +3,7 @@
 import tack
 from tack.dataset import ids
 from tack.dataset.buckets import bucket_order
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import H1, L2, Constant, Values, reference_cells
 from tack.dataset.topology import corner_layout
 from tack.lang.func import Func
@@ -21,10 +21,11 @@ class _Of:
 
 
 @tack.kernel
-def _at_points(fn, geometry, values, n):
-    # An H1 geometry's first values are the points' positions, at either order.
-    for p in range(n):
-        values[p] = fn.f(geometry[p])
+def _at_space_nodes(nodes, fn, values):
+    # Each of the space's nodes once, where the geometry puts it (node_views).
+    for i in nodes:
+        for j in range(nodes.node_count(i)):
+            values[nodes.node_dof(i, j)] = fn.f(nodes.node_position(i, j))
 
 
 @tack.kernel
@@ -67,23 +68,6 @@ def _at_nodes(cells, t, fn, writers, start, first_node, values):
         for k in range(first_node, cells.NUM_QUADRATIC):
             if writers[first + k] == 1:
                 values[t.dof_index(c, k)] = fn.f(cells.position(c, cells.quadratic_node(k)))
-
-
-@tack.kernel
-def _at_l2_nodes(cells, t, fn, values):
-    for c in cells:
-        at = t.offsets[cells.entity_id(c)]
-        if t.ORDER == 0:
-            values[at] = fn.f(cells.position(c, cells.parametric_center()))
-        else:
-            for j in range(cells.NUM_POINTS):
-                values[at + j] = fn.f(cells.position(c, cells.parametric_point(j)))
-
-
-@tack.kernel
-def _at_centers(cells, fn, values):
-    for c in cells:
-        values[cells.entity_id(c)] = fn.f(cells.position(c, cells.parametric_center()))
 
 
 def _writers(data, space, target):
@@ -150,39 +134,23 @@ def interpolate(data, function, space, dtype=None):
     fn = _Of(function)
     values = tack.zeros((space.size,), dtype or data.dtype)
     out = Field(space, values)
-    geometry = data.geometry
-    on_points = isinstance(geometry.space, H1)
-    at_points = ((isinstance(space, Values) and space.on == "points")
-                 or (isinstance(space, H1) and space.order == 1))
-    if at_points and on_points:
-        # A point's position is the geometry's value there.
-        if data.num_points:
-            _at_points(fn, geometry.values, values, data.num_points)
+    shared = isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")
+    if not (shared and not isinstance(data.geometry.space, H1)):
+        # Every node once, from the space's node views.
+        for_each(_at_space_nodes, data, space, fn, values)
         return out
+    # An L2 geometry gives a shared node no position of its own: the first cell
+    # that has it decides, through its corners.
     reference_cells(data.topology, f"interpolate into {space!r}")
-    if isinstance(space, Values) and space.on == "points":
+    if isinstance(space, Values):
         raise ValueError("an L2 geometry has positions per cell corner, not per point")
-    if isinstance(space, H1):
-        if on_points and data.num_points:
-            _at_points(fn, geometry.values, values, data.num_points)
-        starts, writers = _writers(data, space, out)
-        for group in data.launch_groups("cells", [out]):
-            if not group.count:
-                continue
-            cells = data.domain_view("cells", group)
-            if space.order == 1:
-                _at_corners(cells, fn, writers, starts[group.root], values)
-            else:
-                # The points are written already when the geometry has them.
-                first = group.shape.NUM_POINTS if on_points else 0
-                _at_nodes(cells, out.view(group), fn, writers, starts[group.root], first,
-                          values)
-        return out
+    starts, writers = _writers(data, space, out)
     for group in data.launch_groups("cells", [out]):
-        if group.count:
-            cells = data.domain_view("cells", group)
-            if isinstance(space, L2):
-                _at_l2_nodes(cells, out.view(group), fn, values)
-            else:
-                _at_centers(cells, fn, values)
+        if not group.count:
+            continue
+        cells = data.domain_view("cells", group)
+        if space.order == 1:
+            _at_corners(cells, fn, writers, starts[group.root], values)
+        else:
+            _at_nodes(cells, out.view(group), fn, writers, starts[group.root], 0, values)
     return out

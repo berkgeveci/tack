@@ -63,6 +63,23 @@ ordinary kernel; point sets do not currently supply a dataset domain view.
 Sets belong to their topology, so a set from an earlier filter input cannot
 be substituted for a set on its renumbered output.
 
+## Visit a space's nodes
+
+`td.for_each(kernel, data, space, *arrays)` runs a kernel over a space's
+nodes, each once, where `td.interpolate` evaluates its function: an order-2
+`H1` space's points, edge middles, quad face centers and cell interiors, an
+`L2` space's corners per cell. Each node has `nodes.node_dof(i, j)`, where its
+value goes in the space's array, and `nodes.node_position(i, j)`:
+
+```python
+@tack.kernel
+def sample(nodes, values):
+    for i in nodes:
+        for j in range(nodes.node_count(i)):
+            x = nodes.node_position(i, j)
+            values[nodes.node_dof(i, j)] = x[0] * x[1]
+```
+
 ## Parametric and world coordinates have different meanings
 
 `cells.parametric_center()` returns a location in the cell's reference element.

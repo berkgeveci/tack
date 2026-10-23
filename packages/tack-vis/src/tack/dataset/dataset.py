@@ -346,9 +346,10 @@ class DataSet:
         return self.launch_groups(domain)
 
     @on_inputs_device
-    def domain_view(self, domain, group):
+    def domain_view(self, domain, group, extra=(), **extra_attributes):
         """``group``'s view: kind, shape, geometry, and for cells their incidence when
-        faces and edges have been derived."""
+        faces and edges have been derived; ``extra`` mixins and attributes last
+        (a space's node mixins, ``node_views``)."""
         mixins = []
         kind = self._kind(domain)
         geometry, attributes = _geometry_parts(self, group, kind)
@@ -381,7 +382,90 @@ class DataSet:
         for key, value in group.keys.items():
             if hasattr(key, "domain_mixin"):
                 mixins.append(key.domain_mixin(value))
+        mixins.extend(extra)
+        attributes.update(extra_attributes)
         return group.view(*mixins, **attributes)
+
+    @on_inputs_device
+    def node_views(self, space):
+        """Views over ``space``'s nodes, each visited once: entity views -- points,
+        edges, quad faces, cells -- whose ``node_count(i)`` nodes have
+        ``node_dof(i, j)``, where the node's value is in ``space``'s values, and
+        ``node_position(i, j)``, where the geometry puts it. ``for_each(kernel,
+        data, space, ...)`` runs a kernel over them:
+
+            for i in nodes:
+                for j in range(nodes.node_count(i)):
+                    values[nodes.node_dof(i, j)] = f(nodes.node_position(i, j))
+
+        ``H1``'s nodes are its points and, at order 2, its edges' middles, its
+        quad faces' centers and its hexahedra's and quads' interiors; a shared
+        node's position is the mean of its entity's points on a straight
+        geometry, the geometry's own value there on an order-2 one. ``L2``'s
+        are its cells' corners (order 1) or parametric centers (order 0),
+        ``Constant``'s and values on cells' the parametric centers, values on
+        points' the points. Shared nodes need positions per point: an ``L2``
+        geometry has none, and is refused for them. On polyhedra, polygons and
+        polylines only point nodes exist."""
+        from tack.dataset.spaces import Constant, Values, reference_cells
+
+        if space.topology is not self.topology:
+            raise ValueError("a space of another topology")
+        geometry = self.geometry
+        point_nodes = ((isinstance(space, H1) and space.order == 1)
+                       or (isinstance(space, Values) and space.on == "points"))
+        shared = point_nodes or isinstance(space, H1)
+        if shared and not isinstance(geometry.space, H1):
+            raise NotImplementedError(
+                f"the nodes of {space!r} are shared by cells, and an L2 geometry gives a "
+                "shared node no single position")
+        out = []
+        if shared and self.num_points:
+            group = views.DomainGroup(views._Points, shapes.Vertex, (self.num_points,),
+                                self.num_points, 0)
+            mixins, attributes = _geometry_parts(self, group, "points")
+            out.append(group.view(*mixins, views._PointDof, views._MeanPosition, **attributes))
+        if point_nodes:
+            return out
+        if isinstance(space, Values) and space.on not in ("points", "cells"):
+            raise TypeError(f"values on {space.on} have no nodes to visit as such; "
+                            f"for_each over {space.on!r} visits them")
+        reference_cells(self.topology, f"the nodes of {space!r}")
+        if isinstance(space, H1):
+            face_dofs, cell_dofs, _ = space._layout()
+            curved = geometry.space.order == 2
+            where = views._GeometryAtDof if curved else views._MeanPosition
+            for group in self.topology.edges().groups():
+                if group.count:
+                    out.append(self.domain_view("edges", group, (views._EdgeDof, where),
+                                                node_edge_base=self.num_points))
+            if any(g.count and g.shape.QUADRATIC_FACES for g in self.topology.groups()):
+                for group in self.topology.faces().groups():
+                    if group.count and group.shape is shapes.Quad:
+                        out.append(self.domain_view("faces", group, (views._FaceDof, where),
+                                                    node_face_dofs=face_dofs))
+            for group in self.topology.groups():
+                if group.count and group.shape.QUADRATIC_INTERIOR:
+                    out.append(self.domain_view("cells", group, (views._InteriorDof, where),
+                                                node_cell_dofs=cell_dofs))
+            return out
+        groups = (self.launch_groups("cells", keys=(space,)) if space.varies
+                  else self.topology.groups())
+        for group in groups:
+            if not group.count:
+                continue
+            if isinstance(space, L2):
+                order = group.keys[space] if space.varies else space.order
+                dof = views._CornerDof if order == 1 else views._OffsetDof
+                place = views._CornerPosition if order == 1 else views._CenterPosition
+                out.append(self.domain_view("cells", group, (dof, place),
+                                            node_offsets=space.offsets))
+            elif isinstance(space, (Constant, Values)):
+                out.append(self.domain_view("cells", group,
+                                            (views._CellDof, views._CenterPosition)))
+            else:
+                raise TypeError(f"no nodes for {space!r}")
+        return out
 
     @on_inputs_device
     def _side_zero_points(self):
@@ -423,7 +507,17 @@ def for_each(kernel, data, domain, *args):
     ``Field`` among ``args`` becomes its view for the same shape, so
     ``u.value(i, pc)`` and ``u.at(i)`` read the entity ``i`` the loop is at.
     Other arguments pass through.
+
+    ``domain`` may also be a ``Space``: the kernel then runs over the space's
+    nodes (``DataSet.node_views``), taking arrays, not fields.
     """
+    if isinstance(domain, Space):
+        if any(isinstance(arg, Field) for arg in args):
+            raise TypeError("a kernel over a space's nodes takes arrays, not fields: "
+                            "pass field.values")
+        for view in data.node_views(domain):
+            kernel(view, *args)
+        return
     kind = data._kind(domain)
     for arg in args:
         if isinstance(arg, Field):

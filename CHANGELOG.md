@@ -7,6 +7,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `for_each(kernel, data, space, ...)` runs a kernel over a space's nodes, each
+  once (`DataSet.node_views`): views over points, edges, quad faces or cells
+  whose entities have `node_count(i)` nodes with `node_dof(i, j)` and
+  `node_position(i, j)`. `interpolate` is now one kernel over them, with no
+  table of writers and no sort, and gives the same values; an `L2` geometry,
+  which gives a shared node no position of its own, keeps the first cell's.
+
 - Partitioned datasets, the first phase of the partitioned-data proposal.
   `tack.dataset.PartitionedDataSet(partitions)` is a dataset in pieces, an
   ordered list of `DataSet`s as VTK's `vtkPartitionedDataSet`, each piece

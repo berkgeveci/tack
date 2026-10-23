@@ -1117,3 +1117,62 @@ def test_structured_faces_and_edges_are_the_general_derivations(backend, dims):
     for name in ("rows", "side_edge", "side_sign"):
         np.testing.assert_array_equal(getattr(ours, name).numpy(), getattr(theirs, name).numpy(),
                                       err_msg=f"edges.{name}")
+
+
+# ── A space's nodes as a for_each domain ────────────────────────────
+
+@tack.kernel
+def _visit_nodes(nodes, visits, where):
+    for i in nodes:
+        for j in range(nodes.node_count(i)):
+            d = nodes.node_dof(i, j)
+            tack.atomic_add(visits, d, 1)
+            where[d] = nodes.node_position(i, j)
+
+
+def _node_meshes():
+    curved = td.uniform_grid((3, 3, 3))
+    curved.geometry = td.project(curved, curved.geometry, td.H1(curved, order=2))
+    return {"hexes": td.uniform_grid((4, 3, 3)), "quads": td.uniform_grid((4, 3)),
+            "tets": td.tetrahedralize(td.uniform_grid((3, 3, 3))), "curved": curved}
+
+
+@pytest.mark.parametrize("mesh", ["hexes", "quads", "tets", "curved"])
+def test_for_each_over_a_space_visits_each_node_once(backend, mesh):
+    """for_each over a space runs a kernel over its nodes: every value of the space
+    is one node's, visited once, at the position the space's nodal interpolant
+    puts it (interpolate of the identity gives the same positions)."""
+    data = _node_meshes()[mesh]
+
+    @tack.func
+    def identity(x):
+        return x
+
+    spaces = [td.H1(data), td.H1(data, order=2), td.L2(data), td.L2(data, order=0),
+              td.Constant(data), td.Values(data, "points"), td.Values(data, "cells")]
+    for space in spaces:
+        visits = tack.zeros((space.size,), tack.i32)
+        where = tack.zeros((space.size,), tack.vec(3, data.dtype))
+        td.for_each(_visit_nodes, data, space, visits, where)
+        np.testing.assert_array_equal(visits.numpy(), 1, err_msg=repr(space))
+        expected = td.interpolate(data, identity, space, dtype=tack.vec(3, data.dtype))
+        np.testing.assert_allclose(where.numpy(), expected.values.numpy(), atol=1e-6,
+                                   err_msg=repr(space))
+
+
+def test_what_a_space_domain_refuses(backend):
+    data = td.uniform_grid((3, 3, 3))
+    space = td.H1(data, order=2)
+    visits = tack.zeros((space.size,), tack.i32)
+    with pytest.raises(TypeError, match="takes arrays, not fields"):
+        td.for_each(_visit_nodes, data, space, td.Field(space, visits), visits)
+    with pytest.raises(TypeError, match="no nodes to visit as such"):
+        data.node_views(td.Values(data, "faces"))
+    poly = td.as_polyhedra(data)
+    assert len(poly.node_views(td.H1(poly))) == 1                  # its points
+    with pytest.raises(NotImplementedError, match="needs a reference element"):
+        poly.node_views(td.Constant(poly))
+    broken = td.uniform_grid((3, 3, 3))
+    broken.geometry = td.project(broken, broken.geometry, td.L2(broken))
+    with pytest.raises(NotImplementedError, match="no single position"):
+        broken.node_views(td.H1(broken))
