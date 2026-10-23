@@ -3030,6 +3030,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#partitioned-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partitioned datasets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#kernels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3342,6 +3353,17 @@
     <span class="md-ellipsis">
       
         Sets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#partitioned-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partitioned datasets
       
     </span>
   </a>
@@ -4032,6 +4054,82 @@ when the set is made. <code>flags()</code> gives membership, 1 or 0 per entity.<
 </ul>
 <p><strong>Open:</strong> boundary entities from readers mapped onto sets (Exodus side and
 node sets, MFEM boundary attributes).</p>
+<h2 id="partitioned-datasets">Partitioned datasets<a class="headerlink" href="#partitioned-datasets" title="Permanent link">&para;</a></h2>
+<p>A <code>PartitionedDataSet(partitions)</code> is a dataset in pieces: an ordered list
+of <code>DataSet</code>s, as VTK's <code>vtkPartitionedDataSet</code>. Each piece is a whole
+dataset, with its own topology, numbering, geometry, fields, sets and
+device, and may have no cells. Iterate over it, index it (<code>pds[i]</code>) or take
+its length; <code>pds.partitions</code> is the tuple of pieces.</p>
+<ul>
+<li><strong>Work on one piece takes the piece.</strong> Filters, analyses, selections and
+  <code>for_each</code> take a <code>DataSet</code>, as everywhere else; loop over the pieces:
+  <code>for piece in pds: piece.fields["grad"] = td.gradients(piece, "T")</code>.</li>
+<li><strong>Only algorithms whose answer needs more than one piece take the
+  partitioned dataset</strong>, and they name the field (a <code>Field</code> belongs to one
+  piece's topology), which every piece must have:</li>
+<li><code>statistics(pds, "T")</code> takes each piece's moments on its own device and
+    combines them pairwise (Pébay's update), so the result is the whole's
+    up to rounding;</li>
+<li><code>entropy(pds, "T", bins)</code> bins the whole's range and sums each piece's
+    histogram over it.</li>
+</ul>
+<p>Pieces with no values are skipped. Each piece counts only what it owns
+  (below), so where every shared cell and point has one owner, the result
+  is the whole's.
+- <strong><code>split(data, pieces)</code></strong> cuts a structured grid by index ranges, x
+  fastest. <code>pieces</code> is a count, factored over the axes (each prime factor,
+  largest first, cuts the axis whose pieces have most cells), or a tuple of
+  counts, one per axis of the topology. Each axis's cells are shared out as
+  evenly as they go, at least one per piece, and neighbouring pieces share
+  the points between them. A piece keeps the geometry's kind (uniform
+  coordinates with their origin moved, rectilinear axes cut, explicit
+  points taken) and carries its block of every point, cell and <code>L2</code> field
+  and every set, as filters carry them; fields on faces or edges are left
+  behind. A point a piece shares with a piece before it is that piece's, and
+  marked a duplicate in this one; the input's own ghost marks come along.
+  An unstructured mesh is partitioned by VTK
+  (<code>vtkRedistributeDataSetFilter</code>) or by its host application.</p>
+<p><strong>Ghost marks.</strong> Every cell and point that several pieces hold has exactly one
+owner; every other copy is a ghost. <code>data.ghosts</code> is a
+<code>tack.dataset.Ghosts</code> (or <code>None</code>), kept apart from the fields as the
+geometry is: a <code>u8</code> per cell (<code>cells</code>) and per point (<code>points</code>), either of
+which may be <code>None</code>, holding VTK's <code>vtkGhostType</code> bits (<code>Ghosts.DUPLICATECELL</code>
+1, <code>HIDDENCELL</code> 32, <code>DUPLICATEPOINT</code> 1, <code>HIDDENPOINT</code> 2, and the rest, carried
+unread). A duplicate is a copy of what another piece owns; hidden is data not
+valid there (an AMR cell a finer level covers, a blanked cell).</p>
+<ul>
+<li><code>vtk_to_dataset</code> takes a <code>vtkGhostType</code> array as the marks, not as a field,
+  and <code>dataset_to_vtk</code> writes them back; <code>split</code> makes them;
+  <code>data.to_device</code> moves them. Marks of the wrong length or type are refused
+  when they are put in.</li>
+<li><code>statistics</code> and <code>entropy</code> leave out duplicate and hidden cells and points,
+  on one dataset too, so each value counts once across all pieces. An <code>L2</code>
+  field goes by its cells' marks; a field on faces or edges, or of order 2,
+  is refused on a dataset with marks until it is decided who owns those.</li>
+<li>Filters that keep the cells and points (<code>warp</code>, <code>transform</code>,
+  <code>cylindrical</code>, <code>spherical</code>, <code>shrink</code>, <code>as_polyhedra</code>, <code>as_polygons</code>, and
+  <code>probe</code>'s target) keep the marks. Every other filter's output records that
+  it lost them, and <code>statistics</code> and <code>entropy</code> refuse it with
+  <code>NotImplementedError</code>, rather than count shared cells and points once per
+  piece. Setting the output's <code>ghosts</code> clears that.</li>
+<li><strong>Not yet:</strong> the other filters do not carry the marks to their outputs. The plan:
+  filters process duplicates and mark what they make from them, as VTK does,
+  with one owner for every shared point, edge and face (the owner of an
+  edge or face being the owner of its smallest point, by global id or
+  position); they skip hidden cells; <code>remove_ghosts</code> removes ghosts before
+  rendering or writing one file.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="n">pieces</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">wavelet</span><span class="p">(</span><span class="mi">20</span><span class="p">),</span> <span class="mi">8</span><span class="p">)</span>                    <span class="c1"># 8 image-data pieces</span>
+<span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">:</span>
+    <span class="n">piece</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;RTData_cells&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="s2">&quot;RTData&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">piece</span><span class="p">))</span>
+<span class="n">s</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">statistics</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="s2">&quot;RTData_cells&quot;</span><span class="p">)</span>               <span class="c1"># the whole grid&#39;s</span>
+</code></pre></div>
+<p><code>packages/tack-vis/examples/44_partitioned_data.py</code> runs all of it: pieces,
+their ghost marks, work in a loop, reductions checked against the whole,
+pieces spread over several GPUs where there are, and a <code>.vtpd</code> file for
+ParaView.</p>
+<p><strong>Next</strong> (the partitioned-data proposal's later phases): filters that carry
+ghost marks; global ids; ghost cells generated in one process; then MPI.</p>
 <h2 id="kernels">Kernels<a class="headerlink" href="#kernels" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_jump</span><span class="p">(</span><span class="n">faces</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
@@ -4572,11 +4670,15 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 </tr>
 <tr>
 <td><code>statistics(data, f)</code></td>
-<td>a <code>Statistics</code> named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis</td>
+<td>a <code>Statistics</code> named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis; of a <code>PartitionedDataSet</code> too (see <em>Partitioned datasets</em>)</td>
 </tr>
 <tr>
 <td><code>entropy(data, f, bins)</code></td>
-<td>Shannon entropy in bits of a <code>bins</code>-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as <code>numpy.histogram</code> does)</td>
+<td>Shannon entropy in bits of a <code>bins</code>-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as <code>numpy.histogram</code> does); of a <code>PartitionedDataSet</code> too</td>
+</tr>
+<tr>
+<td><code>split(data, pieces)</code></td>
+<td>a structured grid cut into a <code>PartitionedDataSet</code> (see <em>Partitioned datasets</em>)</td>
 </tr>
 <tr>
 <td><code>sources.wavelet(extent, ...)</code></td>
@@ -4682,6 +4784,10 @@ for VTK's <code>vtkStreamTracer</code> on 8 threads.</p>
 <tr>
 <td><code>tack.interop.vtk.dataset_to_vtk(data)</code></td>
 <td>back to VTK, polyhedra and polygons included</td>
+</tr>
+<tr>
+<td>(both)</td>
+<td>a <code>vtkPartitionedDataSet</code> and a <code>PartitionedDataSet</code> convert piece by piece (null pieces skipped); a <code>vtkPartitionedDataSetCollection</code> and a <code>dict</code> of names to <code>PartitionedDataSet</code>s convert by <code>vtkCompositeDataSet.NAME()</code> (<code>"block&lt;i&gt;"</code> without one, <code>"&lt;name&gt;#&lt;i&gt;"</code> for a name taken)</td>
 </tr>
 <tr>
 <td><code>tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)</code></td>
