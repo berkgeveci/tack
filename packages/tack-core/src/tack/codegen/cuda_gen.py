@@ -118,6 +118,17 @@ class CUDACodeGen(CFamilyCodeGen):
     _opaque_negation = False
     # ptxas before 13.3 mis-widens PTX neg.s16/abs.s16; see IntegerCodeGen.
     _ptx_negation = True
+    # NVRTC's --fmad=true fuses a multiply into an add anywhere, across
+    # statements too: `p = a * b; q = p + c` became one fma, p never rounded,
+    # which the language contract forbids (fusion stays inside one
+    # expression; a value bound to a name is rounded once). Two kernels
+    # inlining the same function then rounded it differently: the locator's
+    # two searches disagreed at shared vertices. So a floating product that
+    # is not an operand of a + or - is __fmul_rn/__dmul_rn, which NVRTC never
+    # fuses; a + or - keeps its products plain, fusable as the contract
+    # permits. HIP limits contraction itself (-ffp-contract=on) and OpenCL
+    # contracts per expression, so both keep plain products.
+    _rounded_products = True
 
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = rename_gpu_bindings(ir_func)
@@ -127,6 +138,8 @@ class CUDACodeGen(CFamilyCodeGen):
         self._array_params: set[str] = set()
         self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
         self._declared_vars: set[str] = set()  # vars already emitted with declaration
+        # Products an enclosing + or - may fuse with (by node identity).
+        self._fusable: set[int] = set()
         self._loop_end_name: str | None = None
         self._atomic64 = set()
         self._needs_float_atomic_min = False
@@ -641,9 +654,13 @@ class CUDACodeGen(CFamilyCodeGen):
         return f"{helper}({node.array_name}, {u}, {v}, {w})"
 
     def _expr_binop(self, node: ir.IRBinOp) -> str:
+        dtype = getattr(node, 'dtype', None)
+        if self._rounded_products and node.op in ('+', '-') and dtype in (f32, f64):
+            for operand in (node.left, node.right):
+                if isinstance(operand, ir.IRBinOp) and operand.op == '*':
+                    self._fusable.add(id(operand))
         left = self._expr(node.left)
         right = self._expr(node.right)
-        dtype = getattr(node, 'dtype', None)
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
         if node.op not in ('<<', '>>', '**'):
             right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
@@ -672,6 +689,9 @@ class CUDACodeGen(CFamilyCodeGen):
         if node.op == "//":
             # Legacy unannotated integer IR; normal dispatch is fully typed.
             return f"({left} / {right})"
+        if (node.op == '*' and dtype in (f32, f64) and self._rounded_products
+                and id(node) not in self._fusable):
+            return f"{'__fmul_rn' if dtype is f32 else '__dmul_rn'}({left}, {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"CUDA binop: {node.op}")

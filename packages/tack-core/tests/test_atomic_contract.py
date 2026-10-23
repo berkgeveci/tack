@@ -284,6 +284,9 @@ def test_cuda_hip_wide_atomic_syntax(arch, generator, dtype, op, tmp_path):
     body = generator(func).replace('#include <hip/hip_runtime.h>\n', '')
     preamble = '''#define __device__
 #define __global__
+// CUDA's unfusable products, as the generator emits them for a named product.
+static inline float __fmul_rn(float a, float b) { return a * b; }
+static inline double __dmul_rn(double a, double b) { return a * b; }
 struct Dim { unsigned int x; };
 extern Dim threadIdx, blockIdx, blockDim;
 unsigned long long atomicCAS(unsigned long long*, unsigned long long, unsigned long long);
