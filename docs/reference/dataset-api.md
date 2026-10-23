@@ -493,6 +493,34 @@ td.for_each(_jump, data, "faces", cell_values, out)
   are passed through unchanged.
 - There is no `"points"` domain. Point data, like any field's values taken
   one by one, is read by an ordinary kernel over `field.values`.
+- `domain` may also be a space: the kernel runs over its nodes, each once
+  (`data.node_views(space)`), and takes arrays, not fields. A node view is an
+  entity view -- points, edges, quad faces or cells -- whose entity `i` has
+  `node_count(i)` nodes, each with `node_dof(i, j)` (where its value is in
+  the space's values) and `node_position(i, j)` (where the geometry puts it):
+
+  ```python
+  @tack.kernel
+  def sample(nodes, values):
+      for i in nodes:
+          for j in range(nodes.node_count(i)):
+              x = nodes.node_position(i, j)
+              values[nodes.node_dof(i, j)] = x[0] * x[1]
+
+  space = td.H1(data, order=2)
+  values = tack.zeros((space.size,), data.dtype)
+  td.for_each(sample, data, space, values)
+  ```
+
+  `H1`'s nodes are its points and, at order 2, its edges' middles, its quad
+  faces' centers and its hexahedra's and quads' interiors -- a shared node's
+  position is the mean of its entity's points on a straight geometry, the
+  geometry's own value on an order-2 one; `L2`'s are each cell's corners
+  (order 1) or parametric center (order 0); `Constant`'s and values on
+  cells' the parametric centers; values on points' the points. An `L2`
+  geometry gives a shared node no single position and is refused for them;
+  on polyhedra, polygons and polylines only point nodes exist.
+  `interpolate` is one such kernel.
 
 **What makes a group.** On a shape-based topology, each shape is a group. A
 group is split further, on the device, by:

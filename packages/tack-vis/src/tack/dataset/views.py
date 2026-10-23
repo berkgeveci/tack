@@ -87,6 +87,28 @@ class _SelectedCells(_Cells):
         return self.positions[self.first + c]
 
 
+class _Points:
+    """A dataset's points as entities, for a domain over a space's nodes: point
+    ``i`` is itself, one point of its own (a ``Vertex``)."""
+
+    __tack_iterate__ = "num_points"
+
+    def __init__(self, num_points):
+        self.num_points = num_points
+
+    @tack.func
+    def entity_id(self, i):
+        return i
+
+    @tack.func
+    def index(self, i):
+        return i
+
+    @tack.func
+    def point_id(self, i, j):
+        return i
+
+
 class _StructuredCells:
     """The cells of a structured grid of ``nx * ny * nz`` points, x fastest."""
 
@@ -1131,6 +1153,137 @@ class _ValuesField:
     @tack.func
     def at(self, i):
         return self.get(self.entity_id(i))
+
+
+# ── A space's nodes (for_each over a space) ─────────────────────────
+#
+# A node view is an entity view -- points, edges, quad faces or cells -- with a
+# dof mixin (``node_dof(i, j)``: where node ``j`` of entity ``i`` keeps its
+# value; ``node_count(i)`` of them) and a position mixin (``node_position(i,
+# j)``: where the node is). Shared nodes are one per
+# entity; L2's are per cell.
+
+
+class _PointDof:
+    """H1's (or values on points') node at a point."""
+
+    @tack.func
+    def node_count(self, i):
+        return 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.entity_id(i)
+
+
+class _EdgeDof:
+    """H1 order 2's node at an edge's middle."""
+
+    @tack.func
+    def node_count(self, i):
+        return 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_edge_base + self.entity_id(i)
+
+
+class _FaceDof:
+    """H1 order 2's node at a quad face's center."""
+
+    @tack.func
+    def node_count(self, i):
+        return 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_face_dofs[self.entity_id(i)]
+
+
+class _InteriorDof:
+    """H1 order 2's node inside a hexahedron or quad."""
+
+    @tack.func
+    def node_count(self, i):
+        return 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_cell_dofs[self.entity_id(i)]
+
+
+class _CornerDof:
+    """L2 order 1's nodes: each cell's own corners."""
+
+    @tack.func
+    def node_count(self, i):
+        return self.NUM_POINTS
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_offsets[self.entity_id(i)] + j
+
+
+class _OffsetDof:
+    """L2 order 0's node: one per cell, at its offset."""
+
+    @tack.func
+    def node_count(self, i):
+        return 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_offsets[self.entity_id(i)]
+
+
+class _CellDof:
+    """Constant's (or values on cells') node: one per cell."""
+
+    @tack.func
+    def node_count(self, i):
+        return 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.entity_id(i)
+
+
+class _MeanPosition:
+    """A shared node of a straight (order-1) geometry: the mean of its entity's
+    points -- a point itself, an edge's middle, the bilinear center of a quad,
+    the trilinear center of a hexahedron."""
+
+    @tack.func
+    def node_position(self, i, j):
+        x = self.corner_position(i, 0)
+        for k in range(1, self.NUM_POINTS):
+            x += self.corner_position(i, k)
+        return x / self.NUM_POINTS
+
+
+class _GeometryAtDof:
+    """A shared node of an order-2 geometry: the geometry's own value there, the
+    two spaces sharing the layout."""
+
+    @tack.func
+    def node_position(self, i, j):
+        return self.get(self.node_dof(i, j))
+
+
+class _CornerPosition:
+    """A cell's own corner node: where the geometry puts the corner."""
+
+    @tack.func
+    def node_position(self, i, j):
+        return self.corner_position(i, j)
+
+
+class _CenterPosition:
+    """A cell's one node: where the geometry maps the parametric center."""
+
+    @tack.func
+    def node_position(self, i, j):
+        return self.position(i, self.parametric_center())
 
 
 # ── Groups and view classes ─────────────────────────────────────────

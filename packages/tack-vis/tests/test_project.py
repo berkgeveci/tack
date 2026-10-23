@@ -274,14 +274,14 @@ def test_interpolate_gives_vectors_and_quadratics_exactly(backend):
 
 
 def test_interpolate_writes_each_shared_node_once(backend):
-    """Shared nodes are written by one cell each (the first that has it), so a
-    discontinuous geometry gives a shared point the first cell's corner; which
-    cell writes is kept on the space, and follows a changed geometry."""
+    """Over an H1 geometry every node is visited once, from the space's node views,
+    and follows a changed geometry; a discontinuous (L2) geometry, which gives a
+    shared node no position of its own, has the first cell that has it write
+    it, through its corners."""
     data = _hexes()
     space = td.H1(data, order=2)
-    td.interpolate(data, _quadratic_of, space)
-    _, writers = space._writers
-    assert int(writers.numpy().sum()) == space.size        # every node, once
+    u = td.interpolate(data, _quadratic_of, space)
+    np.testing.assert_allclose(u.values.numpy(), _quadratic(_nodes(data, space)), atol=1e-5)
     # Each cell moved its own way: point 1 (x = 1, on cells 0 and 1) is cell 0's.
     dg = td.project(data, data.geometry, td.L2(data))
     corners = dg.values.numpy().reshape(data.num_cells, 8, 3)
@@ -290,10 +290,11 @@ def test_interpolate_writes_each_shared_node_once(backend):
     u = td.interpolate(moved, _quadratic_of, td.H1(moved))
     np.testing.assert_allclose(u.values.numpy()[1], _quadratic(data.positions()[[1]])[0],
                                atol=1e-5)
-    # A new geometry on the same topology: the same writers, new positions.
+    _, writers = td.H1(moved)._writers
+    assert int(writers.numpy().sum()) == td.H1(moved).size        # every node, once
+    # A new geometry on the same topology: new positions.
     data.geometry = td.warp(data, (0.0, 0.0, 1.0), scale=2.0).geometry
     u = td.interpolate(data, _quadratic_of, space)
-    assert space._writers[1] is writers
     np.testing.assert_allclose(u.values.numpy(), _quadratic(_nodes(data, space)), atol=1e-5)
 
 
