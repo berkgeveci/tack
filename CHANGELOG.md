@@ -37,6 +37,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   pcs)` there; field views evaluate with `tet_value(c, t, pc)`, and the
   cell view gives `locate`, `cell_point`, `face_point` and `tet_jacobian`.
   A cell not star-shaped from its cell point is refused.
+- `advect` and `streamlines` run through polyhedra, located in the same
+  sub-tetrahedra (the kernel's `_PolyhedralMesh` reuses the views'
+  location code), with point velocities linear on each and cell
+  velocities constant: RK4 through a linear field is exact, and leaving
+  the mesh bisects and pushes out as on shapes.
 - Implicit topology arrays. An `UnstructuredTopology`'s `types`, `offsets`
   and `connectivity` may be implicit arrays, kept as they are rather than
   stored: a `ConstantArray` of types for cells all of one shape, a

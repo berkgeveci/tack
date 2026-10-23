@@ -64,12 +64,15 @@ if vtk is not None:
     MESHES.update({name: (lambda t=t: _vtk_blocks(t))
                    for name, t in (("hexahedra", 12), ("tetrahedra", 10), ("wedges", 13),
                                    ("pyramids", 14))})
+# The same meshes as polyhedra, located in sub-tetrahedra.
+MESHES.update({f"{name} as polyhedra": (lambda make=make: td.as_polyhedra(make()))
+               for name, make in list(MESHES.items())})
 
 
 @pytest.mark.parametrize("mesh", MESHES)
 def test_rk4_through_a_linear_field_is_exact(backend, mesh):
     data = MESHES[mesh]()
-    center = (0.0, 0.0) if mesh == "structured" else (2.0, 2.0)
+    center = (0.0, 0.0) if mesh.startswith("structured") else (2.0, 2.0)
     _rotation(data, center)
     seeds = np.array([[center[0] + 1.0, center[1], 0.1], [center[0] + 0.3, center[1] + 0.6, 0.2]])
     out = td.advect(data, "v", seeds, 0.02, 120)
@@ -82,8 +85,10 @@ def test_rk4_through_a_linear_field_is_exact(backend, mesh):
     np.testing.assert_allclose(out.fields["time"].values.numpy(), 2.4, rtol=1e-5)
 
 
-def test_a_mixed_mesh(backend):
-    data = _rotation(_two_hexes_and_a_pyramid(), center=(1.0, 0.5))
+@pytest.mark.parametrize("polyhedra", [False, True])
+def test_a_mixed_mesh(backend, polyhedra):
+    data = _two_hexes_and_a_pyramid()
+    data = _rotation(td.as_polyhedra(data) if polyhedra else data, center=(1.0, 0.5))
     out = td.advect(data, "v", [[1.2, 0.5, 0.2]], 0.01, 50)
     np.testing.assert_allclose(out.positions()[0], _numpy_rk4([1.2, 0.5, 0.2], 0.01, 50,
                                                               (1.0, 0.5)), atol=1e-4)
@@ -203,9 +208,51 @@ def test_refusals(backend):
         td.advect(data, "s", [[0.5, 0.5, 0.5]], 0.1, 3)
     with pytest.raises(ValueError, match="steps"):
         td.advect(_uniform(), "v", [[1.0, 1.0, 1.0]], 0.1, 0)
-    polyhedra = _rotation(td.as_polyhedra(_two_hexes_and_a_pyramid()), center=(1.0, 0.5))
-    with pytest.raises(NotImplementedError, match="polyhedra"):
-        td.advect(polyhedra, "v", [[1.0, 0.5, 0.5]], 0.1, 3)
+    polygons = _rotation(td.as_polygons(td.uniform_grid((3, 3, 1))))
+    with pytest.raises(NotImplementedError, match="polygons"):
+        td.advect(polygons, "v", [[1.0, 0.5, 0.0]], 0.1, 3)
+
+
+# ── Polyhedra ───────────────────────────────────────────────────────
+
+def test_polyhedra_leave_the_mesh_and_take_cell_velocity_as_shapes_do(backend):
+    """A grid as polyhedra has the same boundary (its faces are planar), so leaving
+    it -- the bisection to the boundary, the push out -- and Euler steps through
+    cell data go as on the grid."""
+    for direction, seed in (((1.0, 0.0, 0.0), [1.55, 1.0, 1.0]), ((0.6, 0.8, 0.0), [1.0, 1.0, 1.0])):
+        grid = _uniform(direction)
+        poly = td.as_polyhedra(grid)
+        poly.fields["v"] = td.Field(td.H1(poly), grid.fields["v"].values)
+        ours, theirs = (td.advect(d, "v", [seed], 0.1, 100) for d in (poly, grid))
+        np.testing.assert_allclose(ours.positions(), theirs.positions(), atol=1e-5)
+        for name in ("steps", "status"):
+            np.testing.assert_array_equal(ours.fields[name].values.numpy(),
+                                          theirs.fields[name].values.numpy())
+        lines = [td.streamlines(d, "v", [seed], 0.1, 100) for d in (poly, grid)]
+        np.testing.assert_allclose(lines[0].positions(), lines[1].positions(), atol=1e-5)
+    grid = _uniform()
+    poly = td.as_polyhedra(grid)
+    poly.fields["c"] = td.Field(td.Constant(poly),
+                                _vectors(np.tile([0.0, 0.0, 1.0], (poly.num_cells, 1))))
+    out = td.advect(poly, "c", [[1.0, 1.0, 0.5]], 0.25, 100, integrator="euler")
+    np.testing.assert_allclose(out.positions()[0], [1.0, 1.0, 2.25], atol=1e-5)
+    assert out.fields["steps"].values.numpy()[0] == 7
+
+
+def test_rk4_through_voronoi_polyhedra_is_exact(backend):
+    """Cells of many faces and points, none of them a shape: a linear field is linear
+    in every sub-tetrahedron, so RK4 is exact there too."""
+    from test_polyhedra import _from_cell_faces, _voronoi_columns
+
+    points, cells, _ = _voronoi_columns(thickness=0.4)
+    data = _rotation(td.DataSet(_from_cell_faces(cells, len(points)), points),
+                     center=(0.55, 0.5))
+    seeds = np.array([[0.75, 0.5, 0.1], [0.6, 0.6, 0.2]])
+    out = td.advect(data, "v", seeds, 0.02, 100)
+    for i, seed in enumerate(seeds):
+        np.testing.assert_allclose(out.positions()[i], _numpy_rk4(seed, 0.02, 100, (0.55, 0.5)),
+                                   atol=1e-4)
+    np.testing.assert_array_equal(out.fields["steps"].values.numpy(), [100, 100])
 
 
 def test_advection_keeps_the_input_id_type(backend):

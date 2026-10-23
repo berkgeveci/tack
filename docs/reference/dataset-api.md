@@ -543,7 +543,7 @@ and "polyline" `PolylineTopology`.
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
 | `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | not yet | not yet |
-| `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
+| `advect`, `streamlines` | yes (2D and 3D cells) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | no | no |
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
@@ -806,7 +806,7 @@ decision, recorded in the CHANGELOG as breaking.
 - coefficient layout (DOF-fastest or cell-fastest);
 - filters on higher-order data (subdivide, rather than linearize);
 - clip on polyhedra, polygons and polylines;
-- locating points in polyhedra (no parametric coordinates; a containment
-  test against the faces instead);
+- locating points in polyhedra that are not star-shaped from their cell
+  point (a solid-angle containment test);
 - a polyline topology's edges (its segments as global entities), and
   stitching contour lines into polylines.
