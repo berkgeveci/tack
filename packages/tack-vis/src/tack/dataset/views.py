@@ -31,6 +31,7 @@ the cell ``c`` the loop is at.
 """
 
 import tack
+from tack.dataset.shapes import HOLD_TOLERANCE
 
 # ── Entity kinds ────────────────────────────────────────────────────
 
@@ -469,7 +470,7 @@ class _PolyhedralLocation:
                 det = f.dot(ab)
                 if det > 0.0:
                     w = tack.vec3(d.dot(ab), f.dot(d.cross(b)), f.dot(a.cross(d))) / det
-                    if min(w[0], w[1], w[2]) >= -1e-5 and w[0] + w[1] + w[2] <= 1.0 + 1e-5:
+                    if min(w[0], w[1], w[2]) >= -HOLD_TOLERANCE and w[0] + w[1] + w[2] <= 1.0 + HOLD_TOLERANCE:
                         tet = base + j
                         pc = w
                     else:
@@ -536,7 +537,7 @@ class _PolygonLocation:
             if nn > 0.0:
                 wa = d.cross(b).dot(n) / nn
                 wb = a.cross(d).dot(n) / nn
-                inside = 1 if wa >= -1e-5 and wb >= -1e-5 and wa + wb <= 1.0 + 1e-5 else 0
+                inside = 1 if wa >= -HOLD_TOLERANCE and wb >= -HOLD_TOLERANCE and wa + wb <= 1.0 + HOLD_TOLERANCE else 0
                 r = _closest_on_triangle(d, a - a, a, b)
                 e = r[1] * a + r[2] * b - d
                 gap = e.dot(e)
@@ -583,7 +584,7 @@ class _PolylineLocation:
                 s = (x - a).dot(ab) / length
                 e = a + ab * min(max(s, 0.0), 1.0) - x
                 gap = e.dot(e)
-                inside = 1 if s >= -1e-5 and s <= 1.0 + 1e-5 else 0
+                inside = 1 if s >= -HOLD_TOLERANCE and s <= 1.0 + HOLD_TOLERANCE else 0
                 if gap <= slack * slack and (inside > held or (inside == held and gap < best)):
                     held = inside
                     best = gap
