@@ -4151,6 +4151,22 @@ the option is part of the disk cache's target, so code objects compiled
 without it are not reused. <code>test_float_semantics.py</code> checks <code>p - p</code> for
 products returned from a device function, in f32 and f64, on every
 backend.</p>
+<p>NVRTC's <code>--fmad=true</code> fuses across statements too, but where a product has
+one later use: <code>p = a * b; out = p + c</code> became one fma, <code>p</code> never rounded.
+<code>p - p</code> cannot show that, since the compiler folds it whether or not it
+fuses, so it went unseen until the locator's two searches, inlining the
+same functions into different kernels, disagreed at shared vertices on
+CUDA. (Fusion inside one expression, which the contract permits, can
+still differ between two such kernels; what fixed the locator was a margin
+on its "holds the point" test, since which cell held a shared vertex was
+rounding noise on every backend.) NVRTC has no per-expression option, so the CUDA generator rounds such
+products itself: a floating product that is not an operand of a <code>+</code> or <code>-</code>
+is <code>__fmul_rn</code>/<code>__dmul_rn</code>, which NVRTC never fuses, and the products of a
+sum stay plain, fusable as the contract permits. A test reads a named
+product once in a later sum against its negated rounding, where a fused
+result is the product's rounding error instead of zero. Metal passes it
+with plain products; OpenCL C contracts per expression by its <code>FP_CONTRACT</code>
+rule.</p>
 <h3 id="nan-infinity-and-signed-zero">NaN, infinity and signed zero<a class="headerlink" href="#nan-infinity-and-signed-zero" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

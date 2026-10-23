@@ -3720,7 +3720,7 @@ target also names:</p>
 </tr>
 <tr>
 <td><code>--fmad=true</code></td>
-<td>allow multiply-add contraction, which the contract permits</td>
+<td>allow multiply-add contraction, which the contract permits; the generator emits a product outside a sum as <code>__fmul_rn</code>/<code>__dmul_rn</code>, since NVRTC also fuses across statements</td>
 </tr>
 <tr>
 <td><code>--extra-device-vectorization</code></td>
