@@ -65,22 +65,40 @@ def _polyhedral_gradients(cells, u, out):
         six = 0.0                                  # six times the volume
         total = tack.vec3(0.0, 0.0, 0.0)           # 2 A_t times 3 mean(u) on each triangle
         for k in range(cells.num_faces(c)):
+            # One walk round the face. With F its points' mean, triangle j's
+            # 2 A_j = p_j x p_j+1 + (p_j+1 - p_j) x F, so the face's share is
+            # S + W x F + u_F N, with S = sum (p_j x p_j+1)(u_j + u_j+1),
+            # W = sum (p_j+1 - p_j)(u_j + u_j+1) and N = sum p_j x p_j+1 (the
+            # Newell vector, sum 2 A_j); its share of 6V is F . N. F and u_F are
+            # known only at the end, and none of the sums needs them.
             size = cells.side_num_points(c, k)
-            apex = tack.vec3(0.0, 0.0, 0.0)
-            at_apex = 0.0
-            for j in range(size):
-                apex += cells.side_position(c, k, j) - origin
-                at_apex += u[cells.side_point_id(c, k, j)] - u0
-            apex = apex / size
-            at_apex = at_apex / size
-            for j in range(size):
-                nxt = j + 1 if j + 1 < size else 0
-                a = cells.side_position(c, k, j) - origin
-                b = cells.side_position(c, k, nxt) - origin
-                six += a.dot(b.cross(apex))
-                total += (b - a).cross(apex - a) * (
-                    (u[cells.side_point_id(c, k, j)] - u0)
-                    + (u[cells.side_point_id(c, k, nxt)] - u0) + at_apex)
+            first = cells.side_position(c, k, 0) - origin
+            u_first = u[cells.side_point_id(c, k, 0)] - u0
+            a = first
+            ua = u_first
+            points = first
+            values = u_first
+            newell = tack.vec3(0.0, 0.0, 0.0)
+            spun = tack.vec3(0.0, 0.0, 0.0)
+            along = tack.vec3(0.0, 0.0, 0.0)
+            for j in range(1, size + 1):
+                b = first
+                ub = u_first
+                if j < size:
+                    b = cells.side_position(c, k, j) - origin
+                    ub = u[cells.side_point_id(c, k, j)] - u0
+                    points += b
+                    values += ub
+                n = a.cross(b)
+                both = ua + ub
+                newell += n
+                spun += n * both
+                along += (b - a) * both
+                a = b
+                ua = ub
+            apex = points / size
+            six += apex.dot(newell)
+            total += spun + along.cross(apex) + newell * (values / size)
         # (1/V) sum A_t mean(u)_t = sum (2 A_t)(3 mean(u)_t) / 6V. No volume: NaN.
         out[cells.entity_id(c)] = total / six
 

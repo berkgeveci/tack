@@ -414,39 +414,53 @@ class _PolyhedralLocation:
 
         Inverted sub-tetrahedra (of a cell not star-shaped from its cell point)
         hold nothing; ``CellLocator`` refuses such cells."""
-        p = self.cell_point(c)
+        t, pc = self.locate_from(c, self.cell_point(c), x, slack)
+        return t, pc
+
+    @tack.func
+    def locate_from(self, c, p, x, slack):
+        """``locate``, given the cell point ``p``: for a caller testing many points
+        against one cell. The search stops at the first sub-tetrahedron holding
+        ``x``; coordinates are ratios of triple products (Cramer's rule)."""
         d = x - p
         tet = -1
         pc = tack.vec3(0.0, 0.0, 0.0)
         near = -1
         near_pc = tack.vec3(0.0, 0.0, 0.0)
         best = slack * slack
-        t = 0
-        for k in range(self.num_faces(c)):
+        base = 0
+        nf = self.num_faces(c)
+        k = 0
+        while k < nf and tet < 0:
             n = self.side_num_points(c, k)
             f = self.face_point(c, k) - p
-            for j in range(n):
-                if tet < 0:
-                    nxt = j + 1 if j + 1 < n else 0
-                    a = self.side_position(c, k, j) - p
-                    b = self.side_position(c, k, nxt) - p
-                    m = _columns(f, a, b)
-                    if m.determinant() > 0.0:
-                        w = m.inverse() @ d
-                        if (min(w[0], w[1], w[2]) >= -1e-5
-                                and w[0] + w[1] + w[2] <= 1.0 + 1e-5):
-                            tet = t
-                            pc = w
-                        else:
-                            # Outside: near if its face triangle is, and then
-                            # extrapolated, as the shapes' coordinates are.
-                            r = _closest_on_triangle(d, f, a, b)
-                            e = r[0] * f + r[1] * a + r[2] * b - d
-                            if e.dot(e) <= best:
-                                best = e.dot(e)
-                                near = t
-                                near_pc = w
-                t += 1
+            first = self.side_position(c, k, 0) - p
+            a = first
+            j = 0
+            while j < n and tet < 0:
+                b = first
+                if j + 1 < n:
+                    b = self.side_position(c, k, j + 1) - p
+                ab = a.cross(b)
+                det = f.dot(ab)
+                if det > 0.0:
+                    w = tack.vec3(d.dot(ab), f.dot(d.cross(b)), f.dot(a.cross(d))) / det
+                    if min(w[0], w[1], w[2]) >= -1e-5 and w[0] + w[1] + w[2] <= 1.0 + 1e-5:
+                        tet = base + j
+                        pc = w
+                    else:
+                        # Outside: near if its face triangle is, and then
+                        # extrapolated, as the shapes' coordinates are.
+                        r = _closest_on_triangle(d, f, a, b)
+                        e = r[0] * f + r[1] * a + r[2] * b - d
+                        if e.dot(e) <= best:
+                            best = e.dot(e)
+                            near = base + j
+                            near_pc = w
+                a = b
+                j += 1
+            base += n
+            k += 1
         if tet < 0 and near >= 0:
             tet = near
             pc = near_pc

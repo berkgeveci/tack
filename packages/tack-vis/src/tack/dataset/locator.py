@@ -171,6 +171,7 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
     # As _test_points, locating in the cell's sub-tetrahedra.
     for c in cells:
         e = cells.entity_id(c)
+        middle = cells.cell_point(c)
         a = lo[e]
         b = hi[e]
         slack = tolerance * (b - a).norm()
@@ -190,7 +191,7 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
                         if (x[0] >= a[0] - slack and x[0] <= b[0] + slack
                                 and x[1] >= a[1] - slack and x[1] <= b[1] + slack
                                 and x[2] >= a[2] - slack and x[2] <= b[2] + slack):
-                            t, pc = cells.locate(c, x, slack)
+                            t, pc = cells.locate_from(c, middle, x, slack)
                             if t >= 0:
                                 if write == 0:
                                     tack.atomic_min(found, q, e)
