@@ -3362,7 +3362,7 @@ all corner cases have been validated.</p>
 </tr>
 <tr>
 <td>Composition</td>
-<td><code>@tack.func</code> inlining, returning one or several values; a kernel's trailing <code>return</code>; <code>@tack.device_class</code> templates, with inheritance, device functions held as attributes or under <code>@staticmethod</code>, kernels as methods, and indexing through <code>@tack.func</code> <code>__getitem__</code>, <code>__setitem__</code> and <code>__len__</code> (<code>obj[i]</code>, <code>obj[i] = v</code>, <code>obj[i] += v</code>, <code>len(obj)</code>; several indices as one vector; instance tuples of numbers read as <code>obj.shape[k]</code> with a literal <code>k</code>)</td>
+<td><code>@tack.func</code> inlining, returning one or several values (or another call's several values); a kernel's trailing <code>return</code>; <code>@tack.device_class</code> templates, passed to <code>@tack.func</code>s and methods as well as to kernels, with inheritance, device functions held as attributes or under <code>@staticmethod</code>, kernels as methods, and indexing through <code>@tack.func</code> <code>__getitem__</code>, <code>__setitem__</code> and <code>__len__</code> (<code>obj[i]</code>, <code>obj[i] = v</code>, <code>obj[i] += v</code>, <code>len(obj)</code>; several indices as one vector; instance tuples of numbers read as <code>obj.shape[k]</code> with a literal <code>k</code>)</td>
 <td>Static source transformation, not arbitrary Python calls. A <code>return</code> ends the function on its path; one inside a loop is rejected (LC7)</td>
 </tr>
 <tr>

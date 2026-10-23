@@ -981,6 +981,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#passing-objects-to-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Passing Objects to Functions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#kernels-as-methods" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3152,6 +3163,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#passing-objects-to-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Passing Objects to Functions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#kernels-as-methods" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3406,6 +3428,31 @@ may not hold itself, directly or not.</p>
 walked once to gather its arguments: about 4 us per level on the CPU
 backend of an M1 Max, against 8 us for a whole call with a one-level
 template. The compiled code pays nothing.</p>
+<h2 id="passing-objects-to-functions">Passing Objects to Functions<a class="headerlink" href="#passing-objects-to-functions" title="Permanent link">&para;</a></h2>
+<p>A device-class object, or one it holds, can be passed to a <code>@tack.func</code> or
+to another object's method, which then uses it as it would <code>self</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mean_of_two</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+    <span class="k">return</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">+</span> <span class="n">arr</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">device_class</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Blend</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="o">=</span> <span class="n">weights</span>
+
+    <span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mix</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>                        <span class="c1"># a and b are objects too</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="o">*</span> <span class="n">b</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">smooth</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="n">blend</span><span class="p">,</span> <span class="n">other</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">mean_of_two</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span> <span class="o">+</span> <span class="n">blend</span><span class="o">.</span><span class="n">mix</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="n">other</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+</code></pre></div>
+<p>Each such call gets its own copy of the callee, with the object bound in, so
+it costs nothing at run time; a method may pass on <code>self</code> (<code>helper(self, k)</code>)
+or a held object (<code>helper(self.base, k)</code>) the same way. The callee cannot
+keep the object in a local or return it.</p>
 <h2 id="kernels-as-methods">Kernels as Methods<a class="headerlink" href="#kernels-as-methods" title="Permanent link">&para;</a></h2>
 <p>A kernel can be a method of the class. Called on an object, it receives
 that object as <code>self</code>, a template like any other argument, so the

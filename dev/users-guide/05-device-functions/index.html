@@ -3205,8 +3205,11 @@ and the targets may be array elements:</p>
     <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
         <span class="n">depth</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">normals</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">color</span> <span class="o">=</span> <span class="n">closest_hit</span><span class="p">(</span><span class="n">origins</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">directions</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
 </code></pre></div>
-<p>A result made of several values has to be unpacked into one target each;
-binding it to a single name is rejected.</p>
+<p>A result made of several values is unpacked into one target each. A
+device function may also return another call's result as it is
+(<code>return closest_hit(o, d)</code>), and a name may hold it until it is unpacked
+(<code>hit = closest_hit(o, d)</code>, then <code>depth, normal, color = hit</code>); using such a
+name as one value is rejected.</p>
 <h2 id="nested-calls">Nested Calls<a class="headerlink" href="#nested-calls" title="Permanent link">&para;</a></h2>
 <p><code>@tack.func</code> functions can call other <code>@tack.func</code> functions:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
