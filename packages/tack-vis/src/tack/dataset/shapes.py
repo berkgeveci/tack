@@ -101,6 +101,18 @@ NEWTON_ITERATIONS = tack.constant(10, tack.i32)
 NEWTON_TOLERANCE = tack.constant(1e-4)
 #: A parametric coordinate past this ends the iteration as diverged.
 NEWTON_DIVERGED = tack.constant(1e6)
+#: How far outside its parametric domain (or a fanned cell's sub-triangle or
+#: sub-tetrahedron) a point may lie and still count as held by the cell. A
+#: point on a face, edge or vertex lies on the boundary of every cell that has
+#: it, and without a margin which of them held it was the sign of rounding
+#: noise: the cell-side and point-side searches disagreed at shared mesh
+#: points (every shape but the voxel on the CPU, and on CUDA, where NVRTC
+#: fuses the same inlined functions differently in the two kernels). With it
+#: they all hold the point, and the smaller id wins. Far above that noise
+#: (Newton leaves about its tolerance squared), and far below the locator's
+#: own tolerance: a point this close to a neighbour is extrapolated by at most
+#: this much in it.
+HOLD_TOLERANCE = tack.constant(1e-5)
 
 # Edges as point pairs and faces as four points (-1 pads a triangle),
 # flattened. Each is VTK's GetEdge/GetFace order.

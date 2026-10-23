@@ -330,37 +330,37 @@ class _MeshSearch:
                     surface = 0
                     if (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
                         pc, converged = self.tetra.world_to_parametric(pts, p)
-                        inside = self.tetra.is_inside(pc, 0.0)
+                        inside = self.tetra.is_inside(pc, shapes.HOLD_TOLERANCE)
                         near = self.tetra.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 2) != 0 and kind == shapes.HEXAHEDRON:
                         pc, converged = self.hexa.world_to_parametric(pts, p)
-                        inside = self.hexa.is_inside(pc, 0.0)
+                        inside = self.hexa.is_inside(pc, shapes.HOLD_TOLERANCE)
                         near = self.hexa.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 4) != 0 and kind == shapes.WEDGE:
                         pc, converged = self.wedge.world_to_parametric(pts, p)
-                        inside = self.wedge.is_inside(pc, 0.0)
+                        inside = self.wedge.is_inside(pc, shapes.HOLD_TOLERANCE)
                         near = self.wedge.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 8) != 0 and kind == shapes.PYRAMID:
                         pc, converged = self.pyramid.world_to_parametric(pts, p)
-                        inside = self.pyramid.is_inside(pc, 0.0)
+                        inside = self.pyramid.is_inside(pc, shapes.HOLD_TOLERANCE)
                         near = self.pyramid.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 16) != 0 and kind == shapes.VOXEL:
                         pc, converged = self.voxel.world_to_parametric(pts, p)
-                        inside = self.voxel.is_inside(pc, 0.0)
+                        inside = self.voxel.is_inside(pc, shapes.HOLD_TOLERANCE)
                         near = self.voxel.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 32) != 0 and kind == shapes.TRIANGLE:
                         pc, converged = self.triangle.world_to_parametric(pts, p)
-                        inside = self.triangle.is_inside(pc, 0.0)
+                        inside = self.triangle.is_inside(pc, shapes.HOLD_TOLERANCE)
                         surface = 1
                         near = self.triangle.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 64) != 0 and kind == shapes.QUAD:
                         pc, converged = self.quad.world_to_parametric(pts, p)
-                        inside = self.quad.is_inside(pc, 0.0)
+                        inside = self.quad.is_inside(pc, shapes.HOLD_TOLERANCE)
                         surface = 1
                         near = self.quad.nearest_point(pts, p, pc)
                     elif (self.kinds.PRESENT & 128) != 0 and kind == shapes.PIXEL:
                         pc, converged = self.pixel.world_to_parametric(pts, p)
-                        inside = self.pixel.is_inside(pc, 0.0)
+                        inside = self.pixel.is_inside(pc, shapes.HOLD_TOLERANCE)
                         surface = 1
                         near = self.pixel.nearest_point(pts, p, pc)
                     # As the locator: inside a solid, or within the tolerance of

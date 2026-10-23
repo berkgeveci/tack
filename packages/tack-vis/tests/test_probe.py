@@ -355,6 +355,34 @@ def test_searching_from_the_points_finds_what_searching_from_the_cells_does(back
                                    atol=1e-5)
 
 
+@needs_vtk
+@pytest.mark.parametrize("kind", SHAPES)
+def test_a_point_shared_by_several_cells_goes_to_the_smallest_id(backend, kind):
+    """A mesh point lies on the boundary of every cell that has it: each holds it,
+    and the smallest id wins, from both searches. Held without a margin, which
+    cells held it was the sign of rounding noise in their parametric
+    coordinates; on CUDA the two searches, the same functions inlined into two
+    kernels that NVRTC fused differently, disagreed at 5 of the tetra grid's
+    mesh points."""
+    data = vtk_to_dataset(_grid(kind))
+    offsets = data.topology.offsets.numpy().reshape(-1)
+    connectivity = data.topology.connectivity.numpy().reshape(-1)
+    smallest = np.full(data.num_points, data.num_cells)
+    for c in range(data.num_cells):
+        ids = connectivity[offsets[c]:offsets[c + 1]]
+        smallest[ids] = np.minimum(smallest[ids], c)
+    points = np.arange(data.num_points)
+    if kind == "pyramid":
+        # A pyramid's apex is where its parametric map is singular (any r and s
+        # at t = 1): Newton does not converge there and no cell holds the point,
+        # on main before this margin too. A separate fault; leave the apexes out.
+        apexes = {int(connectivity[offsets[c] + 4]) for c in range(data.num_cells)}
+        points = np.array([p for p in points if p not in apexes])
+    x = data.positions().astype(np.float64)[points]
+    for found, _ in _both_ways(data, x):
+        np.testing.assert_array_equal(found.cells.numpy(), smallest[points])
+
+
 def test_a_first_query_of_few_points_runs_from_the_cells():
     """The search from the points needs the cell bins, about eight entries a cell:
     a fresh locator's first query of few points runs from the cells, and builds

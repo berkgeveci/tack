@@ -834,7 +834,12 @@ the cell's bounding-box diagonal, as `vtkProbeFilter`'s computed tolerance
 has it. Of the cells that hold the point the smallest id wins; a cell that
 only comes within the tolerance wins only where none holds it, so a point
 just inside one cell is not extrapolated in a lower-numbered neighbour.
-Advection ranks its cells the same way.
+A cell holds a point within 1e-5 of its parametric domain
+(`shapes.HOLD_TOLERANCE`; of a sub-triangle or sub-tetrahedron in a fanned
+cell), so a point on a face, edge or vertex that cells share is held by
+all of them and goes to the smallest id: without the margin which cells
+held it was rounding noise, and the searches from the points and from the
+cells disagreed there. Advection ranks its cells the same way.
 The search runs from the points: one launch, each point testing the cells
 its bin may hold (`cell_bins()`, cells reached by id), and `probe` reads point
 and cell data the same way, one launch per field. Where cells cannot be read

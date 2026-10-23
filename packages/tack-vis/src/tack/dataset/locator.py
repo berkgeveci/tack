@@ -40,6 +40,7 @@ from tack.dataset import ids
 from tack.dataset.buckets import bucket_groups
 from tack.dataset.by_id import _bin
 from tack.dataset.dataset import for_each
+from tack.dataset.shapes import HOLD_TOLERANCE
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["CellLocator", "Locations"]
@@ -126,16 +127,19 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
                             # VTK's probe: inside, or within 0.1% of the cell's
                             # diagonal of its nearest point (surface cells too).
                             near = 0
+                            holds = 0
                             if ok == 1:
-                                if cells.DIMENSION == 3 and cells.is_inside(pc, 0.0) == 1:
+                                holds = cells.is_inside(pc, HOLD_TOLERANCE)
+                                if cells.DIMENSION == 3 and holds == 1:
                                     near = 1
                                 else:
                                     d = cells.nearest_point(pts, x, pc) - x
                                     near = 1 if d.dot(d) <= slack * slack else 0
                             if near == 1:
-                                # Holding the point ranks ahead of coming within
-                                # the tolerance; then the smaller id.
-                                rank = e if cells.is_inside(pc, 0.0) == 1 else e + ncells
+                                # Holding the point (within HOLD_TOLERANCE) ranks
+                                # ahead of coming within the tolerance; then the
+                                # smaller id.
+                                rank = e if holds == 1 else e + ncells
                                 if write == 0:
                                     tack.atomic_min(found, q, rank)
                                 elif found[q] == rank:
