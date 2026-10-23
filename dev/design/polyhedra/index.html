@@ -4108,9 +4108,18 @@ share those loads.</p>
 <p><strong>Not yet:</strong></p>
 <ul>
 <li><code>traces</code> and projections into spaces with a basis on polyhedra;</li>
-<li>locating in polygons and polylines;</li>
-<li>cells not star-shaped from their cell point (a solid-angle test);</li>
-<li>one return shape for <code>CellLocator.find</code> on both paths.</li>
+<li>~~locating in polygons and polylines~~: built (2026-10-23). A polygon is
+  fanned from its cell point into triangles, the location <code>t = 2k</code> and
+  <code>pc = (0, w_a, w_b)</code> so <code>tet_value</code> reads it unchanged (<code>_PolygonLocation</code>);
+  a polyline is located on its segments (<code>_PolylineLocation</code>,
+  <code>_PolylinePointField</code>). As on shapes' surface cells, a point within the
+  tolerance counts, and is held when its projection falls in the piece.
+  Polygons not star-shaped from their cell point are refused, as polyhedra are;</li>
+<li>cells not star-shaped from their cell point: refused, by decision
+  (2026-10-23). A solid-angle test would say whether a point is inside one,
+  but its fan's pieces overlap, so it has no interpolant to evaluate;</li>
+<li>~~one return shape for <code>CellLocator.find</code> on both paths~~: <code>Locations(cells,
+  pcs, tets)</code> everywhere since #95.</li>
 </ul>
 
 
