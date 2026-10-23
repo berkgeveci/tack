@@ -148,6 +148,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- `CellLocator.find`, `probe` and advection: which cell held a point on a
+  face, edge or vertex that cells share was the sign of rounding noise, so
+  the searches from the points and from the cells could put a mesh point in
+  different cells, on the CPU (hexahedra, tetrahedra, wedges, pyramids) as on
+  CUDA. A cell now holds a point within 1e-5 of its parametric domain
+  (`shapes.HOLD_TOLERANCE`), so every cell that has a shared point holds it
+  and the smallest id wins, in both searches and on every backend.
 - CUDA: a product bound to a name, or returned from a device function, was
   fused into a later statement's sum (NVRTC's `--fmad=true` fuses across
   statements: all of 100k values on an RTX 4060 Ti), against the float
