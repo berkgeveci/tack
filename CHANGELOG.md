@@ -115,6 +115,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   edges 22 → 9.5 ms on an M1 Max's CPU, 32 → 13.6 ms and 35 → 7.8 ms on its
   GPU; up to 7× on small grids.
 
+- `CellLocator`, `probe` and advection run on polygons, and `CellLocator` and
+  `probe` on polylines. A polygon is fanned from the mean of its points into
+  triangles, and a point within the tolerance of one is located there (held
+  when its projection falls in it), point data linear on each (exact for a
+  linear field); a polyline locates on its segments, point data linear along
+  them. Polygons not star-shaped from their mean point are refused, as such
+  polyhedra are.
+
 ### Fixed
 
 - `CellLocator.find`, and so `probe`, located a point in the lowest-numbered

@@ -46,8 +46,10 @@ def _bin(x, origin, inverse, n, slack):
 # ── Cells by id ─────────────────────────────────────────────────────
 
 class _NoPolyhedra:
-    """For meshes of shapes: the polyhedral methods the search names, never called
-    (their branch is compiled out)."""
+    """For meshes of shapes: the methods the search names for cells with no
+    reference element, never called (their branch is compiled out)."""
+
+    NO_REFERENCE = 0
 
     @tack.func
     def locate(self, e, p, slack):
@@ -58,11 +60,11 @@ class _NoPolyhedra:
         return field.values[0]
 
 
-@tack.device_class
-class _PolyhedralMesh(views._PolyhedralLocation, views._PolyhedralWalk, views._PolyhedralCells):
-    """A polyhedral topology's cells by id, located in their sub-tetrahedra by the
-    same code as their views (``views._PolyhedralLocation``), with the positions
-    it reads."""
+class _FannedCells:
+    """A polyhedral or polygonal topology's cells by id, with the positions they
+    read: located by their views' code, point data evaluated in a fan's piece."""
+
+    NO_REFERENCE = 1
 
     def __init__(self, topology, positions):
         point_offsets, point_ids = topology.cell_points()
@@ -74,10 +76,6 @@ class _PolyhedralMesh(views._PolyhedralLocation, views._PolyhedralWalk, views._P
     @tack.func
     def point_position(self, p):
         return self.positions[p]
-
-    @tack.func
-    def cell_type(self, e):
-        return shapes.POLYHEDRON
 
     @tack.func
     def tet_value_of(self, field, e, t, pc):
@@ -98,6 +96,56 @@ class _PolyhedralMesh(views._PolyhedralLocation, views._PolyhedralWalk, views._P
         return (v0 + pc[0] * (vf - v0)
                 + pc[1] * (field.values[self.side_point_id(e, k, j)] - v0)
                 + pc[2] * (field.values[self.side_point_id(e, k, nxt)] - v0))
+
+
+@tack.device_class
+class _PolyhedralMesh(_FannedCells, views._PolyhedralLocation, views._PolyhedralWalk,
+                      views._PolyhedralCells):
+    """A polyhedral topology's cells by id, located in their sub-tetrahedra
+    (``views._PolyhedralLocation``)."""
+
+    @tack.func
+    def cell_type(self, e):
+        return shapes.POLYHEDRON
+
+
+@tack.device_class
+class _PolygonMesh(_FannedCells, views._PolygonLocation, views._PolyhedralWalk,
+                   views._PolyhedralCells):
+    """A polygonal topology's cells by id, located in the triangles fanning them
+    (``views._PolygonLocation``)."""
+
+    @tack.func
+    def cell_type(self, e):
+        return shapes.POLYGON
+
+
+@tack.device_class
+class _PolylineMesh(views._PolylineLocation, views._PolyhedralWalk, views._PolylineCells):
+    """A polyline topology's cells by id, located on their segments
+    (``views._PolylineLocation``), with the positions they read."""
+
+    NO_REFERENCE = 1
+
+    def __init__(self, topology, positions):
+        point_offsets, point_ids = topology.cell_points()
+        super().__init__(topology.line_offsets, topology.line_points, point_offsets,
+                         point_ids, topology.num_cells)
+        self.positions = positions
+
+    @tack.func
+    def point_position(self, p):
+        return self.positions[p]
+
+    @tack.func
+    def cell_type(self, e):
+        return shapes.POLY_LINE
+
+    @tack.func
+    def tet_value_of(self, field, e, t, pc):
+        """Point data at ``pc`` on segment ``t``: linear along it."""
+        return (pc[1] * field.values[self.line_point_id(e, t)]
+                + pc[2] * field.values[self.line_point_id(e, t + 1)])
 
 
 @tack.device_class
@@ -177,7 +225,7 @@ def cells_by_id(data, positions, strict=True):
     has, or ``None`` if this module cannot serve its topology. Unless
     ``strict``, unstructured cells of other shapes are allowed and never found
     (as advection has always taken them)."""
-    from tack.dataset.polyhedra import PolyhedralTopology
+    from tack.dataset.polyhedra import PolygonalTopology, PolyhedralTopology, PolylineTopology
     from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
     t = data.topology
@@ -193,8 +241,12 @@ def cells_by_id(data, positions, strict=True):
         return _FlatCells(t.types, t.offsets, t.connectivity), present
     if isinstance(t, StructuredTopology) and len(t.point_dims) >= 2:
         return _GridCells(t.point_dims), present
-    if isinstance(t, PolyhedralTopology) and t.dimension == 3:
+    if isinstance(t, PolygonalTopology):
+        return _PolygonMesh(t, positions), _POLYHEDRA if t.num_cells else 0
+    if isinstance(t, PolyhedralTopology):
         return _PolyhedralMesh(t, positions), _POLYHEDRA if t.num_cells else 0
+    if isinstance(t, PolylineTopology):
+        return _PolylineMesh(t, positions), _POLYHEDRA if t.num_cells else 0
     return None
 
 
@@ -252,9 +304,10 @@ class _MeshSearch:
                         and p[1] >= a[1] - s and p[1] <= c[1] + s
                         and p[2] >= a[2] - s and p[2] <= c[2] + s):
                     kind = self.cells.cell_type(e)
-                    if (self.kinds.PRESENT & 256) != 0 and kind == shapes.POLYHEDRON:
-                        # No parametric coordinates: a sub-tetrahedron and the
-                        # point's place in it, within the cell's tolerance.
+                    if self.cells.NO_REFERENCE == 1:
+                        # No parametric coordinates: a piece of the cell's fan (a
+                        # polyline's segment) and the point's place in it, within
+                        # the cell's tolerance.
                         tet, tpc, held = self.cells.locate(e, p, s)
                         if tet >= 0:
                             rank = e if held == 1 else e + self.ncells
@@ -378,7 +431,7 @@ class _PointValues:
     @tack.func
     def value(self, mesh, e, kind, pc, tet):
         v = self.values[mesh.cells.point_id(e, 0)]
-        if (mesh.kinds.PRESENT & 256) != 0 and kind == shapes.POLYHEDRON:
+        if mesh.cells.NO_REFERENCE == 1:
             v = mesh.cells.tet_value_of(self, e, tet, pc)
         else:
             v = v * mesh.weight(kind, 0, pc)

@@ -358,6 +358,10 @@ class DataSet:
             mixins.append(views._PolyhedralWalk)
             if group.shape is shapes.Polyhedron:
                 mixins.append(views._PolyhedralLocation)
+            elif group.shape is shapes.Polygon:
+                mixins.append(views._PolygonLocation)
+            elif group.shape is shapes.PolyLine:
+                mixins.append(views._PolylineLocation)
         if (kind == "cells" and issubclass(group.kind, views._PolylineCells)
                 and self.topology._faces is not None):
             mixins.append(views._PolylineIncidence)

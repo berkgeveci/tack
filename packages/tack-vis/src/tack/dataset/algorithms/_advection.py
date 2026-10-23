@@ -237,9 +237,12 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
         raise TypeError("advection needs an order-1 H1 geometry: one position per point")
     velocity = _velocity(data, field)
     positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
-    if cells_by_id(data, positions, strict=False) is None:
-        raise NotImplementedError("advection takes unstructured, polyhedral and 2D or 3D "
-                                  "structured topologies; not polygons or polylines, nor lines")
+    from tack.dataset.polyhedra import PolylineTopology
+
+    if (isinstance(data.topology, PolylineTopology)
+            or cells_by_id(data, positions, strict=False) is None):
+        raise NotImplementedError("advection takes unstructured, polyhedral, polygonal and 2D "
+                                  "or 3D structured topologies; not polylines, nor lines")
     locator = locator or CellLocator(data)
     if locator.data is not data:
         raise ValueError("the locator was built for another dataset")
