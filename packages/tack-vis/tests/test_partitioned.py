@@ -371,6 +371,53 @@ def test_pieces_on_two_devices_are_reduced_where_each_is():
     assert td.entropy(pds, "cells") == pytest.approx(td.entropy(whole, "cells"))
 
 
+# ── Filters and ghost marks (phase 1: kept or refused, never lost silently) ──
+
+def test_filters_that_keep_the_cells_keep_the_marks():
+    """warp, transform, shrink, as_polyhedra and a probe's target keep their input's
+    cells and points, so they keep its marks, and reduce as it does."""
+    whole = td.wavelet(4)
+    piece = td.split(whole, 2)[0]
+    marks = piece.ghosts.points.numpy()
+    moved = td.transform(piece, np.eye(4))
+    shrunk = td.shrink(piece, 0.9)
+    poly = td.as_polyhedra(piece)
+    probed = td.probe(whole, piece)
+    for out in (moved, shrunk, poly, probed):
+        assert out.ghosts is not None
+        np.testing.assert_array_equal(out.ghosts.points.numpy(), marks)
+    expected = td.statistics(piece, "RTData")
+    for out in (moved, poly, probed):              # shrink's point data is per corner (L2)
+        assert td.statistics(out, "RTData").n == expected.n
+
+
+def test_a_filters_output_that_lost_the_marks_is_not_reduced():
+    """A filter that makes new cells or points does not carry the marks yet: its
+    output remembers that, and statistics and entropy refuse it -- over pieces
+    too -- rather than count shared points once per piece. Filtering it again
+    keeps the record; setting marks clears it; moving it keeps it."""
+    whole = td.wavelet(4)
+    pieces = td.split(whole, 2)
+    cut = [td.threshold(piece, "RTData", 0.0, 1e9) for piece in pieces]
+    assert all(out.ghosts is None for out in cut)
+    with pytest.raises(NotImplementedError, match="filter's output from data with ghost"):
+        td.statistics(cut[0], "RTData")
+    with pytest.raises(NotImplementedError, match="filter's output"):
+        td.entropy(cut[0], "RTData")
+    with pytest.raises(NotImplementedError, match="filter's output"):
+        td.statistics(td.PartitionedDataSet(cut), "RTData")
+    again = td.tetrahedralize(cut[0])
+    with pytest.raises(NotImplementedError, match="filter's output"):
+        td.statistics(again, "RTData")
+    moved = again.to_device(dispatch.as_device(_SecondCPU()))
+    with pytest.raises(NotImplementedError, match="filter's output"):
+        td.statistics(moved, "RTData")
+    again.ghosts = Ghosts(points=np.zeros(again.num_points, np.uint8))
+    assert td.statistics(again, "RTData").n == again.num_points
+    # Without marks to begin with, nothing is refused.
+    assert td.statistics(td.threshold(whole, "RTData", 0.0, 1e9), "RTData").n > 0
+
+
 # ── VTK ─────────────────────────────────────────────────────────────
 
 @needs_vtk

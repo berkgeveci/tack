@@ -20,6 +20,25 @@ from tack.runtime.dispatch import as_device, backend_of, get_backend, same_devic
 __all__ = ["Ghosts"]
 
 
+def keep_marks(source, out):
+    """``out``, a dataset on ``source``'s cells and points (the same topology), with
+    ``source``'s ghost marks -- and its record of having lost them."""
+    out.ghosts = source.ghosts
+    out._ghosts_lost = source._ghosts_lost
+    return out
+
+
+def drop_marks(source, out):
+    """``out``, made from ``source``'s cells and points by a filter, which does not
+    carry ghost marks yet (the partitioned-data proposal's phase 2): if
+    ``source`` had marks, or had lost them, record that ``out`` lost them, so
+    reductions refuse it rather than count shared cells and points once per
+    piece."""
+    if source.ghosts is not None or source._ghosts_lost:
+        out._ghosts_lost = True
+    return out
+
+
 def _marks(values, what):
     """``values`` as a one-dimensional u8 array, or ``None``."""
     if values is None:
@@ -121,6 +140,11 @@ def owned_values(data, field):
     from tack.dataset.carry import _take
     from tack.dataset.spaces import H1, L2, Constant, Values
 
+    if data._ghosts_lost:
+        raise NotImplementedError(
+            "this dataset is a filter's output from data with ghost marks, and filters "
+            "do not carry the marks yet: its shared cells and points would count once "
+            "per piece. Reduce the input instead, or set the output's ghosts")
     values = materialize(field.values)
     ghosts = data.ghosts
     if ghosts is None or (ghosts.cells is None and ghosts.points is None):

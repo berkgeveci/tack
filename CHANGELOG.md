@@ -28,7 +28,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `split` marks the points its pieces share as duplicates in all but one;
   `statistics` and `entropy` leave out duplicate and hidden cells and
   points, so over pieces with one owner per point they give the whole's
-  answer. Filters do not carry the marks yet.
+  answer. Filters that keep the cells and points keep the marks; the others
+  do not carry them yet, and their outputs record that they lost them, so
+  `statistics` and `entropy` refuse those outputs rather than count shared
+  cells and points once per piece.
 - Examples: `45_flow.py` (gradients, `flow_quantities`, `advect`,
   `streamlines` and `perot` on a swirl whose answers are known exactly) and
   `46_cut_and_sample.py` (`clip`, `extract_geometry`, `extract_points`,

@@ -193,6 +193,8 @@ class DataSet:
             if field.space.topology is not topology:
                 raise ValueError(f"field {name!r} is on another topology")
         self.sets = sets
+        # Set by a filter that dropped its input's ghost marks (ghosts.drop_marks).
+        self._ghosts_lost = False
         self.ghosts = ghosts
         _ = self._device                    # refuses parts on two devices
 
@@ -234,9 +236,11 @@ class DataSet:
         sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
                 for name, s in self.sets.items()}
         ghosts = None if self.ghosts is None else self.ghosts.to_device(target)
-        return DataSet(topology, moved(self.geometry),
-                       {name: moved(field) for name, field in self.fields.items()},
-                       sets, dtype=self.dtype, ghosts=ghosts)
+        out = DataSet(topology, moved(self.geometry),
+                      {name: moved(field) for name, field in self.fields.items()},
+                      sets, dtype=self.dtype, ghosts=ghosts)
+        out._ghosts_lost = self._ghosts_lost
+        return out
 
     @property
     def sets(self):
@@ -266,7 +270,14 @@ class DataSet:
     def ghosts(self):
         """The ghost marks of its cells and points (``tack.dataset.Ghosts``),
         or ``None``: which cells and points another piece owns, in VTK's
-        ``vtkGhostType`` bits."""
+        ``vtkGhostType`` bits.
+
+        Filters that keep the cells and points (``warp``, ``transform``,
+        ``shrink``, ``as_polyhedra``, ``probe``'s target, ...) keep the marks;
+        others do not carry them yet, and their output remembers that it lost
+        them, so ``statistics`` and ``entropy`` refuse it rather than count
+        shared cells and points once per piece. Setting marks again clears
+        that."""
         return self._ghosts
 
     @ghosts.setter
@@ -278,6 +289,7 @@ class DataSet:
                 raise TypeError(f"ghost marks are a tack.dataset.ghosts.Ghosts, not "
                                 f"{type(ghosts).__name__}")
             ghosts._check(self.topology)
+            self._ghosts_lost = False
         self._ghosts = ghosts
 
     @property

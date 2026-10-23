@@ -106,4 +106,7 @@ def probe(data, where, fields=None, locator=None):
     out["valid"] = Field(Values(where, "points"), valid)
     kept = dict(where.fields)
     kept.update(out)
-    return DataSet(where.topology, where.geometry, fields=kept, sets=dict(where.sets))
+    from tack.dataset.ghosts import keep_marks
+
+    return keep_marks(where, DataSet(where.topology, where.geometry, fields=kept,
+                                     sets=dict(where.sets)))

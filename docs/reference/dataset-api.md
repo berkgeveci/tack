@@ -441,7 +441,13 @@ valid there (an AMR cell a finer level covers, a blanked cell).
   on one dataset too, so each value counts once across all pieces. An `L2`
   field goes by its cells' marks; a field on faces or edges, or of order 2,
   is refused on a dataset with marks until it is decided who owns those.
-- **Not yet:** filters do not carry the marks to their outputs. The plan:
+- Filters that keep the cells and points (`warp`, `transform`,
+  `cylindrical`, `spherical`, `shrink`, `as_polyhedra`, `as_polygons`, and
+  `probe`'s target) keep the marks. Every other filter's output records that
+  it lost them, and `statistics` and `entropy` refuse it with
+  `NotImplementedError`, rather than count shared cells and points once per
+  piece. Setting the output's `ghosts` clears that.
+- **Not yet:** the other filters do not carry the marks to their outputs. The plan:
   filters process duplicates and mark what they make from them, as VTK does,
   with one owner for every shared point, edge and face (the owner of an
   edge or face being the owner of its smallest point, by global id or

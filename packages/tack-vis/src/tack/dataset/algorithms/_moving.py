@@ -11,9 +11,11 @@ from tack.dataset.dataset import DataSet, Field
 def _moved(data, positions, fields=None):
     """``data`` with the geometry's values replaced: same topology and sets, and the
     fields ``fields`` selects (all by default)."""
+    from tack.dataset.ghosts import keep_marks
+
     fields = {name: data.fields[name] for name in selected(data, fields)}
-    return DataSet(data.topology, Field(data.geometry.space, positions), fields=fields,
-                   sets=dict(data.sets))
+    return keep_marks(data, DataSet(data.topology, Field(data.geometry.space, positions),
+                                    fields=fields, sets=dict(data.sets)))
 
 
 @tack.kernel

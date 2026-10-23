@@ -45,4 +45,6 @@ def shrink(data, factor=0.5, fields=None):
         if isinstance(space, Values) and space.on == "points":
             f, space = Field(H1(data), f.values), H1(data)
         out[name] = project(data, f, L2(data)) if isinstance(space, H1) else f
-    return DataSet(data.topology, corners, fields=out, sets=dict(data.sets))
+    from tack.dataset.ghosts import keep_marks
+
+    return keep_marks(data, DataSet(data.topology, corners, fields=out, sets=dict(data.sets)))

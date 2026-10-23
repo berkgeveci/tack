@@ -321,4 +321,9 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
                                edges_to_cells)
             if moved is not None:
                 sets[name] = moved
-    return DataSet(out, geometry, fields=carried, sets=sets)
+    from tack.dataset.ghosts import drop_marks, keep_marks
+
+    result = DataSet(out, geometry, fields=carried, sets=sets)
+    if isinstance(points, Same) and isinstance(cells, Same):
+        return keep_marks(data, result)       # the same cells and points
+    return drop_marks(data, result)
