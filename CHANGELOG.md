@@ -37,6 +37,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   reads a topology's arrays as `tack.Array`s should use `numpy()`,
   `np.asarray` or `tack.arrays.materialize`, which accept both.
 
+### Fixed
+
+- `CellLocator.find`, and so `probe`, located a point in the lowest-numbered
+  cell within the tolerance (0.1% of a cell's box diagonal), whether or not
+  it held the point, and extrapolated there. On a Delaunay mesh of 16k
+  tetrahedra, 2006 of 75k probes were wrong, by up to 1.7. Now a cell that
+  holds the point ranks ahead of one it only comes near, and advection ranks
+  its cells the same way. On GPUs without 64-bit atomics (Metal, Level Zero)
+  the locator's limit halves, to 2^30 − 1 cells.
+- `probe` grouped its points with two radix sorts whenever some lay outside
+  the mesh (they share one bucket): 57 launches. `buckets.bucket_groups`
+  counts, scans and scatters instead, leaving the unread bucket unfilled:
+  19 launches, and on an RTX 4060 Ti 10.5 → 4.0 ms for 100k points.
+
 ## 0.5.0 — 2026-10-22
 
 The headline: the API freeze. Arrays are NumPy-style (`tack.Array` is
