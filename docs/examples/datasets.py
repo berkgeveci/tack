@@ -29,7 +29,7 @@ def run(arch="cpu", check=False):
 
     # --8<-- [start:fields]
     height = tack.empty((mesh.num_points,))
-    tack.copyto(height, positions[:, 2].copy())
+    tack.copyto(height, positions[:, 2])
     mesh.fields["height"] = td.Field(td.H1(mesh), height)            # point data
     material = tack.empty((mesh.num_cells,))
     tack.copyto(material, np.array([1.0, 2.0], np.float32))

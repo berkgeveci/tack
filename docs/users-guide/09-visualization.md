@@ -244,6 +244,13 @@ and every `Field` argument becomes its view for the same cells. The kernel
 is compiled for each shape, so a hexahedron's loop knows it has eight
 corners.
 
+`for_each` is for kernels that need the mesh: a cell's corners, a face's two
+sides, positions. A kernel that needs only a field's values, each on its own,
+is an ordinary kernel over `field.values`, looping over `range(len(values))`.
+That is also the loop over points, which are not a `for_each` domain: point
+data is one value per point. Implicit values, such as a uniform grid's
+coordinates, are indexed the same way.
+
 ```python
 --8<-- "docs/examples/datasets.py:kernel"
 ```

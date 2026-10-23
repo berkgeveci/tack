@@ -977,6 +977,9 @@ def copyto(dst: Array, src):
     shape is ``dst.numpy()``'s or broadcasts to it, converted to ``dst``'s
     dtype; or a Tack array of ``dst``'s shape on ``dst``'s device, copied
     there (``src.to_device(dst.device)`` brings one from another device).
+
+    It only writes into Tack arrays. `numpy` reads one into a new NumPy
+    array; ``np.copyto`` copies between NumPy arrays.
     """
     if not isinstance(dst, Array):
         raise TypeError(f"copyto() writes into a Tack array, not {type(dst).__name__}")
