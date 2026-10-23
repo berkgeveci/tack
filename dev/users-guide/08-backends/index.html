@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://berkgeveci.github.io/tack/dev/users-guide/08-backends/">
       
       
-        <link rel="prev" href="../data/06-pipelines/">
+        <link rel="prev" href="../data/07-partitioned/">
       
       
         <link rel="next" href="../16-interoperability/">
@@ -1306,6 +1306,34 @@
     
   
     Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
   
 
     
@@ -3502,12 +3530,24 @@ with explicit host-device copies.</p>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p>Tack's CUDA context is current only on the thread that first asked for
-the device (<code>tack.device("cuda")</code>, <code>set_default_device</code> or <code>device=</code>).
-To call kernels from another thread, make the context current there first:</p>
+<p>Tack works in the device's <strong>primary context</strong>, the one the CUDA runtime
+and the libraries on it (PyTorch, CuPy, Warp) use. So Tack and those
+libraries can take turns on one thread in any order, and arrays pass between
+them through DLPack without a context switch. If a context is already
+current when Tack first makes the device (an embedding application's own),
+Tack adopts that one instead. Tack retains the primary context and, when it
+is done with it, releases it rather than destroying it, since other
+libraries may hold it too.</p>
+<p>Tack makes the context current on the thread that first asks for the device
+(<code>tack.device("cuda")</code>, <code>set_default_device</code> or <code>device=</code>). To call kernels
+from another thread, that thread needs it current too. A thread on which
+PyTorch, CuPy or the CUDA runtime already used the device has it; otherwise
+make it current first:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">cuda.bindings</span><span class="w"> </span><span class="kn">import</span> <span class="n">driver</span>
 
-<span class="n">driver</span><span class="o">.</span><span class="n">cuCtxSetCurrent</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">_backend</span><span class="o">.</span><span class="n">_context</span><span class="p">)</span>  <span class="c1"># in the other thread</span>
+<span class="n">_</span><span class="p">,</span> <span class="n">cu_device</span> <span class="o">=</span> <span class="n">driver</span><span class="o">.</span><span class="n">cuDeviceGet</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">_</span><span class="p">,</span> <span class="n">primary</span> <span class="o">=</span> <span class="n">driver</span><span class="o">.</span><span class="n">cuDevicePrimaryCtxRetain</span><span class="p">(</span><span class="n">cu_device</span><span class="p">)</span>   <span class="c1"># in the other thread</span>
+<span class="n">driver</span><span class="o">.</span><span class="n">cuCtxSetCurrent</span><span class="p">(</span><span class="n">primary</span><span class="p">)</span>
 </code></pre></div>
 <p>Calls of one kernel from several threads are safe on every backend: each
 call runs with its own arguments. On GPU backends calls of the same

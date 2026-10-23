@@ -1545,6 +1545,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3422,6 +3450,10 @@ an approximation to a sphere. This example needs no VTK installation.</p>
 <td><a href="../data/06-pipelines/">Sample and Connect Simulations</a></td>
 <td>Probe a solution, integrate paths or exchange datasets</td>
 </tr>
+<tr>
+<td><a href="../data/07-partitioned/">Work with Data in Pieces</a></td>
+<td>Filter and reduce a dataset cut into pieces, with ghost cells, on one device or several</td>
+</tr>
 </tbody>
 </table>
 <p>For a first reading, follow the fundamentals, dataset and mesh chapters,
@@ -3720,8 +3752,10 @@ the mean of its points, and the triangles into tetrahedra from the mean of
 the cell's points; point data is linear on each tetrahedron. Gradients,
 cell centers, probing, advection and streamlines run on polyhedra that way
 (gradients by Green–Gauss over the fanned faces), exactly for linear
-fields; the algorithms that need a reference element (<code>L2</code> and order-2
-spaces, side traces) refuse a polyhedral mesh and say so. The ones that
+fields. Polygons are fanned into triangles from their points' mean the
+same way, so probing and advection run on them, and probing locates on a
+polyline's segments. The algorithms that need a reference element (<code>L2</code> and
+order-2 spaces, side traces) refuse a polyhedral mesh and say so. The ones that
 work from points and faces run on both kinds: contour (by López's face
 walk), slice, threshold, external faces, cell and face geometry,
 divergence, and moving data between points and cells. A 2D mesh contours into lines, and

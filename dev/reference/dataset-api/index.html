@@ -1302,6 +1302,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -4404,7 +4432,7 @@ and "polyline" <code>PolylineTopology</code>.</p>
 </tr>
 <tr>
 <td><code>contour</code>, <code>slice</code>, <code>slice_plane</code></td>
-<td>yes (a 2D mesh's: line cells; an <code>L2</code> field or geometry gives each cell its own points)</td>
+<td>yes (a 2D mesh's: line cells; an <code>L2</code> field or geometry gives each cell its own points; an order-2 <code>H1</code> field is refused, since its corners alone would be contoured)</td>
 <td>yes (López, face-based)</td>
 <td>yes (line cells)</td>
 <td>no (would give points)</td>

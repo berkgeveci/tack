@@ -1456,6 +1456,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3367,7 +3395,7 @@ and therefore waits for the device work it reads.</p>
 </tr>
 <tr>
 <td>Contour or slice</td>
-<td>Yes</td>
+<td>Yes, of order-1 and <code>L2</code> fields (an order-2 <code>H1</code> field is refused)</td>
 <td>Yes</td>
 <td>Currently unsupported</td>
 </tr>
@@ -3384,10 +3412,28 @@ and therefore waits for the device work it reads.</p>
 <td>Yes</td>
 </tr>
 <tr>
-<td>Basis gradients, probing, streamline integration</td>
-<td>Yes, within each algorithm's supported dimension</td>
+<td>Gradients and flow quantities</td>
+<td>Yes</td>
+<td>Yes: Green–Gauss over each polyhedron's faces (exact for linear fields); zero on polygons</td>
+<td>Yes (zero)</td>
+</tr>
+<tr>
+<td>Locate cells and probe</td>
+<td>Yes</td>
+<td>Yes: in sub-tetrahedra or fanned triangles; cells must be star-shaped from their points' mean</td>
+<td>Yes, on segments</td>
+</tr>
+<tr>
+<td>Advection and streamlines</td>
+<td>Yes, 2D and 3D cells</td>
+<td>Yes, as probing locates</td>
 <td>Currently unsupported</td>
-<td>Currently unsupported</td>
+</tr>
+<tr>
+<td>Carry ghost marks over pieces</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
 </tr>
 </tbody>
 </table>

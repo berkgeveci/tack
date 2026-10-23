@@ -1302,6 +1302,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/data/07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2376,10 +2404,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#12-questions-to-settle" class="md-nav__link">
+  <a href="#12-partitioned-data-and-ghost-marks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        12. Questions to settle
+        12. Partitioned data and ghost marks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-questions-to-settle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Questions to settle
       
     </span>
   </a>
@@ -3309,10 +3348,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#12-questions-to-settle" class="md-nav__link">
+  <a href="#12-partitioned-data-and-ghost-marks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        12. Questions to settle
+        12. Partitioned data and ghost marks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-questions-to-settle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Questions to settle
       
     </span>
   </a>
@@ -3366,6 +3416,7 @@ these ways:</p>
   alias at first and has since been removed), and templates may hold
   templates.</li>
 </ul>
+<p>Partitioned data and ghost marks, added later, are recorded in section 12.</p>
 </blockquote>
 <p>It builds on the prototype on <code>vis/data-model</code> (cell shapes, cell sets,
 <code>for_each_shape</code>, six filters) and on two studies of prior art: MFEM 4.9's
@@ -4192,7 +4243,62 @@ size, avoids regrouping but wastes work on low-order cells and makes GPU
 threads in a warp wait on the highest. Tensor-product bases make a runtime
 order practical (a 1D Lagrange basis is loops). Keep it for orders spread
 widely (say 1 to 12); group by order otherwise.</p>
-<h2 id="12-questions-to-settle">12. Questions to settle<a class="headerlink" href="#12-questions-to-settle" title="Permanent link">&para;</a></h2>
+<h2 id="12-partitioned-data-and-ghost-marks">12. Partitioned data and ghost marks<a class="headerlink" href="#12-partitioned-data-and-ghost-marks" title="Permanent link">&para;</a></h2>
+<p>Added 2026-10-21 to 10-23, after the rest of this record: data in pieces,
+as VTK's partitioned datasets and MPI decompositions give it. The user's
+side is <a href="../../users-guide/data/07-partitioned/">Work with Data in Pieces</a>;
+this section records why it is shaped as it is.</p>
+<p><strong>A list of datasets, and no wrappers.</strong> A <code>PartitionedDataSet</code> is an
+ordered list of <code>DataSet</code>s, each a whole dataset with its own device.
+Per-piece work takes a piece and the caller loops. There is no
+"partitioned field" and no filter that maps over pieces: a loop computes
+nothing a wrapper would not, and would hide what runs where. Only
+algorithms whose answer needs every piece take the container:
+<code>statistics</code>, by mergeable moments, and <code>entropy</code>, by histograms over the
+whole's range.</p>
+<p><strong>Marks apart from the fields.</strong> Ghost marks are <code>data.ghosts</code>, a <code>u8</code> per
+cell and per point in VTK's <code>vtkGhostType</code> bits, kept apart from the named
+fields as the geometry is. Kept as a field named <code>vtkGhostType</code>, every
+algorithm would have to look them up by name and could carry them as data
+by mistake. A <code>Set</code> of owned cells would serve cell loops, but would gather
+ids on every launch and have no place for point marks or the other bits.</p>
+<p><strong>One owner per entity; filters carry the marks.</strong> Every cell and point
+that several pieces hold has one owner, and the other copies are
+duplicates. Filters process the duplicates, as VTK's do, because their
+output is what the next step near a piece's edge needs. What a filter makes
+takes the owner of what it came from (<code>ghosts.carry_marks</code>, inside
+<code>carry</code>, so every filter that builds its output through <code>carry</code> carries
+the marks). An entity several cells share -- an edge, a face, a point on an
+edge -- is owned where its smallest point is. "Smallest" goes by position
+until there are global ids: every copy of a point has the same position,
+so every piece decides alike without communicating.</p>
+<p><strong>Why a ghost layer is required.</strong> The rule gives each output entity one
+owner only if the piece owning a point holds every cell around it, which is
+what one ghost layer guarantees. Without ghost cells it fails in two ways
+found while building it:</p>
+<ul>
+<li>a contour point on an edge in the cut is owned where the edge's smallest
+  point is, and that piece may hold no cell containing the edge;</li>
+<li><code>threshold</code> keeps the points its kept cells use, and a shared point's
+  owner may keep none of the cells using it (36 of 1028 points lost on a
+  two-piece wavelet).</li>
+</ul>
+<p>A piece with duplicate points and no duplicate cells is taken to have no
+ghost layer. Outputs of such pieces that depend on neighbours record that
+they lost the marks, with the reason, and reductions refuse them, rather
+than count shared values wrongly.</p>
+<p><strong><code>remove_ghosts</code> keeps owned points.</strong> Removing the ghost cells and the
+points they alone used would drop a contour point from its owner when that
+piece's triangles around the edge are all ghosts (29 of 847 points, before
+the fix). Keeping every owned point, used or not, keeps each point's one
+owner, so reductions over the result are unchanged.</p>
+<p><strong>Hidden cells by extraction, not by kernel tests.</strong> The first plan gave
+cell views an <code>is_hidden(c)</code> test, compiled away without marks. The build
+takes the visible cells first (<code>visible</code>) where hidden cells exist, one
+place for every filter, at the cost of one extraction on the rare data
+that has them. Ids the caller chose (faces, edges) and a reused locator
+refer to the whole dataset, so they are refused there instead.</p>
+<h2 id="13-questions-to-settle">13. Questions to settle<a class="headerlink" href="#13-questions-to-settle" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>Truth for continuity.</strong> This proposal follows MFEM -- continuity
    follows from which entities own DOFs -- and treats vtkCellGrid's

@@ -1319,6 +1319,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3158,7 +3186,10 @@ is read-only; request <code>writable=True</code> only when the owner permits wri
 <p>Metal wraps an <code>MTLBuffer</code>, while CUDA, HIP and Level Zero wrap device addresses.
 Those addresses must belong to the selected device/runtime. Selecting the same
 kind of backend does not prove that two separately initialized contexts can
-share an allocation. Keep context lifetimes aligned with the view.</p>
+share an allocation. Keep context lifetimes aligned with the view. On CUDA,
+Tack works in the device's primary context, as PyTorch, CuPy and Warp do, so
+their allocations and Tack's are in one context and each library's calls can
+follow the other's on one thread (<a href="../08-backends/#cuda">Backends</a>).</p>
 <h2 id="dlpack-exchange-a-tensor-description">DLPack: exchange a tensor description<a class="headerlink" href="#dlpack-exchange-a-tensor-description" title="Permanent link">&para;</a></h2>
 <p>For a compatible library that implements DLPack, start with its object:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># producer is a tensor from another library, on a compatible device.</span>
