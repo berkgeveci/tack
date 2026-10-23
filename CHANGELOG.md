@@ -102,6 +102,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   fresh locator's first query of few points in many cells, which it answers
   without building the cell bins; both give the same answer.
 
+- Structured grids derive their faces and edges by arithmetic, in one pass
+  over the cells with no sort: ids, sides, orientations and signs identical to
+  the general derivation's. On a grid of 1M hexahedra, faces 24 → 7.9 ms and
+  edges 22 → 9.5 ms on an M1 Max's CPU, 32 → 13.6 ms and 35 → 7.8 ms on its
+  GPU; up to 7× on small grids.
+
 ### Fixed
 
 - `CellLocator.find`, and so `probe`, located a point in the lowest-numbered

@@ -457,6 +457,126 @@ def _gather_kind(flags, slots, face_rows, face_sides, ids, rows, sides):
             sides[s] = face_sides[f]
 
 
+@tack.func
+def _before(i, j, k, nx, ny, a, b, c):
+    """How many points before (i, j, k), x fastest, have their own i < a, j < b and
+    k < c: on a grid, the entities of one kind that start at earlier points."""
+    across = min(nx, a)
+    n = min(k, c) * across * min(ny, b)
+    if k < c:
+        n += min(j, b) * across
+        if j < b:
+            n += min(i, a)
+    return n
+
+
+@tack.kernel
+def _structured_faces_by_cell(cells, nx, ny, nz, solid, face_axis, face_high, face_turned,
+                              side_face, side_slot, side_orientation, face_rows, face_kinds,
+                              face_sides):
+    # A structured grid's faces, one pass over the cells, no sort: each local
+    # face's normal axis and side are the shape's (face_axis, face_high), so its
+    # face id follows from the cell's (i, j, k), numbered as the general
+    # derivation's sort numbers faces (by smallest point, then z-, y-, x-normal
+    # in 3D, the edge along x before the edge along y in 2D). Side 0 is the cell
+    # below the face along its normal, or the only one on the boundary, and its
+    # face is the face's row; side 1's orientation is the shape's (face_turned).
+    cx = nx - 1
+    cy = ny - 1
+    cz = nz - 1
+    for c in cells:
+        e = cells.entity_id(c)
+        ci = e % cx
+        rest = e // cx
+        cj = rest % max(cy, 1)
+        ck = rest // max(cy, 1)
+        first = cells.index(c) * cells.NUM_FACES
+        for lf in range(cells.NUM_FACES):
+            axis = face_axis[lf]
+            high = face_high[lf]
+            i = ci + (high if axis == 0 else 0)
+            j = cj + (high if axis == 1 else 0)
+            k = ck + (high if axis == 2 else 0)
+            pos = ci if axis == 0 else (cj if axis == 1 else ck)
+            f = e - e
+            if solid == 1:
+                f = (_before(i, j, k, nx, ny, nx, cy, cz) + _before(i, j, k, nx, ny, cx, ny, cz)
+                     + _before(i, j, k, nx, ny, cx, cy, nz))
+                z_here = 1 if i < cx and j < cy else 0
+                y_here = 1 if i < cx and k < cz else 0
+                if axis == 0:
+                    f += z_here + y_here
+                elif axis == 1:
+                    f += z_here
+            else:
+                f = _before(i, j, k, nx, ny, cx, ny, 1) + _before(i, j, k, nx, ny, nx, cy, 1)
+                if axis == 0:
+                    f += 1 if i < cx else 0
+            slot = 1 if high == 0 and pos > 0 else 0
+            side_face[first + lf] = f
+            side_slot[first + lf] = slot
+            side_orientation[first + lf] = face_turned[lf] if slot == 1 else 0
+            if slot == 0:
+                n = cells.face_num_points(lf)
+                p0 = cells.point_id(c, cells.face_corner(lf, 0))
+                p1 = cells.point_id(c, cells.face_corner(lf, 1))
+                p2 = cells.point_id(c, cells.face_corner(lf, 2)) if n >= 3 else _NO_POINT
+                p3 = cells.point_id(c, cells.face_corner(lf, 3)) if n == 4 else _NO_POINT
+                face_rows[f] = [p0, p1, p2, p3]
+                face_kinds[f] = cells.face_shape(lf)
+                face_sides[f][0] = e
+                face_sides[f][1] = lf
+            else:
+                face_sides[f][2] = e
+                face_sides[f][3] = lf
+
+
+# The shapes' corner tables, read on the host for the structured tables.
+_HEXAHEDRON_FACE_CORNERS = shapes._HEXAHEDRON_FACES
+_HEXAHEDRON_EDGE_CORNERS = shapes._HEXAHEDRON_EDGES
+_QUAD_EDGE_CORNERS = shapes._QUAD_EDGES
+
+
+def _corner_offset(j):
+    """A structured cell's corner ``j`` as (di, dj, dk), VTK's order: the formula
+    ``_StructuredHexahedra.point_id`` and ``by_id._GridCells`` use."""
+    return ((j ^ (j >> 1)) & 1, (j >> 1) & 1, j >> 2)
+
+
+_FACE_TABLES = {}
+
+
+def _structured_face_tables(shape):
+    """Per local face of a structured cell (``Hexahedron``, or ``Quad`` whose faces
+    are its edges): its normal axis, whether it is the cell's high side on it,
+    and the orientation its cell has as the face's side 1 -- read once from the
+    general derivation of a tiny grid, so the two cannot disagree."""
+    if shape not in _FACE_TABLES:
+        solid = shape.DIMENSION == 3
+        axis, high = [], []
+        for lf in range(shape.NUM_FACES):
+            corners = ([_HEXAHEDRON_FACE_CORNERS[4 * lf + m] for m in range(4)] if solid
+                       else [_QUAD_EDGE_CORNERS[2 * lf + m] for m in range(2)])
+            offsets = [_corner_offset(int(cc)) for cc in corners]
+            for a in range(3 if solid else 2):
+                values = {o[a] for o in offsets}
+                if len(values) == 1:
+                    axis.append(a)
+                    high.append(values.pop())
+                    break
+        tiny = StructuredTopology((3, 3, 3) if solid else (3, 3))
+        faces = Faces._derive_sorted(tiny)
+        slots = faces.side_slot.numpy()
+        orientations = faces.side_orientation.numpy()
+        turned = [0] * shape.NUM_FACES
+        for s_, (slot, orientation) in enumerate(zip(slots, orientations)):
+            if slot == 1:
+                turned[s_ % shape.NUM_FACES] = int(orientation)
+        _FACE_TABLES[shape] = (np.array(axis, np.int32), np.array(high, np.int32),
+                               np.array(turned, np.int32))
+    return _FACE_TABLES[shape]
+
+
 class Faces(_OnItsArrays):
     """The faces of a topology's cells of the highest dimension, as global entities:
     a 3D mesh's polygons, a 2D mesh's edges.
@@ -475,6 +595,14 @@ class Faces(_OnItsArrays):
 
     @classmethod
     def _derive(cls, topology):
+        if isinstance(topology, StructuredTopology) and topology.dimension >= 2:
+            return cls._derive_structured(topology)
+        return cls._derive_sorted(topology)
+
+    @classmethod
+    def _derive_sorted(cls, topology):
+        """Any topology's faces: emitted by every cell, matched by a sort of their
+        points."""
         self = cls()
         # Codimension 1 of the top dimension: a surface's edges, not also the
         # edges of its polygons' lines; a solid mesh's faces, not its triangles'.
@@ -518,6 +646,37 @@ class Faces(_OnItsArrays):
             if bad[0]:
                 raise ValueError(f"{bad[0]} cell faces do not go round their face's points "
                                  "in either direction")
+        self._groups = None
+        self._boundary = None
+        return self
+
+    @classmethod
+    def _derive_structured(cls, topology):
+        """A structured grid's faces by arithmetic, one pass over the cells with no
+        sort, numbered, sided and oriented exactly as the general derivation
+        would (``_structured_face_tables``)."""
+        self = cls()
+        (group,) = topology.groups()
+        solid = topology.dimension == 3
+        nx, ny, nz = topology.point_dims + (1,) * (3 - len(topology.point_dims))
+        cx, cy, cz = nx - 1, ny - 1, nz - 1
+        total = group.count * group.shape.NUM_FACES
+        self.group_starts = {group: 0}
+        self.id_dtype = idt = topology.id_dtype
+        count = (nx * cy * cz + cx * ny * cz + cx * cy * nz) if solid else (nx * cy + cx * ny)
+        self.num_faces = count
+        self.side_face = tack.empty((total,), idt)
+        self.side_slot = tack.empty((total,), tack.i32)
+        self.side_orientation = tack.empty((total,), tack.i32)
+        self.rows = tack.empty((count,), tack.vec(4, idt))
+        self.kinds = tack.empty((count,), tack.i32)
+        self.sides = tack.empty((count,), tack.vec(4, idt))
+        self.sides.fill(-1)
+        axis, high, turned = _structured_face_tables(group.shape)
+        _structured_faces_by_cell(group.view(), nx, ny, nz, 1 if solid else 0,
+                                  tack.array(axis), tack.array(high), tack.array(turned),
+                                  self.side_face, self.side_slot, self.side_orientation,
+                                  self.rows, self.kinds, self.sides)
         self._groups = None
         self._boundary = None
         return self
@@ -627,6 +786,83 @@ def _edges_from_runs(order, offsets, keys, edge_rows, side_edge, count):
             side_edge[order[i]] = r
 
 
+@tack.kernel
+def _structured_edges_by_cell(cells, nx, ny, nz, edge_axis, edge_low, edge_sign, side_edge,
+                              side_sign):
+    # A structured grid's edge of each (cell, local edge), one pass over the
+    # cells, no sort: each local edge's axis, low corner and direction are the
+    # shape's, so its id follows from the cell's (i, j, k), numbered as the
+    # general derivation's sort numbers edges (by low point, then along x, y, z).
+    cx = nx - 1
+    cy = ny - 1
+    cz = nz - 1
+    for c in cells:
+        e = cells.entity_id(c)
+        ci = e % cx
+        rest = e // cx
+        cj = rest % max(cy, 1)
+        ck = rest // max(cy, 1)
+        first = cells.index(c) * cells.NUM_EDGES
+        for le in range(cells.NUM_EDGES):
+            low = edge_low[le]
+            i = ci + ((low ^ (low >> 1)) & 1)
+            j = cj + ((low >> 1) & 1)
+            k = ck + (low >> 2)
+            g = (_before(i, j, k, nx, ny, cx, ny, nz) + _before(i, j, k, nx, ny, nx, cy, nz)
+                 + _before(i, j, k, nx, ny, nx, ny, cz))
+            axis = edge_axis[le]
+            if axis == 1:
+                g += 1 if i < cx else 0
+            elif axis == 2:
+                g += (1 if i < cx else 0) + (1 if j < cy else 0)
+            side_edge[first + le] = g
+            side_sign[first + le] = edge_sign[le]
+
+
+_EDGE_TABLES = {}
+
+
+def _structured_edge_tables(shape):
+    """Per local edge of a structured cell (``Hexahedron`` or ``Quad``): its axis,
+    its low corner, and +1 if it runs low to high (its first corner the low
+    one), else -1."""
+    if shape not in _EDGE_TABLES:
+        table = _HEXAHEDRON_EDGE_CORNERS if shape.DIMENSION == 3 else _QUAD_EDGE_CORNERS
+        axis, low, sign = [], [], []
+        for le in range(shape.NUM_EDGES):
+            a_, b_ = int(table[2 * le]), int(table[2 * le + 1])
+            oa, ob = _corner_offset(a_), _corner_offset(b_)
+            along = next(d for d in range(3) if oa[d] != ob[d])
+            axis.append(along)
+            low.append(a_ if oa[along] < ob[along] else b_)
+            sign.append(1 if oa[along] < ob[along] else -1)
+        _EDGE_TABLES[shape] = tuple(np.array(v, np.int32) for v in (axis, low, sign))
+    return _EDGE_TABLES[shape]
+
+
+@tack.kernel
+def _structured_edge_rows(nx, ny, nz, rows):
+    # Each point's edges, in order, where its count of earlier edges puts them.
+    cx = nx - 1
+    cy = ny - 1
+    cz = nz - 1
+    for p in range(nx * ny * nz):
+        i = p % nx
+        rest = p // nx
+        j = rest % ny
+        k = rest // ny
+        e = (_before(i, j, k, nx, ny, cx, ny, nz) + _before(i, j, k, nx, ny, nx, cy, nz)
+             + _before(i, j, k, nx, ny, nx, ny, cz))
+        if i < cx:
+            rows[e] = [p, p + 1]
+            e += 1
+        if j < cy:
+            rows[e] = [p, p + nx]
+            e += 1
+        if k < cz:
+            rows[e] = [p, p + nx * ny]
+
+
 class Edges(_OnItsArrays):
     """The edges of a topology's cells, as global entities.
 
@@ -639,6 +875,8 @@ class Edges(_OnItsArrays):
 
     @classmethod
     def _derive(cls, topology):
+        if isinstance(topology, StructuredTopology) and topology.dimension >= 2:
+            return cls._derive_structured(topology)
         self = cls()
         cell_groups = [g for g in topology.groups() if g.shape.NUM_EDGES]
         starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_EDGES
@@ -661,6 +899,28 @@ class Edges(_OnItsArrays):
         self.rows = tack.empty((count,), tack.vec(2, idt))
         if count:
             _edges_from_runs(order, offsets, keys, self.rows, self.side_edge, count)
+        return self
+
+    @classmethod
+    def _derive_structured(cls, topology):
+        """A structured grid's edges by arithmetic, one pass over the cells with no
+        sort, numbered and signed exactly as the general derivation would."""
+        self = cls()
+        (group,) = topology.groups()
+        nx, ny, nz = topology.point_dims + (1,) * (3 - len(topology.point_dims))
+        cx, cy, cz = nx - 1, ny - 1, nz - 1
+        total = group.count * group.shape.NUM_EDGES
+        self.group_starts = {group: 0}
+        self.id_dtype = idt = topology.id_dtype
+        self.side_edge = tack.empty((total,), idt)
+        self.side_sign = tack.empty((total,), tack.i32)
+        axis, low, sign = _structured_edge_tables(group.shape)
+        _structured_edges_by_cell(group.view(), nx, ny, nz, tack.array(axis), tack.array(low),
+                                  tack.array(sign), self.side_edge, self.side_sign)
+        count = cx * ny * nz + nx * cy * nz + nx * ny * cz
+        self.num_edges = count
+        self.rows = tack.empty((count,), tack.vec(2, idt))
+        _structured_edge_rows(nx, ny, nz, self.rows)
         return self
 
     @on_inputs_device

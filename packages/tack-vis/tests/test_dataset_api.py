@@ -1078,3 +1078,42 @@ def test_vtk_constant_and_affine_fields_stay_implicit():
     assert "Constant" in back.point_data["c"].class_name
     assert "Affine" in back.cell_data["r"].class_name
     np.testing.assert_array_equal(np.asarray(back.cell_data["r"]), [10, 13, 16, 19])
+
+
+# ── Structured faces and edges by arithmetic ────────────────────────
+
+@tack.kernel
+def _corners_of(cells, out):
+    for c in cells:
+        for j in range(cells.NUM_POINTS):
+            out[cells.entity_id(c) * cells.NUM_POINTS + j] = cells.point_id(c, j)
+
+
+def _as_unstructured(topology):
+    """A structured topology's cells, the same ids and corners, as unstructured."""
+    group = topology.groups()[0]
+    n, k = topology.num_cells, group.shape.NUM_POINTS
+    corners = tack.zeros((n * k,), tack.i64)
+    _corners_of(group.view(), corners)
+    return td.UnstructuredTopology(np.full(n, int(group.shape.ID), np.uint8),
+                                   np.arange(n + 1) * k, corners.numpy(),
+                                   num_points=topology.num_points)
+
+
+@pytest.mark.parametrize("dims", [(4, 3, 5), (2, 2, 2), (2, 7, 3), (6, 2, 2), (3, 4), (5, 2)])
+def test_structured_faces_and_edges_are_the_general_derivations(backend, dims):
+    """A structured grid derives its faces and edges by arithmetic, in one pass over
+    its cells with no sort, and gets what the general derivation (emit, sort,
+    match) gives the same cells as unstructured: every array, id for id."""
+    grid = td.StructuredTopology(dims)
+    other = _as_unstructured(grid)
+    ours, theirs = grid.faces(), other.faces()
+    assert ours.num_faces == theirs.num_faces
+    for name in ("rows", "kinds", "sides", "side_face", "side_slot", "side_orientation"):
+        np.testing.assert_array_equal(getattr(ours, name).numpy(), getattr(theirs, name).numpy(),
+                                      err_msg=f"faces.{name}")
+    ours, theirs = grid.edges(), other.edges()
+    assert ours.num_edges == theirs.num_edges
+    for name in ("rows", "side_edge", "side_sign"):
+        np.testing.assert_array_equal(getattr(ours, name).numpy(), getattr(theirs, name).numpy(),
+                                      err_msg=f"edges.{name}")
