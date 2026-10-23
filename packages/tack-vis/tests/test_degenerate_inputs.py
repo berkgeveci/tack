@@ -94,15 +94,12 @@ def test_a_grid_squeezed_of_a_size_one_axis_is_the_same_grid(backend, dims):
 
 @pytest.mark.skipif(vtk is None, reason="needs VTK")
 def test_a_vtk_image_with_a_size_of_one_first(backend):
-    image = vtk.vtkImageData()
-    image.SetDimensions(1, 4, 3)
-    image.SetSpacing(1.0, 0.5, 0.25)
+    image = vtk.vtkImageData(dimensions=(1, 4, 3), spacing=(1.0, 0.5, 0.25))
     data = vtk_to_dataset(image)
     assert (data.num_points, data.num_cells) == (12, 6)
-    expected = np.array([image.GetPoint(p) for p in range(image.GetNumberOfPoints())])
-    np.testing.assert_allclose(data.positions(), expected)
+    np.testing.assert_allclose(data.positions(), np.asarray(image.points.data))
     back = dataset_to_vtk(data)
-    assert back.IsA("vtkImageData") and back.GetDimensions() == (1, 4, 3)
+    assert isinstance(back, vtk.vtkImageData) and back.dimensions == (1, 4, 3)
 
 
 # ── Meshes of lines ─────────────────────────────────────────────────
@@ -262,9 +259,8 @@ def test_extract_cells_takes_a_cell_set_empty_or_not(backend):
 @pytest.mark.skipif(vtk is None, reason="needs VTK")
 @pytest.mark.parametrize("dims", [(1, 1, 1), (0, 0, 0), (1, 5, 4)])
 def test_vtk_images_of_one_point_or_none_go_both_ways(backend, dims):
-    image = vtk.vtkImageData()
-    image.SetDimensions(*dims)
+    image = vtk.vtkImageData(dimensions=dims)
     data = vtk_to_dataset(image)
     assert data.num_points == int(np.prod(dims))
     back = dataset_to_vtk(data)
-    assert back.IsA("vtkImageData") and back.GetDimensions() == dims
+    assert isinstance(back, vtk.vtkImageData) and back.dimensions == dims

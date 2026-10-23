@@ -11,7 +11,6 @@ import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import vtk_to_numpy
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 except ImportError:
@@ -21,18 +20,11 @@ needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
 
 
 def _measure(grid, what):
-    integrate = vtk.vtkIntegrateAttributes()
-    integrate.SetInputData(grid)
-    integrate.Update()
-    return integrate.GetOutput().GetCellData().GetArray(what).GetValue(0)
+    return vtk.vtkIntegrateAttributes()(grid).cell_data[what][0]
 
 
 def _blocks(cell_type, dims=(3, 2, 2)):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(cell_type)
-    source.SetBlocksDimensions(*dims)
-    source.Update()
-    return source.GetOutput()
+    return vtk.vtkCellTypeSource(cell_type=cell_type, blocks_dimensions=dims)()
 
 
 # ── Statistics ──────────────────────────────────────────────────────
@@ -70,17 +62,13 @@ def test_entropy_is_viskores(backend):
 @needs_vtk
 @pytest.mark.parametrize("extent", [10, (-3, 7, 0, 5, -2, 2)])
 def test_wavelet_is_vtks(backend, extent):
-    source = vtk.vtkRTAnalyticSource()
     e = [-extent, extent] * 3 if isinstance(extent, int) else list(extent)
-    source.SetWholeExtent(*e)
-    source.Update()
-    reference = source.GetOutput()
+    reference = vtk.vtkRTAnalyticSource(whole_extent=e)()
     data = td.sources.wavelet(extent)
-    assert data.num_points == reference.GetNumberOfPoints()
-    np.testing.assert_allclose(data.positions(), np.array(
-        [reference.GetPoint(i) for i in range(reference.GetNumberOfPoints())]))
+    assert data.num_points == reference.number_of_points
+    np.testing.assert_allclose(data.positions(), np.asarray(reference.points.data))
     np.testing.assert_allclose(data.fields["RTData"].values.numpy(),
-                               vtk_to_numpy(reference.GetPointData().GetArray("RTData")),
+                               np.asarray(reference.point_data["RTData"]),
                                rtol=1e-4, atol=1e-3)
 
 
@@ -109,10 +97,8 @@ def test_tetrahedralize_keeps_the_volume(backend, cell_type, per_cell):
     assert _measure(dataset_to_vtk(out), "Volume") == pytest.approx(
         _measure(grid, "Volume"), rel=1e-5)
     # Every tetrahedron the right way out (Viskores' wedge table has one inside out).
-    sizes = vtk.vtkCellSizeFilter()
-    sizes.SetInputData(dataset_to_vtk(out))
-    sizes.Update()
-    assert (vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray("Volume")) > 0).all()
+    sizes = vtk.vtkCellSizeFilter()(dataset_to_vtk(out))
+    assert (np.asarray(sizes.cell_data["Volume"]) > 0).all()
     np.testing.assert_array_equal(np.asarray(tack.arrays.to_host(out.fields["id"].values)),
                                   np.repeat(np.arange(data.num_cells), per_cell))
 
@@ -149,11 +135,7 @@ def _plane():
 @pytest.mark.parametrize("cell_type", [12, 10, 13, 14])
 def test_shrink_is_vtks(backend, cell_type):
     grid = _blocks(cell_type)
-    shrinker = vtk.vtkShrinkFilter()
-    shrinker.SetShrinkFactor(0.7)
-    shrinker.SetInputData(grid)
-    shrinker.Update()
-    reference = shrinker.GetOutput()
+    reference = vtk.vtkShrinkFilter(shrink_factor=0.7)(grid)
     data = vtk_to_dataset(grid)
     x = data.positions()
     data.fields["x"] = td.Field(td.H1(data), _scalars(x[:, 0]))
@@ -162,10 +144,8 @@ def test_shrink_is_vtks(backend, cell_type):
     assert isinstance(out.geometry.space, td.L2) and out.topology is data.topology
     # VTK gives each cell its own points, in the cell's corner order: the L2 layout.
     corners = out.geometry.values.numpy()
-    expected = np.concatenate([[reference.GetPoint(i) for i in
-                                (reference.GetCell(c).GetPointId(k) for k in range(
-                                    reference.GetCell(c).GetNumberOfPoints()))]
-                               for c in range(reference.GetNumberOfCells())])
+    expected = np.asarray(reference.points.data)[
+        np.asarray(reference.cells.connectivity_array)]
     np.testing.assert_allclose(corners, expected, rtol=1e-5, atol=1e-5)
     assert isinstance(out.fields["x"].space, td.L2)
     assert out.fields["id"].space is td.Values(data, "cells")

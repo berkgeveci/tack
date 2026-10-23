@@ -24,11 +24,7 @@ def _quads():
 
 
 def _vtk_blocks(cell_type):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(cell_type)
-    source.SetBlocksDimensions(3, 2, 0)
-    source.Update()
-    return vtk_to_dataset(source.GetOutput())
+    return vtk_to_dataset(vtk.vtkCellTypeSource(cell_type=cell_type, blocks_dimensions=(3, 2, 0))())
 
 
 MESHES = {"structured quads": _quads}

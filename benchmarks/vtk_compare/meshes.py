@@ -112,20 +112,14 @@ def tetrahedra(cells):
 
 def square_bend(path):
     """OpenFOAM's squareBend tutorial mesh (112k hexahedra), read by VTK."""
-    from vtkmodules.util.numpy_support import vtk_to_numpy
     from vtkmodules.vtkIOGeometry import vtkOpenFOAMReader
 
-    reader = vtkOpenFOAMReader()
-    reader.SetFileName(path)
-    reader.Update()
-    blocks = reader.GetOutput().NewIterator()
-    blocks.InitTraversal()
-    grid = blocks.GetCurrentDataObject()
-    types = vtk_to_numpy(grid.GetCellTypesArray())
+    grid = next(iter(vtkOpenFOAMReader(file_name=path)()))     # the first leaf block
+    types = np.asarray(grid.cell_types)
     if not (types == VTK_HEXAHEDRON).all():
         raise ValueError("squareBend is expected to be all hexahedra")
-    connectivity = vtk_to_numpy(grid.GetCells().GetConnectivityArray()).astype(np.int64)
-    points = vtk_to_numpy(grid.GetPoints().GetData()).astype(np.float32)
+    connectivity = np.asarray(grid.cells.connectivity_array).astype(np.int64)
+    points = np.asarray(grid.points.data).astype(np.float32)
     return _with_fields(Mesh("squareBend", VTK_HEXAHEDRON, points,
                              connectivity.reshape(-1, 8)))
 
@@ -133,33 +127,23 @@ def square_bend(path):
 # ── VTK inputs ──────────────────────────────────────────────────────
 
 def _cell_array(offsets, connectivity):
-    from vtkmodules.util.numpy_support import numpy_to_vtkIdTypeArray
+    from vtkmodules.vtkCommonCore import vtkIdTypeArray
     from vtkmodules.vtkCommonDataModel import vtkCellArray
 
-    cells = vtkCellArray()
-    cells.SetData(numpy_to_vtkIdTypeArray(np.ascontiguousarray(offsets, np.int64), deep=True),
-                  numpy_to_vtkIdTypeArray(np.ascontiguousarray(connectivity, np.int64),
-                                          deep=True))
-    return cells
+    return vtkCellArray(
+        offsets=vtkIdTypeArray(np.ascontiguousarray(offsets, np.int64)),
+        connectivity=vtkIdTypeArray(np.ascontiguousarray(connectivity, np.int64)))
 
 
 def _points(mesh):
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonCore import vtkFloatArray, vtkPoints
 
-    points = vtkPoints()
-    points.SetData(numpy_to_vtk(mesh.points, deep=True))
-    return points
+    return vtkPoints(data=vtkFloatArray(mesh.points))     # float32, as the mesh's
 
 
 def _add_fields(grid, mesh):
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-
-    for data, name, values in ((grid.GetPointData(), "p", mesh.p),
-                               (grid.GetCellData(), "c", mesh.c)):
-        array = numpy_to_vtk(values, deep=True)
-        array.SetName(name)
-        data.AddArray(array)
+    grid.point_data["p"] = mesh.p
+    grid.cell_data["c"] = mesh.c
     return grid
 
 
@@ -168,14 +152,14 @@ def vtk_shape_grid(mesh):
 
     m, k = mesh.cells.shape
     grid = vtkUnstructuredGrid()
-    grid.SetPoints(_points(mesh))
-    grid.SetCells(mesh.cell_type, _cell_array(np.arange(0, m * k + 1, k), mesh.cells.ravel()))
+    grid.points = _points(mesh)
+    grid.cells = (mesh.cell_type, _cell_array(np.arange(0, m * k + 1, k), mesh.cells.ravel()))
     return _add_fields(grid, mesh)
 
 
 def vtk_polyhedral_grid(mesh):
     """Every cell a ``VTK_POLYHEDRON`` with its own outward copy of its faces."""
-    from vtkmodules.util.numpy_support import numpy_to_vtk
+    from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
     from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
 
     m, k = mesh.cells.shape
@@ -183,8 +167,8 @@ def vtk_polyhedral_grid(mesh):
     nf, s = faces.shape
     face_points = mesh.cells[:, faces].reshape(-1)              # (m * nf * s,)
     grid = vtkUnstructuredGrid()
-    grid.SetPoints(_points(mesh))
-    types = numpy_to_vtk(np.full(m, VTK_POLYHEDRON, np.uint8), deep=True)
+    grid.points = _points(mesh)
+    types = vtkUnsignedCharArray(np.full(m, VTK_POLYHEDRON, np.uint8))
     grid.SetPolyhedralCells(
         types,
         _cell_array(np.arange(0, m * k + 1, k), mesh.cells.ravel()),
@@ -197,8 +181,8 @@ def vtk_subset(grid, point_fields=(), cell_fields=()):
     """A shallow copy of ``grid`` carrying only the named arrays."""
     copy = type(grid)()
     copy.ShallowCopy(grid)
-    for data, keep in ((copy.GetPointData(), point_fields), (copy.GetCellData(), cell_fields)):
-        for name in [data.GetArrayName(i) for i in range(data.GetNumberOfArrays())]:
+    for data, keep in ((copy.point_data, point_fields), (copy.cell_data, cell_fields)):
+        for name in list(data.keys()):
             if name not in keep:
                 data.RemoveArray(name)
         if keep:

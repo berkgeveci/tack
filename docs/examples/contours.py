@@ -93,12 +93,12 @@ def run(arch="cpu", check=False):
 def save_figure(result, output):
     import vtkmodules.vtkRenderingFreeType
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
-    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonCore import VTK_TEXT_CENTERED, VTK_TEXT_TOP, vtkIdTypeArray, vtkPoints
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
     from vtkmodules.vtkIOImage import vtkPNGWriter
     from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor2D
     from vtkmodules.vtkRenderingCore import (
+        VTK_NORMALIZED_VIEWPORT,
         vtkActor,
         vtkPolyDataMapper,
         vtkRenderer,
@@ -109,62 +109,44 @@ def save_figure(result, output):
 
     segments, n = result
     xy = segments.reshape(-1, 2)
-    points = vtkPoints()
-    points.SetData(numpy_to_vtk(np.column_stack((xy, np.zeros(len(xy)))), deep=True))
-    cells = vtkCellArray()
-    cells.SetData(numpy_to_vtkIdTypeArray(np.arange(len(segments) + 1, dtype=np.int64) * 2,
-                                        deep=True),
-                  numpy_to_vtkIdTypeArray(np.arange(len(xy), dtype=np.int64), deep=True))
-    lines = vtkPolyData()
-    lines.SetPoints(points)
-    lines.SetLines(cells)
+    lines = vtkPolyData(
+        points=vtkPoints(data=np.column_stack((xy, np.zeros(len(xy))))),
+        lines=vtkCellArray(
+            offsets=vtkIdTypeArray(np.arange(len(segments) + 1, dtype=np.int64) * 2),
+            connectivity=vtkIdTypeArray(np.arange(len(xy), dtype=np.int64))))
     mapper = vtkPolyDataMapper()
-    mapper.SetInputData(lines)
-    actor = vtkActor()
-    actor.SetMapper(mapper)
-    actor.GetProperty().SetColor(0.15, 0.39, 0.92)
-    actor.GetProperty().SetLineWidth(3)
-    renderer = vtkRenderer()
-    renderer.SetBackground(1, 1, 1)
+    lines >> mapper
+    actor = vtkActor(mapper=mapper)
+    actor.property.color = (0.15, 0.39, 0.92)
+    actor.property.line_width = 3
+    renderer = vtkRenderer(background=(1, 1, 1))
     renderer.AddActor(actor)
-    camera = renderer.GetActiveCamera()
-    camera.SetPosition(0, 0, 1)
-    camera.SetFocalPoint(0, 0, 0)
-    camera.ParallelProjectionOn()
-    camera.SetParallelScale(1.3)
-    axes = vtkCubeAxesActor2D()
-    axes.SetBounds(-1, 1, -1, 1, 0, 0)
-    axes.SetCamera(camera)
-    axes.SetXLabel("x")
-    axes.SetYLabel("y")
-    axes.SetNumberOfLabels(5)
-    axes.SetZAxisVisibility(False)
-    axes.GetAxisTitleTextProperty().SetColor(0, 0, 0)
-    axes.GetAxisLabelTextProperty().SetColor(0, 0, 0)
-    axes.GetProperty().SetColor(0.2, 0.2, 0.2)
+    camera = renderer.active_camera
+    camera.position = (0, 0, 1)
+    camera.focal_point = (0, 0, 0)
+    camera.parallel_projection = True
+    camera.parallel_scale = 1.3
+    axes = vtkCubeAxesActor2D(bounds=(-1, 1, -1, 1, 0, 0), camera=camera, x_label="x",
+                              y_label="y", number_of_labels=5, z_axis_visibility=False)
+    axes.axis_title_text_property.color = (0, 0, 0)
+    axes.axis_label_text_property.color = (0, 0, 0)
+    axes.property.color = (0.2, 0.2, 0.2)
     renderer.AddViewProp(axes)
-    title = vtkTextActor()
-    title.SetInput(f"{len(segments)} segments from {n} x {n} cells")
-    title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-    title.SetPosition(0.5, 0.98)
-    title.GetTextProperty().SetJustificationToCentered()
-    title.GetTextProperty().SetVerticalJustificationToTop()
-    title.GetTextProperty().SetFontSize(20)
-    title.GetTextProperty().SetColor(0, 0, 0)
+    title = vtkTextActor(input=f"{len(segments)} segments from {n} x {n} cells", position=(0.5, 0.98))
+    title.position_coordinate.coordinate_system = VTK_NORMALIZED_VIEWPORT
+    text = title.text_property
+    text.justification = VTK_TEXT_CENTERED
+    text.vertical_justification = VTK_TEXT_TOP
+    text.font_size = 20
+    text.color = (0, 0, 0)
     renderer.AddViewProp(title)
-    window = vtkRenderWindow()
-    window.SetOffScreenRendering(True)
-    window.SetMultiSamples(0)
-    window.SetSize(640, 640)
+    window = vtkRenderWindow(off_screen_rendering=True, multi_samples=0, size=(640, 640))
     window.AddRenderer(renderer)
     window.Render()
-    capture = vtkWindowToImageFilter()
-    capture.SetInput(window)
-    capture.ReadFrontBufferOff()
-    writer = vtkPNGWriter()
-    writer.SetFileName(str(output))
-    writer.SetInputConnection(capture.GetOutputPort())
-    writer.Write()
+    capture = vtkWindowToImageFilter(input=window, read_front_buffer=False)
+    writer = vtkPNGWriter(file_name=str(output))
+    capture >> writer
+    writer.Write()  # calling the writer, or updating it, writes raw pixels instead of a PNG
     window.Finalize()
 
 

@@ -118,8 +118,8 @@ def _meta(config, vtk_threads):
             "machine": platform.platform(), "processor": _processor(),
             "gpu": _gpu(arch, backend) if arch != "cpu" else None,
             "python": platform.python_version(), "numpy": np.__version__,
-            "vtk": vtkVersion.GetVTKVersionFull(), "vtk smp": smp.GetBackend(),
-            "vtk threads": smp.GetEstimatedNumberOfThreads(),
+            "vtk": vtkVersion.GetVTKVersionFull(), "vtk smp": smp.backend,
+            "vtk threads": smp.estimated_number_of_threads,
             "tack": sha + ("+changes" if dirty else ""), "tack backend": backend.label,
             "tack threads": threads, "vtk threads for checks": vtk_threads}
 
@@ -247,7 +247,7 @@ def run_config(config, sizes, mesh_names, filters, budget, vtk_threads,
                     seen.add((form, pair.name))
                     _record(records, **key, impl="tack", mode="cold", times=[first])
                 try:
-                    ok, details = p.check(pair, vtk_filter.GetOutput(), result)
+                    ok, details = p.check(pair, vtk_filter.output, result)
                 except Exception as error:
                     ok, details = False, {"error": f"{type(error).__name__}: {error}"}
                 del result

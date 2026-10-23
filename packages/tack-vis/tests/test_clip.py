@@ -11,7 +11,6 @@ import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 except ImportError:
@@ -26,43 +25,32 @@ FUNCTIONS = {"sphere": lambda: td.Sphere((1.4, 1.6, 0.9), 1.3),
 
 
 def _grid(kind):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(SHAPES[kind])
-    source.SetBlocksDimensions(3, 3, 2 if SHAPES[kind] >= 10 else 0)
-    source.Update()
-    return source.GetOutput()
+    return vtk.vtkCellTypeSource(cell_type=SHAPES[kind],
+                                 blocks_dimensions=(3, 3, 2 if SHAPES[kind] >= 10 else 0))()
 
 
 def _sizes(grid, what):
-    sizes = vtk.vtkCellSizeFilter()
-    sizes.SetInputData(grid)
-    sizes.Update()
-    return vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray(what))
+    return np.asarray(vtk.vtkCellSizeFilter()(grid).cell_data[what])
 
 
 def _vtk_clip(grid, values, value, invert):
     copy = vtk.vtkUnstructuredGrid()
     copy.DeepCopy(grid)
-    array = numpy_to_vtk(np.asarray(values, np.float32), deep=True)
-    array.SetName("clip")
-    copy.GetPointData().SetScalars(array)
-    clip = vtk.vtkTableBasedClipDataSet()
-    clip.SetInputData(copy)
-    clip.SetValue(value)
-    clip.SetInsideOut(invert)
-    clip.Update()
-    return clip.GetOutput()
+    copy.point_data["clip"] = np.asarray(values, np.float32)
+    copy.GetPointData().SetActiveScalars("clip")
+    # Called as a function, the filter returns both its outputs: the kept side first.
+    return vtk.vtkTableBasedClipDataSet(value=value, inside_out=invert)(copy)[0]
 
 
 def _check_like_vtk(out, reference, what):
-    assert (out.num_cells, out.num_points) == (reference.GetNumberOfCells(),
-                                               reference.GetNumberOfPoints())
+    assert (out.num_cells, out.num_points) == (reference.number_of_cells,
+                                               reference.number_of_points)
     ours = _sizes(dataset_to_vtk(out), what)
     assert (ours > 0).all(), "every piece the right way out"
     assert ours.sum() == pytest.approx(_sizes(reference, what).sum(), rel=1e-5)
     np.testing.assert_array_equal(
-        np.bincount(vtk_to_numpy(dataset_to_vtk(out).GetCellTypes()), minlength=15),
-        np.bincount(vtk_to_numpy(reference.GetCellTypes()), minlength=15))
+        np.bincount(np.asarray(dataset_to_vtk(out).cell_types), minlength=15),
+        np.bincount(np.asarray(reference.cell_types), minlength=15))
 
 
 @needs_vtk

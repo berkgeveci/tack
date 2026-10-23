@@ -12,7 +12,6 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import vtk_to_numpy
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 except ImportError:
@@ -156,21 +155,16 @@ def test_refusals():
 
 @pytest.mark.skipif(vtk is None, reason="needs VTK")
 def test_image_data_both_ways(backend):
-    image = vtk.vtkImageData()
-    image.SetExtent(2, 6, -1, 3, 0, 2)
-    image.SetOrigin(0.5, 1.0, -2.0)
-    image.SetSpacing(0.5, 0.25, 2.0)
-    image.SetDirectionMatrix(0, -1, 0, 1, 0, 0, 0, 0, 1)
+    image = vtk.vtkImageData(extent=(2, 6, -1, 3, 0, 2), origin=(0.5, 1.0, -2.0),
+                             spacing=(0.5, 0.25, 2.0), direction_matrix=(0, -1, 0, 1, 0, 0, 0, 0, 1))
     data = vtk_to_dataset(image)
     assert isinstance(data.geometry.values, tack.arrays.UniformCoordinates)
-    expected = np.array([image.GetPoint(p) for p in range(image.GetNumberOfPoints())])
+    expected = np.asarray(image.points.data)
     np.testing.assert_allclose(data.positions(), expected, atol=1e-6)
     back = dataset_to_vtk(data)
-    assert back.IsA("vtkImageData")
-    np.testing.assert_allclose([back.GetPoint(p) for p in range(back.GetNumberOfPoints())],
-                               expected, atol=1e-6)
+    assert isinstance(back, vtk.vtkImageData)
+    np.testing.assert_allclose(np.asarray(back.points.data), expected, atol=1e-6)
     wavelet = td.sources.wavelet(3)
     assert isinstance(wavelet.geometry.values, tack.arrays.UniformCoordinates)
-    np.testing.assert_allclose(vtk_to_numpy(dataset_to_vtk(wavelet).GetPointData()
-                                            .GetArray("RTData")),
+    np.testing.assert_allclose(np.asarray(dataset_to_vtk(wavelet).point_data["RTData"]),
                                wavelet.fields["RTData"].values.numpy())

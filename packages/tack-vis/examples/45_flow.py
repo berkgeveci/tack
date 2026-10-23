@@ -135,9 +135,9 @@ if _args.output:
 
     os.makedirs(_args.output, exist_ok=True)
     data.fields["vorticity"] = q.vorticity
-    for stem, piece, writer in (("grid", data, vtkXMLImageDataWriter()),
-                                ("streamlines", paths, vtkXMLUnstructuredGridWriter())):
-        writer.SetInputData(dataset_to_vtk(piece))
-        writer.SetFileName(os.path.join(_args.output, f"{stem}.{writer.GetDefaultFileExtension()}"))
-        writer.Write()
-        print(f"wrote {writer.GetFileName()}")
+    for stem, piece, kind in (("grid", data, vtkXMLImageDataWriter),
+                              ("streamlines", paths, vtkXMLUnstructuredGridWriter)):
+        writer = kind()
+        writer.file_name = os.path.join(_args.output, f"{stem}.{writer.default_file_extension}")
+        writer(dataset_to_vtk(piece))               # a writer called on its input writes it
+        print(f"wrote {writer.file_name}")

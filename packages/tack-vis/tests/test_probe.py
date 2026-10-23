@@ -18,7 +18,6 @@ import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     from tack.interop.vtk import vtk_to_dataset
 except ImportError:
@@ -30,37 +29,27 @@ SHAPES = {"hexahedron": 12, "tetra": 10, "wedge": 13, "pyramid": 14, "voxel": 11
 
 
 def _grid(kind):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(SHAPES[kind])
-    source.SetBlocksDimensions(3, 3, 2)
-    source.Update()
-    grid = source.GetOutput()
-    x = vtk_to_numpy(grid.GetPoints().GetData()).astype(np.float64)
+    grid = vtk.vtkCellTypeSource(cell_type=SHAPES[kind], blocks_dimensions=(3, 3, 2))()
+    x = np.asarray(grid.points.data).astype(np.float64)
     if kind != "voxel":                       # a voxel is axis-aligned by definition
         x = x + 0.12 * np.c_[np.sin(2 * x[:, 1]), np.cos(x[:, 2]), np.sin(x[:, 0])]
-        grid.GetPoints().SetData(numpy_to_vtk(x.astype(np.float32), deep=True))
-    x = vtk_to_numpy(grid.GetPoints().GetData()).astype(np.float64)
+        grid.points = vtk.vtkPoints(data=vtk.vtkFloatArray(x.astype(np.float32)))
+    x = np.asarray(grid.points.data).astype(np.float64)
     for name, values in (("s", np.sin(x[:, 0]) * x[:, 1] + x[:, 2] ** 2),
                          ("lin", 2 * x[:, 0] - x[:, 1] + 0.5 * x[:, 2])):
-        array = numpy_to_vtk(values.astype(np.float32), deep=True)
-        array.SetName(name)
-        grid.GetPointData().AddArray(array)
+        grid.point_data[name] = values.astype(np.float32)
     return grid
 
 
 def _vtk_probe(grid, points, name="s"):
-    vtk_points = vtk.vtkPoints()
-    for p in points:
-        vtk_points.InsertNextPoint(*p)
-    cloud = vtk.vtkPolyData()
-    cloud.SetPoints(vtk_points)
-    probe = vtk.vtkProbeFilter()
-    probe.SetInputData(cloud)
-    probe.SetSourceData(grid)
-    probe.Update()
-    point_data = probe.GetOutput().GetPointData()
-    return (vtk_to_numpy(point_data.GetArray("vtkValidPointMask")),
-            vtk_to_numpy(point_data.GetArray(name)))
+    # vtkPoints' default storage, f32, as InsertNextPoint filled it.
+    cloud = vtk.vtkPolyData(
+        points=vtk.vtkPoints(data=vtk.vtkFloatArray(np.asarray(points, np.float32))))
+    point_data = vtk.vtkProbeFilter(source_data=grid)(cloud).point_data
+    # The mask is a vtkCharArray, which NumPy reads as bytes (S1): view it as the int8
+    # numpy_support gave.
+    return (np.asarray(point_data["vtkValidPointMask"]).view(np.int8),
+            np.asarray(point_data[name]))
 
 
 @needs_vtk
@@ -85,13 +74,11 @@ def test_probe_is_vtks(backend, kind):
 
 @needs_vtk
 def test_probe_of_a_structured_grid_is_vtks(backend):
-    source = vtk.vtkRTAnalyticSource()
-    source.SetWholeExtent(-6, 6, -6, 6, -6, 6)
-    source.Update()
+    wavelet = vtk.vtkRTAnalyticSource(whole_extent=(-6, 6, -6, 6, -6, 6))()
     data = td.sources.wavelet(6)
     points = np.random.default_rng(5).uniform(-7, 7, (800, 3))
     out = td.probe(data, points)
-    valid, expected = _vtk_probe(source.GetOutput(), points, "RTData")
+    valid, expected = _vtk_probe(wavelet, points, "RTData")
     np.testing.assert_array_equal(out.fields["valid"].values.numpy(), valid)
     inside = valid == 1
     np.testing.assert_allclose(out.fields["RTData"].values.numpy()[inside],

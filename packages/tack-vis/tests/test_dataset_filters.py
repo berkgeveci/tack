@@ -24,7 +24,6 @@ from tack.runtime.dispatch import env_flag
 
 try:
     from vtkmodules import vtkCommonCore, vtkCommonDataModel, vtkFiltersCore
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
     from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
@@ -199,16 +198,13 @@ def _vtk_contour(data, name, isovalue):
     grid = dataset_to_vtk(data)
     grid.GetPointData().SetActiveScalars(name)
     contour = vtk.vtkContourGrid()
-    contour.SetInputData(grid)
     contour.SetValue(0, isovalue)
-    contour.Update()
-    out = contour.GetOutput()
-    if not out.GetNumberOfCells():
+    out = contour(grid)
+    if not out.number_of_cells:
         return np.zeros((0, 3)), np.zeros((0, 3), int)
-    polys = out.GetPolys()
-    offsets = vtk_to_numpy(polys.GetOffsetsArray())
-    connectivity = vtk_to_numpy(polys.GetConnectivityArray())
-    return (vtk_to_numpy(out.GetPoints().GetData()),
+    offsets = np.asarray(out.polys.offsets_array)
+    connectivity = np.asarray(out.polys.connectivity_array)
+    return (np.asarray(out.points.data),
             np.array([connectivity[offsets[i]:offsets[i + 1]]
                       for i in range(len(offsets) - 1)]))
 
@@ -251,14 +247,8 @@ def test_every_case_of_every_shape_is_vtks(f64_backend, shape):
 def test_meshes_are_vtks(f64_backend, mesh):
     rng = np.random.default_rng(9)
     if mesh == "delaunay":
-        cloud_points = vtk.vtkPoints()
-        cloud_points.SetData(numpy_to_vtk(rng.uniform(-1, 1, (300, 3)), deep=1))
-        cloud = vtk.vtkPolyData()
-        cloud.SetPoints(cloud_points)
-        delaunay = vtk.vtkDelaunay3D()
-        delaunay.SetInputData(cloud)
-        delaunay.Update()
-        data = vtk_to_dataset(delaunay.GetOutput(), dtype=tack.f64)
+        cloud = vtk.vtkPolyData(points=vtk.vtkPoints(data=rng.uniform(-1, 1, (300, 3))))
+        data = vtk_to_dataset(vtk.vtkDelaunay3D()(cloud), dtype=tack.f64)
     else:
         ids, rows, points = [], [], []
         for shape in rng.choice(SOLIDS, 200):
@@ -326,18 +316,11 @@ def _vectors(values):
 def test_slice_is_vtks(f64_backend):
     data = _with_radius(_grid(6, "explicit", tack.f64), tack.f64)
     origin, normal = [0.23, 0.11, -0.17], [1.0, 0.4, 0.7]
-    plane = vtk.vtkPlane()
-    plane.SetOrigin(origin)
-    plane.SetNormal(normal)
-    cutter = vtk.vtkCutter()
-    cutter.SetCutFunction(plane)
-    cutter.SetInputData(dataset_to_vtk(data))
-    cutter.Update()
-    out = cutter.GetOutput()
-    polys = out.GetPolys()
-    offsets = vtk_to_numpy(polys.GetOffsetsArray())
-    connectivity = vtk_to_numpy(polys.GetConnectivityArray())
-    theirs = _oriented(vtk_to_numpy(out.GetPoints().GetData()),
+    plane = vtk.vtkPlane(origin=origin, normal=normal)
+    out = vtk.vtkCutter(cut_function=plane)(dataset_to_vtk(data))
+    offsets = np.asarray(out.polys.offsets_array)
+    connectivity = np.asarray(out.polys.connectivity_array)
+    theirs = _oriented(np.asarray(out.points.data),
                        np.array([connectivity[offsets[i]:offsets[i + 1]]
                                  for i in range(len(offsets) - 1)]))
     ours = _oriented(*_triangles(td.slice_plane(data, origin, normal)))
@@ -433,14 +416,10 @@ def test_threshold_carries_l2_blocks(backend):
 @pytest.mark.parametrize("name, lower, upper", [("c", -0.2, 0.4), ("p", -0.5, 0.8)])
 def test_threshold_is_vtks(f64_backend, name, lower, upper):
     data = _values_data(tack.f64)
-    threshold = vtk.vtkThreshold()
-    threshold.SetInputData(dataset_to_vtk(data))
+    threshold = vtk.vtkThreshold(lower_threshold=lower, upper_threshold=upper,
+                                 threshold_function=vtk.vtkThreshold.THRESHOLD_BETWEEN)
     threshold.SetInputArrayToProcess(0, 0, 0, 1 if name == "c" else 0, name)
-    threshold.SetLowerThreshold(lower)
-    threshold.SetUpperThreshold(upper)
-    threshold.SetThresholdFunction(vtk.vtkThreshold.THRESHOLD_BETWEEN)
-    threshold.Update()
-    theirs = vtk_to_dataset(threshold.GetOutput(), dtype=tack.f64)
+    theirs = vtk_to_dataset(threshold(dataset_to_vtk(data)), dtype=tack.f64)
     ours = td.threshold(data, name, lower, upper)
     assert (ours.num_cells, ours.num_points) == (theirs.num_cells, theirs.num_points)
     assert _cells(ours) == _cells(theirs)
@@ -549,20 +528,12 @@ def _cell_point_ids(data):
 def test_external_faces_are_vtks(f64_backend, kind):
     from vtkmodules.vtkFiltersSources import vtkCellTypeSource
 
-    source = vtkCellTypeSource()
-    source.SetCellType(kind)
-    source.SetBlocksDimensions(3, 2, 2)
-    source.Update()
-    grid = source.GetOutput()
-    geometry = vtk.vtkGeometryFilter()
-    geometry.SetInputData(grid)
-    geometry.Update()
-    out = geometry.GetOutput()
-    polys = out.GetPolys()
-    offsets = vtk_to_numpy(polys.GetOffsetsArray())
-    connectivity = vtk_to_numpy(polys.GetConnectivityArray())
+    grid = vtkCellTypeSource(cell_type=kind, blocks_dimensions=(3, 2, 2))()
+    out = vtk.vtkGeometryFilter()(grid)
+    offsets = np.asarray(out.polys.offsets_array)
+    connectivity = np.asarray(out.polys.connectivity_array)
     # vtkGeometryFilter renumbers its points; compare faces by their points' places.
-    at = np.round(vtk_to_numpy(out.GetPoints().GetData()), 6)
+    at = np.round(np.asarray(out.points.data), 6)
     theirs = {frozenset(map(tuple, at[connectivity[offsets[i]:offsets[i + 1]]]))
               for i in range(len(offsets) - 1)}
     surface = td.extract_surface(vtk_to_dataset(grid, dtype=tack.f64))
@@ -646,17 +617,10 @@ def test_extract_edges_of_polyhedra_and_surfaces(backend):
 def test_extract_edges_is_vtks(f64_backend, kind):
     from vtkmodules.vtkFiltersSources import vtkCellTypeSource
 
-    source = vtkCellTypeSource()
-    source.SetCellType(kind)
-    source.SetBlocksDimensions(3, 2, 2)
-    source.Update()
-    grid = source.GetOutput()
-    extract = vtk.vtkExtractEdges()
-    extract.SetInputData(grid)
-    extract.Update()
-    out = extract.GetOutput()
-    connectivity = vtk_to_numpy(out.GetLines().GetConnectivityArray()).reshape(-1, 2)
-    at = np.round(vtk_to_numpy(out.GetPoints().GetData()), 6)
+    grid = vtkCellTypeSource(cell_type=kind, blocks_dimensions=(3, 2, 2))()
+    out = vtk.vtkExtractEdges()(grid)
+    connectivity = np.asarray(out.lines.connectivity_array).reshape(-1, 2)
+    at = np.round(np.asarray(out.points.data), 6)
     theirs = {frozenset(map(tuple, at[row])) for row in connectivity}
     lines = td.extract_edges(vtk_to_dataset(grid, dtype=tack.f64))
     ours_at = np.round(lines.positions(), 6)

@@ -129,13 +129,13 @@ def run(arch="cpu", check=False):
 def save_figure(snapshots, output):
     import vtkmodules.vtkRenderingFreeType
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonCore import VTK_TEXT_CENTERED, VTK_TEXT_TOP, vtkPoints
     from vtkmodules.vtkCommonDataModel import vtkPolyData
     from vtkmodules.vtkFiltersGeneral import vtkVertexGlyphFilter
     from vtkmodules.vtkFiltersSources import vtkOutlineSource
     from vtkmodules.vtkIOImage import vtkPNGWriter
     from vtkmodules.vtkRenderingCore import (
+        VTK_NORMALIZED_VIEWPORT,
         vtkActor,
         vtkPolyDataMapper,
         vtkRenderer,
@@ -144,58 +144,40 @@ def save_figure(snapshots, output):
         vtkWindowToImageFilter,
     )
 
-    window = vtkRenderWindow()
-    window.SetOffScreenRendering(True)
-    window.SetMultiSamples(0)
-    window.SetSize(1600, 440)
+    window = vtkRenderWindow(off_screen_rendering=True, multi_samples=0, size=(1600, 440))
     for index, (xy, step) in enumerate(zip(snapshots, (0, 300, 600, 900), strict=True)):
-        points = vtkPoints()
-        points.SetData(numpy_to_vtk(np.column_stack((xy, np.zeros(len(xy)))), deep=True))
-        particles = vtkPolyData()
-        particles.SetPoints(points)
-        vertices = vtkVertexGlyphFilter()
-        vertices.SetInputData(particles)
+        particles = vtkPolyData(points=vtkPoints(data=np.column_stack((xy, np.zeros(len(xy))))))
         mapper = vtkPolyDataMapper()
-        mapper.SetInputConnection(vertices.GetOutputPort())
-        actor = vtkActor()
-        actor.SetMapper(mapper)
-        actor.GetProperty().SetColor(0.15, 0.39, 0.92)
-        actor.GetProperty().SetPointSize(2)
-        outline = vtkOutlineSource()
-        outline.SetBounds(0, 1, 0, 1, 0, 0)
+        particles >> vtkVertexGlyphFilter() >> mapper
+        actor = vtkActor(mapper=mapper)
+        actor.property.color = (0.15, 0.39, 0.92)
+        actor.property.point_size = 2
         border_mapper = vtkPolyDataMapper()
-        border_mapper.SetInputConnection(outline.GetOutputPort())
-        border = vtkActor()
-        border.SetMapper(border_mapper)
-        border.GetProperty().SetColor(0.2, 0.2, 0.2)
-        renderer = vtkRenderer()
-        renderer.SetBackground(1, 1, 1)
-        renderer.SetViewport(index / 4, 0, (index + 1) / 4, 1)
+        vtkOutlineSource(bounds=(0, 1, 0, 1, 0, 0)) >> border_mapper
+        border = vtkActor(mapper=border_mapper)
+        border.property.color = (0.2, 0.2, 0.2)
+        renderer = vtkRenderer(background=(1, 1, 1), viewport=(index / 4, 0, (index + 1) / 4, 1))
         renderer.AddActor(actor)
         renderer.AddActor(border)
-        title = vtkTextActor()
-        title.SetInput(f"Step {step}")
-        title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-        title.SetPosition(0.5, 0.98)
-        title.GetTextProperty().SetJustificationToCentered()
-        title.GetTextProperty().SetVerticalJustificationToTop()
-        title.GetTextProperty().SetFontSize(20)
-        title.GetTextProperty().SetColor(0, 0, 0)
+        title = vtkTextActor(input=f"Step {step}", position=(0.5, 0.98))
+        title.position_coordinate.coordinate_system = VTK_NORMALIZED_VIEWPORT
+        text = title.text_property
+        text.justification = VTK_TEXT_CENTERED
+        text.vertical_justification = VTK_TEXT_TOP
+        text.font_size = 20
+        text.color = (0, 0, 0)
         renderer.AddViewProp(title)
-        camera = renderer.GetActiveCamera()
-        camera.SetPosition(0.5, 0.5, 1)
-        camera.SetFocalPoint(0.5, 0.5, 0)
-        camera.ParallelProjectionOn()
-        camera.SetParallelScale(0.6)
+        camera = renderer.active_camera
+        camera.position = (0.5, 0.5, 1)
+        camera.focal_point = (0.5, 0.5, 0)
+        camera.parallel_projection = True
+        camera.parallel_scale = 0.6
         window.AddRenderer(renderer)
     window.Render()
-    capture = vtkWindowToImageFilter()
-    capture.SetInput(window)
-    capture.ReadFrontBufferOff()
-    writer = vtkPNGWriter()
-    writer.SetFileName(str(output))
-    writer.SetInputConnection(capture.GetOutputPort())
-    writer.Write()
+    capture = vtkWindowToImageFilter(input=window, read_front_buffer=False)
+    writer = vtkPNGWriter(file_name=str(output))
+    capture >> writer
+    writer.Write()  # calling the writer, or updating it, writes raw pixels instead of a PNG
     window.Finalize()
 
 

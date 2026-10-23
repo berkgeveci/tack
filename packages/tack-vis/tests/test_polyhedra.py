@@ -102,11 +102,8 @@ def test_shape_meshes_as_polyhedra(backend, make):
 @needs_vtk
 @pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
 def test_every_solid_as_polyhedra(backend, kind):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(SOLID_TYPES[kind])
-    source.SetBlocksDimensions(3, 2, 2)
-    source.Update()
-    _check_same_as_shape_path(vtk_to_dataset(source.GetOutput()))
+    source = vtk.vtkCellTypeSource(cell_type=SOLID_TYPES[kind], blocks_dimensions=(3, 2, 2))
+    _check_same_as_shape_path(vtk_to_dataset(source()))
 
 
 @tack.kernel
@@ -270,15 +267,12 @@ def _check_vtk_round_trip(data):
     grid = dataset_to_vtk(data)
     t = data.topology
     volumes = []
-    for c in range(grid.GetNumberOfCells()):
+    for c in range(grid.number_of_cells):
         cell = grid.GetCell(c)
-        assert cell.GetCellType() == 42
+        assert cell.cell_type == 42
         volumes.append(cell.ComputeVolume())
     assert min(volumes) > 0
-    surface = vtk.vtkGeometryFilter()
-    surface.SetInputData(grid)
-    surface.Update()
-    assert surface.GetOutput().GetNumberOfCells() == t.faces().boundary().shape[0]
+    assert vtk.vtkGeometryFilter()(grid).number_of_cells == t.faces().boundary().shape[0]
     back = vtk_to_dataset(grid)
     assert isinstance(back.topology, td.PolyhedralTopology)
     ours = _faces_by_points(t)
@@ -300,17 +294,16 @@ def test_vtk_round_trip(backend, make):
     if make == "mixed":
         np.testing.assert_allclose(volumes, [1, 1, 1 / 3], rtol=1e-6)
     grid = dataset_to_vtk(poly)
-    assert grid.GetCellData().GetArray("c").GetNumberOfTuples() == poly.num_cells
+    assert grid.cell_data["c"].number_of_tuples == poly.num_cells
 
 
 @needs_vtk
 def test_vtk_refuses_faces_wound_the_same_way(backend):
     poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
     grid = dataset_to_vtk(poly)
-    faces = grid.GetPolyhedronFaces()
-    from vtkmodules.util.numpy_support import vtk_to_numpy
-    connectivity = vtk_to_numpy(faces.GetConnectivityArray())
-    offsets = vtk_to_numpy(faces.GetOffsetsArray())
+    faces = grid.polyhedron_faces
+    connectivity = np.asarray(faces.connectivity_array)     # views: writes reach the grid
+    offsets = np.asarray(faces.offsets_array)
     # Turn one copy of the shared hex-hex face around: both cells then claim it.
     sides = poly.topology.faces().sides.numpy()
     shared = int(np.flatnonzero(sides[:, 2] >= 0)[0])
@@ -335,10 +328,7 @@ def test_polyhedra_from_vtk_data(backend, name):
     path = os.path.join(_VTK_DATA, name)
     from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 
-    reader = vtkXMLUnstructuredGridReader()
-    reader.SetFileName(path)
-    reader.Update()
-    grid = reader.GetOutput()
+    grid = vtkXMLUnstructuredGridReader(file_name=path)()
     if name == "polyhedron_mesh.vtu":
         # Wound inconsistently: each cell's faces point both ways, and the face the
         # two cells share runs the same way in both. Refused, not guessed at.
@@ -347,11 +337,9 @@ def test_polyhedra_from_vtk_data(backend, name):
         return
     data = vtk_to_dataset(grid)
     assert isinstance(data.topology, td.PolyhedralTopology)
-    assert data.num_cells == grid.GetNumberOfCells()
-    surface = vtk.vtkGeometryFilter()
-    surface.SetInputData(grid)
-    surface.Update()
-    assert data.topology.faces().boundary().shape[0] == surface.GetOutput().GetNumberOfCells()
+    assert data.num_cells == grid.number_of_cells
+    surface = vtk.vtkGeometryFilter()(grid)
+    assert data.topology.faces().boundary().shape[0] == surface.number_of_cells
     assert len(td.check_winding(data)) == 0
 
 
@@ -364,11 +352,9 @@ def _meshes_for_fv():
     meshes = dict(_grids())
     if vtk is not None:
         for kind in ("tetra", "wedge", "pyramid", "hexahedron", "voxel"):
-            source = vtk.vtkCellTypeSource()
-            source.SetCellType(SOLID_TYPES[kind])
-            source.SetBlocksDimensions(2, 2, 2)
-            source.Update()
-            meshes[kind] = vtk_to_dataset(source.GetOutput())
+            source = vtk.vtkCellTypeSource(cell_type=SOLID_TYPES[kind],
+                                           blocks_dimensions=(2, 2, 2))
+            meshes[kind] = vtk_to_dataset(source())
     return meshes
 
 
@@ -483,7 +469,7 @@ def test_volumes_agree_with_vtk(backend):
     for data in (td.as_polyhedra(_two_hexes_and_a_pyramid()),
                  td.DataSet(_from_cell_faces(cells, len(points)), points)):
         grid = dataset_to_vtk(data)
-        theirs = [grid.GetCell(c).ComputeVolume() for c in range(grid.GetNumberOfCells())]
+        theirs = [grid.GetCell(c).ComputeVolume() for c in range(grid.number_of_cells)]
         ours = alg.cell_geometry(data)[0].values.numpy()
         np.testing.assert_allclose(ours, theirs, rtol=1e-4)
 
@@ -537,12 +523,7 @@ def _pixel_grid():
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkFiltersCore import vtkAppendFilter
 
-    image = vtkImageData()
-    image.SetDimensions(4, 3, 1)
-    append = vtkAppendFilter()
-    append.AddInputData(image)
-    append.Update()
-    return append.GetOutput()                         # pixels, as an unstructured grid
+    return vtkAppendFilter()(vtkImageData(dimensions=(4, 3, 1)))  # pixels, as an unstructured grid
 
 
 def test_polygon_windings_must_agree(backend):
@@ -593,15 +574,11 @@ def test_polygons_through_vtk(backend):
     data.sets["boundary"] = td.algorithms.boundary_faces(data)
     surface = td.algorithms.extract_surface(data, "boundary")
     grid = dataset_to_vtk(surface)
-    assert grid.GetNumberOfCells() == surface.num_cells
-    assert {grid.GetCellType(c) for c in range(grid.GetNumberOfCells())} == {7}
-    from vtkmodules.util.numpy_support import vtk_to_numpy
+    assert grid.number_of_cells == surface.num_cells
+    assert set(np.asarray(grid.cell_types).tolist()) == {7}
     from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
 
-    sizes = vtkCellSizeFilter()
-    sizes.SetInputData(grid)
-    sizes.Update()
-    theirs = vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray("Area"))
+    theirs = np.asarray(vtkCellSizeFilter()(grid).cell_data["Area"])
     np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.numpy(),
                                theirs, rtol=1e-5)
 
@@ -628,11 +605,9 @@ def _solid_meshes():
     meshes = {"mixed": _two_hexes_and_a_pyramid()}
     if vtk is not None:
         for kind in ("tetra", "hexahedron", "wedge", "pyramid", "voxel"):
-            source = vtk.vtkCellTypeSource()
-            source.SetCellType(SOLID_TYPES[kind])
-            source.SetBlocksDimensions(3, 3, 2)
-            source.Update()
-            meshes[kind] = vtk_to_dataset(source.GetOutput())
+            source = vtk.vtkCellTypeSource(cell_type=SOLID_TYPES[kind],
+                                           blocks_dimensions=(3, 3, 2))
+            meshes[kind] = vtk_to_dataset(source())
     return meshes
 
 
@@ -665,21 +640,16 @@ def test_contour_of_polyhedra_is_the_shape_paths(backend, name):
 
 
 def _vtk_lopez(data, name, iso):
-    from vtkmodules.util.numpy_support import vtk_to_numpy
     from vtkmodules.vtkFiltersCore import vtkContour3DLinearGrid
 
     grid = dataset_to_vtk(data)
-    grid.GetPointData().SetActiveScalars(name)
-    contour = vtkContour3DLinearGrid()
-    contour.SetInputData(grid)
+    grid.point_data.SetActiveScalars(name)
+    contour = vtkContour3DLinearGrid(generate_triangles=False)
     contour.SetValue(0, iso)
-    contour.GenerateTrianglesOff()
-    contour.Update()
-    out = contour.GetOutput()
-    polys = out.GetPolys()
-    return (vtk_to_numpy(out.GetPoints().GetData()) if out.GetNumberOfPoints()
-            else np.zeros((0, 3)),
-            vtk_to_numpy(polys.GetOffsetsArray()), vtk_to_numpy(polys.GetConnectivityArray()))
+    out = contour(grid)
+    polys = out.polys
+    return (np.asarray(out.points.data) if out.number_of_points else np.zeros((0, 3)),
+            np.asarray(polys.offsets_array), np.asarray(polys.connectivity_array))
 
 
 def _saddle_pair():
@@ -861,20 +831,15 @@ def test_threshold_of_polyhedra_is_vtks(backend):
 
     poly = td.as_polyhedra(_threshold_meshes()["wedge"])
     grid = dataset_to_vtk(poly)
-    threshold = vtkThreshold()
-    threshold.SetInputData(grid)
+    threshold = vtkThreshold(lower_threshold=0.3, upper_threshold=1.2,
+                             threshold_function=vtkThreshold.THRESHOLD_BETWEEN)
     threshold.SetInputArrayToProcess(0, 0, 0, 1, "c")
-    threshold.SetLowerThreshold(0.3)
-    threshold.SetUpperThreshold(1.2)
-    threshold.SetThresholdFunction(vtkThreshold.THRESHOLD_BETWEEN)
-    threshold.Update()
-    theirs = threshold.GetOutput()
+    theirs = threshold(grid)
     ours = td.threshold(poly, "c", 0.3, 1.2)
-    assert (ours.num_cells, ours.num_points) == (theirs.GetNumberOfCells(),
-                                                 theirs.GetNumberOfPoints())
+    assert (ours.num_cells, ours.num_points) == (theirs.number_of_cells, theirs.number_of_points)
     np.testing.assert_allclose(sorted(td.algorithms.cell_geometry(ours)[0].values.numpy()),
                                sorted(theirs.GetCell(c).ComputeVolume()
-                                      for c in range(theirs.GetNumberOfCells())), rtol=1e-5)
+                                      for c in range(theirs.number_of_cells)), rtol=1e-5)
 
 
 def test_orient_repairs_reversed_faces_and_cells(backend):
@@ -902,12 +867,7 @@ def _cgns(name):
     # Not every VTK build has the CGNS reader; the data is always here.
     vtkCGNSReader = pytest.importorskip("vtkmodules.vtkIOCGNSReader").vtkCGNSReader
 
-    reader = vtkCGNSReader()
-    reader.SetFileName(path)
-    reader.Update()
-    blocks = reader.GetOutput().NewIterator()
-    blocks.InitTraversal()
-    return blocks.GetCurrentDataObject()
+    return next(iter(vtkCGNSReader(file_name=path)()))   # the first leaf block
 
 
 @needs_vtk
@@ -938,10 +898,8 @@ def test_a_real_cfd_mesh_needs_orienting(backend):
     data = vtk_to_dataset(grid, orient=True)
     assert data.num_cells == 1956 and len(td.check_winding(data)) == 0
     assert (td.algorithms.cell_geometry(data)[0].values.numpy() > 0).all()
-    surface = vtk.vtkGeometryFilter()
-    surface.SetInputData(dataset_to_vtk(data))
-    surface.Update()
-    assert data.topology.faces().boundary().shape[0] == surface.GetOutput().GetNumberOfCells()
+    surface = vtk.vtkGeometryFilter()(dataset_to_vtk(data))
+    assert data.topology.faces().boundary().shape[0] == surface.number_of_cells
 
 
 @pytest.mark.parametrize("make", [td.as_polyhedra, "polygons"])
@@ -995,7 +953,6 @@ def test_averages_are_the_shape_paths(backend, name):
 
 @needs_vtk
 def test_averages_on_voronoi_columns_are_vtks(backend):
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
     from vtkmodules.vtkFiltersCore import vtkCellDataToPointData, vtkPointDataToCellData
 
     points, cells, _ = _voronoi_columns()
@@ -1003,25 +960,17 @@ def test_averages_on_voronoi_columns_are_vtks(backend):
     p = np.cos(3 * points[:, 0]) + points[:, 1] * points[:, 2]
     c = np.sin(np.arange(data.num_cells, dtype=float))
     grid = dataset_to_vtk(data)
-    array = numpy_to_vtk(p.astype(np.float32), deep=True)
-    array.SetName("p")
-    grid.GetPointData().AddArray(array)
-    array = numpy_to_vtk(c.astype(np.float32), deep=True)
-    array.SetName("c")
-    grid.GetCellData().AddArray(array)
-    to_cells = vtkPointDataToCellData()
-    to_cells.SetInputData(grid)
-    to_cells.Update()
-    to_points = vtkCellDataToPointData()
-    to_points.SetInputData(grid)
-    to_points.Update()
+    grid.point_data["p"] = p.astype(np.float32)
+    grid.cell_data["c"] = c.astype(np.float32)
+    to_cells = vtkPointDataToCellData()(grid)
+    to_points = vtkCellDataToPointData()(grid)
     ours = td.algorithms.project(data, td.Field(td.H1(data), _scalars(p)), td.Constant(data))
     np.testing.assert_allclose(ours.values.numpy(),
-                               vtk_to_numpy(to_cells.GetOutput().GetCellData().GetArray("p")),
+                               np.asarray(to_cells.cell_data["p"]),
                                rtol=1e-5, atol=1e-6)
     ours = td.algorithms.project(data, td.Field(td.Values(data, "cells"), _scalars(c)), td.H1(data))
     np.testing.assert_allclose(ours.values.numpy(),
-                               vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("c")),
+                               np.asarray(to_points.point_data["c"]),
                                rtol=1e-5, atol=1e-6)
 
 

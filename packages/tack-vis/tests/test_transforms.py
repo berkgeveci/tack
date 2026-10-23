@@ -10,7 +10,6 @@ import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     from tack.interop.vtk import vtk_to_dataset
 except ImportError:
@@ -27,14 +26,10 @@ def _vectors(rows):
 
 
 def _grid():
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(10)
-    source.SetBlocksDimensions(4, 2, 2)
-    source.Update()
-    grid = source.GetOutput()
-    x = vtk_to_numpy(grid.GetPoints().GetData())
+    grid = vtk.vtkCellTypeSource(cell_type=10, blocks_dimensions=(4, 2, 2))()
+    x = np.asarray(grid.points.data)
     # Points on every side of the origin, for the coordinate transforms.
-    grid.GetPoints().SetData(numpy_to_vtk((x - [2.0, 1.0, 1.0]).astype(np.float32), deep=True))
+    grid.points = vtk.vtkPoints(data=vtk.vtkFloatArray((x - [2.0, 1.0, 1.0]).astype(np.float32)))
     return grid
 
 
@@ -79,13 +74,9 @@ def test_ids_are_implicit(backend):
 @needs_vtk
 def test_point_elevation_is_vtks(backend):
     grid = _grid()
-    elevation = vtk.vtkElevationFilter()
-    elevation.SetLowPoint(-1.0, -0.5, 0.2)
-    elevation.SetHighPoint(1.5, 0.7, -0.4)
-    elevation.SetScalarRange(3.0, 7.0)
-    elevation.SetInputData(grid)
-    elevation.Update()
-    expected = vtk_to_numpy(elevation.GetOutput().GetPointData().GetArray("Elevation"))
+    elevation = vtk.vtkElevationFilter(low_point=(-1.0, -0.5, 0.2), high_point=(1.5, 0.7, -0.4),
+                                       scalar_range=(3.0, 7.0))
+    expected = np.asarray(elevation(grid).point_data["Elevation"])
     out = td.point_elevation(vtk_to_dataset(grid), (-1.0, -0.5, 0.2), (1.5, 0.7, -0.4),
                              (3.0, 7.0))
     np.testing.assert_allclose(out.values.numpy(), expected, rtol=1e-5, atol=1e-5)
@@ -95,32 +86,21 @@ def test_point_elevation_is_vtks(backend):
 @needs_vtk
 def test_warp_is_vtks(backend):
     grid = _grid()
-    x = vtk_to_numpy(grid.GetPoints().GetData())
-    direction = np.c_[np.sin(x[:, 0]), x[:, 1] ** 2, np.ones(len(x))].astype(np.float32)
-    array = numpy_to_vtk(direction, deep=True)
-    array.SetName("d")
-    grid.GetPointData().SetVectors(array)
-    scale = numpy_to_vtk((x[:, 2] + 2).astype(np.float32), deep=True)
-    scale.SetName("s")
-    grid.GetPointData().SetScalars(scale)
+    x = np.asarray(grid.points.data)
+    point_data = grid.point_data
+    point_data["d"] = np.c_[np.sin(x[:, 0]), x[:, 1] ** 2, np.ones(len(x))].astype(np.float32)
+    point_data["s"] = (x[:, 2] + 2).astype(np.float32)
+    # The warps read the active vectors and scalars, which have no pythonic setter.
+    point_data.SetActiveVectors("d")
+    point_data.SetActiveScalars("s")
     data = vtk_to_dataset(grid)
 
-    warp = vtk.vtkWarpVector()
-    warp.SetScaleFactor(0.3)
-    warp.SetInputData(grid)
-    warp.Update()
+    warped = vtk.vtkWarpVector(scale_factor=0.3)(grid)
     np.testing.assert_allclose(td.warp(data, "d", 0.3).positions(),
-                               vtk_to_numpy(warp.GetOutput().GetPoints().GetData()), rtol=1e-5,
-                               atol=1e-6)
-    scalar = vtk.vtkWarpScalar()
-    scalar.SetScaleFactor(0.5)
-    scalar.UseNormalOn()
-    scalar.SetNormal(0.0, 0.6, 0.8)
-    scalar.SetInputData(grid)
-    scalar.Update()
+                               np.asarray(warped.points.data), rtol=1e-5, atol=1e-6)
+    warped = vtk.vtkWarpScalar(scale_factor=0.5, use_normal=True, normal=(0.0, 0.6, 0.8))(grid)
     out = td.warp(data, (0.0, 0.6, 0.8), 0.5, scale_by="s")
-    np.testing.assert_allclose(out.positions(),
-                               vtk_to_numpy(scalar.GetOutput().GetPoints().GetData()), rtol=1e-5,
+    np.testing.assert_allclose(out.positions(), np.asarray(warped.points.data), rtol=1e-5,
                                atol=1e-6)
     assert set(out.fields) == set(data.fields) and out.topology is data.topology
 
@@ -132,14 +112,11 @@ def test_transform_is_vtks(backend):
     t.Translate(1.0, -2.0, 0.5)
     t.RotateWXYZ(33.0, 0.2, 1.0, 0.4)
     t.Scale(1.5, 0.7, 2.0)
-    move = vtk.vtkTransformFilter()
-    move.SetTransform(t)
-    move.SetInputData(grid)
-    move.Update()
-    matrix = np.array([[t.GetMatrix().GetElement(i, j) for j in range(4)] for i in range(4)])
+    moved = vtk.vtkTransformFilter(transform=t)(grid)
+    # A vtkMatrix4x4 cannot be indexed.
+    matrix = np.array([[t.matrix.GetElement(i, j) for j in range(4)] for i in range(4)])
     out = td.transform(vtk_to_dataset(grid), matrix)
-    np.testing.assert_allclose(out.positions(),
-                               vtk_to_numpy(move.GetOutput().GetPoints().GetData()), rtol=1e-5,
+    np.testing.assert_allclose(out.positions(), np.asarray(moved.points.data), rtol=1e-5,
                                atol=1e-5)
     with pytest.raises(ValueError, match="affine"):
         td.transform(vtk_to_dataset(grid), np.ones((4, 4)))

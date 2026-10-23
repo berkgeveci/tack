@@ -11,7 +11,6 @@ import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     from tack.interop.vtk import vtk_to_dataset
 except ImportError:
@@ -25,38 +24,26 @@ KINDS = {"hexahedron": 12, "tetra": 10, "wedge": 13, "pyramid": 14}
 def _grid(kind):
     """A small block of cells, a little skewed, with a nonlinear scalar ``s`` and
     vector ``v``: gradients vary inside each cell."""
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(KINDS[kind])
-    source.SetBlocksDimensions(3, 3, 2)
-    source.Update()
-    grid = source.GetOutput()
-    x = vtk_to_numpy(grid.GetPoints().GetData()).astype(np.float64)
+    grid = vtk.vtkCellTypeSource(cell_type=KINDS[kind], blocks_dimensions=(3, 3, 2))()
+    x = np.asarray(grid.points.data).astype(np.float64)
     x = x + 0.15 * np.c_[np.sin(2 * x[:, 1]), np.cos(x[:, 2]), np.sin(x[:, 0])]
-    grid.GetPoints().SetData(numpy_to_vtk(x.astype(np.float32), deep=True))
-    s = numpy_to_vtk((np.sin(x[:, 0]) * x[:, 1] + x[:, 2] ** 2).astype(np.float32), deep=True)
-    s.SetName("s")
-    v = numpy_to_vtk(np.c_[np.sin(x[:, 1]), x[:, 0] * x[:, 2], x[:, 1] ** 2 - x[:, 0]]
-                     .astype(np.float32), deep=True)
-    v.SetName("v")
-    grid.GetPointData().AddArray(s)
-    grid.GetPointData().AddArray(v)
+    grid.points = vtk.vtkPoints(data=vtk.vtkFloatArray(x.astype(np.float32)))
+    grid.point_data["s"] = (np.sin(x[:, 0]) * x[:, 1] + x[:, 2] ** 2).astype(np.float32)
+    grid.point_data["v"] = np.c_[np.sin(x[:, 1]), x[:, 0] * x[:, 2],
+                                 x[:, 1] ** 2 - x[:, 0]].astype(np.float32)
     return grid
 
 
 def _vtk_gradients(grid, name):
-    g = vtk.vtkGradientFilter()
-    g.SetInputData(grid)
+    g = vtk.vtkGradientFilter(result_array_name="grad", compute_divergence=True,
+                              compute_vorticity=True, compute_q_criterion=True)
     g.SetInputArrayToProcess(0, 0, 0, 0, name)
-    g.SetResultArrayName("grad")
-    g.ComputeDivergenceOn()
-    g.ComputeVorticityOn()
-    g.ComputeQCriterionOn()
-    g.Update()
-    point_data = g.GetOutput().GetPointData()
-    return {key: vtk_to_numpy(point_data.GetArray(array))
+    point_data = g(grid).point_data
+    # A missing name reads as a NoneArray, not None, so ask the keys.
+    return {key: np.asarray(point_data[array])
             for key, array in (("gradient", "grad"), ("divergence", "Divergence"),
                                ("vorticity", "Vorticity"), ("q_criterion", "Q-criterion"))
-            if point_data.GetArray(array) is not None}
+            if array in point_data.keys()}
 
 
 @needs_vtk
@@ -83,12 +70,10 @@ def test_point_gradients_are_vtks(backend, kind):
 @pytest.mark.parametrize("kind", KINDS)
 def test_cell_gradients_of_vectors_are_vtks(backend, kind):
     grid = _grid(kind)
-    grid.GetPointData().SetActiveVectors("v")
+    grid.GetPointData().SetActiveVectors("v")   # no pythonic setter
     derivatives = vtk.vtkCellDerivatives()
-    derivatives.SetInputData(grid)
-    derivatives.SetTensorModeToComputeGradient()
-    derivatives.Update()
-    expected = vtk_to_numpy(derivatives.GetOutput().GetCellData().GetTensors())
+    derivatives.SetTensorModeToComputeGradient()   # the enum has no Python name
+    expected = np.asarray(derivatives(grid).cell_data.tensors)
     data = vtk_to_dataset(grid)
     out = td.algorithms.gradients(data, data.fields["v"])
     assert out.space is td.Values(data, "cells")

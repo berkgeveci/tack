@@ -84,10 +84,7 @@ def test_outputs_widen_only_when_they_must():
 
 @pytest.mark.skipif(vtk is None, reason="needs VTK")
 def test_vtk_ids_take_the_type_asked_for(backend, request):
-    source = vtk.vtkCellTypeSource()
-    source.SetCellType(12)
-    source.SetBlocksDimensions(2, 2, 2)
-    source.Update()
+    grid = vtk.vtkCellTypeSource(cell_type=12, blocks_dimensions=(2, 2, 2))()
     default = tack.i64 if request.config.getoption("--ids") == "i64" else tack.i32
-    assert vtk_to_dataset(source.GetOutput()).id_dtype == default
-    assert vtk_to_dataset(source.GetOutput(), id_dtype=tack.i64).id_dtype == tack.i64
+    assert vtk_to_dataset(grid).id_dtype == default
+    assert vtk_to_dataset(grid, id_dtype=tack.i64).id_dtype == tack.i64

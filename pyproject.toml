@@ -28,7 +28,7 @@ dev = [
 # PyMFEM ships wheels for these two platforms only; elsewhere it would build
 # MFEM from source, so it is left out and the MFEM comparisons skip.
 interop = [
-    "vtk",
+    "vtk>=9.7.1",              # the pythonic API (see CLAUDE.md): data model, arrays, pipelines
     "mfem; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
 ]
 docs = [

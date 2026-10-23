@@ -98,8 +98,8 @@ SOLIDS = (sh.Tetra, sh.Voxel, sh.Hexahedron, sh.Wedge, sh.Pyramid)
 
 def _vtk_cell(shape):
     cell = getattr(vtk, f"vtk{shape.__name__}")()
-    for i in range(cell.GetNumberOfPoints()):
-        cell.GetPointIds().SetId(i, i)
+    for i in range(cell.number_of_points):
+        cell.point_ids.SetId(i, i)
     return cell
 
 
@@ -153,26 +153,25 @@ def test_tables_match_the_recorded_ones(backend, shape):
 @each_shape
 def test_the_recorded_tables_are_vtks(shape):
     cell, want = _vtk_cell(shape), EXPECTED[shape]
-    assert cell.GetCellType() == shape.ID
-    assert cell.GetCellDimension() == want["dim"]
-    n = cell.GetNumberOfPoints()
-    pc = cell.GetParametricCoords()
-    np.testing.assert_array_equal(np.array([pc[k] for k in range(3 * n)]).reshape(n, 3),
+    assert cell.cell_type == shape.ID
+    assert cell.cell_dimension == want["dim"]
+    n = cell.number_of_points
+    np.testing.assert_array_equal(np.array(cell.parametric_coords).reshape(n, 3),
                                   want["points"])
     center = [0.0, 0.0, 0.0]
     cell.GetParametricCenter(center)
     np.testing.assert_allclose(center, want["center"], atol=1e-6)   # VTK's wedge: 0.333333
-    assert [tuple(cell.GetEdge(e).GetPointIds().GetId(k) for k in range(2))
-            for e in range(cell.GetNumberOfEdges())] == want["edges"]
+    assert [tuple(cell.GetEdge(e).point_ids.GetId(k) for k in range(2))
+            for e in range(cell.number_of_edges)] == want["edges"]
     if want["dim"] == 2:
         # VTK counts no faces on a 2D cell; Tack's are its edges, going round it.
-        assert cell.GetNumberOfFaces() == 0
+        assert cell.number_of_faces == 0
         return
     got, kinds = [], []
-    for f in range(cell.GetNumberOfFaces()):
-        ids = cell.GetFace(f).GetPointIds()
-        face = tuple(ids.GetId(k) for k in range(ids.GetNumberOfIds()))
-        kind = cell.GetFace(f).GetCellType()
+    for f in range(cell.number_of_faces):
+        ids = cell.GetFace(f).point_ids
+        face = tuple(ids.GetId(k) for k in range(ids.number_of_ids))
+        kind = cell.GetFace(f).cell_type
         if kind == 8:                                    # VTK_PIXEL
             # Tack's faces go round: a pixel's last two corners swapped, a quad.
             face, kind = face[:2] + face[3:1:-1], 9           # VTK_QUAD
@@ -244,7 +243,7 @@ def test_gradients_are_the_functions_derivatives(f64_backend, shape):
 
 def _vtk_functions(shape, pcs):
     cell = _vtk_cell(shape)
-    n, dim = cell.GetNumberOfPoints(), cell.GetCellDimension()
+    n, dim = cell.number_of_points, cell.cell_dimension
     values, gradients = np.zeros((len(pcs), n)), np.zeros((len(pcs), n, 3))
     for i, pc in enumerate(pcs):
         w = [0.0] * n
@@ -461,9 +460,9 @@ def test_world_to_parametric_is_vtks(f64_backend, shape):
     dim = EXPECTED[shape]["dim"]
     for i in range(len(pcs)):
         cell = _vtk_cell(shape)
-        n = cell.GetNumberOfPoints()
+        n = cell.number_of_points
         for j in range(n):
-            cell.GetPoints().SetPoint(j, cells[i, j])
+            cell.points.SetPoint(j, cells[i, j])
         x = [0.0, 0.0, 0.0]
         cell.EvaluateLocation(vtk.reference(0), pcs[i], x, [0.0] * n)
         np.testing.assert_allclose(positions[i] - offsets[i], x, atol=1e-12)
@@ -510,10 +509,10 @@ def test_nearest_point_is_vtks(f64_backend, shape, outside):
     positions, nearest = _run_nearest(shape, cells, pcs, offsets)
     for i in range(len(pcs)):
         cell = _vtk_cell(shape)
-        for j in range(cell.GetNumberOfPoints()):
-            cell.GetPoints().SetPoint(j, cells[i, j])
+        for j in range(cell.number_of_points):
+            cell.points.SetPoint(j, cells[i, j])
         closest, pc = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-        weights = [0.0] * cell.GetNumberOfPoints()
+        weights = [0.0] * cell.number_of_points
         cell.EvaluatePosition(positions[i], closest, vtk.reference(0), pc,
                               vtk.reference(0.0), weights)
         np.testing.assert_allclose(nearest[i], closest, atol=1e-8)

@@ -142,7 +142,9 @@ write through Tack appears in both VTK arrays. It uses the CPU backend;
 Metal cannot import this VTK host allocation without copying. A GPU exchange
 needs compatible device arrays and the context rules described above.
 
-Use a VTK build exposing `vtkmodules.util.dlpack_support`. Its Python version
+Tack's VTK interop needs VTK 9.7.1 or later, for VTK's pythonic API
+(`uv sync --extra interop` installs it). Zero-copy array exchange also needs
+a VTK build exposing `vtkmodules.util.dlpack_support`. Its Python version
 must match the interpreter running Tack. Add the build's Python site-packages
 directory to `PYTHONPATH` if it is not installed in that environment. A VTK
 wheel sufficient for the tutorial figures may lack this DLPack module. The
