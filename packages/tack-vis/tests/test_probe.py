@@ -90,7 +90,8 @@ def test_locator_finds_the_cell_and_its_coordinates(backend):
     grid = _grid("hexahedron")
     data = vtk_to_dataset(grid)
     points = np.random.default_rng(4).uniform(0.2, 2.8, (100, 3)) * [1, 1, 0.6]
-    cells, pcs = td.CellLocator(data).find(points)
+    cells, pcs, tets = td.CellLocator(data).find(points)
+    assert tets is None
     cells, pcs = cells.numpy(), pcs.numpy()
     for q in range(0, 100, 9):
         cell = grid.GetCell(int(cells[q]))
@@ -145,7 +146,7 @@ def test_a_point_in_a_cell_is_found_there_not_in_a_neighbour_within_tolerance(ba
     comes within the tolerance: there the field would be extrapolated across the
     kink (0 here, where the second gives the true value)."""
     data = _two_tets()
-    cells, _ = td.CellLocator(data).find(_NEAR_THE_FACE)
+    cells = td.CellLocator(data).find(_NEAR_THE_FACE).cells
     np.testing.assert_array_equal(cells.numpy(), [1, 1, 1])
     out = td.probe(data, _NEAR_THE_FACE)
     # The far corner is 2 / sqrt(3) from the face, so p there is the depth over that.
@@ -168,7 +169,7 @@ def test_polyhedra_rank_the_cell_that_holds_the_point_first(backend):
     is only near the first (rank past the ids) and in the second, which wins, for
     probe and for advection alike."""
     data = td.as_polyhedra(_two_tets())
-    cells, tets, _ = td.CellLocator(data).find(_NEAR_THE_FACE)
+    cells, _, tets = td.CellLocator(data).find(_NEAR_THE_FACE)
     np.testing.assert_array_equal(cells.numpy(), [1, 1, 1])
     assert (tets.numpy() >= 0).all()
     out = td.probe(data, _NEAR_THE_FACE)
@@ -241,7 +242,7 @@ def test_probe_of_polyhedra_is_the_shape_paths(backend, kind):
     np.testing.assert_allclose(ours.fields["lin"].values.numpy()[valid],
                                _linear(points)[valid], atol=2e-4)
     assert (ours.fields["s"].values.numpy()[~valid] == 0).all()
-    cells, tets, pcs = td.CellLocator(poly).find(points)
+    cells, pcs, tets = td.CellLocator(poly).find(points)
     cells, tets = cells.numpy(), tets.numpy()
     np.testing.assert_array_equal(cells >= 0, valid)
     np.testing.assert_array_equal(tets >= 0, valid)

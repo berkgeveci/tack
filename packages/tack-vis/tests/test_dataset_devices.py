@@ -185,7 +185,7 @@ def test_derived_state_and_iteration_are_on_the_datasets_device(second, make):
     assert td.H1(data, order=2).size > data.num_points
     found = td.CellLocator(data).find(tack.array(np.array([[0.5, 0.5, 0.5]], np.float32),
                                                  tack.vec3(), device=second))
-    assert all(_on(second, a) for a in found)
+    assert _on(second, found.cells) and _on(second, found.pcs) and found.tets is None
 
 
 def test_a_dataset_refuses_parts_on_two_devices(second):

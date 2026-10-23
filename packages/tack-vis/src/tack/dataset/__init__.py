@@ -89,7 +89,7 @@ from tack.dataset.dataset import (
 )
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
-from tack.dataset.locator import CellLocator
+from tack.dataset.locator import CellLocator, Locations
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.polyhedra import (
     PolygonalTopology,
@@ -116,6 +116,7 @@ __all__ = [
     "Field",
     "FlowQuantities",
     "Ghosts",
+    "Locations",
     "ParticleStatus",
     "PartitionedDataSet",
     "Plane",

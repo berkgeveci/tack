@@ -85,6 +85,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   reads a topology's arrays as `tack.Array`s should use `numpy()`,
   `np.asarray` or `tack.arrays.materialize`, which accept both.
 
+- **Breaking:** `CellLocator.find` returns `Locations(cells, pcs, tets)`, a
+  named tuple of three on every dataset, where it returned `(cells, pcs)`,
+  or `(cells, tets, pcs)` on polyhedra. `tets` is `None` except on
+  polyhedra. `cells, pcs = locator.find(p)` becomes
+  `cells, pcs, _ = locator.find(p)`, or reads `.cells` and `.pcs`.
+
 ### Fixed
 
 - `CellLocator.find`, and so `probe`, located a point in the lowest-numbered
