@@ -3709,11 +3709,16 @@ ask for them before the launch:</p>
 </code></pre></div>
 <h2 id="polyhedra-polygons-and-lines">Polyhedra, polygons and lines<a class="headerlink" href="#polyhedra-polygons-and-lines" title="Permanent link">&para;</a></h2>
 <p>A polyhedral cell has no reference element: no shape functions and no
-parametric coordinates. Algorithms that need one (gradients, probing,
-advection) refuse a polyhedral mesh and say so. The ones that work from
-points and faces run on both kinds: contour (by López's face walk), slice,
-threshold, external faces, cell and face geometry, divergence, and moving
-data between points and cells. A 2D mesh contours into lines, and
+parametric coordinates. Instead, each face is fanned into triangles from
+the mean of its points, and the triangles into tetrahedra from the mean of
+the cell's points; point data is linear on each tetrahedron. Gradients,
+cell centers, probing, advection and streamlines run on polyhedra that way
+(gradients by Green–Gauss over the fanned faces), exactly for linear
+fields; the algorithms that need a reference element (<code>L2</code> and order-2
+spaces, side traces) refuse a polyhedral mesh and say so. The ones that
+work from points and faces run on both kinds: contour (by López's face
+walk), slice, threshold, external faces, cell and face geometry,
+divergence, and moving data between points and cells. A 2D mesh contours into lines, and
 streamlines are polylines, one per seed:</p>
 <div class="highlight"><pre><span></span><code>    <span class="n">flow</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">9</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">flow</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>

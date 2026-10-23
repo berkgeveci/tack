@@ -3160,9 +3160,11 @@ resolved by the sampled field replacing the target's field of that name.</p>
 <p>Reuse a <code>CellLocator</code> when geometry is fixed and only the sampled fields change.
 Rebuild it after moving geometry; its spatial bins describe the mesh when it
 was constructed. Where a query lies in more than one cell, the smallest cell
-id wins. At a discontinuity that choice can determine which side is sampled;
-it is not an average across the interface.</p>
-<p>Probing currently needs shape-based cells. A <code>Values</code> field on faces is not a
+id wins; a cell the query is only within the tolerance of counts only where no
+cell holds it. At a discontinuity that choice can determine which side is
+sampled; it is not an average across the interface.</p>
+<p>Probing takes shape-based cells and polyhedra (located in sub-tetrahedra); polygons
+and polylines are not supported yet. A <code>Values</code> field on faces is not a
 continuous field that can be sampled arbitrarily through the volume.</p>
 <h2 id="integrate-a-steady-velocity-field">Integrate a steady velocity field<a class="headerlink" href="#integrate-a-steady-velocity-field" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>    <span class="n">seeds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mi">0</span><span class="p">]],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
