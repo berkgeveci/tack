@@ -763,9 +763,9 @@ data goes to each, the points stay the same.
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
 uniform grid over the dataset, about `density` bins per cell.
 `locator.find(points)` takes an `(n, 3)` array or a field of 3-vectors and
-gives each point's cell (a field of the dataset's `id_dtype`, -1 where
-none holds it) and its
-parametric coordinates there. A point counts as in a cell within 0.1% of
+returns `Locations(cells, pcs, tets)`, a named tuple: each point's cell (a
+field of the dataset's `id_dtype`, -1 where none holds it), its parametric
+coordinates there, and `tets`, which is `None` except in polyhedra (below). A point counts as in a cell within 0.1% of
 the cell's bounding-box diagonal, as `vtkProbeFilter`'s computed tolerance
 has it. Of the cells that hold the point the smallest id wins; a cell that
 only comes within the tolerance wins only where none holds it, so a point
@@ -781,11 +781,11 @@ triangles from their face points (the mean of each face's points), and the
 triangles into *sub-tetrahedra* from the cell point (the mean of the cell's
 distinct points); point data is linear on each, taking the means of the
 values at those two points, so a linear field is exact and a face's two
-cells agree on it. On a polyhedral dataset `find` returns `(cells, tets,
-pcs)`: each point's sub-tetrahedron in its cell (i32, numbered face by face
-and edge by edge, -1 for none) and its coordinates there, the weights of
-the face point and the edge's two points, which a field's view evaluates
-with `tet_value(c, t, pc)`. The locator refuses a dataset with a cell that
+cells agree on it. On a polyhedral dataset `find`'s `tets` is each point's
+sub-tetrahedron in its cell (i32, numbered face by face and edge by edge,
+-1 for none), and `pcs` its coordinates there, the weights of the face
+point and the edge's two points, which a field's view evaluates with
+`tet_value(c, t, pc)`. The locator refuses a dataset with a cell that
 is not star-shaped from its cell point, whose sub-tetrahedra would overlap.
 
 `probe(data, where, fields=None, locator=None)` evaluates `data`'s fields

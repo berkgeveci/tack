@@ -65,10 +65,7 @@ def probe(data, where, fields=None, locator=None):
     if locator.data is not data:
         raise ValueError("the locator was built for another dataset")
     points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
-    if locator.polyhedral:
-        found, tets, pcs = locator.find(points)
-    else:
-        found, pcs = locator.find(points)
+    found, pcs, tets = locator.find(points)
     m = found.shape[0]
     keys = tack.empty((m,), found.dtype)
     if m:

@@ -22,6 +22,8 @@ the points are bucketed by the cell found, and each cell evaluates its fields
 at its own points through the fields' bases.
 """
 
+from typing import NamedTuple
+
 import numpy as np
 
 import tack
@@ -33,7 +35,21 @@ from tack.dataset.buckets import bucket_groups, bucket_order
 from tack.dataset.dataset import for_each
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ["CellLocator"]
+__all__ = ["CellLocator", "Locations"]
+
+
+class Locations(NamedTuple):
+    """Where ``CellLocator.find`` put each point: ``cells``, the cell holding it (-1
+    for none), in the dataset's ``id_dtype``; ``pcs``, its coordinates there; and
+    ``tets``, in polyhedra, its sub-tetrahedron in the cell (i32, -1 for none),
+    ``None`` on cells with a reference element. On those ``pcs`` are parametric
+    coordinates; in a polyhedron they are the weights of the sub-tetrahedron's
+    face point and edge points (``views._PolyhedralLocation``), which a field's
+    view evaluates with ``tet_value(c, t, pc)``."""
+
+    cells: object
+    pcs: object
+    tets: object = None
 
 # A point just outside a cell counts as in it within this share of the cell's
 # diagonal, as vtkProbeFilter's computed tolerance has it (0.1%).
@@ -332,15 +348,10 @@ class CellLocator:
 
     @on_inputs_device
     def find(self, points):
-        """``(cells, pcs)`` for ``points`` (an ``(n, 3)`` host array or a field of
-        3-vectors): a field of the cell holding each point (-1 for none), in the
-        dataset's ``id_dtype``, and a field of its parametric coordinates there.
-
-        In polyhedra, ``(cells, tets, pcs)``: each point's sub-tetrahedron in its
-        cell (i32, -1 for none) and its coordinates there, the weights of the
-        face point and the edge's two points (see
-        ``views._PolyhedralLocation``), which a field's view evaluates with
-        ``tet_value(c, t, pc)``."""
+        """``Locations(cells, pcs, tets)`` for ``points`` (an ``(n, 3)`` host array or
+        a field of 3-vectors): each point's cell (-1 for none) and its
+        coordinates there, and in polyhedra its sub-tetrahedron (``tets`` is
+        ``None`` otherwise). See ``Locations``."""
         data = self.data
         dtype = data.dtype
         if not hasattr(points, "numpy"):
@@ -363,10 +374,11 @@ class CellLocator:
                     f"which the {get_backend().name} backend does not have")
         found = tack.full((m,), none, scratch) if m else tack.empty((0,), scratch)
         pcs = tack.empty((m,), tack.vec(3, dtype))
-        tets = tack.empty((m,), tack.i32)
+        tets = tack.empty((m,), tack.i32) if self.polyhedral else None
         if m:
             pcs.fill(0)
-            tets.fill(-1)
+            if tets is not None:
+                tets.fill(-1)
         if m and data.num_cells:
             nbins = int(np.prod(self.dims))
             keys = tack.empty((m,), tack.i32)
@@ -387,8 +399,8 @@ class CellLocator:
         elif m:
             found.fill(-1)
         if self.polyhedral:
-            return ids.as_ids(found, data.id_dtype), tets, pcs
-        return ids.as_ids(found, data.id_dtype), pcs
+            return Locations(ids.as_ids(found, data.id_dtype), pcs, tets)
+        return Locations(ids.as_ids(found, data.id_dtype), pcs)
 
 
 

@@ -65,7 +65,7 @@ def test_derived_entities_and_filters_follow_the_topology(backend):
     cut = td.contour(wide, "s", 0.7)
     assert cut.id_dtype == tack.i64 and cut.num_cells
     assert td.as_polyhedra(wide).id_dtype == tack.i64
-    cells, _ = td.CellLocator(wide).find([[0.5, 0.5, 0.5], [9.0, 9.0, 9.0]])
+    cells = td.CellLocator(wide).find([[0.5, 0.5, 0.5], [9.0, 9.0, 9.0]]).cells
     assert cells.dtype == tack.i64
     np.testing.assert_array_equal(cells.numpy(), [0, -1])
 
