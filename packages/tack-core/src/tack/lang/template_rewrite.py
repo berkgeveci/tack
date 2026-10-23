@@ -346,12 +346,14 @@ def template_array_param_name(param_name, attr_name):
     return f"__tmpl_{param_name}_{attr_name}__"
 
 
-def rewrite_templates(kernel_ast, template_args):
+def rewrite_templates(kernel_ast, template_args, python_func=None):
     """Rewrite a kernel AST to resolve template parameters.
 
     Args:
         kernel_ast: The kernel's Python AST (will be deep-copied)
         template_args: dict of param_index -> (param_name, template_object)
+        python_func: the kernel's Python function, whose namespace resolves the
+            device functions a template is passed to
 
     Returns:
         (rewritten_ast, resolved_funcs) — the rewritten AST and a mapping
@@ -377,17 +379,27 @@ def rewrite_templates(kernel_ast, template_args):
     # The source spelling of each held array's synthetic parameter, for
     # diagnostics; lowering keeps it on the IR (`IRFunction.held_arrays`).
     funcdef._tack_held_arrays = {}
+    specializer = _Specializer(resolved_funcs, used_names)
+    # The templates resolved so far: a call is specialized for all of them at
+    # once, and one whose callee is a method of a template still to come waits
+    # for it (`b.combine(a, i)` while `a` is being resolved).
+    roots = {}
+    pending = {name for name, _ in template_args.values()}
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
         param_name, obj = template_args[idx]
+        pending.discard(param_name)
         root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs,
-                                      funcdef._tack_held_arrays)
+                                      funcdef._tack_held_arrays, specializer)
 
         # obj[i], obj[i] = v and len(obj) as the protocol's method calls
         _desugar_indexing(funcdef, param_name, root, used_names)
         # Rewrite the kernel function definition
+        roots[param_name] = root
         rewriter = _KernelTemplateRewriter(param_name, idx, root, extra, template=obj,
-                                           used_names=used_names)
+                                           used_names=used_names, specializer=specializer,
+                                           funcdef=funcdef, python_func=python_func,
+                                           roots=roots, pending=frozenset(pending))
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
@@ -589,9 +601,12 @@ class _Node:
     synthetic names of its arrays and runtime scalars, its resolved methods and
     device-function attributes, and its child nodes."""
 
-    def __init__(self, obj, path):
+    def __init__(self, obj, path, extra=()):
         self.obj = obj
         self.path = path
+        # The tree's synthetic parameters, which every method of the tree
+        # takes, and which a function given this object takes too.
+        self.extra = list(extra)
         self.scalars = {}
         self.arrays = {}
         self.runtime = {}
@@ -600,7 +615,8 @@ class _Node:
         self.children = {}
 
 
-def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays):
+def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays,
+                    specializer=None):
     """The resolved tree of one template argument: ``(root, extra)``, ``extra`` the
     synthetic parameters every resolved method takes, in the runtime's order --
     the flattened arrays by name, then the flattened runtime scalars by name.
@@ -618,7 +634,7 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays):
 
     nodes = {}
     for path, node_obj in template_tree(obj):
-        node = nodes[path] = _Node(node_obj, path)
+        node = nodes[path] = _Node(node_obj, path, extra)
         if path:
             nodes[path[:-1]].children[path[-1]] = node
         prefix = _prefix(path)
@@ -644,7 +660,7 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays):
             if method_name in node.methods:
                 resolved_name = node.methods[method_name]
                 resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
-                                                                node, extra)
+                                                                node, extra, specializer)
     return nodes[()], extra
 
 
@@ -719,7 +735,7 @@ def _resolve_attribute(node, names, root, strict=True):
     return None
 
 
-def _resolve_method(func_obj, resolved_name, node, extra):
+def _resolve_method(func_obj, resolved_name, node, extra, specializer=None):
     """Resolve a template method while retaining its defining Python callable.
 
     The resolved copy has:
@@ -741,8 +757,9 @@ def _resolve_method(func_obj, resolved_name, node, extra):
     names = {n.id for n in ast.walk(funcdef) if isinstance(n, ast.Name)}
     _desugar_indexing(funcdef, 'self', node, names, lazy=True)
 
-    # Resolve self.attr and self.method(args) references in the body
-    resolver = _SelfResolver(node, extra)
+    # Resolve self.attr and self.method(args) references in the body, and
+    # specialize what self (or a template it holds) is passed to
+    resolver = _BoundResolver({'self': node}, specializer, funcdef, func_obj.func)
     for i, stmt in enumerate(funcdef.body):
         funcdef.body[i] = resolver.visit(stmt)
 
@@ -761,36 +778,181 @@ class _ResolvedFunc(Func):
         self.func = python_func
 
 
-class _SelfResolver(ast.NodeTransformer):
-    """Replaces self.attr with constants, synthetic parameter names, or method calls,
-    through any templates the object holds."""
+def _template_argument(expr, roots):
+    """The template node ``expr`` names -- a bound name (``self``, a kernel's or a
+    function's template parameter) or a template it holds (``self.base``) --
+    or None."""
+    if isinstance(expr, ast.Name):
+        return roots.get(expr.id)
+    names = []
+    while isinstance(expr, ast.Attribute):
+        names.append(expr.attr)
+        expr = expr.value
+    if not (isinstance(expr, ast.Name) and expr.id in roots):
+        return None
+    node = roots[expr.id]
+    for name in reversed(names):
+        if name not in node.children:
+            return None
+        node = node.children[name]
+    return node
 
-    def __init__(self, node, extra):
-        self.node = node
-        self.extra = extra
+
+class _Specializer:
+    """Copies of device functions with a template parameter bound, for one rewrite.
+
+    A call that passes a device-class object -- or a template it holds -- to a
+    ``@tack.func`` or to a template's method gets a copy of the callee in which
+    that parameter is bound to the object, as a method's ``self`` is: its
+    attributes and methods resolve through the object's node, its own
+    template calls are specialized in turn, and the object's tree's synthetic
+    parameters are appended, which the call passes. Copies are shared by
+    callee and bound objects; the copy keeps the callee's Python function, so
+    its body resolves names where the callee was defined.
+    """
+
+    def __init__(self, resolved_funcs, used_names):
+        self.resolved_funcs = resolved_funcs
+        self.used_names = used_names
+        self.copies = {}
+
+    def call(self, call, roots, funcdef, python_func):
+        """``call`` with any template arguments bound into a copy of its callee."""
+        if self is None or not isinstance(call, ast.Call):
+            return call
+        bound = {}
+        for position, arg in enumerate(call.args):
+            node = _template_argument(arg, roots)
+            if node is not None:
+                bound[position] = node
+        if not bound:
+            return call
+        callee_def, callee_func = self._callee(call, funcdef, python_func)
+        params = [a.arg for a in callee_def.args.args]
+        if len(call.args) > len(params):
+            raise TypeError(f"'{callee_def.name}' takes {len(params)} arguments, "
+                            f"given {len(call.args)}")
+        key = (id(callee_def), tuple(sorted((k, id(n)) for k, n in bound.items())))
+        if key not in self.copies:
+            self._copy(key, callee_def, callee_func, bound, params)
+        name, added = self.copies[key]
+        args = [a for k, a in enumerate(call.args) if k not in bound]
+        args += [ast.Name(id=n, ctx=ast.Load()) for n in added]
+        return ast.copy_location(ast.Call(func=_method_call_name(name), args=args,
+                                          keywords=call.keywords), call)
+
+    def _callee(self, call, funcdef, python_func):
+        """The callee's definition and Python function: a resolved method or copy,
+        or a ``@tack.func`` bound where the calling function was defined."""
+        func = call.func
+        if getattr(func, '_tack_template_call', False):
+            resolved = self.resolved_funcs[func.id]
+            return resolved._funcdef, getattr(resolved, 'func', None)
+        from tack.lang.call_bindings import CallBindings
+
+        bindings = CallBindings(funcdef, python_func=python_func,
+                                template_funcs=self.resolved_funcs)
+        callee = bindings.device_func(func)
+        if callee is None:
+            raise TypeError(f"'{ast.unparse(func)}' is given a device-class object, but is "
+                            "not a @tack.func or a template's method")
+        return callee._funcdef, callee.func
+
+    def _copy(self, key, callee_def, callee_func, bound, params):
+        """Make the copy, recorded under ``key`` as ``(name, added)``: its synthetic
+        name and the parameters it gained."""
+        copied = copy.deepcopy(callee_def)
+        bound_names = {params[k]: node for k, node in sorted(bound.items())}
+        copied.args.args = [a for k, a in enumerate(copied.args.args) if k not in bound]
+        present = {a.arg for a in copied.args.args}
+        added = []
+        for node in bound_names.values():
+            for name in node.extra:
+                if name not in present and name not in added:
+                    added.append(name)
+        copied.args.args += [ast.arg(arg=n) for n in added]
+        name = fresh_name(f"__tmpl_{callee_def.name}_{'_'.join(bound_names)}__",
+                          self.used_names)
+        self.used_names.add(name)
+        # Recorded before the body resolves: a copy reached again from inside
+        # itself is this one (and lowering then refuses the recursion).
+        self.copies[key] = (name, added)
+        names = {n.id for n in ast.walk(copied) if isinstance(n, ast.Name)}
+        for param, node in bound_names.items():
+            _desugar_indexing(copied, param, node, names, lazy=True)
+        resolver = _BoundResolver(bound_names, self, copied, callee_func)
+        copied.body = [resolver.visit(stmt) for stmt in copied.body]
+        copied.name = name
+        ast.fix_missing_locations(copied)
+        self.resolved_funcs[name] = _ResolvedFunc(name, copied, callee_func)
+
+
+def _refuse_kept(node, roots, where):
+    """A device-class object bound to another name, or returned, is refused: the
+    template is resolved by name, so a second name would not be."""
+    value = node.value
+    if value is None or _template_argument(value, roots) is None:
+        return
+    what = ("returns" if isinstance(node, ast.Return)
+            else f"binds to '{ast.unparse(node.targets[0])}'")
+    raise TypeError(f"{where} {what} the device-class object '{ast.unparse(value)}', "
+                    "which can only be used or passed on by its own name")
+
+
+class _BoundResolver(ast.NodeTransformer):
+    """Within one function, names bound to template nodes (a method's ``self``, a
+    copy's bound parameters): their attributes become constants or synthetic
+    names, their method calls the resolved methods, through the templates they
+    hold; and a call passing one of them is specialized."""
+
+    def __init__(self, roots, specializer, funcdef, python_func):
+        self.roots = roots
+        self.specializer = specializer
+        self.funcdef = funcdef
+        self.python_func = python_func
 
     def visit_Call(self, node):
         node = self.generic_visit(node)
-        names = _chain(node.func, 'self')
-        if names:
-            call = _resolve_call(self.node, node, names, 'self', self.extra)
-            if call is not None:
-                return call
+        for root, owner in self.roots.items():
+            names = _chain(node.func, root)
+            if names:
+                call = _resolve_call(owner, node, names, root, owner.extra)
+                if call is not None:
+                    node = call
+                break
+        if self.specializer is not None:
+            node = self.specializer.call(node, self.roots, self.funcdef, self.python_func)
         return node
 
     def visit_Attribute(self, node):
-        names = _chain(node, 'self')
-        if names is None:
-            return self.generic_visit(node)
-        resolved = _resolve_attribute(self.node, names, 'self')
-        return node if resolved is None else resolved
+        for root, owner in self.roots.items():
+            names = _chain(node, root)
+            if names is not None:
+                resolved = _resolve_attribute(owner, names, root)
+                return node if resolved is None else resolved
+        return self.generic_visit(node)
+
+    def visit_Assign(self, node):
+        _refuse_kept(node, self.roots, f"'{self.funcdef.name}'")
+        return self.generic_visit(node)
+
+    def visit_Return(self, node):
+        _refuse_kept(node, self.roots, f"'{self.funcdef.name}'")
+        return self.generic_visit(node)
 
 
 class _KernelTemplateRewriter(ast.NodeTransformer):
     """Rewrites a kernel function to resolve one template parameter."""
 
-    def __init__(self, param_name, param_idx, root, extra, template=None, used_names=None):
+    def __init__(self, param_name, param_idx, root, extra, template=None, used_names=None,
+                 specializer=None, funcdef=None, python_func=None, roots=None,
+                 pending=frozenset()):
         self.template = template
+        self.specializer = specializer
+        self.funcdef = funcdef
+        self.python_func = python_func
+        self.roots = roots if roots is not None else {param_name: root}
+        self.pending = pending
         self.used_names = used_names if used_names is not None else set()
         self.param_name = param_name
         self.param_idx = param_idx
@@ -811,6 +973,10 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
         # Visit the body
         self.generic_visit(node)
         return node
+
+    def visit_Assign(self, node):
+        _refuse_kept(node, self.roots, "the kernel")
+        return self.generic_visit(node)
 
     def visit_For(self, node):
         # for c in obj: becomes a range or ndindex loop over its iteration
@@ -859,12 +1025,19 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
         names = _chain(node.func, self.param_name)
         if names:
             call = _resolve_call(self.root, node, names, self.param_name, self.extra)
-            if call is not None:
-                return call
-            raise ValueError(
-                f"Template object has no @tack.func method '{'.'.join(names)}', "
-                f"and no @tack.func held as an attribute of that name"
-            )
+            if call is None:
+                raise ValueError(
+                    f"Template object has no @tack.func method '{'.'.join(names)}', "
+                    f"and no @tack.func held as an attribute of that name"
+                )
+            node = call
+        # A template, or one it holds, passed to a function or method -- unless
+        # the callee is a method of a template not resolved yet, which binds
+        # them when it is
+        waiting = isinstance(node, ast.Call) and any(
+            _chain(node.func, name) for name in self.pending)
+        if self.specializer is not None and not waiting:
+            node = self.specializer.call(node, self.roots, self.funcdef, self.python_func)
         return node
 
     def visit_Attribute(self, node):

@@ -202,6 +202,36 @@ walked once to gather its arguments: about 4 us per level on the CPU
 backend of an M1 Max, against 8 us for a whole call with a one-level
 template. The compiled code pays nothing.
 
+## Passing Objects to Functions
+
+A device-class object, or one it holds, can be passed to a `@tack.func` or
+to another object's method, which then uses it as it would `self`:
+
+```python
+@tack.func
+def mean_of_two(arr, k):
+    return 0.5 * (arr.get(k) + arr.get(k + 1))
+
+@tack.device_class
+class Blend:
+    def __init__(self, weights):
+        self.weights = weights
+
+    @tack.func
+    def mix(self, a, b, k):                        # a and b are objects too
+        return self.weights[k] * a.get(k) + (1.0 - self.weights[k]) * b.get(k)
+
+@tack.kernel
+def smooth(arr, blend, other, out):
+    for i in range(out.shape[0]):
+        out[i] = mean_of_two(arr, i) + blend.mix(arr, other, i)
+```
+
+Each such call gets its own copy of the callee, with the object bound in, so
+it costs nothing at run time; a method may pass on `self` (`helper(self, k)`)
+or a held object (`helper(self.base, k)`) the same way. The callee cannot
+keep the object in a local or return it.
+
 ## Kernels as Methods
 
 A kernel can be a method of the class. Called on an object, it receives
