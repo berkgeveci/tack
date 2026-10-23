@@ -1365,6 +1365,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#visit-a-spaces-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visit a space's nodes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#parametric-and-world-coordinates-have-different-meanings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3097,6 +3108,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#visit-a-spaces-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visit a space's nodes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#parametric-and-world-coordinates-have-different-meanings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3225,6 +3247,19 @@ every element is written before anything reads it.</p>
 ordinary kernel; point sets do not currently supply a dataset domain view.
 Sets belong to their topology, so a set from an earlier filter input cannot
 be substituted for a set on its renumbered output.</p>
+<h2 id="visit-a-spaces-nodes">Visit a space's nodes<a class="headerlink" href="#visit-a-spaces-nodes" title="Permanent link">&para;</a></h2>
+<p><code>td.for_each(kernel, data, space, *arrays)</code> runs a kernel over a space's
+nodes, each once, where <code>td.interpolate</code> evaluates its function: an order-2
+<code>H1</code> space's points, edge middles, quad face centers and cell interiors, an
+<code>L2</code> space's corners per cell. Each node has <code>nodes.node_dof(i, j)</code>, where its
+value goes in the space's array, and <code>nodes.node_position(i, j)</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="n">nodes</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">nodes</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nodes</span><span class="o">.</span><span class="n">node_count</span><span class="p">(</span><span class="n">i</span><span class="p">)):</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">nodes</span><span class="o">.</span><span class="n">node_position</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+            <span class="n">values</span><span class="p">[</span><span class="n">nodes</span><span class="o">.</span><span class="n">node_dof</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+</code></pre></div>
 <h2 id="parametric-and-world-coordinates-have-different-meanings">Parametric and world coordinates have different meanings<a class="headerlink" href="#parametric-and-world-coordinates-have-different-meanings" title="Permanent link">&para;</a></h2>
 <p><code>cells.parametric_center()</code> returns a location in the cell's reference element.
 <code>temperature.value(c, pc)</code> evaluates the field there, and
