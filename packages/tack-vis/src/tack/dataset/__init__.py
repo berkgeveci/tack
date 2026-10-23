@@ -5,10 +5,10 @@ arrays a field's values may be, explicit or implicit; ``topology`` the
 unstructured and structured topologies and the faces and edges derived from
 them; ``polyhedra`` the polyhedral and polygonal ones; ``spaces`` where a
 field's values live on a topology; ``dataset`` fields, ``DataSet`` and
-``for_each``; ``carry`` how algorithms carry fields; ``implicit`` the
-implicit functions; ``locator`` the cell locator; ``sources`` the wavelet and
-tangle; ``algorithms`` every algorithm, one module each, all re-exported
-here.
+``for_each``; ``partitioned`` a dataset in pieces; ``carry`` how algorithms
+carry fields; ``implicit`` the implicit functions; ``locator`` the cell
+locator; ``sources`` the wavelet and tangle; ``algorithms`` every algorithm,
+one module each, all re-exported here.
 """
 
 from tack.dataset import (
@@ -68,6 +68,7 @@ from tack.dataset.algorithms import (
     slice,
     slice_plane,
     spherical,
+    split,
     statistics,
     streamlines,
     tetrahedralize,
@@ -86,8 +87,10 @@ from tack.dataset.dataset import (
     rectilinear_grid,
     uniform_grid,
 )
+from tack.dataset.ghosts import Ghosts
 from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.dataset.locator import CellLocator
+from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.polyhedra import (
     PolygonalTopology,
     PolyhedralTopology,
@@ -112,7 +115,9 @@ __all__ = [
     "FaceGeometry",
     "Field",
     "FlowQuantities",
+    "Ghosts",
     "ParticleStatus",
+    "PartitionedDataSet",
     "Plane",
     "Planes",
     "PolygonalTopology",
@@ -179,6 +184,7 @@ __all__ = [
     "sources",
     "spaces",
     "spherical",
+    "split",
     "statistics",
     "streamlines",
     "tangle",

@@ -179,10 +179,13 @@ class DataSet:
     array, or any array of 3-vectors, such as a device array or a
     ``CartesianProduct``), which become an ``H1`` field -- kept apart from
     ``fields`` as ``data.geometry``: algorithms move it with the cells, never as
-    one of the fields they carry or select."""
+    one of the fields they carry or select. ``ghosts``, a
+    ``tack.dataset.Ghosts`` or ``None``, marks the cells and points
+    another piece of a partitioned dataset owns."""
 
     @on_inputs_device
-    def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32):
+    def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32,
+                 ghosts=None):
         self.topology = topology
         self._geometry = _as_geometry(geometry, topology, dtype)
         self.fields = dict(fields or {})
@@ -190,6 +193,9 @@ class DataSet:
             if field.space.topology is not topology:
                 raise ValueError(f"field {name!r} is on another topology")
         self.sets = sets
+        # Set by a filter that dropped its input's ghost marks (ghosts.drop_marks).
+        self._ghosts_lost = False
+        self.ghosts = ghosts
         _ = self._device                    # refuses parts on two devices
 
     @property
@@ -203,6 +209,7 @@ class DataSet:
             held.append(parts["_geometry"].values)
         held.extend(field.values for field in parts.get("fields", {}).values())
         held.extend(s.ids for s in (parts.get("_sets") or {}).values())
+        held.append(parts.get("_ghosts"))
         return same_device("DataSet", held)
 
     @property
@@ -228,9 +235,12 @@ class DataSet:
 
         sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
                 for name, s in self.sets.items()}
-        return DataSet(topology, moved(self.geometry),
-                       {name: moved(field) for name, field in self.fields.items()},
-                       sets, dtype=self.dtype)
+        ghosts = None if self.ghosts is None else self.ghosts.to_device(target)
+        out = DataSet(topology, moved(self.geometry),
+                      {name: moved(field) for name, field in self.fields.items()},
+                      sets, dtype=self.dtype, ghosts=ghosts)
+        out._ghosts_lost = self._ghosts_lost
+        return out
 
     @property
     def sets(self):
@@ -255,6 +265,32 @@ class DataSet:
             return kind
         raise ValueError(f"no domain {domain!r}: cells, faces, edges, or a cell, face or "
                          f"edge set ({', '.join(self.sets) or 'none'})")
+
+    @property
+    def ghosts(self):
+        """The ghost marks of its cells and points (``tack.dataset.Ghosts``),
+        or ``None``: which cells and points another piece owns, in VTK's
+        ``vtkGhostType`` bits.
+
+        Filters that keep the cells and points (``warp``, ``transform``,
+        ``shrink``, ``as_polyhedra``, ``probe``'s target, ...) keep the marks;
+        others do not carry them yet, and their output remembers that it lost
+        them, so ``statistics`` and ``entropy`` refuse it rather than count
+        shared cells and points once per piece. Setting marks again clears
+        that."""
+        return self._ghosts
+
+    @ghosts.setter
+    def ghosts(self, ghosts):
+        from tack.dataset.ghosts import Ghosts
+
+        if ghosts is not None:
+            if not isinstance(ghosts, Ghosts):
+                raise TypeError(f"ghost marks are a tack.dataset.ghosts.Ghosts, not "
+                                f"{type(ghosts).__name__}")
+            ghosts._check(self.topology)
+            self._ghosts_lost = False
+        self._ghosts = ghosts
 
     @property
     def geometry(self):

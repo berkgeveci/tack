@@ -387,6 +387,88 @@ when the set is made. `flags()` gives membership, 1 or 0 per entity.
 **Open:** boundary entities from readers mapped onto sets (Exodus side and
 node sets, MFEM boundary attributes).
 
+## Partitioned datasets
+
+A `PartitionedDataSet(partitions)` is a dataset in pieces: an ordered list
+of `DataSet`s, as VTK's `vtkPartitionedDataSet`. Each piece is a whole
+dataset, with its own topology, numbering, geometry, fields, sets and
+device, and may have no cells. Iterate over it, index it (`pds[i]`) or take
+its length; `pds.partitions` is the tuple of pieces.
+
+- **Work on one piece takes the piece.** Filters, analyses, selections and
+  `for_each` take a `DataSet`, as everywhere else; loop over the pieces:
+  `for piece in pds: piece.fields["grad"] = td.gradients(piece, "T")`.
+- **Only algorithms whose answer needs more than one piece take the
+  partitioned dataset**, and they name the field (a `Field` belongs to one
+  piece's topology), which every piece must have:
+  - `statistics(pds, "T")` takes each piece's moments on its own device and
+    combines them pairwise (Pébay's update), so the result is the whole's
+    up to rounding;
+  - `entropy(pds, "T", bins)` bins the whole's range and sums each piece's
+    histogram over it.
+
+  Pieces with no values are skipped. Each piece counts only what it owns
+  (below), so where every shared cell and point has one owner, the result
+  is the whole's.
+- **`split(data, pieces)`** cuts a structured grid by index ranges, x
+  fastest. `pieces` is a count, factored over the axes (each prime factor,
+  largest first, cuts the axis whose pieces have most cells), or a tuple of
+  counts, one per axis of the topology. Each axis's cells are shared out as
+  evenly as they go, at least one per piece, and neighbouring pieces share
+  the points between them. A piece keeps the geometry's kind (uniform
+  coordinates with their origin moved, rectilinear axes cut, explicit
+  points taken) and carries its block of every point, cell and `L2` field
+  and every set, as filters carry them; fields on faces or edges are left
+  behind. A point a piece shares with a piece before it is that piece's, and
+  marked a duplicate in this one; the input's own ghost marks come along.
+  An unstructured mesh is partitioned by VTK
+  (`vtkRedistributeDataSetFilter`) or by its host application.
+
+**Ghost marks.** Every cell and point that several pieces hold has exactly one
+owner; every other copy is a ghost. `data.ghosts` is a
+`tack.dataset.Ghosts` (or `None`), kept apart from the fields as the
+geometry is: a `u8` per cell (`cells`) and per point (`points`), either of
+which may be `None`, holding VTK's `vtkGhostType` bits (`Ghosts.DUPLICATECELL`
+1, `HIDDENCELL` 32, `DUPLICATEPOINT` 1, `HIDDENPOINT` 2, and the rest, carried
+unread). A duplicate is a copy of what another piece owns; hidden is data not
+valid there (an AMR cell a finer level covers, a blanked cell).
+
+- `vtk_to_dataset` takes a `vtkGhostType` array as the marks, not as a field,
+  and `dataset_to_vtk` writes them back; `split` makes them;
+  `data.to_device` moves them. Marks of the wrong length or type are refused
+  when they are put in.
+- `statistics` and `entropy` leave out duplicate and hidden cells and points,
+  on one dataset too, so each value counts once across all pieces. An `L2`
+  field goes by its cells' marks; a field on faces or edges, or of order 2,
+  is refused on a dataset with marks until it is decided who owns those.
+- Filters that keep the cells and points (`warp`, `transform`,
+  `cylindrical`, `spherical`, `shrink`, `as_polyhedra`, `as_polygons`, and
+  `probe`'s target) keep the marks. Every other filter's output records that
+  it lost them, and `statistics` and `entropy` refuse it with
+  `NotImplementedError`, rather than count shared cells and points once per
+  piece. Setting the output's `ghosts` clears that.
+- **Not yet:** the other filters do not carry the marks to their outputs. The plan:
+  filters process duplicates and mark what they make from them, as VTK does,
+  with one owner for every shared point, edge and face (the owner of an
+  edge or face being the owner of its smallest point, by global id or
+  position); they skip hidden cells; `remove_ghosts` removes ghosts before
+  rendering or writing one file.
+
+```python
+pieces = td.split(td.wavelet(20), 8)                    # 8 image-data pieces
+for piece in pieces:
+    piece.fields["RTData_cells"] = td.project(piece, "RTData", td.Constant(piece))
+s = td.statistics(pieces, "RTData_cells")               # the whole grid's
+```
+
+`packages/tack-vis/examples/44_partitioned_data.py` runs all of it: pieces,
+their ghost marks, work in a loop, reductions checked against the whole,
+pieces spread over several GPUs where there are, and a `.vtpd` file for
+ParaView.
+
+**Next** (the partitioned-data proposal's later phases): filters that carry
+ghost marks; global ids; ghost cells generated in one process; then MPI.
+
 ## Kernels
 
 ```python
@@ -665,8 +747,9 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `tetrahedralize(data)` | 3D cells as tetrahedra by Viskores' tables (hexahedron or voxel 5, wedge 3, pyramid 2), one wedge tetrahedron turned the right way out |
 | `triangulate(data)` | 2D cells as triangles: quads and pixels in two, polygons in fans |
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
-| `statistics(data, f)` | a `Statistics` named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
-| `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as `numpy.histogram` does) |
+| `statistics(data, f)` | a `Statistics` named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis; of a `PartitionedDataSet` too (see *Partitioned datasets*) |
+| `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as `numpy.histogram` does); of a `PartitionedDataSet` too |
+| `split(data, pieces)` | a structured grid cut into a `PartitionedDataSet` (see *Partitioned datasets*) |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 
@@ -763,6 +846,7 @@ for VTK's `vtkStreamTracer` on 8 threads.
 |---|---|
 | `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
+| (both) | a `vtkPartitionedDataSet` and a `PartitionedDataSet` convert piece by piece (null pieces skipped); a `vtkPartitionedDataSetCollection` and a `dict` of names to `PartitionedDataSet`s convert by `vtkCompositeDataSet.NAME()` (`"block<i>"` without one, `"<name>#<i>"` for a name taken) |
 | `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |
 | `tack.interop.mfem.mfem_field(data, mesh, gf, dtype=tack.f32)` | one grid function: H1 orders 1 and 2, L2 orders 0 and 1, scalars and vectors |
 
