@@ -113,6 +113,26 @@ def cuCtxPopCurrent():
 def cuCtxDestroy(ctx):
     contexts.pop(ctx, None)
     return OK
+primaries = {}          # device -> [handle, references]
+def cuDevicePrimaryCtxRetain(dev):
+    if dev not in primaries:
+        ctx = next(_ids)
+        contexts[ctx] = dev
+        primaries[dev] = [ctx, 0]
+    primaries[dev][1] += 1
+    return OK, primaries[dev][0]
+def cuDevicePrimaryCtxRelease(dev):
+    primaries[dev][1] -= 1
+    if primaries[dev][1] == 0:
+        contexts.pop(primaries.pop(dev)[0], None)
+    return (OK,)
+def cuCtxSetCurrent(ctx):
+    stack = _stack()
+    if stack:
+        stack[-1] = ctx
+    else:
+        stack.append(ctx)
+    return (OK,)
 
 
 def cuStreamCreate(flags):
@@ -506,6 +526,40 @@ check("framework's context after", fake.current() == foreign)
 check("every call in its own context: " + repr(fake.wrong), not fake.wrong)
 '''
 
+_CUDA_SHARES_PRIMARY = '''
+import cuda.bindings.driver as fake
+from tack.runtime import cuda_backend
+
+# Tack first: it retains device 0's primary context and leaves it current.
+dev = tack.device("cuda")
+token = dev._backend._token
+check("the primary context", token.primary and token.handle == fake.primaries[0][0])
+check("current", fake.current() == token.handle)
+x = tack.array(np.arange(4, dtype=np.float32), device=dev)
+# A library on the CUDA runtime (PyTorch, CuPy, Warp) then makes the primary
+# context current and leaves it so: the same context, so Tack's work goes on.
+err, theirs = fake.cuDevicePrimaryCtxRetain(0)
+fake.cuCtxSetCurrent(theirs)
+check("theirs is Tack's", theirs == token.handle)
+backend = recording(dev)
+out = tack.zeros((4,), device=dev)
+scale(x, out, 2.0)
+check("Tack launches after them, in the shared context", backend.compiled[0].launches == [theirs])
+out.fill(2.0)
+tack.copyto(x, np.ones(4, np.float32))
+check("and fills, copies and reads", out.numpy().tolist() == [2.0] * 4
+      and x.numpy().tolist() == [1.0] * 4)
+check("one context switches nothing", not cuda_backend._switching)
+check("every call in its own context: " + repr(fake.wrong), not fake.wrong)
+# Tack lets go of its reference (its last user going), not destroying the
+# context: theirs keeps it alive.
+del x, out
+tack.sync()
+dev._backend.__del__()
+check("released, not destroyed", not token.alive and fake.primaries[0][1] == 1
+      and theirs in fake.contexts)
+'''
+
 _CUDA_SECOND_ONLY = '''
 import cuda.bindings.driver as fake
 from tack.runtime import cuda_backend
@@ -595,8 +649,10 @@ def _run(fake, checks, tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("checks", [_CUDA_CHECKS, _CUDA_ADOPTS, _CUDA_SECOND_ONLY],
-                         ids=["two-devices", "adopts-a-framework-context", "second-only"])
+@pytest.mark.parametrize("checks", [_CUDA_CHECKS, _CUDA_ADOPTS, _CUDA_SECOND_ONLY,
+                                    _CUDA_SHARES_PRIMARY],
+                         ids=["two-devices", "adopts-a-framework-context", "second-only",
+                              "shares-the-primary-context"])
 def test_cuda_works_in_each_devices_context(checks, tmp_path):
     _run(_FAKE_CUDA, checks, tmp_path)
 

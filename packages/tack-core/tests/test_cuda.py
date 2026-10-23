@@ -669,3 +669,37 @@ def test_device_memory_imported_with_the_cpu_as_default_stays_on_its_device():
     assert wrapped.device == tack.device("cuda")
     assert int(wrapped._buffer.device_ptr) == int(g._buffer.device_ptr)
     assert np.array_equal(wrapped.numpy(), np.arange(4, dtype=np.float32))
+
+
+def test_the_context_is_the_devices_primary_context():
+    """Tack retains the device's primary context, which the CUDA runtime and the
+    libraries on it (PyTorch, CuPy, Warp) use, so one of them making it current
+    leaves Tack's work in place: with a context of its own, Tack's next launch
+    after Warp made the primary context current failed with
+    CUDA_ERROR_INVALID_HANDLE."""
+    from cuda.bindings import driver
+
+    backend = tack.get_default_device()._backend
+    token = backend._token
+    err, dev = driver.cuDeviceGet(backend.ordinal)
+    assert err == driver.CUresult.CUDA_SUCCESS
+    err, primary = driver.cuDevicePrimaryCtxRetain(dev)
+    assert err == driver.CUresult.CUDA_SUCCESS
+    try:
+        if token.owned:                           # not an embedding application's
+            assert token.primary and int(token.handle) == int(primary)
+        # What a runtime library does: make the primary context current.
+        (err,) = driver.cuCtxSetCurrent(primary)
+        assert err == driver.CUresult.CUDA_SUCCESS
+        x = tack.array(np.arange(8, dtype=np.float32))
+        out = tack.zeros((8,))
+        _scale_for_primary(x, out, 2.0)
+        np.testing.assert_array_equal(out.numpy(), np.arange(8) * 2.0)
+    finally:
+        driver.cuDevicePrimaryCtxRelease(dev)
+
+
+@tack.kernel
+def _scale_for_primary(x, out, a):
+    for i in range(x.shape[0]):
+        out[i] = x[i] * a

@@ -125,6 +125,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- CUDA: Tack works in the device's primary context (retained, and released
+  when its last backend goes) instead of creating its own. PyTorch, CuPy and
+  Warp use the primary context, so a launch of Tack's after one of them made
+  it current no longer fails with `CUDA_ERROR_INVALID_HANDLE`. A context an
+  embedding application made current is still adopted as before.
+
 - `CellLocator.find`, and so `probe`, located a point in the lowest-numbered
   cell within the tolerance (0.1% of a cell's box diagonal), whether or not
   it held the point, and extrapolated there. On a Delaunay mesh of 16k
