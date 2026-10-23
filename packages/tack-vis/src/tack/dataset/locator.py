@@ -177,6 +177,25 @@ def _not_star_shaped(cells, bad):
 
 
 @tack.kernel
+def _not_star_shaped_polygons(cells, bad):
+    # 1 where a triangle of the fan from the cell point turns the other way from
+    # the polygon (its Newell normal), or the polygon has no area: one not
+    # star-shaped from its cell point, whose triangles overlap.
+    for c in cells:
+        p = cells.cell_point(c)
+        normal = p - p
+        for k in range(cells.num_faces(c)):
+            normal += (cells.side_position(c, k, 0) - p).cross(cells.side_position(c, k, 1) - p)
+        total = normal.dot(normal)
+        least = total
+        for k in range(cells.num_faces(c)):
+            v = (cells.side_position(c, k, 0) - p).cross(
+                cells.side_position(c, k, 1) - p).dot(normal)
+            least = min(least, v)
+        bad[cells.entity_id(c)] = 1 if total <= 0.0 or least < -1e-5 * total else 0
+
+
+@tack.kernel
 def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz,
                               ix, iy, iz, nx, ny, nz, tolerance, ncells, write, found, tets,
                               pcs):
@@ -281,20 +300,22 @@ class CellLocator:
 
     @on_inputs_device
     def __init__(self, data, density=1.0):
-        #: Polyhedra, which have no parametric coordinates: points are located in
-        #: their sub-tetrahedra (``find`` says which).
+        #: Cells with no reference element -- polyhedra, polygons, polylines --
+        #: have no parametric coordinates: points are located in a piece of each
+        #: cell's fan (a polyline's segment), which ``find`` says (``tets``).
         self.polyhedral = not getattr(data.topology, "reference_cells", True)
-        if self.polyhedral and data.topology.dimension != 3:
-            raise NotImplementedError("locating points in polygons or polylines is not built "
-                                      "yet")
         self.data = data
         n = data.num_cells
         dtype = data.dtype
         self.lo = tack.empty((n,), tack.vec(3, dtype))
         self.hi = tack.empty((n,), tack.vec(3, dtype))
         if n and self.polyhedral:
-            bad = tack.empty((n,), tack.i32)
-            for_each(_not_star_shaped, data, "cells", bad)
+            bad = tack.zeros((n,), tack.i32)
+            dimension = data.topology.dimension
+            if dimension >= 2:
+                # A polyline needs no fan, so has no such failure.
+                for_each(_not_star_shaped if dimension == 3 else _not_star_shaped_polygons,
+                         data, "cells", bad)
             count = int(bad.numpy().sum())
             if count:
                 raise NotImplementedError(

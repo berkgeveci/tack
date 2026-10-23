@@ -184,8 +184,11 @@ def test_points_outside_every_cell(backend):
     data = _two_hexes_and_a_pyramid()
     out = td.probe(data, [[10.0, 10.0, 10.0], [-1.0, 0.5, 0.5]])
     np.testing.assert_array_equal(out.fields["valid"].values.numpy(), [0, 0])
-    with pytest.raises(NotImplementedError, match="polygons or polylines"):
-        td.CellLocator(td.as_polygons(td.uniform_grid((3, 3, 1))))
+    ring = np.array([[0, 0], [3, 0], [3, 1], [1, 1], [1, 2], [3, 2], [3, 3], [0, 3]], float)
+    notch = td.DataSet(td.PolygonalTopology([0, 8], list(range(8))),
+                       np.c_[ring, np.zeros(8)].astype(np.float32))
+    with pytest.raises(NotImplementedError, match="1 of the 1 cells are not star-shaped"):
+        td.CellLocator(notch)                    # a C: its mean point is in the notch
 
 
 def test_probe_keeps_target_topology_ids_and_quadratic_geometry(backend):
@@ -305,8 +308,16 @@ def _both_ways(data, points):
             for loc in (by_points, by_cells)]
 
 
+def _polyline():
+    points = np.array([[0, 0, 0], [1, 0, 0], [2, 1, 0], [3, 1, 1], [0, 2, 0], [1, 3, 1]],
+                      np.float32)
+    return td.DataSet(td.PolylineTopology([0, 4, 6], [0, 1, 2, 3, 4, 5]), points)
+
+
 def _meshes():
     meshes = {"mixed": _two_hexes_and_a_pyramid(),
+              "polygons": td.as_polygons(td.uniform_grid((5, 4))),
+              "polyline": _polyline(),
               "structured": td.wavelet(4),
               "two tets as polyhedra": td.as_polyhedra(_two_tets())}
     if vtk is not None:
@@ -315,8 +326,9 @@ def _meshes():
     return meshes
 
 
-@pytest.mark.parametrize("name", ["mixed", "structured", "two tets as polyhedra", "hexahedron",
-                                  "tetra", "wedge", "pyramid", "voxel", "wedges as polyhedra"])
+@pytest.mark.parametrize("name", ["mixed", "structured", "two tets as polyhedra", "polygons",
+                                  "polyline", "hexahedron", "tetra", "wedge", "pyramid", "voxel",
+                                  "wedges as polyhedra"])
 def test_searching_from_the_points_finds_what_searching_from_the_cells_does(backend, name):
     """The two searches rank candidates alike -- holding the point first, then the
     smaller id -- so they find the same cells, coordinates and sub-tetrahedra,
@@ -374,3 +386,39 @@ def test_what_by_id_cannot_serve_is_searched_from_the_cells():
         assert locator._search() is None
         found = locator.find([point])
         assert found.cells.numpy()[0] >= 0
+
+
+# ── Polygons and polylines ──────────────────────────────────────────
+
+def test_polygons_hold_what_their_quads_do(backend):
+    """A quad grid as polygons, each fanned into triangles from its points' mean:
+    the same points found (near the plane too) and a linear field exact."""
+    quads = td.uniform_grid((5, 4))
+    x = quads.positions().astype(np.float64)
+    quads.fields["lin"] = td.Field(td.H1(quads), _scalars(_linear(x)))
+    polygons = td.as_polygons(quads)
+    rng = np.random.default_rng(9)
+    points = np.c_[rng.uniform(-0.2, 4.2, (300, 2)), rng.uniform(-1e-4, 1e-4, 300)]
+    ours, theirs = td.probe(polygons, points), td.probe(quads, points)
+    valid = ours.fields["valid"].values.numpy() == 1
+    np.testing.assert_array_equal(valid, theirs.fields["valid"].values.numpy() == 1)
+    assert 100 < valid.sum() < 300
+    projected = np.c_[points[:, :2], np.zeros(len(points))]
+    np.testing.assert_allclose(ours.fields["lin"].values.numpy()[valid],
+                               _linear(projected)[valid], atol=1e-5)
+
+
+def test_a_polyline_is_linear_along_its_segments(backend):
+    """A point is located on the nearest segment within the tolerance, held when its
+    projection falls on it, and point data is linear along the segment."""
+    data = _polyline()
+    data.fields["u"] = td.Field(td.H1(data), _scalars(np.array([0, 1, 3, 6, 10, 20.0])))
+    points = [[0.5, 0, 0], [1.5, 0.5, 0], [2.5, 1, 0.5], [1, 0, 0], [0.5, 2.5, 0.5], [5, 5, 5]]
+    out = td.probe(data, points)
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), [1, 1, 1, 1, 1, 0])
+    np.testing.assert_allclose(out.fields["u"].values.numpy(), [0.5, 2, 4.5, 1, 15, 0],
+                               atol=1e-5)
+    cells, pcs, tets = td.CellLocator(data).find(points)
+    np.testing.assert_array_equal(cells.numpy(), [0, 0, 0, 0, 1, -1])
+    np.testing.assert_array_equal(tets.numpy()[[0, 1, 2, 4]], [0, 1, 2, 0])
+

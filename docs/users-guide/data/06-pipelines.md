@@ -41,8 +41,9 @@ id wins; a cell the query is only within the tolerance of counts only where no
 cell holds it. At a discontinuity that choice can determine which side is
 sampled; it is not an average across the interface.
 
-Probing takes shape-based cells and polyhedra (located in sub-tetrahedra); polygons
-and polylines are not supported yet. A `Values` field on faces is not a
+Probing takes shape-based cells, polyhedra (located in sub-tetrahedra), polygons
+(in the triangles fanning each from its points' mean) and polylines (on their
+segments). A `Values` field on faces is not a
 continuous field that can be sampled arbitrarily through the volume.
 
 ## Integrate a steady velocity field

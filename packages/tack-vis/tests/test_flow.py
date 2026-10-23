@@ -208,9 +208,26 @@ def test_refusals(backend):
         td.advect(data, "s", [[0.5, 0.5, 0.5]], 0.1, 3)
     with pytest.raises(ValueError, match="steps"):
         td.advect(_uniform(), "v", [[1.0, 1.0, 1.0]], 0.1, 0)
-    polygons = _rotation(td.as_polygons(td.uniform_grid((3, 3, 1))))
-    with pytest.raises(NotImplementedError, match="polygons"):
-        td.advect(polygons, "v", [[1.0, 0.5, 0.0]], 0.1, 3)
+    chain = td.DataSet(td.PolylineTopology([0, 3], [0, 1, 2]),
+                       np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], np.float32))
+    chain.fields["v"] = td.Field(td.H1(chain), _vectors(np.tile([1.0, 0.0, 0.0], (3, 1))))
+    with pytest.raises(NotImplementedError, match="not polylines"):
+        td.advect(chain, "v", [[0.5, 0.0, 0.0]], 0.1, 3)
+
+
+def test_advection_over_polygons_is_over_their_quads(backend):
+    """A quad grid as polygons: a particle in its plane moves as on the quads, the
+    velocity linear on each polygon's triangles (exact for this linear field)."""
+    quads = _rotation(td.uniform_grid((5, 5)), center=(2.0, 2.0))
+    v = quads.fields["v"].values.numpy().copy()
+    v[:, 2] = 0.0                                     # stay in the plane
+    quads.fields["v"] = td.Field(td.H1(quads), _vectors(v))
+    polygons = td.as_polygons(quads)
+    seeds = [[3.0, 2.0, 0.0], [2.5, 2.7, 0.0]]
+    ours, theirs = (td.advect(d, "v", seeds, 0.05, 40) for d in (polygons, quads))
+    np.testing.assert_allclose(ours.positions(), theirs.positions(), atol=1e-5)
+    np.testing.assert_array_equal(ours.fields["status"].values.numpy(),
+                                  theirs.fields["status"].values.numpy())
 
 
 # ── Polyhedra ───────────────────────────────────────────────────────

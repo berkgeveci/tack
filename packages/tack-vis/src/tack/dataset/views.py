@@ -492,6 +492,106 @@ class _PolyhedralLocation:
         return tet, pc, inside
 
 
+class _PolygonLocation:
+    """Where a point is in a polygon, a 2D cell with no parametric coordinates: in
+    which of the triangles fanning it from its cell point (the mean of its
+    points), and where. Triangle ``t = 2 * k`` is (cell point, ``a``, ``b``) for
+    the polygon's edge ``k``: numbered so that ``tet_value`` reads it as the
+    sub-tetrahedron (cell point, face point, ``a``, ``b``) of edge ``k`` with
+    the face point's weight 0. ``pc`` is ``(0, w_a, w_b)``, the weights of the
+    point's projection onto the triangle's plane, extrapolated outside it, so a
+    linear field stays exact. As for a shape's surface cell, the point must be
+    within ``slack`` of the triangle, and is held when its projection falls in
+    it."""
+
+    @tack.func
+    def cell_point(self, c):
+        """The mean of the cell's distinct points."""
+        n = self.num_points(c)
+        x = self.point_position(self.point_id(c, 0))
+        for j in range(1, n):
+            x += self.point_position(self.point_id(c, j))
+        return x / n
+
+    @tack.func
+    def locate(self, c, x, slack):
+        """``(t, pc, inside)``, as ``_PolyhedralLocation.locate``."""
+        t, pc, inside = self.locate_from(c, self.cell_point(c), x, slack)
+        return t, pc, inside
+
+    @tack.func
+    def locate_from(self, c, p, x, slack):
+        """``locate``, given the cell point ``p``: a triangle holding the point's
+        projection, within ``slack``, and failing that the nearest within it."""
+        d = x - p
+        tet = -1
+        pc = tack.vec3(0.0, 0.0, 0.0)
+        held = 0
+        best = slack * slack
+        for k in range(self.num_faces(c)):
+            a = self.side_position(c, k, 0) - p
+            b = self.side_position(c, k, 1) - p
+            n = a.cross(b)
+            nn = n.dot(n)
+            if nn > 0.0:
+                wa = d.cross(b).dot(n) / nn
+                wb = a.cross(d).dot(n) / nn
+                inside = 1 if wa >= -1e-5 and wb >= -1e-5 and wa + wb <= 1.0 + 1e-5 else 0
+                r = _closest_on_triangle(d, a - a, a, b)
+                e = r[1] * a + r[2] * b - d
+                gap = e.dot(e)
+                if gap <= slack * slack and (inside > held or (inside == held and gap < best)):
+                    held = inside
+                    best = gap
+                    tet = 2 * k
+                    pc = tack.vec3(0.0, wa, wb)
+        return tet, pc, held
+
+
+class _PolylineLocation:
+    """Where a point is on a polyline: on which segment, ``t`` (from the chain's
+    point ``t`` to ``t + 1``), and where, ``pc = (0, 1 - s, s)`` with ``s`` the
+    projection's place along it, extrapolated past its ends so a linear field
+    stays exact. The point must be within ``slack`` of the segment, and is held
+    when its projection falls on it."""
+
+    @tack.func
+    def cell_point(self, c):
+        """The mean of the cell's distinct points."""
+        n = self.num_points(c)
+        x = self.point_position(self.point_id(c, 0))
+        for j in range(1, n):
+            x += self.point_position(self.point_id(c, j))
+        return x / n
+
+    @tack.func
+    def locate(self, c, x, slack):
+        t, pc, inside = self.locate_from(c, self.cell_point(c), x, slack)
+        return t, pc, inside
+
+    @tack.func
+    def locate_from(self, c, p, x, slack):
+        tet = -1
+        pc = tack.vec3(0.0, 0.0, 0.0)
+        held = 0
+        best = slack * slack
+        for j in range(self.line_num_points(c) - 1):
+            a = self.point_position(self.line_point_id(c, j))
+            ab = self.point_position(self.line_point_id(c, j + 1)) - a
+            length = ab.dot(ab)
+            if length > 0.0:
+                s = (x - a).dot(ab) / length
+                e = a + ab * min(max(s, 0.0), 1.0) - x
+                gap = e.dot(e)
+                inside = 1 if s >= -1e-5 and s <= 1.0 + 1e-5 else 0
+                if gap <= slack * slack and (inside > held or (inside == held and gap < best)):
+                    held = inside
+                    best = gap
+                    tet = j
+                    pc = tack.vec3(0.0, 1.0 - s, s)
+        return tet, pc, held
+
+
 class _SelectedPolyhedra(_PolyhedralCells):
     """Some of a polyhedral topology's cells: a subgroup's, ``num_cells`` of the
     ``selected`` cell ids from ``first``. No rows to gather -- a polyhedral cell is
@@ -1115,6 +1215,21 @@ class _PolyhedralPointField:
         return tack.vec3(self.face_point_value(c, k) - u0,
                          self.get(self.side_point_id(c, k, j)) - u0,
                          self.get(self.side_point_id(c, k, nxt)) - u0)
+
+
+class _PolylinePointField:
+    """Point data (H1, order 1) on a polyline: linear along each segment
+    (``_PolylineLocation``)."""
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.point_value(c, j)
+
+    @tack.func
+    def tet_value(self, c, t, pc):
+        """The value at ``pc`` on segment ``t``."""
+        return (pc[1] * self.get(self.line_point_id(c, t))
+                + pc[2] * self.get(self.line_point_id(c, t + 1)))
 
 
 class _PolyhedralCellField(_ConstantField):

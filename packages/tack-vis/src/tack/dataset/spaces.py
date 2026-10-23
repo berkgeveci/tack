@@ -254,8 +254,10 @@ class H1(Space):
 
     def mixin_for(self, key, shape=None):
         # Polyhedra evaluate in their sub-tetrahedra.
-        if shape is shapes.Polyhedron and self.order == 1:
+        if shape in (shapes.Polyhedron, shapes.Polygon) and self.order == 1:
             return views._PolyhedralPointField
+        if shape is shapes.PolyLine and self.order == 1:
+            return views._PolylinePointField
         return self.mixin
 
     def extra_mixins(self, group):
@@ -381,7 +383,8 @@ class Constant(Space):
     interpolated = True
 
     def mixin_for(self, key, shape=None):
-        return views._PolyhedralCellField if shape is shapes.Polyhedron else self.mixin
+        no_reference = (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine)
+        return views._PolyhedralCellField if shape in no_reference else self.mixin
 
     @property
     def size(self):
