@@ -766,16 +766,22 @@ def _resolve_method(func_obj, resolved_name, node, extra, specializer=None):
     funcdef.name = resolved_name
     ast.fix_missing_locations(funcdef)
 
-    return _ResolvedFunc(resolved_name, funcdef, func_obj.func)
+    return _ResolvedFunc(resolved_name, funcdef, func_obj.func, {'self': node})
 
 
 class _ResolvedFunc(Func):
-    """A method body with template attributes resolved and bindings retained."""
+    """A method body with template attributes resolved and bindings retained.
 
-    def __init__(self, name, funcdef, python_func):
+    ``roots`` are the names bound to template nodes when it was resolved (a
+    method's ``self``, a copy's bound parameters): a call it could not resolve
+    yet, because its callee hangs off a parameter still to be bound, is
+    resolved in a later copy, which binds these too."""
+
+    def __init__(self, name, funcdef, python_func, roots=None):
         self.name = name
         self._funcdef = funcdef
         self.func = python_func
+        self.roots = dict(roots or {})
 
 
 def _template_argument(expr, roots):
@@ -827,14 +833,23 @@ class _Specializer:
                 bound[position] = node
         if not bound:
             return call
-        callee_def, callee_func = self._callee(call, funcdef, python_func)
+        func = call.func
+        while isinstance(func, ast.Attribute):
+            func = func.value
+        if (isinstance(func, ast.Name) and not getattr(func, '_tack_template_call', False)
+                and func.id not in roots
+                and func.id in {a.arg for a in funcdef.args.args}):
+            # The callee hangs off a parameter still to be bound (``mesh.f(self)``
+            # in a method given ``mesh``): the copy that binds it resolves this.
+            return call
+        callee_def, callee_func, inherited = self._callee(call, funcdef, python_func)
         params = [a.arg for a in callee_def.args.args]
         if len(call.args) > len(params):
             raise TypeError(f"'{callee_def.name}' takes {len(params)} arguments, "
                             f"given {len(call.args)}")
         key = (id(callee_def), tuple(sorted((k, id(n)) for k, n in bound.items())))
         if key not in self.copies:
-            self._copy(key, callee_def, callee_func, bound, params)
+            self._copy(key, callee_def, callee_func, bound, params, inherited)
         name, added = self.copies[key]
         args = [a for k, a in enumerate(call.args) if k not in bound]
         args += [ast.Name(id=n, ctx=ast.Load()) for n in added]
@@ -847,7 +862,8 @@ class _Specializer:
         func = call.func
         if getattr(func, '_tack_template_call', False):
             resolved = self.resolved_funcs[func.id]
-            return resolved._funcdef, getattr(resolved, 'func', None)
+            return (resolved._funcdef, getattr(resolved, 'func', None),
+                    getattr(resolved, 'roots', {}))
         from tack.lang.call_bindings import CallBindings
 
         bindings = CallBindings(funcdef, python_func=python_func,
@@ -856,9 +872,9 @@ class _Specializer:
         if callee is None:
             raise TypeError(f"'{ast.unparse(func)}' is given a device-class object, but is "
                             "not a @tack.func or a template's method")
-        return callee._funcdef, callee.func
+        return callee._funcdef, callee.func, {}
 
-    def _copy(self, key, callee_def, callee_func, bound, params):
+    def _copy(self, key, callee_def, callee_func, bound, params, inherited=None):
         """Make the copy, recorded under ``key`` as ``(name, added)``: its synthetic
         name and the parameters it gained."""
         copied = copy.deepcopy(callee_def)
@@ -880,11 +896,13 @@ class _Specializer:
         names = {n.id for n in ast.walk(copied) if isinstance(n, ast.Name)}
         for param, node in bound_names.items():
             _desugar_indexing(copied, param, node, names, lazy=True)
-        resolver = _BoundResolver(bound_names, self, copied, callee_func)
+        # The callee's own roots (a method's self) stay bound beside the new ones.
+        roots = {**(inherited or {}), **bound_names}
+        resolver = _BoundResolver(roots, self, copied, callee_func)
         copied.body = [resolver.visit(stmt) for stmt in copied.body]
         copied.name = name
         ast.fix_missing_locations(copied)
-        self.resolved_funcs[name] = _ResolvedFunc(name, copied, callee_func)
+        self.resolved_funcs[name] = _ResolvedFunc(name, copied, callee_func, roots)
 
 
 def _refuse_kept(node, roots, where):

@@ -91,6 +91,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   polyhedra. `cells, pcs = locator.find(p)` becomes
   `cells, pcs, _ = locator.find(p)`, or reads `.cells` and `.pcs`.
 
+- `CellLocator.find` and `probe` search from the points where cells can be read
+  by id (`tack.dataset.by_id`: an order-1 geometry over the linear shapes,
+  structured grids, polyhedra): one launch over the points instead of two
+  passes over the cells and two groupings, and `probe` reads point and cell
+  data by cell id, one launch per field. Advection shares the same search
+  and evaluation. Probing 100k points warm: 13.5 → 5.8 ms (10k cells) and
+  30 → 16 ms (1M) on an M1 Max's CPU, 15.3 → 8.3 ms and 23.5 → 6–8 ms on its
+  GPU. The cell-side search remains for what `by_id` cannot serve, and for a
+  fresh locator's first query of few points in many cells, which it answers
+  without building the cell bins; both give the same answer.
+
 ### Fixed
 
 - `CellLocator.find`, and so `probe`, located a point in the lowest-numbered

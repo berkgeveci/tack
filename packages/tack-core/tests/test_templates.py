@@ -521,6 +521,45 @@ def test_device_functions_and_methods_take_templates(backend):
     np.testing.assert_allclose(out.numpy(), 2 + x)
 
 
+@tack.device_class
+class _Scaler:
+    def __init__(self, factor):
+        self.factor = factor
+
+    @tack.func
+    def scaled(self, value_of, i):
+        return value_of.values_at(i) * self.factor
+
+
+@tack.device_class
+class _Reader:
+    def __init__(self, x):
+        self.x = x
+
+    @tack.func
+    def values_at(self, i):
+        return self.x[i]
+
+    @tack.func
+    def through(self, scaler, i):
+        # scaler is a parameter here, bound only when this method is copied for
+        # a call: its method, given self, is resolved in that copy.
+        return scaler.scaled(self, i) + 1.0
+
+
+@tack.kernel
+def _method_handing_self_to_its_argument(scaler, reader, out):
+    for i in range(out.shape[0]):
+        out[i] = reader.through(scaler, i)
+
+
+def test_a_method_hands_self_to_a_template_it_is_given(backend):
+    x = np.arange(4, dtype=np.float32)
+    out = tack.zeros((4,), tack.f32)
+    _method_handing_self_to_its_argument(_Scaler(3.0), _Reader(tack.array(x)), out)
+    np.testing.assert_allclose(out.numpy(), x * 3 + 1)
+
+
 def _not_a_device_function(source, i):
     return 0.0
 
