@@ -375,7 +375,8 @@ reference element.
 6. **Output triangulation:** polygons by default, triangulated on request
    -- centroid fan or capped ear clip?
 7. **Interior interpolation of point data:** sub-tetrahedra, or none until
-   an algorithm needs it?
+   an algorithm needs it? Answered in section 13: sub-tetrahedra, built
+   with gradients, centers, probe and advection.
 8. **Bucket caps:** fixed (32/64/128/256), or derived from the mesh?
 
 ## 8. A phased path
@@ -672,3 +673,141 @@ the file or VTK's reader is at fault is worth a look in VTK.
   `edgeSignOnCell` map onto `from_cell_faces` or the constructor
   directly, when there is data;
 - carrying edge values through threshold.
+
+## 13. Interpolation inside a cell, as built
+
+Every algorithm that needs a value or a derivative inside a cell asked a
+reference element for shape functions at parametric coordinates, so on
+polyhedra it refused: `gradients`, `cell_centers`, `values_at_centers`,
+the `CellLocator` behind `probe`, and advection. They run now (question 7),
+except for `traces` and projections into spaces with a basis, which still
+refuse.
+
+**What VTK does.** `vtkPolyhedron` interpolates by mean value coordinates:
+Ju, Schaefer and Warren's for triangle faces, Langer, Belyaev and Seidel's
+spherical barycentric coordinates for polygonal ones. They are smooth
+inside, exact for linear fields and defined for non-convex cells. Its
+"parametric coordinates" are the point's place in the cell's bounding box,
+and `Derivatives` takes finite differences of the interpolant in them.
+
+**The interpolant: linear on sub-tetrahedra.**
+- Each face is fanned from its *face point*, the mean of its points: the
+  apex `face_centers` fans from (section 10), so the triangles are those.
+- The faces' triangles are fanned from the *cell point*, the mean of the
+  cell's distinct points. Sub-tetrahedron *t* is (cell point, face point,
+  *a*, *b*) for edge *ab* of a face, numbered face by face and edge by edge
+  as `side_point_id` walks them.
+- The two extra points take the means of the values as well as of the
+  positions. The weights match, so a linear field is reproduced exactly.
+- A face is stored once and both its cells fan it from the same point, so
+  the field is continuous across it, non-planar faces included.
+- The cell point is not the volume centroid, which has no such weights.
+  `cell_centers` and `values_at_centers` give the cell point and the
+  points' mean value. They match the shape path only where its parametric
+  center maps to the corners' mean: tetrahedra and parallelepipeds, not
+  pyramids.
+
+**Gradients without the interpolant.** A cell's gradient is Green–Gauss
+over the fanned faces, `(1/V) Σ A_t ū_t`. By the divergence theorem that
+is the volume-weighted mean of the sub-tetrahedra's gradients, and it is
+exact for linear fields. On a parallelepiped it equals the trilinear
+gradient at the center. Each face is walked once.
+- With *F* its points' mean, triangle *j*'s doubled area vector is
+  `p_j × p_j+1 + (p_j+1 − p_j) × F`.
+- So the face's share is `S + W × F + u_F N`, from sums that do not need
+  *F*: `S = Σ (p_j × p_j+1)(u_j + u_j+1)`, `W = Σ (p_j+1 − p_j)(u_j + u_j+1)`,
+  and `N = Σ p_j × p_j+1`, the Newell vector.
+- The face's share of 6V is `F · N`.
+
+At points, the cells' gradients are averaged, as on shapes. Polygons and
+polylines get zero, as lower-dimensional cells do on shapes.
+
+**Locating, and the view.** The proposal (in the vault) had field views
+evaluate at world positions, `value_at(c, x)`. That cannot work: a field
+view holds values, not positions, and a device function can call methods
+only on its own view, not on a view passed to it. So, as on shapes, the
+cell view locates and the field view evaluates:
+
+- `_PolyhedralLocation`, on polyhedral domain views:
+  - `locate(c, x, slack)` gives `(t, pc)`: the sub-tetrahedron and the
+    point's coordinates in it. `pc` holds the weights of the face point,
+    *a* and *b*; the cell point's is what is left, a reference tetrahedron
+    with the cell point at its origin.
+  - The coordinates are triple-product ratios (Cramer's rule). The search
+    stops at the first sub-tetrahedron holding the point.
+  - A point outside every sub-tetrahedron but within `slack` of a face
+    triangle is extrapolated in that triangle's sub-tetrahedron, as shape
+    coordinates are extrapolated. Clamping to the triangle made a linear
+    field wrong by 6e-4.
+  - `locate_from` takes the cell point, for a caller testing many points
+    against one cell. `cell_point`, `face_point` and `tet_jacobian` are
+    there too.
+- `_PolyhedralPointField` (H1, order 1) and `_PolyhedralCellField`
+  (Constant):
+  - `tet_value(c, t, pc)` and `tet_parametric_gradient(c, t)`, from values
+    alone. The gradient at a point is `tet_jacobian(c, t)^-T` times the
+    latter.
+  - `Space.mixin_for(key, shape)` picks them by shape. `_H1Field` could
+    never be used on polyhedra: every method of a view is resolved, and its
+    `value` names shape functions a `Polyhedron` lacks.
+- `CellLocator.find` returns `(cells, tets, pcs)` on polyhedral data;
+  `probe` evaluates with `tet_value`.
+- The advection kernel's `_PolyhedralMesh` is a device class made of the
+  same mixins, with the positions and point velocities it reads, so a
+  particle is located exactly as `find` locates a point.
+
+**Cells that are not star-shaped from their cell point** have inverted
+sub-tetrahedra, which overlap the others. `CellLocator` refuses a dataset
+with one, or with a cell of no volume (`_not_star_shaped`), rather than
+find points a cell does not hold. Locating in such cells would need a
+solid-angle test, which is not built.
+
+**Tests, and why not VTK.** The proposal planned exact agreement with
+`vtkProbeFilter` and `vtkGradientFilter` on linear fields. On VTK 9.7.1
+neither works on polyhedra:
+- `vtkPolyhedron::Derivatives` is wrong in each component whose parametric
+  coordinate is 1. Its forward differences likely step out of the cell. So
+  `vtkGradientFilter`'s point gradients are wrong at every corner of a box
+  but the first.
+- `vtkPolyhedron::EvaluatePosition` reports points outside a convex cell as
+  inside, while its own `IsInside` disagrees. So `vtkProbeFilter` accepted
+  55 of 800 points outside Voronoi columns, and got a linear field wrong by
+  up to 0.18 at 83 of the rest.
+- `InterpolateFunctions` takes a world position, unlike every other cell's,
+  which takes parametric coordinates.
+
+The tests use other references:
+- `Derivatives` at each cell's parametric center, where it is exact;
+- convex-hull membership of the Voronoi cells, which are convex;
+- the shape path on the same cells: the same probe points (all of them
+  where faces are planar), and the same paths for advection, leaving the
+  mesh included;
+- exact RK4 through a linear field on every shape as polyhedra and on
+  Voronoi cells;
+- the refusal of a C-shaped prism, whose cell point lies in its notch.
+
+**Cost.** `benchmarks/polyhedra_compare.py`: 64³ moved hexahedra against
+the same cells as polyhedra, warm medians on an M1 Max. Polyhedra take,
+relative to hexahedra:
+
+| algorithm | CPU | Metal |
+|---|---:|---:|
+| gradients (cells) | 4.9× | 2.6× |
+| `cell_centers`, `values_at_centers` | 0.9–1.1× | 1.3–1.4× |
+| `probe` | 1.3× | 1.3× |
+| `advect` | 1.4× | 1.7× |
+| `streamlines` | 1.3× | 1.6× |
+
+The cell gradient walks 6 faces of 4 points, each point reached through
+cell → face → face offsets → face points; a hexahedron reads 8 ids and
+inverts one Jacobian. Resolving each face once (a start and a step into
+`face_points`) measured no change on either backend; the compilers already
+share those loads.
+
+**Not yet:**
+
+- `traces` and projections into spaces with a basis on polyhedra;
+- locating in polygons and polylines;
+- cells not star-shaped from their cell point (a solid-angle test);
+- one return shape for `CellLocator.find` on both paths.
+
