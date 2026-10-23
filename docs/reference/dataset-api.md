@@ -411,8 +411,8 @@ its length; `pds.partitions` is the tuple of pieces.
   Pieces with no values are skipped. Each piece counts only what it owns
   (below), so where every shared cell and point has one owner, the result
   is the whole's.
-- **`split(data, pieces)`** cuts a structured grid by index ranges, x
-  fastest. `pieces` is a count, factored over the axes (each prime factor,
+- **`split(data, pieces, ghost_layers=0)`** cuts a structured grid by index
+  ranges, x fastest. `pieces` is a count, factored over the axes (each prime factor,
   largest first, cuts the axis whose pieces have most cells), or a tuple of
   counts, one per axis of the topology. Each axis's cells are shared out as
   evenly as they go, at least one per piece, and neighbouring pieces share
@@ -420,10 +420,14 @@ its length; `pds.partitions` is the tuple of pieces.
   coordinates with their origin moved, rectilinear axes cut, explicit
   points taken) and carries its block of every point, cell and `L2` field
   and every set, as filters carry them; fields on faces or edges are left
-  behind. A point a piece shares with a piece before it is that piece's, and
-  marked a duplicate in this one; the input's own ghost marks come along.
-  An unstructured mesh is partitioned by VTK
-  (`vtkRedistributeDataSetFilter`) or by its host application.
+  behind. `ghost_layers` adds that many layers of each neighbour's cells
+  around a piece, as far as the grid goes, marked duplicates, as VTK's
+  `vtkGhostCellsGenerator` adds them; filters need one (below). A point of
+  several pieces' own cells is the first such piece's, x fastest, and a
+  duplicate in the others, as are the points of the ghost layers; the
+  input's own ghost marks come along. An unstructured mesh is partitioned by
+  VTK (`vtkRedistributeDataSetFilter`, then `vtkGhostCellsGenerator` for
+  ghost cells) or by its host application.
 
 **Ghost marks.** Every cell and point that several pieces hold has exactly one
 owner; every other copy is a ghost. `data.ghosts` is a
@@ -442,33 +446,63 @@ valid there (an AMR cell a finer level covers, a blanked cell).
   on one dataset too, so each value counts once across all pieces. An `L2`
   field goes by its cells' marks; a field on faces or edges, or of order 2,
   is refused on a dataset with marks until it is decided who owns those.
-- Filters that keep the cells and points (`warp`, `transform`,
-  `cylindrical`, `spherical`, `shrink`, `as_polyhedra`, `as_polygons`, and
-  `probe`'s target) keep the marks. Every other filter's output records that
-  it lost them, and `statistics` and `entropy` refuse it with
-  `NotImplementedError`, rather than count shared cells and points once per
-  piece. Setting the output's `ghosts` clears that.
-- **Not yet:** the other filters do not carry the marks to their outputs. The plan:
-  filters process duplicates and mark what they make from them, as VTK does,
-  with one owner for every shared point, edge and face (the owner of an
-  edge or face being the owner of its smallest point, by global id or
-  position); they skip hidden cells; `remove_ghosts` removes ghosts before
-  rendering or writing one file.
+- **Filters process the ghost cells and carry the marks**, as VTK does:
+  what a piece makes near its edge is what the next step there needs (point
+  normals, smoothing, a second filter that looks at neighbours). What a
+  filter makes takes the owner of what it came from:
+  - an output cell (a contour's triangles, a clip's pieces, a kept cell)
+    its source cell's;
+  - a kept point its own; a point on an input edge (a contour's, a clip's)
+    the edge's; a point inside a cell (a clip's centroids) the cell's;
+  - a surface face its cell's; a face two cells share, an edge, and a cell
+    with no source cell (a vertex) the owner of its smallest point,
+    smallest by position, so every piece holding it decides alike.
+
+  So over pieces with **at least one ghost layer**, the owned part of a
+  filter's output is the whole's output, cell for cell and point for point,
+  and `statistics` and `entropy` of the outputs are the whole's. Filters
+  that keep the cells and points (`warp`, `transform`, `cylindrical`,
+  `spherical`, `shrink`, `as_polyhedra`, `as_polygons`, `probe`'s target)
+  keep the marks as they are.
+- **Pieces without ghost cells** cannot tell what their neighbours make or
+  keep from the cells, faces and edges they share: a contour point on a
+  shared edge, a surface face on the cut, a shared point only a neighbour's
+  kept cells use. Such a filter's output records that it lost the marks, and
+  `statistics` and `entropy` refuse it with `NotImplementedError` naming the
+  cause, rather than count shared values wrongly. Points chosen by their own
+  values (`threshold_points`, `extract_points`, `mask_points`) keep them.
+  Setting an output's `ghosts` clears the record.
+- **Hidden cells are never processed:** filters that make new cells or
+  points (`contour`, `slice`, `clip`, `threshold`, `extract_cells`,
+  `extract_geometry`, `mask`, `extract_surface`, `extract_edges`,
+  `triangulate`, `tetrahedralize`) and the source of `probe`, `advect` and
+  `streamlines` leave them out, as if they were not there. Faces or edges
+  chosen by id, and a reused `CellLocator`, are refused on data with hidden
+  cells. Outputs on the same cells keep their values there, marked.
+- **`remove_ghosts(data)`** takes out the duplicate and hidden cells and the
+  points no remaining cell uses, as VTK's `vtkRemoveGhosts`: the last step
+  before rendering, writing one file, or code that does not know ghost
+  marks. The points kept keep their marks, and a point the piece owns stays
+  even when only ghost cells used it, so reductions over the result are
+  unchanged. A structured piece whose remaining cells are a block stays a
+  structured grid.
 
 ```python
-pieces = td.split(td.wavelet(20), 8)                    # 8 image-data pieces
+pieces = td.split(td.wavelet(20), 8, ghost_layers=1)    # 8 image-data pieces
 for piece in pieces:
     piece.fields["RTData_cells"] = td.project(piece, "RTData", td.Constant(piece))
 s = td.statistics(pieces, "RTData_cells")               # the whole grid's
+iso = td.PartitionedDataSet(td.contour(piece, "RTData", 160.0) for piece in pieces)
+s = td.statistics(iso, "RTData")                        # the whole grid's isosurface's
 ```
 
-`packages/tack-vis/examples/44_partitioned_data.py` runs all of it: pieces,
-their ghost marks, work in a loop, reductions checked against the whole,
-pieces spread over several GPUs where there are, and a `.vtpd` file for
-ParaView.
+`packages/tack-vis/examples/44_partitioned_data.py` runs all of it: pieces
+with ghost layers, their marks, work in a loop, reductions of the grid and
+of the pieces' isosurfaces checked against the whole, pieces spread over
+several GPUs where there are, and `.vtpd` files for ParaView.
 
-**Next** (the partitioned-data proposal's later phases): filters that carry
-ghost marks; global ids; ghost cells generated in one process; then MPI.
+**Next** (the partitioned-data proposal's later phases): global ids; ghost
+cells generated in one process; then MPI.
 
 ## Kernels
 
@@ -780,7 +814,8 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
 | `statistics(data, f)` | a `Statistics` named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis; of a `PartitionedDataSet` too (see *Partitioned datasets*) |
 | `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as `numpy.histogram` does); of a `PartitionedDataSet` too |
-| `split(data, pieces)` | a structured grid cut into a `PartitionedDataSet` (see *Partitioned datasets*) |
+| `split(data, pieces, ghost_layers=0)` | a structured grid cut into a `PartitionedDataSet`, with ghost layers (see *Partitioned datasets*) |
+| `remove_ghosts(data)` | `data` without its duplicate and hidden cells, keeping the points it owns (see *Partitioned datasets*) |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 

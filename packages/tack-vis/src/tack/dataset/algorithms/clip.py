@@ -103,7 +103,7 @@ def _clip_counts(cells, values, value, invert, data, cases, remap, counts):
 @tack.kernel
 def _clip_emit(cells, values, value, invert, data, cases, edges, remap, whole_type,
                whole_order, starts, types, offsets, connectivity, sources, keys, slots,
-               centroid_offsets):
+               centroid_offsets, centroid_cells):
     for c in cells:
         e = cells.entity_id(c)
         full = (1 << cells.NUM_POINTS) - 1
@@ -139,6 +139,7 @@ def _clip_emit(cells, values, value, invert, data, cases, edges, remap, whole_ty
                 at += 2
                 if kind == 0:
                     centroid_offsets[centroid] = member
+                    centroid_cells[centroid] = e
                     for k in range(count):
                         entry = data[at + k]
                         pa = 0
@@ -233,6 +234,9 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     corners, the crossings on cut edges (merged across cells) and centroid
     points; point data is interpolated onto them, cell data goes to each piece.
     """
+    from tack.dataset.ghosts import visible
+
+    data, by = visible(data, by)
 
     if not getattr(data.topology, "reference_cells", True):
         raise NotImplementedError("clip takes cells of the linear shapes, not polyhedra, "
@@ -288,10 +292,11 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     keys = tack.empty((n_records,), tack.vec(2, idt))
     slots = tack.empty((n_records,), odt)
     centroid_offsets = tack.empty((n_centroids + 1,), odt)
+    centroid_cells = tack.empty((n_centroids,), idt)
     for group, (table, cases, edges, remap, whole_type, whole_order) in groups:
         _clip_emit(group.view(), values, float(value), invert, table, cases, edges, remap,
                    whole_type, whole_order, starts, types, offsets, connectivity, sources,
-                   keys, slots, centroid_offsets)
+                   keys, slots, centroid_offsets, centroid_cells)
     _close(offsets, n_cells, n_conn)
     _close(centroid_offsets, n_centroids, n_members)
 
@@ -308,5 +313,6 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     if n_conn:
         _centroid_entries(connectivity, count)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count + n_centroids)
-    points = Interpolate(ends, weights, averages=(centroid_offsets, members))
+    points = Interpolate(ends, weights, averages=(centroid_offsets, members),
+                         average_cells=centroid_cells)
     return carry(data, out, points=points, cells=Pieces(sources), fields=fields)

@@ -19,6 +19,12 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
     ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of
     3-vectors; ``integrator`` ``"rk4"`` or ``"euler"``; ``locator`` reuses a
     ``CellLocator`` of ``data``."""
+    from tack.dataset.ghosts import refuse_hidden, visible
+
+    if locator is None:
+        data, field = visible(data, field)
+    else:
+        refuse_hidden(data, "advect with a locator")
     xs, times, taken, status, _, _, _ = _run(data, field, seeds, step_size, steps,
                                              integrator, locator, record=False)
     out = _vertices(xs, data)                  # the particles stay on the device

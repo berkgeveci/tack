@@ -58,6 +58,12 @@ def extract_surface(data, faces=None, fields=None):
     not evaluated. A 2D mesh's boundary lines take an order-2 field's values at
     the points. The geometry must be ``H1``: an ``L2`` one has no shared points
     for the faces to stand on."""
+    from tack.dataset.ghosts import refuse_hidden, visible
+
+    if faces is None:
+        data = visible(data)
+    else:
+        refuse_hidden(data, "extract_surface of chosen faces")
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
     if faces is None:

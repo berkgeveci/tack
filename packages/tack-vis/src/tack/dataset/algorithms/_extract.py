@@ -71,13 +71,24 @@ def _complement(flags):
         _flip(flags)
 
 
-def _keep_cells(data, keep, fields=None):
+@tack.kernel
+def _or_flags(extra, used):
+    for i in range(used.shape[0]):
+        if extra[i] == 1:
+            used[i] = 1
+
+
+def _keep_cells(data, keep, fields=None, keep_points=None):
     """The cells whose ``keep`` flag (i32, one per cell) is 1, with only the points
-    they use, renumbered in order; fields carried by ``carry``. Polyhedral
-    topologies keep their cells' faces too; polygonal and polyline ones their
-    loops and chains."""
+    they use, renumbered in order -- and the points whose ``keep_points`` flag is
+    1, used or not; fields carried by ``carry``. Polyhedral topologies keep
+    their cells' faces too; polygonal and polyline ones their loops and chains.
+    Hidden cells (``HIDDENCELL``) are never kept."""
+    from tack.dataset.ghosts import without_hidden
+
+    keep = without_hidden(data, keep)
     if not getattr(data.topology, "reference_cells", True):
-        return _polyhedral_keep_cells(data, keep, fields)
+        return _polyhedral_keep_cells(data, keep, fields, keep_points)
     n = data.num_cells
     sizes = tack.empty((n,), tack.i32)
     for group in data.topology.groups():
@@ -106,6 +117,8 @@ def _keep_cells(data, keep, fields=None):
             _kept_cells(group.view(), keep, slots, starts, types, offsets, connectivity,
                         sources, used)
         _close(offsets, count, length)
+    if keep_points is not None and num_points:
+        _or_flags(keep_points, used)
     new_ids = tack.empty((num_points,), idt)
     kept_points = exclusive_scan(used, new_ids, num_points) if num_points else 0
     if length:
@@ -117,7 +130,7 @@ def _keep_cells(data, keep, fields=None):
     return carry(data, kept, points=Take(point_ids), cells=Take(sources), fields=fields)
 
 
-def _polyhedral_keep_cells(data, keep, fields=None):
+def _polyhedral_keep_cells(data, keep, fields=None, keep_points=None):
     """``_keep_cells`` of a polyhedral or polygonal topology: whole cells, their faces
     kept once and numbered in their old order, points compacted."""
     from tack.dataset.polyhedra import PolygonalTopology, PolyhedralTopology, PolylineTopology
@@ -139,6 +152,8 @@ def _polyhedral_keep_cells(data, keep, fields=None):
         out_loops = tack.empty((total,), idt)
         if total:
             _copy_loops(loop_offsets, loop_points, keep, starts, out_loops, point_used, n)
+        if keep_points is not None and data.num_points:
+            _or_flags(keep_points, point_used)
         point_new, kept_points, kept_np = _compact(point_used, idt)
         if total:
             _renumber_points(out_loops, point_new)
@@ -175,6 +190,8 @@ def _polyhedral_keep_cells(data, keep, fields=None):
             _copy_entries(t.cell_offsets, t.cell_faces, t.cell_face_sides, keep, new_face,
                           flipped, entry_starts, cell_faces, cell_sides, n)
         cell_offsets = _gather_offsets(entry_starts, kept_cells, entries)
+        if keep_points is not None and data.num_points:
+            _or_flags(keep_points, point_used)
         point_new, kept_points, kept_np = _compact(point_used, idt)
         if total:
             _renumber_points(face_points, point_new)

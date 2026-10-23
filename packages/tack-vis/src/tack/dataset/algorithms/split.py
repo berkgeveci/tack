@@ -27,14 +27,14 @@ def _block_ids(out, nx, ny, sx, sy, ox, oy, oz):
 
 
 @tack.kernel
-def _mark_shared(marks, nx, ny, after_x, after_y, after_z):
-    # A point on a block's first layer along an axis where a block comes before
-    # it is that block's: a duplicate here (DUPLICATEPOINT).
+def _mark_outside(marks, nx, ny, lo_x, lo_y, lo_z, hi_x, hi_y, hi_z):
+    # Marks the entities of a block of nx * ny * ... outside the box lo..hi (local
+    # indices, inclusive) as duplicates: DUPLICATECELL and DUPLICATEPOINT are 1.
     for n in range(marks.shape[0]):
         i = n % nx
         j = (n // nx) % ny
         k = n // (nx * ny)
-        if (i == 0 and after_x == 1) or (j == 0 and after_y == 1) or (k == 0 and after_z == 1):
+        if i < lo_x or i > hi_x or j < lo_y or j > hi_y or k < lo_z or k > hi_z:
             marks[n] = marks[n] | 1
 
 
@@ -99,7 +99,7 @@ def _block_geometry(coordinates, axes, start, point_dims, device):
 
 
 @on_inputs_device
-def split(data, pieces):
+def split(data, pieces, ghost_layers=0):
     """``data``, a structured grid, cut by index ranges into a ``PartitionedDataSet``
     of ``pieces`` structured grids, x fastest.
 
@@ -111,14 +111,25 @@ def split(data, pieces):
     coordinates with their origin moved, rectilinear axes cut, explicit
     points taken -- and carries its block of every point, cell and L2 field
     and every set, as filters carry them; fields on faces or edges are left
-    behind. Every point has one owner: a point a piece shares with a piece
-    before it is that piece's, and marked a duplicate (``DUPLICATEPOINT`` in
-    ``ghosts``) in this one. The input's own ghost marks come along. An unstructured mesh is partitioned by VTK
-    (``vtkRedistributeDataSetFilter``) or by its host application."""
+    behind.
+
+    ``ghost_layers`` adds that many layers of each neighbour's cells around a
+    piece, as far as the grid goes, marked duplicates (``DUPLICATECELL`` in
+    ``ghosts``), as VTK's ``vtkGhostCellsGenerator`` adds them. Filters need
+    one to give each piece's share of what they make on the faces and edges
+    pieces share. Every point has one owner: a point of several pieces' own
+    cells is the first such piece's, x fastest, and a duplicate
+    (``DUPLICATEPOINT``) in the others, as is every point of the ghost
+    layers. The input's own ghost marks come along. An unstructured mesh is
+    partitioned by VTK (``vtkRedistributeDataSetFilter``) or by its host
+    application."""
     topology = data.topology
     if not isinstance(topology, StructuredTopology):
         raise TypeError("split cuts structured grids; partition an unstructured mesh "
                         "with VTK (vtkRedistributeDataSetFilter) or the host application")
+    layers = int(ghost_layers)
+    if layers < 0 or layers != ghost_layers:
+        raise ValueError(f"ghost_layers is a count of layers, not {ghost_layers!r}")
     dims = topology.point_dims
     cells = tuple(d - 1 for d in dims)
     counts = _counts(pieces, cells)
@@ -133,8 +144,11 @@ def split(data, pieces):
     out = []
     for index in np.ndindex(*reversed(counts)):
         index = tuple(reversed(index))                # x fastest
-        start = tuple(b[i] for b, i in zip(bounds, index))
-        block_cells = tuple(b[i + 1] - b[i] for b, i in zip(bounds, index))
+        own = [(b[i], b[i + 1]) for b, i in zip(bounds, index)]        # its cells
+        # With its ghost layers, as far as the grid goes.
+        start = tuple(max(lo - layers, 0) for lo, _ in own)
+        stop = tuple(min(hi + layers, n) for (_, hi), n in zip(own, cells))
+        block_cells = tuple(b - a for a, b in zip(start, stop))
         block_points = tuple(n + 1 for n in block_cells)
         piece = StructuredTopology(block_points, id_dtype=topology.id_dtype, device=device)
         geometry = None
@@ -145,23 +159,36 @@ def split(data, pieces):
         cell_ids = _ids(cells, start, block_cells, topology.id_dtype)
         part = carry(data, piece, points=Take(point_ids), cells=Take(cell_ids),
                      geometry=geometry)
-        part.ghosts = _block_ghosts(data.ghosts, point_ids, cell_ids, block_points, start)
+        part.ghosts = _block_ghosts(data.ghosts, point_ids, cell_ids, block_points,
+                                    block_cells, start, own)
         out.append(part)
     return PartitionedDataSet(out)
 
 
-def _block_ghosts(ghosts, point_ids, cell_ids, block_points, start):
-    """A block's ghost marks: the input's, taken, with the points it shares with a
-    block before it marked duplicates, so each point has one owner."""
-    if ghosts is not None and ghosts.points is not None:
-        points = _take(ghosts.points, point_ids)
-    else:
-        points = tack.zeros((point_ids.shape[0],), tack.u8)
-    block = tuple(block_points) + (1,) * (3 - len(block_points))
-    after = tuple(int(s > 0) for s in start) + (0,) * (3 - len(start))
-    if any(after):
-        _mark_shared(points, block[0], block[1], *after)
+def _block_ghosts(ghosts, point_ids, cell_ids, block_points, block_cells, start, own):
+    """A block's ghost marks: the input's, taken, with the cells outside its own
+    marked duplicates, and the points outside its own -- the points of its own
+    cells but those of a block before it along an axis -- too, so each point
+    has one owner."""
+    def marked(marks, ids, block, lo, hi):
+        out = _take(marks, ids) if marks is not None else tack.zeros((ids.shape[0],), tack.u8)
+        block = tuple(block) + (1,) * (3 - len(block))
+        lo, hi = (tuple(v) + (0,) * (3 - len(v)) for v in (lo, hi))
+        if any(a > 0 for a in lo) or any(b < n - 1 for b, n in zip(hi, block)):
+            _mark_outside(out, block[0], block[1], *lo, *hi)
+        return out
+
+    # Its own cells, and its own points: those of its cells, less the first layer
+    # where a block comes before it.
+    cell_lo = tuple(a - s for (a, _), s in zip(own, start))
+    cell_hi = tuple(b - 1 - s for (_, b), s in zip(own, start))
+    point_lo = tuple(a - s + (1 if a > 0 else 0) for (a, _), s in zip(own, start))
+    point_hi = tuple(b - s for (_, b), s in zip(own, start))
+    points = marked(None if ghosts is None else ghosts.points, point_ids, block_points,
+                    point_lo, point_hi)
+    has_ghost_cells = any(c != b - a for c, (a, b) in zip(block_cells, own))
     cells = None
-    if ghosts is not None and ghosts.cells is not None:
-        cells = _take(ghosts.cells, cell_ids)
+    if (ghosts is not None and ghosts.cells is not None) or has_ghost_cells:
+        cells = marked(None if ghosts is None else ghosts.cells, cell_ids, block_cells,
+                       cell_lo, cell_hi)
     return Ghosts(cells=cells, points=points)
