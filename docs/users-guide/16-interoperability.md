@@ -50,7 +50,10 @@ is read-only; request `writable=True` only when the owner permits writes.
 Metal wraps an `MTLBuffer`, while CUDA, HIP and Level Zero wrap device addresses.
 Those addresses must belong to the selected device/runtime. Selecting the same
 kind of backend does not prove that two separately initialized contexts can
-share an allocation. Keep context lifetimes aligned with the view.
+share an allocation. Keep context lifetimes aligned with the view. On CUDA,
+Tack works in the device's primary context, as PyTorch, CuPy and Warp do, so
+their allocations and Tack's are in one context and each library's calls can
+follow the other's on one thread ([Backends](08-backends.md#cuda)).
 
 ## DLPack: exchange a tensor description
 

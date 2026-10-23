@@ -119,8 +119,8 @@ libraries and frameworks without copying: wrapping external pointers,
 DLPack, exported device memory, and VTK interop.
 
 **[Dataset API](dataset-api.md).** The design record of `tack.dataset`: how
-its data model (topologies, spaces, fields, sets) and algorithms were
-reasoned out. The API as it stands is the
+its data model (topologies, spaces, fields, sets), its algorithms and its
+partitioned data and ghost marks were reasoned out. The API as it stands is the
 [Dataset API reference](../reference/dataset-api.md).
 
 **[Polyhedra](polyhedra.md).** The design record of the polyhedral path in

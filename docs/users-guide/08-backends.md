@@ -213,14 +213,27 @@ pip install 'cuda-python>=13.2'
 tack.set_default_device("cuda")
 ```
 
-Tack's CUDA context is current only on the thread that first asked for
-the device (`tack.device("cuda")`, `set_default_device` or `device=`).
-To call kernels from another thread, make the context current there first:
+Tack works in the device's **primary context**, the one the CUDA runtime
+and the libraries on it (PyTorch, CuPy, Warp) use. So Tack and those
+libraries can take turns on one thread in any order, and arrays pass between
+them through DLPack without a context switch. If a context is already
+current when Tack first makes the device (an embedding application's own),
+Tack adopts that one instead. Tack retains the primary context and, when it
+is done with it, releases it rather than destroying it, since other
+libraries may hold it too.
+
+Tack makes the context current on the thread that first asks for the device
+(`tack.device("cuda")`, `set_default_device` or `device=`). To call kernels
+from another thread, that thread needs it current too. A thread on which
+PyTorch, CuPy or the CUDA runtime already used the device has it; otherwise
+make it current first:
 
 ```python
 from cuda.bindings import driver
 
-driver.cuCtxSetCurrent(tack.device("cuda")._backend._context)  # in the other thread
+_, cu_device = driver.cuDeviceGet(0)
+_, primary = driver.cuDevicePrimaryCtxRetain(cu_device)   # in the other thread
+driver.cuCtxSetCurrent(primary)
 ```
 
 Calls of one kernel from several threads are safe on every backend: each

@@ -48,9 +48,11 @@ returned as it is.
   created, is adopted for its device and never destroyed. It must be
   current before the first call that names that device: the device is made
   once, so a context made current later is not adopted.
-- A CUDA context that Tack creates while no context is current stays
-  current on that thread; one created while another is current is not, and
-  the thread keeps its own. As long as Tack holds one context and it is
+- Otherwise Tack works in the device's primary context, the one the CUDA
+  runtime and libraries on it use (PyTorch, CuPy, Warp), retained when the
+  device is made and released, never destroyed, when the last backend on it
+  goes. Made while no context is current, it stays current on that thread;
+  made while another is current, it is not, and the thread keeps its own. As long as Tack holds one context and it is
   current where it was made, nothing is switched. Once it holds two, or a
   context is not current on the thread that made its device, every CUDA
   operation makes its own context current for its duration and restores

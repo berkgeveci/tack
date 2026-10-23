@@ -123,6 +123,7 @@ nav:
           - Filter and Analyze: users-guide/data/04-filters.md
           - Write Mesh Algorithms: users-guide/data/05-mesh-kernels.md
           - Sample and Connect Simulations: users-guide/data/06-pipelines.md
+          - Work with Data in Pieces: users-guide/data/07-partitioned.md
       - Run and Diagnose:
           - Backends: users-guide/08-backends.md
           - Sharing Arrays: users-guide/16-interoperability.md

@@ -82,6 +82,7 @@ arrays so you can check what each filter means, as well as view its output.
 | [Filter and Analyze](data/04-filters.md) | Selection versus cutting, array propagation, gradients and statistics |
 | [Write Mesh Algorithms](data/05-mesh-kernels.md) | Per-shape cell kernels, subsets, faces and oriented flux balances |
 | [Sample and Connect Simulations](data/06-pipelines.md) | Probes, streamlines, retained geometry, VTK/MFEM and repeated pipelines |
+| [Work with Data in Pieces](data/07-partitioned.md) | Partitioned datasets, ghost cells and marks, filters and reductions over pieces |
 
 Read the kernel chapters when you want to initialize data on the device, write
 a custom operation, or connect a simulation's working arrays to the dataset.
