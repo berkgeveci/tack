@@ -8,18 +8,24 @@ but some come within the tolerance, the smallest of those; -1 for none --
 and its parametric coordinates there, found by the shapes' own Newton
 inversion (``world_to_parametric``, VTK's EvaluatePosition) and domain test.
 
-The search runs from the cells, not the points: the points are bucketed into
+The search runs from the points where ``by_id`` serves the dataset (an
+order-1 geometry over the shapes it knows, structured grids, polyhedra): one
+launch, each point searching the cells its bin may hold (``cell_bins``),
+reached by id. Elsewhere it runs from the cells: the points are bucketed into
 the same bins, and every cell, through its own view, tests the points in the
-bins its box overlaps. A view addresses its cells its own way -- a structured
-grid's by (i, j, k) -- so a cell is reached through its group's launch, never
-looked up by id. The winner is decided by an atomic minimum over a rank: a cell
-that holds the point ranks ahead of one that only comes within the tolerance,
-then the smaller id wins; a second pass lets the winner write the coordinates.
-Without the first part a point just inside a cell went to a lower-numbered
-neighbour within the tolerance, and was extrapolated there (off by the
-tolerance times the jump in gradient). ``probe`` evaluates fields the same way:
-the points are bucketed by the cell found, and each cell evaluates its fields
-at its own points through the fields' bases.
+bins its box overlaps (a view addresses its cells its own way, a structured
+grid's by (i, j, k)), the winner decided by an atomic minimum and a second pass
+writing its coordinates. A fresh locator's first query of few points in many
+cells also runs from the cells, sparing the cell bins (about eight entries a
+cell) until it is used again. Both rank candidates alike: a cell that holds the
+point ranks ahead of one that only comes within the tolerance, then the smaller
+id wins. Without the first part a point just inside a cell went to a
+lower-numbered neighbour within the tolerance, and was extrapolated there.
+
+``probe`` reads point and cell data by cell id where the search ran from the
+points (one launch per field); other fields, and every field where it ran
+from the cells, are evaluated cell by cell through the fields' bases, the
+points bucketed by the cell found.
 """
 
 from typing import NamedTuple
@@ -31,7 +37,8 @@ from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import gather
 from tack.dataset import ids
-from tack.dataset.buckets import bucket_groups, bucket_order
+from tack.dataset.buckets import bucket_groups
+from tack.dataset.by_id import _bin
 from tack.dataset.dataset import for_each
 from tack.runtime.dispatch import on_inputs_device
 
@@ -68,18 +75,6 @@ def _cell_boxes(cells, lo, hi):
             b = [max(b[0], p[0]), max(b[1], p[1]), max(b[2], p[2])]
         lo[e] = a
         hi[e] = b
-
-
-@tack.func
-def _bin(x, origin, inverse, n, slack):
-    """The bin along one axis of coordinate ``x``, the grid widened by ``slack``
-    on both sides (its edge bins take the margin); -1 outside that."""
-    f = (x - origin) * inverse
-    reach = slack * inverse
-    i = tack.i64(-1)
-    if f >= -reach and f <= n + reach:
-        i = min(max(tack.i64(floor(f)), 0), n - 1)
-    return i
 
 
 @tack.kernel
@@ -257,6 +252,18 @@ def _bin_entries(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, starts, 
 
 
 @tack.kernel
+def _find_from_points(mesh, points, found, pcs, tets, write_tets):
+    # One thread per point: its cell by the cell bins, ranked as the cell-side
+    # search ranks them (by_id._MeshSearch.find); no atomics, no grouping.
+    for q in range(points.shape[0]):
+        e, kind, pc, t = mesh.find(points[q])
+        found[q] = e if e < mesh.ncells else -1
+        pcs[q] = pc
+        if write_tets == 1:
+            tets[q] = t
+
+
+@tack.kernel
 def _resolve(found, none, ncells):
     # A rank back to its cell; -1 for none.
     for q in range(found.shape[0]):
@@ -337,7 +344,8 @@ class CellLocator:
             cells = tack.empty((total,), data.id_dtype)
             if total:
                 _bin_entries(self.lo, self.hi, *self._grid(), _TOLERANCE, starts, keys, cells)
-            order, offsets = bucket_order(keys, nbins, index)
+            # A bin's cells in any order: the search ranks its candidates itself.
+            order, offsets = bucket_groups(keys, nbins, index)
             self._cell_bins = (offsets, gather(cells, order) if total else cells)
         return self._cell_bins
 
@@ -345,6 +353,16 @@ class CellLocator:
     def _device(self):
         data = self.__dict__.get("data")
         return data._device if data is not None else None
+
+    def _search(self):
+        """The search from the points (``by_id._MeshSearch``) over this locator's
+        cell bins, or ``None`` where ``by_id`` cannot serve the dataset. Made on
+        first use and kept, as the bins are."""
+        if "_mesh_search" not in self.__dict__:
+            from tack.dataset.by_id import mesh_search
+
+            self._mesh_search = mesh_search(self.data, self)
+        return self._mesh_search
 
     @on_inputs_device
     def find(self, points):
@@ -360,7 +378,26 @@ class CellLocator:
             if len(host):
                 tack.copyto(points, host)
         m = arrays.size_of(points)
-        # The best rank wins by an atomic minimum (a cell id, or past the ids for
+        # From the points needs the cell bins (about 8 entries a cell); a first
+        # query of few points in many cells is cheaper from the cells. Both give
+        # the same answer.
+        first = not self.__dict__.get("_found_before")
+        self._found_before = True
+        worth_bins = ("_cell_bins" in self.__dict__ or not first
+                      or 4 * m >= data.num_cells)
+        search = self._search() if worth_bins else None
+        if search is not None:
+            # From the points: one launch, each point searching its bin's cells.
+            found = tack.empty((m,), data.id_dtype)
+            pcs = tack.empty((m,), tack.vec(3, dtype))
+            tets = tack.empty((m,), tack.i32) if self.polyhedral else None
+            if m:
+                _find_from_points(search, points, found, pcs,
+                                  tets if tets is not None else found,
+                                  1 if tets is not None else 0)
+            return Locations(found, pcs, tets)
+        # From the cells, where by_id cannot serve the dataset (an order-2 or L2
+        # geometry, line or vertex cells). The best rank wins by an atomic minimum (a cell id, or past the ids for
         # a cell the point is only near): in i32 below 2**30 cells, as every
         # backend has those atomics; in i64 past that.
         scratch = ids.at_least(tack.i32, 2 * data.num_cells)

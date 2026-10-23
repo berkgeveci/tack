@@ -2,10 +2,9 @@
 RK4 or Euler steps; a step leaving the mesh bisected to the boundary and the
 particle pushed out; a stop after its steps, outside, or at zero velocity.
 Each particle's whole path is one thread of one launch, its stages located
-from the particle's side (``CellLocator.cell_bins``), its cells reached by id
-through the topology's flat arrays, each shape's code compiled in only when
-the mesh has that shape. Polyhedra are located in their sub-tetrahedra, by the
-code their views use (``views._PolyhedralLocation``)."""
+from the particle's side by ``by_id``'s search (over ``CellLocator.cell_bins``,
+ranked as the locator ranks cells), its velocity read by cell id there, as
+``CellLocator.find`` and ``probe`` do."""
 
 import enum
 
@@ -13,10 +12,11 @@ import numpy as np
 
 import tack
 from tack import arrays
-from tack.dataset import shapes, views
 from tack.dataset.algorithms._common import _field
-from tack.dataset.locator import _TOLERANCE, CellLocator, _bin
-from tack.dataset.spaces import H1, Constant, Values
+from tack.dataset.by_id import _as_vectors, cells_by_id, field_by_id, mesh_search
+from tack.dataset.dataset import Field
+from tack.dataset.locator import CellLocator
+from tack.dataset.spaces import H1
 from tack.lang.array import Array
 
 # A particle's status bits, Viskores' ParticleStatus: the kernel's constants,
@@ -60,117 +60,9 @@ _LAST = tack.constant(4, tack.i32)       # the last point inside, for the push o
 _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
 
-class _NoPolyhedra:
-    """For meshes of shapes: the polyhedral methods the kernel names, never called
-    (their branch is compiled out)."""
-
-    @tack.func
-    def locate(self, e, p, slack):
-        return -1, p - p, 0
-
-    @tack.func
-    def velocity_at(self, e, t, pc):
-        return pc - pc
-
-
-@tack.device_class
-class _PolyhedralMesh(views._PolyhedralLocation, views._PolyhedralWalk, views._PolyhedralCells):
-    """A polyhedral topology's cells by id, located in their sub-tetrahedra by the
-    same code as their views (``views._PolyhedralLocation``), with the positions
-    and the point velocities it reads."""
-
-    def __init__(self, topology, positions, velocity):
-        point_offsets, point_ids = topology.cell_points()
-        super().__init__(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
-                         topology.face_offsets, topology.face_points, point_offsets,
-                         point_ids, topology.num_cells)
-        self.positions = positions
-        self.velocity = velocity
-
-    @tack.func
-    def point_position(self, p):
-        return self.positions[p]
-
-    @tack.func
-    def cell_type(self, e):
-        return shapes.POLYHEDRON
-
-    @tack.func
-    def velocity_at(self, e, t, pc):
-        """The point velocity at ``pc`` in sub-tetrahedron ``t``: linear there, the
-        cell and face points taking the means of their points' velocities."""
-        k, j = self.tet_face(e, t)
-        n = self.side_num_points(e, k)
-        nxt = j + 1 if j + 1 < n else 0
-        count = self.num_points(e)
-        v0 = self.velocity[self.point_id(e, 0)]
-        for i in range(1, count):
-            v0 += self.velocity[self.point_id(e, i)]
-        v0 = v0 / count
-        vf = self.velocity[self.side_point_id(e, k, 0)]
-        for i in range(1, n):
-            vf += self.velocity[self.side_point_id(e, k, i)]
-        vf = vf / n
-        return (v0 + pc[0] * (vf - v0) + pc[1] * (self.velocity[self.side_point_id(e, k, j)] - v0)
-                + pc[2] * (self.velocity[self.side_point_id(e, k, nxt)] - v0))
-
-
-@tack.device_class
-class _FlatCells(_NoPolyhedra):
-    """An unstructured topology's cells by id: type and points from its arrays."""
-
-    def __init__(self, types, offsets, connectivity):
-        self.types = types
-        self.offsets = offsets
-        self.connectivity = connectivity
-
-    @tack.func
-    def cell_type(self, e):
-        return tack.i32(self.types[e])
-
-    @tack.func
-    def num_points(self, e):
-        return self.offsets[e + 1] - self.offsets[e]
-
-    @tack.func
-    def point_id(self, e, j):
-        return self.connectivity[self.offsets[e] + j]
-
-
-@tack.device_class
-class _GridCells(_NoPolyhedra):
-    """A structured grid's cells by id: hexahedra (quads in 2D), x fastest, corners
-    in VTK's order."""
-
-    def __init__(self, point_dims):
-        dims = tuple(point_dims) + (1,) * (3 - len(point_dims))
-        self.nx, self.ny = dims[0], dims[1]
-        self.cx, self.cy = dims[0] - 1, max(dims[1] - 1, 1)
-        self.dimension = len(point_dims)
-
-    @tack.func
-    def cell_type(self, e):
-        return shapes.HEXAHEDRON if self.dimension == 3 else shapes.QUAD
-
-    @tack.func
-    def num_points(self, e):
-        return 8 if self.dimension == 3 else 4
-
-    @tack.func
-    def point_id(self, e, j):
-        i = e % self.cx
-        rest = e // self.cx
-        k = rest // self.cy
-        return (i + ((j ^ (j >> 1)) & 1)) + ((rest - k * self.cy + ((j >> 1) & 1))
-                                             + (k + (j >> 2)) * self.ny) * self.nx
-
-
 @tack.kernel
-def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pixel,
-            positions, velocity, on_cells, lo, hi, bin_offsets, bin_cells,
-            ox, oy, oz, ix, iy, iz, nx, ny, nz, slack, tolerance, ncells,
-            h, max_steps, rk4, eps, xs, times, steps, status, trace, trace_times, lengths,
-            capacity, record):
+def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, trace,
+            trace_times, lengths, capacity, record):
     for q in range(xs.shape[0]):
         x = xs[q]
         t = times[q]
@@ -182,7 +74,6 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
             trace[q * capacity] = x
             trace_times[q * capacity] = t
             length = 1
-        pts = tack.local_array_like(lo, 24)
         k1 = x - x
         k2 = k1
         k3 = k1
@@ -215,125 +106,12 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
 
             # Its cell, ranked as the locator ranks them -- holding the point
             # ahead of coming within the tolerance, then the smaller id -- and
-            # the velocity there.
-            best = ncells
-            best_rank = 2 * ncells
-            best_type = 0
-            best_pc = p - p
-            best_tet = -1
-            bi = _bin(p[0], ox, ix, nx, slack)
-            bj = _bin(p[1], oy, iy, ny, slack)
-            bk = _bin(p[2], oz, iz, nz, slack)
-            if bi >= 0 and bj >= 0 and bk >= 0:
-                b = bi + nx * (bj + ny * bk)
-                for m in range(bin_offsets[b], bin_offsets[b + 1]):
-                    e = bin_cells[m]
-                    a = lo[e]
-                    c = hi[e]
-                    s = tolerance * (c - a).norm()
-                    if (e < best_rank and p[0] >= a[0] - s and p[0] <= c[0] + s
-                            and p[1] >= a[1] - s and p[1] <= c[1] + s
-                            and p[2] >= a[2] - s and p[2] <= c[2] + s):
-                        kind = mesh.cell_type(e)
-                        if (kinds.PRESENT & 256) != 0 and kind == shapes.POLYHEDRON:
-                            # No parametric coordinates: a sub-tetrahedron and the
-                            # point's place in it, within the cell's tolerance,
-                            # ranked as the shapes are.
-                            tet, tpc, held = mesh.locate(e, p, s)
-                            if tet >= 0:
-                                rank = e if held == 1 else e + ncells
-                                if rank < best_rank:
-                                    best_rank = rank
-                                    best = e
-                                    best_type = kind
-                                    best_tet = tet
-                                    best_pc = tpc
-                            continue
-                        for j in range(mesh.num_points(e)):
-                            y = positions[mesh.point_id(e, j)]
-                            pts[3 * j] = y[0]
-                            pts[3 * j + 1] = y[1]
-                            pts[3 * j + 2] = y[2]
-                        pc = p - p
-                        converged = 0
-                        inside = 0
-                        near = p - p
-                        surface = 0
-                        if (kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
-                            pc, converged = tetra.world_to_parametric(pts, p)
-                            inside = tetra.is_inside(pc, 0.0)
-                            near = tetra.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 2) != 0 and kind == shapes.HEXAHEDRON:
-                            pc, converged = hexa.world_to_parametric(pts, p)
-                            inside = hexa.is_inside(pc, 0.0)
-                            near = hexa.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 4) != 0 and kind == shapes.WEDGE:
-                            pc, converged = wedge.world_to_parametric(pts, p)
-                            inside = wedge.is_inside(pc, 0.0)
-                            near = wedge.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 8) != 0 and kind == shapes.PYRAMID:
-                            pc, converged = pyramid.world_to_parametric(pts, p)
-                            inside = pyramid.is_inside(pc, 0.0)
-                            near = pyramid.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 16) != 0 and kind == shapes.VOXEL:
-                            pc, converged = voxel.world_to_parametric(pts, p)
-                            inside = voxel.is_inside(pc, 0.0)
-                            near = voxel.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 32) != 0 and kind == shapes.TRIANGLE:
-                            pc, converged = triangle.world_to_parametric(pts, p)
-                            inside = triangle.is_inside(pc, 0.0)
-                            surface = 1
-                            near = triangle.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 64) != 0 and kind == shapes.QUAD:
-                            pc, converged = quad.world_to_parametric(pts, p)
-                            inside = quad.is_inside(pc, 0.0)
-                            surface = 1
-                            near = quad.nearest_point(pts, p, pc)
-                        elif (kinds.PRESENT & 128) != 0 and kind == shapes.PIXEL:
-                            pc, converged = pixel.world_to_parametric(pts, p)
-                            inside = pixel.is_inside(pc, 0.0)
-                            surface = 1
-                            near = pixel.nearest_point(pts, p, pc)
-                        # As the locator: inside a solid, or within the tolerance of
-                        # the cell's nearest point; holding it (a surface: over it)
-                        # ranks first.
-                        d = near - p
-                        if converged == 1 and ((inside == 1 and surface == 0)
-                                               or d.dot(d) <= s * s):
-                            rank = e if inside == 1 else e + ncells
-                            if rank < best_rank:
-                                best_rank = rank
-                                best = e
-                                best_type = kind
-                                best_pc = pc
-            found = 1 if best < ncells else 0
+            # the velocity there (by_id).
+            best, best_type, best_pc, best_tet = mesh.find(p)
+            found = 1 if best < mesh.ncells else 0
             v = p - p
             if found == 1:
-                if on_cells == 1:
-                    v = velocity[best]
-                elif (kinds.PRESENT & 256) != 0 and best_type == shapes.POLYHEDRON:
-                    v = mesh.velocity_at(best, best_tet, best_pc)
-                else:
-                    count = mesh.num_points(best)
-                    for j in range(count):
-                        w = 0.0
-                        if (kinds.PRESENT & 1) != 0 and best_type == shapes.TETRA:
-                            w = tetra.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 2) != 0 and best_type == shapes.HEXAHEDRON:
-                            w = hexa.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 4) != 0 and best_type == shapes.WEDGE:
-                            w = wedge.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 8) != 0 and best_type == shapes.PYRAMID:
-                            w = pyramid.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 16) != 0 and best_type == shapes.VOXEL:
-                            w = voxel.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 32) != 0 and best_type == shapes.TRIANGLE:
-                            w = triangle.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 64) != 0 and best_type == shapes.QUAD:
-                            w = quad.shape_function(j, best_pc)
-                        elif (kinds.PRESENT & 128) != 0 and best_type == shapes.PIXEL:
-                            w = pixel.shape_function(j, best_pc)
-                        v += w * velocity[mesh.point_id(best, j)]
+                v = velocity.value(mesh, best, best_type, best_pc, best_tet)
 
             # What it means for the particle.
             bisect = 0
@@ -435,70 +213,18 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
         lengths[q] = length
 
 
-_kinds_classes = {}
-
-
-def _kinds(present):
-    """A template whose class constant ``PRESENT`` has a bit for each of ``_SHAPES``
-    the mesh has, so the kernel compiles only those shapes' code."""
-    if present not in _kinds_classes:
-        _kinds_classes[present] = tack.device_class(
-            type(f"_Kinds{present}", (), {"PRESENT": present}))
-    return _kinds_classes[present]()
-
-
-_SHAPES = (shapes.Tetra, shapes.Hexahedron, shapes.Wedge, shapes.Pyramid, shapes.Voxel,
-           shapes.Triangle, shapes.Quad, shapes.Pixel)
-
-
 def _velocity(data, field):
-    """The velocity's values and whether they are on the cells."""
-
+    """The velocity, read by cell id (``by_id``): point data or cell data of
+    3-vectors in the dataset's precision."""
     field = _field(data, field)
-    space = field.space
-    if (isinstance(space, H1) and space.order == 1) or space is Values(data, "points"):
-        on_cells = 0
-    elif isinstance(space, Constant) or space is Values(data, "cells"):
-        on_cells = 1
-    else:
-        raise TypeError(f"advection takes point data (H1 order 1, values on points) or "
-                        f"cell data, not {space!r}")
     if arrays.width_of(field.values) != 3:
         raise TypeError("advection needs a field of 3-vectors")
-    return _as_vectors(arrays.materialize(field.values), data.dtype), on_cells
-
-
-def _as_vectors(values, dtype):
-    if values.scalar_dtype == dtype:
-        return values
-    out = tack.empty((arrays.size_of(values),), tack.vec(3, dtype))
-    if arrays.size_of(values):
-        tack.copyto(out, values.numpy().astype(dtype.numpy_dtype))
-    return out
-
-
-# The kinds bit for polyhedra, past the shapes'.
-_POLYHEDRA = 256
-
-
-def _mesh(data, positions, velocity):
-    """The cells by id, and the bits of the shapes present."""
-    from tack.dataset.polyhedra import PolyhedralTopology
-    from tack.dataset.topology import StructuredTopology, UnstructuredTopology
-
-    t = data.topology
-    present = 0
-    for group in t.groups() if hasattr(t, "groups") else ():
-        if group.count and group.shape in _SHAPES:
-            present |= 1 << _SHAPES.index(group.shape)
-    if isinstance(t, UnstructuredTopology):
-        return _FlatCells(t.types, t.offsets, t.connectivity), present
-    if isinstance(t, StructuredTopology) and len(t.point_dims) >= 2:
-        return _GridCells(t.point_dims), present
-    if isinstance(t, PolyhedralTopology) and t.dimension == 3:
-        return _PolyhedralMesh(t, positions, velocity), _POLYHEDRA if t.num_cells else 0
-    raise NotImplementedError("advection takes unstructured, polyhedral and 2D or 3D "
-                              "structured topologies; not polygons or polylines, nor lines")
+    velocity = Field(field.space, _as_vectors(arrays.materialize(field.values), data.dtype))
+    by_id = field_by_id(data, velocity)
+    if by_id is None:
+        raise TypeError(f"advection takes point data (H1 order 1, values on points) or "
+                        f"cell data, not {field.space!r}")
+    return by_id
 
 
 def _run(data, field, seeds, step_size, steps, integrator, locator, record):
@@ -509,13 +235,15 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     geometry = data.geometry
     if not isinstance(geometry.space, H1) or geometry.space.order != 1:
         raise TypeError("advection needs an order-1 H1 geometry: one position per point")
-    velocity, on_cells = _velocity(data, field)
+    velocity = _velocity(data, field)
     positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
-    mesh, present = _mesh(data, positions, velocity)
+    if cells_by_id(data, positions, strict=False) is None:
+        raise NotImplementedError("advection takes unstructured, polyhedral and 2D or 3D "
+                                  "structured topologies; not polygons or polylines, nor lines")
     locator = locator or CellLocator(data)
     if locator.data is not data:
         raise ValueError("the locator was built for another dataset")
-    bin_offsets, bin_cells = locator.cell_bins()
+    mesh = mesh_search(data, locator, positions, strict=False)
     dtype = data.dtype
     # Seeds in an array of 3-vectors are copied on the device; anything else
     # comes from the host.
@@ -538,9 +266,7 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
         taken.fill(0)
         status.fill(int(SUCCESS))
         eps = float(np.finfo(dtype.numpy_dtype).eps)
-        _advect(mesh, _kinds(present), *(shape() for shape in _SHAPES), positions, velocity, on_cells,
-                locator.lo, locator.hi, bin_offsets, bin_cells, *locator._grid(),
-                float(locator.slack), _TOLERANCE, data.num_cells, float(step_size), int(steps),
+        _advect(mesh, velocity, float(step_size), int(steps),
                 1 if integrator == "rk4" else 0, eps, xs, times, taken, status, trace,
                 trace_times, lengths, capacity, 1 if record else 0)
     return xs, times, taken, status, (trace, trace_times), lengths, capacity

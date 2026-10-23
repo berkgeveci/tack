@@ -289,3 +289,88 @@ def test_probe_of_voronoi_polyhedra_holds_the_points_inside(backend):
     assert 100 < inside.sum() < 800
     np.testing.assert_allclose(out.fields["lin"].values.numpy()[inside],
                                _linear(where)[inside], atol=2e-5)
+
+
+# ── From the points and from the cells ──────────────────────────────
+
+def _both_ways(data, points):
+    """``find`` and ``probe`` from the points (by_id's search over the cell bins)
+    and from the cells (each group's view), on fresh locators."""
+    by_points = td.CellLocator(data)
+    by_points._search()                                # build the search: from the points
+    by_points._found_before = True
+    by_cells = td.CellLocator(data)
+    by_cells._mesh_search = None                       # no search: from the cells
+    return [(loc.find(points), td.probe(data, points, locator=loc))
+            for loc in (by_points, by_cells)]
+
+
+def _meshes():
+    meshes = {"mixed": _two_hexes_and_a_pyramid(),
+              "structured": td.wavelet(4),
+              "two tets as polyhedra": td.as_polyhedra(_two_tets())}
+    if vtk is not None:
+        meshes.update({kind: vtk_to_dataset(_grid(kind)) for kind in SHAPES})
+        meshes["wedges as polyhedra"] = td.as_polyhedra(vtk_to_dataset(_grid("wedge")))
+    return meshes
+
+
+@pytest.mark.parametrize("name", ["mixed", "structured", "two tets as polyhedra", "hexahedron",
+                                  "tetra", "wedge", "pyramid", "voxel", "wedges as polyhedra"])
+def test_searching_from_the_points_finds_what_searching_from_the_cells_does(backend, name):
+    """The two searches rank candidates alike -- holding the point first, then the
+    smaller id -- so they find the same cells, coordinates and sub-tetrahedra,
+    and probe the same values, points outside the mesh included."""
+    meshes = _meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    x = data.positions().astype(np.float64)
+    data.fields["lin"] = td.Field(td.H1(data), _scalars(_linear(x)))
+    data.fields["ids"] = td.Field(td.Constant(data),
+                                  _scalars(np.arange(data.num_cells, dtype=float)))
+    lo, hi = x.min(axis=0), x.max(axis=0)
+    points = np.r_[lo + np.random.default_rng(8).uniform(-0.1, 1.1, (400, 3)) * (hi - lo), x]
+    (a, pa), (b, pb) = _both_ways(data, points)
+    np.testing.assert_array_equal(a.cells.numpy(), b.cells.numpy())
+    inside = a.cells.numpy() >= 0
+    assert inside.any() and not inside.all()
+    np.testing.assert_allclose(a.pcs.numpy()[inside], b.pcs.numpy()[inside], atol=1e-5)
+    if a.tets is not None:
+        np.testing.assert_array_equal(a.tets.numpy(), b.tets.numpy())
+    for f in ("lin", "ids", "valid"):
+        np.testing.assert_allclose(pa.fields[f].values.numpy(), pb.fields[f].values.numpy(),
+                                   atol=1e-5)
+
+
+def test_a_first_query_of_few_points_runs_from_the_cells():
+    """The search from the points needs the cell bins, about eight entries a cell:
+    a fresh locator's first query of few points runs from the cells, and builds
+    them only from its second query on, or for many points."""
+    tack.set_default_device("cpu")
+    data = td.wavelet(6)
+    locator = td.CellLocator(data)
+    locator.find([[0.0, 0.0, 0.0]])
+    assert "_cell_bins" not in locator.__dict__
+    locator.find([[0.0, 0.0, 0.0]])
+    assert "_cell_bins" in locator.__dict__
+    many = td.CellLocator(data)
+    many.find(np.zeros((data.num_cells, 3)))
+    assert "_cell_bins" in many.__dict__
+
+
+def test_what_by_id_cannot_serve_is_searched_from_the_cells():
+    """A curved (order-2) geometry and line cells have no search from the points:
+    find and probe run from the cells, as before."""
+    tack.set_default_device("cpu")
+    curved = td.uniform_grid((3, 3, 3))
+    curved.geometry = td.project(curved, curved.geometry, td.H1(curved, order=2))
+    lines = td.DataSet(td.UnstructuredTopology(np.array([3, 3], np.uint8), [0, 2, 4],
+                                               [0, 1, 1, 2]),
+                       np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], np.float32))
+    for data, point in ((curved, [0.6, 0.6, 0.6]), (lines, [1.5, 0.0, 0.0])):
+        locator = td.CellLocator(data)
+        locator._found_before = True
+        assert locator._search() is None
+        found = locator.find([point])
+        assert found.cells.numpy()[0] >= 0

@@ -8,6 +8,7 @@ from tack.dataset import ids
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.buckets import bucket_groups
+from tack.dataset.by_id import field_by_id
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.locator import CellLocator
 from tack.dataset.spaces import H1, Constant, Values
@@ -32,6 +33,15 @@ def _evaluate_in_tets(cells, u, links, link_points, tets, pcs, out):
         for n in range(links[e], links[e + 1]):
             q = link_points[n]
             out[q] = u.tet_value(c, tets[q], pcs[q])
+
+
+@tack.kernel
+def _values_from_points(mesh, field, found, pcs, tets, out):
+    # One thread per point, the field read by cell id (by_id).
+    for q in range(found.shape[0]):
+        e = found[q]
+        if e >= 0:
+            out[q] = field.value(mesh, e, mesh.cells.cell_type(e), pcs[q], tets[q])
 
 
 @tack.kernel
@@ -67,12 +77,22 @@ def probe(data, where, fields=None, locator=None):
     points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
     found, pcs, tets = locator.find(points)
     m = found.shape[0]
-    keys = tack.empty((m,), found.dtype)
-    if m:
-        _found_keys(found, data.num_cells, keys)
-    # The extra cell: not found, never evaluated, so not filled.
-    order, links = bucket_groups(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m),
-                                 skip=data.num_cells)
+    # Fields read by cell id where find searched from the points; built only
+    # then, since it needs the cell bins.
+    search = locator.__dict__.get("_mesh_search")
+    grouped = []
+
+    def by_cell():
+        # The points grouped by the cell found, for the fields evaluated from
+        # the cells (through each group's view), made once if any is.
+        if not grouped:
+            keys = tack.empty((m,), found.dtype)
+            if m:
+                _found_keys(found, data.num_cells, keys)
+            # The extra cell: not found, never evaluated, so not filled.
+            grouped.append(bucket_groups(keys, data.num_cells + 1,
+                                         ids.at_least(data.id_dtype, m), skip=data.num_cells))
+        return grouped[0]
 
     out = {}
     for name in selected(data, fields):
@@ -87,8 +107,15 @@ def probe(data, where, fields=None, locator=None):
         dtype = arrays.dtype_of(f.values)
         values = (tack.empty((m,), tack.vec(width, dtype)) if width
                   else tack.empty((m,), dtype))
-        if m:
+        by_id = field_by_id(data, f) if search is not None else None
+        if m and by_id is not None:
             values.fill(0)
+            # tets is read only in polyhedra; found stands in for it elsewhere.
+            _values_from_points(search, by_id, found, pcs,
+                                tets if tets is not None else found, values)
+        elif m:
+            values.fill(0)
+            order, links = by_cell()
             for group in data.launch_groups("cells", [f]):
                 if group.count and locator.polyhedral:
                     _evaluate_in_tets(data.domain_view("cells", group), f.view(group), links,
