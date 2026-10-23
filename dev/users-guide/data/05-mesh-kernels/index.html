@@ -3176,6 +3176,9 @@
 edge. Tack supplies a view of the mesh and compatible views of its fields.
 Your kernel can use geometry and interpolation without manually switching on
 cell type or maintaining a connectivity parser for every representation.</p>
+<p>An operation on each value of a field alone, such as scaling it, needs no
+mesh: pass <code>field.values</code> to an ordinary kernel and loop over
+<code>range(len(values))</code>. That is also how to loop over points.</p>
 <p>Read <a href="../../05-device-functions/">Device Functions</a> and
 <a href="../../06-templates/">Templates</a> when the kernel syntax is new. The built-in
 filters use the same dataset API as the examples here.</p>

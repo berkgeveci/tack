@@ -3556,7 +3556,7 @@ datasets from their own connectivity and geometry.</p>
 <p>The rest of this tour uses <code>mesh</code>, the hex-and-pyramid dataset from the
 Unstructured tab. Attach height in H1 and a material constant per cell:</p>
 <div class="highlight"><pre><span></span><code>    <span class="n">height</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">mesh</span><span class="o">.</span><span class="n">num_points</span><span class="p">,))</span>
-    <span class="n">tack</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">height</span><span class="p">,</span> <span class="n">positions</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+    <span class="n">tack</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">height</span><span class="p">,</span> <span class="n">positions</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">])</span>
     <span class="n">mesh</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;height&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">mesh</span><span class="p">),</span> <span class="n">height</span><span class="p">)</span>            <span class="c1"># point data</span>
     <span class="n">material</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">mesh</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,))</span>
     <span class="n">tack</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">material</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
@@ -3634,6 +3634,12 @@ kernel once per shape. Each launch gets that shape's <em>view</em> of the cells,
 and every <code>Field</code> argument becomes its view for the same cells. The kernel
 is compiled for each shape, so a hexahedron's loop knows it has eight
 corners.</p>
+<p><code>for_each</code> is for kernels that need the mesh: a cell's corners, a face's two
+sides, positions. A kernel that needs only a field's values, each on its own,
+is an ordinary kernel over <code>field.values</code>, looping over <code>range(len(values))</code>.
+That is also the loop over points, which are not a <code>for_each</code> domain: point
+data is one value per point. Implicit values, such as a uniform grid's
+coordinates, are indexed the same way.</p>
 <div class="highlight"><pre><span></span><code>    <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">centers</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">where</span><span class="p">):</span>
         <span class="c1"># Once per shape: `cells` is that shape&#39;s view, `u` the field&#39;s.</span>

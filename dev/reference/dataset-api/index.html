@@ -4148,6 +4148,8 @@ ghost marks; global ids; ghost cells generated in one process; then MPI.</p>
   that group (<code>for i in view</code>). Each <code>Field</code> among <code>args</code> becomes its view
   for the same group, so <code>u.value(i, pc)</code> reads entity <code>i</code>. Other arguments
   are passed through unchanged.</li>
+<li>There is no <code>"points"</code> domain. Point data, like any field's values taken
+  one by one, is read by an ordinary kernel over <code>field.values</code>.</li>
 </ul>
 <p><strong>What makes a group.</strong> On a shape-based topology, each shape is a group. A
 group is split further, on the device, by:</p>

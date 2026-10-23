@@ -3660,7 +3660,9 @@ component type; an element dtype override selects a new element type:</p>
 <p><code>tack.copyto(a, host)</code> is strict, like <code>np.copyto</code>: <code>host</code> must have the
 shape of <code>a.numpy()</code> or broadcast to it, and its values are converted to
 <code>a</code>'s dtype. Given another Tack array, <code>tack.copyto(dst, src)</code> copies on the
-device. Arrays are not assigned with <code>a[...] = values</code>.</p>
+device. The destination is always a Tack array: <code>copyto</code> writes into Tack
+storage, and <code>numpy()</code> reads it back into a new NumPy array. Between two NumPy
+arrays, use <code>np.copyto</code>. Arrays are not assigned with <code>a[...] = values</code>.</p>
 <p>On Metal (Apple Silicon), arrays use shared memory — <code>copyto</code>/<code>numpy</code>
 are simple memory copies with no DMA transfers. On CUDA, HIP and Level Zero,
 these are explicit host-device copies. On every GPU backend they take their
