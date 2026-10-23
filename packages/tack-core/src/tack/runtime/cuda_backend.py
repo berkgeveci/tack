@@ -124,15 +124,21 @@ class _ContextToken:
     of them can overlap, and the context must survive until the last one
     goes. ``owned`` is False for a context an embedding application created:
     Tack adopts those but never destroys them, so their token never dies here.
+    ``primary`` is the device's primary context, which Tack retained (``cu_device``
+    is its CUdevice): released when the last user goes, not destroyed, since
+    the CUDA runtime and the libraries on it may hold it too.
     """
 
-    __slots__ = ("alive", "device", "dropped", "handle", "owned", "stream", "users")
+    __slots__ = ("alive", "cu_device", "device", "dropped", "handle", "owned", "primary",
+                 "stream", "users")
 
-    def __init__(self, handle, owned, device):
+    def __init__(self, handle, owned, device, primary=False, cu_device=None):
         self.handle = handle
         self.users = 1
         self.alive = True
         self.owned = owned
+        self.primary = primary
+        self.cu_device = cu_device
         self.device = device            # the device's ordinal
         # The context's queue: every launch, fill and copy Tack makes in the
         # context goes through this one stream, in order, and returns once
@@ -1067,7 +1073,12 @@ class CUDABackend(GPUBackend):
 
         Reuse an existing CUDA context if one is already active on the
         device (e.g. from a simulation framework like AMReX), or one Tack
-        holds for it already; only create a new context when there is none.
+        holds for it already; otherwise retain the device's primary context,
+        the one the CUDA runtime and the libraries built on it (PyTorch, CuPy,
+        Warp) use. Sharing it, Tack's work and theirs are in one context,
+        whichever made it current: with a context of its own, Tack's next
+        launch after one of them made the primary context current failed
+        (CUDA_ERROR_INVALID_HANDLE).
 
         Whether the context may be destroyed is a property of the context,
         not of the backend that happens to hold it: a backend made beside the
@@ -1098,12 +1109,15 @@ class CUDABackend(GPUBackend):
             if token is not None:
                 token.users += 1
             else:
-                err, ctx = driver.cuCtxCreate(None, 0, self._device)
+                err, ctx = driver.cuDevicePrimaryCtxRetain(self._device)
                 _check(err)
-                if current is not None:
-                    # cuCtxCreate made it current: leave the thread's own.
-                    driver.cuCtxPopCurrent()
-                token = _CONTEXTS[int(ctx)] = _ContextToken(ctx, True, ordinal)
+                if current is None:
+                    # Current here, as a context Tack made used to be; a thread
+                    # working in another device's context keeps its own.
+                    (err,) = driver.cuCtxSetCurrent(ctx)
+                    _check(err)
+                token = _CONTEXTS[int(ctx)] = _ContextToken(ctx, True, ordinal, primary=True,
+                                                             cu_device=self._device)
         # A context is current only on the thread that made or adopted it.
         # Once this one is not current here, or there are two, some thread
         # works in a context it did not make current: from now on every
@@ -1359,9 +1373,12 @@ class CUDABackend(GPUBackend):
                     driver.cuStreamDestroy(token.stream)
                 token.stream = None
             if token.owned:
-                # Mark dead before destroying, so any buffer still holding
-                # this token reports the problem instead of faulting.
+                # Mark dead before releasing or destroying, so any buffer still
+                # holding this token reports the problem instead of faulting.
                 token.alive = False
-                driver.cuCtxDestroy(token.handle)
+                if token.primary:
+                    driver.cuDevicePrimaryCtxRelease(token.cu_device)
+                else:
+                    driver.cuCtxDestroy(token.handle)
         except Exception:
             pass

@@ -284,7 +284,9 @@ sequenceDiagram
 ```
 
 `CUDABackend` adopts whatever context is current on the calling thread when
-it starts and creates its own with `cuCtxCreate` only if there is none; see
+it starts, and otherwise retains the device's primary context, the one the
+CUDA runtime and libraries on it (PyTorch, CuPy, Warp) use, so work from
+either side runs in one context whichever made it current; see
 [Backend Implementations](backend-implementations.md#cuda).
 
 ## Level Zero: one context, shared out of band

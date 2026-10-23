@@ -197,10 +197,16 @@ types as `uint`, so one dispatch covers at most 2³² iterations;
 **Initialization.** `CUDABackend.__init__` (`runtime/cuda_backend.py`) calls
 `cuInit(0)` and `cuDeviceGet(0)`. If a context is already current on the
 calling thread — an embedding application such as an AMReX simulation made
-one — Tack adopts it. Otherwise it creates one with `cuCtxCreate`. Either
-way the context gets a `_ContextToken` that counts the backends sharing it
-and records whether Tack owns it; only an owned context whose last backend
-goes away is destroyed, and buffers allocated in it are marked dead first.
+one — Tack adopts it. Otherwise it retains the device's primary context
+(`cuDevicePrimaryCtxRetain`), which the CUDA runtime and the libraries on it
+(PyTorch, CuPy, Warp) use: until 2026-10 Tack created its own with
+`cuCtxCreate`, and its next launch after one of those libraries made the
+primary context current failed with `CUDA_ERROR_INVALID_HANDLE` (found
+comparing with Warp). Either way the context gets a `_ContextToken` that
+counts the backends sharing it and records whether Tack owns it; when an
+owned context's last backend goes away, a primary context is released
+(others may hold it) and any other destroyed, and buffers allocated in it
+are marked dead first.
 [Memory and Aliasing](memory-and-aliasing.md#when-the-cuda-context-goes-away)
 explains why.
 
