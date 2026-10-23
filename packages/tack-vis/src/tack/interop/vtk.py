@@ -621,7 +621,8 @@ def dataset_to_vtk(data):
         from vtkmodules.vtkCommonDataModel import vtkPartitionedDataSet
 
         out = vtkPartitionedDataSet()
-        out.SetNumberOfPartitions(len(data))
+        # Assigned: the keyword constructor ignores it (VTK 9.7.1).
+        out.number_of_partitions = len(data)
         for i, piece in enumerate(data):
             out.SetPartition(i, dataset_to_vtk(piece))
         return out
@@ -720,7 +721,7 @@ def _datasets_to_collection(datasets):
     from tack.dataset import PartitionedDataSet
 
     out = vtkPartitionedDataSetCollection()
-    out.SetNumberOfPartitionedDataSets(len(datasets))
+    out.number_of_partitioned_data_sets = len(datasets)
     for i, (name, pieces) in enumerate(datasets.items()):
         if not isinstance(pieces, PartitionedDataSet):
             raise TypeError(f"collection entry {name!r} is a {type(pieces).__name__}, not "

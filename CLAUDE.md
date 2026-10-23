@@ -749,6 +749,7 @@ Tack requires VTK 9.7.1 or later (the `interop` extra) and uses VTK's pythonic A
 - A filter with two outputs called as a function returns a tuple of both.
 - `vtkPNGWriter`/`vtkJPEGWriter` called on their input write raw pixels: connect and call `Write()`. An XML writer called on its input works, but returns `None` even when it fails.
 - An int cell type (`ug.cells = (type, ...)`) makes the types a `vtkConstantArray`, and `InsertNextCell` then records every new cell as that type.
-- Not indexable: `vtkMatrix3x3`/`4x4` (`GetElement`), `vtkPartitionedDataSet` (iterates, `GetPartition(i)`), and a partitioned collection iterates over its leaves. A `vtkStructuredGrid`'s `dimensions` is not readable (`GetDimensions`).
+- Not indexable: `vtkMatrix3x3`/`4x4` (`GetElement`), `vtkPartitionedDataSet` (iterates, `GetPartition(i)`), and a partitioned collection iterates over its leaves.
+- `vtkPartitionedDataSet(number_of_partitions=n)` and the collection's `number_of_partitioned_data_sets=` keyword are silently ignored (0 partitions): assign the property after constructing. A `vtkStructuredGrid`'s `dimensions` is not readable (`GetDimensions`).
 
 ## Do not mention Claude in git commits

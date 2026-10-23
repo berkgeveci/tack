@@ -109,9 +109,6 @@ except ImportError:
 else:
     out = pathlib.Path("results") / "partitioned_wavelet.vtpd"
     out.parent.mkdir(exist_ok=True)
-    writer = vtkXMLPartitionedDataSetWriter()
-    writer.SetInputData(dataset_to_vtk(td.PartitionedDataSet(
+    vtkXMLPartitionedDataSetWriter(file_name=str(out))(dataset_to_vtk(td.PartitionedDataSet(
         piece.to_device("cpu") for piece in pieces)))
-    writer.SetFileName(str(out))
-    writer.Write()
     print(f"wrote {out} ({len(pieces)} pieces, ghost marks as vtkGhostType)")

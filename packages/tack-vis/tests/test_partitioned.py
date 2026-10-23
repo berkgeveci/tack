@@ -24,8 +24,13 @@ from tack.runtime.dispatch import env_flag
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 try:
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    from vtkmodules.vtkCommonDataModel import vtkCompositeDataSet
+    from vtkmodules.vtkCommonCore import vtkFloatArray
+    from vtkmodules.vtkCommonDataModel import (
+        vtkCompositeDataSet,
+        vtkImageData,
+        vtkPartitionedDataSet,
+        vtkPartitionedDataSetCollection,
+    )
     from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
     from vtkmodules.vtkFiltersParallelDIY2 import (
         vtkGhostCellsGenerator,
@@ -40,6 +45,9 @@ except ImportError:
     vtk = None
 else:
     vtk = types.SimpleNamespace(vtkCompositeDataSet=vtkCompositeDataSet)
+
+# GetPartition, GetMetaData and the NAME key stay classic: 9.7.1 has no
+# pythonic form for them (a vtkPartitionedDataSet iterates, but walks leaves).
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
 
@@ -369,10 +377,10 @@ def test_pieces_on_two_devices_are_reduced_where_each_is():
 def test_split_pieces_go_to_vtk_and_back():
     pieces = td.split(td.wavelet(6), (2, 1, 2))
     out = dataset_to_vtk(pieces)
-    assert out.GetClassName() == "vtkPartitionedDataSet"
-    assert out.GetNumberOfPartitions() == 4
-    assert out.GetPartition(1).GetClassName() == "vtkImageData"
-    assert out.GetPartition(1).GetBounds() == (0.0, 6.0, -6.0, 6.0, -6.0, 0.0)
+    assert isinstance(out, vtkPartitionedDataSet)
+    assert out.number_of_partitions == 4
+    assert isinstance(out.GetPartition(1), vtkImageData)
+    assert out.GetPartition(1).bounds == (0.0, 6.0, -6.0, 6.0, -6.0, 0.0)
     back = vtk_to_dataset(out)
     assert isinstance(back, td.PartitionedDataSet) and len(back) == 4
     for a, b in zip(pieces, back):
@@ -388,8 +396,8 @@ def test_ghost_marks_go_to_vtk_and_back():
                               points=pieces[0].ghosts.points)
     out = dataset_to_vtk(pieces)
     first = out.GetPartition(0)
-    assert first.GetCellData().GetArray("vtkGhostType").GetDataTypeAsString() == "unsigned char"
-    assert first.GetPointData().GetArray("vtkGhostType") is not None
+    assert np.asarray(first.cell_data["vtkGhostType"]).dtype == np.uint8
+    assert "vtkGhostType" in first.point_data.keys()
     back = vtk_to_dataset(out)
     for a, b in zip(pieces, back):
         assert "vtkGhostType" not in b.fields
@@ -403,7 +411,7 @@ def test_collections_are_dicts_of_partitioned_datasets():
     pieces = td.split(td.wavelet(3), 2)
     one = td.PartitionedDataSet([td.uniform_grid((3, 3, 3))])
     out = dataset_to_vtk({"fluid": pieces, "solid": one})
-    assert out.GetClassName() == "vtkPartitionedDataSetCollection"
+    assert isinstance(out, vtkPartitionedDataSetCollection)
     name = vtk.vtkCompositeDataSet.NAME()
     assert [out.GetMetaData(i).Get(name) for i in range(2)] == ["fluid", "solid"]
     back = vtk_to_dataset(out)
@@ -411,7 +419,7 @@ def test_collections_are_dicts_of_partitioned_datasets():
     assert [len(back["fluid"]), len(back["solid"])] == [2, 1]
     # A name taken twice, and none at all.
     out.GetMetaData(1).Set(name, "fluid")
-    out.SetNumberOfPartitionedDataSets(3)
+    out.number_of_partitioned_data_sets = 3
     assert list(vtk_to_dataset(out)) == ["fluid", "fluid#1", "block2"]
     assert len(vtk_to_dataset(out)["block2"]) == 0
     with pytest.raises(TypeError, match="not a PartitionedDataSet"):
@@ -422,18 +430,12 @@ def test_collections_are_dicts_of_partitioned_datasets():
 def test_vtks_redistributed_pieces_reduce_to_the_wholes_statistics():
     """``vtkRedistributeDataSetFilter`` assigns each cell to one piece, so cell
     statistics over its pieces are the whole's."""
-    source = vtkRTAnalyticSource()
-    source.SetWholeExtent(-6, 6, -6, 6, -6, 6)
-    cells = vtkPointDataToCellData()
-    cells.SetInputConnection(source.GetOutputPort())
-    redistribute = vtkRedistributeDataSetFilter()
-    redistribute.SetInputConnection(cells.GetOutputPort())
-    redistribute.SetNumberOfPartitions(4)
-    redistribute.PreservePartitionsInOutputOn()
-    redistribute.Update()
-    cells.Update()
-    pieces = vtk_to_dataset(redistribute.GetOutputDataObject(0))
-    whole = vtk_to_dataset(cells.GetOutputDataObject(0))
+    image = (vtkRTAnalyticSource(whole_extent=(-6, 6, -6, 6, -6, 6))
+             >> vtkPointDataToCellData())()
+    redistribute = vtkRedistributeDataSetFilter(number_of_partitions=4,
+                                                preserve_partitions_in_output=True)
+    pieces = vtk_to_dataset(redistribute(image))
+    whole = vtk_to_dataset(image)
     assert len(pieces) == 4
     assert sum(p.num_cells for p in pieces) == whole.num_cells
     expected, combined = td.statistics(whole, "RTData"), td.statistics(pieces, "RTData")
@@ -448,24 +450,13 @@ def test_vtks_redistributed_pieces_reduce_to_the_wholes_statistics():
 def test_vtks_ghost_cells_give_the_wholes_statistics():
     """``vtkGhostCellsGenerator`` gives every cell and point of its pieces one owner,
     so point and cell statistics over pieces with ghost layers are the whole's."""
-    source = vtkRTAnalyticSource()
-    source.SetWholeExtent(-6, 6, -6, 6, -6, 6)
-    source.Update()
-    image = source.GetOutput()
-    n = image.GetNumberOfCells()
-    cell_values = numpy_to_vtk((1.5 + np.sin(np.arange(n) * 0.37)).astype(np.float32), deep=1)
-    cell_values.SetName("C")
-    image.GetCellData().AddArray(cell_values)
-    redistribute = vtkRedistributeDataSetFilter()
-    redistribute.SetInputData(image)
-    redistribute.SetNumberOfPartitions(4)
-    redistribute.PreservePartitionsInOutputOn()
-    ghosts = vtkGhostCellsGenerator()
-    ghosts.SetInputConnection(redistribute.GetOutputPort())
-    ghosts.SetNumberOfGhostLayers(1)
-    ghosts.BuildIfRequiredOff()
-    ghosts.Update()
-    pieces = vtk_to_dataset(ghosts.GetOutputDataObject(0))
+    image = vtkRTAnalyticSource(whole_extent=(-6, 6, -6, 6, -6, 6))()
+    n = image.number_of_cells
+    image.cell_data["C"] = vtkFloatArray((1.5 + np.sin(np.arange(n) * 0.37)).astype(np.float32))
+    layered = (vtkRedistributeDataSetFilter(number_of_partitions=4,
+                                            preserve_partitions_in_output=True)
+               >> vtkGhostCellsGenerator(number_of_ghost_layers=1, build_if_required=False))
+    pieces = vtk_to_dataset(layered(image))
     whole = vtk_to_dataset(image)
     assert all(p.ghosts is not None and p.ghosts.cells is not None for p in pieces)
     assert sum(p.num_cells for p in pieces) > whole.num_cells        # ghost layers
