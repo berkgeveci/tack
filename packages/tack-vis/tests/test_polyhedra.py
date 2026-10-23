@@ -28,7 +28,6 @@ from tack.runtime.dispatch import env_flag
 
 try:
     from vtkmodules import vtkCommonDataModel
-    from vtkmodules.vtkFiltersGeneral import vtkGradientFilter
     from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
     from vtkmodules.vtkFiltersSources import vtkCellTypeSource
 
@@ -40,7 +39,6 @@ except ImportError:
 else:
     vtk = types.SimpleNamespace(vtkGeometryFilter=vtkGeometryFilter,
                                 vtkCellTypeSource=vtkCellTypeSource,
-                                vtkGradientFilter=vtkGradientFilter,
                                 vtkPolyhedron=vtkCommonDataModel.vtkPolyhedron)
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
@@ -1139,7 +1137,7 @@ def test_polyhedral_gradients_of_a_linear_field_are_vtks(backend):
     expected = np.empty((data.num_cells, 3))
     for c in range(data.num_cells):
         cell = grid.GetCell(c)
-        values = [u[cell.GetPointId(j)] for j in range(cell.GetNumberOfPoints())]
+        values = [u[cell.GetPointId(j)] for j in range(cell.number_of_points)]
         derivative = [0.0, 0.0, 0.0]
         cell.Derivatives(0, [0.5, 0.5, 0.5], values, 1, derivative)
         expected[c] = derivative
