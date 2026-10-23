@@ -1126,9 +1126,10 @@ def test_polyhedral_gradients_of_a_linear_field_are_vtks(backend):
     """vtkPolyhedron's derivatives (of mean value coordinates) at each cell's
     parametric center agree for a linear field, where both are exact; for other
     fields the interpolants differ. Not vtkGradientFilter: at points it takes the
-    derivatives at the cell's vertices, where mean value coordinates are singular,
-    and on VTK 9.7.1 it is wrong at every vertex but a cell's first (a box's
-    gradient of x is -3.2 at its second corner)."""
+    derivatives at the cell's corners, and on VTK 9.7.1 they are wrong in each
+    component whose parametric coordinate is 1 (a box's gradient of x is -3.2 at
+    its second corner), likely because their forward differences step out of
+    the cell."""
     points, cells, _ = _voronoi_columns()
     data = td.DataSet(_from_cell_faces(cells, len(points)), points)
     x = data.positions().astype(np.float64)

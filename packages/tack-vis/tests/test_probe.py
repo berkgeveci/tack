@@ -252,9 +252,9 @@ def test_probe_of_voronoi_polyhedra_holds_the_points_inside(backend):
 
     Not vtkProbeFilter, on VTK 9.7.1: on these cells it accepts 55 of 800 points
     lying outside every cell (up to 3.8% of the mesh's diagonal), and for 83 of
-    the rest its linear field is off by up to 0.18 -- vtkPolyhedron's
-    InterpolateFunctions does not map the parametric coordinates
-    EvaluatePosition returns back to the point."""
+    the rest its linear field is off by up to 0.18, because
+    vtkPolyhedron::EvaluatePosition reports points outside a convex cell as
+    inside (its own IsInside disagrees)."""
     from scipy.spatial import Delaunay
     from test_polyhedra import _from_cell_faces, _voronoi_columns
 
