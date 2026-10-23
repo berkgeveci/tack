@@ -3629,9 +3629,10 @@ can be too large for <code>i32</code> (a hexahedron tetrahedralizes into 20
 connectivity entries), so a pipeline that starts in <code>i64</code> stays there.
 Sort keys are tuples of ids, never ids packed into one integer, so 64-bit
 ids sort as 32-bit ones do.</p>
-<p>On GPUs without 64-bit atomics (Metal, Level Zero), <code>CellLocator</code> refuses a
-dataset of more than 2^30 − 1 cells (it ranks a point's candidate cells up to
-twice the cell count); everything else works there.</p>
+<p>On GPUs without 64-bit atomics (Metal, Level Zero), <code>CellLocator</code>'s search
+from the cells refuses a dataset of more than 2^30 − 1 cells (it ranks a
+point's candidate cells up to twice the cell count in an atomic minimum); the
+search from the points uses no atomics, and everything else works there.</p>
 <p><code>pytest --ids=i64</code> runs the dataset tests with every topology in <code>i64</code>.</p>
 <h3 id="derived-entities">Derived entities<a class="headerlink" href="#derived-entities" title="Permanent link">&para;</a></h3>
 <ul>
@@ -4706,10 +4707,15 @@ has it. Of the cells that hold the point the smallest id wins; a cell that
 only comes within the tolerance wins only where none holds it, so a point
 just inside one cell is not extrapolated in a lower-numbered neighbour.
 Advection ranks its cells the same way.
-The search runs from the cells: each cell tests the points in the bins its
-box overlaps, so a cell is reached through its own view, never looked up by
-id. The bins follow the geometry when the locator is built; build it again
-after moving the points.</p>
+The search runs from the points: one launch, each point testing the cells
+its bin may hold (<code>cell_bins()</code>, cells reached by id), and <code>probe</code> reads point
+and cell data the same way, one launch per field. Where cells cannot be read
+by id -- an order-2 or <code>L2</code> geometry, line or vertex cells -- it runs from the
+cells instead, each cell testing the points in the bins its box overlaps
+through its own view; so does a fresh locator's first query of fewer points
+than a quarter of its cells, sparing the cell bins until it is used again.
+Both rank candidates alike and give the same answer. The bins follow the
+geometry when the locator is built; build it again after moving the points.</p>
 <p>A polyhedron has no parametric coordinates. Its faces are fanned into
 triangles from their face points (the mean of each face's points), and the
 triangles into <em>sub-tetrahedra</em> from the cell point (the mean of the cell's
