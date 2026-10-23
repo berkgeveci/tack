@@ -118,7 +118,8 @@ Sort keys are tuples of ids, never ids packed into one integer, so 64-bit
 ids sort as 32-bit ones do.
 
 On GPUs without 64-bit atomics (Metal, Level Zero), `CellLocator` refuses a
-dataset of more than 2^31 − 1 cells; everything else works there.
+dataset of more than 2^30 − 1 cells (it ranks a point's candidate cells up to
+twice the cell count); everything else works there.
 
 `pytest --ids=i64` runs the dataset tests with every topology in `i64`.
 
@@ -679,9 +680,12 @@ uniform grid over the dataset, about `density` bins per cell.
 `locator.find(points)` takes an `(n, 3)` array or a field of 3-vectors and
 gives each point's cell (a field of the dataset's `id_dtype`, -1 where
 none holds it) and its
-parametric coordinates there. Where cells share the point, the smallest
-cell id wins. A point counts as in a cell within 0.1% of the cell's
-bounding-box diagonal, as `vtkProbeFilter`'s computed tolerance has it.
+parametric coordinates there. A point counts as in a cell within 0.1% of
+the cell's bounding-box diagonal, as `vtkProbeFilter`'s computed tolerance
+has it. Of the cells that hold the point the smallest id wins; a cell that
+only comes within the tolerance wins only where none holds it, so a point
+just inside one cell is not extrapolated in a lower-numbered neighbour.
+Advection ranks its cells the same way.
 The search runs from the cells: each cell tests the points in the bins its
 box overlaps, so a cell is reached through its own view, never looked up by
 id. The bins follow the geometry when the locator is built; build it again

@@ -157,9 +157,11 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
             elif mode == _OUT:
                 p = out
 
-            # Its cell -- the smallest id among those holding it -- and the
-            # velocity there.
+            # Its cell, ranked as the locator ranks them -- holding the point
+            # ahead of coming within the tolerance, then the smaller id -- and
+            # the velocity there.
             best = ncells
+            best_rank = 2 * ncells
             best_type = 0
             best_pc = p - p
             bi = _bin(p[0], ox, ix, nx, slack)
@@ -172,7 +174,7 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
                     a = lo[e]
                     c = hi[e]
                     s = tolerance * (c - a).norm()
-                    if (e < best and p[0] >= a[0] - s and p[0] <= c[0] + s
+                    if (e < best_rank and p[0] >= a[0] - s and p[0] <= c[0] + s
                             and p[1] >= a[1] - s and p[1] <= c[1] + s
                             and p[2] >= a[2] - s and p[2] <= c[2] + s):
                         kind = mesh.cell_type(e)
@@ -185,6 +187,7 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
                         converged = 0
                         inside = 0
                         near = p - p
+                        surface = 0
                         if (kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
                             pc, converged = tetra.world_to_parametric(pts, p)
                             inside = tetra.is_inside(pc, 0.0)
@@ -207,20 +210,31 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
                             near = voxel.nearest_point(pts, p, pc)
                         elif (kinds.PRESENT & 32) != 0 and kind == shapes.TRIANGLE:
                             pc, converged = triangle.world_to_parametric(pts, p)
+                            inside = triangle.is_inside(pc, 0.0)
+                            surface = 1
                             near = triangle.nearest_point(pts, p, pc)
                         elif (kinds.PRESENT & 64) != 0 and kind == shapes.QUAD:
                             pc, converged = quad.world_to_parametric(pts, p)
+                            inside = quad.is_inside(pc, 0.0)
+                            surface = 1
                             near = quad.nearest_point(pts, p, pc)
                         elif (kinds.PRESENT & 128) != 0 and kind == shapes.PIXEL:
                             pc, converged = pixel.world_to_parametric(pts, p)
+                            inside = pixel.is_inside(pc, 0.0)
+                            surface = 1
                             near = pixel.nearest_point(pts, p, pc)
                         # As the locator: inside a solid, or within the tolerance of
-                        # the cell's nearest point.
+                        # the cell's nearest point; holding it (a surface: over it)
+                        # ranks first.
                         d = near - p
-                        if converged == 1 and (inside == 1 or d.dot(d) <= s * s):
-                            best = e
-                            best_type = kind
-                            best_pc = pc
+                        if converged == 1 and ((inside == 1 and surface == 0)
+                                               or d.dot(d) <= s * s):
+                            rank = e if inside == 1 else e + ncells
+                            if rank < best_rank:
+                                best_rank = rank
+                                best = e
+                                best_type = kind
+                                best_pc = pc
             found = 1 if best < ncells else 0
             v = p - p
             if found == 1:

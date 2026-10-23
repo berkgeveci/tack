@@ -37,8 +37,9 @@ resolved by the sampled field replacing the target's field of that name.
 Reuse a `CellLocator` when geometry is fixed and only the sampled fields change.
 Rebuild it after moving geometry; its spatial bins describe the mesh when it
 was constructed. Where a query lies in more than one cell, the smallest cell
-id wins. At a discontinuity that choice can determine which side is sampled;
-it is not an average across the interface.
+id wins; a cell the query is only within the tolerance of counts only where no
+cell holds it. At a discontinuity that choice can determine which side is
+sampled; it is not an average across the interface.
 
 Probing currently needs shape-based cells. A `Values` field on faces is not a
 continuous field that can be sampled arbitrarily through the volume.
