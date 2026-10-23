@@ -4698,9 +4698,9 @@ data goes to each, the points stay the same.</p>
 <p><code>CellLocator(data, density=1.0)</code> bins the cells' bounding boxes on a
 uniform grid over the dataset, about <code>density</code> bins per cell.
 <code>locator.find(points)</code> takes an <code>(n, 3)</code> array or a field of 3-vectors and
-gives each point's cell (a field of the dataset's <code>id_dtype</code>, -1 where
-none holds it) and its
-parametric coordinates there. A point counts as in a cell within 0.1% of
+returns <code>Locations(cells, pcs, tets)</code>, a named tuple: each point's cell (a
+field of the dataset's <code>id_dtype</code>, -1 where none holds it), its parametric
+coordinates there, and <code>tets</code>, which is <code>None</code> except in polyhedra (below). A point counts as in a cell within 0.1% of
 the cell's bounding-box diagonal, as <code>vtkProbeFilter</code>'s computed tolerance
 has it. Of the cells that hold the point the smallest id wins; a cell that
 only comes within the tolerance wins only where none holds it, so a point
@@ -4715,11 +4715,11 @@ triangles from their face points (the mean of each face's points), and the
 triangles into <em>sub-tetrahedra</em> from the cell point (the mean of the cell's
 distinct points); point data is linear on each, taking the means of the
 values at those two points, so a linear field is exact and a face's two
-cells agree on it. On a polyhedral dataset <code>find</code> returns <code>(cells, tets,
-pcs)</code>: each point's sub-tetrahedron in its cell (i32, numbered face by face
-and edge by edge, -1 for none) and its coordinates there, the weights of
-the face point and the edge's two points, which a field's view evaluates
-with <code>tet_value(c, t, pc)</code>. The locator refuses a dataset with a cell that
+cells agree on it. On a polyhedral dataset <code>find</code>'s <code>tets</code> is each point's
+sub-tetrahedron in its cell (i32, numbered face by face and edge by edge,
+-1 for none), and <code>pcs</code> its coordinates there, the weights of the face
+point and the edge's two points, which a field's view evaluates with
+<code>tet_value(c, t, pc)</code>. The locator refuses a dataset with a cell that
 is not star-shaped from its cell point, whose sub-tetrahedra would overlap.</p>
 <p><code>probe(data, where, fields=None, locator=None)</code> evaluates <code>data</code>'s fields
 at the points of <code>where</code>, as Viskores' Probe and VTK's <code>vtkProbeFilter</code> do.
