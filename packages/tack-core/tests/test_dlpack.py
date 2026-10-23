@@ -177,6 +177,39 @@ def test_an_unconsumed_versioned_capsule_is_released():
     assert len(dlpack._prevent_gc) == before
 
 
+def test_tack_sets_no_prototype_on_the_shared_c_api():
+    """``ctypes.pythonapi.<name>`` is one object for the whole process, so a
+    prototype set on it re-types every other library's calls, and theirs
+    Tack's. Warp sets PyCapsule_IsValid's first argument to py_object; Tack
+    set it to c_void_p, on the same object."""
+    mine = [f for f in vars(dlpack).values() if isinstance(f, ctypes._CFuncPtr)]
+    for name in ("PyCapsule_New", "PyCapsule_IsValid", "PyCapsule_GetPointer",
+                 "PyCapsule_SetName", "Py_IncRef"):
+        shared = getattr(ctypes.pythonapi, name)
+        assert all(f is not shared for f in mine), f"Tack uses the shared {name}"
+
+
+def test_unconsumed_capsules_are_released_after_another_library_retypes_the_c_api(
+        monkeypatch):
+    """What importing Warp after Tack did: Warp's prototypes on the shared
+    PyCapsule_IsValid and PyCapsule_GetPointer took Tack's capsule pointer for
+    a Python object, the destructor found no capsule, and every export
+    dropped unconsumed stayed pinned (100 of 100 on mustafar-linux)."""
+    for name in ("PyCapsule_IsValid", "PyCapsule_GetPointer"):
+        monkeypatch.setattr(getattr(ctypes.pythonapi, name), "argtypes",
+                            [ctypes.py_object, ctypes.c_char_p])
+    gc.collect()
+    before = len(dlpack._prevent_gc)
+    for versioned in (False, True):
+        for _ in range(25):
+            array = _array(np.arange(4, dtype=np.float32), tack.f32)
+            capsule = (array.__dlpack__(max_version=(1, 0)) if versioned
+                       else array.__dlpack__())
+            del array, capsule
+    gc.collect()
+    assert len(dlpack._prevent_gc) == before
+
+
 @pytest.mark.parametrize("shape", [(6,), (2, 3), (2, 3, 4), (1, 1)])
 def test_shape_survives(shape):
     values = np.arange(int(np.prod(shape)), dtype=np.float32).reshape(shape)

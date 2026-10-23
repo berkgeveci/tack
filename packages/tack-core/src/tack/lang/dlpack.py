@@ -140,19 +140,28 @@ _prevent_gc = {}
 # indistinguishable from "no context".
 _ctx_keys = itertools.count(1)
 
-_PyCapsule_New = ctypes.pythonapi.PyCapsule_New
-_PyCapsule_New.restype = ctypes.py_object
-_PyCapsule_New.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
+def _c_api(name, restype, *argtypes):
+    """``name`` from Python's C API, with a prototype of Tack's own.
+
+    ``ctypes.pythonapi.<name>`` is one object for the whole process, so a
+    prototype set on it re-types every other library's calls, and theirs
+    Tack's. Warp sets PyCapsule_IsValid's first argument to py_object where
+    Tack used c_void_p: imported after Warp, Tack made Warp's capsule
+    destructor raise ArgumentError; imported before it, Warp's prototype made
+    Tack's destructor find no capsule, and every export dropped unconsumed
+    stayed pinned. A prototype of one's own binds the same symbol."""
+    return ctypes.PYFUNCTYPE(restype, *argtypes)((name, ctypes.pythonapi))
+
+
+_PyCapsule_New = _c_api("PyCapsule_New", ctypes.py_object,
+                        ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)
 
 # Raw pointers rather than py_object throughout: these run during capsule
 # teardown, where touching the object's refcount risks resurrecting it.
-_PyCapsule_IsValid = ctypes.pythonapi.PyCapsule_IsValid
-_PyCapsule_IsValid.restype = ctypes.c_int
-_PyCapsule_IsValid.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-
-_PyCapsule_GetPointer = ctypes.pythonapi.PyCapsule_GetPointer
-_PyCapsule_GetPointer.restype = ctypes.c_void_p
-_PyCapsule_GetPointer.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_PyCapsule_IsValid = _c_api("PyCapsule_IsValid", ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p)
+_PyCapsule_GetPointer = _c_api("PyCapsule_GetPointer", ctypes.c_void_p,
+                               ctypes.c_void_p, ctypes.c_char_p)
+_Py_IncRef = _c_api("Py_IncRef", None, ctypes.py_object)
 
 
 def _release(managed_ptr, struct, _cast=ctypes.cast, _pointer=ctypes.POINTER,
@@ -218,7 +227,7 @@ _capsule_destructor = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(_destroy_capsule)
 # module's globals freed the thunk, and the capsule then called freed memory:
 # 39_vtk_interop.py segfaulted at exit. One reference each, never released.
 for _thunk in (_dlpack_deleter, _dlpack_deleter_versioned, _capsule_destructor):
-    ctypes.pythonapi.Py_IncRef(ctypes.py_object(_thunk))
+    _Py_IncRef(_thunk)
 del _thunk
 
 
@@ -339,9 +348,7 @@ def dlpack_device(array):
 # release it when the array dies -- otherwise the producer frees memory
 # the array is still pointing at.
 
-_PyCapsule_SetName = ctypes.pythonapi.PyCapsule_SetName
-_PyCapsule_SetName.restype = ctypes.c_int
-_PyCapsule_SetName.argtypes = [ctypes.py_object, ctypes.c_char_p]
+_PyCapsule_SetName = _c_api("PyCapsule_SetName", ctypes.c_int, ctypes.py_object, ctypes.c_char_p)
 
 # DLPack device type -> the memory spaces a backend reports for it. An
 # imported tensor has to land on a backend that can actually address it.

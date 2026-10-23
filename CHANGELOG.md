@@ -148,6 +148,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- DLPack: Tack set argument types on `ctypes.pythonapi`'s capsule
+  functions, which are one object for the whole process, so its types and
+  another library's replaced each other. Imported after Warp, Tack made
+  Warp's capsule destructor raise `ArgumentError` at exit; imported before
+  it, Warp's made Tack's destructor miss its capsule, and every array
+  exported through DLPack and never consumed stayed pinned, its device
+  memory never freed. Tack now binds the functions with prototypes of its
+  own and touches nothing shared.
 - `contour` read only an order-2 `H1` field's corner values, so a quadratic
   that rises inside a cell from zero at its corners gave no surface,
   silently. It now refuses an order-2 field (`NotImplementedError`) on
