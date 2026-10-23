@@ -3699,7 +3699,9 @@ process, so a device pointer means the same thing to every library.</p>
     Tack-&gt;&gt;VTK: dlpack_to_vtk(array) — consumes array.__dlpack__()
     VTK--&gt;&gt;App: vtkDataArray over the same allocation</code></pre>
 <p><code>CUDABackend</code> adopts whatever context is current on the calling thread when
-it starts and creates its own with <code>cuCtxCreate</code> only if there is none; see
+it starts, and otherwise retains the device's primary context, the one the
+CUDA runtime and libraries on it (PyTorch, CuPy, Warp) use, so work from
+either side runs in one context whichever made it current; see
 <a href="../backend-implementations/#cuda">Backend Implementations</a>.</p>
 <h2 id="level-zero-one-context-shared-out-of-band">Level Zero: one context, shared out of band<a class="headerlink" href="#level-zero-one-context-shared-out-of-band" title="Permanent link">&para;</a></h2>
 <h3 id="why-a-pointer-is-not-enough">Why a pointer is not enough<a class="headerlink" href="#why-a-pointer-is-not-enough" title="Permanent link">&para;</a></h3>
