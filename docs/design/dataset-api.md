@@ -571,11 +571,14 @@ What building it showed:
   - *No edge -> cells.* A face has at most two cells, so its record is
     fixed-size; an edge has any number, so that direction would be a CSR
     list. Nothing needs it yet.
-  - *Structured faces and edges are derived by the general sort.* Section
-    3.1 says a structured topology implies them arithmetically (face and
-    edge ids from (i, j, k) and a direction); the prototype sorts keys as
-    for an unstructured mesh, which is correct but stores and sorts what
-    could be computed.
+  - *Structured faces and edges are derived arithmetically* (2026-10-23),
+    as section 3.1 says: one pass over the cells, each local face's or
+    edge's id from the cell's (i, j, k) and the shape's tables, no sort and
+    no per-entry keys. The ids are the general sort's, so a structured grid
+    and the same cells as unstructured get identical arrays
+    (`test_structured_faces_and_edges_are_the_general_derivations`). The
+    derived arrays are still stored; computing them in the views instead is
+    left until something needs the memory.
   - *A face set is re-gathered on every `for_each`*: `Faces.groups(subset)`
     splits the set by shape each call, where the full face list is
     cached.
