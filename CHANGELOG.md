@@ -19,6 +19,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `gradients` and `flow_quantities` work on polyhedra, which have no
+  reference element: each cell's gradient is Green–Gauss over its faces,
+  each fanned into triangles from the mean of its points, which is exact for
+  a linear field and, on a parallelepiped, the trilinear gradient at its
+  center. At the points it is the average of the cells' gradients, as on
+  shapes. Polygons and polylines get zero, as lower-dimensional cells do.
 - Implicit topology arrays. An `UnstructuredTopology`'s `types`, `offsets`
   and `connectivity` may be implicit arrays, kept as they are rather than
   stored: a `ConstantArray` of types for cells all of one shape, a

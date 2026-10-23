@@ -545,7 +545,7 @@ and "polyline" `PolylineTopology`.
 | `CellLocator`, `probe` | yes | not yet | not yet | not yet |
 | `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
 | `cell_centers`, `values_at_centers` | yes | no | no | no |
-| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no | no |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
 | `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
 | side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |

@@ -28,6 +28,7 @@ from tack.runtime.dispatch import env_flag
 
 try:
     from vtkmodules import vtkCommonDataModel
+    from vtkmodules.vtkFiltersGeneral import vtkGradientFilter
     from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
     from vtkmodules.vtkFiltersSources import vtkCellTypeSource
 
@@ -39,6 +40,7 @@ except ImportError:
 else:
     vtk = types.SimpleNamespace(vtkGeometryFilter=vtkGeometryFilter,
                                 vtkCellTypeSource=vtkCellTypeSource,
+                                vtkGradientFilter=vtkGradientFilter,
                                 vtkPolyhedron=vtkCommonDataModel.vtkPolyhedron)
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
@@ -913,7 +915,6 @@ def test_reference_element_algorithms_are_refused(backend, make):
     cell_data = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells, dtype=float)))
     for call in (lambda: td.algorithms.cell_centers(data),
                  lambda: td.algorithms.values_at_centers(data, point_data),
-                 lambda: td.algorithms.gradients(data, point_data),
                  lambda: td.project(data, point_data, td.SideTraces(data)),
                  lambda: td.algorithms.jump(data, point_data)):
         with pytest.raises(NotImplementedError, match="needs a reference element"):
@@ -979,3 +980,108 @@ def test_check_winding_takes_cells_that_list_their_faces(backend):
     assert len(td.check_winding(td.as_polyhedra(data))) == 0
     with pytest.raises(TypeError, match="list their faces"):
         td.check_winding(data)
+
+
+# ── Gradients without a reference element ───────────────────────────
+
+_GRADIENT = np.array([0.7, -1.3, 2.1])
+
+
+def _gradient_meshes():
+    """Polyhedral meshes of several kinds: Voronoi columns (cells of many faces,
+    some of five points or more), and the shape meshes as polyhedra."""
+    points, cells, _ = _voronoi_columns()
+    meshes = {"voronoi": td.DataSet(_from_cell_faces(cells, len(points)), points)}
+    for name, data in _solid_meshes().items():
+        meshes[name] = td.as_polyhedra(data)
+    return meshes
+
+
+@pytest.mark.parametrize("name", ["voronoi", "mixed", "tetra", "hexahedron", "wedge", "pyramid",
+                                  "voxel"])
+def test_polyhedral_gradients_of_a_linear_field_are_exact(backend, name):
+    """Green-Gauss over the faces fanned from their points' means is exact for a
+    linear field, at the cells and at the points, scalar or vector."""
+    meshes = _gradient_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    x = data.positions().astype(np.float64)
+    data.fields["u"] = td.Field(td.H1(data), _scalars(x @ _GRADIENT + 3.0))
+    for at in ("cells", "points"):
+        np.testing.assert_allclose(td.gradients(data, "u", at=at).values.numpy(),
+                                   np.broadcast_to(_GRADIENT, (data.num_cells if at == "cells"
+                                                               else data.num_points, 3)),
+                                   atol=2e-5)
+    vector = np.c_[x @ _GRADIENT, -2.0 * (x @ _GRADIENT), x[:, 0]].astype(np.float32)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(vector, tack.vec3()))
+    expected = np.r_[_GRADIENT, -2.0 * _GRADIENT, [1.0, 0.0, 0.0]]
+    g = td.gradients(data, "v")
+    np.testing.assert_allclose(g.values.numpy(), np.broadcast_to(expected, (data.num_cells, 9)),
+                               atol=5e-5)
+    q = td.flow_quantities(data, g)
+    np.testing.assert_allclose(q.divergence.values.numpy(), _GRADIENT[0] + 2.6, atol=5e-5)
+
+
+@pytest.mark.parametrize("name", ["hexahedron", "voxel"])
+def test_polyhedral_gradients_of_hexahedra_are_the_trilinear_center_gradient(backend, name):
+    """On a parallelepiped, Green-Gauss over its fanned faces is the trilinear
+    gradient at its center: the shape path's, for any field."""
+    meshes = _solid_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    x = data.positions().astype(np.float64)
+    values = _scalars(np.sin(2.0 * x[:, 0]) * x[:, 1] ** 2 + x[:, 2] ** 3)
+    data.fields["q"] = td.Field(td.H1(data), values)
+    poly.fields["q"] = td.Field(td.H1(poly), values)
+    np.testing.assert_allclose(td.gradients(poly, "q").values.numpy(),
+                               td.gradients(data, "q").values.numpy(), atol=1e-5)
+
+
+def test_polyhedral_gradients_of_cell_data_and_polygons_are_zero(backend):
+    """As on shapes: cell data is constant in each cell, and cells below three
+    dimensions get zero."""
+    poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    cells = td.Field(td.Constant(poly), _scalars(np.arange(poly.num_cells, dtype=float)))
+    np.testing.assert_array_equal(td.gradients(poly, cells).values.numpy(), 0.0)
+    polygons = td.as_polygons(_plane_mesh())
+    x = polygons.positions()
+    linear = td.Field(td.H1(polygons), _scalars(x[:, 0] + x[:, 1]))
+    np.testing.assert_array_equal(td.gradients(polygons, linear).values.numpy(), 0.0)
+
+
+def test_a_flat_polyhedron_has_a_nan_gradient(backend):
+    """A cell of no volume divides by zero, as a singular Jacobian does on shapes."""
+    pts = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], np.float32)
+    faces = [[0, 1, 2, 3], [3, 2, 1, 0]]          # a square, both ways: no volume
+    data = td.DataSet(_from_cell_faces([faces], 4), pts)
+    data.fields["u"] = td.Field(td.H1(data), _scalars(pts[:, 0]))
+    assert np.isnan(td.gradients(data, "u").values.numpy()).all()
+
+
+@needs_vtk
+def test_polyhedral_gradients_of_a_linear_field_are_vtks(backend):
+    """vtkPolyhedron's derivatives (of mean value coordinates) at each cell's
+    parametric center agree for a linear field, where both are exact; for other
+    fields the interpolants differ. Not vtkGradientFilter: at points it takes the
+    derivatives at the cell's vertices, where mean value coordinates are singular,
+    and on VTK 9.7.1 it is wrong at every vertex but a cell's first (a box's
+    gradient of x is -3.2 at its second corner)."""
+    points, cells, _ = _voronoi_columns()
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    x = data.positions().astype(np.float64)
+    u = x @ _GRADIENT + 3.0
+    data.fields["u"] = td.Field(td.H1(data), _scalars(u))
+    grid = dataset_to_vtk(data)
+    expected = np.empty((data.num_cells, 3))
+    for c in range(data.num_cells):
+        cell = grid.GetCell(c)
+        values = [u[cell.GetPointId(j)] for j in range(cell.GetNumberOfPoints())]
+        derivative = [0.0, 0.0, 0.0]
+        cell.Derivatives(0, [0.5, 0.5, 0.5], values, 1, derivative)
+        expected[c] = derivative
+    ours = td.gradients(data, "u").values.numpy()
+    np.testing.assert_allclose(expected, np.broadcast_to(_GRADIENT, ours.shape), atol=1e-6)
+    np.testing.assert_allclose(ours, expected, atol=2e-5)
