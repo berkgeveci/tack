@@ -121,12 +121,10 @@ class CUDACodeGen(CFamilyCodeGen):
     # NVRTC's --fmad=true fuses a multiply into an add anywhere, across
     # statements too: `p = a * b; q = p + c` became one fma, p never rounded,
     # which the language contract forbids (fusion stays inside one
-    # expression; a value bound to a name is rounded once). Two kernels
-    # inlining the same function then rounded it differently: the locator's
-    # two searches disagreed at shared vertices. So a floating product that
-    # is not an operand of a + or - is __fmul_rn/__dmul_rn, which NVRTC never
-    # fuses; a + or - keeps its products plain, fusable as the contract
-    # permits. HIP limits contraction itself (-ffp-contract=on) and OpenCL
+    # expression; a value bound to a name is rounded once). So a floating
+    # product that is not an operand of a + or - is __fmul_rn/__dmul_rn,
+    # which NVRTC never fuses; a + or - keeps its products plain, fusable as
+    # the contract permits. HIP limits contraction itself (-ffp-contract=on) and OpenCL
     # contracts per expression, so both keep plain products.
     _rounded_products = True
 

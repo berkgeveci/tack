@@ -476,9 +476,12 @@ backend.
 NVRTC's `--fmad=true` fuses across statements too, but where a product has
 one later use: `p = a * b; out = p + c` became one fma, `p` never rounded.
 `p - p` cannot show that, since the compiler folds it whether or not it
-fuses, so the CUDA tests passed while the locator's two searches, inlining
-the same functions into different kernels, disagreed at shared vertices.
-NVRTC has no per-expression option, so the CUDA generator rounds such
+fuses, so it went unseen until the locator's two searches, inlining the
+same functions into different kernels, disagreed at shared vertices on
+CUDA. (Fusion inside one expression, which the contract permits, can
+still differ between two such kernels; what fixed the locator was a margin
+on its "holds the point" test, since which cell held a shared vertex was
+rounding noise on every backend.) NVRTC has no per-expression option, so the CUDA generator rounds such
 products itself: a floating product that is not an operand of a `+` or `-`
 is `__fmul_rn`/`__dmul_rn`, which NVRTC never fuses, and the products of a
 sum stay plain, fusable as the contract permits. A test reads a named

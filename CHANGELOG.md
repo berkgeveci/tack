@@ -150,11 +150,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 - CUDA: a product bound to a name, or returned from a device function, was
   fused into a later statement's sum (NVRTC's `--fmad=true` fuses across
-  statements), against the float contract's one rounding per named value.
-  The same inlined functions then rounded differently in two kernels, and
-  `CellLocator`'s point-side and cell-side searches disagreed at shared
-  vertices of tetrahedra. The CUDA generator now emits such products as
-  `__fmul_rn`/`__dmul_rn`; a product inside a sum may still fuse.
+  statements: all of 100k values on an RTX 4060 Ti), against the float
+  contract's one rounding per named value. The CUDA generator now emits
+  such products as `__fmul_rn`/`__dmul_rn`; a product inside a sum may
+  still fuse, as the contract permits.
 - DLPack: Tack set argument types on `ctypes.pythonapi`'s capsule
   functions, which are one object for the whole process, so its types and
   another library's replaced each other. Imported after Warp, Tack made
