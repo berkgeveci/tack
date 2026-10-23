@@ -269,6 +269,9 @@ def test_native_reduction_cpp_syntax(dialect, op, tmp_path):
     preamble = '''#include <stdint.h>
 #define __device__
 #define __global__
+// CUDA's unfusable products, as the generator emits them for a named product.
+static inline float __fmul_rn(float a, float b) { return a * b; }
+static inline double __dmul_rn(double a, double b) { return a * b; }
 #define __shared__
 struct Dim { unsigned int x; };
 extern Dim threadIdx, blockIdx, blockDim;

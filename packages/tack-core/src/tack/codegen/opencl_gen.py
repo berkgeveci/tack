@@ -72,6 +72,9 @@ class OpenCLCodeGen(CUDACodeGen):
     # IGC misfolds widened negation/abs of a signed minimum; see IntegerCodeGen.
     _opaque_negation = True
     _ptx_negation = False
+    # OpenCL C contracts within an expression only (FP_CONTRACT): products
+    # need no explicit rounding (CUDACodeGen), and it has no __fmul_rn.
+    _rounded_products = False
 
     def generate(self) -> str:
         func = self.ir_func

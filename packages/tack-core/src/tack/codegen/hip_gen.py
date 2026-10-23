@@ -33,6 +33,9 @@ class HIPCodeGen(CUDACodeGen):
     _TEXTURE_OBJECT_TYPE = "hipTextureObject_t"
     # Inline PTX is NVIDIA-only; hipRTC compiles the plain C negation.
     _ptx_negation = False
+    # hipRTC compiles with -ffp-contract=on, which keeps fusion inside an
+    # expression: products need no explicit rounding (CUDACodeGen).
+    _rounded_products = False
 
     def generate(self) -> str:
         """Generate HIP C source for the kernel."""

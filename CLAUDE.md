@@ -624,7 +624,12 @@ and every read agrees (`x - x` is 0). General reassociation is not
 permitted. CPU emits no fast-math flags; HIP/OpenCL retain default settings
 without unsafe options, except that HIP passes `-ffp-contract=on`
 (`_HIPRTC_OPTIONS`; a vendor workaround, see `docs/design/vendor-workarounds.md`),
-since a named value must be rounded once for every read. Floating math
+since a named value must be rounded once for every read. NVRTC has no such
+option and fuses a product into a later statement's sum, so `CUDACodeGen`
+emits a floating product that is not an operand of `+`/`-` as
+`__fmul_rn`/`__dmul_rn` (`_rounded_products`, off for HIP and OpenCL;
+another vendor workaround); host shims compiling generated CUDA define the
+two (`test_float_semantics.py`'s later-sum test). Floating math
 calls convert arguments to the result precision first; integer arguments
 default to f32, irrespective of the destination array. CPU libm calls use
 the matching f32/f64 symbols and return that precision before nested

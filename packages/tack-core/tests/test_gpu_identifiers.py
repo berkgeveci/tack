@@ -300,6 +300,9 @@ def test_generated_cpp_compiles_and_executes_collisions(generate, named_kernel, 
 #include <cstdio>
 #define __global__
 #define __device__
+// CUDA's unfusable products, as the generator emits them for a named product.
+static inline float __fmul_rn(float a, float b) { return a * b; }
+static inline double __dmul_rn(double a, double b) { return a * b; }
 struct Grid { unsigned int x; };
 Grid blockIdx = {0}, blockDim = {1}, threadIdx = {0};
 ''' + source + f'''

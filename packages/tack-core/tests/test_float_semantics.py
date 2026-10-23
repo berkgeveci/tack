@@ -238,6 +238,46 @@ def test_f64_a_named_value_reads_the_same_everywhere(f64_backend):
 
 
 @tack.kernel
+def _later_sums(a, b, c, out):
+    for i in range(a.shape[0]):
+        p = a[i] * b[i]                     # bound to a name
+        q = _scaled(a[i], b[i])             # returned from a device function
+        out[i, 0] = p + c[i]                # each read once, by a later sum
+        out[i, 1] = q + c[i]
+        out[i, 2] = a[i] * b[i] + c[i]      # one expression: fusion permitted
+
+
+def _check_later_sums(dtype):
+    # p - p above cannot show it: the compiler folds it whether or not it
+    # fuses. A named product read once by a later sum can: NVRTC's --fmad=true
+    # fused p = a * b into p + c across the statement (all 100k on an RTX 4060
+    # Ti), the product never rounded. With c = -p rounded, p + c is exactly 0,
+    # and a fused result is p's rounding error instead.
+    rng = np.random.default_rng(37 + dtype.bits)
+    a = rng.uniform(1, 2, 4096).astype(dtype.numpy_dtype)
+    b = rng.uniform(1, 2, 4096).astype(dtype.numpy_dtype)
+    c = -(a * b)                            # rounded to dtype: NumPy rounds each op
+    out = tack.empty((len(a), 3), dtype)
+    _later_sums(_array(a, dtype), _array(b, dtype), _array(c, dtype), out)
+    got = out.numpy()
+    np.testing.assert_array_equal(got[:, 0], 0)
+    np.testing.assert_array_equal(got[:, 1], 0)
+    # The single expression may fuse or not: either result is allowed.
+    # Exact, then rounded once (math.fma is Python 3.13's; Tack runs on 3.11).
+    fused = np.asarray([float(Fraction(float(x)) * Fraction(float(y)) + Fraction(float(z)))
+                        for x, y, z in zip(a, b, c)], dtype=dtype.numpy_dtype)
+    assert np.all((got[:, 2] == 0) | (got[:, 2] == fused))
+
+
+def test_f32_a_named_product_is_rounded_before_a_later_sum(backend):
+    _check_later_sums(tack.f32)
+
+
+def test_f64_a_named_product_is_rounded_before_a_later_sum(f64_backend):
+    _check_later_sums(tack.f64)
+
+
+@tack.kernel
 def _math(a, b, out):
     for i in range(a.shape[0]):
         x, y = a[i], b[i]
@@ -420,6 +460,9 @@ def test_generated_cpp_executes_safe_identities(dtype, generate, tmp_path):
 #include <cstdio>
 #define __global__
 #define __device__
+// CUDA's unfusable products, as the generator emits them for a named product.
+static inline float __fmul_rn(float a, float b) { return a * b; }
+static inline double __dmul_rn(double a, double b) { return a * b; }
 struct Grid { unsigned int x; };
 Grid blockIdx = {0}, blockDim = {1}, threadIdx = {0};
 ''' + source + f'''
