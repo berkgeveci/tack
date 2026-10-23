@@ -1145,3 +1145,57 @@ def test_polyhedral_gradients_of_a_linear_field_are_vtks(backend):
     ours = td.gradients(data, "u").values.numpy()
     np.testing.assert_allclose(expected, np.broadcast_to(_GRADIENT, ours.shape), atol=1e-6)
     np.testing.assert_allclose(ours, expected, atol=2e-5)
+
+
+# ── Sub-tetrahedra ──────────────────────────────────────────────────
+
+@tack.kernel
+def _first_and_last_tets(cells, u, gradients, values):
+    # Each cell's first and last sub-tetrahedra: the field's gradient in each,
+    # and its value at the first one's centroid against the position there.
+    for c in cells:
+        e = cells.entity_id(c)
+        last = -1
+        for k in range(cells.num_faces(c)):
+            last += cells.side_num_points(c, k)
+        g0 = cells.tet_jacobian(c, 0).inverse().transpose() @ u.tet_parametric_gradient(c, 0)
+        g1 = (cells.tet_jacobian(c, last).inverse().transpose()
+              @ u.tet_parametric_gradient(c, last))
+        gradients[2 * e] = g0
+        gradients[2 * e + 1] = g1
+        pc = tack.vec3(0.25, 0.25, 0.25)
+        values[2 * e] = u.tet_value(c, 0, pc)
+        x = cells.cell_point(c) + cells.tet_jacobian(c, 0) @ pc
+        values[2 * e + 1] = x.dot(tack.vec3(0.7, -1.3, 2.1)) + 3.0
+
+
+@pytest.mark.parametrize("name", ["voronoi", "mixed", "wedge", "pyramid"])
+def test_sub_tetrahedra_reproduce_a_linear_field(backend, name):
+    """In every sub-tetrahedron a linear field has its own gradient, and its value
+    at a point is the field's at that point's position."""
+    meshes = _gradient_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    x = data.positions().astype(np.float64)
+    u = td.Field(td.H1(data), _scalars(x @ _GRADIENT + 3.0))
+    gradients = tack.empty((2 * data.num_cells,), tack.vec3())
+    values = tack.empty((2 * data.num_cells,), tack.f32)
+    td.for_each(_first_and_last_tets, data, "cells", u, gradients, values)
+    # One thin sub-tetrahedron (the Voronoi columns are 0.01 thick) in f32.
+    np.testing.assert_allclose(gradients.numpy(),
+                               np.broadcast_to(_GRADIENT, (2 * data.num_cells, 3)), atol=1e-3)
+    values = values.numpy().reshape(-1, 2)
+    np.testing.assert_allclose(values[:, 0], values[:, 1], atol=1e-5)
+
+
+def test_a_cell_not_star_shaped_from_its_cell_point_is_refused(backend):
+    """A C-shaped prism's cell point is in its notch, outside it: its sub-tetrahedra
+    overlap, and the locator refuses it rather than find points it does not hold."""
+    ring = np.array([[0, 0], [3, 0], [3, 1], [1, 1], [1, 2], [3, 2], [3, 3], [0, 3]], float)
+    pts = np.r_[np.c_[ring, np.zeros(8)], np.c_[ring, np.ones(8)]].astype(np.float32)
+    faces = [list(range(8))[::-1], list(range(8, 16))]
+    faces += [[j, (j + 1) % 8, 8 + (j + 1) % 8, 8 + j] for j in range(8)]
+    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 16, pts, orient=True), pts)
+    with pytest.raises(NotImplementedError, match="1 of the 1 cells are not star-shaped"):
+        td.CellLocator(data)

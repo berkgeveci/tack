@@ -289,6 +289,18 @@ class _PolyhedralCells(_CellsById):
     def point_id(self, c, j):
         return self.point_ids[self.point_offsets[self.cell(c)] + j]
 
+    @tack.func
+    def tet_face(self, c, t):
+        """The facet ``k`` and its edge ``j`` (from point ``j`` to the next) of the
+        cell's sub-tetrahedron ``t``: sub-tetrahedra are numbered facet by facet,
+        edge by edge, as ``side_point_id`` walks them."""
+        k = 0
+        j = t
+        while j >= self.side_num_points(c, k):
+            j -= self.side_num_points(c, k)
+            k += 1
+        return k, j
+
 
 class _PolyhedralWalk:
     """A polyhedral cell's facet points' positions, from the geometry: the walk's
@@ -299,6 +311,146 @@ class _PolyhedralWalk:
     def side_position(self, c, k, j):
         """The position of ``side_point_id(c, k, j)``."""
         return self.point_position(self.side_point_id(c, k, j))
+
+
+@tack.func
+def _columns(a, b, c):
+    """The 3x3 matrix with columns ``a``, ``b``, ``c``."""
+    return tack.mat3([a[0], b[0], c[0]], [a[1], b[1], c[1]], [a[2], b[2], c[2]])
+
+
+@tack.func
+def _closest_on_triangle(p, a, b, c):
+    """The barycentric coordinates (of ``a``, ``b``, ``c``) of the triangle's point
+    nearest ``p``, by the regions of Ericson's *Real-Time Collision Detection*
+    (5.1.5)."""
+    ab = b - a
+    ac = c - a
+    ap = p - a
+    d1 = ab.dot(ap)
+    d2 = ac.dot(ap)
+    bp = p - b
+    d3 = ab.dot(bp)
+    d4 = ac.dot(bp)
+    cp = p - c
+    d5 = ab.dot(cp)
+    d6 = ac.dot(cp)
+    vc = d1 * d4 - d3 * d2
+    vb = d5 * d2 - d1 * d6
+    va = d3 * d6 - d5 * d4
+    w = tack.vec3(0.0, 0.0, 0.0)
+    if d1 <= 0.0 and d2 <= 0.0:
+        w = [1.0, 0.0, 0.0]
+    elif d3 >= 0.0 and d4 <= d3:
+        w = [0.0, 1.0, 0.0]
+    elif d6 >= 0.0 and d5 <= d6:
+        w = [0.0, 0.0, 1.0]
+    elif vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        v = d1 / (d1 - d3)
+        w = [1.0 - v, v, 0.0]
+    elif vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        v = d2 / (d2 - d6)
+        w = [1.0 - v, 0.0, v]
+    elif va <= 0.0 and d4 - d3 >= 0.0 and d5 - d6 >= 0.0:
+        v = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+        w = [0.0, 1.0 - v, v]
+    else:
+        inverse = 1.0 / (va + vb + vc)
+        w = [1.0 - (vb + vc) * inverse, vb * inverse, vc * inverse]
+    return w
+
+
+class _PolyhedralLocation:
+    """Where a point is in a polyhedron, which has no parametric coordinates: in which
+    of its *sub-tetrahedra*, and where in that one (``docs/design/polyhedra.md``,
+    section 13).
+
+    Each face is fanned from its *face point*, the mean of its points, and the
+    fan's triangles from the *cell point*, the mean of the cell's distinct
+    points: sub-tetrahedron ``t`` (``tet_face``) is (cell point, face point,
+    ``a``, ``b``) for the edge ``ab`` of facet ``k``. A location is ``t`` and
+    the coordinates ``pc`` of the point in it, the weights of the face point,
+    ``a`` and ``b`` (the cell point's is what is left): a reference tetrahedron
+    with the cell point at its origin. A field view evaluates there
+    (``tet_value``), without positions; its gradient there is
+    ``tet_jacobian(c, t)``'s inverse transpose times ``tet_parametric_gradient``.
+    """
+
+    @tack.func
+    def cell_point(self, c):
+        """The mean of the cell's distinct points."""
+        n = self.num_points(c)
+        x = self.point_position(self.point_id(c, 0))
+        for j in range(1, n):
+            x += self.point_position(self.point_id(c, j))
+        return x / n
+
+    @tack.func
+    def face_point(self, c, k):
+        """The mean of the points of the cell's facet ``k``."""
+        n = self.side_num_points(c, k)
+        x = self.side_position(c, k, 0)
+        for j in range(1, n):
+            x += self.side_position(c, k, j)
+        return x / n
+
+    @tack.func
+    def tet_jacobian(self, c, t):
+        """The 3x3 derivative of position by ``pc`` in sub-tetrahedron ``t``: columns
+        from the cell point to the face point, ``a`` and ``b``."""
+        k, j = self.tet_face(c, t)
+        n = self.side_num_points(c, k)
+        nxt = j + 1 if j + 1 < n else 0
+        p = self.cell_point(c)
+        return _columns(self.face_point(c, k) - p, self.side_position(c, k, j) - p,
+                        self.side_position(c, k, nxt) - p)
+
+    @tack.func
+    def locate(self, c, x, slack):
+        """``(t, pc)``: the first sub-tetrahedron holding ``x`` and its coordinates
+        there; failing that, the one whose face triangle is nearest ``x``, if
+        within ``slack``, and the coordinates of ``x`` extrapolated in it (so a
+        linear field stays exact); else ``t`` is -1.
+
+        Inverted sub-tetrahedra (of a cell not star-shaped from its cell point)
+        hold nothing; ``CellLocator`` refuses such cells."""
+        p = self.cell_point(c)
+        d = x - p
+        tet = -1
+        pc = tack.vec3(0.0, 0.0, 0.0)
+        near = -1
+        near_pc = tack.vec3(0.0, 0.0, 0.0)
+        best = slack * slack
+        t = 0
+        for k in range(self.num_faces(c)):
+            n = self.side_num_points(c, k)
+            f = self.face_point(c, k) - p
+            for j in range(n):
+                if tet < 0:
+                    nxt = j + 1 if j + 1 < n else 0
+                    a = self.side_position(c, k, j) - p
+                    b = self.side_position(c, k, nxt) - p
+                    m = _columns(f, a, b)
+                    if m.determinant() > 0.0:
+                        w = m.inverse() @ d
+                        if (min(w[0], w[1], w[2]) >= -1e-5
+                                and w[0] + w[1] + w[2] <= 1.0 + 1e-5):
+                            tet = t
+                            pc = w
+                        else:
+                            # Outside: near if its face triangle is, and then
+                            # extrapolated, as the shapes' coordinates are.
+                            r = _closest_on_triangle(d, f, a, b)
+                            e = r[0] * f + r[1] * a + r[2] * b - d
+                            if e.dot(e) <= best:
+                                best = e.dot(e)
+                                near = t
+                                near_pc = w
+                t += 1
+        if tet < 0 and near >= 0:
+            tet = near
+            pc = near_pc
+        return tet, pc
 
 
 class _SelectedPolyhedra(_PolyhedralCells):
@@ -874,6 +1026,68 @@ class _ConstantField:
     @tack.func
     def corner_value(self, i, j):
         return self.get(self.entity_id(i))
+
+
+class _PolyhedralPointField:
+    """Point data (H1, order 1) in a polyhedron: linear on its sub-tetrahedra
+    (``_PolyhedralLocation``), whose cell and face points take the means of the
+    cell's and the face's points' values, as their positions are the means of
+    the points' positions -- so a linear field is exact."""
+
+    @tack.func
+    def corner_value(self, c, j):
+        """The value at the cell's point ``j``, of ``num_points(c)``."""
+        return self.point_value(c, j)
+
+    @tack.func
+    def cell_point_value(self, c):
+        n = self.num_points(c)
+        v = self.point_value(c, 0)
+        for j in range(1, n):
+            v += self.point_value(c, j)
+        return v / n
+
+    @tack.func
+    def face_point_value(self, c, k):
+        n = self.side_num_points(c, k)
+        v = self.get(self.side_point_id(c, k, 0))
+        for j in range(1, n):
+            v += self.get(self.side_point_id(c, k, j))
+        return v / n
+
+    @tack.func
+    def tet_value(self, c, t, pc):
+        """The value at ``pc`` in sub-tetrahedron ``t``."""
+        k, j = self.tet_face(c, t)
+        n = self.side_num_points(c, k)
+        nxt = j + 1 if j + 1 < n else 0
+        u0 = self.cell_point_value(c)
+        return (u0 + pc[0] * (self.face_point_value(c, k) - u0)
+                + pc[1] * (self.get(self.side_point_id(c, k, j)) - u0)
+                + pc[2] * (self.get(self.side_point_id(c, k, nxt)) - u0))
+
+    @tack.func
+    def tet_parametric_gradient(self, c, t):
+        """A scalar field's derivative by ``pc`` in sub-tetrahedron ``t``."""
+        k, j = self.tet_face(c, t)
+        n = self.side_num_points(c, k)
+        nxt = j + 1 if j + 1 < n else 0
+        u0 = self.cell_point_value(c)
+        return tack.vec3(self.face_point_value(c, k) - u0,
+                         self.get(self.side_point_id(c, k, j)) - u0,
+                         self.get(self.side_point_id(c, k, nxt)) - u0)
+
+
+class _PolyhedralCellField(_ConstantField):
+    """Cell data (Constant) in a polyhedron: its value in every sub-tetrahedron."""
+
+    @tack.func
+    def tet_value(self, c, t, pc):
+        return self.get(self.entity_id(c))
+
+    @tack.func
+    def tet_parametric_gradient(self, c, t):
+        return tack.vec3(0.0, 0.0, 0.0)
 
 
 class _SideTracesField:

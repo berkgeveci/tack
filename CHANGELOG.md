@@ -30,6 +30,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   points, and point data takes the mean of their values there (the value
   of an interpolant linear on tetrahedra fanned from that point, so exact
   for a linear field); cell data is its own value.
+- `CellLocator` and `probe` work on polyhedra, locating points in
+  sub-tetrahedra: each face fanned from its points' mean, the fans from
+  the mean of the cell's points. Point data is linear on each (exact for
+  a linear field, continuous across faces). `find` returns `(cells, tets,
+  pcs)` there; field views evaluate with `tet_value(c, t, pc)`, and the
+  cell view gives `locate`, `cell_point`, `face_point` and `tet_jacobian`.
+  A cell not star-shaped from its cell point is refused.
 - Implicit topology arrays. An `UnstructuredTopology`'s `types`, `offsets`
   and `connectivity` may be implicit arrays, kept as they are rather than
   stored: a `ConstantArray` of types for cells all of one shape, a

@@ -542,7 +542,7 @@ and "polyline" `PolylineTopology`.
 | `clip` | yes (with an `H1` geometry) | not yet | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
-| `CellLocator`, `probe` | yes | not yet | not yet | not yet |
+| `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | not yet | not yet |
 | `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
@@ -690,6 +690,18 @@ The search runs from the cells: each cell tests the points in the bins its
 box overlaps, so a cell is reached through its own view, never looked up by
 id. The bins follow the geometry when the locator is built; build it again
 after moving the points.
+
+A polyhedron has no parametric coordinates. Its faces are fanned into
+triangles from their face points (the mean of each face's points), and the
+triangles into *sub-tetrahedra* from the cell point (the mean of the cell's
+distinct points); point data is linear on each, taking the means of the
+values at those two points, so a linear field is exact and a face's two
+cells agree on it. On a polyhedral dataset `find` returns `(cells, tets,
+pcs)`: each point's sub-tetrahedron in its cell (i32, numbered face by face
+and edge by edge, -1 for none) and its coordinates there, the weights of
+the face point and the edge's two points, which a field's view evaluates
+with `tet_value(c, t, pc)`. The locator refuses a dataset with a cell that
+is not star-shaped from its cell point, whose sub-tetrahedra would overlap.
 
 `probe(data, where, fields=None, locator=None)` evaluates `data`'s fields
 at the points of `where`, as Viskores' Probe and VTK's `vtkProbeFilter` do.

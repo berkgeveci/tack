@@ -105,8 +105,9 @@ class Space:
         the storage."""
         return ()
 
-    def mixin_for(self, key):
-        """The field-view mixin for cells of ``key`` (``None`` for a uniform space)."""
+    def mixin_for(self, key, shape=None):
+        """The field-view mixin for cells of ``key`` (``None`` for a uniform space) and
+        ``shape``."""
         return self.mixin
 
     def cell_keys(self):
@@ -251,6 +252,12 @@ class H1(Space):
                                   face_start=faces.group_starts[root])
         return attributes
 
+    def mixin_for(self, key, shape=None):
+        # Polyhedra evaluate in their sub-tetrahedra.
+        if shape is shapes.Polyhedron and self.order == 1:
+            return views._PolyhedralPointField
+        return self.mixin
+
     def extra_mixins(self, group):
         if self.order == 1:
             return ()
@@ -292,7 +299,7 @@ class L2(Space):
     def varies(self):
         return _is_array(self.order)
 
-    def mixin_for(self, key):
+    def mixin_for(self, key, shape=None):
         order = key if self.varies else self.order
         return views._L2Order0Field if order == 0 else views._L2Field
 
@@ -372,6 +379,9 @@ class Constant(Space):
 
     mixin = views._ConstantField
     interpolated = True
+
+    def mixin_for(self, key, shape=None):
+        return views._PolyhedralCellField if shape is shapes.Polyhedron else self.mixin
 
     @property
     def size(self):

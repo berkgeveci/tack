@@ -132,6 +132,74 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
 
 
 @tack.kernel
+def _polyhedral_boxes(cells, lo, hi):
+    for c in cells:
+        e = cells.entity_id(c)
+        a = cells.point_position(cells.point_id(c, 0))
+        b = a
+        for j in range(1, cells.num_points(c)):
+            p = cells.point_position(cells.point_id(c, j))
+            a = [min(a[0], p[0]), min(a[1], p[1]), min(a[2], p[2])]
+            b = [max(b[0], p[0]), max(b[1], p[1]), max(b[2], p[2])]
+        lo[e] = a
+        hi[e] = b
+
+
+@tack.kernel
+def _not_star_shaped(cells, bad):
+    # 1 where a sub-tetrahedron is inverted, or the cell has no volume: a cell
+    # not star-shaped from its cell point, whose sub-tetrahedra overlap.
+    for c in cells:
+        p = cells.cell_point(c)
+        total = 0.0
+        least = 0.0
+        for k in range(cells.num_faces(c)):
+            n = cells.side_num_points(c, k)
+            f = cells.face_point(c, k) - p
+            for j in range(n):
+                nxt = j + 1 if j + 1 < n else 0
+                v = f.dot((cells.side_position(c, k, j) - p).cross(
+                    cells.side_position(c, k, nxt) - p))
+                total += v
+                least = min(least, v)
+        bad[cells.entity_id(c)] = 1 if total <= 0.0 or least < -1e-5 * total else 0
+
+
+@tack.kernel
+def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz,
+                              ix, iy, iz, nx, ny, nz, tolerance, write, found, tets, pcs):
+    # As _test_points, locating in the cell's sub-tetrahedra.
+    for c in cells:
+        e = cells.entity_id(c)
+        a = lo[e]
+        b = hi[e]
+        slack = tolerance * (b - a).norm()
+        i0 = max(tack.i64(floor((a[0] - slack - ox) * ix)), 0)
+        j0 = max(tack.i64(floor((a[1] - slack - oy) * iy)), 0)
+        k0 = max(tack.i64(floor((a[2] - slack - oz) * iz)), 0)
+        i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
+        j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
+        k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
+        for k in range(k0, k1 + 1):
+            for j in range(j0, j1 + 1):
+                for i in range(i0, i1 + 1):
+                    bin_ = i + nx * (j + ny * k)
+                    for n in range(bin_offsets[bin_], bin_offsets[bin_ + 1]):
+                        q = bin_points[n]
+                        x = points[q]
+                        if (x[0] >= a[0] - slack and x[0] <= b[0] + slack
+                                and x[1] >= a[1] - slack and x[1] <= b[1] + slack
+                                and x[2] >= a[2] - slack and x[2] <= b[2] + slack):
+                            t, pc = cells.locate(c, x, slack)
+                            if t >= 0:
+                                if write == 0:
+                                    tack.atomic_min(found, q, e)
+                                elif found[q] == e:
+                                    tets[q] = t
+                                    pcs[q] = pc
+
+
+@tack.kernel
 def _bins_per_cell(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, counts):
     # The bins each cell's box, widened by its tolerance, overlaps.
     for e in range(counts.shape[0]):
@@ -186,16 +254,30 @@ class CellLocator:
 
     @on_inputs_device
     def __init__(self, data, density=1.0):
-        if not getattr(data.topology, "reference_cells", True):
-            raise NotImplementedError("locating points in polyhedra, polygons or polylines is "
-                                      "not built yet")
+        #: Polyhedra, which have no parametric coordinates: points are located in
+        #: their sub-tetrahedra (``find`` says which).
+        self.polyhedral = not getattr(data.topology, "reference_cells", True)
+        if self.polyhedral and data.topology.dimension != 3:
+            raise NotImplementedError("locating points in polygons or polylines is not built "
+                                      "yet")
         self.data = data
         n = data.num_cells
         dtype = data.dtype
         self.lo = tack.empty((n,), tack.vec(3, dtype))
         self.hi = tack.empty((n,), tack.vec(3, dtype))
-        if n:
+        if n and self.polyhedral:
+            bad = tack.empty((n,), tack.i32)
+            for_each(_not_star_shaped, data, "cells", bad)
+            count = int(bad.numpy().sum())
+            if count:
+                raise NotImplementedError(
+                    f"{count} of the {n} cells are not star-shaped from their cell point "
+                    "(the mean of their points), or have no volume: locating points in "
+                    "them needs another inside test, not built yet")
+            for_each(_polyhedral_boxes, data, "cells", self.lo, self.hi)
+        elif n:
             for_each(_cell_boxes, data, "cells", self.lo, self.hi)
+        if n:
             lo, hi = self.lo.numpy(), self.hi.numpy()
             low, high = lo.min(axis=0).astype(float), hi.max(axis=0).astype(float)
         else:
@@ -248,7 +330,13 @@ class CellLocator:
     def find(self, points):
         """``(cells, pcs)`` for ``points`` (an ``(n, 3)`` host array or a field of
         3-vectors): a field of the cell holding each point (-1 for none), in the
-        dataset's ``id_dtype``, and a field of its parametric coordinates there."""
+        dataset's ``id_dtype``, and a field of its parametric coordinates there.
+
+        In polyhedra, ``(cells, tets, pcs)``: each point's sub-tetrahedron in its
+        cell (i32, -1 for none) and its coordinates there, the weights of the
+        face point and the edge's two points (see
+        ``views._PolyhedralLocation``), which a field's view evaluates with
+        ``tet_value(c, t, pc)``."""
         data = self.data
         dtype = data.dtype
         if not hasattr(points, "numpy"):
@@ -271,8 +359,10 @@ class CellLocator:
                     f"which the {get_backend().name} backend does not have")
         found = tack.full((m,), none, scratch) if m else tack.empty((0,), scratch)
         pcs = tack.empty((m,), tack.vec(3, dtype))
+        tets = tack.empty((m,), tack.i32)
         if m:
             pcs.fill(0)
+            tets.fill(-1)
         if m and data.num_cells:
             nbins = int(np.prod(self.dims))
             keys = tack.empty((m,), tack.i32)
@@ -281,11 +371,19 @@ class CellLocator:
             order, starts = bucket_groups(keys, nbins + 1, ids.at_least(data.id_dtype, m),
                                           skip=nbins)
             for write in (0, 1):
-                for_each(_test_points, data, "cells", points, self.lo, self.hi, starts, order,
-                         *self._grid(), _TOLERANCE, data.num_cells, write, found, pcs)
+                if self.polyhedral:
+                    for_each(_test_points_in_polyhedra, data, "cells", points, self.lo,
+                             self.hi, starts, order, *self._grid(), _TOLERANCE, write, found,
+                             tets, pcs)
+                else:
+                    for_each(_test_points, data, "cells", points, self.lo, self.hi, starts,
+                             order, *self._grid(), _TOLERANCE, data.num_cells, write, found,
+                             pcs)
             _resolve(found, none, data.num_cells)
         elif m:
             found.fill(-1)
+        if self.polyhedral:
+            return ids.as_ids(found, data.id_dtype), tets, pcs
         return ids.as_ids(found, data.id_dtype), pcs
 
 
