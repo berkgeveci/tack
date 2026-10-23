@@ -473,6 +473,20 @@ without it are not reused. `test_float_semantics.py` checks `p - p` for
 products returned from a device function, in f32 and f64, on every
 backend.
 
+NVRTC's `--fmad=true` fuses across statements too, but where a product has
+one later use: `p = a * b; out = p + c` became one fma, `p` never rounded.
+`p - p` cannot show that, since the compiler folds it whether or not it
+fuses, so the CUDA tests passed while the locator's two searches, inlining
+the same functions into different kernels, disagreed at shared vertices.
+NVRTC has no per-expression option, so the CUDA generator rounds such
+products itself: a floating product that is not an operand of a `+` or `-`
+is `__fmul_rn`/`__dmul_rn`, which NVRTC never fuses, and the products of a
+sum stay plain, fusable as the contract permits. A test reads a named
+product once in a later sum against its negated rounding, where a fused
+result is the product's rounding error instead of zero. Metal passes it
+with plain products; OpenCL C contracts per expression by its `FP_CONTRACT`
+rule.
+
 ### NaN, infinity and signed zero
 
 | Behavior | How it is implemented |

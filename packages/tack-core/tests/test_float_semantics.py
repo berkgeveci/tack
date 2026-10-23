@@ -1,7 +1,6 @@
 """Portable floating expressions use safe math without requiring // or %."""
 
 import itertools
-import math
 import subprocess
 from fractions import Fraction
 
@@ -264,8 +263,9 @@ def _check_later_sums(dtype):
     np.testing.assert_array_equal(got[:, 0], 0)
     np.testing.assert_array_equal(got[:, 1], 0)
     # The single expression may fuse or not: either result is allowed.
-    fused = np.array([math.fma(x, y, z) for x, y, z in zip(a.tolist(), b.tolist(), c.tolist())],
-                     dtype.numpy_dtype)
+    # Exact, then rounded once (math.fma is Python 3.13's; Tack runs on 3.11).
+    fused = np.asarray([float(Fraction(float(x)) * Fraction(float(y)) + Fraction(float(z)))
+                        for x, y, z in zip(a, b, c)], dtype=dtype.numpy_dtype)
     assert np.all((got[:, 2] == 0) | (got[:, 2] == fused))
 
 

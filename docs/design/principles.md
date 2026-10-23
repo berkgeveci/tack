@@ -192,7 +192,9 @@ floating-point policy).
   --prec-sqrt=true --fmad=true` and without `--use_fast_math`; Metal sets
   `fastMathEnabled` to false; HIP limits contraction to one expression
   (`-ffp-contract=on`), since hipRTC's default fused across statements and
-  gave one variable two values; the CPU emits no LLVM fast-math flags. See
+  gave one variable two values; CUDA's generator rounds a product outside a
+  sum itself (`__fmul_rn`), since NVRTC has no such option and fused one
+  into a later statement; the CPU emits no LLVM fast-math flags. See
   the [floating-point policy](../reference/language-contract.md#floating-point-execution-policy).
 - **Optimization.** `optimize_ir` (`lang/ir_optimize.py`) performs only
   conservative copy propagation; LICM and CSE stay disabled until they have
