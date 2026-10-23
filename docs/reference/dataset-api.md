@@ -542,10 +542,10 @@ and "polyline" `PolylineTopology`.
 | `clip` | yes (with an `H1` geometry) | not yet | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
-| `CellLocator`, `probe` | yes | not yet | not yet | not yet |
-| `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
-| `cell_centers`, `values_at_centers` | yes | no | no | no |
-| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no | no |
+| `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | not yet | not yet |
+| `advect`, `streamlines` | yes (2D and 3D cells) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | no | no |
+| `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
 | `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
 | side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |
@@ -691,6 +691,18 @@ box overlaps, so a cell is reached through its own view, never looked up by
 id. The bins follow the geometry when the locator is built; build it again
 after moving the points.
 
+A polyhedron has no parametric coordinates. Its faces are fanned into
+triangles from their face points (the mean of each face's points), and the
+triangles into *sub-tetrahedra* from the cell point (the mean of the cell's
+distinct points); point data is linear on each, taking the means of the
+values at those two points, so a linear field is exact and a face's two
+cells agree on it. On a polyhedral dataset `find` returns `(cells, tets,
+pcs)`: each point's sub-tetrahedron in its cell (i32, numbered face by face
+and edge by edge, -1 for none) and its coordinates there, the weights of
+the face point and the edge's two points, which a field's view evaluates
+with `tet_value(c, t, pc)`. The locator refuses a dataset with a cell that
+is not star-shaped from its cell point, whose sub-tetrahedra would overlap.
+
 `probe(data, where, fields=None, locator=None)` evaluates `data`'s fields
 at the points of `where`, as Viskores' Probe and VTK's `vtkProbeFilter` do.
 `where` is a dataset, which keeps its topology and fields, or an
@@ -794,7 +806,7 @@ decision, recorded in the CHANGELOG as breaking.
 - coefficient layout (DOF-fastest or cell-fastest);
 - filters on higher-order data (subdivide, rather than linearize);
 - clip on polyhedra, polygons and polylines;
-- locating points in polyhedra (no parametric coordinates; a containment
-  test against the faces instead);
+- locating points in polyhedra that are not star-shaped from their cell
+  point (a solid-angle containment test);
 - a polyline topology's edges (its segments as global entities), and
   stitching contour lines into polylines.

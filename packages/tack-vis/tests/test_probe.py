@@ -163,12 +163,28 @@ def test_advection_samples_the_cell_that_holds_the_particle(backend):
     assert (out.positions()[:, 0] > _NEAR_THE_FACE[:, 0]).all()
 
 
+def test_polyhedra_rank_the_cell_that_holds_the_point_first(backend):
+    """The same two tetrahedra as polyhedra: located in sub-tetrahedra, the point
+    is only near the first (rank past the ids) and in the second, which wins, for
+    probe and for advection alike."""
+    data = td.as_polyhedra(_two_tets())
+    cells, tets, _ = td.CellLocator(data).find(_NEAR_THE_FACE)
+    np.testing.assert_array_equal(cells.numpy(), [1, 1, 1])
+    assert (tets.numpy() >= 0).all()
+    out = td.probe(data, _NEAR_THE_FACE)
+    np.testing.assert_allclose(out.fields["p"].values.numpy(), _DEPTH * np.sqrt(3) / 2,
+                               atol=1e-6)
+    moved = td.advect(data, "v", _NEAR_THE_FACE, step_size=0.1, steps=1)
+    assert not (moved.fields["status"].values.numpy() & td.ParticleStatus.ZERO_VELOCITY).any()
+    assert (moved.positions()[:, 0] > _NEAR_THE_FACE[:, 0]).all()
+
+
 def test_points_outside_every_cell(backend):
     data = _two_hexes_and_a_pyramid()
     out = td.probe(data, [[10.0, 10.0, 10.0], [-1.0, 0.5, 0.5]])
     np.testing.assert_array_equal(out.fields["valid"].values.numpy(), [0, 0])
-    with pytest.raises(NotImplementedError):
-        td.CellLocator(td.as_polyhedra(data))
+    with pytest.raises(NotImplementedError, match="polygons or polylines"):
+        td.CellLocator(td.as_polygons(td.uniform_grid((3, 3, 1))))
 
 
 def test_probe_keeps_target_topology_ids_and_quadratic_geometry(backend):
@@ -198,3 +214,77 @@ def test_probe_preserves_f64_point_coordinates(f64_backend):
     out = td.probe(source, points)
     assert out.dtype is tack.f64
     np.testing.assert_array_equal(out.positions(), points)
+
+
+# ── Polyhedra: located in their sub-tetrahedra ──────────────────────
+
+def _linear(x):
+    return 2 * x[:, 0] - x[:, 1] + 0.5 * x[:, 2]
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", SHAPES)
+def test_probe_of_polyhedra_is_the_shape_paths(backend, kind):
+    """The shape meshes as polyhedra hold the same points -- all of them where the
+    faces are planar (tetrahedra, voxels), all but a few near the bilinear faces
+    a fan of triangles replaces -- and reproduce a linear field exactly; cell
+    data is the holding cell's."""
+    data = vtk_to_dataset(_grid(kind))
+    poly = td.as_polyhedra(data)
+    poly.fields["c"] = td.Field(td.Constant(poly), _scalars(np.arange(poly.num_cells) + 1.0))
+    points = np.random.default_rng(3).uniform(-0.4, 3.4, (500, 3))
+    ours, theirs = td.probe(poly, points), td.probe(data, points)
+    valid = ours.fields["valid"].values.numpy() == 1
+    same = valid == (theirs.fields["valid"].values.numpy() == 1)
+    assert same.all() if kind in ("tetra", "voxel") else same.mean() > 0.98
+    assert 50 < valid.sum() < 500
+    np.testing.assert_allclose(ours.fields["lin"].values.numpy()[valid],
+                               _linear(points)[valid], atol=2e-4)
+    assert (ours.fields["s"].values.numpy()[~valid] == 0).all()
+    cells, tets, pcs = td.CellLocator(poly).find(points)
+    cells, tets = cells.numpy(), tets.numpy()
+    np.testing.assert_array_equal(cells >= 0, valid)
+    np.testing.assert_array_equal(tets >= 0, valid)
+    np.testing.assert_array_equal(ours.fields["c"].values.numpy()[valid], cells[valid] + 1.0)
+
+
+@needs_vtk
+def test_probe_of_polyhedra_at_their_points(backend):
+    """At the mesh's own points -- on faces, edges and corners of several cells, and
+    on the boundary -- every point is found and takes its own value."""
+    data = vtk_to_dataset(_grid("hexahedron"))
+    poly = td.as_polyhedra(data)
+    x = poly.positions().astype(np.float64)
+    out = td.probe(poly, x)
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), 1)
+    np.testing.assert_allclose(out.fields["s"].values.numpy(),
+                               poly.fields["s"].values.numpy(), atol=1e-5)
+
+
+def test_probe_of_voronoi_polyhedra_holds_the_points_inside(backend):
+    """Voronoi cells are convex, so a point is in one exactly when it is in the convex
+    hull of its points: the probe finds those points, and no others, and a linear
+    field there exactly.
+
+    Not vtkProbeFilter, on VTK 9.7.1: on these cells it accepts 55 of 800 points
+    lying outside every cell (up to 3.8% of the mesh's diagonal), and for 83 of
+    the rest its linear field is off by up to 0.18, because
+    vtkPolyhedron::EvaluatePosition reports points outside a convex cell as
+    inside (its own IsInside disagrees)."""
+    from scipy.spatial import Delaunay
+    from test_polyhedra import _from_cell_faces, _voronoi_columns
+
+    points, cells, _ = _voronoi_columns(thickness=0.4)
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    x = data.positions().astype(np.float64)
+    data.fields["lin"] = td.Field(td.H1(data), _scalars(_linear(x)))
+    lo, hi = x.min(axis=0), x.max(axis=0)
+    where = lo + np.random.default_rng(6).uniform(-0.05, 1.05, (800, 3)) * (hi - lo)
+    out = td.probe(data, where)
+    offsets, ids = (a.numpy() for a in data.topology.cell_points())
+    hulls = [Delaunay(x[ids[offsets[c]:offsets[c + 1]]]) for c in range(data.num_cells)]
+    inside = np.array([any(h.find_simplex(q) >= 0 for h in hulls) for q in where])
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), inside)
+    assert 100 < inside.sum() < 800
+    np.testing.assert_allclose(out.fields["lin"].values.numpy()[inside],
+                               _linear(where)[inside], atol=2e-5)

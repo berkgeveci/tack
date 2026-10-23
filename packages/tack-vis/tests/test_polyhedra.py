@@ -911,10 +911,7 @@ def test_reference_element_algorithms_are_refused(backend, make):
         _two_hexes_and_a_pyramid())
     point_data = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
     cell_data = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells, dtype=float)))
-    for call in (lambda: td.algorithms.cell_centers(data),
-                 lambda: td.algorithms.values_at_centers(data, point_data),
-                 lambda: td.algorithms.gradients(data, point_data),
-                 lambda: td.project(data, point_data, td.SideTraces(data)),
+    for call in (lambda: td.project(data, point_data, td.SideTraces(data)),
                  lambda: td.algorithms.jump(data, point_data)):
         with pytest.raises(NotImplementedError, match="needs a reference element"):
             call()
@@ -979,3 +976,225 @@ def test_check_winding_takes_cells_that_list_their_faces(backend):
     assert len(td.check_winding(td.as_polyhedra(data))) == 0
     with pytest.raises(TypeError, match="list their faces"):
         td.check_winding(data)
+
+
+# ── Centers without a reference element ─────────────────────────────
+
+def _point_means(data, values):
+    """Each cell's mean over its distinct points, on the host."""
+    offsets, point_ids = (a.numpy() for a in data.topology.cell_points())
+    values = np.asarray(values, float)
+    return np.array([values[point_ids[offsets[c]:offsets[c + 1]]].mean(axis=0)
+                     for c in range(data.num_cells)])
+
+
+@pytest.mark.parametrize("name", ["voronoi", "mixed", "hexahedron", "pyramid", "polygons"])
+def test_polyhedral_centers_are_the_cell_points(backend, name):
+    """With no parametric center, a cell's center is its cell point, the mean of its
+    distinct points, and a field's value there is its interpolant's: the points'
+    mean for point data (so exact for a linear field), its own for cell data."""
+    if name == "polygons":
+        data = td.as_polygons(_plane_mesh())
+    else:
+        meshes = _gradient_meshes()
+        if name not in meshes:
+            pytest.skip("needs VTK for this mesh")
+        data = meshes[name]
+    x = data.positions().astype(np.float64)
+    centers = td.algorithms.cell_centers(data)
+    assert isinstance(centers.space, td.Values) and centers.space.on == "cells"
+    np.testing.assert_allclose(centers.values.numpy(), _point_means(data, x), atol=1e-5)
+    data.fields["u"] = td.Field(td.H1(data), _scalars(x @ _GRADIENT + 3.0))
+    at = td.algorithms.values_at_centers(data, "u").values.numpy()
+    np.testing.assert_allclose(at, centers.values.numpy().astype(float) @ _GRADIENT + 3.0,
+                               atol=1e-4)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(x.astype(np.float32), tack.vec3()))
+    np.testing.assert_allclose(td.algorithms.values_at_centers(data, "v").values.numpy(),
+                               centers.values.numpy(), atol=1e-6)
+    cells = _scalars(np.arange(data.num_cells, dtype=float) * 0.5)
+    data.fields["c"] = td.Field(td.Constant(data), cells)
+    at = td.algorithms.values_at_centers(data, "c").values
+    assert at is not cells
+    np.testing.assert_array_equal(at.numpy(), cells.numpy())
+    faces = np.zeros(data.topology.faces().num_faces)
+    data.fields["f"] = td.Field(td.Values(data, "faces"), _scalars(faces))
+    with pytest.raises(NotImplementedError, match="only point data"):
+        td.algorithms.values_at_centers(data, "f")
+
+
+@pytest.mark.parametrize("name", ["tetra", "hexahedron", "voxel"])
+def test_polyhedral_centers_of_symmetric_shapes_are_the_shape_paths(backend, name):
+    """Where a shape's parametric center maps to the mean of its corners -- a
+    tetrahedron, a parallelepiped -- the two paths agree, for any field."""
+    meshes = _solid_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    np.testing.assert_allclose(td.algorithms.cell_centers(poly).values.numpy(),
+                               td.algorithms.cell_centers(data).values.numpy(), atol=1e-6)
+    x = data.positions().astype(np.float64)
+    values = _scalars(np.sin(2.0 * x[:, 0]) * x[:, 1] ** 2 + x[:, 2] ** 3)
+    ours = td.algorithms.values_at_centers(poly, td.Field(td.H1(poly), values))
+    theirs = td.algorithms.values_at_centers(data, td.Field(td.H1(data), values))
+    np.testing.assert_allclose(ours.values.numpy(), theirs.values.numpy(), atol=1e-6)
+
+
+# ── Gradients without a reference element ───────────────────────────
+
+_GRADIENT = np.array([0.7, -1.3, 2.1])
+
+
+def _gradient_meshes():
+    """Polyhedral meshes of several kinds: Voronoi columns (cells of many faces,
+    some of five points or more), and the shape meshes as polyhedra."""
+    points, cells, _ = _voronoi_columns()
+    meshes = {"voronoi": td.DataSet(_from_cell_faces(cells, len(points)), points)}
+    for name, data in _solid_meshes().items():
+        meshes[name] = td.as_polyhedra(data)
+    return meshes
+
+
+@pytest.mark.parametrize("name", ["voronoi", "mixed", "tetra", "hexahedron", "wedge", "pyramid",
+                                  "voxel"])
+def test_polyhedral_gradients_of_a_linear_field_are_exact(backend, name):
+    """Green-Gauss over the faces fanned from their points' means is exact for a
+    linear field, at the cells and at the points, scalar or vector."""
+    meshes = _gradient_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    x = data.positions().astype(np.float64)
+    data.fields["u"] = td.Field(td.H1(data), _scalars(x @ _GRADIENT + 3.0))
+    for at in ("cells", "points"):
+        np.testing.assert_allclose(td.gradients(data, "u", at=at).values.numpy(),
+                                   np.broadcast_to(_GRADIENT, (data.num_cells if at == "cells"
+                                                               else data.num_points, 3)),
+                                   atol=2e-5)
+    vector = np.c_[x @ _GRADIENT, -2.0 * (x @ _GRADIENT), x[:, 0]].astype(np.float32)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(vector, tack.vec3()))
+    expected = np.r_[_GRADIENT, -2.0 * _GRADIENT, [1.0, 0.0, 0.0]]
+    g = td.gradients(data, "v")
+    np.testing.assert_allclose(g.values.numpy(), np.broadcast_to(expected, (data.num_cells, 9)),
+                               atol=5e-5)
+    q = td.flow_quantities(data, g)
+    np.testing.assert_allclose(q.divergence.values.numpy(), _GRADIENT[0] + 2.6, atol=5e-5)
+
+
+@pytest.mark.parametrize("name", ["hexahedron", "voxel"])
+def test_polyhedral_gradients_of_hexahedra_are_the_trilinear_center_gradient(backend, name):
+    """On a parallelepiped, Green-Gauss over its fanned faces is the trilinear
+    gradient at its center: the shape path's, for any field."""
+    meshes = _solid_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    x = data.positions().astype(np.float64)
+    values = _scalars(np.sin(2.0 * x[:, 0]) * x[:, 1] ** 2 + x[:, 2] ** 3)
+    data.fields["q"] = td.Field(td.H1(data), values)
+    poly.fields["q"] = td.Field(td.H1(poly), values)
+    np.testing.assert_allclose(td.gradients(poly, "q").values.numpy(),
+                               td.gradients(data, "q").values.numpy(), atol=1e-5)
+
+
+def test_polyhedral_gradients_of_cell_data_and_polygons_are_zero(backend):
+    """As on shapes: cell data is constant in each cell, and cells below three
+    dimensions get zero."""
+    poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    cells = td.Field(td.Constant(poly), _scalars(np.arange(poly.num_cells, dtype=float)))
+    np.testing.assert_array_equal(td.gradients(poly, cells).values.numpy(), 0.0)
+    polygons = td.as_polygons(_plane_mesh())
+    x = polygons.positions()
+    linear = td.Field(td.H1(polygons), _scalars(x[:, 0] + x[:, 1]))
+    np.testing.assert_array_equal(td.gradients(polygons, linear).values.numpy(), 0.0)
+
+
+def test_a_flat_polyhedron_has_a_nan_gradient(backend):
+    """A cell of no volume divides by zero, as a singular Jacobian does on shapes."""
+    pts = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], np.float32)
+    faces = [[0, 1, 2, 3], [3, 2, 1, 0]]          # a square, both ways: no volume
+    data = td.DataSet(_from_cell_faces([faces], 4), pts)
+    data.fields["u"] = td.Field(td.H1(data), _scalars(pts[:, 0]))
+    assert np.isnan(td.gradients(data, "u").values.numpy()).all()
+
+
+@needs_vtk
+def test_polyhedral_gradients_of_a_linear_field_are_vtks(backend):
+    """vtkPolyhedron's derivatives (of mean value coordinates) at each cell's
+    parametric center agree for a linear field, where both are exact; for other
+    fields the interpolants differ. Not vtkGradientFilter: at points it takes the
+    derivatives at the cell's corners, and on VTK 9.7.1 they are wrong in each
+    component whose parametric coordinate is 1 (a box's gradient of x is -3.2 at
+    its second corner), likely because their forward differences step out of
+    the cell."""
+    points, cells, _ = _voronoi_columns()
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    x = data.positions().astype(np.float64)
+    u = x @ _GRADIENT + 3.0
+    data.fields["u"] = td.Field(td.H1(data), _scalars(u))
+    grid = dataset_to_vtk(data)
+    expected = np.empty((data.num_cells, 3))
+    for c in range(data.num_cells):
+        cell = grid.GetCell(c)
+        values = [u[cell.GetPointId(j)] for j in range(cell.number_of_points)]
+        derivative = [0.0, 0.0, 0.0]
+        cell.Derivatives(0, [0.5, 0.5, 0.5], values, 1, derivative)
+        expected[c] = derivative
+    ours = td.gradients(data, "u").values.numpy()
+    np.testing.assert_allclose(expected, np.broadcast_to(_GRADIENT, ours.shape), atol=1e-6)
+    np.testing.assert_allclose(ours, expected, atol=2e-5)
+
+
+# ── Sub-tetrahedra ──────────────────────────────────────────────────
+
+@tack.kernel
+def _first_and_last_tets(cells, u, gradients, values):
+    # Each cell's first and last sub-tetrahedra: the field's gradient in each,
+    # and its value at the first one's centroid against the position there.
+    for c in cells:
+        e = cells.entity_id(c)
+        last = -1
+        for k in range(cells.num_faces(c)):
+            last += cells.side_num_points(c, k)
+        g0 = cells.tet_jacobian(c, 0).inverse().transpose() @ u.tet_parametric_gradient(c, 0)
+        g1 = (cells.tet_jacobian(c, last).inverse().transpose()
+              @ u.tet_parametric_gradient(c, last))
+        gradients[2 * e] = g0
+        gradients[2 * e + 1] = g1
+        pc = tack.vec3(0.25, 0.25, 0.25)
+        values[2 * e] = u.tet_value(c, 0, pc)
+        x = cells.cell_point(c) + cells.tet_jacobian(c, 0) @ pc
+        values[2 * e + 1] = x.dot(tack.vec3(0.7, -1.3, 2.1)) + 3.0
+
+
+@pytest.mark.parametrize("name", ["voronoi", "mixed", "wedge", "pyramid"])
+def test_sub_tetrahedra_reproduce_a_linear_field(backend, name):
+    """In every sub-tetrahedron a linear field has its own gradient, and its value
+    at a point is the field's at that point's position."""
+    meshes = _gradient_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    x = data.positions().astype(np.float64)
+    u = td.Field(td.H1(data), _scalars(x @ _GRADIENT + 3.0))
+    gradients = tack.empty((2 * data.num_cells,), tack.vec3())
+    values = tack.empty((2 * data.num_cells,), tack.f32)
+    td.for_each(_first_and_last_tets, data, "cells", u, gradients, values)
+    # One thin sub-tetrahedron (the Voronoi columns are 0.01 thick) in f32.
+    np.testing.assert_allclose(gradients.numpy(),
+                               np.broadcast_to(_GRADIENT, (2 * data.num_cells, 3)), atol=1e-3)
+    values = values.numpy().reshape(-1, 2)
+    np.testing.assert_allclose(values[:, 0], values[:, 1], atol=1e-5)
+
+
+def test_a_cell_not_star_shaped_from_its_cell_point_is_refused(backend):
+    """A C-shaped prism's cell point is in its notch, outside it: its sub-tetrahedra
+    overlap, and the locator refuses it rather than find points it does not hold."""
+    ring = np.array([[0, 0], [3, 0], [3, 1], [1, 1], [1, 2], [3, 2], [3, 3], [0, 3]], float)
+    pts = np.r_[np.c_[ring, np.zeros(8)], np.c_[ring, np.ones(8)]].astype(np.float32)
+    faces = [list(range(8))[::-1], list(range(8, 16))]
+    faces += [[j, (j + 1) % 8, 8 + (j + 1) % 8, 8 + j] for j in range(8)]
+    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 16, pts, orient=True), pts)
+    with pytest.raises(NotImplementedError, match="1 of the 1 cells are not star-shaped"):
+        td.CellLocator(data)

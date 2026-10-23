@@ -19,6 +19,29 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `gradients` and `flow_quantities` work on polyhedra, which have no
+  reference element: each cell's gradient is Green–Gauss over its faces,
+  each fanned into triangles from the mean of its points, which is exact for
+  a linear field and, on a parallelepiped, the trilinear gradient at its
+  center. At the points it is the average of the cells' gradients, as on
+  shapes. Polygons and polylines get zero, as lower-dimensional cells do.
+- `cell_centers` and `values_at_centers` work on polyhedra, polygons and
+  polylines: a cell's center is its cell point, the mean of its distinct
+  points, and point data takes the mean of their values there (the value
+  of an interpolant linear on tetrahedra fanned from that point, so exact
+  for a linear field); cell data is its own value.
+- `CellLocator` and `probe` work on polyhedra, locating points in
+  sub-tetrahedra: each face fanned from its points' mean, the fans from
+  the mean of the cell's points. Point data is linear on each (exact for
+  a linear field, continuous across faces). `find` returns `(cells, tets,
+  pcs)` there; field views evaluate with `tet_value(c, t, pc)`, and the
+  cell view gives `locate`, `cell_point`, `face_point` and `tet_jacobian`.
+  A cell not star-shaped from its cell point is refused.
+- `advect` and `streamlines` run through polyhedra, located in the same
+  sub-tetrahedra (the kernel's `_PolyhedralMesh` reuses the views'
+  location code), with point velocities linear on each and cell
+  velocities constant: RK4 through a linear field is exact, and leaving
+  the mesh bisects and pushes out as on shapes.
 - Implicit topology arrays. An `UnstructuredTopology`'s `types`, `offsets`
   and `connectivity` may be implicit arrays, kept as they are rather than
   stored: a `ConstantArray` of types for cells all of one shape, a

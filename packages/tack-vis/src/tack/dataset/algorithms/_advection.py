@@ -4,7 +4,8 @@ particle pushed out; a stop after its steps, outside, or at zero velocity.
 Each particle's whole path is one thread of one launch, its stages located
 from the particle's side (``CellLocator.cell_bins``), its cells reached by id
 through the topology's flat arrays, each shape's code compiled in only when
-the mesh has that shape."""
+the mesh has that shape. Polyhedra are located in their sub-tetrahedra, by the
+code their views use (``views._PolyhedralLocation``)."""
 
 import enum
 
@@ -12,7 +13,7 @@ import numpy as np
 
 import tack
 from tack import arrays
-from tack.dataset import shapes
+from tack.dataset import shapes, views
 from tack.dataset.algorithms._common import _field
 from tack.dataset.locator import _TOLERANCE, CellLocator, _bin
 from tack.dataset.spaces import H1, Constant, Values
@@ -59,8 +60,63 @@ _LAST = tack.constant(4, tack.i32)       # the last point inside, for the push o
 _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
 
+class _NoPolyhedra:
+    """For meshes of shapes: the polyhedral methods the kernel names, never called
+    (their branch is compiled out)."""
+
+    @tack.func
+    def locate(self, e, p, slack):
+        return -1, p - p, 0
+
+    @tack.func
+    def velocity_at(self, e, t, pc):
+        return pc - pc
+
+
 @tack.device_class
-class _FlatCells:
+class _PolyhedralMesh(views._PolyhedralLocation, views._PolyhedralWalk, views._PolyhedralCells):
+    """A polyhedral topology's cells by id, located in their sub-tetrahedra by the
+    same code as their views (``views._PolyhedralLocation``), with the positions
+    and the point velocities it reads."""
+
+    def __init__(self, topology, positions, velocity):
+        point_offsets, point_ids = topology.cell_points()
+        super().__init__(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
+                         topology.face_offsets, topology.face_points, point_offsets,
+                         point_ids, topology.num_cells)
+        self.positions = positions
+        self.velocity = velocity
+
+    @tack.func
+    def point_position(self, p):
+        return self.positions[p]
+
+    @tack.func
+    def cell_type(self, e):
+        return shapes.POLYHEDRON
+
+    @tack.func
+    def velocity_at(self, e, t, pc):
+        """The point velocity at ``pc`` in sub-tetrahedron ``t``: linear there, the
+        cell and face points taking the means of their points' velocities."""
+        k, j = self.tet_face(e, t)
+        n = self.side_num_points(e, k)
+        nxt = j + 1 if j + 1 < n else 0
+        count = self.num_points(e)
+        v0 = self.velocity[self.point_id(e, 0)]
+        for i in range(1, count):
+            v0 += self.velocity[self.point_id(e, i)]
+        v0 = v0 / count
+        vf = self.velocity[self.side_point_id(e, k, 0)]
+        for i in range(1, n):
+            vf += self.velocity[self.side_point_id(e, k, i)]
+        vf = vf / n
+        return (v0 + pc[0] * (vf - v0) + pc[1] * (self.velocity[self.side_point_id(e, k, j)] - v0)
+                + pc[2] * (self.velocity[self.side_point_id(e, k, nxt)] - v0))
+
+
+@tack.device_class
+class _FlatCells(_NoPolyhedra):
     """An unstructured topology's cells by id: type and points from its arrays."""
 
     def __init__(self, types, offsets, connectivity):
@@ -82,7 +138,7 @@ class _FlatCells:
 
 
 @tack.device_class
-class _GridCells:
+class _GridCells(_NoPolyhedra):
     """A structured grid's cells by id: hexahedra (quads in 2D), x fastest, corners
     in VTK's order."""
 
@@ -164,6 +220,7 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
             best_rank = 2 * ncells
             best_type = 0
             best_pc = p - p
+            best_tet = -1
             bi = _bin(p[0], ox, ix, nx, slack)
             bj = _bin(p[1], oy, iy, ny, slack)
             bk = _bin(p[2], oz, iz, nz, slack)
@@ -178,6 +235,20 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
                             and p[1] >= a[1] - s and p[1] <= c[1] + s
                             and p[2] >= a[2] - s and p[2] <= c[2] + s):
                         kind = mesh.cell_type(e)
+                        if (kinds.PRESENT & 256) != 0 and kind == shapes.POLYHEDRON:
+                            # No parametric coordinates: a sub-tetrahedron and the
+                            # point's place in it, within the cell's tolerance,
+                            # ranked as the shapes are.
+                            tet, tpc, held = mesh.locate(e, p, s)
+                            if tet >= 0:
+                                rank = e if held == 1 else e + ncells
+                                if rank < best_rank:
+                                    best_rank = rank
+                                    best = e
+                                    best_type = kind
+                                    best_tet = tet
+                                    best_pc = tpc
+                            continue
                         for j in range(mesh.num_points(e)):
                             y = positions[mesh.point_id(e, j)]
                             pts[3 * j] = y[0]
@@ -240,6 +311,8 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
             if found == 1:
                 if on_cells == 1:
                     v = velocity[best]
+                elif (kinds.PRESENT & 256) != 0 and best_type == shapes.POLYHEDRON:
+                    v = mesh.velocity_at(best, best_tet, best_pc)
                 else:
                     count = mesh.num_points(best)
                     for j in range(count):
@@ -404,8 +477,13 @@ def _as_vectors(values, dtype):
     return out
 
 
-def _mesh(data):
+# The kinds bit for polyhedra, past the shapes'.
+_POLYHEDRA = 256
+
+
+def _mesh(data, positions, velocity):
     """The cells by id, and the bits of the shapes present."""
+    from tack.dataset.polyhedra import PolyhedralTopology
     from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
     t = data.topology
@@ -417,9 +495,10 @@ def _mesh(data):
         return _FlatCells(t.types, t.offsets, t.connectivity), present
     if isinstance(t, StructuredTopology) and len(t.point_dims) >= 2:
         return _GridCells(t.point_dims), present
-    raise NotImplementedError("advection takes unstructured and 2D or 3D structured "
-                              "topologies; not polyhedra, polygons or polylines, whose "
-                              "cells have no parametric coordinates, nor lines")
+    if isinstance(t, PolyhedralTopology) and t.dimension == 3:
+        return _PolyhedralMesh(t, positions, velocity), _POLYHEDRA if t.num_cells else 0
+    raise NotImplementedError("advection takes unstructured, polyhedral and 2D or 3D "
+                              "structured topologies; not polygons or polylines, nor lines")
 
 
 def _run(data, field, seeds, step_size, steps, integrator, locator, record):
@@ -430,8 +509,9 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     geometry = data.geometry
     if not isinstance(geometry.space, H1) or geometry.space.order != 1:
         raise TypeError("advection needs an order-1 H1 geometry: one position per point")
-    mesh, present = _mesh(data)
     velocity, on_cells = _velocity(data, field)
+    positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
+    mesh, present = _mesh(data, positions, velocity)
     locator = locator or CellLocator(data)
     if locator.data is not data:
         raise ValueError("the locator was built for another dataset")
@@ -457,7 +537,6 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
         times.fill(0)
         taken.fill(0)
         status.fill(int(SUCCESS))
-        positions = _as_vectors(arrays.materialize(geometry.values), dtype)
         eps = float(np.finfo(dtype.numpy_dtype).eps)
         _advect(mesh, _kinds(present), *(shape() for shape in _SHAPES), positions, velocity, on_cells,
                 locator.lo, locator.hi, bin_offsets, bin_cells, *locator._grid(),

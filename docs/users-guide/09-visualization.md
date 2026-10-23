@@ -272,11 +272,16 @@ ask for them before the launch:
 ## Polyhedra, polygons and lines
 
 A polyhedral cell has no reference element: no shape functions and no
-parametric coordinates. Algorithms that need one (gradients, probing,
-advection) refuse a polyhedral mesh and say so. The ones that work from
-points and faces run on both kinds: contour (by López's face walk), slice,
-threshold, external faces, cell and face geometry, divergence, and moving
-data between points and cells. A 2D mesh contours into lines, and
+parametric coordinates. Instead, each face is fanned into triangles from
+the mean of its points, and the triangles into tetrahedra from the mean of
+the cell's points; point data is linear on each tetrahedron. Gradients,
+cell centers, probing, advection and streamlines run on polyhedra that way
+(gradients by Green–Gauss over the fanned faces), exactly for linear
+fields; the algorithms that need a reference element (`L2` and order-2
+spaces, side traces) refuse a polyhedral mesh and say so. The ones that
+work from points and faces run on both kinds: contour (by López's face
+walk), slice, threshold, external faces, cell and face geometry,
+divergence, and moving data between points and cells. A 2D mesh contours into lines, and
 streamlines are polylines, one per seed:
 
 ```python

@@ -26,6 +26,15 @@ def _evaluate(cells, u, links, link_points, pcs, out):
 
 
 @tack.kernel
+def _evaluate_in_tets(cells, u, links, link_points, tets, pcs, out):
+    for c in cells:
+        e = cells.entity_id(c)
+        for n in range(links[e], links[e + 1]):
+            q = link_points[n]
+            out[q] = u.tet_value(c, tets[q], pcs[q])
+
+
+@tack.kernel
 def _found_keys(found, ncells, keys):
     for q in range(found.shape[0]):
         keys[q] = found[q] if found[q] >= 0 else ncells
@@ -56,7 +65,10 @@ def probe(data, where, fields=None, locator=None):
     if locator.data is not data:
         raise ValueError("the locator was built for another dataset")
     points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
-    found, pcs = locator.find(points)
+    if locator.polyhedral:
+        found, tets, pcs = locator.find(points)
+    else:
+        found, pcs = locator.find(points)
     m = found.shape[0]
     keys = tack.empty((m,), found.dtype)
     if m:
@@ -81,7 +93,10 @@ def probe(data, where, fields=None, locator=None):
         if m:
             values.fill(0)
             for group in data.launch_groups("cells", [f]):
-                if group.count:
+                if group.count and locator.polyhedral:
+                    _evaluate_in_tets(data.domain_view("cells", group), f.view(group), links,
+                                      order, tets, pcs, values)
+                elif group.count:
                     _evaluate(data.domain_view("cells", group), f.view(group), links, order,
                               pcs, values)
         out[name] = Field(H1(where), values)

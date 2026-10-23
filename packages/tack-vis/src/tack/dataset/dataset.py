@@ -99,7 +99,7 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
             and not _is_cells(group)):
         raise TypeError(f"{space!r} is read cell by cell: on faces, take its traces "
                         "(tack.dataset.traces)")
-    mixins = [space_mixin or space.mixin_for(group.keys.get(space))]
+    mixins = [space_mixin or space.mixin_for(group.keys.get(space), group.shape)]
     if isinstance(space, H1):
         # A grid's coordinates read a corner by (i, j, k) when their axes are
         # the topology's; a grid with a size of 1 before another axis has its
@@ -319,6 +319,8 @@ class DataSet:
         mixins.extend(geometry)
         if kind == "cells" and issubclass(group.kind, views._CellsById):
             mixins.append(views._PolyhedralWalk)
+            if group.shape is shapes.Polyhedron:
+                mixins.append(views._PolyhedralLocation)
         if (kind == "cells" and issubclass(group.kind, views._PolylineCells)
                 and self.topology._faces is not None):
             mixins.append(views._PolylineIncidence)
