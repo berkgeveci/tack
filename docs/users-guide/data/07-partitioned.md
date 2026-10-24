@@ -253,8 +253,8 @@ are several devices of the chosen type.
 
 ## Not here yet
 
-`statistics` and `entropy` across MPI ranks, more than one generated ghost
-layer, and particles that cross pieces are the next steps.
+More than one generated ghost layer, and particles that cross pieces, are
+the next steps.
 
 ## Run and check
 

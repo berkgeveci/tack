@@ -88,6 +88,16 @@ def _merged(a, b):
             m2, m3, m4)
 
 
+def _over_pieces(data, each):
+    """``each(piece)`` for every piece of a partitioned dataset over every rank of its
+    world, in the pieces' global order."""
+    from tack import communication as tc
+
+    pieces = list(data)
+    blocks = tc.Blocks([piece.device for piece in pieces], data.world)
+    return blocks.all_gather({g: each(piece) for g, piece in zip(blocks.local, pieces)})
+
+
 def _summary(n, low, high, total, mean, m2, m3, m4):
     skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
     kurtosis = n * m4 / (m2 * m2) if m2 else 0.0
@@ -114,13 +124,14 @@ def statistics(data, field):
 
     Over a ``PartitionedDataSet``, ``field`` names a field every piece has: each
     piece's moments, over what it owns, are taken on its own device and
-    combined pairwise. Where every shared cell and point has one owner, the
-    result is the whole's up to rounding."""
+    combined pairwise, in the order of the pieces over every rank of
+    ``data.world`` -- the same result however the pieces are shared out. Where
+    every shared cell and point has one owner, the result is the whole's up to
+    rounding."""
     if isinstance(data, PartitionedDataSet):
         fields_of(data, field, "statistics")
         moments = None
-        for piece in data:
-            part = _moments(piece, field)
+        for part in _over_pieces(data, lambda piece: _moments(piece, field)):
             if part is not None:
                 moments = part if moments is None else _merged(moments, part)
     else:
