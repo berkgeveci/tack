@@ -470,7 +470,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         # Points are origin + direction @ (ijk * spacing), ijk from the extent's start.
         origin = np.asarray(grid.origin) + direction @ (np.asarray(grid.extent[0::2]) * spacing)
         geometry = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
-        topology = grid_topology(dims, id_dtype=id_dtype)
+        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
     elif isinstance(grid, vtkRectilinearGrid):
         geometry = CartesianProduct(np.asarray(grid.x_coordinates),
                                     np.asarray(grid.y_coordinates),
@@ -478,11 +478,11 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         dims = list(grid.dimensions)
         if dims != list(geometry.dims):
             raise ValueError(f"grid dimensions {dims} do not match its coordinates")
-        topology = grid_topology(dims, id_dtype=id_dtype)
+        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
     elif isinstance(grid, vtkStructuredGrid):
         dims = [0, 0, 0]
         grid.GetDimensions(dims)        # not a readable property on a structured grid in 9.7.1
-        topology = grid_topology(dims, id_dtype=id_dtype)
+        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
         geometry = _vtk_points(grid)
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkStructuredGrid, "

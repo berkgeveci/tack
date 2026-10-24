@@ -457,16 +457,27 @@ class UnstructuredTopology(_Topology):
 
 class StructuredTopology(_Topology):
     """The cells of a structured grid of ``point_dims`` points, x fastest: lines, quads
-    or hexahedra in ``vtkStructuredGrid``'s order, iterated by (i, j, k)."""
+    or hexahedra in ``vtkStructuredGrid``'s order, iterated by (i, j, k).
+
+    ``offset`` is the grid index of its first point in a larger grid, one per
+    axis (VTK's extent's start; zeros by default): a piece ``split`` cut, or an
+    image whose extent starts elsewhere. What depends on a cell's place in the
+    whole grid -- ``tetrahedralize``'s alternating splits -- reads it, so
+    neighbouring pieces agree."""
 
     _KINDS = {1: (_StructuredLines, shapes.Line), 2: (_StructuredQuads, shapes.Quad),
               3: (_StructuredHexahedra, shapes.Hexahedron)}
 
-    def __init__(self, point_dims, id_dtype=None, device=None):
+    def __init__(self, point_dims, id_dtype=None, device=None, offset=None):
         point_dims = tuple(int(d) for d in point_dims)
         if not 1 <= len(point_dims) <= 3 or min(point_dims) < 2:
             raise ValueError(f"point_dims must be 1 to 3 sizes of at least 2, not {point_dims}")
+        offset = (0,) * len(point_dims) if offset is None else tuple(int(o) for o in offset)
+        if len(offset) != len(point_dims):
+            raise ValueError(f"offset needs one index per axis ({len(point_dims)}), not "
+                             f"{offset}")
         self.point_dims = point_dims
+        self.offset = offset
         self.num_cells = int(np.prod([d - 1 for d in point_dims]))
         self.num_points = int(np.prod(point_dims))
         self.id_dtype = ids.choose(id_dtype, max(self.num_points, 12 * self.num_cells))
@@ -479,7 +490,8 @@ class StructuredTopology(_Topology):
         self._found_device = backend_of(device)
 
     def _moved(self, target):
-        return StructuredTopology(self.point_dims, id_dtype=self.id_dtype, device=target)
+        return StructuredTopology(self.point_dims, id_dtype=self.id_dtype, device=target,
+                                  offset=self.offset)
 
     def groups(self):
         return self._groups

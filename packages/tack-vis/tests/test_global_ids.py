@@ -27,11 +27,6 @@ from tack.runtime.dispatch import env_flag
 
 try:
     import vtkmodules.vtkCommonDataModel  # noqa: F401  (registers the pythonic API)
-    from vtkmodules.vtkFiltersParallelDIY2 import (
-        vtkGenerateGlobalIds,
-        vtkGhostCellsGenerator,
-        vtkRedistributeDataSetFilter,
-    )
     from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
@@ -43,6 +38,21 @@ else:
     vtk = types.SimpleNamespace()
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
+
+# The DIY2 filters are an optional VTK module (``FiltersParallelDIY2``), which a
+# build without MPI may leave out (headroom's VTK master build); the tests
+# comparing with them skip on their own, as in ``test_partitioned.py``.
+try:
+    from vtkmodules.vtkFiltersParallelDIY2 import (
+        vtkGenerateGlobalIds,
+        vtkGhostCellsGenerator,
+        vtkRedistributeDataSetFilter,
+    )
+except ImportError:
+    vtkGenerateGlobalIds = vtkGhostCellsGenerator = vtkRedistributeDataSetFilter = None
+
+needs_diy2 = pytest.mark.skipif(vtkRedistributeDataSetFilter is None,
+                                reason="needs VTK's FiltersParallelDIY2 module")
 
 pytestmark = pytest.mark.quick
 
@@ -156,6 +166,7 @@ def test_filters_carry_the_ids_of_what_they_keep():
 # -- VTK -------------------------------------------------------------------
 
 @needs_vtk
+@needs_diy2
 def test_vtks_global_ids_come_and_go_as_global_ids():
     image = vtkRTAnalyticSource(whole_extent=(-2, 2, -2, 2, -2, 2))()
     plain = vtkRedistributeDataSetFilter(number_of_partitions=2,
@@ -176,6 +187,7 @@ def test_vtks_global_ids_come_and_go_as_global_ids():
 
 
 @needs_vtk
+@needs_diy2
 def test_generated_ids_are_vtks():
     """On pieces without ghost cells: VTK's ids, and its duplicate marks."""
     image = vtkRTAnalyticSource(whole_extent=(-4, 4, -4, 4, -4, 4))()
@@ -190,6 +202,7 @@ def test_generated_ids_are_vtks():
 
 
 @needs_vtk
+@needs_diy2
 def test_generated_ids_on_vtks_ghosted_pieces_keep_its_owners():
     """vtkGenerateGlobalIds gives a point to the lowest piece holding any copy of it,
     ghost copies too, and remarks the pieces; generate_global_ids keeps the

@@ -59,7 +59,7 @@ that share everything else: spaces without a basis, fields, sets,
 | Topology | Built from | Kind |
 |---|---|---|
 | `UnstructuredTopology(types, offsets, connectivity, num_points=None, id_dtype=None)` | VTK cell types and point rows, of the linear shapes (vertex to pyramid) | shape-based |
-| `StructuredTopology(point_dims, id_dtype=None)`, usually through `rectilinear_grid(x, y, z)` | grid dimensions; cells addressed by (i, j, k) | shape-based |
+| `StructuredTopology(point_dims, id_dtype=None, offset=None)`, usually through `rectilinear_grid(x, y, z)` | grid dimensions; cells addressed by (i, j, k); `offset`, the grid index of its first point in a larger grid (VTK's extent's start: `split`'s pieces, an image whose extent starts elsewhere) | shape-based |
 | `PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides, num_points=None, id_dtype=None)` | faces stored once, as point rings wound out of side 0; each cell a list of faces, with the side (u8, 0 or 1) it is on | polyhedral, 3D |
 | `PolyhedralTopology.from_cell_faces(cells, num_points, positions=None, orient=False, id_dtype=None)` | each cell's own face rings, as VTK and most readers give them; copies of a face matched by point set | polyhedral, 3D |
 | `PolygonalTopology(loop_offsets, loop_points, num_points=None, id_dtype=None)` | each polygon's loop of points | polyhedral, 2D |
@@ -896,7 +896,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 
 | | |
 |---|---|
-| `tetrahedralize(data)` | 3D cells as tetrahedra that meet face to face, as VTK's `vtkDataSetTriangleFilter` makes them: a structured grid's hexahedra in 5, the two mirror splits alternating with the parity of (i, j, k); any other cell the cone from its corner of smallest point id over the faces without it, each quadrilateral face split from its own smallest corner, so neighbours split a shared face alike (hexahedron or voxel 6, wedge 3, pyramid 2). Viskores' fixed tables, used before, did not conform |
+| `tetrahedralize(data)` | 3D cells as tetrahedra that meet face to face, as VTK's `vtkDataSetTriangleFilter` makes them: a structured grid's hexahedra in 5, the two mirror splits alternating with the parity of (i, j, k) in the whole grid (the topology's `offset` added); any other cell the cone from its corner of smallest point id -- global id, where the dataset has global ids -- over the faces without it, each quadrilateral face split from its own smallest corner, so neighbours split a shared face alike (hexahedron or voxel 6, wedge 3, pyramid 2), across the pieces of a partitioned dataset too. Viskores' fixed tables, used before, did not conform |
 | `triangulate(data)` | 2D cells as triangles: quads and pixels in two, polygons in fans |
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
 | `statistics(data, f)` | a `Statistics` named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis; of a `PartitionedDataSet` too (see *Partitioned datasets*) |

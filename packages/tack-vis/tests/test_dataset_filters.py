@@ -172,6 +172,26 @@ def test_an_order_two_field_is_refused(backend):
         td.contour(data, td.Field(space, _scalars(values)), 0.5)
 
 
+def test_a_slice_of_an_order_two_geometry_cuts_its_cells_at_their_corners(backend):
+    """A slice contours the implicit function's values in the geometry's space,
+    order 2 for a curved geometry, which contour refuses: slicing such a
+    dataset raised (examples/43_mfem_poisson.py). The function's values at the
+    points are a linear field of the cells' corners, as before contour
+    refused order 2: a straight-sided geometry raised to order 2 is cut as its
+    order-1 self."""
+    data = _grid(3, "explicit")
+    curved = td.DataSet(data.topology, data.geometry)
+    curved.geometry = td.project(curved, curved.geometry, td.H1(curved, order=2))
+    assert curved.geometry.space.order == 2
+    origin, normal = (0.37, 0.41, 0.29), (1.0, 0.3, 0.2)
+    ours, theirs = td.slice_plane(curved, origin, normal), td.slice_plane(data, origin, normal)
+    assert ours.num_cells == theirs.num_cells > 0
+    np.testing.assert_allclose(np.sort(ours.positions(), axis=0),
+                               np.sort(theirs.positions(), axis=0), atol=1e-6)
+    many = td.slice_plane(curved, origin, normal, value=[-0.2, 0.0, 0.2])
+    assert many.num_cells > ours.num_cells
+
+
 def test_fields_carried_onto_the_surface(backend):
     data = _with_radius(_grid(6, "explicit"))
     positions = data.positions()

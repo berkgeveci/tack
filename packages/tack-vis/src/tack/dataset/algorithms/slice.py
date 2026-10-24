@@ -2,7 +2,9 @@
 
 from tack.dataset.algorithms.contour import contour
 from tack.dataset.algorithms.implicit_values import implicit_values
+from tack.dataset.algorithms.project import project
 from tack.dataset.implicit import Plane
+from tack.dataset.spaces import H1
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['slice', 'slice_plane']
@@ -14,10 +16,16 @@ def slice(data, function, merge_points=True, fields=None, value=0.0):
     a contour of its values on the geometry, carrying fields as ``contour``
     does. ``value`` may be a sequence, as ``contour``'s: every level in one
     pass, each output cell's in ``contour_value``. ``slice_plane`` is this
-    with a ``Plane``."""
-
-    return contour(data, implicit_values(data, function), value, merge_points=merge_points,
-                   fields=fields)
+    with a ``Plane``. On a curved geometry (``H1`` above order 1) the cells are cut
+    linearized at their corners, as ``contour`` would need its cells subdivided
+    for the curve inside them."""
+    values = implicit_values(data, function)
+    if isinstance(values.space, H1) and values.space.order != 1:
+        # The function's values at the points: projected into order-1 H1, a
+        # continuous field keeps them. contour refuses order 2, so slicing a
+        # curved dataset raised.
+        values = project(data, values, H1(data))
+    return contour(data, values, value, merge_points=merge_points, fields=fields)
 
 
 @on_inputs_device

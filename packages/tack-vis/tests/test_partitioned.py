@@ -32,10 +32,6 @@ try:
         vtkPartitionedDataSetCollection,
     )
     from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
-    from vtkmodules.vtkFiltersParallelDIY2 import (
-        vtkGhostCellsGenerator,
-        vtkRedistributeDataSetFilter,
-    )
     from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
@@ -50,6 +46,21 @@ else:
 # pythonic form for them (a vtkPartitionedDataSet iterates, but walks leaves).
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
+
+# The DIY2 filters are an optional VTK module (``FiltersParallelDIY2``), which a
+# build without MPI may leave out: headroom's VTK master build has none. A VTK
+# without it still runs every other test here, so the three that redistribute
+# and generate ghosts through VTK skip on their own.
+try:
+    from vtkmodules.vtkFiltersParallelDIY2 import (
+        vtkGhostCellsGenerator,
+        vtkRedistributeDataSetFilter,
+    )
+except ImportError:
+    vtkGhostCellsGenerator = vtkRedistributeDataSetFilter = None
+
+needs_diy2 = pytest.mark.skipif(vtkRedistributeDataSetFilter is None,
+                                reason="needs VTK's FiltersParallelDIY2 module")
 
 
 @pytest.fixture(autouse=True)
@@ -579,6 +590,7 @@ def test_hidden_cells_are_never_processed():
 
 
 @needs_vtk
+@needs_diy2
 def test_vtks_ghost_cells_give_each_piece_its_share():
     """The same over VTK's pieces of an unstructured mesh, with ghost cells from
     vtkGhostCellsGenerator."""
@@ -652,6 +664,7 @@ def test_collections_are_dicts_of_partitioned_datasets():
 
 
 @needs_vtk
+@needs_diy2
 def test_vtks_redistributed_pieces_reduce_to_the_wholes_statistics():
     """``vtkRedistributeDataSetFilter`` assigns each cell to one piece, so cell
     statistics over its pieces are the whole's."""
@@ -672,6 +685,7 @@ def test_vtks_redistributed_pieces_reduce_to_the_wholes_statistics():
 
 
 @needs_vtk
+@needs_diy2
 def test_vtks_ghost_cells_give_the_wholes_statistics():
     """``vtkGhostCellsGenerator`` gives every cell and point of its pieces one owner,
     so point and cell statistics over pieces with ghost layers are the whole's."""
