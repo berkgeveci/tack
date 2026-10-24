@@ -3583,7 +3583,11 @@ reader or your own partitioner, get a layer from <code>ghost_cells</code>, as VT
 <div class="highlight"><pre><span></span><code><span class="n">plain</span> <span class="o">=</span> <span class="n">vtk_to_dataset</span><span class="p">(</span><span class="n">vtkRedistributeDataSetFilter</span><span class="p">(</span><span class="n">number_of_partitions</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
                                                     <span class="n">preserve_partitions_in_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)(</span><span class="n">mesh</span><span class="p">))</span>
 <span class="n">pieces</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">plain</span><span class="p">)</span>                     <span class="c1"># one layer, marked</span>
+<span class="n">deeper</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">plain</span><span class="p">,</span> <span class="n">layers</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>           <span class="c1"># two, for two neighbour filters in a row</span>
 </code></pre></div>
+<p>Structured pieces, <code>split</code>'s or VTK's image pieces, stay structured: each
+becomes its block grown by the layers, with the right offset and
+coordinates.</p>
 <p>Pieces neighbour where they share points at exactly the same position, and
 a shared point belongs to the lowest piece holding it. The pieces may be on
 different devices, or on different MPI ranks (each rank passes its own
@@ -3640,7 +3644,7 @@ probing the whole dataset. Ghost cells are not needed for it.</p>
 <span class="n">values</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;RTData&quot;</span><span class="p">],</span> <span class="n">values</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;valid&quot;</span><span class="p">]</span>    <span class="c1"># valid 0 outside every piece</span>
 </code></pre></div>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p>More than one generated ghost layer is the next step.</p>
+<p>Connected components across pieces and <code>merge_points</code> are the next steps.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_partitioned.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packages/tack-vis/examples/44_partitioned_data.py<span class="w"> </span>--pieces<span class="w"> </span><span class="m">8</span>
