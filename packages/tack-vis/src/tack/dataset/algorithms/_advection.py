@@ -26,6 +26,10 @@ TERMINATE = tack.constant(2, tack.i32)
 SPATIAL_BOUNDS = tack.constant(4, tack.i32)
 TOOK_ANY_STEPS = tack.constant(16, tack.i32)
 ZERO_VELOCITY = tack.constant(64, tack.i32)
+# Not Viskores': the particle ended a whole step in a ghost cell, so it goes to
+# the piece that owns that cell (advection over a partitioned dataset). The
+# driver clears it; users never see it.
+HANDOFF = tack.constant(128, tack.i32)
 
 
 class ParticleStatus(enum.IntFlag):
@@ -62,7 +66,7 @@ _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
 @tack.kernel
 def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, trace,
-            trace_times, lengths, capacity, record):
+            trace_times, lengths, capacity, record, ghosts, handoff):
     for q in range(xs.shape[0]):
         x = xs[q]
         t = times[q]
@@ -86,7 +90,14 @@ def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, tr
         r0 = h - h
         r1 = h
         div = 1.0
+        # A resumed particle that stopped -- outside, at zero velocity, handed on,
+        # or with its steps done -- stays where it is; one that stopped at an
+        # earlier call's step limit goes on.
         running = 1
+        if (st & (SPATIAL_BOUNDS | ZERO_VELOCITY | HANDOFF)) != 0 or n >= max_steps:
+            running = 0
+        else:
+            st = st & ~TERMINATE
         while running == 1:
             # Where to locate the particle next.
             p = x
@@ -113,9 +124,20 @@ def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, tr
             if found == 1:
                 v = velocity.value(mesh, best, best_type, best_pc, best_tet)
 
+            # A whole step that ended in a ghost cell hands the particle to the
+            # cell's owner, which goes on from there with whole steps; only
+            # after a step here, so a particle never goes back without moving.
+            handed = 0
+            if handoff == 1 and mode == _STEP and stage == 0 and took == 1 and found == 1:
+                if (ghosts[best] & 1) != 0:
+                    handed = 1
+
             # What it means for the particle.
             bisect = 0
-            if mode == _STEP or mode == _CHECK:
+            if handed == 1:
+                st = st | HANDOFF
+                running = 0
+            elif mode == _STEP or mode == _CHECK:
                 if found == 0:
                     if mode == _STEP:
                         # Viskores' SmallStep: from the particle, bisect the step.
@@ -227,7 +249,12 @@ def _velocity(data, field):
     return by_id
 
 
-def _run(data, field, seeds, step_size, steps, integrator, locator, record):
+def _run(data, field, seeds, step_size, steps, integrator, locator, record, resume=None,
+         handoff=False):
+    """``resume``, ``(times, steps, status)`` for the seeds, goes on from there:
+    ``steps`` counts the steps already taken, and a stopped particle stays.
+    ``handoff`` stops a particle after a whole step ending in a ghost cell
+    (``HANDOFF``)."""
     if int(steps) < 1:
         raise ValueError(f"steps must be at least 1, not {steps!r}")
     if integrator not in ("rk4", "euler"):
@@ -266,11 +293,21 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     trace_times = tack.empty((m * capacity,), dtype)
     if m:
         tack.copyto(xs, seeds.to_device(xs.device) if stored else host)
-        times.fill(0)
-        taken.fill(0)
-        status.fill(int(SUCCESS))
+        if resume is None:
+            times.fill(0)
+            taken.fill(0)
+            status.fill(int(SUCCESS))
+        else:
+            for into, values, kind in zip((times, taken, status), resume,
+                                          (dtype, tack.i32, tack.i32)):
+                tack.copyto(into, values.to_device(into.device).astype(kind)
+                            if isinstance(values, Array)
+                            else np.asarray(values, kind.numpy_dtype))
+        marks = data.ghosts.cells if handoff and data.ghosts is not None else None
+        ghosts = marks if marks is not None else tack.zeros((1,), tack.u8)
         eps = float(np.finfo(dtype.numpy_dtype).eps)
         _advect(mesh, velocity, float(step_size), int(steps),
                 1 if integrator == "rk4" else 0, eps, xs, times, taken, status, trace,
-                trace_times, lengths, capacity, 1 if record else 0)
+                trace_times, lengths, capacity, 1 if record else 0, ghosts,
+                1 if marks is not None else 0)
     return xs, times, taken, status, (trace, trace_times), lengths, capacity

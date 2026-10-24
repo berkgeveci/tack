@@ -52,7 +52,16 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
-    ``time`` on the points. A seed that takes no step has a point and no line."""
+    ``time`` on the points. A seed that takes no step has a point and no line.
+
+    Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
+    piece, each piece holding the stretches it traced
+    (``_particles.streamlines_pieces``)."""
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet):
+        from tack.dataset.algorithms._particles import streamlines_pieces
+        return streamlines_pieces(data, field, seeds, step_size, steps, integrator)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
