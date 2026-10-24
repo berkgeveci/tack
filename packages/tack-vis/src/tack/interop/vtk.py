@@ -285,13 +285,25 @@ def _attributes_to_fields(attributes, space, float_dtype):
     from tack.dataset import Field
 
     fields = {}
+    global_ids = attributes.GetGlobalIds()          # no pythonic form in 9.7.1
+    skipped = {_GHOST_ARRAY, global_ids.GetName() if global_ids is not None else None}
     for name in attributes.keys():
         array = attributes[name]
         # Named data arrays: string and other abstract arrays have no values to compute on,
-        # and the ghost array becomes the ghost marks.
-        if name and name != _GHOST_ARRAY and isinstance(array, vtkDataArray):
+        # the ghost array becomes the ghost marks and the global ids the global ids.
+        if name and name not in skipped and isinstance(array, vtkDataArray):
             fields[name] = Field(space, _array_to_field(array, float_dtype))
     return fields
+
+
+def _global_ids(attributes):
+    """An attributes object's ``GlobalIds`` array as i64 ids, or ``None``."""
+    import numpy as np
+
+    array = attributes.GetGlobalIds()               # no pythonic form in 9.7.1
+    if array is None:
+        return None
+    return tack.array(np.ascontiguousarray(np.asarray(array), np.int64).reshape(-1), tack.i64)
 
 
 def _ghost_marks(attributes):
@@ -406,6 +418,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     )
     from tack.dataset.dataset import grid_topology
     from tack.dataset.ghosts import Ghosts
+    from tack.dataset.global_ids import GlobalIds
 
     options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype}
     if isinstance(grid, vtkPartitionedDataSetCollection):
@@ -479,7 +492,11 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     fields.update(_attributes_to_fields(grid.cell_data, Constant(topology), dtype))
     cells, points = _ghost_marks(grid.cell_data), _ghost_marks(grid.point_data)
     ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
-    return DataSet(topology, geometry, fields=fields, dtype=dtype, ghosts=ghosts)
+    cells, points = _global_ids(grid.cell_data), _global_ids(grid.point_data)
+    global_ids = None if cells is None and points is None else GlobalIds(cells=cells,
+                                                                         points=points)
+    return DataSet(topology, geometry, fields=fields, dtype=dtype, ghosts=ghosts,
+                   global_ids=global_ids)
 
 
 def _to_vtk_types(types):
@@ -707,6 +724,16 @@ def dataset_to_vtk(data):
             if marks is not None:
                 attributes[_GHOST_ARRAY] = vtkUnsignedCharArray(
                     np.ascontiguousarray(marks.numpy(), np.uint8))
+    if data.global_ids is not None:
+        from vtkmodules.vtkCommonCore import vtkIdTypeArray
+
+        for attributes, ids, name in ((grid.cell_data, data.global_ids.cells, "GlobalCellIds"),
+                                      (grid.point_data, data.global_ids.points,
+                                       "GlobalPointIds")):
+            if ids is not None:
+                array = vtkIdTypeArray(np.ascontiguousarray(ids.numpy(), np.int64))
+                array.SetName(name)                 # vtkGenerateGlobalIds' names
+                attributes.SetGlobalIds(array)      # no pythonic form in 9.7.1
     return grid
 
 

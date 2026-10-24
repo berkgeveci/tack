@@ -286,6 +286,7 @@ jobs:
           uv run pytest -q -rs packages/tack-core/tests/test_communication.py
           packages/tack-vis/tests/test_ghost_update.py
           packages/tack-vis/tests/test_ghost_cells.py
+          packages/tack-vis/tests/test_global_ids.py
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not

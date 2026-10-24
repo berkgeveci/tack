@@ -300,7 +300,8 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     carried like any point (or L2) field.
 
     Ghost marks go by the same maps (``ghosts.carry_marks``): what the output makes
-    takes the owner of what it came from.
+    takes the owner of what it came from. Global ids go with the entities that are
+    input entities (``global_ids.carry_ids``).
 
     Sets go by the same maps: an output entity is in a set when the input entity
     it comes from is, and a face or edge set becomes a cell set where faces or
@@ -327,7 +328,10 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
             if moved is not None:
                 sets[name] = moved
     from tack.dataset.ghosts import carry_marks
+    from tack.dataset.global_ids import carry_ids
 
-    return carry_marks(data, DataSet(out, geometry, fields=carried, sets=sets), points=points,
-                       cells=cells, faces_to_cells=faces_to_cells,
+    made = DataSet(out, geometry, fields=carried, sets=sets)
+    carry_ids(data, made, points=points, cells=None if faces_to_cells is not None or
+              edges_to_cells is not None else cells)
+    return carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,
                        edges_to_cells=edges_to_cells)

@@ -32,18 +32,18 @@ import numpy as np
 import tack
 from tack import arrays
 from tack import communication as tc
+from tack.dataset import _matching
+from tack.dataset._matching import INDEX_BITS, INDEX_MASK
 from tack.dataset.carry import _take
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
+from tack.dataset.global_ids import GlobalIds
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1, Constant, Values
 from tack.dataset.topology import UnstructuredTopology
 
 __all__ = ["ghost_cells", "update_ghosts"]
-
-# A point's identity, (owner piece, index there), as one integer.
-_INDEX_BITS = 40
 
 
 def ghost_cells(data, layers=1, world=None, fields=None):
@@ -62,7 +62,9 @@ def ghost_cells(data, layers=1, world=None, fields=None):
 
     Point and cell fields (``H1`` of order 1, ``Constant``, values on points
     or cells) are carried, ``fields`` choosing them as filters do (``None``:
-    all); point and cell sets keep their members. ``update_ghosts`` refreshes
+    all); point and cell sets keep their members, and global ids come along
+    where every piece has them, points then matched by their ids rather than
+    their positions. ``update_ghosts`` refreshes
     a field's ghost values from their owners afterwards, after a filter that
     is right only where it sees every neighbour.
 
@@ -82,23 +84,41 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     for i, piece in enumerate(pieces):
         _check_piece(i, piece)
     blocks = tc.Blocks([piece.device for piece in pieces], world)
-    if blocks.count > 1 << (63 - _INDEX_BITS):
-        raise ValueError(f"ghost_cells handles up to {1 << (63 - _INDEX_BITS)} pieces")
+    if blocks.count > 1 << (63 - INDEX_BITS):
+        raise ValueError(f"ghost_cells handles up to {1 << (63 - INDEX_BITS)} pieces")
 
     hosts = {g: _host(piece) for g, piece in zip(blocks.local, pieces)}
-    partners = _match(blocks, pieces, hosts)
-    owners = {g: _owners(g, hosts[g]["num_points"], partners[g]) for g in blocks.local}
-    sent = _ghost_parts(blocks, pieces, hosts, partners, owners, names)
+    # Global ids come along where every piece has them, and points are matched
+    # by them then, by position otherwise.
+    numbered = {kind: bool(blocks.all_reduce({
+        g: int(p.global_ids is not None and getattr(p.global_ids, kind) is not None)
+        for g, p in zip(blocks.local, pieces)}, "min")) if blocks.count else False
+        for kind in ("points", "cells")}
+
+    def values(g, piece):
+        chosen = hosts[g]["candidates"]
+        if numbered["points"]:
+            return [piece.global_ids.points.numpy()[chosen].astype(np.uint64)]
+        return _matching.position_bits(hosts[g]["positions"][chosen])
+
+    partners = _matching.match(blocks, {
+        g: (hosts[g]["candidates"], values(g, piece),
+            np.zeros(len(hosts[g]["candidates"]), np.uint8))
+        for g, piece in zip(blocks.local, pieces)})
+    owners = {g: _matching.owners(g, hosts[g]["num_points"], partners[g],
+                                  np.zeros(hosts[g]["num_points"], bool))
+              for g in blocks.local}
+    sent = _ghost_parts(blocks, pieces, hosts, partners, owners, names, numbered)
     incoming = blocks.exchange(sent)
 
     out, receive_points, receive_cells = [], {}, {}
     for g, piece in zip(blocks.local, pieces):
         result, points_from, cells_from = _appended(g, piece, hosts[g], owners[g],
-                                                    incoming[g], names, blocks)
+                                                    incoming[g], names, numbered, blocks)
         out.append(result)
         receive_points[g], receive_cells[g] = points_from, cells_from
-    point_plan = _plan(blocks, receive_points)
-    cell_plan = _plan(blocks, receive_cells)
+    point_plan = _matching.plan(blocks, receive_points)
+    cell_plan = _matching.plan(blocks, receive_cells)
     result = PartitionedDataSet(out, world=world)
     result._ghost_plans = {"points": point_plan, "cells": cell_plan}
     return result
@@ -202,110 +222,26 @@ def _host(piece):
     }
 
 
-def _position_keys(positions):
-    """A 64-bit hash of each position's exact coordinates (-0 as 0)."""
-    exact = np.ascontiguousarray(positions + 0.0)
-    bits = exact.view(np.uint32 if exact.dtype == np.float32 else np.uint64).astype(np.uint64)
-    bits = bits.reshape(len(positions), -1)
-    key = np.zeros(len(positions), np.uint64)
-    with np.errstate(over="ignore"):
-        for column in bits.T:
-            key = _mix(key ^ _mix(column + np.uint64(0x9E3779B97F4A7C15)))
-    return key
 
 
-def _mix(x):
-    # splitmix64's finalizer
-    with np.errstate(over="ignore"):
-        x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
-        x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
-        return x ^ (x >> np.uint64(31))
 
 
 # -- matching --------------------------------------------------------------
 
-def _match(blocks, pieces, hosts):
-    """For each piece on this rank, its boundary points other pieces hold:
-    ``(index, other piece, index there)`` rows, as three host arrays."""
-    keys, values = {}, {}
-    for g, piece in zip(blocks.local, pieces):
-        host = hosts[g]
-        chosen = host["candidates"]
-        positions = np.asarray(host["positions"][chosen], np.float64) + 0.0   # -0 as 0
-        device = blocks.device(g)
-        keys[g] = tack.array(_position_keys(positions), tack.u64, device=device)
-        values[g] = {
-            "piece": tack.array(np.full(len(chosen), g, np.int64), tack.i64, device=device),
-            "index": tack.array(chosen, tack.i64, device=device),
-        }
-        # The coordinates' bits, as u64: every device stores those, f64 or not.
-        bits = np.ascontiguousarray(positions).view(np.uint64)
-        for axis, name in enumerate("xyz"):
-            values[g][name] = tack.array(bits[:, axis].copy(), tack.u64, device=device)
-    sorted_keys, sorted_values = tc.sort_by_key(blocks, keys, values)
-
-    outgoing = {}
-    for g in blocks.local:
-        found = _pairs(sorted_keys[g].numpy(),
-                       *(sorted_values[g][n].numpy() for n in ("piece", "index", "x", "y", "z")))
-        device = blocks.device(g)
-        outgoing[g] = {}
-        for piece in np.unique(found[0]).tolist():
-            rows = found[0] == piece
-            outgoing[g][int(piece)] = {
-                name: tack.array(column[rows], tack.i64, device=device)
-                for name, column in zip(("index", "other", "other_index"), found[1:])}
-    incoming = blocks.exchange(outgoing)
-    partners = {}
-    for g in blocks.local:
-        parts = list(incoming[g].values())
-        partners[g] = tuple(np.concatenate([part[name].numpy() for part in parts])
-                            if parts else np.zeros(0, np.int64)
-                            for name in ("index", "other", "other_index"))
-    return partners
 
 
-def _pairs(keys, piece, index, x, y, z):
-    """Rows ``(piece, index, other piece, other index)`` for every two points at one
-    position on different pieces, from sorted keys and their points."""
-    if not len(keys):
-        return tuple(np.zeros(0, np.int64) for _ in range(4))
-    table = np.stack([keys, x, y, z], axis=1).view(np.int64)
-    _, group, sizes = np.unique(table, axis=0, return_inverse=True, return_counts=True)
-    group = group.reshape(-1)
-    order = np.argsort(group, kind="stable")
-    group, piece, index = group[order], piece[order], index[order]
-    starts = np.concatenate(([0], np.cumsum(sizes)))[group]
-    size = sizes[group]
-    first = np.repeat(np.arange(len(group)), size)
-    second = np.repeat(starts, size) + (np.arange(size.sum()) - np.repeat(np.cumsum(size) - size,
-                                                                          size))
-    keep = piece[first] != piece[second]
-    first, second = first[keep], second[keep]
-    return piece[first], index[first], piece[second], index[second]
 
 
-def _owners(g, num_points, partners):
-    """Each point's identity, ``(owner << _INDEX_BITS) | index there``: the lowest
-    piece holding it, and the point's index on that piece."""
-    if num_points >= 1 << _INDEX_BITS:
-        raise ValueError(f"ghost_cells handles pieces of fewer than 2**{_INDEX_BITS} points")
-    identity = (np.int64(g) << _INDEX_BITS) | np.arange(num_points, dtype=np.int64)
-    index, other, other_index = partners
-    if len(index):
-        theirs = (other.astype(np.int64) << _INDEX_BITS) | other_index
-        np.minimum.at(identity, index, theirs)
-    return identity
 
 
 # -- what each piece sends -------------------------------------------------
 
-def _ghost_parts(blocks, pieces, hosts, partners, owners, names):
+def _ghost_parts(blocks, pieces, hosts, partners, owners, names, numbered):
     """Each piece's message to each neighbour: its cells using a point they share."""
     outgoing = {}
     for g, piece in zip(blocks.local, pieces):
         host = hosts[g]
-        index, other, _ = partners[g]
+        index, other, _, _ = partners[g]
         offsets, connectivity = host["offsets"], host["connectivity"]
         counts = np.diff(offsets)
         cell_of = np.repeat(np.arange(host["num_cells"]), counts)
@@ -334,17 +270,20 @@ def _ghost_parts(blocks, pieces, hosts, partners, owners, names):
                 field = piece.fields[name]
                 chosen = point_ids if _kind(field) == "points" else cell_ids
                 message["field." + name] = _take(field.values, chosen)
+            for kind, chosen in (("points", point_ids), ("cells", cell_ids)):
+                if numbered[kind]:
+                    message["ids." + kind] = _take(getattr(piece.global_ids, kind), chosen)
             outgoing[g][int(neighbour)] = message
     return outgoing
 
 
 # -- what each piece makes of what it received -----------------------------
 
-def _appended(g, piece, host, identity, received, names, blocks):
+def _appended(g, piece, host, identity, received, names, numbered, blocks):
     """The piece with what its neighbours sent appended, and where its ghost points
     and cells come from: ``{owner: (owner's indices, local indices)}`` for each."""
     n_points, n_cells = host["num_points"], host["num_cells"]
-    owner = identity >> _INDEX_BITS
+    owner = identity >> INDEX_BITS
     point_marks = host["point_marks"].copy()
     point_marks[owner != g] |= Ghosts.DUPLICATEPOINT
 
@@ -356,8 +295,8 @@ def _appended(g, piece, host, identity, received, names, blocks):
     starts = np.concatenate(([0], np.cumsum([len(ids) for ids in sent]))).astype(np.int64)
     arrived = np.concatenate(sent) if sent else np.zeros(0, np.int64)
     local = np.full(len(arrived), -1, np.int64)
-    mine = (arrived >> _INDEX_BITS) == g
-    local[mine] = arrived[mine] & ((1 << _INDEX_BITS) - 1)
+    mine = (arrived >> INDEX_BITS) == g
+    local[mine] = arrived[mine] & INDEX_MASK
     elsewhere = np.flatnonzero(owner != g)
     if len(elsewhere) and len(arrived):
         order = np.argsort(identity[elsewhere])
@@ -401,11 +340,11 @@ def _appended(g, piece, host, identity, received, names, blocks):
     # Each ghost point from its owner: the piece's own shared points owned
     # elsewhere, then the new ones.
     every_identity = np.concatenate([identity, new_identity])
-    ghosts = np.flatnonzero((every_identity >> _INDEX_BITS) != g)
+    ghosts = np.flatnonzero((every_identity >> INDEX_BITS) != g)
     points_from = {}
-    for source in np.unique(every_identity[ghosts] >> _INDEX_BITS).tolist():
-        mine = ghosts[(every_identity[ghosts] >> _INDEX_BITS) == source]
-        points_from[int(source)] = (every_identity[mine] & ((1 << _INDEX_BITS) - 1), mine)
+    for source in np.unique(every_identity[ghosts] >> INDEX_BITS).tolist():
+        mine = ghosts[(every_identity[ghosts] >> INDEX_BITS) == source]
+        points_from[int(source)] = (every_identity[mine] & INDEX_MASK, mine)
 
     with blocks.device(g):
         topology = UnstructuredTopology(types, offsets, connectivity, num_points=total_points,
@@ -433,6 +372,19 @@ def _appended(g, piece, host, identity, received, names, blocks):
         for name, members in piece.sets.items():
             if members.on in ("points", "cells"):
                 out.sets[name] = Set(out, members.on, members.ids)
+        ids = {}
+        for kind in ("points", "cells"):
+            if not numbered[kind]:
+                continue
+            parts = [getattr(piece.global_ids, kind)]
+            sent = [message["ids." + kind] for _, message in sources]
+            if kind == "points" and len(new_from):
+                parts.append(_take(_joined(sent), tack.array(new_from, tack.i64)))
+            elif kind == "cells":
+                parts += sent
+            ids[kind] = _joined(parts)
+        if ids:
+            out.global_ids = GlobalIds(cells=ids.get("cells"), points=ids.get("points"))
     return out, points_from, cells_from
 
 
@@ -442,19 +394,3 @@ def _joined(parts):
     if not kept:
         return parts[0]
     return tack.concat([arrays.materialize(parts[0]), *kept])
-
-
-def _plan(blocks, receives):
-    """The plan giving each piece's ghosts the values at ``receives``:
-    ``{gid: {source: (source's indices, local indices)}}``. Each source hears which
-    of its indices to send, in order."""
-    outgoing = {g: {source: {"wanted": tack.array(np.asarray(theirs, np.int64), tack.i64,
-                                                  device=blocks.device(g))}
-                    for source, (theirs, _) in receives[g].items() if len(theirs)}
-                for g in blocks.local}
-    asked = blocks.exchange(outgoing)
-    sends = {g: {asker: message["wanted"] for asker, message in asked[g].items()}
-             for g in blocks.local}
-    local = {g: {source: np.asarray(mine, np.int64) for source, (theirs, mine)
-                 in receives[g].items() if len(theirs)} for g in blocks.local}
-    return tc.Plan(blocks, sends, local)

@@ -50,6 +50,7 @@ from tack.dataset.algorithms import (
     face_centers,
     face_geometry,
     flow_quantities,
+    generate_global_ids,
     ghost_cells,
     gradients,
     implicit_values,
@@ -91,6 +92,7 @@ from tack.dataset.dataset import (
     uniform_grid,
 )
 from tack.dataset.ghosts import Ghosts
+from tack.dataset.global_ids import GlobalIds
 from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.dataset.locator import CellLocator, Locations
 from tack.dataset.partitioned import PartitionedDataSet
@@ -119,6 +121,7 @@ __all__ = [
     "Field",
     "FlowQuantities",
     "Ghosts",
+    "GlobalIds",
     "Locations",
     "ParticleStatus",
     "PartitionedDataSet",
@@ -163,6 +166,7 @@ __all__ = [
     "face_geometry",
     "flow_quantities",
     "for_each",
+    "generate_global_ids",
     "ghost_cells",
     "gradients",
     "implicit",

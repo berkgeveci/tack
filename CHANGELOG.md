@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Global ids: `data.global_ids` (`tack.dataset.GlobalIds`), an `i64` per
+  point and per cell, the same on every piece holding it. VTK's `GlobalIds`
+  attributes come in as them (no longer as fields) and go back out;
+  filters carry them where an output entity is an input entity.
+  `generate_global_ids(pds)` makes them as `vtkGenerateGlobalIds` does
+  (equal ids and duplicate marks on pieces without ghost cells; on pieces
+  with ghost cells it keeps the owners the marks say, where VTK reassigns
+  them), in one process or across MPI ranks, and `ghost_cells` carries them
+  into the ghost layer, matching points by them.
+
 - `ghost_cells(pds)` gives each unstructured piece of a partitioned dataset
   a layer of its neighbours' cells, as VTK's `vtkGhostCellsGenerator` does:
   the same cells, points, marks (a shared point belongs to the lowest piece
