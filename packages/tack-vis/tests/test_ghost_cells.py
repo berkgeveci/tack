@@ -26,10 +26,6 @@ from tack.runtime.dispatch import env_flag
 
 try:
     import vtkmodules.vtkCommonDataModel  # noqa: F401  (registers the pythonic API)
-    from vtkmodules.vtkFiltersParallelDIY2 import (
-        vtkGhostCellsGenerator,
-        vtkRedistributeDataSetFilter,
-    )
     from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
 
     from tack.interop.vtk import vtk_to_dataset
@@ -41,6 +37,20 @@ else:
     vtk = types.SimpleNamespace()
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
+
+# The DIY2 filters are an optional VTK module (``FiltersParallelDIY2``), which a
+# build without MPI may leave out (headroom's VTK master build); the tests
+# comparing with them skip on their own, as in ``test_partitioned.py``.
+try:
+    from vtkmodules.vtkFiltersParallelDIY2 import (
+        vtkGhostCellsGenerator,
+        vtkRedistributeDataSetFilter,
+    )
+except ImportError:
+    vtkGhostCellsGenerator = vtkRedistributeDataSetFilter = None
+
+needs_diy2 = pytest.mark.skipif(vtkRedistributeDataSetFilter is None,
+                                reason="needs VTK's FiltersParallelDIY2 module")
 
 pytestmark = pytest.mark.quick
 
@@ -221,6 +231,7 @@ def test_ghost_cells_refuse_what_they_cannot_do():
 
 
 @needs_vtk
+@needs_diy2
 def test_ghost_cells_are_vtks():
     """On VTK's pieces of an unstructured mesh: the cells and points
     vtkGhostCellsGenerator adds, with its marks and values."""
