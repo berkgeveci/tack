@@ -361,12 +361,13 @@ def test_serial_estimate_never_sits_below_the_parallel_rate(cpu, monkeypatch):
 
 
 def _above_the_serial_rate(backend, monkeypatch, whole_range_rate):
-    """A kernel whose fan-out measured `r_p` at 100x its serial estimate,
-    then the next dispatch, whose whole-range serial run reads
+    """A kernel with atomics whose fan-out measured `r_p` at 100x its serial
+    estimate, then the next dispatch, whose whole-range serial run reads
     `whole_range_rate` times that estimate. Returns the kernel, the
     estimate, and the threshold before."""
     n = 4096
     compiled, args = _measured(backend, _scale, n)
+    compiled.atomics = True                       # what contends: see _arbitrate
     honest = compiled.ns_per_elem
     before = compiled.parallel_min_elems
     _pin_fan_out(monkeypatch, backend)
@@ -389,9 +390,30 @@ def _above_the_serial_rate(backend, monkeypatch, whole_range_rate):
 
 
 def test_a_parallel_measurement_lifts_a_low_serial_estimate(cpu, monkeypatch):
-    """A fan-out measuring `r_p` above `r_s` says the estimate came from a
-    cheap slice -- or that the fan-out lost. The next dispatch runs the
-    whole range serially, and when that agrees the range is dear, the
+    """Without atomics, a fan-out measuring `r_p` above `r_s` says the
+    estimate came from a cheap slice (an image kernel's background): the
+    floor lifts it at once, with no whole-range serial run, which would be
+    the stall the rechecks avoid (`test_timing_a_cheap_prefix_...`)."""
+    backend = CPUBackend()
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    assert not compiled.atomics
+    honest = compiled.ns_per_elem
+    before = compiled.parallel_min_elems
+    _pin_fan_out(monkeypatch, backend)
+    workers = 4
+    backend._record_parallel_cost(compiled, [honest * 400.0] * workers, workers,
+                                  bounds_serial=True)
+    assert not compiled.arbitrate
+    assert compiled.serial_floor_ns == pytest.approx(compiled.ns_per_elem_parallel)
+    assert compiled.ns_per_elem == pytest.approx(honest * 100.0)
+    assert compiled.parallel_min_elems < before
+
+
+def test_an_atomic_kernels_dear_whole_range_floors_after_arbitration(cpu, monkeypatch):
+    """With atomics, a fan-out measuring `r_p` above `r_s` says the estimate
+    came from a cheap slice -- or that the fan-out lost. The next dispatch runs
+    the whole range serially, and when that agrees the range is dear, the
     floor applies then, not on a serial sample 1024 dispatches away."""
     backend = CPUBackend()
     compiled, honest, before = _above_the_serial_rate(backend, monkeypatch, 300.0)

@@ -705,6 +705,11 @@ class CompiledKernel:
         # counter, a few shared cache lines), so the kernel runs serially,
         # fanning out only on P9's back-off to see if that has changed.
         self.contended = False
+        # Whether the kernel has atomics, the contention a fan-out can lose
+        # to: only then does an `r_p` above `r_s` go to `_arbitrate`. Without
+        # them it means `r_s` came from a cheap slice (an image kernel's
+        # background), and the floor lifts it, with no whole-range run.
+        self.atomics = False
 
     def recheck_due(self) -> bool:
         """Whether this parallel dispatch should re-measure instead.
@@ -843,8 +848,11 @@ def _load_kernel(engine, ir_func: ir.IRFunction) -> CompiledKernel:
     param_types = [p.type_annotation for p in ir_func.params]
     param_is_array = [p._is_array for p in ir_func.params]
     loop = next(s for s in ir_func.body if isinstance(s, ir.IRParallelFor))
-    return CompiledKernel(engine, func_ptr, param_types, param_is_array, ir_func.name,
-                          num_dims=len(loop.dims or ()))
+    compiled = CompiledKernel(engine, func_ptr, param_types, param_is_array, ir_func.name,
+                              num_dims=len(loop.dims or ()))
+    from tack.lang.ir_traversal import walk_ir
+    compiled.atomics = any(isinstance(node, ir.IRAtomicOp) for node in walk_ir(ir_func))
+    return compiled
 
 
 def _cache_target() -> str:
@@ -2067,11 +2075,14 @@ class CPUBackend(Backend):
             if sample < compiled.ns_per_elem:
                 compiled.contended = False
                 compiled.ns_per_elem_parallel = sample
-        elif (bounds_serial and 0.0 < compiled.ns_per_elem
-              < compiled.ns_per_elem_parallel):
-            # Above the serial rate on spans long enough to believe: the
-            # fan-out lost, or `r_s` is low. Flooring would assume the
-            # second; the next dispatch finds out (`_arbitrate`).
+        elif (compiled.atomics and bounds_serial
+              and 0.0 < compiled.ns_per_elem < compiled.ns_per_elem_parallel):
+            # Above the serial rate on spans long enough to believe, in a
+            # kernel with atomics: the fan-out lost to contention, or `r_s`
+            # is low. Flooring would assume the second; the next dispatch
+            # finds out (`_arbitrate`). Without atomics the floor applies,
+            # as it always did: a whole-range run of an image kernel with a
+            # cheap background would be the stall the rechecks avoid.
             compiled.arbitrate = True
         elif bounds_serial:
             # The lesser of this sample and the smoothed rate (P9). Each

@@ -388,9 +388,15 @@ cores of an EPYC 7453 it ran 9x slower threaded than serially, with `r_p`
 contended rate, and the threshold formula, which caps `r_p` at 0.9 `r_s`,
 still credited a fan-out with a gain, so the kernel fanned out on every
 call; later serial samples, whole-range runs included, were held under
-the floor. A slice cannot tell the two cases apart. So such a fan-out sets
-no floor but `arbitrate`, and the next dispatch runs the whole range
-serially (`_arbitrate`). After a fan-out that sample is an upper bound,
+the floor. A slice cannot tell the two cases apart. So in a kernel with atomics
+(`CompiledKernel.atomics`, read from the IR), such a fan-out sets no floor
+but `arbitrate`, and the next dispatch runs the whole range serially
+(`_arbitrate`). Without atomics the floor applies at once, as it did: there
+the cheap region is the likely cause, and a whole-range serial run of an
+image kernel is the stall the rechecks exist to avoid -- arbitrating every
+kernel failed `test_timing_a_cheap_prefix_does_not_stall_the_rechecks` on
+CI's 4-thread runners. Contention without atomics (false sharing, a
+saturated memory bus) is not caught this way. After a fan-out that sample is an upper bound,
 so one below `r_p` is conclusive: the kernel is `contended`, takes the
 sample as `r_s` with no floor, and its threshold is `_NEVER`. Otherwise
 `r_s` is the whole range's sample and the floor `r_p`, which is what the
@@ -527,7 +533,7 @@ Each mechanism above exists because a specific failure was measured:
 | **One-way door, threading side.** Only serial runs measure `r_s`, and threading stops serial runs; a corrupt-high estimate predicts an even slower serial run, so it cannot be caught against itself. | Rechecks on a geometric back-off that time a slice; a far-lower sample believed outright. | `recheck_due`, recheck branch of `_run` |
 | **One-way door, serial side.** Only fan-outs measure `r_p`. Worker rates for identical fan-outs varied 8x on a 1-socket Xeon (October 2026), and one high draw held 6–34 M-element dispatches of a cheap kernel serial, up to 6x slower (`_parallel_recheck_due`'s docstring). | Parallel rechecks on the same back-off; the floor takes the lesser of sample and smoothed rate. | `_parallel_recheck_due`, `_record_parallel_cost` |
 | **Scattered samples.** A sample after a fan-out, or on untouched pages, reads dear; believed, it keeps the backend fanning out, which keeps the next sample scattered. | `scattered` tracking; scattered samples only lower an affordable estimate; confirmation before the first near-threshold fan-out; first clean sample believed. | `scattered`, `rate_confirmed`, `_run_serial`, `_needs_confirmation` |
-| **Contention.** Threads on one atomic counter or a few shared lines run slower than one thread, `r_p` above `r_s`; the floor turned that rate into the serial estimate and the kernel fanned out on every call, 8–9x slower (jura, 2026-10-24). | An `r_p` above `r_s` sets no floor but a whole-range serial run on the next dispatch; slower threaded, the kernel is `contended` and serial, until a P9 recheck fans out faster. | `_record_parallel_cost`, `_arbitrate`, `_threshold` |
+| **Contention.** Threads on one atomic counter or a few shared lines run slower than one thread, `r_p` above `r_s`; the floor turned that rate into the serial estimate and the kernel fanned out on every call, 8–9x slower (jura, 2026-10-24). | In a kernel with atomics, an `r_p` above `r_s` sets no floor but a whole-range serial run on the next dispatch; slower threaded, the kernel is `contended` and serial, until a P9 recheck fans out faster. | `_record_parallel_cost`, `_arbitrate`, `_threshold` |
 | **Stale floors.** A floor learned on expensive inputs survives when the same compiled kernel gets cheap inputs, and keeps it threading. | A whole-range fan-out with every span short retires the floor and schedules a serial sample. | `retire_floor` in `_parallel_execute`, `_record_parallel_cost` |
 | **Fixed cost dominating short samples.** For a cheap kernel the call is most of a sample; for a short chunk the GIL hand-back is most of a span. | Call overhead subtracted; slices sized to 10x it; worker rates ignored below 1 µs; spans trusted as a floor only above `trusted_span`. | `_measure_call_overhead`, `_SAMPLE_OVERHEAD_RATIO`, `_RP_MIN_WORKER_NS`, `_RP_BOUND_SPAN_RATIO` |
 | **Load, descheduling, a moving fan-out cost.** Load and idle states change the fan-out cost mid-program; a descheduled worker dominates a max; a high estimate stops the fan-outs that would lower it. | Idle curve; free and scheduled refreshes, including the hot knot's recovery probe; median worker; work-share condition; derived margin. | `_fan_out_estimate`, `_record_fan_out`, `_refresh_fan_out`, `_margin` |
