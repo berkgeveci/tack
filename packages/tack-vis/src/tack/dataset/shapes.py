@@ -118,6 +118,14 @@ HOLD_TOLERANCE = tack.constant(1e-5)
 #: at ``t = 1`` is the same point, Newton's Jacobian is singular, and it did
 #: not converge within 1e-8 of the apex.
 APEX_SNAP = tack.constant(1e-6)
+#: Within this much of a pyramid's size of its apex, a point Newton cannot place
+#: (outside, beside the apex: the parametric map runs off as (offset) / (1 - t))
+#: is put just past the apex, ``APEX_OUTSIDE`` above it in ``t``: past the hold
+#: margin, so a cell that holds the point ranks first, and near if the faces'
+#: nearest point is within the locator's tolerance (0.1% of a cell's diagonal,
+#: which this reach covers), its values the apex's.
+APEX_REACH = tack.constant(2e-3)
+APEX_OUTSIDE = tack.constant(2.0 * float(HOLD_TOLERANCE))
 
 # Edges as point pairs and faces as four points (-1 pads a triangle),
 # flattened. Each is VTK's GetEdge/GetFace order.
@@ -1098,7 +1106,9 @@ class Pyramid(_Solid):
         there, Newton did not converge, and no cell held a mesh point at a
         pyramid's apex. Within ``APEX_SNAP`` of the pyramid's size of the apex,
         ``x`` is taken to be at it: ``(0.5, 0.5, 1)``, converged, where every
-        base corner's shape function is 0 and the apex's 1."""
+        base corner's shape function is 0 and the apex's 1. A point Newton cannot
+        place within ``APEX_REACH`` of the apex is outside beside it: just past
+        the apex (``APEX_OUTSIDE``), converged, held by no margin."""
         apex = _point(pts, 4)
         size = (_point(pts, 0) - apex).norm()
         for j in range(1, 4):
@@ -1109,6 +1119,10 @@ class Pyramid(_Solid):
         converged = 1
         if d.dot(d) > reach * reach:
             pc, converged = self._newton(pts, x)
+            near = APEX_REACH * size
+            if converged == 0 and d.dot(d) <= near * near:
+                pc = tack.vec3(0.5, 0.5, 1.0 + APEX_OUTSIDE)
+                converged = 1
         return pc, converged
 
     @tack.func
