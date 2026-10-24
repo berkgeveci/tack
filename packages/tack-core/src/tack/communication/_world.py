@@ -28,8 +28,9 @@ class World:
     run. Messages between ranks are staged through host memory, or with
     ``gpu_aware=True`` passed to MPI as the arrays themselves (through DLPack),
     for an MPI that reads and writes device memory. Where a backend says the
-    MPI may not take an array's memory as it is (HIP's stream-ordered pool,
-    which MVAPICH-Plus's UCX takes for host memory), the array goes as a device
+    MPI may not take an array's memory as it is (the stream-ordered pools of
+    CUDA and HIP, which Cray MPICH cannot export and MVAPICH-Plus's UCX takes
+    for host memory), the array goes as a device
     copy in memory the MPI does take, and arrives in such memory. Tack imports
     no MPI module: the caller makes the communicator.
     """
@@ -127,7 +128,8 @@ class World:
 
 def _direct(values):
     """``values`` as memory a GPU-aware MPI reads directly: itself, or a device copy
-    in ``Backend.allocate_mpi_array``'s memory (HIP's pool is not such memory)."""
+    in ``Backend.allocate_mpi_array``'s memory (CUDA's and HIP's pools are not
+    such memory)."""
     if values._backend.mpi_direct(values._buffer):
         return values
     copy = _empty_for_mpi(values.shape, values.dtype, values.device)

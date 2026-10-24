@@ -295,8 +295,9 @@ def _has_memory_pools(ordinal):
 
 
 def _free_dropped(token, wait=False):
-    """``cuMemFree`` the buffers dropped in ``token``'s context on a device
-    without memory pools, once its stream is idle, or after waiting for it.
+    """``cuMemFree`` the ``cuMemAlloc`` buffers dropped in ``token``'s context
+    (every buffer on a device without memory pools, and memory for a GPU-aware
+    MPI on one with them), once its stream is idle, or after waiting for it.
 
     ``cuMemFree`` waits for the whole device: on the T4 it took 1.26 s
     behind an unrelated launch. Freeing as a buffer is dropped would make a
@@ -365,7 +366,8 @@ class CUDABuffer(DeviceBuffer):
     a queued launch still uses it is freed after that launch, and the
     driver's pool hands the memory back out without a device round trip.
     A device without the pool (`_has_memory_pools`) allocates with
-    ``cuMemAlloc`` and frees once the stream has finished.
+    ``cuMemAlloc`` and frees once the stream has finished, as does memory for
+    a GPU-aware MPI (``pooled=False``, `CUDABackend.allocate_mpi_array`).
     """
 
     backend_name = "cuda"
@@ -374,16 +376,21 @@ class CUDABuffer(DeviceBuffer):
     # returning, as on Metal.
     _shared = False
 
-    def __init__(self, numpy_dtype, shape, token=None):
+    def __init__(self, numpy_dtype, shape, token=None, pooled=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
         self._token = token = token or _current_context_token()
+        # From the device's stream-ordered pool when it has one, unless asked
+        # not to: memory for a GPU-aware MPI (``pooled=False``,
+        # ``allocate_mpi_array``), which cannot export pool memory.
+        pools = _has_memory_pools(token.device)
+        self._pooled = pools if pooled is None else (pooled and pools)
         stream = token.queue()
         with _in_context(token):
             # A zero-byte request is rejected; an empty array gets one byte
             # it never reads, as on Level Zero.
-            if _has_memory_pools(token.device):
+            if self._pooled:
                 err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
             else:
                 _free_dropped(token)
@@ -527,7 +534,7 @@ class CUDABuffer(DeviceBuffer):
             return
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
-                if not _has_memory_pools(token.device):
+                if not getattr(self, "_pooled", _has_memory_pools(token.device)):
                     token.dropped.append(self._device_ptr)   # `_free_dropped`
                     return
                 # In stream order: after every launch queued so far, which
@@ -1174,6 +1181,17 @@ class CUDABackend(GPUBackend):
         if exportable:
             return ExportableCUDABuffer(dtype.numpy_dtype, shape, self._token_or_none)
         return CUDABuffer(dtype.numpy_dtype, shape, self._token_or_none)
+
+    def mpi_direct(self, buffer) -> bool:
+        """Pool memory (``cuMemAllocAsync``) is not for a GPU-aware MPI: Cray
+        MPICH 9.1 could not export it to another rank on the node
+        (``MPIDI_CRAY_Common_lmt_export_mem``: "Invalid count"), and libfabric
+        refused it across nodes ("OFI tagged senddata failed ... Invalid
+        argument"; Perlmutter's A100s, 2026-10-24)."""
+        return not getattr(buffer, "_pooled", False)
+
+    def allocate_mpi_array(self, dtype: ScalarType, shape: tuple[int, ...]) -> CUDABuffer:
+        return CUDABuffer(dtype.numpy_dtype, shape, self._token_or_none, pooled=False)
 
     def texture_in_hardware(self, shape_3d) -> bool:
         return True

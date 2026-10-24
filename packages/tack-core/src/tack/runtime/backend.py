@@ -141,9 +141,10 @@ class Backend:
     def mpi_direct(self, buffer) -> bool:
         """Whether a GPU-aware MPI may read and write ``buffer``'s memory as it is
         (``tack.communication.World(comm, gpu_aware=True)``). True by default;
-        a backend says no for memory such an MPI does not know -- HIP's
-        stream-ordered pool, which MVAPICH-Plus's UCX takes for host memory --
-        and the exchange goes through `allocate_mpi_array`'s memory instead."""
+        a backend says no for memory such an MPI does not know -- the
+        stream-ordered pools of CUDA and HIP, which Cray MPICH cannot export
+        and MVAPICH-Plus's UCX takes for host memory -- and the exchange goes
+        through `allocate_mpi_array`'s memory instead."""
         return True
 
     def allocate_mpi_array(self, dtype: ScalarType, shape: tuple[int, ...]):

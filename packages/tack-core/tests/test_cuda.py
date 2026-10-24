@@ -272,6 +272,27 @@ def test_export_without_virtual_memory_says_why():
 
 # --- Context ownership across re-initialization ---
 
+def test_memory_for_a_gpu_aware_mpi():
+    """CUDA arrays come from the stream-ordered pool, which Cray MPICH cannot export
+    to another rank; tack.communication hands a GPU-aware MPI copies in
+    ``cuMemAlloc`` memory instead (``mpi_direct``, ``allocate_mpi_array``)."""
+    from tack.communication._world import _direct
+    from tack.lang.array import _empty_for_mpi
+
+    backend = tack.device("cuda")._backend
+    values = tack.array(np.arange(12, dtype=np.float32).reshape(4, 3), tack.vec3(),
+                        device="cuda")
+    pooled = values._buffer._pooled
+    assert backend.mpi_direct(values._buffer) is (not pooled)
+    plain = _empty_for_mpi((4,), tack.vec3(), "cuda")
+    assert backend.mpi_direct(plain._buffer) and not plain._buffer._pooled
+    sent = _direct(values)
+    assert (sent is values) is (not pooled)
+    np.testing.assert_array_equal(sent.numpy(), values.numpy())
+    del plain, sent                         # queued for cuMemFree, freed at the sync
+    tack.sync()
+
+
 def test_repeated_init_keeps_context_usable():
     """``tack.set_default_device("cuda")`` twice in a row must not kill the context.
 
