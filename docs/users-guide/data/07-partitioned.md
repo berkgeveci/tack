@@ -298,10 +298,21 @@ regions = td.connected_components(pieces)          # region, point_region on eac
 
 With global ids on the pieces, regions are numbered as on the whole dataset.
 
+## One dataset again
+
+`merge_pieces` gives the pieces back as one dataset, each cell and point
+once, ghosts dropped: to write one file, or to hand to code that knows no
+pieces. Structured pieces come back as one structured grid; across MPI ranks
+the result is on the root rank.
+
+```python
+whole = td.merge_pieces(pieces)                    # None on the other ranks
+```
+
 ## Not here yet
 
-`merge_points` (one dataset of the pieces, for writing one file) is the next
-step.
+Asynchronous exchange, should particles across MPI ranks need it, and
+rebalancing pieces are not planned for now.
 
 ## Run and check
 
