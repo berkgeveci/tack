@@ -189,6 +189,7 @@ def _host(piece):
         "num_points": piece.num_points,
         "num_cells": piece.num_cells,
         "positions": positions,
+        "geometry_dtype": arrays.dtype_of(piece.geometry.values),
         "candidates": candidates[candidates >= 0].astype(np.int64),
         "types": np.asarray(arrays.to_host(topology.types), np.uint8).reshape(-1),
         "offsets": np.asarray(arrays.to_host(topology.offsets), np.int64).reshape(-1),
@@ -236,10 +237,11 @@ def _match(blocks, pieces, hosts):
         values[g] = {
             "piece": tack.array(np.full(len(chosen), g, np.int64), tack.i64, device=device),
             "index": tack.array(chosen, tack.i64, device=device),
-            "x": tack.array(positions[:, 0], tack.f64, device=device),
-            "y": tack.array(positions[:, 1], tack.f64, device=device),
-            "z": tack.array(positions[:, 2], tack.f64, device=device),
         }
+        # The coordinates' bits, as u64: every device stores those, f64 or not.
+        bits = np.ascontiguousarray(positions).view(np.uint64)
+        for axis, name in enumerate("xyz"):
+            values[g][name] = tack.array(bits[:, axis].copy(), tack.u64, device=device)
     sorted_keys, sorted_values = tc.sort_by_key(blocks, keys, values)
 
     outgoing = {}
@@ -268,8 +270,7 @@ def _pairs(keys, piece, index, x, y, z):
     position on different pieces, from sorted keys and their points."""
     if not len(keys):
         return tuple(np.zeros(0, np.int64) for _ in range(4))
-    table = np.stack([keys.view(np.int64), x.view(np.int64), y.view(np.int64),
-                      z.view(np.int64)], axis=1)
+    table = np.stack([keys, x, y, z], axis=1).view(np.int64)
     _, group, sizes = np.unique(table, axis=0, return_inverse=True, return_counts=True)
     group = group.reshape(-1)
     order = np.argsort(group, kind="stable")
@@ -324,8 +325,8 @@ def _ghost_parts(blocks, pieces, hosts, partners, owners, names):
                 "cells": tack.array(cells.astype(np.int64), tack.i64, device=device),
                 "cell_marks": tack.array(host["cell_marks"][cells], tack.u8, device=device),
                 "identity": tack.array(owners[g][points], tack.i64, device=device),
-                "positions": tack.array(np.asarray(host["positions"][points], np.float64),
-                                        tack.vec3(tack.f64), device=device),
+                "positions": tack.array(host["positions"][points],
+                                        tack.vec3(host["geometry_dtype"]), device=device),
             }
             point_ids = tack.array(points, tack.i64, device=device)
             cell_ids = tack.array(cells.astype(np.int64), tack.i64, device=device)
