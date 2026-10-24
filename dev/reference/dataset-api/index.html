@@ -3730,10 +3730,20 @@ search from the points uses no atomics, and everything else works there.</p>
 <td><code>from_cell_faces(..., orient=True)</code></td>
 <td>repairs input whose faces or cells are inconsistently wound, then turns each connected piece outward by the sign of its total volume</td>
 </tr>
+<tr>
+<td><code>topology.validate()</code></td>
+<td>checks the arrays a topology is built from, on their device, reading back a few integers: offsets start at 0, never run backwards and end at their members' length; every id is within its range (points; faces, for polyhedra; sides 0 or 1); an unstructured topology's types are linear shapes with their point counts. Raises <code>ValueError</code> saying what is wrong and how often, or returns the topology</td>
+</tr>
 </tbody>
 </table>
 <p>Winding comes from the input, not from geometry. Inconsistent input is
 refused unless the caller asks for the repair.</p>
+<p>A topology is not checked when made: a bad id is read, or written, out of
+bounds by whatever uses it first. Call <code>validate()</code> on input you did not
+make, or turn on debug mode (<code>tack.set_debug(True)</code>, <code>TACK_DEBUG=1</code>), which
+checks every topology's ids when it is made -- before a polygonal or
+polyline topology derives anything from them -- along with every kernel's
+array accesses.</p>
 <h2 id="spaces">Spaces<a class="headerlink" href="#spaces" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
