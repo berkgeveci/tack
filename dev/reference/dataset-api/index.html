@@ -4685,6 +4685,15 @@ points some cases add.</p>
 <p>On an edge with an infinite or NaN value at one end, <code>contour</code>, <code>slice</code> and
 <code>clip</code> put the crossing at the finite end, and the fields carried to it
 take that end's values; interpolating would give NaN.</p>
+<p>Where the isovalue equals a point's value, <code>contour</code> and <code>slice</code> take the
+crossings of every edge at that point to be the point itself, one output
+point shared by every cell there, with the point's own values (a value
+equal to the isovalue counts as above it). A triangle, polygon or line with
+two of its crossings at one point has no extent and is dropped (a polygon
+keeps its distinct points if three are left), as warp-simdata drops it. VTK
+and Viskores keep such cells and points, so their counts are higher where a
+level runs through mesh points (a plane through grid points, an isovalue
+some points have exactly); the areas agree.</p>
 <p>Without a function: <code>extract_cells(data, cells)</code>, where <code>cells</code> is ids (a
 host array or an integer field), a cell <code>Set</code> of <code>data</code>, or the name of one
 in <code>data.sets</code> (cells keep their order, not the order given),
