@@ -286,9 +286,22 @@ values = td.probe(pieces, points)                  # points: an array or a datas
 values.fields["RTData"], values.fields["valid"]    # valid 0 outside every piece
 ```
 
+## Connected regions across pieces
+
+`connected_components` labels cells connected through shared points; given
+pieces, it numbers the regions across all of them, so a region that crosses
+a cut has one number everywhere:
+
+```python
+regions = td.connected_components(pieces)          # region, point_region on each piece
+```
+
+With global ids on the pieces, regions are numbered as on the whole dataset.
+
 ## Not here yet
 
-Connected components across pieces and `merge_points` are the next steps.
+`merge_points` (one dataset of the pieces, for writing one file) is the next
+step.
 
 ## Run and check
 

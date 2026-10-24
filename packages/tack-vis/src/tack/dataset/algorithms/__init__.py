@@ -11,6 +11,7 @@ from tack.dataset.algorithms.cell_ids import cell_ids
 from tack.dataset.algorithms.check_winding import check_winding
 from tack.dataset.algorithms.clip import clip
 from tack.dataset.algorithms.composite import composite
+from tack.dataset.algorithms.connected_components import connected_components
 from tack.dataset.algorithms.contour import contour
 from tack.dataset.algorithms.cross import cross
 from tack.dataset.algorithms.cylindrical import cylindrical
@@ -74,6 +75,7 @@ __all__ = [
     "check_winding",
     "clip",
     "composite",
+    "connected_components",
     "contour",
     "cross",
     "cylindrical",
