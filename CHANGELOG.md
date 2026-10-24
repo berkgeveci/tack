@@ -136,6 +136,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- `slice` and `slice_plane` of a curved dataset (an order-2 geometry) raised
+  `NotImplementedError` since #93 made `contour` refuse order-2 fields: the
+  implicit function's values are in the geometry's space. They are now
+  projected into order-1 H1 first, so the cells are cut linearized at their
+  corners, as before #93. Example 43, which contoured an order-2 field, now
+  contours its order-1 interpolant. Found on mustafar's CUDA round.
+
+- Face derivation on AMD GPUs: `_sort_buckets` sorts a bucket of up to 16
+  entries in a local array and writes it back once, instead of by insertion
+  in global memory, where each shift is a store the next comparison reads.
+  1M hexahedra on an MI210: the sort 2.48 to 0.76 ms, `faces()` 9.2 to 7.5,
+  a fresh `extract_surface` 11.6 to 9.8; unchanged on an H100 and the CPU.
+  Found on illyad's round.
+
 - `tetrahedralize` over the pieces of a partitioned dataset splits each face
   pieces share along the same diagonal on both sides. A structured piece
   alternated its hexahedra by the parity of its own (i, j, k), so a piece
