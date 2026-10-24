@@ -848,6 +848,19 @@ def empty(shape, dtype=f32, *, device=None, exportable=False, layout="aos") -> A
     return _array_view(dtype, shape, buffer, device=backend)
 
 
+def _empty_for_mpi(shape, dtype, device) -> Array:
+    """``empty``, in memory a GPU-aware MPI reads and writes directly
+    (``Backend.allocate_mpi_array``): what ``tack.communication`` receives
+    into, and copies an array it cannot hand to MPI as it is into."""
+    backend = _target(device)
+    shape = _array_shape(shape)
+    dtype = as_dtype(dtype)
+    scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
+    storage = (int(math.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
+    return _array_view(dtype, shape, backend.allocate_mpi_array(scalar, storage),
+                       device=backend)
+
+
 def zeros(shape, dtype=f32, *, device=None, layout="aos") -> Array:
     """A new array of zeros, filled on the device."""
     a = empty(shape, dtype, device=device, layout=layout)

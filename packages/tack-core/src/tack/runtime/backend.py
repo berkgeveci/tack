@@ -138,6 +138,19 @@ class Backend:
         """Wrap existing memory as a DeviceBuffer without copying."""
         raise NotImplementedError
 
+    def mpi_direct(self, buffer) -> bool:
+        """Whether a GPU-aware MPI may read and write ``buffer``'s memory as it is
+        (``tack.communication.World(comm, gpu_aware=True)``). True by default;
+        a backend says no for memory such an MPI does not know -- HIP's
+        stream-ordered pool, which MVAPICH-Plus's UCX takes for host memory --
+        and the exchange goes through `allocate_mpi_array`'s memory instead."""
+        return True
+
+    def allocate_mpi_array(self, dtype: ScalarType, shape: tuple[int, ...]):
+        """Storage a GPU-aware MPI reads and writes directly (`mpi_direct`): by
+        default what `allocate_array` gives."""
+        return self.allocate_array(dtype, shape)
+
     def fill_array(self, array, value) -> bool:
         """Fill an array with one scalar the backend's own way; false to let
         `Array.fill` fill the buffer in place.

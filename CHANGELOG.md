@@ -180,6 +180,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- GPU-aware MPI with HIP arrays: Tack's HIP arrays come from the
+  stream-ordered pool (`hipMallocAsync`), which MVAPICH-Plus 4.1's UCX took
+  for host memory (an assertion, or a segfault, at the first send; illyad).
+  `World(comm, gpu_aware=True)` now hands such an MPI device copies in
+  `hipMalloc` memory and receives into it (`Backend.mpi_direct`,
+  `Backend.allocate_mpi_array`); `hipMalloc` memory went through at 44 GB/s
+  a rank on the MI210s. Other backends hand their arrays over as before.
+
 - `slice` and `slice_plane` of a curved dataset (an order-2 geometry) raised
   `NotImplementedError` since #93 made `contour` refuse order-2 fields: the
   implicit function's values are in the geometry's space. They are now
