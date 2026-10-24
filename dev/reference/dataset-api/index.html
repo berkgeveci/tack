@@ -4796,7 +4796,18 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 data goes to each, the points stay the same.</p>
 <h2 id="locating-points-probing-and-advection">Locating points, probing and advection<a class="headerlink" href="#locating-points-probing-and-advection" title="Permanent link">&para;</a></h2>
 <p><code>CellLocator(data, density=1.0)</code> bins the cells' bounding boxes on a
-uniform grid over the dataset, about <code>density</code> bins per cell.
+uniform grid over the dataset, about <code>density</code> bins per cell. It records
+the topology, the geometry's values and their state when made;
+<code>locator.serves(data)</code> says whether it still locates in <code>data</code>'s cells.
+<code>probe</code>, <code>advect</code> and <code>streamlines</code> take a locator for any dataset of the
+same topology and geometry, and refuse one whose positions Tack has written
+since (a kernel, <code>fill</code> or <code>copyto</code> into them). Given none, they use the
+locator the topology keeps (<code>tack.dataset.locator.cached_locator</code>), made
+once and again when the geometry changes or is replaced: repeated probes of
+a mesh build its bins once. Writes Tack does not make, through memory it
+shares (DLPack, <code>export_memory</code>, <code>wrap_ptr</code>), need a new locator. The state
+is a write count every array's storage keeps (<code>DeviceBuffer.version</code>,
+counted by host writes and by every launch that may store to it).
 <code>locator.find(points)</code> takes an <code>(n, 3)</code> array or a field of 3-vectors and
 returns <code>Locations(cells, pcs, tets)</code>, a named tuple: each point's cell (a
 field of the dataset's <code>id_dtype</code>, -1 where none holds it), its parametric
