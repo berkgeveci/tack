@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `contour` takes a sequence of values, and `slice` and `slice_plane` take
+  one as `value` (parallel planes for `slice_plane`): every value's contour
+  in one dataset, made in one pass over the cells, each output cell's value
+  in a cell field `contour_value`. On every path: shapes, polyhedra, 2D
+  lines and per-cell (`L2`) lines. 10 values on 1M hexahedra: 38 ms against
+  80 for ten contours (CPU). As warp-simdata's `compute_many`, but one
+  dataset, as VTK's and Viskores' contour filters give.
+
 - `topology.validate()` checks the arrays a topology is built from, on their
   device, reading back a few integers: offsets that start at 0, never run
   backwards and end at their members' length, ids within range (points,

@@ -789,6 +789,17 @@ On an edge with an infinite or NaN value at one end, `contour`, `slice` and
 `clip` put the crossing at the finite end, and the fields carried to it
 take that end's values; interpolating would give NaN.
 
+`contour(data, field, value)` takes a sequence of values too, and
+`slice` and `slice_plane` take one as `value` (the function's levels; for a
+plane, signed distances along its unit normal, so parallel planes): every
+value's contour in one dataset, made in one pass over the cells -- each cell
+compared with every value, emitting for those it crosses -- with each output
+cell's value in a cell field `contour_value` (of the field's type). Points
+are not shared between values. One value, not in a sequence, adds no field.
+For 10 values on 1M hexahedra the one pass took 38 ms against 80 for ten
+contours on an M1 Max's CPU (a loaded host); merging the larger output is
+most of what is left.
+
 Where the isovalue equals a point's value, `contour` and `slice` take the
 crossings of every edge at that point to be the point itself, one output
 point shared by every cell there, with the point's own values (a value

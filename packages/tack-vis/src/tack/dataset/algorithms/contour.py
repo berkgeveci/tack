@@ -1,4 +1,7 @@
-"""``contour``: the surface where ``field`` crosses ``value``, as triangles."""
+"""``contour``: the surface where ``field`` crosses ``value`` -- or each of several
+values, in one pass over the cells -- as triangles."""
+
+import numpy as np
 
 import tack
 from tack import arrays
@@ -23,66 +26,108 @@ from tack.runtime.dispatch import on_inputs_device
 __all__ = ['contour']
 
 
-@tack.kernel
-def _contour_counts(cells, u, isovalue, counts):
-    for c in cells:
-        case = 0
-        for j in range(cells.NUM_POINTS):
-            if u.corner_value(c, j) >= isovalue:
-                case |= 1 << j
-        counts[cells.entity_id(c)] = cells.contour_count(case)
+def _levels(value, field):
+    """The isovalues as a field of the field's floating type, their number, and
+    whether several were given (a sequence: the output then records each
+    cell's value)."""
+    several = np.ndim(value) > 0
+    host = np.asarray(value, arrays.dtype_of(field.values).numpy_dtype).reshape(-1)
+    if not host.size:
+        raise ValueError("contour needs at least one value")
+    return tack.array(host), int(host.size), several
 
 
 @tack.kernel
-def _contour_points(cells, u, isovalue, per_cell, starts, points, edges, weights, sources,
-                    keys):
+def _level_values(levels, which, out):
+    for i in range(out.shape[0]):
+        out[i] = levels[which[i]]
+
+
+def _with_levels(out, levels, which, several):
+    """``out`` with each cell's isovalue (``contour_value``) when several were given."""
+    if several:
+        from tack.dataset.spaces import Constant
+
+        values = _like(levels, out.num_cells)
+        if out.num_cells:
+            _level_values(levels, which, values)
+        out.fields["contour_value"] = Field(Constant(out), values)
+    return out
+
+
+@tack.func
+def _cell_case(cells, u, c, level):
+    case = 0
+    for j in range(cells.NUM_POINTS):
+        if u.corner_value(c, j) >= level:
+            case |= 1 << j
+    return case
+
+
+@tack.kernel
+def _contour_counts(cells, u, levels, nlevels, counts):
+    # Every level's triangles, in one pass over the cells.
     for c in cells:
-        case = 0
-        for j in range(cells.NUM_POINTS):
-            if u.corner_value(c, j) >= isovalue:
-                case |= 1 << j
+        total = 0
+        for v in range(nlevels):
+            total += cells.contour_count(_cell_case(cells, u, c, levels[v]))
+        counts[cells.entity_id(c)] = total
+
+
+@tack.kernel
+def _contour_points(cells, u, levels, nlevels, per_cell, starts, points, edges, weights,
+                    sources, keys, which):
+    # A crossing's key holds its level: (low point * nlevels + level, high point),
+    # or (within cells) (cell * nlevels + level, local edge), so each level's
+    # points merge among themselves.
+    for c in cells:
         cell = cells.entity_id(c)
-        first = 3 * starts[cell]
-        for k in range(3 * cells.contour_count(case)):
-            e = cells.contour_edge(case, k)
-            ja = cells.edge_corner(e, 0)
-            jb = cells.edge_corner(e, 1)
-            # Always from the lower point id, so cells sharing an edge compute
-            # the same point, bit for bit, when their values agree there.
-            if cells.point_id(c, jb) < cells.point_id(c, ja):
-                ja, jb = jb, ja
-            va = u.corner_value(c, ja)
-            vb = u.corner_value(c, jb)
-            w = _crossing(isovalue, va, vb)
-            xa = cells.corner_position(c, ja)
-            xb = cells.corner_position(c, jb)
-            a = cells.point_id(c, ja)
-            b = cells.point_id(c, jb)
-            sources[first + k] = cell
-            # A crossing at a corner whose value is the isovalue is that corner,
-            # keyed by it, so every edge's crossing there merges into one point.
-            hit = -1
-            if va == isovalue:
-                hit = ja
-            elif vb == isovalue:
-                hit = jb
-            if hit >= 0:
-                p = cells.point_id(c, hit)
-                points[first + k] = cells.corner_position(c, hit)
-                edges[first + k] = [p, p]
-                weights[first + k] = 0.0
-                if per_cell == 1:
-                    keys[first + k] = [cell, _CORNER_KEY + hit]
+        at = 3 * starts[cell]
+        for v in range(nlevels):
+            level = levels[v]
+            case = _cell_case(cells, u, c, level)
+            for k in range(3 * cells.contour_count(case)):
+                e = cells.contour_edge(case, k)
+                ja = cells.edge_corner(e, 0)
+                jb = cells.edge_corner(e, 1)
+                # Always from the lower point id, so cells sharing an edge compute
+                # the same point, bit for bit, when their values agree there.
+                if cells.point_id(c, jb) < cells.point_id(c, ja):
+                    ja, jb = jb, ja
+                va = u.corner_value(c, ja)
+                vb = u.corner_value(c, jb)
+                w = _crossing(level, va, vb)
+                xa = cells.corner_position(c, ja)
+                xb = cells.corner_position(c, jb)
+                a = cells.point_id(c, ja)
+                b = cells.point_id(c, jb)
+                sources[at] = cell
+                which[at] = v
+                # A crossing at a corner whose value is the level is that corner,
+                # keyed by it, so every edge's crossing there merges into one point.
+                hit = -1
+                if va == level:
+                    hit = ja
+                elif vb == level:
+                    hit = jb
+                if hit >= 0:
+                    p = cells.point_id(c, hit)
+                    points[at] = cells.corner_position(c, hit)
+                    edges[at] = [p, p]
+                    weights[at] = 0.0
+                    if per_cell == 1:
+                        keys[at] = [cell * nlevels + v, _CORNER_KEY + hit]
+                    else:
+                        keys[at] = [p * nlevels + v, p]
                 else:
-                    keys[first + k] = [p, p]
-            else:
-                points[first + k] = xa + w * (xb - xa)
-                edges[first + k] = [a, b]
-                weights[first + k] = w
-                if per_cell == 1:
-                    keys[first + k] = [cell, e]
-                else:
-                    keys[first + k] = [a, b]
+                    points[at] = xa + w * (xb - xa)
+                    edges[at] = [a, b]
+                    weights[at] = w
+                    if per_cell == 1:
+                        keys[at] = [cell * nlevels + v, e]
+                    else:
+                        keys[at] = [a * nlevels + v, b]
+                at += 1
 
 
 # Within-cell keys of corner hits: (cell, _CORNER_KEY + corner), past every
@@ -108,8 +153,8 @@ def _distinct_triangles(keys, keep):
 
 
 @tack.kernel
-def _kept_triangles(keep, slots, points, edges, weights, sources, keys, out_points,
-                    out_edges, out_weights, out_sources, out_keys):
+def _kept_triangles(keep, slots, points, edges, weights, sources, keys, which, out_points,
+                    out_edges, out_weights, out_sources, out_keys, out_which):
     for t in range(keep.shape[0]):
         if keep[t] == 1:
             s = slots[t]
@@ -119,6 +164,7 @@ def _kept_triangles(keep, slots, points, edges, weights, sources, keys, out_poin
                 out_weights[3 * s + j] = weights[3 * t + j]
                 out_sources[3 * s + j] = sources[3 * t + j]
                 out_keys[3 * s + j] = keys[3 * t + j]
+                out_which[3 * s + j] = which[3 * t + j]
 
 
 @tack.kernel
@@ -139,15 +185,21 @@ def _run_of_each(order, offsets, run_of, count):
 
 
 @tack.kernel
-def _triangle_cells(sources, out):
+def _triangle_cells(sources, which, out, out_which):
     for t in range(out.shape[0]):
         out[t] = sources[3 * t]
+        out_which[t] = which[3 * t]
 
 
 @on_inputs_device
 def contour(data, field, value, merge_points=True, fields=None):
     """Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles
     (as polygons on polyhedra); lines of a 2D mesh.
+
+    ``value`` may be a sequence: the surfaces of every value, in one dataset
+    made in one pass over the cells (each cell compared with every value),
+    with each output cell's value in a cell field ``contour_value``. Points
+    are not shared between values.
 
     ``field`` is a scalar field with a basis, or its name: ``H1`` of order 1
     (point data), or ``L2`` (DG, an order per cell too). An order-2 ``H1``
@@ -183,16 +235,17 @@ def contour(data, field, value, merge_points=True, fields=None):
             f"contour of an order-{space.order} H1 field is not built: it would subdivide "
             "each cell, and its corner values alone give the contour of a linear field")
     _scalar_floating("contour", field)
+    levels, nlevels, several = _levels(value, field)
     dimension = data.topology.dimension
     if dimension == 2:
-        return _contour_lines(data, field, value, fields)
+        return _contour_lines(data, field, levels, nlevels, several, fields)
     if dimension < 2 and data.num_cells:
         # No cells (a threshold that kept none) has no dimension, and no surface.
         raise NotImplementedError("contour of lines (which would give points) is not built")
     if not getattr(data.topology, "reference_cells", True):
         if data.topology.dimension == 1:
             raise NotImplementedError("contour of polylines (which would give points) is not built")
-        return _polyhedral_contour(data, field, value, fields)
+        return _polyhedral_contour(data, field, levels, nlevels, several, fields)
     field = _with_basis(data, field)
     space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
@@ -202,10 +255,13 @@ def contour(data, field, value, merge_points=True, fields=None):
               if g.count and g.shape.CONTOUR_TRIANGLES]
     n_cells = data.num_cells
     idt = data.id_dtype
-    odt = ids.for_output(data, 15 * n_cells)     # up to five triangles a cell
+    odt = ids.for_output(data, 15 * n_cells * nlevels)     # up to five triangles a cell
+    # Keys hold the level beside a point or cell id.
+    kdt = ids.at_least(idt, (n_cells if per_cell else data.num_points) * nlevels)
     counts = tack.zeros((n_cells,), tack.i32)
     for group in groups:
-        _contour_counts(data.domain_view("cells", group), field.view(group), value, counts)
+        _contour_counts(data.domain_view("cells", group), field.view(group), levels, nlevels,
+                        counts)
     starts = tack.empty((n_cells,), odt)
     triangles = exclusive_scan(counts, starts, n_cells) if n_cells else 0
 
@@ -214,28 +270,32 @@ def contour(data, field, value, merge_points=True, fields=None):
     edges = tack.empty((n,), tack.vec(2, idt))
     weights = tack.empty((n,), arrays.dtype_of(field.values))
     sources = tack.empty((n,), idt)
-    keys = tack.empty((n,), tack.vec(2, idt))
+    keys = tack.empty((n,), tack.vec(2, kdt))
+    which = tack.empty((n,), tack.i32)
     for group in groups:
-        _contour_points(data.domain_view("cells", group), field.view(group), value,
-                        per_cell, starts, points, edges, weights, sources, keys)
+        _contour_points(data.domain_view("cells", group), field.view(group), levels, nlevels,
+                        per_cell, starts, points, edges, weights, sources, keys, which)
     if triangles:
         keep = tack.empty((triangles,), tack.i32)
         _distinct_triangles(keys, keep)
         slots = tack.empty((triangles,), odt)
         kept = exclusive_scan(keep, slots, triangles)
         if kept < triangles:
-            arrays_in = (points, edges, weights, sources, keys)
+            arrays_in = (points, edges, weights, sources, keys, which)
             arrays_out = tuple(_like(a, 3 * kept) for a in arrays_in)
             _kept_triangles(keep, slots, *arrays_in, *arrays_out)
-            points, edges, weights, sources, keys = arrays_out
+            points, edges, weights, sources, keys, which = arrays_out
             triangles, n = kept, 3 * kept
     triangle_cells = tack.empty((triangles,), idt)
+    triangle_levels = tack.empty((triangles,), tack.i32)
     if triangles:
-        _triangle_cells(sources, triangle_cells)
+        _triangle_cells(sources, which, triangle_cells, triangle_levels)
 
     if merge_points and n:
-        # A key is the edge's (low, high) points, or (within cells) (cell, local edge).
-        order, _ = bucket_order(keys, n_cells if per_cell else data.num_points, odt)
+        # A key is the edge's (low, high) points, or (within cells) (cell, local edge),
+        # its first part times the levels plus the level.
+        order, _ = bucket_order(keys, (n_cells if per_cell else data.num_points) * nlevels,
+                                odt)
         offsets, count = run_offsets(keys, order)
         merged = tack.empty((count,), tack.vec(3, data.dtype))
         merged_edges = tack.empty((count,), tack.vec(2, idt))
@@ -252,96 +312,113 @@ def contour(data, field, value, merge_points=True, fields=None):
     # implicit, and the connectivity is the triangles' rows of merged points.
     types, tri_offsets = uniform_cells(shapes.TRIANGLE, triangles, odt)
     surface = UnstructuredTopology(types, tri_offsets, rows, num_points=count)
-    return carry(data, surface, points=Interpolate(edges, weights),
-                 cells=Pieces(triangle_cells), geometry=Field(H1(surface), points),
-                 fields=fields)
-
-
-@tack.kernel
-def _lopez_counts(cells, values, iso, counts):
-    # Most cells lie on one side of the isovalue and need not walk their faces;
-    # their counts stay zero.
-    for c in cells:
-        below = 0
-        above = 0
-        for j in range(cells.num_points(c)):
-            if values[cells.point_id(c, j)] >= iso:
-                above = 1
-            else:
-                below = 1
-        if below == 0 or above == 0:
-            continue
-        for k in range(cells.num_faces(c)):
-            n = cells.side_num_points(c, k)
-            keyed = 0
-            for j in range(n):
-                va = values[cells.side_point_id(c, k, j)]
-                vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
-                if va < iso and vb >= iso:
-                    keyed += 1
-            counts[cells.entry(c, k)] = keyed
+    return _with_levels(carry(data, surface, points=Interpolate(edges, weights),
+                              cells=Pieces(triangle_cells), geometry=Field(H1(surface), points),
+                              fields=fields), levels, triangle_levels, several)
 
 
 @tack.func
-def _edge_key(a, b):
-    return [min(a, b), max(a, b)]
+def _straddles(cells, c, values, iso):
+    # Whether the cell has points on both sides of the level: most do not, and
+    # need not walk their faces.
+    below = 0
+    above = 0
+    for j in range(cells.num_points(c)):
+        if values[cells.point_id(c, j)] >= iso:
+            above = 1
+        else:
+            below = 1
+    return below == 1 and above == 1
 
 
 @tack.kernel
-def _lopez_pairs(cells, values, iso, starts, pair_from, pair_to):
+def _lopez_counts(cells, values, levels, nlevels, counts):
+    # Each face's rising crossings, of every level; cells on one side of a level
+    # count none for it.
     for c in cells:
-        below = 0
-        above = 0
-        for j in range(cells.num_points(c)):
-            if values[cells.point_id(c, j)] >= iso:
-                above = 1
-            else:
-                below = 1
-        if below == 0 or above == 0:
-            continue
+        for k in range(cells.num_faces(c)):
+            counts[cells.entry(c, k)] = 0
+        for v in range(nlevels):
+            iso = levels[v]
+            if _straddles(cells, c, values, iso):
+                for k in range(cells.num_faces(c)):
+                    n = cells.side_num_points(c, k)
+                    keyed = 0
+                    for j in range(n):
+                        va = values[cells.side_point_id(c, k, j)]
+                        vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
+                        if va < iso and vb >= iso:
+                            keyed += 1
+                    counts[cells.entry(c, k)] += keyed
+
+
+@tack.func
+def _edge_key(a, b, v, nlevels):
+    # An edge's crossing of level v: (low point * nlevels + v, high point).
+    return [min(a, b) * nlevels + v, max(a, b)]
+
+
+@tack.kernel
+def _lopez_pairs(cells, values, levels, nlevels, starts, pair_from, pair_to):
+    for c in cells:
         for k in range(cells.num_faces(c)):
             n = cells.side_num_points(c, k)
             at = starts[cells.entry(c, k)]
-            for j in range(n):
-                va = values[cells.side_point_id(c, k, j)]
-                vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
-                if va < iso and vb >= iso:
-                    nxt = j
-                    for m in range(1, n):
-                        j2 = j + m if j + m < n else j + m - n
-                        wa = values[cells.side_point_id(c, k, j2)]
-                        wb = values[cells.side_point_id(c, k, j2 + 1 if j2 + 1 < n else 0)]
-                        if (1 if wa >= iso else 0) != (1 if wb >= iso else 0):
-                            nxt = j2
-                            break
-                    pair_from[at] = _edge_key(
-                        cells.side_point_id(c, k, j), cells.side_point_id(c, k, j + 1 if j + 1 < n else 0))
-                    pair_to[at] = _edge_key(
-                        cells.side_point_id(c, k, nxt),
-                        cells.side_point_id(c, k, nxt + 1 if nxt + 1 < n else 0))
-                    at += 1
+            for v in range(nlevels):
+                iso = levels[v]
+                if _straddles(cells, c, values, iso):
+                    at = _face_pairs(cells, c, k, n, values, iso, v, nlevels, at, pair_from,
+                                     pair_to)
+
+
+@tack.func
+def _face_pairs(cells, c, k, n, values, iso, v, nlevels, at, pair_from, pair_to):
+    # Face k's rising crossings of level v, each paired with the next crossing
+    # going round; returns the next free slot.
+    for j in range(n):
+        va = values[cells.side_point_id(c, k, j)]
+        vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
+        if va < iso and vb >= iso:
+            nxt = j
+            for m in range(1, n):
+                j2 = j + m if j + m < n else j + m - n
+                wa = values[cells.side_point_id(c, k, j2)]
+                wb = values[cells.side_point_id(c, k, j2 + 1 if j2 + 1 < n else 0)]
+                if (1 if wa >= iso else 0) != (1 if wb >= iso else 0):
+                    nxt = j2
+                    break
+            pair_from[at] = _edge_key(
+                cells.side_point_id(c, k, j), cells.side_point_id(c, k, j + 1 if j + 1 < n else 0),
+                v, nlevels)
+            pair_to[at] = _edge_key(
+                cells.side_point_id(c, k, nxt),
+                cells.side_point_id(c, k, nxt + 1 if nxt + 1 < n else 0), v, nlevels)
+            at += 1
+    return at
 
 
 @tack.kernel
 def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, poly_offsets,
-                 poly_starts, poly_cells, vertices, bad):
+                 poly_starts, poly_cells, poly_levels, vertices, used, nlevels, bad):
+    # used: one flag per pair, zero on entry (a cell's pairs, of every level, can
+    # pass any scratch size). A pair's key holds its level, so a polygon's pairs
+    # are of one level.
     for c in cells:
         e = cells.entity_id(c)
         first = pair_offsets[cells.entry(c, 0)]
         m = pair_offsets[cells.entry(c, cells.num_faces(c))] - first
-        used = tack.local_array(tack.i32, cells.MAX_SCRATCH)
-        for i in range(m):
-            used[i] = 0
         polys = 0
         out = first
         for s in range(m):
-            if used[s] == 0:
+            if used[first + s] == 0:
                 if emit == 1:
                     poly_starts[poly_offsets[e] + polys] = out
                     poly_cells[poly_offsets[e] + polys] = e
+                    poly_levels[poly_offsets[e] + polys] = tack.i32(pair_from[first + s][0]
+                                                                    % nlevels)
                 cur = s
                 for step in range(m):
-                    used[cur] = 1
+                    used[first + cur] = 1
                     if emit == 1:
                         vertices[out] = first + cur          # the crossing, by its pair
                     out += 1
@@ -353,7 +430,7 @@ def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, pol
                             nxt = i
                     if nxt == s:
                         break
-                    if nxt < 0 or used[nxt] == 1:
+                    if nxt < 0 or used[first + nxt] == 1:
                         tack.atomic_add(bad, 0, 1)
                         break
                     cur = nxt
@@ -363,36 +440,40 @@ def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, pol
 
 
 @tack.kernel
-def _crossing_names(pair_from, values, iso, names):
+def _crossing_names(pair_from, values, levels, nlevels, names):
     # A crossing's name is its edge, or the point at an end whose value is the
-    # isovalue, so every edge's crossing at such a point is one iso-vertex, as
-    # the shape path's contour names it.
+    # level, so every edge's crossing at such a point is one iso-vertex, as the
+    # shape path's contour names it; with the level, as its key holds it:
+    # (point * nlevels + level, other point).
     for i in range(names.shape[0]):
         key = pair_from[i]
-        a = key[0]
+        v = key[0] % nlevels
+        a = key[0] // nlevels
         b = key[1]
+        iso = levels[v]
         if values[a] == iso:
-            names[i] = [a, a]
+            names[i] = [a * nlevels + v, a]
         elif values[b] == iso:
-            names[i] = [b, b]
+            names[i] = [b * nlevels + v, b]
         else:
             names[i] = key
 
 
 @tack.kernel
-def _iso_vertices(names, order, offsets, values, iso, positions, weights, out, ends,
-                  vertex_of_pair, count):
+def _iso_vertices(names, order, offsets, values, levels, nlevels, positions, weights, out,
+                  ends, vertex_of_pair, count):
     # One per run of equal crossing names, interpolated from the lower point id,
     # as the shape path's contour interpolates, so the two agree on every point.
     for r in range(count):
         key = names[order[offsets[r]]]
-        a = key[0]
+        v = key[0] % nlevels
+        a = key[0] // nlevels
         b = key[1]
         if a == b:
             out[r] = positions[a]
             weights[r] = 0.0
         else:
-            w = _crossing(iso, values[a], values[b])
+            w = _crossing(levels[v], values[a], values[b])
             xa = positions[a]
             out[r] = xa + w * (positions[b] - xa)
             weights[r] = w
@@ -420,7 +501,7 @@ def _distinct_sizes(poly_starts, vertices, sizes, n):
 
 @tack.kernel
 def _distinct_vertices(poly_starts, vertices, sizes, out_starts, out_vertices, poly_cells,
-                       out_cells, slots, n):
+                       out_cells, poly_levels, out_levels, slots, n):
     for g in range(n):
         if sizes[g] > 0:
             begin = poly_starts[g]
@@ -432,6 +513,7 @@ def _distinct_vertices(poly_starts, vertices, sizes, out_starts, out_vertices, p
                     out_vertices[at] = vertices[i]
                     at += 1
             out_cells[slots[g]] = poly_cells[g]
+            out_levels[slots[g]] = poly_levels[g]
 
 
 @tack.kernel
@@ -453,7 +535,7 @@ def _renumber_vertices(vertices, vertex_of_pair):
         vertices[i] = vertex_of_pair[vertices[i]]
 
 
-def _polyhedral_contour(data, field, isovalue, fields=None):
+def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
     """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
     ``PolygonalTopology`` -- polygons, not triangles."""
     from tack.dataset.polyhedra import PolygonalTopology, SizeBuckets
@@ -465,20 +547,21 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     entries = int(t.cell_faces.shape[0])
     idt = data.id_dtype
     # A face's crossings are at most its points; every face is in two cells at most.
-    odt = ids.for_output(data, 2 * int(t.face_points.shape[0]))
+    odt = ids.for_output(data, 2 * int(t.face_points.shape[0]) * nlevels)
+    kdt = ids.at_least(idt, data.num_points * nlevels)      # keys hold the level
     counts = tack.zeros((entries,), tack.i32)
     for group in data.launch_groups("cells", []):
         if group.count:
-            _lopez_counts(data.domain_view("cells", group), values, isovalue, counts)
+            _lopez_counts(data.domain_view("cells", group), values, levels, nlevels, counts)
     pair_offsets = tack.empty((entries + 1,), odt)
     pairs = exclusive_scan(counts, pair_offsets, entries) if entries else 0
     _close(pair_offsets, entries, pairs)
-    pair_from = tack.empty((pairs,), tack.vec(2, idt))
-    pair_to = tack.empty((pairs,), tack.vec(2, idt))
+    pair_from = tack.empty((pairs,), tack.vec(2, kdt))
+    pair_to = tack.empty((pairs,), tack.vec(2, kdt))
     if pairs:
         for group in data.launch_groups("cells", []):
             if group.count:
-                _lopez_pairs(data.domain_view("cells", group), values, isovalue,
+                _lopez_pairs(data.domain_view("cells", group), values, levels, nlevels,
                              pair_offsets, pair_from, pair_to)
     n = data.num_cells
     poly_counts = tack.zeros((n,), tack.i32)
@@ -487,19 +570,25 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     buckets = SizeBuckets(t)
     traced = [g for g in data.launch_groups("cells", [], keys=[buckets]) if g.count]
     dummy = tack.empty((1,), odt)
+    dummy_levels = tack.empty((1,), tack.i32)
+    used = tack.zeros((max(pairs, 1),), tack.i32)
     if pairs:
         for group in traced:
             _lopez_trace(data.domain_view("cells", group), pair_offsets, pair_from, pair_to,
-                         0, poly_counts, poly_offsets, dummy, dummy, dummy, bad)
+                         0, poly_counts, poly_offsets, dummy, dummy, dummy_levels, dummy, used,
+                         nlevels, bad)
     polygons = exclusive_scan(poly_counts, poly_offsets, n) if n and pairs else 0
     _close(poly_offsets, n, polygons)
     poly_starts = tack.empty((polygons + 1,), odt)
     poly_cells = tack.empty((polygons,), idt)
+    poly_levels = tack.empty((polygons,), tack.i32)
     vertices = tack.empty((pairs,), odt)
     if polygons:
+        used.fill(0)
         for group in traced:
             _lopez_trace(data.domain_view("cells", group), pair_offsets, pair_from, pair_to,
-                         1, poly_counts, poly_offsets, poly_starts, poly_cells, vertices, bad)
+                         1, poly_counts, poly_offsets, poly_starts, poly_cells, poly_levels,
+                         vertices, used, nlevels, bad)
     _close(poly_starts, polygons, pairs)
     if bad[0]:
         raise ValueError(f"{bad[0]} iso-polygons do not close: the cells' faces are not "
@@ -508,17 +597,17 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     # Each crossing is named by its edge in every cell around that edge, or by its
     # point where the value there is the isovalue: one iso-vertex per run of
     # equal names.
-    names = tack.empty((pairs,), tack.vec(2, idt))
+    names = tack.empty((pairs,), tack.vec(2, kdt))
     if pairs:
-        _crossing_names(pair_from, values, isovalue, names)
-    order, _ = bucket_order(names, data.num_points, odt)
+        _crossing_names(pair_from, values, levels, nlevels, names)
+    order, _ = bucket_order(names, data.num_points * nlevels, odt)
     offsets, count = run_offsets(names, order)
     positions = tack.empty((count,), tack.vec(3, data.dtype))
     ends = tack.empty((count,), tack.vec(2, idt))
     weights = tack.empty((count,), arrays.dtype_of(field.values))
     vertex_of_pair = tack.empty((pairs,), odt)
     if count:
-        _iso_vertices(names, order, offsets, values, isovalue,
+        _iso_vertices(names, order, offsets, values, levels, nlevels,
                       arrays.materialize(data.geometry.values), weights, positions, ends,
                       vertex_of_pair, count)
     if pairs:
@@ -536,51 +625,61 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
             kept = exclusive_scan(keep, slots, polygons)
             out_vertices = tack.empty((total,), odt)
             out_cells = tack.empty((kept,), idt)
+            out_levels = tack.empty((kept,), tack.i32)
             _distinct_vertices(poly_starts, vertices, sizes, out_starts, out_vertices,
-                               poly_cells, out_cells, slots, polygons)
+                               poly_cells, out_cells, poly_levels, out_levels, slots, polygons)
             starts = tack.empty((kept + 1,), odt)
             if kept:
                 _kept_starts(out_starts, keep, slots, starts, polygons)
             _close(starts, kept, total)
             poly_starts, vertices, poly_cells, polygons = starts, out_vertices, out_cells, kept
+            poly_levels = out_levels
             # Iso-vertices only dropped polygons used are left over, unused.
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
-    return carry(data, surface, points=Interpolate(ends, weights), cells=Pieces(poly_cells),
-                 geometry=Field(H1(surface), positions), fields=fields)
+    return _with_levels(carry(data, surface, points=Interpolate(ends, weights),
+                              cells=Pieces(poly_cells), geometry=Field(H1(surface), positions),
+                              fields=fields), levels, poly_levels, several)
 
 
 # ── Lines of 2D meshes ──────────────────────────────────────────────
+#
+# Several levels: a face's crossing of level v is slot f * nlevels + v of the
+# per-face arrays, and a crossing at point p of level v is slot
+# nfv + p * nlevels + v of the points' (nfv the faces' slots), so each level's
+# points are its own.
 
 @tack.kernel
-def _line_counts(cells, values, iso, counts):
-    # A 2D cell's crossings, going round its edges: half as many lines.
+def _line_counts(cells, values, levels, nlevels, counts):
+    # A 2D cell's crossings of each level, going round its edges: half as many lines.
     for c in cells:
-        crossings = 0
-        for k in range(cells.num_faces(c)):
-            above_a = values[cells.side_point_id(c, k, 0)] >= iso
-            above_b = values[cells.side_point_id(c, k, 1)] >= iso
-            if above_a != above_b:
-                crossings += 1
-        counts[cells.entity_id(c)] = crossings // 2
+        total = 0
+        for v in range(nlevels):
+            iso = levels[v]
+            crossings = 0
+            for k in range(cells.num_faces(c)):
+                above_a = values[cells.side_point_id(c, k, 0)] >= iso
+                above_b = values[cells.side_point_id(c, k, 1)] >= iso
+                if above_a != above_b:
+                    crossings += 1
+            total += crossings // 2
+        counts[cells.entity_id(c)] = total
 
 
-@tack.kernel
-def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, ends, weights,
-                 positions, hits):
-    for c in cells:
-        n = cells.num_faces(c)
-        # Going round the cell from its first rising crossing, each rising crossing
-        # (below to above) pairs with the next falling one: a line cutting off a run
-        # of points above the isovalue, which lies on its right.
-        first = -1
-        for k in range(n):
-            if first < 0:
-                if (values[cells.side_point_id(c, k, 0)] < iso
-                        and values[cells.side_point_id(c, k, 1)] >= iso):
-                    first = k
+@tack.func
+def _level_lines(cells, c, values, iso, v, nlevels, at, line_faces, line_cells, line_levels,
+                 crossed, ends, weights, positions, hits):
+    # Level v's lines of cell c from slot at; returns the next free slot. Going
+    # round the cell from its first rising crossing, each rising crossing (below
+    # to above) pairs with the next falling one: a line cutting off a run of
+    # points above the level, which lies on its right.
+    n = cells.num_faces(c)
+    first = -1
+    for k in range(n):
         if first < 0:
-            continue
-        at = starts[cells.entity_id(c)]
+            if (values[cells.side_point_id(c, k, 0)] < iso
+                    and values[cells.side_point_id(c, k, 1)] >= iso):
+                first = k
+    if first >= 0:
         rising = 0
         for i in range(n):
             k = (first + i) % n
@@ -589,12 +688,13 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
             above_a = values[a] >= iso
             above_b = values[b] >= iso
             if above_a != above_b:
-                f = cells.face_id(c, k)
+                f = cells.face_id(c, k) * nlevels + v
                 if not above_a:
                     rising = f
                 else:
                     line_faces[at] = [rising, f]
                     line_cells[at] = cells.entity_id(c)
+                    line_levels[at] = v
                     at += 1
                 if cells.face_side(c, k) == 0:
                     # The face's side 0 records its iso-point, from its lower point
@@ -608,15 +708,26 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
                     ends[f] = [p, q]
                     weights[f] = w
                     positions[f] = xp + w * (cells.side_position(c, k, 1 - lo) - xp)
-                    # At an end whose value is the isovalue the crossing is that
+                    # At an end whose value is the level the crossing is that
                     # point, shared by every face crossing there.
                     hits[f] = p if values[p] == iso else (q if values[q] == iso else -1)
+    return at
+
+
+@tack.kernel
+def _line_pieces(cells, values, levels, nlevels, starts, line_faces, line_cells, line_levels,
+                 crossed, ends, weights, positions, hits):
+    for c in cells:
+        at = starts[cells.entity_id(c)]
+        for v in range(nlevels):
+            at = _level_lines(cells, c, values, levels[v], v, nlevels, at, line_faces,
+                              line_cells, line_levels, crossed, ends, weights, positions, hits)
 
 
 @tack.kernel
 def _distinct_lines(line_faces, hits, keep):
     # A line whose two crossings are one point (both at a point whose value is the
-    # isovalue) has no length: dropped.
+    # level) has no length: dropped.
     for i in range(keep.shape[0]):
         pair = line_faces[i]
         h = hits[pair[0]]
@@ -624,78 +735,84 @@ def _distinct_lines(line_faces, hits, keep):
 
 
 @tack.kernel
-def _kept_lines(keep, slots, line_faces, line_cells, out_faces, out_cells):
+def _kept_lines(keep, slots, line_faces, line_cells, line_levels, out_faces, out_cells,
+                out_levels):
     for i in range(keep.shape[0]):
         if keep[i] == 1:
             out_faces[slots[i]] = line_faces[i]
             out_cells[slots[i]] = line_cells[i]
+            out_levels[slots[i]] = line_levels[i]
+
+
+@tack.func
+def _point_slot(fv, hits, nfv, nlevels):
+    # The point a face's crossing is: its own slot, or its point's, of its level.
+    h = hits[fv]
+    return fv if h < 0 else nfv + h * nlevels + fv % nlevels
 
 
 @tack.kernel
-def _used_points(line_faces, hits, used, nf):
-    # used[f] for a face's own crossing, used[nf + p] for a crossing at point p.
+def _used_points(line_faces, hits, used, nfv, nlevels):
     for i in range(line_faces.shape[0]):
         pair = line_faces[i]
         for j in range(2):
-            f = pair[j]
-            h = hits[f]
-            used[f if h < 0 else nf + h] = 1
+            used[_point_slot(pair[j], hits, nfv, nlevels)] = 1
 
 
 @tack.kernel
-def _iso_points(kept, ends, weights, positions, geometry, nf, out_ends, out_weights,
-                out_positions):
-    for v in range(kept.shape[0]):
-        k = kept[v]
-        if k < nf:
-            out_ends[v] = ends[k]
-            out_weights[v] = weights[k]
-            out_positions[v] = positions[k]
+def _iso_points(kept, ends, weights, positions, geometry, nfv, nlevels, out_ends,
+                out_weights, out_positions):
+    for i in range(kept.shape[0]):
+        k = kept[i]
+        if k < nfv:
+            out_ends[i] = ends[k]
+            out_weights[i] = weights[k]
+            out_positions[i] = positions[k]
         else:
-            p = k - nf
-            out_ends[v] = [p, p]
-            out_weights[v] = 0.0
-            out_positions[v] = geometry[p]
+            p = (k - nfv) // nlevels
+            out_ends[i] = [p, p]
+            out_weights[i] = 0.0
+            out_positions[i] = geometry[p]
 
 
 @tack.kernel
-def _line_cells(line_faces, hits, point_of, nf, connectivity, n):
+def _line_cells(line_faces, hits, point_of, nfv, nlevels, connectivity, n):
     for i in range(n):
         pair = line_faces[i]
         for j in range(2):
-            f = pair[j]
-            h = hits[f]
-            connectivity[2 * i + j] = point_of[f if h < 0 else nf + h]
+            connectivity[2 * i + j] = point_of[_point_slot(pair[j], hits, nfv, nlevels)]
 
 
 @tack.kernel
-def _cell_line_counts(cells, u, iso, counts):
+def _cell_line_counts(cells, u, levels, nlevels, counts):
     # As _line_counts, from the cell's own corner values.
     for c in cells:
-        crossings = 0
-        for k in range(cells.NUM_FACES):
-            above_a = u.corner_value(c, cells.face_corner(k, 0)) >= iso
-            above_b = u.corner_value(c, cells.face_corner(k, 1)) >= iso
-            if above_a != above_b:
-                crossings += 1
-        counts[cells.entity_id(c)] = crossings // 2
+        total = 0
+        for v in range(nlevels):
+            iso = levels[v]
+            crossings = 0
+            for k in range(cells.NUM_FACES):
+                above_a = u.corner_value(c, cells.face_corner(k, 0)) >= iso
+                above_b = u.corner_value(c, cells.face_corner(k, 1)) >= iso
+                if above_a != above_b:
+                    crossings += 1
+            total += crossings // 2
+        counts[cells.entity_id(c)] = total
 
 
-@tack.kernel
-def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, positions):
-    # As _line_pieces, but each line has its own two points, from its cell's own
+@tack.func
+def _level_cell_lines(cells, u, c, iso, v, at, line_cells, line_levels, ends, weights,
+                      positions):
+    # As _level_lines, but each line has its own two points, from its cell's own
     # values and corners: line i's are points 2i (rising) and 2i + 1 (falling).
-    for c in cells:
-        n = cells.NUM_FACES
-        first = -1
-        for k in range(n):
-            if first < 0:
-                if (u.corner_value(c, cells.face_corner(k, 0)) < iso
-                        and u.corner_value(c, cells.face_corner(k, 1)) >= iso):
-                    first = k
+    n = cells.NUM_FACES
+    first = -1
+    for k in range(n):
         if first < 0:
-            continue
-        at = starts[cells.entity_id(c)]
+            if (u.corner_value(c, cells.face_corner(k, 0)) < iso
+                    and u.corner_value(c, cells.face_corner(k, 1)) >= iso):
+                first = k
+    if first >= 0:
         for i in range(n):
             k = (first + i) % n
             ja = cells.face_corner(k, 0)
@@ -708,14 +825,14 @@ def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, position
                 if cells.point_id(c, jb) < cells.point_id(c, ja):
                     lo = jb
                     hi = ja
-                v = u.corner_value(c, lo)
+                vl = u.corner_value(c, lo)
                 vh = u.corner_value(c, hi)
-                w = _crossing(iso, v, vh)
+                w = _crossing(iso, vl, vh)
                 x = cells.corner_position(c, lo)
                 slot = 2 * at + (1 if above_a else 0)
-                # At a corner whose value is the isovalue the crossing is the corner.
-                if v == iso or vh == iso:
-                    j = lo if v == iso else hi
+                # At a corner whose value is the level the crossing is the corner.
+                if vl == iso or vh == iso:
+                    j = lo if vl == iso else hi
                     ends[slot] = [cells.point_id(c, j), cells.point_id(c, j)]
                     weights[slot] = 0.0
                     positions[slot] = cells.corner_position(c, j)
@@ -725,7 +842,19 @@ def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, position
                     positions[slot] = x + w * (cells.corner_position(c, hi) - x)
                 if above_a:
                     line_cells[at] = cells.entity_id(c)
+                    line_levels[at] = v
                     at += 1
+    return at
+
+
+@tack.kernel
+def _cell_line_points(cells, u, levels, nlevels, starts, line_cells, line_levels, ends,
+                      weights, positions):
+    for c in cells:
+        at = starts[cells.entity_id(c)]
+        for v in range(nlevels):
+            at = _level_cell_lines(cells, u, c, levels[v], v, at, line_cells, line_levels,
+                                   ends, weights, positions)
 
 
 @tack.kernel
@@ -738,19 +867,20 @@ def _distinct_cell_lines(ends, keep):
 
 
 @tack.kernel
-def _kept_cell_lines(keep, slots, line_cells, ends, weights, positions, out_cells, out_ends,
-                     out_weights, out_positions):
+def _kept_cell_lines(keep, slots, line_cells, line_levels, ends, weights, positions,
+                     out_cells, out_levels, out_ends, out_weights, out_positions):
     for i in range(keep.shape[0]):
         if keep[i] == 1:
             s = slots[i]
             out_cells[s] = line_cells[i]
+            out_levels[s] = line_levels[i]
             for j in range(2):
                 out_ends[2 * s + j] = ends[2 * i + j]
                 out_weights[2 * s + j] = weights[2 * i + j]
                 out_positions[2 * s + j] = positions[2 * i + j]
 
 
-def _contour_cell_lines(data, field, isovalue, fields=None):
+def _contour_cell_lines(data, field, levels, nlevels, several, fields=None):
     """``contour`` of a 2D shape mesh whose field or geometry is per cell (``L2``):
     each cell's lines from its own values and corners, their points not shared,
     so a DG field keeps its jumps and an ``L2`` geometry its gaps."""
@@ -763,38 +893,42 @@ def _contour_cell_lines(data, field, isovalue, fields=None):
     idt = data.id_dtype
     counts = tack.zeros((n,), tack.i32)
     for group in groups:
-        _cell_line_counts(data.domain_view("cells", group), field.view(group), isovalue,
+        _cell_line_counts(data.domain_view("cells", group), field.view(group), levels, nlevels,
                           counts)
-    odt = ids.for_output(data, 4 * n)        # at most two lines, four points, a cell
+    odt = ids.for_output(data, 4 * n * nlevels)  # at most two lines, four points, a cell
     starts = tack.empty((n,), odt)
     lines = exclusive_scan(counts, starts, n) if n else 0
     line_cells = tack.empty((lines,), idt)
+    line_levels = tack.empty((lines,), tack.i32)
     ends = tack.empty((2 * lines,), tack.vec(2, idt))
     weights = tack.empty((2 * lines,), arrays.dtype_of(field.values))
     positions = tack.empty((2 * lines,), tack.vec(3, data.dtype))
     if lines:
         for group in groups:
-            _cell_line_points(data.domain_view("cells", group), field.view(group), isovalue,
-                              starts, line_cells, ends, weights, positions)
+            _cell_line_points(data.domain_view("cells", group), field.view(group), levels,
+                              nlevels, starts, line_cells, line_levels, ends, weights,
+                              positions)
         keep = tack.empty((lines,), tack.i32)
         _distinct_cell_lines(ends, keep)
         slots = tack.empty((lines,), odt)
         kept = exclusive_scan(keep, slots, lines)
         if kept < lines:
-            arrays_in = (line_cells, ends, weights, positions)
-            arrays_out = (_like(line_cells, kept), *(_like(a, 2 * kept) for a in arrays_in[1:]))
+            arrays_in = (line_cells, line_levels, ends, weights, positions)
+            arrays_out = (_like(line_cells, kept), _like(line_levels, kept),
+                          *(_like(a, 2 * kept) for a in arrays_in[2:]))
             _kept_cell_lines(keep, slots, *arrays_in, *arrays_out)
-            line_cells, ends, weights, positions = arrays_out
+            line_cells, line_levels, ends, weights, positions = arrays_out
             lines = kept
     # Each line its own two points: everything about the cells is implicit.
     types, offsets = uniform_cells(shapes.LINE, lines, odt)
     out = UnstructuredTopology(types, offsets, CountingArray(2 * lines, dtype=odt),
                                num_points=2 * lines)
-    return carry(data, out, points=Interpolate(ends, weights), cells=Pieces(line_cells),
-                 geometry=Field(H1(out), positions), fields=fields)
+    return _with_levels(carry(data, out, points=Interpolate(ends, weights),
+                              cells=Pieces(line_cells), geometry=Field(H1(out), positions),
+                              fields=fields), levels, line_levels, several)
 
 
-def _contour_lines(data, field, isovalue, fields=None):
+def _contour_lines(data, field, levels, nlevels, several, fields=None):
     """``contour`` of a 2D mesh -- shapes or polygons -- as line cells: each cell's
     crossings found going round its edges, which are the mesh's faces, so lines
     share their points through them. A field or geometry per cell (``L2``) gives
@@ -809,57 +943,66 @@ def _contour_lines(data, field, isovalue, fields=None):
             field = Field((H1 if field.space.on == "points" else Constant)(data), field.values)
         if not getattr(data.topology, "reference_cells", True):
             raise TypeError("contour of polygons takes point data")
-        return _contour_cell_lines(data, field, isovalue, fields)
+        return _contour_cell_lines(data, field, levels, nlevels, several, fields)
     values = arrays.materialize(field.values)
     faces = data.topology.faces()
     nf = faces.num_faces
+    nfv = nf * nlevels
     idt = data.id_dtype
     n = data.num_cells
     groups = [g for g in data.launch_groups("cells", [])
               if g.count and g.shape.DIMENSION == 2]
     counts = tack.zeros((n,), tack.i32)
     for group in groups:
-        _line_counts(data.domain_view("cells", group), values, isovalue, counts)
-    odt = ids.for_output(data, 2 * nf + data.num_points)
+        _line_counts(data.domain_view("cells", group), values, levels, nlevels, counts)
+    np_ = data.num_points
+    odt = ids.for_output(data, (2 * nf + np_) * nlevels)
+    sdt = ids.at_least(idt, nfv + np_ * nlevels)            # face-and-level slots
     starts = tack.empty((n,), odt)
     lines = exclusive_scan(counts, starts, n) if n else 0
-    line_faces = tack.empty((lines,), tack.vec(2, idt))
+    line_faces = tack.empty((lines,), tack.vec(2, sdt))
     line_cells = tack.empty((lines,), idt)
-    crossed = tack.zeros((nf,), tack.i32)
-    ends = tack.empty((nf,), tack.vec(2, idt))
-    weights = tack.empty((nf,), values.dtype)
-    positions = tack.empty((nf,), tack.vec(3, data.dtype))
-    hits = tack.empty((nf,), idt)
+    line_levels = tack.empty((lines,), tack.i32)
+    crossed = tack.zeros((nfv,), tack.i32)
+    ends = tack.empty((nfv,), tack.vec(2, idt))
+    weights = tack.empty((nfv,), values.dtype)
+    positions = tack.empty((nfv,), tack.vec(3, data.dtype))
+    hits = tack.empty((nfv,), idt)
     if lines:
         for group in groups:
-            _line_pieces(data.domain_view("cells", group), values, isovalue, starts, line_faces,
-                         line_cells, crossed, ends, weights, positions, hits)
+            _line_pieces(data.domain_view("cells", group), values, levels, nlevels, starts,
+                         line_faces, line_cells, line_levels, crossed, ends, weights,
+                         positions, hits)
         keep = tack.empty((lines,), tack.i32)
         _distinct_lines(line_faces, hits, keep)
         slots = tack.empty((lines,), odt)
         kept_lines = exclusive_scan(keep, slots, lines)
         if kept_lines < lines:
-            out_faces = tack.empty((kept_lines,), tack.vec(2, idt))
+            out_faces = tack.empty((kept_lines,), tack.vec(2, sdt))
             out_cells = tack.empty((kept_lines,), idt)
-            _kept_lines(keep, slots, line_faces, line_cells, out_faces, out_cells)
-            line_faces, line_cells, lines = out_faces, out_cells, kept_lines
+            out_levels = tack.empty((kept_lines,), tack.i32)
+            _kept_lines(keep, slots, line_faces, line_cells, line_levels, out_faces,
+                        out_cells, out_levels)
+            line_faces, line_cells, line_levels, lines = (out_faces, out_cells, out_levels,
+                                                          kept_lines)
     # The points: a face's own crossing, or the point it crosses at, shared by
-    # every face crossing there -- those the kept lines use, in order.
-    np_ = data.num_points
-    used = tack.zeros((nf + np_,), tack.i32)
+    # every face crossing there -- each level's its own -- those the kept lines
+    # use, in order.
+    used = tack.zeros((nfv + np_ * nlevels,), tack.i32)
     if lines:
-        _used_points(line_faces, hits, used, nf)
+        _used_points(line_faces, hits, used, nfv, nlevels)
     point_of, kept, count = _compact(used, odt)
     out_ends = tack.empty((count,), tack.vec(2, idt))
     out_weights = tack.empty((count,), values.dtype)
     out_positions = tack.empty((count,), tack.vec(3, data.dtype))
     if count:
         _iso_points(kept, ends, weights, positions, arrays.materialize(data.geometry.values),
-                    nf, out_ends, out_weights, out_positions)
+                    nfv, nlevels, out_ends, out_weights, out_positions)
     types, offsets = uniform_cells(shapes.LINE, lines, odt)
     connectivity = tack.empty((2 * lines,), odt)
     if lines:
-        _line_cells(line_faces, hits, point_of, nf, connectivity, lines)
+        _line_cells(line_faces, hits, point_of, nfv, nlevels, connectivity, lines)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
-    return carry(data, out, points=Interpolate(out_ends, out_weights), cells=Pieces(line_cells),
-                 geometry=Field(H1(out), out_positions), fields=fields)
+    return _with_levels(carry(data, out, points=Interpolate(out_ends, out_weights),
+                              cells=Pieces(line_cells), geometry=Field(H1(out), out_positions),
+                              fields=fields), levels, line_levels, several)
