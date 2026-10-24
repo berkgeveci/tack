@@ -34,7 +34,16 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
-from tack.dataset.topology import _as_field, _OnItsArrays, _Topology, edge_groups
+from tack.dataset.topology import (
+    _as_field,
+    _checks_ids,
+    _csr_problems,
+    _id_problems,
+    _OnItsArrays,
+    _refuse,
+    _Topology,
+    edge_groups,
+)
 from tack.dataset.views import DomainGroup, _PolygonFaces, _PolyhedralCells, _PolylineCells
 from tack.lang.array import Array
 from tack.runtime.dispatch import on_inputs_device
@@ -356,6 +365,26 @@ class PolyhedralTopology(_Topology):
         self.num_points = int(num_points)
         self._cell_points = None
         self._groups = None
+        if _checks_ids():
+            _refuse("polyhedral topology", self._id_problems())
+
+    def _id_problems(self):
+        found = _csr_problems(self.face_offsets, self.face_points, self.num_points,
+                              "face_offsets", "face_points", "num_points")
+        found += _csr_problems(self.cell_offsets, self.cell_faces, self.num_faces,
+                               "cell_offsets", "cell_faces", "the number of faces")
+        n = self.cell_face_sides.shape[0]
+        if n:
+            problems = tack.zeros((3,), tack.i32)
+            _id_problems(self.cell_face_sides, 2, problems, n)
+            if problems[1]:
+                found.append(f"{problems[1]} of the {n} entries of cell_face_sides are "
+                             "neither 0 nor 1")
+        return found
+
+    def validate(self):
+        _refuse("polyhedral topology", self._id_problems())
+        return self
 
     @on_inputs_device
     def faces(self):
@@ -609,6 +638,11 @@ class PolygonalTopology(PolyhedralTopology):
                          given=(loop_offsets, loop_points))
         loop_offsets = ids.as_ids(loop_offsets, idt, check=False)
         loop_points = ids.as_ids(loop_points, idt, check=False)
+        if _checks_ids():
+            # Before the facets are derived from the loops, which index by point.
+            _refuse("polygonal topology", _csr_problems(
+                loop_offsets, loop_points, int(num_points), "loop_offsets", "loop_points",
+                "num_points"))
         n = loop_offsets.shape[0] - 1
         keys = tack.empty((total,), tack.vec(2, idt))
         directions = tack.empty((total,), tack.i32)
@@ -637,6 +671,12 @@ class PolygonalTopology(PolyhedralTopology):
         self.loop_offsets = loop_offsets
         self.loop_points = loop_points
 
+
+    def validate(self):
+        _refuse("polygonal topology", _csr_problems(
+            self.loop_offsets, self.loop_points, self.num_points, "loop_offsets",
+            "loop_points", "num_points"))
+        return self
     def loops(self):
         """Each polygon's points in order: ``(loop_offsets, loop_points)``."""
         return self.loop_offsets, self.loop_points
@@ -724,6 +764,9 @@ class PolylineTopology(_Topology):
         self.line_points = ids.as_ids(line_points, idt, check=False)
         self.num_cells = n
         self.num_points = int(num_points)
+        if _checks_ids():
+            # Before the ends are read from the lines.
+            self.validate()
         self._ends = tack.empty((2 * n,), idt)
         if n:
             short = tack.zeros((1,), tack.i32)
@@ -732,6 +775,12 @@ class PolylineTopology(_Topology):
                 raise ValueError(f"{short[0]} polylines have fewer than two points")
         self._cell_points = None
         self._groups = None
+
+    def validate(self):
+        _refuse("polyline topology", _csr_problems(
+            self.line_offsets, self.line_points, self.num_points, "line_offsets",
+            "line_points", "num_points"))
+        return self
 
     def lines(self):
         """Each polyline's points in order: ``(line_offsets, line_points)``."""

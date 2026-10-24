@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `topology.validate()` checks the arrays a topology is built from, on their
+  device, reading back a few integers: offsets that start at 0, never run
+  backwards and end at their members' length, ids within range (points,
+  faces, sides), and an unstructured topology's types and point counts. It
+  raises `ValueError` saying what is wrong and how often. Debug mode
+  (`tack.set_debug`, `TACK_DEBUG`) checks every topology's ids when it is
+  made, before anything is derived from them: a bad id from a reader or a
+  caller was read or written out of bounds, silently. As warp-simdata's
+  `validate_datasets`.
+
 - `for_each(kernel, data, space, ...)` runs a kernel over a space's nodes, each
   once (`DataSet.node_views`): views over points, edges, quad faces or cells
   whose entities have `node_count(i)` nodes with `node_dof(i, j)` and

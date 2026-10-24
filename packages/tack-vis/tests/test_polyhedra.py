@@ -188,7 +188,8 @@ def test_what_a_polyhedral_topology_refuses(backend):
                               twice).faces()
     wrong = cell_faces.copy()
     wrong[0] = 999
-    with pytest.raises(ValueError, match="name no face"):
+    # Debug mode checks the ids when the topology is made; otherwise faces() does.
+    with pytest.raises(ValueError, match="name no face|cell_faces are outside"):
         td.PolyhedralTopology(face_offsets, face_points, cell_offsets, wrong, sides).faces()
     with pytest.raises(NotImplementedError, match="reference element"):
         td.L2(poly).attributes()

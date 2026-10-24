@@ -172,9 +172,17 @@ search from the points uses no atomics, and everything else works there.
 | `check_winding(data)` | of polyhedra or polygons, a cell `Set` of the cells whose faces do not wind consistently; empty when all is well (a shape's faces come from its table) |
 | `orient(topology)` | turns around faces wound into their only cell |
 | `from_cell_faces(..., orient=True)` | repairs input whose faces or cells are inconsistently wound, then turns each connected piece outward by the sign of its total volume |
+| `topology.validate()` | checks the arrays a topology is built from, on their device, reading back a few integers: offsets start at 0, never run backwards and end at their members' length; every id is within its range (points; faces, for polyhedra; sides 0 or 1); an unstructured topology's types are linear shapes with their point counts. Raises `ValueError` saying what is wrong and how often, or returns the topology |
 
 Winding comes from the input, not from geometry. Inconsistent input is
 refused unless the caller asks for the repair.
+
+A topology is not checked when made: a bad id is read, or written, out of
+bounds by whatever uses it first. Call `validate()` on input you did not
+make, or turn on debug mode (`tack.set_debug(True)`, `TACK_DEBUG=1`), which
+checks every topology's ids when it is made -- before a polygonal or
+polyline topology derives anything from them -- along with every kernel's
+array accesses.
 
 ## Spaces
 

@@ -188,6 +188,66 @@ class _OnItsArrays:
         return same_device(type(self).__name__, vars(self).values())
 
 
+@tack.kernel
+def _range_problems(offsets, total, problems, n):
+    # Ranges [offsets[c], offsets[c + 1]) that run backwards or leave [0, total]
+    # (problems[0]), and offsets that do not start at 0 and end at total ([2]).
+    for c in range(n):
+        a = offsets[c]
+        b = offsets[c + 1]
+        if a > b or a < 0 or b > total:
+            tack.atomic_add(problems, 0, 1)
+        if (c == 0 and a != 0) or (c == n - 1 and b != total):
+            tack.atomic_add(problems, 2, 1)
+
+
+@tack.kernel
+def _id_problems(members, limit, problems, n):
+    # Entries outside [0, limit) (problems[1]); members may be implicit: no shape.
+    for k in range(n):
+        m = members[k]
+        if m < 0 or m >= limit:
+            tack.atomic_add(problems, 1, 1)
+
+
+def _csr_problems(offsets, members, limit, offsets_name, members_name, limit_name):
+    """What is wrong with a CSR pair whose members are ids below ``limit``: a list of
+    sentences, empty when nothing is. Reads back three integers."""
+    n = size_of(offsets) - 1
+    total = size_of(members)
+    problems = tack.zeros((3,), tack.i32)
+    if n > 0:
+        _range_problems(offsets, total, problems, n)
+    if total:
+        _id_problems(members, limit, problems, total)
+    p = problems.numpy()
+    found = []
+    if p[2] or (n == 0 and total):
+        found.append(f"{offsets_name} does not start at 0 and end at {total}, the length of "
+                     f"{members_name}")
+    if p[0]:
+        found.append(f"{p[0]} of the {n} ranges in {offsets_name} run backwards or leave "
+                     f"[0, {total}]")
+    if p[1]:
+        found.append(f"{p[1]} of the {total} entries of {members_name} are outside "
+                     f"[0, {limit}) ({limit_name})")
+    return found
+
+
+def _refuse(kind, found):
+    if found:
+        raise ValueError(f"invalid {kind}: " + "; ".join(found))
+
+
+def _checks_ids():
+    """Whether topologies check their ids when made: in debug mode
+    (`tack.set_debug`, ``TACK_DEBUG``), where a bad id would otherwise be read
+    or written out of bounds by the first derivation that follows it."""
+    from tack.runtime.dispatch import debug_enabled
+
+    return debug_enabled()
+
+
 class _Topology:
     """What both kinds share: the derived faces and edges, made once and kept.
 
@@ -205,6 +265,16 @@ class _Topology:
 
     #: The arrays it is built from, which say its device.
     _STORED = ()
+
+    def validate(self):
+        """Check the arrays it is built from, on their device, reading back a few
+        integers: offsets start at 0, never run backwards and end at their
+        members' length; every id is within its range (points, faces); the
+        cells' types and point counts agree. Raises ``ValueError`` saying what
+        is wrong and how often; returns the topology. Debug mode
+        (`tack.set_debug`) checks the ids of every topology when it is made.
+        A structured topology holds no arrays and has nothing to check."""
+        return self
 
     @property
     def _device(self):
@@ -325,6 +395,18 @@ class UnstructuredTopology(_Topology):
         self.offsets = _ids_of(offsets, self.id_dtype)
         self.connectivity = _ids_of(connectivity, self.id_dtype)
         self._groups = None
+        if _checks_ids():
+            _refuse("unstructured topology", self._id_problems())
+
+    def _id_problems(self):
+        return _csr_problems(self.offsets, self.connectivity, self.num_points, "offsets",
+                             "connectivity", "num_points")
+
+    def validate(self):
+        _refuse("unstructured topology", self._id_problems())
+        self._groups = None
+        self.groups()                    # the types are shapes, of their point counts
+        return self
 
     def _moved(self, target):
         return UnstructuredTopology(self.types.to_device(target),
