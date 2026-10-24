@@ -101,6 +101,32 @@ def test_a_topology_keeps_its_implicit_arrays():
     np.testing.assert_array_equal(np.asarray(narrow.offsets), [0, 1, 2, 3])
 
 
+@pytest.mark.parametrize("chunk, chunks", [(4096, 1024), (7, 1024), (7, 5)])
+def test_stored_types_are_grouped_by_their_counts(monkeypatch, chunk, chunks):
+    """A stored types array is counted by chunks on the CPU, each into its own
+    table (no atomics: one type put every worker on one counter). Groups
+    get every cell of their type, in order, across chunk boundaries and when
+    the chunk count is capped."""
+    from tack.dataset import topology as T
+
+    monkeypatch.setattr(T, "_TYPE_CHUNK", chunk)
+    monkeypatch.setattr(T, "_TYPE_CHUNKS", chunks)
+    rng = np.random.default_rng(3)
+    sizes = {10: 4, 12: 8, 13: 6}                    # tetra, hexahedron, wedge
+    for n, kinds in ((1, [12]), (50, [12]), (203, [10, 12, 13]), (999, [13, 10])):
+        types = rng.choice(kinds, n).astype(np.uint8)
+        counts = np.array([sizes[int(t)] for t in types])
+        offsets = np.concatenate([[0], np.cumsum(counts)]).astype(np.int32)
+        connectivity = rng.integers(0, 40, offsets[-1]).astype(np.int32)
+        t = td.UnstructuredTopology(types, offsets, connectivity, num_points=40)
+        groups = {int(g.shape.ID): g for g in t.groups()}
+        assert sorted(groups) == sorted({int(k) for k in types})
+        for kind, group in groups.items():
+            ids = np.flatnonzero(types == kind)
+            assert group.count == len(ids)
+            np.testing.assert_array_equal(_host(group.args[1]), ids)
+
+
 def test_a_topology_refuses_implicit_arrays_that_do_not_fit():
     with pytest.raises(TypeError, match="expected a u8 field"):
         td.UnstructuredTopology(ConstantArray(5, 2), CountingArray(3, step=3),

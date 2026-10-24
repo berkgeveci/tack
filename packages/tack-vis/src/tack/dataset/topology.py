@@ -96,6 +96,58 @@ def _histogram_types(types, keys, counts):
         tack.atomic_add(counts, t, 1)
 
 
+# On the CPU the types are counted by chunks, each into a private table, and the
+# tables summed: no atomics. With one atomic counter per type, a mesh of one
+# type put every worker on one counter: 34 ms for 1M cells against 2.7 ms on
+# one thread, nearly all of a fresh topology's cost. At most _TYPE_CHUNKS
+# chunks, so the tables stay small.
+_TYPE_CHUNK = 4096
+_TYPE_CHUNKS = 1024
+
+
+@tack.kernel
+def _count_types(types, keys, chunk_counts, n, chunk, nchunks):
+    # chunk_counts[t * nchunks + c]: the cells of type t in chunk c.
+    for c in range(nchunks):
+        table = tack.local_array(tack.i32, 256)
+        for t in range(256):
+            table[t] = 0
+        start = c * chunk
+        end = min(start + chunk, n)
+        for i in range(start, end):
+            t = tack.i32(types[i])
+            keys[i] = t
+            table[t] = table[t] + 1
+        for t in range(256):
+            chunk_counts[t * nchunks + c] = table[t]
+
+
+@tack.kernel
+def _sum_type_counts(chunk_counts, counts, nchunks):
+    for t in range(256):
+        total = 0
+        for c in range(nchunks):
+            total += chunk_counts[t * nchunks + c]
+        counts[t] = total
+
+
+def _type_counts(types, n):
+    """Each cell's type as an i32 key, and the count of each of the 256 types."""
+    keys = tack.empty((n,), tack.i32)
+    counts = tack.zeros((256,), tack.i32)
+    if get_backend().supports_workgroups:
+        # GPUs run the chunk tables as few threads with spilled tables; their
+        # atomics stay.
+        _histogram_types(types, keys, counts)
+        return keys, counts
+    chunk = max(_TYPE_CHUNK, -(-n // _TYPE_CHUNKS))
+    nchunks = -(-n // chunk)
+    chunk_counts = tack.empty((256 * nchunks,), tack.i32)
+    _count_types(types, keys, chunk_counts, n, chunk, nchunks)
+    _sum_type_counts(chunk_counts, counts, nchunks)
+    return keys, counts
+
+
 @tack.kernel
 def _gather_shape(order, start, offsets, connectivity, ids, rows, bad):
     for c in range(rows.shape[0]):
@@ -291,9 +343,7 @@ class UnstructuredTopology(_Topology):
                 raise ValueError(f"cell types [{t}] are not linear shapes")
             groups.append(self._gathered(t, CountingArray(n, dtype=self.id_dtype), 0, n, bad))
         elif n:
-            keys = tack.empty((n,), tack.i32)
-            counts = tack.zeros((256,), tack.i32)
-            _histogram_types(self.types, keys, counts)
+            keys, counts = _type_counts(self.types, n)
             counts = counts.numpy()
             present = np.flatnonzero(counts)
             unknown = [int(t) for t in present if int(t) not in shapes._BY_ID]
