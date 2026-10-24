@@ -64,7 +64,22 @@ def probe(data, where, fields=None, locator=None):
     field with a basis (``H1``, ``L2``, ``Constant``, values on points)
     evaluated through it in the cell holding the point, values on cells taken
     from that cell, and ``valid`` (1, or 0 where no cell holds the point and the
-    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``."""
+    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``.
+
+    ``data`` may be a ``PartitionedDataSet``: each point goes to the piece one
+    of whose own cells (not a ghost) holds it, the lowest such piece, which
+    evaluates it there, and the values come back. ``where`` is then this
+    rank's points -- a dataset, an array, or a ``PartitionedDataSet``, which
+    gives one back, each piece probed -- and every rank's points are probed
+    over every rank's pieces of ``data.world``. A point on a face two pieces
+    share takes the lower piece's values, as one dataset takes its lower
+    cell's."""
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet):
+        if locator is not None:
+            raise ValueError("probe of a PartitionedDataSet uses each piece's own locator")
+        return _probe_pieces(data, where, fields)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
@@ -141,3 +156,99 @@ def probe(data, where, fields=None, locator=None):
 
     return keep_marks(where, DataSet(where.topology, where.geometry, fields=kept,
                                      sets=dict(where.sets)))
+
+
+def _held_box(piece):
+    """A piece's box, grown by what its locator accepts outside a cell: a share
+    (``locator._TOLERANCE``) of a cell's diagonal, so of the piece's at most."""
+    from tack.dataset.locator import _TOLERANCE
+
+    x = piece.positions().astype(np.float64)
+    lower, upper = x.min(axis=0), x.max(axis=0)
+    grow = _TOLERANCE * float(np.linalg.norm(upper - lower))
+    return lower - grow, upper + grow
+
+
+def _probe_pieces(data, where, fields):
+    """``probe`` with a partitioned source (``probe``'s docstring)."""
+    from tack import communication as tc
+    from tack.communication._kernels import gather
+    from tack.dataset.ghosts import Ghosts, keep_marks, visible
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    pieces = []
+    for piece in data:                       # each piece's work on its own device
+        with piece.device:
+            pieces.append(visible(piece))
+    blocks = tc.Blocks([piece.device for piece in pieces], data.world)
+    if not len(blocks.local):
+        raise ValueError("probe of a PartitionedDataSet needs pieces on this rank to "
+                         "start from")
+
+    # This rank's targets, their points end to end, from its first block.
+    many = isinstance(where, PartitionedDataSet)
+    targets = list(where) if many else [where]
+    for i, target in enumerate(targets):
+        if not isinstance(target, DataSet):
+            targets[i] = _vertices(np.asarray(target, float).reshape(-1, 3), pieces[0])
+        elif not isinstance(target.geometry.space, H1):
+            raise TypeError("probe needs the probed points: an H1 geometry")
+    points = [np.asarray(t.positions(), np.float64).reshape(-1, 3) for t in targets]
+    counts = [len(p) for p in points]
+    first = blocks.local.start
+    positions = {g: (np.concatenate(points) if g == first and points else np.zeros((0, 3)))
+                 for g in blocks.local}
+    boxes = {}
+    locators = {}
+    for g, piece in zip(blocks.local, pieces):
+        if piece.num_points:
+            boxes[g] = _held_box(piece)
+            with piece.device:
+                locators[g] = cached_locator(piece)
+        else:
+            boxes[g] = None
+
+    def holds(g, x):
+        piece = pieces[g - blocks.local.start]
+        with piece.device:
+            cells, held = locators[g]._find_holding(x.astype(piece.dtype.numpy_dtype))
+        cells = arrays.to_host(cells).astype(np.int64)
+        owned = cells >= 0
+        marks = None if piece.ghosts is None else piece.ghosts.cells
+        if marks is not None:
+            owned &= (marks.numpy()[np.maximum(cells, 0)] & Ghosts.SKIPPED_CELLS) == 0
+        # Holding the point ranks ahead of coming within the tolerance, as one
+        # dataset's locator ranks its cells.
+        return np.where(owned, 1 + held.numpy(), 0)
+
+    routing = tc.Routing(blocks, positions, boxes, holds)
+    arrived = routing.send()
+
+    # What each piece gives back, and its element types, from a probe of no
+    # points (so a rank whose points went nowhere still knows them).
+    with pieces[0].device:
+        empty = probe(pieces[0], np.zeros((0, 3)), fields)
+    names = [n for n in empty.fields if n not in ("valid",)] + ["valid"]
+    like = {n: empty.fields[n].values.dtype for n in names}
+    answers = {}
+    for g, piece in zip(blocks.local, pieces):
+        x, _ = arrived[g]
+        if len(x):
+            with piece.device:
+                probed = probe(piece, x, fields)
+            answers[g] = {n: probed.fields[n].values for n in names}
+    replied = routing.reply(answers, like)[first]
+
+    out = []
+    start = 0
+    for target, n in zip(targets, counts):
+        kept = dict(target.fields)
+        rows = tack.arange(start, start + n, dtype=tack.i64, device=blocks.device(first))
+        for name in names:
+            values = gather(replied[name], rows).to_device(target.device)
+            space = Values(target, "points") if name == "valid" else H1(target)
+            kept[name] = Field(space, values)
+        start += n
+        out.append(keep_marks(target, DataSet(target.topology, target.geometry, fields=kept,
+                                              sets=dict(target.sets))))
+    return PartitionedDataSet(out, world=data.world) if many else out[0]

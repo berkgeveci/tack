@@ -287,6 +287,23 @@ def _find_from_points(mesh, points, found, pcs, tets, write_tets):
 
 
 @tack.kernel
+def _find_holding_from_points(mesh, points, found, held):
+    # As _find_from_points, with whether the cell found holds the point (1) or
+    # only comes within its tolerance (0).
+    for q in range(points.shape[0]):
+        e, kind, pc, t, h = mesh.find_ranked(points[q])
+        found[q] = e if e < mesh.ncells else -1
+        held[q] = h
+
+
+@tack.kernel
+def _held_ranks(found, none, ncells, held):
+    # From the cell-side search's ranks, before _resolve: a cell id holds.
+    for q in range(found.shape[0]):
+        held[q] = 1 if found[q] < ncells else 0
+
+
+@tack.kernel
 def _resolve(found, none, ncells):
     # A rank back to its cell; -1 for none.
     for q in range(found.shape[0]):
@@ -418,6 +435,17 @@ class CellLocator:
         a field of 3-vectors): each point's cell (-1 for none) and its
         coordinates there, and in polyhedra its sub-tetrahedron (``tets`` is
         ``None`` otherwise). See ``Locations``."""
+        return self._find(points)[0]
+
+    def _find_holding(self, points):
+        """``find``'s cells, and per point 1 if its cell holds it, 0 if the cell
+        only comes within its tolerance (or there is none), as i32 arrays: what
+        decides between pieces that both come close to a point
+        (``probe`` and advection over a ``PartitionedDataSet``)."""
+        locations, held = self._find(points, want_held=True)
+        return locations.cells, held
+
+    def _find(self, points, want_held=False):
         data = self.data
         dtype = data.dtype
         if not hasattr(points, "numpy"):
@@ -439,11 +467,14 @@ class CellLocator:
             found = tack.empty((m,), data.id_dtype)
             pcs = tack.empty((m,), tack.vec(3, dtype))
             tets = tack.empty((m,), tack.i32) if self.polyhedral else None
-            if m:
+            held = tack.empty((m,), tack.i32) if want_held else None
+            if m and want_held:
+                _find_holding_from_points(search, points, found, held)
+            elif m:
                 _find_from_points(search, points, found, pcs,
                                   tets if tets is not None else found,
                                   1 if tets is not None else 0)
-            return Locations(found, pcs, tets)
+            return Locations(found, pcs, tets), held
         # From the cells, where by_id cannot serve the dataset (an order-2 or L2
         # geometry, line or vertex cells). The best rank wins by an atomic minimum (a cell id, or past the ids for
         # a cell the point is only near): in i32 below 2**30 cells, as every
@@ -480,12 +511,18 @@ class CellLocator:
                     for_each(_test_points, data, "cells", points, self.lo, self.hi, starts,
                              order, *self._grid(), _TOLERANCE, data.num_cells, write, found,
                              pcs)
+            if want_held:
+                held = tack.empty((m,), tack.i32)
+                _held_ranks(found, none, data.num_cells, held)
             _resolve(found, none, data.num_cells)
         elif m:
             found.fill(-1)
+        if want_held and (not m or not data.num_cells):
+            held = tack.zeros((m,), tack.i32)
+        held = held if want_held else None
         if self.polyhedral:
-            return Locations(ids.as_ids(found, data.id_dtype), pcs, tets)
-        return Locations(ids.as_ids(found, data.id_dtype), pcs)
+            return Locations(ids.as_ids(found, data.id_dtype), pcs, tets), held
+        return Locations(ids.as_ids(found, data.id_dtype), pcs), held
 
 
 @on_inputs_device

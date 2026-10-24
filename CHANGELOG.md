@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `probe` of a `PartitionedDataSet`: each point goes to the lowest piece one
+  of whose own cells holds it (holding ahead of the locator's tolerance),
+  is evaluated there, and its values come back, equal to probing the whole
+  dataset, with or without ghost cells, on any devices or MPI ranks.
+  `where` may be a `PartitionedDataSet`, giving one back.
+- `tack.communication.Routing`: points to the block that holds them (by the
+  blocks' boxes and the caller's ranked test), values sent with them
+  (`send`) and answers returned in the points' order (`reply`). Particles
+  across pieces now route through it.
+
 - Particles across pieces: `advect` and `streamlines` of a
   `PartitionedDataSet` route each particle to the piece owning the cell
   that holds it, advance it there, and hand it on when a whole step ends in
