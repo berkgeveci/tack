@@ -74,6 +74,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A topology made from a stored cell-types array groups its cells 16× faster
+  on the CPU at 1M cells (36 → 2.2 ms), 7× at 100k: the types are counted by
+  chunks into private tables, with no atomics. With one counter per type, a
+  mesh of one type, as most readers give, put every worker on one atomic
+  counter. A fresh unstructured mesh paid this before its first filter
+  (found comparing with warp-simdata on the CPU).
+
 - `gradients` and `flow_quantities` work on polyhedra, which have no
   reference element: each cell's gradient is Green–Gauss over its faces,
   each fanned into triangles from the mean of its points, which is exact for
