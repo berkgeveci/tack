@@ -33,6 +33,14 @@ class World:
     for host memory), the array goes as a device
     copy in memory the MPI does take, and arrives in such memory. Tack imports
     no MPI module: the caller makes the communicator.
+
+    A GPU-aware MPI uses the device that is current when MPI starts. Make the
+    rank's device first, with ``tack.device("cuda:N")``, and only then import
+    ``mpi4py.MPI``, which starts MPI. A rank that moves to another device
+    afterwards loses Cray MPICH's CUDA IPC between ranks on a node (7 GB/s a
+    rank against 22 on Perlmutter's A100s), or fails across nodes. CUDA IPC
+    also needs every rank to see its node's GPUs (Slurm's ``--gpu-bind=none``,
+    not ``--gpus-per-task=1``), each rank taking its own by local rank.
     """
 
     def __init__(self, comm=None, *, gpu_aware=False):
