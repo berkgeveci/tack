@@ -355,7 +355,7 @@ def test_routing_prefers_the_higher_rank_then_the_lower_block(cpu, second):
     close to it (rank 1), as a locator ranks holding ahead of its tolerance."""
     blocks = tc.Blocks([cpu, second, cpu])
     x = {0: np.array([[0.5], [1.0], [2.0]]), 1: np.zeros((0, 1)), 2: np.zeros((0, 1))}
-    boxes = {g: ((0.0,), (3.0,)) for g in range(3)}
+    boxes = dict.fromkeys(range(3), ((0.0,), (3.0,)))
     ranks = {0: [1, 1, 0], 1: [2, 1, 0], 2: [2, 2, 0]}       # per point, by block
     routing = tc.Routing(blocks, x, boxes, lambda g, p: np.array(ranks[g]))
     assert routing.destination[0].tolist() == [1, 2, -1]
