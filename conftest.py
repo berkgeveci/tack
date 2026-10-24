@@ -45,6 +45,9 @@ went stale the moment another arrived.
 """
 
 import os
+import shutil
+import subprocess
+import sys
 
 import pytest
 
@@ -173,3 +176,28 @@ def require_idle():
             pytest.skip(f"needs an idle host: load average {load:.1f} "
                         f"against {threads} threads")
     return require
+
+
+@pytest.fixture
+def mpiexec():
+    """Run a script on MPI ranks: ``mpiexec(ranks, script, *args)`` starts ``ranks``
+    copies of this Python under ``mpiexec`` (one CPU thread each) and returns the
+    finished process. Skips without mpi4py (the ``mpi`` extra) or an ``mpiexec``;
+    with ``TACK_REQUIRE_MPI`` set, as CI's MPI job sets it, that fails instead."""
+    from tack.runtime.dispatch import env_flag
+    try:
+        import mpi4py  # noqa: F401
+        why = None if shutil.which("mpiexec") else "no mpiexec on the path"
+    except ImportError:
+        why = "mpi4py is not installed (the mpi extra)"
+    if why is not None:
+        if env_flag("TACK_REQUIRE_MPI"):
+            pytest.fail(f"TACK_REQUIRE_MPI is set, but {why}")
+        pytest.skip(why)
+
+    def run(ranks, script, *args):
+        return subprocess.run([shutil.which("mpiexec"), "-n", str(ranks), sys.executable,
+                               str(script), *map(str, args)],
+                              capture_output=True, text=True, timeout=300,
+                              env={**os.environ, "TACK_CPU_THREADS": "1"})
+    return run

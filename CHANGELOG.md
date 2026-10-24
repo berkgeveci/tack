@@ -18,7 +18,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   keeps an exchange (elements gathered on one block, scattered on another)
   for reuse, as ghost values are refreshed from their owners. DIY's model,
   with Tack arrays as the messages. `World()` is one process, blocks on any
-  of its devices; MPI comes next.
+  of its devices; `World(comm)` spans an mpi4py communicator's ranks (the
+  new `mpi` extra), staging arrays through the host or, with
+  `gpu_aware=True`, handing them to MPI through DLPack. The same cases run
+  on both, and a CI job runs them under `mpiexec`.
 
 - `contour` takes a sequence of values, and `slice` and `slice_plane` take
   one as `value` (parallel planes for `slice_plane`): every value's contour

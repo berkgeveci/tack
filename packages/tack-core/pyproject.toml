@@ -46,6 +46,11 @@ metal = [
 # guessing at somebody else's install. hip-python 10 (a compatibility
 # package over rocm.bindings) is what the bound resolves to today, and
 # hip_backend reads its version, runtime library and output structs too.
+# mpi4py, for tack.communication across MPI ranks. It builds against the
+# system's MPI (mpicc on the path), so it is not part of dev.
+mpi = [
+    "mpi4py>=4.0",
+]
 hip = [
     "hip-python>=7.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]

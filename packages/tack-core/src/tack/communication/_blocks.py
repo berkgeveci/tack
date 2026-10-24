@@ -188,6 +188,10 @@ def _check_message(message, source, destination, device):
         if not isinstance(values, Array):
             raise TypeError(f"{name!r} in the message from block {source} to block "
                             f"{destination} is a {type(values).__name__}, not a Tack array")
+        if values.layout != "aos":
+            raise TypeError(f"{name!r} in the message from block {source} to block "
+                            f"{destination} is a structure of arrays; send its "
+                            f"components")
         if values._backend.memory_domain != device.memory_domain:
             raise ValueError(f"{name!r} in the message from block {source} to block "
                              f"{destination} is on {values.device}, not on its source "

@@ -7,8 +7,10 @@ simulated by threads sharing a hub (`_ThreadWorld`), each with its own
 `Blocks`, which checks the paths that cross ranks without MPI.
 """
 
+import os
 import threading
 
+import _communication_cases as cases
 import numpy as np
 import pytest
 
@@ -110,27 +112,6 @@ def test_blocks_number_this_process_blocks_from_zero(cpu, second):
         blocks.rank_of(3)
 
 
-def test_global_ids_are_contiguous_by_rank(cpu):
-    def body(world):
-        blocks = tc.Blocks(["cpu"] * (world.rank + 1), world)      # 1, 2 and 3 blocks
-        return blocks.count, blocks.local, [blocks.rank_of(g) for g in range(blocks.count)]
-
-    results = _run_ranks(3, body)
-    assert [r[1] for r in results] == [range(1), range(1, 3), range(3, 6)]
-    assert all(r[0] == 6 and r[2] == [0, 1, 1, 2, 2, 2] for r in results)
-
-
-def test_a_rank_may_hold_no_blocks(cpu):
-    def body(world):
-        blocks = tc.Blocks([] if world.rank == 0 else ["cpu"], world)
-        offsets, total = blocks.exclusive_scan(dict.fromkeys(blocks.local, 5))
-        return blocks.local, offsets, total, blocks.all_reduce(dict.fromkeys(blocks.local, 1.0))
-
-    (l0, o0, t0, s0), (l1, o1, t1, s1) = _run_ranks(2, body)
-    assert l0 == range(0) and l1 == range(1)
-    assert o0 == {} and o1 == {0: 0} and t0 == t1 == 5 and s0 == s1 == 1.0
-
-
 # -- exchange ----------------------------------------------------------------
 
 def test_messages_arrive_on_their_destinations_device(cpu, second):
@@ -171,19 +152,8 @@ def test_exchange_refuses_what_it_cannot_send(cpu, second):
         blocks.exchange({0: {1: {"a": np.zeros(2)}}})
     with pytest.raises(ValueError, match="not on its source block's device"):
         blocks.exchange({1: {0: {"a": a}}})
-
-
-def test_exchange_crosses_ranks(cpu):
-    def body(world):
-        blocks = tc.Blocks(["cpu", "cpu"], world)
-        outgoing = {g: {(g + 1) % blocks.count: {"from": tack.array(np.array([g], np.int32))}}
-                    for g in blocks.local}
-        incoming = blocks.exchange(outgoing)
-        return {g: {s: int(m["from"].numpy()[0]) for s, m in r.items()}
-                for g, r in incoming.items()}
-
-    results = _run_ranks(3, body)
-    assert results == [{0: {5: 5}, 1: {0: 0}}, {2: {1: 1}, 3: {2: 2}}, {4: {3: 3}, 5: {4: 4}}]
+    with pytest.raises(TypeError, match="structure of arrays"):
+        blocks.exchange({0: {1: {"a": tack.soa(a, a)}}})
 
 
 # -- collectives -------------------------------------------------------------
@@ -203,28 +173,7 @@ def test_all_reduce_combines_in_global_id_order(cpu):
         blocks.all_reduce({0: 1, 2: 1})
 
 
-def test_a_sum_has_the_same_bits_however_blocks_are_assigned(cpu):
-    rng = np.random.default_rng(3)
-    values = rng.standard_normal(6) * 10.0 ** rng.integers(-8, 8, 6)
-    one = tc.Blocks(["cpu"] * 6).all_reduce(dict(enumerate(values)))
-
-    def body(world):
-        blocks = tc.Blocks(["cpu"] * (1 if world.rank < 2 else 4), world)
-        return blocks.all_reduce({g: values[g] for g in blocks.local})
-
-    assert set(_run_ranks(3, body)) == {one}
-
-
-def test_all_gather_and_exclusive_scan(cpu):
-    def body(world):
-        blocks = tc.Blocks(["cpu"] * 2, world)
-        every = blocks.all_gather({g: ("block", g) for g in blocks.local})
-        offsets, total = blocks.exclusive_scan({g: g + 1 for g in blocks.local})
-        return every, offsets, total
-
-    results = _run_ranks(2, body)
-    assert all(r[0] == [("block", g) for g in range(4)] and r[2] == 10 for r in results)
-    assert results[0][1] == {0: 0, 1: 1} and results[1][1] == {2: 3, 3: 6}
+def test_exclusive_scan_takes_counts(cpu):
     with pytest.raises(ValueError, match="integers of at least 0"):
         tc.Blocks(["cpu"]).exclusive_scan({0: -1})
 
@@ -275,19 +224,6 @@ def test_a_plan_moves_whole_elements_and_several_arrays(cpu, second):
     assert vec[1].numpy()[0].tolist() == [100, 101, 102]
 
 
-def test_a_plan_crosses_ranks(cpu):
-    def body(world):
-        blocks = tc.Blocks(["cpu"], world)
-        g = blocks.local.start
-        values = {g: tack.array(np.full(3, float(g), np.float32))}
-        right, left = (g + 1) % blocks.count, (g - 1) % blocks.count
-        plan = tc.Plan(blocks, sends={g: {right: [1]}}, receives={g: {left: [0]}})
-        plan.run(values)
-        return values[g].numpy().tolist()
-
-    assert _run_ranks(3, body) == [[2, 0, 0], [0, 1, 1], [1, 2, 2]]
-
-
 def test_a_plan_refuses_mismatched_sides(cpu, second):
     blocks = tc.Blocks([cpu, second])
     with pytest.raises(ValueError, match="sends 2 elements to block 1, which receives 1"):
@@ -320,3 +256,23 @@ def test_an_empty_plan_does_nothing(cpu):
     a = tack.array(np.arange(3, dtype=np.float32))
     plan.run({0: a, 1: a})
     assert a.numpy().tolist() == [0, 1, 2]
+
+
+# -- across ranks ------------------------------------------------------------
+
+@pytest.mark.parametrize("name", list(cases.CASES))
+def test_across_simulated_ranks(cpu, name):
+    ranks, body, check = cases.CASES[name]
+    check(_run_ranks(ranks, body))
+
+
+@pytest.mark.parametrize("gpu_aware", [False, True], ids=["staged", "gpu-aware"])
+def test_across_mpi_ranks(mpiexec, gpu_aware):
+    """Every case under ``mpiexec -n 3``, through MPI; GPU-aware hands the
+    arrays themselves to MPI through DLPack (CPU arrays here)."""
+    script = os.path.join(os.path.dirname(__file__), "_communication_mpi.py")
+    run = mpiexec(3, script, *(["--gpu-aware"] if gpu_aware else []))
+    report = run.stdout + run.stderr
+    assert run.returncode == 0, report
+    for name in cases.CASES:
+        assert f"ok {name}" in run.stdout, report

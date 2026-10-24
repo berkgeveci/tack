@@ -17,10 +17,12 @@ over them:
 
 A `World` is the transport: ``World()`` is one process, blocks on any of its
 devices, a message moved by copying its arrays to the destination block's
-device. It is DIY's model (blocks, links, exchange, collectives) with Tack
-arrays as the messages instead of bytes, and functions in place of
-callbacks: ``exchange`` takes ``{source: {destination: message}}`` and
-returns ``{destination: {source: message}}``.
+device; ``World(comm)`` spans the ranks of an mpi4py communicator.
+Algorithms written on `Blocks` run unchanged on either. It is DIY's model
+(blocks, links, exchange, collectives) with Tack arrays as the messages
+instead of bytes, and functions in place of callbacks: ``exchange`` takes
+``{source: {destination: message}}`` and returns
+``{destination: {source: message}}``.
 """
 
 from ._blocks import Blocks

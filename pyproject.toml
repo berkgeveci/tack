@@ -15,6 +15,7 @@ cuda = ["tack-core[cuda]"]
 metal = ["tack-core[metal]"]
 hip = ["tack-core[hip]"]
 level_zero = ["tack-core[level_zero]"]
+mpi = ["tack-core[mpi]"]
 dev = [
     "pytest",
     # `pytest -n auto` runs the suite across processes; see CLAUDE.md, Tests.
