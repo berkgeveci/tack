@@ -4879,6 +4879,10 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 <td><code>data</code> without its duplicate and hidden cells, keeping the points it owns (see <em>Partitioned datasets</em>)</td>
 </tr>
 <tr>
+<td><code>connected_components(data)</code></td>
+<td>which cells are connected through shared points, as VTK's <code>vtkConnectivityFilter</code> (all regions, colored) and Viskores' <code>CellSetConnectivity</code>: <code>data</code> with <code>region</code> on the cells and <code>point_region</code> on the points, numbered from 0 in order of their lowest cell (VTK's numbering); -1 for hidden cells and unused points; union-find on the device. Of a <code>PartitionedDataSet</code> too: regions numbered across every piece and rank, in order of their lowest global cell id where pieces have global ids (the whole's numbering for the whole's ids)</td>
+</tr>
+<tr>
 <td><code>ghost_cells(pds, layers=1)</code></td>
 <td>unstructured pieces with a layer of their neighbours' cells, as <code>vtkGhostCellsGenerator</code> (see <em>Partitioned datasets</em>)</td>
 </tr>

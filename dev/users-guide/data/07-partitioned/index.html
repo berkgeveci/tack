@@ -1531,6 +1531,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connected-regions-across-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connected regions across pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3312,6 +3323,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connected-regions-across-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connected regions across pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3643,8 +3665,16 @@ probing the whole dataset. Ghost cells are not needed for it.</p>
 <div class="highlight"><pre><span></span><code><span class="n">values</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">points</span><span class="p">)</span>                  <span class="c1"># points: an array or a dataset</span>
 <span class="n">values</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;RTData&quot;</span><span class="p">],</span> <span class="n">values</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;valid&quot;</span><span class="p">]</span>    <span class="c1"># valid 0 outside every piece</span>
 </code></pre></div>
+<h2 id="connected-regions-across-pieces">Connected regions across pieces<a class="headerlink" href="#connected-regions-across-pieces" title="Permanent link">&para;</a></h2>
+<p><code>connected_components</code> labels cells connected through shared points; given
+pieces, it numbers the regions across all of them, so a region that crosses
+a cut has one number everywhere:</p>
+<div class="highlight"><pre><span></span><code><span class="n">regions</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">connected_components</span><span class="p">(</span><span class="n">pieces</span><span class="p">)</span>          <span class="c1"># region, point_region on each piece</span>
+</code></pre></div>
+<p>With global ids on the pieces, regions are numbered as on the whole dataset.</p>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p>Connected components across pieces and <code>merge_points</code> are the next steps.</p>
+<p><code>merge_points</code> (one dataset of the pieces, for writing one file) is the next
+step.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_partitioned.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packages/tack-vis/examples/44_partitioned_data.py<span class="w"> </span>--pieces<span class="w"> </span><span class="m">8</span>
