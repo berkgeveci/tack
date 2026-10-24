@@ -397,7 +397,7 @@ unchanged code. The disk cache's lowered-IR key includes debug mode
 (`disk_cache.lowered_key`), and the variant key is built from that entry,
 so debug and plain kernels never share one; a stored debug kernel keeps
 its `bounds_sites`. Debug calls bypass the dispatch fast path. See
-`test_debug_bounds.py`. `TACK_DEBUG=1 pytest` runs every
+Debug mode also checks every `tack.dataset` topology's ids when it is made (`topology._checks_ids`, `_csr_problems`: offsets monotone from 0 to their members' length, ids within range), before polygonal and polyline topologies derive facets and ends from them; `topology.validate()` runs the same checks on demand, plus an unstructured topology's types and point counts (`groups()`). See `test_debug_bounds.py`. `TACK_DEBUG=1 pytest` runs every
 kernel of the suite with checks, and passes. A test of what plain mode
 generates or does (one that reads generated source or IR text, calls a
 compiled CPU kernel with its own argument list, compiles generated code with
