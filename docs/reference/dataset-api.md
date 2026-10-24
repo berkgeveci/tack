@@ -481,6 +481,16 @@ combine pieces.
   pieces from `ghost_cells` reuse its exchanges, and `ghost_cells` carries
   global ids into the ghost layer, matching points by them, where every
   piece has them.
+- **`probe(pds, where)`** with a partitioned source: each point goes to the
+  lowest piece one of whose own cells (not a ghost) holds it, holding
+  ahead of coming within the locator's tolerance, as one dataset ranks its
+  cells; that piece evaluates it, and the values come back. The result
+  equals probing the whole, points on faces pieces share included, with or
+  without ghost cells (a point is evaluated in one cell). `where` is this
+  rank's points (a dataset, an array, or a `PartitionedDataSet`, which gives
+  one back); across MPI ranks every rank's points are probed over every
+  rank's pieces. Built on `tack.communication.Routing`, which particles
+  across pieces use too.
 - **`update_ghosts(pds, *fields)`** copies the named point and cell fields'
   values on ghost points and cells from their owners, in place, for pieces
   `ghost_cells` made (it keeps the two exchanges as

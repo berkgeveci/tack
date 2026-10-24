@@ -221,13 +221,12 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record):
 
 
 def _boxes(blocks, pieces):
-    """Every piece's bounding box, ``(lower, upper)`` or ``None`` if it has no points."""
-    def box(piece):
-        if piece.num_points == 0:
-            return None
-        x = piece.positions()
-        return (x.min(axis=0).astype(np.float64), x.max(axis=0).astype(np.float64))
-    return blocks.all_gather({g: box(piece) for g, piece in zip(blocks.local, pieces)})
+    """This rank's pieces' boxes as the locator sees them (``probe._held_box``),
+    ``None`` for a piece with no points."""
+    from tack.dataset.algorithms.probe import _held_box
+
+    return {g: _held_box(piece) if piece.num_points else None
+            for g, piece in zip(blocks.local, pieces)}
 
 
 def _seeded(blocks, seeds):
@@ -248,68 +247,40 @@ def _seeded(blocks, seeds):
 
 
 def _route(blocks, pieces, locators, boxes, pending):
-    """Each particle in flight to the lowest piece one of whose own cells holds it:
-    ``(arrived, outside)``, the particles each piece takes, and those no piece
-    takes, left with the piece they were on."""
-    # 1. To every piece whose box holds it, to be located there.
-    asked = {}
+    """Each particle in flight to the lowest piece one of whose own cells holds it
+    (``tack.communication.Routing``): ``(arrived, outside)``, the particles each
+    piece takes, and those no piece takes, left with the piece they were on."""
+    def holds(g, x):
+        piece = pieces[g - blocks.local.start]
+        with piece.device:
+            cells, held = locators[g]._find_holding(x.astype(piece.dtype.numpy_dtype))
+        cells = arrays.to_host(cells).astype(np.int64)
+        owned = cells >= 0
+        marks = None if piece.ghosts is None else piece.ghosts.cells
+        if marks is not None:
+            owned &= (marks.numpy()[np.maximum(cells, 0)] & Ghosts.SKIPPED_CELLS) == 0
+        # Holding the point ranks ahead of coming within the tolerance, as one
+        # dataset's locator ranks its cells.
+        return np.where(owned, 1 + held.numpy(), 0)
+
+    routing = tc.Routing(blocks, {g: pending[g].x for g in blocks.local}, boxes, holds)
+    outside, state = {}, {}
     for g in blocks.local:
         particles = pending[g]
-        asked[g] = {}
-        for d, box in enumerate(boxes):
-            if box is None or not len(particles):
-                continue
-            lower, upper = box
-            slack = 1e-6 * max(float(np.max(upper - lower)), 1.0)
-            inside = np.all((particles.x >= lower - slack) & (particles.x <= upper + slack),
-                            axis=1)
-            rows = np.flatnonzero(inside)
-            if len(rows):
-                message = _bits(particles.x[rows], blocks.device(g))
-                message["slot"] = tack.array(rows.astype(np.int64), tack.i64,
-                                             device=blocks.device(g))
-                asked[g][d] = message
-    questions = blocks.exchange(asked)
-
-    # 2. Each piece says which it holds in a cell of its own.
-    answers = {}
-    for g, piece in zip(blocks.local, pieces):
-        answers[g] = {}
-        marks = None if piece.ghosts is None or piece.ghosts.cells is None \
-            else piece.ghosts.cells.numpy()
-        for origin, message in questions[g].items():
-            x = _unbits(message).astype(piece.dtype.numpy_dtype)
-            with piece.device:
-                cells = arrays.to_host(locators[g].find(x).cells).astype(np.int64)
-            owned = cells >= 0
-            if marks is not None:
-                owned &= (marks[np.maximum(cells, 0)] & Ghosts.SKIPPED_CELLS) == 0
-            answers[g][origin] = {"slot": message["slot"],
-                                  "owned": tack.array(owned.astype(np.uint8), tack.u8,
-                                                      device=blocks.device(g))}
-    replies = blocks.exchange(answers)
-
-    # 3. The lowest piece that holds it takes it.
-    sent, outside = {}, {}
-    for g in blocks.local:
-        particles = pending[g]
-        destination = np.full(len(particles), blocks.count, np.int64)
-        for d, reply in replies[g].items():          # in order of piece
-            slots = reply["slot"].numpy()
-            owned = reply["owned"].numpy().astype(bool)
-            mine = slots[owned]
-            destination[mine] = np.minimum(destination[mine], d)
-        lost = destination == blocks.count
-        left = particles.take(np.flatnonzero(lost))
+        left = particles.take(np.flatnonzero(routing.destination[g] < 0))
         left.status = left.status | int(SPATIAL_BOUNDS)
         never = left.steps == 0
         left.status[never] &= ~int(SUCCESS)          # a seed outside the mesh
         outside[g] = left
-        sent[g] = {int(d): particles.message(blocks.device(g), np.flatnonzero(destination == d))
-                   for d in np.unique(destination[~lost])}
-    arrivals = blocks.exchange(sent)
-    arrived = {g: _Particles.joined([_Particles.received(m) for m in arrivals[g].values()])
-               for g in blocks.local}
+        message = particles.message(blocks.device(g))
+        state[g] = {n: v for n, v in message.items() if not n.startswith("x")}
+    arrived = {}
+    for g, (x, values) in routing.send(state).items():
+        if not len(x):
+            arrived[g] = _Particles()
+            continue
+        values = {**values, **_bits(x, blocks.device(g))}
+        arrived[g] = _Particles.received(values)
     return arrived, outside
 
 

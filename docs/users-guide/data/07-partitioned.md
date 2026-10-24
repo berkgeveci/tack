@@ -270,6 +270,17 @@ particle is in one piece of the result, with its `seed`; a path's stretches
 are in the pieces that traced them, each after the first starting at a
 point marked `DUPLICATEPOINT`.
 
+## Probing pieces
+
+`probe` takes a partitioned source: each point is evaluated by the piece
+that holds it, and the values come back in your points' order, equal to
+probing the whole dataset. Ghost cells are not needed for it.
+
+```python
+values = td.probe(pieces, points)                  # points: an array or a dataset
+values.fields["RTData"], values.fields["valid"]    # valid 0 outside every piece
+```
+
 ## Not here yet
 
 More than one generated ghost layer is the next step.

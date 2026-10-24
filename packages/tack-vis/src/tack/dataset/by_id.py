@@ -284,6 +284,13 @@ class _MeshSearch:
         those holding it, else among those within their tolerance -- its type,
         and ``p``'s coordinates there (in a polyhedron, its sub-tetrahedron and
         the coordinates in that); ``e`` is ``ncells`` for none."""
+        e, kind, pc, tet, held = self.find_ranked(p)
+        return e, kind, pc, tet
+
+    @tack.func
+    def find_ranked(self, p):
+        """``find``'s ``(e, kind, pc, tet)`` and ``held``: 1 if the cell holds ``p``,
+        0 if it only comes within its tolerance (or there is none)."""
         best = self.ncells
         best_rank = 2 * self.ncells
         best_type = 0
@@ -375,7 +382,7 @@ class _MeshSearch:
                             best = e
                             best_type = kind
                             best_pc = pc
-        return best, best_type, best_pc, best_tet
+        return best, best_type, best_pc, best_tet, 1 if best_rank < self.ncells else 0
 
     @tack.func
     def weight(self, kind, j, pc):
