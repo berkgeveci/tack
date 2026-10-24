@@ -15,6 +15,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
 from tack.dataset.carry import Pieces, Same, carry
 from tack.dataset.topology import UnstructuredTopology, _as_field, uniform_cells
@@ -72,13 +73,13 @@ def _emit(cells, c, connectivity, at, p, a, b, d):
 
 
 @tack.kernel
-def _parity_tets(cells, even, odd, starts, connectivity, sources):
-    # A structured grid's hexahedra, 5 tetrahedra each, the split by (i + j + k)'s
-    # parity.
+def _parity_tets(cells, even, odd, shift, starts, connectivity, sources):
+    # A structured grid's hexahedra, 5 tetrahedra each, the split by the parity of
+    # (i + j + k) in the whole grid: the topology's offset's parity is ``shift``.
     for c in cells:
         e = cells.entity_id(c)
         at = starts[e]
-        flip = (c[0] + c[1] + c[2]) % 2
+        flip = (c[0] + c[1] + c[2] + shift) % 2
         for t in range(5):
             r = 4 * t
             if flip == 0:
@@ -91,15 +92,16 @@ def _parity_tets(cells, even, odd, starts, connectivity, sources):
 
 
 @tack.kernel
-def _cone_tets(cells, starts, connectivity, sources):
-    # Each cell as the cone from its corner of smallest point id over the faces
-    # without it, a quadrilateral face split from its own smallest corner.
+def _cone_tets(cells, rank, starts, connectivity, sources):
+    # Each cell as the cone from its corner of smallest rank (its point's id, or
+    # global id) over the faces without it, a quadrilateral face split from its
+    # own corner of smallest rank.
     for c in cells:
         e = cells.entity_id(c)
         at = starts[e]
         apex = 0
         for j in range(1, cells.NUM_POINTS):
-            if cells.point_id(c, j) < cells.point_id(c, apex):
+            if rank[cells.point_id(c, j)] < rank[cells.point_id(c, apex)]:
                 apex = j
         t = 0
         if cells.NUM_FACES == 4 and cells.NUM_POINTS == 4:
@@ -122,8 +124,8 @@ def _cone_tets(cells, starts, connectivity, sources):
                     else:
                         m = 0
                         for j in range(1, 4):
-                            if (cells.point_id(c, cells.face_corner(f, j))
-                                    < cells.point_id(c, cells.face_corner(f, m))):
+                            if (rank[cells.point_id(c, cells.face_corner(f, j))]
+                                    < rank[cells.point_id(c, cells.face_corner(f, m))]):
                                 m = j
                         q0 = cells.face_corner(f, m)
                         q1 = cells.face_corner(f, (m + 1) % 4)
@@ -184,15 +186,21 @@ def _tetrahedra(data, fields):
     count = exclusive_scan(counts, starts, n) if n else 0
     connectivity = tack.empty((4 * count,), odt)
     sources = tack.empty((count,), data.id_dtype)
+    # Corners rank by global id where there are global ids, so pieces of a
+    # partitioned dataset split the faces they share alike; by point id otherwise.
+    ids_ = data.global_ids
+    rank = ids_.points if ids_ is not None and ids_.points is not None else \
+        CountingArray(data.num_points, dtype=tack.i64)
+    shift = sum(data.topology.offset) % 2 if structured else 0
     for group in groups:
         view = data.domain_view("cells", group)        # with the corners' positions
         if structured:
             _parity_tets(view, _as_field(np.asarray(_EVEN_TETS, np.int32).reshape(-1),
                                                  tack.i32),
                          _as_field(np.asarray(_ODD_TETS, np.int32).reshape(-1), tack.i32),
-                         starts, connectivity, sources)
+                         shift, starts, connectivity, sources)
         else:
-            _cone_tets(view, starts, connectivity, sources)
+            _cone_tets(view, rank, starts, connectivity, sources)
     return _pieces_topology(data, connectivity, sources, count, shapes.TETRA, 4, fields)
 
 

@@ -671,7 +671,7 @@ def _check_domain(space, kind):
     raise TypeError(f"a field on {space!r} cannot be viewed while iterating {kind}")
 
 
-def grid_topology(dims, id_dtype=None, device=None):
+def grid_topology(dims, id_dtype=None, device=None, offset=None):
     """The topology of a grid of ``dims`` points (one to three sizes, x fastest).
 
     A size of 1 adds no cells, in any position: ``(1, 3)`` is a line of three
@@ -691,7 +691,9 @@ def grid_topology(dims, id_dtype=None, device=None):
         with as_device(backend_of(device)):
             return UnstructuredTopology([], [0], [], num_points=int(np.prod(dims)),
                                         id_dtype=id_dtype)
-    return StructuredTopology(axes, id_dtype=id_dtype, device=device)
+    if offset is not None:                  # the axes of more than one point
+        offset = [o for o, d in zip(offset, dims) if d != 1]
+    return StructuredTopology(axes, id_dtype=id_dtype, device=device, offset=offset)
 
 
 def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None):

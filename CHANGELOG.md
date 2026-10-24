@@ -134,6 +134,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `mask_points`, `extract_edges`, `tetrahedralize`, `as_polygons`, `perot`
   and `shrink`.
 
+### Fixed
+
+- `tetrahedralize` over the pieces of a partitioned dataset splits each face
+  pieces share along the same diagonal on both sides. A structured piece
+  alternated its hexahedra by the parity of its own (i, j, k), so a piece
+  starting at an odd index split the shared quads the other way; it now adds
+  the topology's `offset`, the grid index of its first point, which `split`
+  sets and `vtk_to_dataset` takes from an extent (`StructuredTopology(...,
+  offset=)`). Other pieces split from each cell's corner of smallest local
+  id, which differs between pieces; they now rank corners by global id where
+  the dataset has global ids. A single dataset's tetrahedra are unchanged.
+
 ### Changed
 
 - **Breaking:** `Planes(origins, normals)` follows the data's precision, as

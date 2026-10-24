@@ -150,7 +150,8 @@ def split(data, pieces, ghost_layers=0):
         stop = tuple(min(hi + layers, n) for (_, hi), n in zip(own, cells))
         block_cells = tuple(b - a for a, b in zip(start, stop))
         block_points = tuple(n + 1 for n in block_cells)
-        piece = StructuredTopology(block_points, id_dtype=topology.id_dtype, device=device)
+        piece = StructuredTopology(block_points, id_dtype=topology.id_dtype, device=device,
+                                   offset=[o + s for o, s in zip(topology.offset, start)])
         geometry = None
         if implicit:
             geometry = Field(H1(piece), _block_geometry(coordinates, axes, start,
