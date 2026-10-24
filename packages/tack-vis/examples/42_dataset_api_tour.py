@@ -203,11 +203,17 @@ def more_algorithms(data, surface):
     lines = alg.extract_edges(data)
     assert lines.num_cells == data.topology.edges().num_edges
 
-    # Tetrahedra by Viskores' tables: a hexahedron or voxel 5, a wedge 3, a
-    # pyramid 2, a tetrahedron 1.
-    per_shape = {"Hexahedron": 5, "Voxel": 5, "Wedge": 3, "Pyramid": 2, "Tetra": 1}
+    # Tetrahedra that meet face to face, as VTK's: a hexahedron or voxel of an
+    # unstructured mesh 6, a wedge 3, a pyramid 2, a tetrahedron 1 (a structured
+    # grid's hexahedra 5); no inner face shows in the surface.
+    per_shape = {"Hexahedron": 6, "Voxel": 6, "Wedge": 3, "Pyramid": 2, "Tetra": 1}
+    if isinstance(data.topology, td.StructuredTopology):
+        per_shape["Hexahedron"] = 5
     expected = sum(per_shape[g.shape.__name__] * g.count for g in data.topology.groups())
-    assert alg.tetrahedralize(data).num_cells == expected
+    tets = alg.tetrahedralize(data)
+    assert tets.num_cells == expected
+    assert alg.extract_surface(tets).num_cells == \
+        alg.triangulate(alg.extract_surface(data)).num_cells
 
     # The boundary surface as polygons: the same faces, any number of points.
     polygons = alg.as_polygons(surface)

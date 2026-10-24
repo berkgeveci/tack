@@ -86,7 +86,7 @@ def test_tangle_is_viskores(backend):
 # ── Refinement ──────────────────────────────────────────────────────
 
 @needs_vtk
-@pytest.mark.parametrize("cell_type, per_cell", [(12, 5), (11, 5), (13, 3), (14, 2), (10, 1)])
+@pytest.mark.parametrize("cell_type, per_cell", [(12, 6), (11, 6), (13, 3), (14, 2), (10, 1)])
 def test_tetrahedralize_keeps_the_volume(backend, cell_type, per_cell):
     grid = _blocks(cell_type)
     data = vtk_to_dataset(grid)
@@ -96,11 +96,47 @@ def test_tetrahedralize_keeps_the_volume(backend, cell_type, per_cell):
     assert {int(t) for t in out.topology.types.numpy()} == {10}
     assert _measure(dataset_to_vtk(out), "Volume") == pytest.approx(
         _measure(grid, "Volume"), rel=1e-5)
-    # Every tetrahedron the right way out (Viskores' wedge table has one inside out).
+    # Every tetrahedron the right way out.
     sizes = vtk.vtkCellSizeFilter()(dataset_to_vtk(out))
     assert (np.asarray(sizes.cell_data["Volume"]) > 0).all()
     np.testing.assert_array_equal(np.asarray(tack.arrays.to_host(out.fields["id"].values)),
                                   np.repeat(np.arange(data.num_cells), per_cell))
+
+
+@needs_vtk
+@pytest.mark.parametrize("cell_type", [12, 11, 13, 14, 10])
+def test_tetrahedra_meet_face_to_face(backend, cell_type):
+    """Neighbouring cells split their shared face along one diagonal, as VTK's
+    vtkDataSetTriangleFilter does, whatever order the cells and points come in:
+    the tetrahedra's surface is the cells' outer surface, triangulated, and no
+    inner face shows. With Viskores' fixed table a 2 x 2 x 2 cube of hexahedra
+    showed every inner face."""
+    grid = vtk_to_dataset(_blocks(cell_type))
+    rng = np.random.default_rng(cell_type)
+    t = grid.topology
+    rows = t.connectivity.numpy().reshape(grid.num_cells, -1)
+    perm = rng.permutation(grid.num_points)                 # shuffle the point ids
+    rows = np.argsort(perm)[rows][rng.permutation(grid.num_cells)]
+    shuffled = td.DataSet(td.UnstructuredTopology(
+        np.full(len(rows), cell_type, np.uint8), np.arange(0, rows.size + 1, rows.shape[1]),
+        rows.ravel(), num_points=grid.num_points),
+        tack.array(grid.positions()[perm].astype(np.float32), tack.vec3(tack.f32)))
+    for data in (grid, shuffled):
+        expected = td.triangulate(td.extract_surface(data)).num_cells
+        assert td.extract_surface(td.tetrahedralize(data)).num_cells == expected
+
+
+def test_a_structured_grid_takes_five_tetrahedra_a_cell_alternating(backend):
+    """A structured grid's hexahedra take 5 tetrahedra each, the two mirror splits
+    alternating by (i + j + k), as VTK splits image data: conforming too."""
+    grid = td.uniform_grid((4, 3, 5), spacing=(0.5, 1.0, 0.25))
+    out = td.tetrahedralize(grid)
+    assert out.num_cells == 5 * grid.num_cells
+    from tack.dataset.algorithms import cell_geometry
+    volume = cell_geometry(out).measure.values.numpy()
+    assert (volume > 0).all() and volume.sum() == pytest.approx(1.5 * 2.0 * 1.0, rel=1e-5)
+    surface = td.extract_surface(out).num_cells
+    assert surface == 2 * td.extract_surface(grid).num_cells
 
 
 @needs_vtk

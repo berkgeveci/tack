@@ -1,5 +1,15 @@
-"""Splitting cells into pieces by Viskores' tables, behind ``tetrahedralize``
-and ``triangulate``."""
+"""Splitting cells into pieces, behind ``tetrahedralize`` and ``triangulate``.
+
+Tetrahedra conform, as VTK's ``vtkDataSetTriangleFilter``'s do: two cells
+sharing a quadrilateral face split it along the same diagonal, so the pieces
+meet face to face. A structured grid's hexahedra take 5 tetrahedra, the two
+mirror splits alternating with the parity of (i, j, k); any other cell is the
+cone, from its corner of smallest point id, over the faces that do not hold
+that corner, each quadrilateral face split from its own corner of smallest
+point id -- a rule both cells of a face apply alike, in whatever order they
+come (a hexahedron in 6, a wedge in 3, a pyramid in 2). The cone fills a
+convex cell. Triangles of 2D cells need no rule: cells share edges, which
+are not split."""
 
 import numpy as np
 
@@ -9,21 +19,18 @@ from tack.dataset import ids, shapes
 from tack.dataset.carry import Pieces, Same, carry
 from tack.dataset.topology import UnstructuredTopology, _as_field, uniform_cells
 
-_HEX_TETS = [[0, 1, 3, 4], [1, 4, 5, 6], [1, 4, 6, 3], [1, 3, 6, 2], [3, 6, 7, 4]]
+# A structured hexahedron's two splits into 5 (VTK's corner order): a tetrahedron of
+# alternate corners in the middle, one at each other corner. Neighbours take the
+# other split, so a shared face has one diagonal.
+_EVEN_TETS = [[0, 2, 5, 7], [1, 0, 2, 5], [3, 0, 2, 7], [4, 0, 5, 7], [6, 2, 5, 7]]
+_ODD_TETS = [[1, 3, 4, 6], [0, 1, 3, 4], [2, 1, 3, 6], [5, 1, 4, 6], [7, 3, 4, 6]]
 
-
-_VOXEL_ORDER = [0, 1, 3, 2, 4, 5, 7, 6]
+# Tetrahedra of the cone from the smallest corner, per shape.
+_CONE_TETS = {int(shapes.TETRA): 1, int(shapes.HEXAHEDRON): 6, int(shapes.VOXEL): 6,
+              int(shapes.WEDGE): 3, int(shapes.PYRAMID): 2}
 
 
 _PIECES = {
-    "tetrahedra": {
-        int(shapes.TETRA): [[0, 1, 2, 3]],
-        int(shapes.HEXAHEDRON): _HEX_TETS,
-        int(shapes.VOXEL): [[_VOXEL_ORDER[k] for k in tet] for tet in _HEX_TETS],
-        # Viskores' (3, 4, 5, 2) is inside out: the same tetrahedron, turned.
-        int(shapes.WEDGE): [[0, 1, 2, 4], [3, 5, 4, 2], [0, 2, 3, 4]],
-        int(shapes.PYRAMID): [[0, 1, 2, 4], [0, 2, 3, 4]],
-    },
     "triangles": {
         int(shapes.TRIANGLE): [[0, 1, 2]],
         int(shapes.QUAD): [[0, 1, 2], [0, 2, 3]],
@@ -47,6 +54,86 @@ def _split_cells(cells, table, pieces, width, starts, connectivity, sources):
             for v in range(width):
                 connectivity[(at + t) * width + v] = cells.point_id(c, table[t * width + v])
             sources[at + t] = e
+
+
+@tack.func
+def _emit(cells, c, connectivity, at, p, a, b, d):
+    # Tetrahedron (p, a, b, d) of corners of cell c into slot at, turned if needed
+    # so its volume is positive.
+    x = cells.corner_position(c, p)
+    u = cells.corner_position(c, a) - x
+    v = cells.corner_position(c, b) - x
+    w = cells.corner_position(c, d) - x
+    turn = u.dot(v.cross(w)) < 0.0
+    connectivity[4 * at] = cells.point_id(c, p)
+    connectivity[4 * at + 1] = cells.point_id(c, a)
+    connectivity[4 * at + 2] = cells.point_id(c, d if turn else b)
+    connectivity[4 * at + 3] = cells.point_id(c, b if turn else d)
+
+
+@tack.kernel
+def _parity_tets(cells, even, odd, starts, connectivity, sources):
+    # A structured grid's hexahedra, 5 tetrahedra each, the split by (i + j + k)'s
+    # parity.
+    for c in cells:
+        e = cells.entity_id(c)
+        at = starts[e]
+        flip = (c[0] + c[1] + c[2]) % 2
+        for t in range(5):
+            r = 4 * t
+            if flip == 0:
+                _emit(cells, c, connectivity, at + t, even[r], even[r + 1], even[r + 2],
+                      even[r + 3])
+            else:
+                _emit(cells, c, connectivity, at + t, odd[r], odd[r + 1], odd[r + 2],
+                      odd[r + 3])
+            sources[at + t] = e
+
+
+@tack.kernel
+def _cone_tets(cells, starts, connectivity, sources):
+    # Each cell as the cone from its corner of smallest point id over the faces
+    # without it, a quadrilateral face split from its own smallest corner.
+    for c in cells:
+        e = cells.entity_id(c)
+        at = starts[e]
+        apex = 0
+        for j in range(1, cells.NUM_POINTS):
+            if cells.point_id(c, j) < cells.point_id(c, apex):
+                apex = j
+        t = 0
+        if cells.NUM_FACES == 4 and cells.NUM_POINTS == 4:
+            _emit(cells, c, connectivity, at, 0, 1, 2, 3)        # a tetrahedron is one
+            sources[at] = e
+            t = 1
+        else:
+            for f in range(cells.NUM_FACES):
+                n = 4 if cells.face_corner(f, 3) >= 0 else 3
+                holds = 0
+                for j in range(n):
+                    if cells.face_corner(f, j) == apex:
+                        holds = 1
+                if holds == 0:
+                    if n == 3:
+                        _emit(cells, c, connectivity, at + t, apex, cells.face_corner(f, 0),
+                              cells.face_corner(f, 1), cells.face_corner(f, 2))
+                        sources[at + t] = e
+                        t += 1
+                    else:
+                        m = 0
+                        for j in range(1, 4):
+                            if (cells.point_id(c, cells.face_corner(f, j))
+                                    < cells.point_id(c, cells.face_corner(f, m))):
+                                m = j
+                        q0 = cells.face_corner(f, m)
+                        q1 = cells.face_corner(f, (m + 1) % 4)
+                        q2 = cells.face_corner(f, (m + 2) % 4)
+                        q3 = cells.face_corner(f, (m + 3) % 4)
+                        _emit(cells, c, connectivity, at + t, apex, q0, q1, q2)
+                        _emit(cells, c, connectivity, at + t + 1, apex, q0, q2, q3)
+                        sources[at + t] = e
+                        sources[at + t + 1] = e
+                        t += 2
 
 
 @tack.kernel
@@ -74,7 +161,44 @@ def _pieces_topology(data, connectivity, sources, count, shape, width, fields):
     return carry(data, out, points=Same(), cells=Pieces(sources), fields=fields)
 
 
+def _tetrahedra(data, fields):
+    """Every 3D shape cell as conforming tetrahedra (the module's docstring)."""
+    from tack.dataset.topology import StructuredTopology
+
+    n = data.num_cells
+    structured = isinstance(data.topology, StructuredTopology)
+    if structured and data.topology.dimension != 3:
+        groups, per = [], {}
+    elif structured:
+        groups = [g for g in data.topology.groups() if g.count]
+        per = {int(shapes.HEXAHEDRON): 5}
+    else:
+        groups = [g for g in data.topology.groups()
+                  if g.count and int(g.shape.ID) in _CONE_TETS]
+        per = _CONE_TETS
+    counts = tack.zeros((n,), tack.i32)
+    for group in groups:
+        _piece_counts(group.view(), per[int(group.shape.ID)], counts)
+    odt = ids.for_output(data, 24 * n)
+    starts = tack.empty((n,), odt)
+    count = exclusive_scan(counts, starts, n) if n else 0
+    connectivity = tack.empty((4 * count,), odt)
+    sources = tack.empty((count,), data.id_dtype)
+    for group in groups:
+        view = data.domain_view("cells", group)        # with the corners' positions
+        if structured:
+            _parity_tets(view, _as_field(np.asarray(_EVEN_TETS, np.int32).reshape(-1),
+                                                 tack.i32),
+                         _as_field(np.asarray(_ODD_TETS, np.int32).reshape(-1), tack.i32),
+                         starts, connectivity, sources)
+        else:
+            _cone_tets(view, starts, connectivity, sources)
+    return _pieces_topology(data, connectivity, sources, count, shapes.TETRA, 4, fields)
+
+
 def _split(data, kind, fields):
+    if kind == "tetrahedra":
+        return _tetrahedra(data, fields)
     tables = _PIECES[kind]
     width, shape = (4, shapes.TETRA) if kind == "tetrahedra" else (3, shapes.TRIANGLE)
     n = data.num_cells
