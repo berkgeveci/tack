@@ -10,7 +10,7 @@ from tack.dataset._matching import INDEX_BITS
 from tack.dataset.dataset import DataSet
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
-from tack.dataset.partitioned import PartitionedDataSet
+from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.topology import StructuredTopology
 
 __all__ = ["generate_global_ids"]
@@ -41,6 +41,7 @@ def generate_global_ids(data, world=None):
         raise TypeError(f"generate_global_ids takes a PartitionedDataSet, not "
                         f"{type(data).__name__}")
     world = data.world if world is None else world
+    common_origin(data, "generate_global_ids", world)
     pieces = list(data)
     blocks = tc.Blocks([piece.device for piece in pieces], world)
     plans = getattr(data, "_ghost_plans", None)
@@ -76,7 +77,8 @@ def generate_global_ids(data, world=None):
                 ghosts = Ghosts(cells=None if ghosts is None else ghosts.cells, points=points)
             copy = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
                            sets=dict(piece.sets), dtype=piece.dtype, ghosts=ghosts,
-                           global_ids=GlobalIds(cells=cell_ids[g], points=point_ids[g]))
+                           global_ids=GlobalIds(cells=cell_ids[g], points=point_ids[g]),
+                           origin=piece.origin)
         copy._ghosts_lost = piece._ghosts_lost
         out.append(copy)
     result = PartitionedDataSet(out, world=world)

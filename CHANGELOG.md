@@ -7,6 +7,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A dataset's origin: `DataSet.origin`, three doubles on the host, where its
+  geometry's coordinates start. Kernels see only the geometry's values
+  (`tack.f32`, or `tack.f64` where the device has it), so points far from
+  zero, such as a LiDAR survey at UTM coordinates, keep millimetres in single
+  precision. Filters keep it. Implicit functions, probe points, seeds,
+  elevation points and functions of position take world coordinates,
+  converted in double precision; `transform` moves the origin;
+  `world_positions()` and `rebased(origin)`; `vtk_to_dataset(..., origin=)`,
+  and `dataset_to_vtk` writes world positions. Pieces whose positions meet
+  must share one origin.
+- `td.point_cloud(positions, fields)`: a dataset of one implicit vertex cell
+  per point (stored nowhere), float64 positions on an origin of their own,
+  integer fields (a LAS classification, intensities) kept in their type. The
+  first step of point clouds and SPH (the vault's proposal).
 - `merge_pieces(pds)`: the pieces of a partitioned dataset as one dataset,
   each owned cell and each point once, as `vtkMergeBlocks` after
   `vtkRemoveGhosts`. Points matched and numbered as `generate_global_ids`

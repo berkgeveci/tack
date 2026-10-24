@@ -26,6 +26,9 @@ def implicit_values(data, function):
     out = tack.empty((n,), dtype)
     # A function holding arrays (Planes) gives a copy at the data's precision and
     # on its device; the others hold Python numbers, which take it anyway.
+    from tack.dataset.implicit import relative_to
+
+    function = relative_to(function, data.origin)    # the geometry's values are relative
     matching = getattr(type(function), "_matching", None)
     if matching is not None:
         function = matching(function, dtype, data.device)

@@ -23,7 +23,9 @@ from tack.dataset import algorithms as alg
 - A **space** says where values live and how they are interpolated, if at
   all. It is built on a topology and owns its layout.
 - The **geometry** is a field, so point positions are data like any other.
-  It is kept apart from the named fields, as `data.geometry`.
+  It is kept apart from the named fields, as `data.geometry`. Its values are
+  relative to the dataset's **origin**, three doubles on the host (*Origins
+  and point clouds*).
 - **Kernels** run over an iteration domain (cells, faces, edges or a face
   set) through `for_each`. That makes one launch per group of like entities,
   and each field argument becomes a view specialized to the group.
@@ -328,6 +330,58 @@ field. It is kept apart from `fields`: `data.geometry` returns it, assigning
 `data.positions()` gives the positions on the host. Algorithms move it with
 the cells; it is never among the fields they carry or select. An `L2` geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.
+
+## Origins and point clouds
+
+A position is `data.origin + value`: the origin is three floats kept in double
+precision on the host (`(0.0, 0.0, 0.0)` unless set), the value the geometry's,
+in `tack.f32` or, on a device that has it, `tack.f64`. Kernels see only the
+values, so coordinates far from zero keep their precision: single precision
+resolves 0.25 m at 4,000 km, a LiDAR survey's eastings, but a millimetre
+within a few kilometres of an origin. LAS files store scaled integers and an
+offset for the same reason.
+
+| | |
+|---|---|
+| `DataSet(..., origin=)`, `data.origin` | set it; assigning it moves every point (the values stay) |
+| `data.world_positions()` | `origin + positions()`, a float64 host array; `positions()` stays the values |
+| `data.rebased(origin)` | the same world positions relative to another origin: each value moved by the difference of the origins, taken in double precision, added in the geometry's type |
+| `point_cloud(positions, fields=None, origin=None, dtype=tack.f32)` | a dataset of one implicit vertex cell per point (types, offsets and connectivity stored nowhere), `fields` as point data. Host positions are world positions, taken relative to `origin` in double precision; without one, float64 positions get the lower corner of their box rounded down, others zero. A Tack array of 3-vectors is relative to `origin` already. Floating-point fields take `dtype`, integer fields (a classification, intensities) keep their type; `tack.f64` is refused on a device without it |
+
+**Filters keep it**: an output dataset has its input's origin (through `carry`,
+`keep_marks` and `drop_marks`), as `to_device`, `split`, `ghost_cells` and
+`merge_pieces` do. Lengths, areas, gradients and normals do not depend on it.
+What takes or gives absolute positions converts on the host in double
+precision:
+
+- **Implicit functions** are given in world coordinates. `Plane`, `Sphere`,
+  `Cylinder`, `Box` and `Planes` move their parameters by the origin exactly
+  (`implicit.relative_to`); another object with a `value` is evaluated at the
+  value plus the origin, added in the geometry's type.
+- **`probe` points and `advect`/`streamlines` seeds** given as host arrays are
+  world positions; a dataset's points (a target, `advect`'s particles) are its
+  own, relative to its origin, and moved by the difference of the origins; a
+  Tack array of seeds is relative to the data's origin.
+- **`point_elevation`'s points** are world positions. **`interpolate`'s
+  function** is called with world positions (the value plus the origin, in the
+  geometry's type).
+- **`transform`** moves the origin by the map, in double precision, and applies
+  only its linear part to the values. **`cylindrical` and `spherical`** convert
+  world positions, and give an origin of zero.
+- **The VTK interop**: `vtk_to_dataset(..., origin=)` takes VTK's points, an
+  image's origin and a rectilinear grid's lines relative to it in double
+  precision; `dataset_to_vtk` writes world positions (double-precision points
+  where the origin is not zero).
+- **Position-valued fields** (`cell_geometry(...).centroid`, a field holding
+  positions) are relative to the dataset's origin, as its geometry is.
+- **`CellLocator.find`** takes positions relative to the dataset's origin.
+
+Pieces whose positions are compared or moved between them must share one
+origin: `ghost_cells`, `generate_global_ids`, `merge_pieces`,
+`connected_components`, `probe` and advection over a `PartitionedDataSet` refuse
+two (`partitioned.common_origin`, over every rank); `rebased` puts a piece on
+another. An image's own origin (`UniformCoordinates`) is separate from the
+dataset's and computed in the geometry's type.
 
 ## Devices
 
@@ -851,7 +905,9 @@ a slice by one lands on the same points as theirs.
 
 Each is a `@tack.device_class` object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
-template and calls `f.value(p)`. Taking one:
+template and calls `f.value(p)`. Their parameters are world positions: on a
+dataset with an origin, each is moved by it in double precision (*Origins and
+point clouds*). Taking one:
 
 | | |
 |---|---|

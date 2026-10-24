@@ -278,10 +278,17 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     dtype = data.dtype
     # Seeds in an array of 3-vectors are copied on the device; anything else
     # comes from the host.
+    # A Tack array holds positions relative to the dataset's origin, as its
+    # geometry does; host seeds are world positions, taken relative to it in
+    # double precision.
     stored = isinstance(seeds, Array) and seeds._vector_n == 3
-    host = None if stored else np.ascontiguousarray(
-        np.asarray(seeds.numpy() if hasattr(seeds, "numpy") else seeds,
-                   dtype.numpy_dtype).reshape(-1, 3))
+    if stored:
+        host = None
+    elif isinstance(seeds, Array):
+        host = np.ascontiguousarray(seeds.numpy().astype(dtype.numpy_dtype).reshape(-1, 3))
+    else:
+        host = np.ascontiguousarray((np.asarray(seeds, np.float64).reshape(-1, 3)
+                                     - np.asarray(data.origin)).astype(dtype.numpy_dtype))
     m = int(seeds.shape[0]) if stored else len(host)
     xs = tack.empty((m,), tack.vec(3, dtype))
     times = tack.empty((m,), dtype)

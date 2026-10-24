@@ -40,7 +40,7 @@ from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts, visible
 from tack.dataset.locator import cached_locator
-from tack.dataset.partitioned import PartitionedDataSet, fields_of
+from tack.dataset.partitioned import PartitionedDataSet, common_origin, fields_of
 from tack.dataset.spaces import Values
 
 __all__ = ["advect_pieces", "streamlines_pieces"]
@@ -172,7 +172,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
                                         np.asarray(members, np.int64), num_points=count)
             lines = DataSet(topology, points, dtype=piece.dtype,
                             ghosts=Ghosts(points=np.concatenate(marks) if marks
-                                          else np.zeros(0, np.uint8)))
+                                          else np.zeros(0, np.uint8)), origin=piece.origin)
             lines.fields["seed"] = Field(Values(lines, "cells"),
                                          tack.array(np.asarray(seed, np.int64), tack.i64))
             lines.fields["segment"] = Field(Values(lines, "cells"),
@@ -202,7 +202,7 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record):
         with piece.device:
             locators[g] = cached_locator(piece)
     boxes = _boxes(blocks, pieces)
-    pending = _seeded(blocks, seeds)
+    pending = _seeded(blocks, seeds, common_origin(data, "advection over pieces"))
     finished = {g: [] for g in blocks.local}
     traced = {g: [] for g in blocks.local}
     for _ in range(int(steps) + 2):
@@ -229,10 +229,14 @@ def _boxes(blocks, pieces):
             for g, piece in zip(blocks.local, pieces)}
 
 
-def _seeded(blocks, seeds):
-    """This rank's seeds, numbered after the ranks before it, on its first block."""
-    host = np.asarray(seeds.numpy() if hasattr(seeds, "numpy") else seeds,
-                      np.float64).reshape(-1, 3)
+def _seeded(blocks, seeds, origin):
+    """This rank's seeds, numbered after the ranks before it, on its first block:
+    host seeds are world positions, taken relative to the pieces' ``origin``; a
+    Tack array's are relative to it already."""
+    if hasattr(seeds, "numpy"):
+        host = np.asarray(seeds.numpy(), np.float64).reshape(-1, 3)
+    else:
+        host = np.asarray(seeds, np.float64).reshape(-1, 3) - np.asarray(origin)
     if len(host) and not len(blocks.local):
         raise ValueError("a rank with no pieces has no piece to start its seeds from")
     first = blocks.local.start if len(blocks.local) else None

@@ -39,7 +39,7 @@ from tack.dataset.carry import _take
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
-from tack.dataset.partitioned import PartitionedDataSet
+from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1, Constant, Values
 from tack.dataset.topology import StructuredTopology, UnstructuredTopology
@@ -88,6 +88,7 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     if not isinstance(data, PartitionedDataSet):
         raise TypeError(f"ghost_cells takes a PartitionedDataSet, not {type(data).__name__}")
     world = data.world if world is None else world
+    common_origin(data, "ghost_cells", world)       # positions are matched as they are
     pieces = list(data)
     names = _carried(pieces, fields)
     for i, piece in enumerate(pieces):
@@ -426,7 +427,7 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
         topology = UnstructuredTopology(types, offsets, connectivity, num_points=total_points,
                                         id_dtype=piece.topology.id_dtype)
         out = DataSet(topology, positions, dtype=geometry_dtype,
-                      ghosts=Ghosts(cells=cell_marks, points=point_marks))
+                      ghosts=Ghosts(cells=cell_marks, points=point_marks), origin=piece.origin)
         for name in names:
             field = piece.fields[name]
             kind = _kind(field)

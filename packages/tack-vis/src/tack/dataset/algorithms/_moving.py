@@ -19,6 +19,27 @@ def _moved(data, positions, fields=None):
 
 
 @tack.kernel
+def _shift(positions, out, x, y, z):
+    for i in range(out.shape[0]):
+        out[i] = positions[i] + [x, y, z]
+
+
+def _shifted(data, offset):
+    """``data``'s geometry values plus ``offset`` (three floats, rounded to the
+    geometry's type once): a new array of positions."""
+    return _shifted_values(data.geometry.values, data.dtype, offset)
+
+
+def _shifted_values(values, dtype, offset):
+    """Positions (an array of 3-vectors of ``dtype``) plus ``offset``: a new array."""
+    n = size_of(values)
+    out = _vectors(n, dtype)
+    if n:
+        _shift(materialize(values), out, *(float(v) for v in offset))
+    return out
+
+
+@tack.kernel
 def _to_cylindrical(positions, out):
     for i in range(out.shape[0]):
         p = positions[i]
@@ -61,8 +82,15 @@ def _from_spherical(positions, out):
 
 
 def _recoordinate(data, kernel, fields=None):
-    n = size_of(data.geometry.values)
+    """New coordinates of each world position (``origin`` plus the value, added in
+    the geometry's type): the output's origin is zero."""
+    values = data.geometry.values
+    if any(data.origin):
+        values = _shifted(data, data.origin)
+    n = size_of(values)
     out = _vectors(n, data.dtype)
     if n:
-        kernel(materialize(data.geometry.values), out)
-    return _moved(data, out, fields)
+        kernel(materialize(values), out)
+    out = _moved(data, out, fields)
+    out.origin = None
+    return out

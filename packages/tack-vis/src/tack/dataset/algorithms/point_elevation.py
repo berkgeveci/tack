@@ -24,9 +24,10 @@ def point_elevation(data, low_point=(0, 0, 0), high_point=(0, 0, 1), range=(0.0,
     """Each geometry value's position along the line from ``low_point`` to
     ``high_point``, clamped to it and mapped to ``range`` (VTK's
     vtkElevationFilter, Viskores' PointElevation): a field in the geometry's
-    space."""
-    low = np.asarray(low_point, float)
-    direction = np.asarray(high_point, float) - low
+    space. The two points are world positions, taken relative to the dataset's
+    origin in double precision."""
+    low = np.asarray(low_point, float) - np.asarray(data.origin)
+    direction = np.asarray(high_point, float) - np.asarray(data.origin) - low
     length2 = float(direction @ direction)
     if length2 == 0:
         raise ValueError("the low and high points must differ")

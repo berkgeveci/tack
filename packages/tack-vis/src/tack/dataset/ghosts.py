@@ -37,6 +37,7 @@ def keep_marks(source, out):
     out.ghosts = source.ghosts
     out._ghosts_lost = source._ghosts_lost
     out.global_ids = source.global_ids
+    out.origin = source.origin
     return out
 
 
@@ -48,6 +49,7 @@ def drop_marks(source, out, reason=True):
     piece."""
     if source.ghosts is not None or source._ghosts_lost:
         out._ghosts_lost = source._ghosts_lost or reason
+    out.origin = source.origin
     return out
 
 
@@ -440,7 +442,7 @@ def visible(data, *arguments):
     source = data
     if names:
         source = DataSet(data.topology, data.geometry, fields={**data.fields, **names},
-                         sets=dict(data.sets), ghosts=data.ghosts)
+                         sets=dict(data.sets), ghosts=data.ghosts, origin=data.origin)
     keep = tack.empty((data.num_cells,), tack.i32)
     keep.fill(1)
     out = _keep_cells(source, keep)

@@ -178,6 +178,26 @@ or explicit position storage. Those are **value-array representations**, not
 different finite-element spaces. Image and rectilinear geometry are explained
 in [Build Meshes](02-meshes.md#image-rectilinear-and-curvilinear-data).
 
+The geometry's values are relative to the dataset's `origin`, three doubles
+kept on the host. Survey data far from zero keeps its precision in single
+precision that way: a point cloud at UTM coordinates stores millimetres as
+offsets from a nearby origin, which single precision resolves, where its raw
+eastings would be rounded to a quarter metre.
+
+```python
+cloud = td.point_cloud(lidar_xyz, fields={"classification": classes})  # float64 xyz
+cloud.origin             # the lower corner of the box, rounded down
+cloud.positions()        # float32 offsets from it, what kernels see
+cloud.world_positions()  # float64 again
+ground = td.threshold_points(cloud, "classification", 2, 2)            # keeps the origin
+```
+
+Filters keep the origin, and arguments that are positions -- implicit
+functions, probe points, seeds -- are given in world coordinates and moved by
+the origin in double precision. The [dataset API
+reference](../../reference/dataset-api.md#origins-and-point-clouds) lists what
+converts.
+
 ## Importing MFEM preserves the separation
 
 `mfem_to_dataset(mesh, fields={...})` constructs topology from the elements'

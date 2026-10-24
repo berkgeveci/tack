@@ -10,7 +10,7 @@ from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
-from tack.dataset.partitioned import PartitionedDataSet
+from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.spaces import Values
 from tack.dataset.topology import StructuredTopology
 from tack.runtime.dispatch import get_backend, on_inputs_device
@@ -188,6 +188,7 @@ def _components_pieces(data):
     from tack.dataset._matching import INDEX_BITS
 
     pieces = list(data)
+    common_origin(data, "connected_components of a PartitionedDataSet")
     blocks = tc.Blocks([p.device for p in pieces], data.world)
     local = {}
     for g, piece in zip(blocks.local, pieces):

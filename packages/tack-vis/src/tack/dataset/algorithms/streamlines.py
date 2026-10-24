@@ -99,7 +99,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     if lines:
         _chains(kept, starts, lengths, line_offsets, line_points)
     topology = PolylineTopology(line_offsets, line_points, num_points=total, id_dtype=idt)
-    out = DataSet(topology, points)
+    out = DataSet(topology, points, origin=data.origin)
     out.fields["seed"] = Field(Values(out, "cells"), seed_of)
     out.fields["time"] = Field(Values(out, "points"), point_times)
     return out
