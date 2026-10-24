@@ -442,6 +442,32 @@ def test_a_point_at_a_pyramids_apex_is_found(backend):
         np.testing.assert_allclose(probed.fields["lin"].values.numpy(), _linear(x), atol=2e-4)
 
 
+def test_a_point_just_outside_beside_a_pyramids_apex_is_near_it(backend):
+    """Beside an apex, outside the pyramid, Newton runs off (r and s grow as the
+    offset over 1 - t) and no cell took the point, though it lay within the
+    locator's tolerance: an apex on a mesh's boundary lost such points. Now it
+    is placed just past the apex, outside the hold margin, so it is near the
+    pyramid, with the apex's value, up to the tolerance and no farther; points
+    above and inside are as before."""
+    corners = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0.5, 0.5, 1]], np.float32)
+    data = td.DataSet(td.UnstructuredTopology(np.array([14], np.uint8), [0, 5], np.arange(5),
+                                              num_points=5),
+                      tack.array(corners, tack.vec3(tack.f32)))
+    data.fields["z"] = td.Field(td.H1(data), tack.array(corners[:, 2].copy()))
+    apex = np.array([0.5, 0.5, 1.0])
+    x, z = np.array([1.0, 0, 0]), np.array([0, 0, 1.0])
+    beside = [apex + d * x for d in (1e-5, 1e-4, 1e-3)]
+    above = [apex + d * z for d in (1e-5, 1e-3)]
+    inside = [apex - d * z for d in (1e-5, 1e-3)]
+    far = [apex + 3e-3 * x]                           # past the tolerance
+    query = np.array(beside + above + inside + far, np.float32)
+    out = td.probe(data, query)
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), [1] * 7 + [0])
+    z = out.fields["z"].values.numpy()
+    np.testing.assert_allclose(z[:3], 1.0, atol=1e-4)                 # the apex's value
+    np.testing.assert_allclose(z[3:7], query[3:7, 2], atol=1e-5)
+
+
 def test_a_first_query_of_few_points_runs_from_the_cells():
     """The search from the points needs the cell bins, about eight entries a cell:
     a fresh locator's first query of few points runs from the cells, and builds

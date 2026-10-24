@@ -212,6 +212,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- `as_polyhedra` and `extract_surface` scanned their faces' point counts (4
+  a face) into the mesh's own id type, which a mesh is given for 12 per
+  cell: a structured grid of 170M cells, or 120M hexahedra that share no
+  points, still on 32-bit ids, wrapped the offsets. They now widen to 64 bits
+  when the faces need it. Found by an audit of every scan in Tack; the other
+  46 were covered by their bounds.
+- A point just outside a pyramid, beside its apex, was located in no cell
+  though within the locator's tolerance: Newton runs off there. Within 0.2%
+  of the pyramid's size of the apex, it is now placed just past the apex,
+  outside the hold margin, so it is near the pyramid (a cell holding it
+  still ranks first) and takes the apex's value.
+
 - A point at a pyramid's apex was located in no cell: every `(r, s)` at
   `t = 1` maps to the apex, so Newton's Jacobian is singular there and it
   did not converge. `Pyramid.world_to_parametric` now takes a point within
