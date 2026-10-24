@@ -1520,6 +1520,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#probing-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Probing pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3290,6 +3301,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#probing-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Probing pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3610,6 +3632,13 @@ Without ghost cells it crosses at the boundary by a shortened step. Each
 particle is in one piece of the result, with its <code>seed</code>; a path's stretches
 are in the pieces that traced them, each after the first starting at a
 point marked <code>DUPLICATEPOINT</code>.</p>
+<h2 id="probing-pieces">Probing pieces<a class="headerlink" href="#probing-pieces" title="Permanent link">&para;</a></h2>
+<p><code>probe</code> takes a partitioned source: each point is evaluated by the piece
+that holds it, and the values come back in your points' order, equal to
+probing the whole dataset. Ghost cells are not needed for it.</p>
+<div class="highlight"><pre><span></span><code><span class="n">values</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">points</span><span class="p">)</span>                  <span class="c1"># points: an array or a dataset</span>
+<span class="n">values</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;RTData&quot;</span><span class="p">],</span> <span class="n">values</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;valid&quot;</span><span class="p">]</span>    <span class="c1"># valid 0 outside every piece</span>
+</code></pre></div>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
 <p>More than one generated ghost layer is the next step.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>

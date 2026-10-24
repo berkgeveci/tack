@@ -5029,6 +5029,56 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#tack.communication.Routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Routing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.Routing.send" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        send
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.Routing.reply" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reply
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.sort_by_key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sort_by_key
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -7527,6 +7577,56 @@
         
       </ul>
     </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.Routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Routing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.Routing.send" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        send
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.Routing.reply" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reply
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.communication.sort_by_key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sort_by_key
+      
+    </span>
+  </a>
   
 </li>
         
@@ -17634,6 +17734,558 @@ elements are written in place; the others are left as they were.</p>
 
   </div>
 
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="tack.communication.Routing" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">tack.communication.Routing</span>
+
+
+<a href="#tack.communication.Routing" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">Routing</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">boxes</span><span class="p">,</span> <span class="n">holds</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Where each point goes: the lowest block that holds it.</p>
+<p><code>positions</code> is <code>{gid: points}</code> for every block on this rank, an
+<code>(n, d)</code> host array of coordinates each (<code>n</code> may be 0); <code>boxes</code>
+<code>{gid: (lower, upper)}</code> for every block on this rank, <code>None</code> for a block
+that holds nothing. A point is asked of every block whose box holds it (with
+a relative slack of 1e-6), and <code>holds(gid, points)</code> -- called by the block
+asked, with the points it was asked about as an <code>(m, d)</code> float64 host
+array -- says how well it holds each: 0 not at all, or a rank (<code>True</code> is
+1). The point goes to the block of the highest rank, the lowest such block
+on a tie: a locator that holds a point beats one only within its tolerance. Coordinates travel as their f64 bits in <code>u64</code> arrays, which
+every device stores, so a block decides on exactly the points it was given.</p>
+<p><code>destination</code> is <code>{gid: array}</code>, each point's block, or -1 where no block
+holds it. <code>send</code> moves values with the points to their destinations, and
+<code>reply</code> returns values from there to where the points came from.</p>
+
+
+
+
+
+
+
+
+                  <details class="mkdocstrings-source">
+                    <summary>Source code in <code>packages/tack-core/src/tack/communication/_route.py</code></summary>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">blocks</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">boxes</span><span class="p">,</span> <span class="n">holds</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">blocks</span>
+    <span class="n">blocks</span><span class="o">.</span><span class="n">_every_local</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="s2">&quot;Routing&#39;s positions&quot;</span><span class="p">)</span>
+    <span class="n">blocks</span><span class="o">.</span><span class="n">_every_local</span><span class="p">(</span><span class="n">boxes</span><span class="p">,</span> <span class="s2">&quot;Routing&#39;s boxes&quot;</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_positions</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">_points</span><span class="p">(</span><span class="n">positions</span><span class="p">[</span><span class="n">g</span><span class="p">])</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
+    <span class="n">every</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">boxes</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span>
+                               <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">boxes</span><span class="p">[</span><span class="n">g</span><span class="p">])</span>
+                               <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
+
+    <span class="c1"># 1. Each point to every block whose box holds it.</span>
+    <span class="n">asked</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_positions</span><span class="p">[</span><span class="n">g</span><span class="p">]</span>
+        <span class="n">asked</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">box</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">every</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">box</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">box</span>
+            <span class="n">slack</span> <span class="o">=</span> <span class="mf">1e-6</span> <span class="o">*</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">upper</span> <span class="o">-</span> <span class="n">lower</span><span class="p">))</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">upper</span><span class="p">)</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="n">inside</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">((</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="n">lower</span> <span class="o">-</span> <span class="n">slack</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">x</span> <span class="o">&lt;=</span> <span class="n">upper</span> <span class="o">+</span> <span class="n">slack</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">inside</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="n">_bits</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">rows</span><span class="p">],</span> <span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">))</span>
+                <span class="n">message</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span>
+                                             <span class="n">device</span><span class="o">=</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">))</span>
+                <span class="n">asked</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span>
+    <span class="n">questions</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exchange</span><span class="p">(</span><span class="n">asked</span><span class="p">)</span>
+
+    <span class="c1"># 2. Each block says which it holds.</span>
+    <span class="n">answers</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">answers</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">origin</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">questions</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">held</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">holds</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">_unbits</span><span class="p">(</span><span class="n">message</span><span class="p">)))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">answers</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">origin</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;slot&quot;</span><span class="p">:</span> <span class="n">message</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">],</span>
+                                  <span class="s2">&quot;held&quot;</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">held</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span>
+                                                     <span class="n">device</span><span class="o">=</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">))}</span>
+    <span class="n">replies</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exchange</span><span class="p">(</span><span class="n">answers</span><span class="p">)</span>
+
+    <span class="c1"># 3. The highest rank takes it, the lowest block on a tie (replies come</span>
+    <span class="c1"># in order of block, so a later one must rank strictly higher).</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">destination</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_positions</span><span class="p">[</span><span class="n">g</span><span class="p">])</span>
+        <span class="n">destination</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">best</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">reply</span> <span class="ow">in</span> <span class="n">replies</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">slots</span> <span class="o">=</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+            <span class="n">rank</span> <span class="o">=</span> <span class="n">reply</span><span class="p">[</span><span class="s2">&quot;held&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+            <span class="n">better</span> <span class="o">=</span> <span class="n">rank</span> <span class="o">&gt;</span> <span class="n">best</span><span class="p">[</span><span class="n">slots</span><span class="p">]</span>
+            <span class="n">destination</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">better</span><span class="p">]]</span> <span class="o">=</span> <span class="n">d</span>
+            <span class="n">best</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">better</span><span class="p">]]</span> <span class="o">=</span> <span class="n">rank</span><span class="p">[</span><span class="n">better</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="n">destination</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_arrivals</span> <span class="o">=</span> <span class="kc">None</span>
+</code></pre></div></td></tr></table></div>
+                  </details>
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="tack.communication.Routing.send" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">send</span>
+
+
+<a href="#tack.communication.Routing.send" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">send</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Move <code>values</code> (<code>{gid: {name: array}}</code>, an element per point, on the
+block's device; may be omitted) with the points to their destinations.
+Returns <code>{gid: (positions, {name: array})}</code> for every block on this
+rank: what arrived there, the points as an <code>(m, d)</code> host array and the
+values on the block's device, in order of origin block and then of the
+points there. <code>reply</code> answers in that order.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/communication/_route.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Move ``values`` (``{gid: {name: array}}``, an element per point, on the</span>
+<span class="sd">    block&#39;s device; may be omitted) with the points to their destinations.</span>
+<span class="sd">    Returns ``{gid: (positions, {name: array})}`` for every block on this</span>
+<span class="sd">    rank: what arrived there, the points as an ``(m, d)`` host array and the</span>
+<span class="sd">    values on the block&#39;s device, in order of origin block and then of the</span>
+<span class="sd">    points there. ``reply`` answers in that order.&quot;&quot;&quot;</span>
+    <span class="n">blocks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">values</span> <span class="ow">or</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
+    <span class="n">outgoing</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_order</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">outgoing</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">tolist</span><span class="p">():</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">==</span> <span class="n">d</span><span class="p">)</span>
+            <span class="n">device</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="n">_bits</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_positions</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">rows</span><span class="p">],</span> <span class="n">device</span><span class="p">)</span>
+            <span class="n">message</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">indices</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">array</span> <span class="ow">in</span> <span class="n">values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">Array</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Routing.send() moves Tack arrays; block </span><span class="si">{</span><span class="n">g</span><span class="si">}</span><span class="s2">&#39;s &quot;</span>
+                                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is a </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">array</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">message</span><span class="p">[</span><span class="s2">&quot;value.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">indices</span><span class="p">)</span>
+            <span class="n">outgoing</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">d</span><span class="p">)]</span> <span class="o">=</span> <span class="n">message</span>
+    <span class="n">incoming</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exchange</span><span class="p">(</span><span class="n">outgoing</span><span class="p">)</span>
+    <span class="n">arrived</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_arrivals</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">incoming</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>               <span class="c1"># in order of origin</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_arrivals</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">[(</span><span class="n">origin</span><span class="p">,</span> <span class="n">m</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="k">for</span> <span class="n">origin</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">]</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">_unbits</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">])</span> <span class="k">if</span> <span class="n">parts</span>
+             <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_width</span><span class="p">()),</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">k</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">parts</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">m</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;value.&quot;</span><span class="p">)})</span>
+        <span class="n">joined</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+            <span class="n">pieces</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">]</span>
+            <span class="n">joined</span><span class="p">[</span><span class="n">name</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;value.&quot;</span><span class="p">):]]</span> <span class="o">=</span> <span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pieces</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> \
+                <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">pieces</span><span class="p">)</span>
+        <span class="n">arrived</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">joined</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">arrived</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="tack.communication.Routing.reply" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">reply</span>
+
+
+<a href="#tack.communication.Routing.reply" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">reply</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">like</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Send <code>values</code> -- <code>{gid: {name: array}}</code>, an element for each point
+that arrived at the block (<code>send</code>'s order) -- back to where the points
+came from. Returns <code>{gid: {name: array}}</code> for the blocks on this rank,
+an element per point of the block's <code>positions</code>, zero where the point
+had no destination. <code>like</code> is <code>{name: element type}</code>, for blocks
+none of whose points were taken.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/communication/_route.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">like</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Send ``values`` -- ``{gid: {name: array}}``, an element for each point</span>
+<span class="sd">    that arrived at the block (``send``&#39;s order) -- back to where the points</span>
+<span class="sd">    came from. Returns ``{gid: {name: array}}`` for the blocks on this rank,</span>
+<span class="sd">    an element per point of the block&#39;s ``positions``, zero where the point</span>
+<span class="sd">    had no destination. ``like`` is ``{name: element type}``, for blocks</span>
+<span class="sd">    none of whose points were taken.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_arrivals</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Routing.reply() answers what Routing.send() delivered: &quot;</span>
+                         <span class="s2">&quot;send first&quot;</span><span class="p">)</span>
+    <span class="n">blocks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span>
+    <span class="n">outgoing</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">outgoing</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">origin</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_arrivals</span><span class="p">[</span><span class="n">g</span><span class="p">]:</span>
+            <span class="n">indices</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">count</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span>
+                                 <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">))</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;slot&quot;</span><span class="p">:</span> <span class="n">slots</span><span class="o">.</span><span class="n">to_device</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">))}</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">like</span><span class="p">:</span>
+                <span class="n">message</span><span class="p">[</span><span class="s2">&quot;value.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">name</span><span class="p">],</span> <span class="n">indices</span><span class="p">)</span>
+            <span class="n">outgoing</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">origin</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span>
+            <span class="n">start</span> <span class="o">+=</span> <span class="n">count</span>
+    <span class="n">incoming</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exchange</span><span class="p">(</span><span class="n">outgoing</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_positions</span><span class="p">[</span><span class="n">g</span><span class="p">])</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="n">like</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">array</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">incoming</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">scatter</span><span class="p">(</span><span class="n">message</span><span class="p">[</span><span class="s2">&quot;value.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">],</span> <span class="n">message</span><span class="p">[</span><span class="s2">&quot;slot&quot;</span><span class="p">],</span> <span class="n">array</span><span class="p">)</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">array</span>
+    <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.communication.sort_by_key" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">tack.communication.sort_by_key</span>
+
+
+<a href="#tack.communication.sort_by_key" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">sort_by_key</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Sort the keys of every block, carrying <code>values</code> along: block 0 ends with the
+smallest keys, the last block with the largest, each block's ascending.</p>
+<p><code>keys</code> is <code>{gid: array}</code> and <code>values</code> <code>{gid: {name: array}}</code>, for every
+block on this rank: one-dimensional <code>i32</code>, <code>u32</code>, <code>i64</code> or <code>u64</code> keys of
+one type on every block, and values of the keys' length, each name of one
+element type everywhere, all on the block's device. Returns <code>(keys,
+values)</code> in the same form (<code>values</code> None if not given), on the same
+devices.</p>
+<p>Every copy of a key ends on one block, so equal keys can be grouped where
+they land; heavily repeated keys can leave blocks uneven. The sort is
+stable: equal keys keep the order of their blocks, then their order within
+a block. A sample sort, as DIY's: each block sorts its own keys and sends
+<code>samples</code> of them, weighted by its count, from which every block finds the
+same <code>count - 1</code> splitters; each block sends each range to its block, and
+sorts what arrives.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/communication/_sort.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sort_by_key</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sort the keys of every block, carrying ``values`` along: block 0 ends with the</span>
+<span class="sd">    smallest keys, the last block with the largest, each block&#39;s ascending.</span>
+
+<span class="sd">    ``keys`` is ``{gid: array}`` and ``values`` ``{gid: {name: array}}``, for every</span>
+<span class="sd">    block on this rank: one-dimensional ``i32``, ``u32``, ``i64`` or ``u64`` keys of</span>
+<span class="sd">    one type on every block, and values of the keys&#39; length, each name of one</span>
+<span class="sd">    element type everywhere, all on the block&#39;s device. Returns ``(keys,</span>
+<span class="sd">    values)`` in the same form (``values`` None if not given), on the same</span>
+<span class="sd">    devices.</span>
+
+<span class="sd">    Every copy of a key ends on one block, so equal keys can be grouped where</span>
+<span class="sd">    they land; heavily repeated keys can leave blocks uneven. The sort is</span>
+<span class="sd">    stable: equal keys keep the order of their blocks, then their order within</span>
+<span class="sd">    a block. A sample sort, as DIY&#39;s: each block sorts its own keys and sends</span>
+<span class="sd">    ``samples`` of them, weighted by its count, from which every block finds the</span>
+<span class="sd">    same ``count - 1`` splitters; each block sends each range to its block, and</span>
+<span class="sd">    sorts what arrives.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">blocks</span><span class="o">.</span><span class="n">_every_local</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="s2">&quot;sort_by_key()&quot;</span><span class="p">)</span>
+    <span class="n">given</span> <span class="o">=</span> <span class="n">values</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="n">gid</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span> <span class="k">if</span> <span class="n">values</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">values</span>
+    <span class="n">blocks</span><span class="o">.</span><span class="n">_every_local</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="s2">&quot;sort_by_key()&#39;s values&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">_check</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">gid</span><span class="p">,</span> <span class="n">keys</span><span class="p">[</span><span class="n">gid</span><span class="p">],</span> <span class="n">values</span><span class="p">[</span><span class="n">gid</span><span class="p">])</span>
+    <span class="n">kinds</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">({</span><span class="n">gid</span><span class="p">:</span> <span class="p">(</span><span class="n">keys</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">dtype</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span>
+                                                       <span class="n">values</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()})</span>
+                               <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">({</span><span class="nb">repr</span><span class="p">(</span><span class="n">kind</span><span class="p">)</span> <span class="k">for</span> <span class="n">kind</span> <span class="ow">in</span> <span class="n">kinds</span><span class="p">})</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;sort_by_key() needs one key type and the same values, of one &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;type each, on every block, not </span><span class="si">{</span><span class="nb">sorted</span><span class="p">({</span><span class="nb">repr</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">kinds</span><span class="p">})</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">ordered</span><span class="p">,</span> <span class="n">carried</span><span class="p">,</span> <span class="n">picks</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{},</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">perm</span> <span class="o">=</span> <span class="n">argsort</span><span class="p">(</span><span class="n">keys</span><span class="p">[</span><span class="n">gid</span><span class="p">])</span>
+        <span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">keys</span><span class="p">[</span><span class="n">gid</span><span class="p">],</span> <span class="n">perm</span><span class="p">)</span>
+        <span class="n">carried</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">gather</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">perm</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">size</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">at</span> <span class="o">=</span> <span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">n</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="n">chosen</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">],</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">at</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">gid</span><span class="p">)))</span>
+        <span class="n">picks</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">n</span><span class="p">)</span>
+    <span class="n">splitters</span> <span class="o">=</span> <span class="n">_splitters</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">(</span><span class="n">picks</span><span class="p">),</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">)</span>
+
+    <span class="n">outgoing</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">size</span>
+        <span class="n">bounds</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="o">*</span><span class="n">search_right</span><span class="p">(</span><span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">],</span> <span class="n">splitters</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">n</span><span class="p">]</span>
+        <span class="n">outgoing</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">destination</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">):</span>
+            <span class="n">start</span><span class="p">,</span> <span class="n">count</span> <span class="o">=</span> <span class="n">bounds</span><span class="p">[</span><span class="n">destination</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[</span><span class="n">destination</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">bounds</span><span class="p">[</span><span class="n">destination</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">count</span><span class="p">:</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;keys&quot;</span><span class="p">:</span> <span class="n">take</span><span class="p">(</span><span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">],</span> <span class="n">start</span><span class="p">,</span> <span class="n">count</span><span class="p">)}</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">carried</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">message</span><span class="p">[</span><span class="s2">&quot;values.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">take</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
+                <span class="n">outgoing</span><span class="p">[</span><span class="n">gid</span><span class="p">][</span><span class="n">destination</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span>
+    <span class="n">incoming</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exchange</span><span class="p">(</span><span class="n">outgoing</span><span class="p">)</span>
+
+    <span class="n">sorted_keys</span><span class="p">,</span> <span class="n">sorted_values</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+        <span class="n">runs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">incoming</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>             <span class="c1"># in order of source block</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">gid</span><span class="p">)</span>
+        <span class="n">key_type</span><span class="p">,</span> <span class="n">value_types</span> <span class="o">=</span> <span class="n">kinds</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span>
+        <span class="n">joined</span> <span class="o">=</span> <span class="n">_joined</span><span class="p">([</span><span class="n">run</span><span class="p">[</span><span class="s2">&quot;keys&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">runs</span><span class="p">],</span> <span class="n">key_type</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+        <span class="n">perm</span> <span class="o">=</span> <span class="n">argsort</span><span class="p">(</span><span class="n">joined</span><span class="p">)</span>
+        <span class="n">sorted_keys</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">joined</span><span class="p">,</span> <span class="n">perm</span><span class="p">)</span>
+        <span class="n">sorted_values</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">gather</span><span class="p">(</span><span class="n">_joined</span><span class="p">([</span><span class="n">run</span><span class="p">[</span><span class="s2">&quot;values.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">runs</span><span class="p">],</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span> <span class="n">perm</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="n">value_types</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="k">return</span> <span class="n">sorted_keys</span><span class="p">,</span> <span class="p">(</span><span class="n">sorted_values</span> <span class="k">if</span> <span class="n">given</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
     </div>
 
 </div><h2 id="vtk-interop">VTK interop<a class="headerlink" href="#vtk-interop" title="Permanent link">&para;</a></h2>
