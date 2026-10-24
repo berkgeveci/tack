@@ -15,7 +15,7 @@ from tack import arrays
 from tack.dataset.algorithms._common import _field
 from tack.dataset.by_id import _as_vectors, cells_by_id, field_by_id, mesh_search
 from tack.dataset.dataset import Field
-from tack.dataset.locator import CellLocator
+from tack.dataset.locator import cached_locator
 from tack.dataset.spaces import H1
 from tack.lang.array import Array
 
@@ -243,9 +243,10 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
             or cells_by_id(data, positions, strict=False) is None):
         raise NotImplementedError("advection takes unstructured, polyhedral, polygonal and 2D "
                                   "or 3D structured topologies; not polylines, nor lines")
-    locator = locator or CellLocator(data)
-    if locator.data is not data:
-        raise ValueError("the locator was built for another dataset")
+    locator = locator or cached_locator(data)
+    if not locator.serves(data):
+        raise ValueError("the locator was built for another topology or geometry, or "
+                         "Tack has written the positions since: make a new one")
     mesh = mesh_search(data, locator, positions, strict=False)
     dtype = data.dtype
     # Seeds in an array of 3-vectors are copied on the device; anything else
