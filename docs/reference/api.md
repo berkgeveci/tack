@@ -328,6 +328,19 @@ Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
 
 ::: tack.block_max
 
+## Communication between blocks
+
+`tack.communication` moves data between blocks -- units of work with global
+ids, each on a device, such as the pieces of a partitioned dataset -- and
+combines values over them. `World()` is this process; its blocks may be on any
+of its devices.
+
+::: tack.communication.World
+
+::: tack.communication.Blocks
+
+::: tack.communication.Plan
+
 ## VTK interop
 
 `tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_array`,
