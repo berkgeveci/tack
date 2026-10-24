@@ -4648,8 +4648,9 @@ cell of no volume NaN.</p>
 <h2 id="implicit-functions">Implicit functions<a class="headerlink" href="#implicit-functions" title="Permanent link">&para;</a></h2>
 <p><code>tack.dataset.Plane(origin, normal)</code>, <code>Sphere(center, radius)</code>,
 <code>Cylinder(center, axis, radius)</code> (infinite), <code>Box(lower, upper)</code>
-(axis-aligned) and <code>Planes(origins, normals, dtype=tack.f32)</code> (the convex region
-below every plane: a frustum, a box at any angle; <code>dtype=tack.f64</code> for f64 data). <code>value(p)</code> is negative inside, zero on
+(axis-aligned) and <code>Planes(origins, normals)</code> (the convex region below every
+plane: a frustum, a box at any angle; its planes are evaluated at the data's
+precision, as the others' numbers are). <code>value(p)</code> is negative inside, zero on
 the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.</p>
