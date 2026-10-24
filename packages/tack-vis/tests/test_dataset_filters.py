@@ -205,6 +205,62 @@ def test_contours_that_miss_and_bad_fields(backend):
                                   _scalars(np.zeros(data.topology.faces().num_faces))), 0.5)
 
 
+def _levels_data(form):
+    """A field ``r`` (the distance from the origin) on a mesh of each kind contour has a
+    path for."""
+    if form in ("2d", "2d-l2"):
+        data = td.uniform_grid((21, 17), origin=(-1, -1, 0), spacing=(0.1, 0.125, 1.0))
+    else:
+        data = _grid(6, "explicit")
+        if form == "polyhedra":
+            data = td.as_polyhedra(data)
+    data = _with_radius(data)
+    if form in ("l2", "2d-l2"):
+        data.fields["r"] = td.project(data, "r", td.L2(data))
+    return data
+
+
+@pytest.mark.parametrize("form", ["shapes", "l2", "polyhedra", "2d", "2d-l2"])
+def test_several_values_are_every_values_contour_in_one_dataset(backend, form):
+    """A sequence of values gives every value's contour in one dataset, made in one
+    pass over the cells, each output cell's value in ``contour_value``: the
+    cells of each value are that value's contour, cell for cell and in measure,
+    and no point is shared between values."""
+    data = _levels_data(form)
+    levels = [0.45, 0.7, 1.05]
+    many = td.contour(data, "r", levels)
+    singles = [td.contour(data, "r", v) for v in levels]
+    assert many.num_cells == sum(s.num_cells for s in singles) > 0
+    assert many.num_points == sum(s.num_points for s in singles)
+    values = many.fields["contour_value"].values.numpy()
+    measure = alg.cell_geometry(many).measure.values.numpy()
+    for v, single in zip(levels, singles):
+        mine = np.flatnonzero(values == np.float32(v))
+        assert len(mine) == single.num_cells
+        assert measure[mine].sum() == pytest.approx(
+            alg.cell_geometry(single).measure.values.numpy().sum(), rel=1e-5)
+
+
+def test_one_value_or_a_sequence_and_slices_at_several_offsets(backend):
+    data = _with_radius(_grid(5, "explicit"))
+    assert "contour_value" not in td.contour(data, "r", 0.5).fields
+    one = td.contour(data, "r", [0.5])
+    assert one.num_cells == td.contour(data, "r", 0.5).num_cells
+    np.testing.assert_array_equal(one.fields["contour_value"].values.numpy(), 0.5)
+    with pytest.raises(ValueError, match="at least one value"):
+        td.contour(data, "r", [])
+    # Parallel planes: signed distances along the unit normal.
+    normal = np.array([1.0, 2.0, 2.0]) / 3.0
+    offsets = [-0.5, 0.0, 0.25]
+    planes = td.slice_plane(data, (0, 0, 0), normal, value=offsets)
+    assert planes.num_cells == sum(td.slice_plane(data, (0, 0, 0), normal, value=v).num_cells
+                                   for v in offsets)
+    level = planes.fields["contour_value"].values.numpy()
+    rows = planes.topology.connectivity.numpy().reshape(-1, 3)
+    distance = planes.positions() @ normal
+    np.testing.assert_allclose(distance[rows[:, 0]], level, atol=1e-5)
+
+
 def _vtk_contour(data, name, isovalue):
     grid = dataset_to_vtk(data)
     grid.GetPointData().SetActiveScalars(name)
