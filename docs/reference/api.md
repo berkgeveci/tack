@@ -341,6 +341,10 @@ of its devices.
 
 ::: tack.communication.Plan
 
+::: tack.communication.Routing
+
+::: tack.communication.sort_by_key
+
 ## VTK interop
 
 `tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_array`,

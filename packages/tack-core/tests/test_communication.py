@@ -323,3 +323,39 @@ def test_a_sort_refuses_what_it_cannot_sort(cpu, second):
         tc.sort_by_key(blocks, {0: keys[1], 1: keys[1]})
     with pytest.raises(ValueError, match="every block on this rank"):
         tc.sort_by_key(blocks, {0: keys[0]})
+
+
+# -- routing -----------------------------------------------------------------
+
+def test_routing_in_one_process(cpu, second):
+    blocks = tc.Blocks([cpu, second])
+    x = {0: np.array([[0.2, 0.0], [1.5, 0.0], [5.0, 5.0]]), 1: np.zeros((0, 2))}
+    boxes = {0: ((0.0, 0.0), (1.0, 1.0)), 1: ((1.0, 0.0), (2.0, 1.0))}
+    asked = []
+
+    def holds(g, points):
+        asked.append((g, len(points)))
+        return np.ones(len(points), bool)
+
+    routing = tc.Routing(blocks, x, boxes, holds)
+    assert routing.destination[0].tolist() == [0, 1, -1] and routing.destination[1].tolist() == []
+    assert sorted(asked) == [(0, 1), (1, 1)]                  # by box, the outsider asked of none
+    values = {0: {"w": tack.array(np.array([1.0, 2.0, 3.0], np.float32), device=cpu)}, 1: {}}
+    arrived = routing.send(values)
+    assert arrived[1][0].tolist() == [[1.5, 0.0]] and _on(second, arrived[1][1]["w"])
+    with pytest.raises(ValueError, match="send first"):
+        tc.Routing(blocks, x, boxes, holds).reply({}, {"w": tack.f32})
+    back = routing.reply({g: {"w": arrived[g][1]["w"]} for g in (0, 1) if len(arrived[g][0])},
+                         {"w": tack.f32})
+    assert back[0]["w"].numpy().tolist() == [1.0, 2.0, 0.0] and back[1]["w"].size == 0
+
+
+def test_routing_prefers_the_higher_rank_then_the_lower_block(cpu, second):
+    """A block that holds a point (rank 2) beats a lower block that only comes
+    close to it (rank 1), as a locator ranks holding ahead of its tolerance."""
+    blocks = tc.Blocks([cpu, second, cpu])
+    x = {0: np.array([[0.5], [1.0], [2.0]]), 1: np.zeros((0, 1)), 2: np.zeros((0, 1))}
+    boxes = {g: ((0.0,), (3.0,)) for g in range(3)}
+    ranks = {0: [1, 1, 0], 1: [2, 1, 0], 2: [2, 2, 0]}       # per point, by block
+    routing = tc.Routing(blocks, x, boxes, lambda g, p: np.array(ranks[g]))
+    assert routing.destination[0].tolist() == [1, 2, -1]

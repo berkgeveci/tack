@@ -180,6 +180,37 @@ def _check_sort(results):
     assert sum(1 for g in every if every[g][0]) >= 3       # shared out
 
 
+
+def _routed(world):
+    """Points on the line, blocks holding [g, g + 1): each point to the block of
+    its floor (a point at an integer to the lower), values sent and answered."""
+    blocks = tc.Blocks(["cpu"], world)
+    g = blocks.local.start
+    x = np.array([[0.5 + g], [blocks.count - 0.5], [1.0], [-3.0]])     # the last outside
+    ids = tack.array(np.arange(4, dtype=np.int64) + 10 * g)
+
+    def holds(block, points):
+        return (points[:, 0] >= block) & (points[:, 0] <= block + 1)
+
+    routing = tc.Routing(blocks, {g: x}, {g: ((float(g),), (g + 1.0,))}, holds)
+    arrived = routing.send({g: {"id": ids}})
+    got_x, got = arrived[g]
+    doubled = tack.array(got["id"].numpy() * 2) if len(got_x) else tack.empty(0, tack.i64)
+    back = routing.reply({g: {"twice": doubled}}, {"twice": tack.i64})[g]["twice"]
+    return (routing.destination[g].tolist(), sorted(got["id"].numpy().tolist()),
+            back.numpy().tolist())
+
+
+def _check_routed(results):
+    count = len(results)
+    for g, (destination, _, back) in enumerate(results):
+        assert destination == [g, count - 1, 0, -1]          # 1.0 is held by 0 and 1: 0
+        assert back == [2 * (10 * g), 2 * (10 * g + 1), 2 * (10 * g + 2), 0]
+    arrived = [sorted(r[1]) for r in results]
+    assert arrived[0] == sorted([0, *(10 * h + 2 for h in range(count))])
+    assert arrived[-1] == sorted([10 * (count - 1), *(10 * h + 1 for h in range(count))])
+
+
 CASES = {
     "contiguous ids": (3, _contiguous_ids, _check_contiguous_ids),
     "a rank with no blocks": (2, _no_blocks, _check_no_blocks),
@@ -190,4 +221,5 @@ CASES = {
     "links": (2, _links, _check_links),
     "a plan in a ring": (3, _plan_ring, _check_plan_ring),
     "a sort": (2, _sort, _check_sort),
+    "routing": (3, _routed, _check_routed),
 }
