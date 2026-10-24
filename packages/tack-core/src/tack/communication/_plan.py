@@ -5,17 +5,7 @@ import numpy as np
 import tack
 from tack.lang.array import Array
 
-
-@tack.kernel
-def _gather(source, indices, out, n):
-    for t in range(out.shape[0]):
-        out[t] = source[tack.i64(indices[t // n]) * n + t % n]
-
-
-@tack.kernel
-def _scatter(values, indices, out, n):
-    for t in range(values.shape[0]):
-        out[tack.i64(indices[t // n]) * n + t % n] = values[t]
+from ._kernels import gather, scatter
 
 
 class Plan:
@@ -97,10 +87,7 @@ class Plan:
             for destination, indices in destinations.items():
                 message = {}
                 for name, array in named[gid].items():
-                    width = _width(array)
-                    out = tack.empty(indices.size, array.dtype, device=array.device)
-                    _gather(array._scalar_view(), indices, out._scalar_view(), width)
-                    message[name] = out
+                    message[name] = gather(array, indices)
                 outgoing[gid][destination] = message
         incoming = blocks.exchange(outgoing)
         for gid, sources in self._receives.items():
@@ -111,13 +98,7 @@ class Plan:
                     if received.dtype != array.dtype:
                         raise TypeError(f"block {source} sent {name!r} as {received.dtype}, "
                                         f"and block {gid} holds {array.dtype}")
-                    _scatter(received._scalar_view(), indices, array._scalar_view(),
-                             _width(array))
-
-
-def _width(array):
-    """Scalars per element."""
-    return array.scalar_size // array.size if array.size else 1
+                    scatter(received, indices, array)
 
 
 def _indices(blocks, table, what, other_name):

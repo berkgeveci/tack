@@ -144,6 +144,42 @@ def _check_plan_ring(results):
                        ([1, 2, 2], [10, 20, 20])]
 
 
+
+def _sort_input(gid):
+    """Block ``gid``'s keys for the sort: some repeated, block 3's none."""
+    rng = np.random.default_rng(gid)
+    n = (0, 50, 7, 0, 300)[gid % 5] if gid != 0 else 120
+    return rng.integers(-20, 40, n).astype(np.int64)
+
+
+def _sort(world):
+    blocks = tc.Blocks(["cpu"] * 2, world)
+    keys = {g: tack.array(_sort_input(g), tack.i64) for g in blocks.local}
+    values = {g: {"origin": tack.array(np.full(len(_sort_input(g)), g, np.int32)),
+                  "index": tack.array(np.arange(len(_sort_input(g)), dtype=np.int64)),
+                  "vec": tack.array(np.repeat(_sort_input(g)[:, None], 3, 1).astype(np.float32),
+                                    tack.vec3())}
+              for g in blocks.local}
+    out_keys, out_values = tc.sort_by_key(blocks, keys, values)
+    return {g: (out_keys[g].numpy().tolist(),
+                {n: a.numpy().tolist() for n, a in out_values[g].items()})
+            for g in blocks.local}
+
+
+def _check_sort(results):
+    every = {g: r for result in results for g, r in result.items()}
+    keys = [k for g in sorted(every) for k in every[g][0]]
+    origin = [o for g in sorted(every) for o in every[g][1]["origin"]]
+    index = [i for g in sorted(every) for i in every[g][1]["index"]]
+    pairs = sorted(((k, g, i) for g in range(4) for i, k in enumerate(_sort_input(g))))
+    assert list(zip(keys, origin, index)) == pairs          # stable, block then index
+    last = [every[g][0][-1] for g in sorted(every) if every[g][0]]
+    first = [every[g][0][0] for g in sorted(every) if every[g][0]]
+    assert all(a < b for a, b in zip(last, first[1:]))     # a key on one block only
+    assert all(v == [k] * 3 for g in every for k, v in zip(every[g][0], every[g][1]["vec"]))
+    assert sum(1 for g in every if every[g][0]) >= 3       # shared out
+
+
 CASES = {
     "contiguous ids": (3, _contiguous_ids, _check_contiguous_ids),
     "a rank with no blocks": (2, _no_blocks, _check_no_blocks),
@@ -153,4 +189,5 @@ CASES = {
     "gather and scan": (2, _gather_and_scan, _check_gather_and_scan),
     "links": (2, _links, _check_links),
     "a plan in a ring": (3, _plan_ring, _check_plan_ring),
+    "a sort": (2, _sort, _check_sort),
 }
