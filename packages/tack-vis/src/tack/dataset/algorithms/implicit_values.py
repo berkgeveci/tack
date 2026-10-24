@@ -22,7 +22,13 @@ def implicit_values(data, function):
     geometry that is one value per point."""
     positions = materialize(data.geometry.values)
     n = size_of(data.geometry.values)
-    out = tack.empty((n,), arrays.dtype_of(data.geometry.values))
+    dtype = arrays.dtype_of(data.geometry.values)
+    out = tack.empty((n,), dtype)
+    # A function holding arrays (Planes) gives a copy at the data's precision and
+    # on its device; the others hold Python numbers, which take it anyway.
+    matching = getattr(type(function), "_matching", None)
+    if matching is not None:
+        function = matching(function, dtype, data.device)
     if n:
         _implicit_values(positions, function, out)
     return Field(data.geometry.space, out)

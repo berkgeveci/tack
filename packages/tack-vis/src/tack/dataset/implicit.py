@@ -120,14 +120,13 @@ class Planes:
     """The convex region below every one of several planes (a frustum, a clipping
     box at any angle): the largest of their signed distances.
 
-    The planes are stored in an array of ``dtype``, f32 by default; pass
-    ``dtype=tack.f64`` for f64 data, so the distances are computed at its
-    precision. (The other functions hold Python numbers, which take the data's
-    precision on their own.)"""
+    The planes follow the data's precision, as the other functions' Python
+    numbers do: `implicit_values`, and every filter that takes an implicit
+    function, evaluate a copy holding them in the geometry's floating type (f64
+    for f64 data) on its device (`_matching`). Made, it holds them in f32 on
+    the default device, which a kernel of one's own calling ``value`` reads."""
 
-    def __init__(self, origins, normals, dtype=tack.f32):
-        if dtype not in (tack.f32, tack.f64):
-            raise TypeError(f"Planes stores f32 or f64, not {dtype}")
+    def __init__(self, origins, normals):
         origins = np.asarray(origins, float).reshape(-1, 3)
         normals = np.asarray(normals, float).reshape(-1, 3)
         if len(origins) == 0 or origins.shape != normals.shape:
@@ -135,9 +134,28 @@ class Planes:
         lengths = np.linalg.norm(normals, axis=1)
         if not (lengths > 0).all():
             raise ValueError("a plane's normal must not be zero")
-        rows = np.hstack([origins, normals / lengths[:, None]]).astype(dtype.numpy_dtype)
-        self.planes = tack.empty((rows.size,), dtype)
-        tack.copyto(self.planes, rows.reshape(-1))
+        # Kept as given (underscored: no kernel receives them), and stored per
+        # precision and device as they are asked for.
+        self._rows = np.hstack([origins, normals / lengths[:, None]]).reshape(-1)
+        self._kept = {}
+        self.planes = self._stored(tack.f32, None)
+
+    def _stored(self, dtype, device):
+        planes = tack.empty((self._rows.size,), dtype, device=device)
+        tack.copyto(planes, self._rows.astype(dtype.numpy_dtype))
+        return planes
+
+    def _matching(self, dtype, device):
+        """These planes in ``dtype`` on ``device``: itself, or a copy made once."""
+        if self.planes.dtype is dtype and self.planes.device == device:
+            return self
+        key = (dtype, device)
+        if key not in self._kept:
+            copy = object.__new__(Planes)
+            copy._rows, copy._kept = self._rows, self._kept
+            copy.planes = self._stored(dtype, device)
+            self._kept[key] = copy
+        return self._kept[key]
 
     @tack.func
     def value(self, p):

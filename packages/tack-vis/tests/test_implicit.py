@@ -197,19 +197,25 @@ def test_bad_functions_are_refused():
         td.Planes([], [])
 
 
-def test_planes_keep_f64_data_at_its_precision(f64_backend):
-    """Planes stored its planes in f32 whatever the data: a plane at x = 0.1
-    was off by ~1e-9 on f64 data. With dtype=tack.f64 it is exact, as the
-    other functions' Python numbers are."""
+def test_planes_follow_the_datas_precision(f64_backend):
+    """Planes stored its planes in f32 whatever the data: a plane at x = 0.1 was
+    off by ~1e-9 on f64 data unless dtype=tack.f64 was asked for. Now filters
+    evaluate a copy at the geometry's precision, as the other functions'
+    Python numbers are: exact on f64 data, f32 on f32 data, the copy made once."""
+    planes = td.Planes([(0.1, 0, 0)], [(1, 0, 0)])
     data = td.uniform_grid((5, 2, 2), spacing=(0.1, 1, 1), dtype=tack.f64)
     x = data.positions()[:, 0]
-    exact = td.Planes([(0.1, 0, 0)], [(1, 0, 0)], dtype=tack.f64)
-    got = td.implicit_values(data, exact).values.numpy()
+    got = td.implicit_values(data, planes).values.numpy()
     np.testing.assert_allclose(got, x - 0.1, rtol=0, atol=1e-12)
-    rounded = td.implicit_values(data, td.Planes([(0.1, 0, 0)], [(1, 0, 0)])).values.numpy()
-    assert np.abs(rounded - (x - 0.1)).max() > 1e-12      # the f32 default, for contrast
-    with pytest.raises(TypeError, match="f32 or f64"):
-        td.Planes([(0, 0, 0)], [(1, 0, 0)], dtype=tack.i32)
+    assert planes._matching(tack.f64, data.device) is planes._matching(tack.f64, data.device)
+    assert planes.planes.dtype is tack.f32                 # its own stays as made
+    single = td.uniform_grid((5, 2, 2), spacing=(0.1, 1, 1))
+    assert planes._matching(tack.f32, single.device) is planes
+    np.testing.assert_allclose(td.implicit_values(single, planes).values.numpy(),
+                               single.positions()[:, 0] - np.float32(0.1), atol=1e-6)
+    # Every filter taking a function goes through implicit_values.
+    cut = td.extract_geometry(data, planes)
+    assert (cut.positions()[:, 0] <= 0.1 + 1e-12).all()
 
 
 def test_moving_a_function_compiles_nothing_new(backend):
