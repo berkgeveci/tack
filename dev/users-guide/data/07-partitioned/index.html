@@ -1509,6 +1509,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#particles-across-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Particles across pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3268,6 +3279,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#particles-across-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Particles across pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3574,9 +3596,22 @@ enumerate(pieces))</code> spreads them over two GPUs. Each piece's work runs on
 its own device, and <code>statistics</code> and <code>entropy</code> reduce each piece where it
 is. <code>packages/tack-vis/examples/44_partitioned_data.py</code> does this when there
 are several devices of the chosen type.</p>
+<h2 id="particles-across-pieces">Particles across pieces<a class="headerlink" href="#particles-across-pieces" title="Permanent link">&para;</a></h2>
+<p><code>advect</code> and <code>streamlines</code> take a partitioned dataset too, and particles
+cross from piece to piece:</p>
+<div class="highlight"><pre><span></span><code><span class="n">pieces</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="n">ghost_layers</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">particles</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">advect</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>  <span class="c1"># a dataset per piece</span>
+<span class="n">paths</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">streamlines</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span> <span class="c1"># each piece&#39;s stretches</span>
+</code></pre></div>
+<p>With a ghost layer wider than a step (<code>step_size</code> times the speed), the
+paths are the whole mesh's up to rounding: a particle that ends a step in a
+ghost cell is handed to the cell's owner, which goes on with whole steps.
+Without ghost cells it crosses at the boundary by a shortened step. Each
+particle is in one piece of the result, with its <code>seed</code>; a path's stretches
+are in the pieces that traced them, each after the first starting at a
+point marked <code>DUPLICATEPOINT</code>.</p>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p>More than one generated ghost layer, and particles that cross pieces, are
-the next steps.</p>
+<p>More than one generated ghost layer is the next step.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_partitioned.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packages/tack-vis/examples/44_partitioned_data.py<span class="w"> </span>--pieces<span class="w"> </span><span class="m">8</span>
