@@ -28,10 +28,19 @@ class World:
     run. Messages between ranks are staged through host memory, or with
     ``gpu_aware=True`` passed to MPI as the arrays themselves (through DLPack),
     for an MPI that reads and writes device memory. Where a backend says the
-    MPI may not take an array's memory as it is (HIP's stream-ordered pool,
-    which MVAPICH-Plus's UCX takes for host memory), the array goes as a device
+    MPI may not take an array's memory as it is (the stream-ordered pools of
+    CUDA and HIP, which Cray MPICH cannot export and MVAPICH-Plus's UCX takes
+    for host memory), the array goes as a device
     copy in memory the MPI does take, and arrives in such memory. Tack imports
     no MPI module: the caller makes the communicator.
+
+    A GPU-aware MPI uses the device that is current when MPI starts. Make the
+    rank's device first, with ``tack.device("cuda:N")``, and only then import
+    ``mpi4py.MPI``, which starts MPI. A rank that moves to another device
+    afterwards loses Cray MPICH's CUDA IPC between ranks on a node (7 GB/s a
+    rank against 22 on Perlmutter's A100s), or fails across nodes. CUDA IPC
+    also needs every rank to see its node's GPUs (Slurm's ``--gpu-bind=none``,
+    not ``--gpus-per-task=1``), each rank taking its own by local rank.
     """
 
     def __init__(self, comm=None, *, gpu_aware=False):
@@ -127,7 +136,8 @@ class World:
 
 def _direct(values):
     """``values`` as memory a GPU-aware MPI reads directly: itself, or a device copy
-    in ``Backend.allocate_mpi_array``'s memory (HIP's pool is not such memory)."""
+    in ``Backend.allocate_mpi_array``'s memory (CUDA's and HIP's pools are not
+    such memory)."""
     if values._backend.mpi_direct(values._buffer):
         return values
     copy = _empty_for_mpi(values.shape, values.dtype, values.device)

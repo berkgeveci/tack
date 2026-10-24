@@ -192,8 +192,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   for host memory (an assertion, or a segfault, at the first send; illyad).
   `World(comm, gpu_aware=True)` now hands such an MPI device copies in
   `hipMalloc` memory and receives into it (`Backend.mpi_direct`,
-  `Backend.allocate_mpi_array`); `hipMalloc` memory went through at 44 GB/s
-  a rank on the MI210s. Other backends hand their arrays over as before.
+  `Backend.allocate_mpi_array`); the exchange runs at 36.8 GB/s a rank on
+  the MI210s, against 44.6 for `hipMalloc` arrays sent as they are.
+- GPU-aware MPI with CUDA arrays, the same way: Cray MPICH 9.1 could not
+  export Tack's CUDA pool memory (`cuMemAllocAsync`) to another rank on the
+  node ("Invalid count") and libfabric refused it across nodes (Perlmutter's
+  A100s). Sends go as copies in `cuMemAlloc` memory and receives land in it:
+  22.2 GB/s a rank over CUDA IPC on one node, 5.9 across two. `World`'s
+  docstring says what such an MPI needs of the launch: each rank's device
+  made before MPI starts, and every GPU of a node visible to its ranks.
 
 - `slice` and `slice_plane` of a curved dataset (an order-2 geometry) raised
   `NotImplementedError` since #93 made `contour` refuse order-2 fields: the
