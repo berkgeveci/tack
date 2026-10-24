@@ -453,6 +453,31 @@ combine pieces.
   (`tack.communication.sort_by_key`), and each piece sends each neighbour
   its cells around their shared points. One layer; structured pieces get
   more from `split`.
+- **Global ids.** `data.global_ids` is a `tack.dataset.GlobalIds` (or
+  `None`), kept apart from the fields as the marks are: an `i64` per point
+  (`points`) and per cell (`cells`), either of which may be `None`, the same
+  on every piece holding the entity and unique otherwise. `vtk_to_dataset`
+  takes VTK's `GlobalIds` attributes as them, not as fields, and
+  `dataset_to_vtk` writes them back (`GlobalPointIds`, `GlobalCellIds`, the
+  names `vtkGenerateGlobalIds` gives); `to_device` moves them. Filters carry
+  them where an output entity is an input entity (`carry`'s `Same` and
+  `Take`: kept points, kept or extracted cells, `remove_ghosts`), and what a
+  filter makes (a contour's points, a clip's pieces, a surface's faces) has
+  none, as in VTK.
+- **`generate_global_ids(pds, world=None)`** numbers the pieces' points and
+  cells, as VTK's `vtkGenerateGlobalIds`: each piece its owned entities in
+  its own order, after the pieces before it, and copies their owner's ids.
+  Owners come from the ghost marks where there are any; a point several
+  pieces hold unmarked (pieces without ghost cells share their boundary
+  points) belongs to the lowest of them and is marked `DUPLICATEPOINT` in
+  the others. On such pieces the ids and marks equal VTK's. On pieces with
+  ghost cells VTK gives a point to the lowest piece holding any copy, ghost
+  copies too, and remarks them; Tack keeps the owners the marks say, so an
+  owner still holds every cell around its points. Points are copies when
+  their positions are exactly equal, cells when their points' ids are;
+  pieces from `ghost_cells` reuse its exchanges, and `ghost_cells` carries
+  global ids into the ghost layer, matching points by them, where every
+  piece has them.
 - **`update_ghosts(pds, *fields)`** copies the named point and cell fields'
   values on ghost points and cells from their owners, in place, for pieces
   `ghost_cells` made (it keeps the two exchanges as
@@ -533,8 +558,8 @@ with ghost layers, their marks, work in a loop, reductions of the grid and
 of the pieces' isosurfaces checked against the whole, pieces spread over
 several GPUs where there are, and `.vtpd` files for ParaView.
 
-**Next** (the partitioned-data proposal's later phases): global ids,
-`statistics` and `entropy` across ranks, more than one generated layer, and
+**Next** (the partitioned-data proposal's later phases): `statistics` and
+`entropy` across ranks, more than one generated layer, and
 the algorithms that need more than ghosts (particles across pieces, probe of
 a partitioned source), on `tack.communication`.
 
@@ -880,6 +905,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `remove_ghosts(data)` | `data` without its duplicate and hidden cells, keeping the points it owns (see *Partitioned datasets*) |
 | `ghost_cells(pds, layers=1)` | unstructured pieces with a layer of their neighbours' cells, as `vtkGhostCellsGenerator` (see *Partitioned datasets*) |
 | `update_ghosts(pds, *fields)` | ghost values refreshed from their owners, in place, for pieces `ghost_cells` made |
+| `generate_global_ids(pds)` | the pieces' points and cells numbered across all of them, as `vtkGenerateGlobalIds` (see *Partitioned datasets*) |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 

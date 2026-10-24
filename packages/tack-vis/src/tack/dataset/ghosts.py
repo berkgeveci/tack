@@ -36,6 +36,7 @@ def keep_marks(source, out):
     ``source``'s ghost marks -- and its record of having lost them."""
     out.ghosts = source.ghosts
     out._ghosts_lost = source._ghosts_lost
+    out.global_ids = source.global_ids
     return out
 
 

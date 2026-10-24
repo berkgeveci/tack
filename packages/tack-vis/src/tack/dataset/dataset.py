@@ -181,11 +181,12 @@ class DataSet:
     ``fields`` as ``data.geometry``: algorithms move it with the cells, never as
     one of the fields they carry or select. ``ghosts``, a
     ``tack.dataset.Ghosts`` or ``None``, marks the cells and points
-    another piece of a partitioned dataset owns."""
+    another piece of a partitioned dataset owns; ``global_ids``, a
+    ``tack.dataset.GlobalIds`` or ``None``, numbers them across the pieces."""
 
     @on_inputs_device
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32,
-                 ghosts=None):
+                 ghosts=None, global_ids=None):
         self.topology = topology
         self._geometry = _as_geometry(geometry, topology, dtype)
         self.fields = dict(fields or {})
@@ -196,6 +197,7 @@ class DataSet:
         # Set by a filter that dropped its input's ghost marks (ghosts.drop_marks).
         self._ghosts_lost = False
         self.ghosts = ghosts
+        self.global_ids = global_ids
         _ = self._device                    # refuses parts on two devices
 
     @property
@@ -210,6 +212,7 @@ class DataSet:
         held.extend(field.values for field in parts.get("fields", {}).values())
         held.extend(s.ids for s in (parts.get("_sets") or {}).values())
         held.append(parts.get("_ghosts"))
+        held.append(parts.get("_global_ids"))
         return same_device("DataSet", held)
 
     @property
@@ -236,9 +239,10 @@ class DataSet:
         sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
                 for name, s in self.sets.items()}
         ghosts = None if self.ghosts is None else self.ghosts.to_device(target)
+        global_ids = None if self.global_ids is None else self.global_ids.to_device(target)
         out = DataSet(topology, moved(self.geometry),
                       {name: moved(field) for name, field in self.fields.items()},
-                      sets, dtype=self.dtype, ghosts=ghosts)
+                      sets, dtype=self.dtype, ghosts=ghosts, global_ids=global_ids)
         out._ghosts_lost = self._ghosts_lost
         return out
 
@@ -291,6 +295,25 @@ class DataSet:
             ghosts._check(self.topology)
             self._ghosts_lost = False
         self._ghosts = ghosts
+
+    @property
+    def global_ids(self):
+        """The global ids of its points and cells (``tack.dataset.GlobalIds``), or
+        ``None``: each one's number across every piece of a partitioned dataset.
+        Filters carry them where an output entity is an input entity (kept points,
+        kept or extracted cells); what a filter makes has none."""
+        return self._global_ids
+
+    @global_ids.setter
+    def global_ids(self, global_ids):
+        from tack.dataset.global_ids import GlobalIds
+
+        if global_ids is not None:
+            if not isinstance(global_ids, GlobalIds):
+                raise TypeError(f"global ids are a tack.dataset.GlobalIds, not "
+                                f"{type(global_ids).__name__}")
+            global_ids._check(self.topology)
+        self._global_ids = global_ids
 
     @property
     def geometry(self):

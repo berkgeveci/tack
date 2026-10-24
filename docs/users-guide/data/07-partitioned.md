@@ -226,6 +226,22 @@ for piece in pieces:
 `ghost_cells` keeps the exchanges, so each `update_ghosts` is one copy per
 neighbour, not a new matching.
 
+## Global ids
+
+Each piece numbers its points and cells from 0. Global ids number them
+across all the pieces, one id per point and per cell wherever it is held:
+`piece.global_ids.points` and `.cells`, `i64` arrays (`td.GlobalIds`).
+VTK's `GlobalIds` arrays come in as them, and `generate_global_ids` makes
+them, as `vtkGenerateGlobalIds` does:
+
+```python
+pieces = td.generate_global_ids(td.ghost_cells(plain))
+ids = pieces[0].global_ids.points                  # the same at a shared point
+```
+
+Filters keep the ids of the points and cells they keep (`threshold`,
+`extract_cells`, `remove_ghosts`); what they make has none.
+
 ## Pieces on several devices
 
 A piece is a dataset, so it can live on any device:
@@ -237,8 +253,8 @@ are several devices of the chosen type.
 
 ## Not here yet
 
-Global ids, `statistics` and `entropy` across MPI ranks, more than one
-generated ghost layer, and particles that cross pieces are the next steps.
+`statistics` and `entropy` across MPI ranks, more than one generated ghost
+layer, and particles that cross pieces are the next steps.
 
 ## Run and check
 
