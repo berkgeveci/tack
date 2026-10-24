@@ -6,6 +6,8 @@ algorithm given one of these either returns a finite, meaningful result or
 refuses with a ValueError, TypeError or NotImplementedError naming the reason.
 """
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -207,6 +209,91 @@ def test_a_crossing_beside_a_value_that_is_not_finite_lies_at_the_other_end(back
     clipped = td.clip(data, "p", 0.03)
     assert np.isfinite(clipped.positions()).all()
     assert np.isfinite(clipped.fields["v"].values.numpy()).all()
+
+
+# ── A level through mesh points ─────────────────────────────────────
+
+
+def _linear(data, coefficients):
+    x = data.positions().astype(np.float64)
+    return td.Field(td.H1(data), tack.array((x @ np.asarray(coefficients, float))
+                                            .astype(np.float32)))
+
+
+def _rows(out):
+    t = out.topology
+    if isinstance(t, td.UnstructuredTopology):
+        offsets, members = t.offsets, t.connectivity
+    else:                                            # polygons
+        offsets, members = t.loop_offsets, t.loop_points
+    offsets = np.asarray(tack.arrays.to_host(offsets)).astype(np.int64)
+    members = np.asarray(tack.arrays.to_host(members))
+    return [members[a:b] for a, b in itertools.pairwise(offsets)]
+
+
+def _measure(out):
+    p = out.positions().astype(np.float64)
+    total = 0.0
+    for row in _rows(out):
+        if len(row) == 2:
+            total += np.linalg.norm(p[row[1]] - p[row[0]])
+        else:
+            for j in range(1, len(row) - 1):
+                total += 0.5 * np.linalg.norm(np.cross(p[row[j]] - p[row[0]],
+                                                       p[row[j + 1]] - p[row[0]]))
+    return total
+
+
+def _no_point_twice(out):
+    """No cell names a point twice, and no two points are at one place."""
+    for row in _rows(out):
+        assert len(set(row.tolist())) == len(row), row
+    p = np.round(out.positions().astype(np.float64), 6)
+    assert len(np.unique(p, axis=0)) == len(p)
+
+
+@pytest.mark.parametrize("form", ["structured", "tetrahedra", "polyhedra"])
+def test_a_level_through_mesh_points_makes_one_point_each_and_no_empty_cells(backend, form):
+    """Where the isovalue equals a mesh point's value, the crossings of every edge
+    at that point are the point, once, and a triangle or polygon left with fewer
+    than three distinct points is dropped, as warp-simdata does. Here the level
+    x + y + z = 1.5 runs through every grid point with i + j + k = 9, which
+    three edges reach from below. Before, each edge's crossing there was its
+    own point, and the triangles between them had no area."""
+    data = td.uniform_grid((7, 7, 7), spacing=(1 / 6, 1 / 6, 1 / 6))
+    if form == "tetrahedra":
+        data = td.tetrahedralize(data)
+    elif form == "polyhedra":
+        data = td.as_polyhedra(data)
+    data.fields["s"] = _linear(data, (1, 1, 1))
+    out = td.contour(data, "s", 1.5)
+    _no_point_twice(out)
+    i, j, k = np.meshgrid(*[np.arange(7)] * 3, indexing="ij")
+    on_level = int((i + j + k == 9).sum())
+    if form == "tetrahedra":
+        assert out.num_points >= on_level           # diagonals also cross between points
+    else:
+        assert out.num_points == on_level           # every crossing is at a point
+    # A regular hexagon of side sqrt(2) / 2.
+    assert _measure(out) == pytest.approx(3 * np.sqrt(3) / 4, rel=1e-5)
+    x = out.positions().astype(np.float64)
+    np.testing.assert_allclose(x.sum(axis=1), 1.5, atol=1e-5)
+
+
+@pytest.mark.parametrize("per_cell", [False, True])
+def test_a_2d_level_through_mesh_points_has_no_empty_lines(backend, per_cell):
+    """x + y = 1 runs through 11 points of the grid diagonally: 10 lines, each
+    between two of them (their own two, from an L2 field)."""
+    data = td.uniform_grid((11, 11), spacing=(0.1, 0.1, 1.0))
+    field = _linear(data, (1, 1, 0))
+    data.fields["f"] = td.project(data, field, td.L2(data)) if per_cell else field
+    out = td.contour(data, "f", 1.0)
+    assert out.num_cells == 10
+    assert out.num_points == (20 if per_cell else 11)
+    assert _measure(out) == pytest.approx(np.sqrt(2.0), rel=1e-5)
+    for row in _rows(out):
+        p = out.positions()[row]
+        assert np.linalg.norm(p[1] - p[0]) > 0.1
 
 
 def test_histograms_refuse_ranges_that_are_not_finite(backend):

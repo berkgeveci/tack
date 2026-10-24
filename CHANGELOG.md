@@ -74,6 +74,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `contour` and `slice` where the isovalue equals a point's value: the
+  crossings of every edge at that point are now that point, once, and a
+  triangle, polygon or line left with two corners at one point is dropped,
+  as warp-simdata does. Before, each edge's crossing there was its own
+  point, and the cells between them had no area or length: 702 of 45k
+  triangles on a 1M-hexahedron grid whose plane of points lay on the level,
+  23% of the triangles on 10k tetrahedra. The area is unchanged; the cell
+  and point counts now differ from VTK's and Viskores', which keep them.
+  On every path: shapes, polyhedra, 2D lines and per-cell (`L2`) lines.
 - A topology made from a stored cell-types array groups its cells 16× faster
   on the CPU at 1M cells (36 → 2.2 ms), 7× at 100k: the types are counted by
   chunks into private tables, with no atomics. With one counter per type, a

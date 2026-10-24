@@ -14,7 +14,7 @@ from tack.dataset.algorithms._common import (
     _with_basis,
 )
 from tack.dataset.buckets import bucket_order, run_offsets
-from tack.dataset.carry import Interpolate, Pieces, carry
+from tack.dataset.carry import Interpolate, Pieces, _like, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
 from tack.dataset.topology import UnstructuredTopology, uniform_cells
@@ -52,18 +52,73 @@ def _contour_points(cells, u, isovalue, per_cell, starts, points, edges, weights
             if cells.point_id(c, jb) < cells.point_id(c, ja):
                 ja, jb = jb, ja
             va = u.corner_value(c, ja)
-            w = _crossing(isovalue, va, u.corner_value(c, jb))
+            vb = u.corner_value(c, jb)
+            w = _crossing(isovalue, va, vb)
             xa = cells.corner_position(c, ja)
-            points[first + k] = xa + w * (cells.corner_position(c, jb) - xa)
+            xb = cells.corner_position(c, jb)
             a = cells.point_id(c, ja)
             b = cells.point_id(c, jb)
-            edges[first + k] = [a, b]
-            weights[first + k] = w
             sources[first + k] = cell
-            if per_cell == 1:
-                keys[first + k] = [cell, e]
+            # A crossing at a corner whose value is the isovalue is that corner,
+            # keyed by it, so every edge's crossing there merges into one point.
+            hit = -1
+            if va == isovalue:
+                hit = ja
+            elif vb == isovalue:
+                hit = jb
+            if hit >= 0:
+                p = cells.point_id(c, hit)
+                points[first + k] = cells.corner_position(c, hit)
+                edges[first + k] = [p, p]
+                weights[first + k] = 0.0
+                if per_cell == 1:
+                    keys[first + k] = [cell, _CORNER_KEY + hit]
+                else:
+                    keys[first + k] = [p, p]
             else:
-                keys[first + k] = [a, b]
+                points[first + k] = xa + w * (xb - xa)
+                edges[first + k] = [a, b]
+                weights[first + k] = w
+                if per_cell == 1:
+                    keys[first + k] = [cell, e]
+                else:
+                    keys[first + k] = [a, b]
+
+
+# Within-cell keys of corner hits: (cell, _CORNER_KEY + corner), past every
+# local edge number.
+_CORNER_KEY = tack.constant(64, tack.i32)
+
+
+@tack.func
+def _same(p, q):
+    return p[0] == q[0] and p[1] == q[1]
+
+
+@tack.kernel
+def _distinct_triangles(keys, keep):
+    # A triangle two of whose points are one point (two hits at one corner, or a
+    # hit and its edge's crossing there) has no area: dropped, as warp-simdata
+    # drops it.
+    for t in range(keep.shape[0]):
+        p = keys[3 * t]
+        q = keys[3 * t + 1]
+        r = keys[3 * t + 2]
+        keep[t] = 0 if _same(p, q) or _same(q, r) or _same(p, r) else 1
+
+
+@tack.kernel
+def _kept_triangles(keep, slots, points, edges, weights, sources, keys, out_points,
+                    out_edges, out_weights, out_sources, out_keys):
+    for t in range(keep.shape[0]):
+        if keep[t] == 1:
+            s = slots[t]
+            for j in range(3):
+                out_points[3 * s + j] = points[3 * t + j]
+                out_edges[3 * s + j] = edges[3 * t + j]
+                out_weights[3 * s + j] = weights[3 * t + j]
+                out_sources[3 * s + j] = sources[3 * t + j]
+                out_keys[3 * s + j] = keys[3 * t + j]
 
 
 @tack.kernel
@@ -163,6 +218,17 @@ def contour(data, field, value, merge_points=True, fields=None):
     for group in groups:
         _contour_points(data.domain_view("cells", group), field.view(group), value,
                         per_cell, starts, points, edges, weights, sources, keys)
+    if triangles:
+        keep = tack.empty((triangles,), tack.i32)
+        _distinct_triangles(keys, keep)
+        slots = tack.empty((triangles,), odt)
+        kept = exclusive_scan(keep, slots, triangles)
+        if kept < triangles:
+            arrays_in = (points, edges, weights, sources, keys)
+            arrays_out = tuple(_like(a, 3 * kept) for a in arrays_in)
+            _kept_triangles(keep, slots, *arrays_in, *arrays_out)
+            points, edges, weights, sources, keys = arrays_out
+            triangles, n = kept, 3 * kept
     triangle_cells = tack.empty((triangles,), idt)
     if triangles:
         _triangle_cells(sources, triangle_cells)
@@ -297,22 +363,88 @@ def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, pol
 
 
 @tack.kernel
-def _iso_vertices(pair_from, order, offsets, values, iso, positions, weights, out, ends,
-                  vertex_of_pair, count):
-    # One per run of equal crossing keys, interpolated from the lower point id, as
-    # the shape path's contour interpolates, so the two agree on every point.
-    for r in range(count):
-        key = pair_from[order[offsets[r]]]
+def _crossing_names(pair_from, values, iso, names):
+    # A crossing's name is its edge, or the point at an end whose value is the
+    # isovalue, so every edge's crossing at such a point is one iso-vertex, as
+    # the shape path's contour names it.
+    for i in range(names.shape[0]):
+        key = pair_from[i]
         a = key[0]
         b = key[1]
-        va = values[a]
-        w = _crossing(iso, va, values[b])
-        xa = positions[a]
-        out[r] = xa + w * (positions[b] - xa)
+        if values[a] == iso:
+            names[i] = [a, a]
+        elif values[b] == iso:
+            names[i] = [b, b]
+        else:
+            names[i] = key
+
+
+@tack.kernel
+def _iso_vertices(names, order, offsets, values, iso, positions, weights, out, ends,
+                  vertex_of_pair, count):
+    # One per run of equal crossing names, interpolated from the lower point id,
+    # as the shape path's contour interpolates, so the two agree on every point.
+    for r in range(count):
+        key = names[order[offsets[r]]]
+        a = key[0]
+        b = key[1]
+        if a == b:
+            out[r] = positions[a]
+            weights[r] = 0.0
+        else:
+            w = _crossing(iso, values[a], values[b])
+            xa = positions[a]
+            out[r] = xa + w * (positions[b] - xa)
+            weights[r] = w
         ends[r] = [a, b]
-        weights[r] = w
         for i in range(offsets[r], offsets[r + 1]):
             vertex_of_pair[order[i]] = r
+
+
+@tack.kernel
+def _distinct_sizes(poly_starts, vertices, sizes, n):
+    # Each polygon's vertices without a repeat of the one before it (going round):
+    # two crossings at one point become one vertex. Fewer than three: dropped.
+    for g in range(n):
+        begin = poly_starts[g]
+        end = poly_starts[g + 1]
+        kept = 0
+        for i in range(begin, end):
+            prev = vertices[end - 1] if i == begin else vertices[i - 1]
+            if vertices[i] != prev:
+                kept += 1
+        if kept == 0 and end > begin:
+            kept = 1
+        sizes[g] = kept if kept >= 3 else 0
+
+
+@tack.kernel
+def _distinct_vertices(poly_starts, vertices, sizes, out_starts, out_vertices, poly_cells,
+                       out_cells, slots, n):
+    for g in range(n):
+        if sizes[g] > 0:
+            begin = poly_starts[g]
+            end = poly_starts[g + 1]
+            at = out_starts[g]
+            for i in range(begin, end):
+                prev = vertices[end - 1] if i == begin else vertices[i - 1]
+                if vertices[i] != prev:
+                    out_vertices[at] = vertices[i]
+                    at += 1
+            out_cells[slots[g]] = poly_cells[g]
+
+
+@tack.kernel
+def _nonzero(sizes, keep):
+    for g in range(keep.shape[0]):
+        keep[g] = 1 if sizes[g] > 0 else 0
+
+
+@tack.kernel
+def _kept_starts(out_starts, keep, slots, starts, n):
+    for g in range(n):
+        if keep[g] == 1:
+            starts[slots[g]] = out_starts[g]
 
 
 @tack.kernel
@@ -373,20 +505,45 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
         raise ValueError(f"{bad[0]} iso-polygons do not close: the cells' faces are not "
                          "wound consistently (check_winding)")
 
-    # Each crossing is named by its edge in every cell around that edge: one
-    # iso-vertex per run of equal names.
-    order, _ = bucket_order(pair_from, data.num_points, odt)
-    offsets, count = run_offsets(pair_from, order)
+    # Each crossing is named by its edge in every cell around that edge, or by its
+    # point where the value there is the isovalue: one iso-vertex per run of
+    # equal names.
+    names = tack.empty((pairs,), tack.vec(2, idt))
+    if pairs:
+        _crossing_names(pair_from, values, isovalue, names)
+    order, _ = bucket_order(names, data.num_points, odt)
+    offsets, count = run_offsets(names, order)
     positions = tack.empty((count,), tack.vec(3, data.dtype))
     ends = tack.empty((count,), tack.vec(2, idt))
     weights = tack.empty((count,), arrays.dtype_of(field.values))
     vertex_of_pair = tack.empty((pairs,), odt)
     if count:
-        _iso_vertices(pair_from, order, offsets, values, isovalue,
+        _iso_vertices(names, order, offsets, values, isovalue,
                       arrays.materialize(data.geometry.values), weights, positions, ends,
                       vertex_of_pair, count)
     if pairs:
         _renumber_vertices(vertices, vertex_of_pair)
+    if polygons:
+        # A polygon through such a point may name it twice in a row: once.
+        sizes = tack.empty((polygons,), tack.i32)
+        _distinct_sizes(poly_starts, vertices, sizes, polygons)
+        out_starts = tack.empty((polygons + 1,), odt)
+        total = exclusive_scan(sizes, out_starts, polygons)
+        if total < pairs:
+            keep = tack.empty((polygons,), tack.i32)
+            _nonzero(sizes, keep)
+            slots = tack.empty((polygons,), odt)
+            kept = exclusive_scan(keep, slots, polygons)
+            out_vertices = tack.empty((total,), odt)
+            out_cells = tack.empty((kept,), idt)
+            _distinct_vertices(poly_starts, vertices, sizes, out_starts, out_vertices,
+                               poly_cells, out_cells, slots, polygons)
+            starts = tack.empty((kept + 1,), odt)
+            if kept:
+                _kept_starts(out_starts, keep, slots, starts, polygons)
+            _close(starts, kept, total)
+            poly_starts, vertices, poly_cells, polygons = starts, out_vertices, out_cells, kept
+            # Iso-vertices only dropped polygons used are left over, unused.
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
     return carry(data, surface, points=Interpolate(ends, weights), cells=Pieces(poly_cells),
                  geometry=Field(H1(surface), positions), fields=fields)
@@ -409,7 +566,7 @@ def _line_counts(cells, values, iso, counts):
 
 @tack.kernel
 def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, ends, weights,
-                 positions):
+                 positions, hits):
     for c in cells:
         n = cells.num_faces(c)
         # Going round the cell from its first rising crossing, each rising crossing
@@ -451,23 +608,64 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
                     ends[f] = [p, q]
                     weights[f] = w
                     positions[f] = xp + w * (cells.side_position(c, k, 1 - lo) - xp)
+                    # At an end whose value is the isovalue the crossing is that
+                    # point, shared by every face crossing there.
+                    hits[f] = p if values[p] == iso else (q if values[q] == iso else -1)
 
 
 @tack.kernel
-def _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_positions):
+def _distinct_lines(line_faces, hits, keep):
+    # A line whose two crossings are one point (both at a point whose value is the
+    # isovalue) has no length: dropped.
+    for i in range(keep.shape[0]):
+        pair = line_faces[i]
+        h = hits[pair[0]]
+        keep[i] = 0 if h >= 0 and h == hits[pair[1]] else 1
+
+
+@tack.kernel
+def _kept_lines(keep, slots, line_faces, line_cells, out_faces, out_cells):
+    for i in range(keep.shape[0]):
+        if keep[i] == 1:
+            out_faces[slots[i]] = line_faces[i]
+            out_cells[slots[i]] = line_cells[i]
+
+
+@tack.kernel
+def _used_points(line_faces, hits, used, nf):
+    # used[f] for a face's own crossing, used[nf + p] for a crossing at point p.
+    for i in range(line_faces.shape[0]):
+        pair = line_faces[i]
+        for j in range(2):
+            f = pair[j]
+            h = hits[f]
+            used[f if h < 0 else nf + h] = 1
+
+
+@tack.kernel
+def _iso_points(kept, ends, weights, positions, geometry, nf, out_ends, out_weights,
+                out_positions):
     for v in range(kept.shape[0]):
-        f = kept[v]
-        out_ends[v] = ends[f]
-        out_weights[v] = weights[f]
-        out_positions[v] = positions[f]
+        k = kept[v]
+        if k < nf:
+            out_ends[v] = ends[k]
+            out_weights[v] = weights[k]
+            out_positions[v] = positions[k]
+        else:
+            p = k - nf
+            out_ends[v] = [p, p]
+            out_weights[v] = 0.0
+            out_positions[v] = geometry[p]
 
 
 @tack.kernel
-def _line_cells(line_faces, point_of_face, connectivity, n):
+def _line_cells(line_faces, hits, point_of, nf, connectivity, n):
     for i in range(n):
         pair = line_faces[i]
-        connectivity[2 * i] = point_of_face[pair[0]]
-        connectivity[2 * i + 1] = point_of_face[pair[1]]
+        for j in range(2):
+            f = pair[j]
+            h = hits[f]
+            connectivity[2 * i + j] = point_of[f if h < 0 else nf + h]
 
 
 @tack.kernel
@@ -511,15 +709,45 @@ def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, position
                     lo = jb
                     hi = ja
                 v = u.corner_value(c, lo)
-                w = _crossing(iso, v, u.corner_value(c, hi))
+                vh = u.corner_value(c, hi)
+                w = _crossing(iso, v, vh)
                 x = cells.corner_position(c, lo)
                 slot = 2 * at + (1 if above_a else 0)
-                ends[slot] = [cells.point_id(c, lo), cells.point_id(c, hi)]
-                weights[slot] = w
-                positions[slot] = x + w * (cells.corner_position(c, hi) - x)
+                # At a corner whose value is the isovalue the crossing is the corner.
+                if v == iso or vh == iso:
+                    j = lo if v == iso else hi
+                    ends[slot] = [cells.point_id(c, j), cells.point_id(c, j)]
+                    weights[slot] = 0.0
+                    positions[slot] = cells.corner_position(c, j)
+                else:
+                    ends[slot] = [cells.point_id(c, lo), cells.point_id(c, hi)]
+                    weights[slot] = w
+                    positions[slot] = x + w * (cells.corner_position(c, hi) - x)
                 if above_a:
                     line_cells[at] = cells.entity_id(c)
                     at += 1
+
+
+@tack.kernel
+def _distinct_cell_lines(ends, keep):
+    # A line both of whose points are one corner has no length: dropped.
+    for i in range(keep.shape[0]):
+        p = ends[2 * i]
+        q = ends[2 * i + 1]
+        keep[i] = 0 if p[0] == p[1] and _same(p, q) else 1
+
+
+@tack.kernel
+def _kept_cell_lines(keep, slots, line_cells, ends, weights, positions, out_cells, out_ends,
+                     out_weights, out_positions):
+    for i in range(keep.shape[0]):
+        if keep[i] == 1:
+            s = slots[i]
+            out_cells[s] = line_cells[i]
+            for j in range(2):
+                out_ends[2 * s + j] = ends[2 * i + j]
+                out_weights[2 * s + j] = weights[2 * i + j]
+                out_positions[2 * s + j] = positions[2 * i + j]
 
 
 def _contour_cell_lines(data, field, isovalue, fields=None):
@@ -548,6 +776,16 @@ def _contour_cell_lines(data, field, isovalue, fields=None):
         for group in groups:
             _cell_line_points(data.domain_view("cells", group), field.view(group), isovalue,
                               starts, line_cells, ends, weights, positions)
+        keep = tack.empty((lines,), tack.i32)
+        _distinct_cell_lines(ends, keep)
+        slots = tack.empty((lines,), odt)
+        kept = exclusive_scan(keep, slots, lines)
+        if kept < lines:
+            arrays_in = (line_cells, ends, weights, positions)
+            arrays_out = (_like(line_cells, kept), *(_like(a, 2 * kept) for a in arrays_in[1:]))
+            _kept_cell_lines(keep, slots, *arrays_in, *arrays_out)
+            line_cells, ends, weights, positions = arrays_out
+            lines = kept
     # Each line its own two points: everything about the cells is implicit.
     types, offsets = uniform_cells(shapes.LINE, lines, odt)
     out = UnstructuredTopology(types, offsets, CountingArray(2 * lines, dtype=odt),
@@ -582,7 +820,7 @@ def _contour_lines(data, field, isovalue, fields=None):
     counts = tack.zeros((n,), tack.i32)
     for group in groups:
         _line_counts(data.domain_view("cells", group), values, isovalue, counts)
-    odt = ids.for_output(data, 2 * nf)
+    odt = ids.for_output(data, 2 * nf + data.num_points)
     starts = tack.empty((n,), odt)
     lines = exclusive_scan(counts, starts, n) if n else 0
     line_faces = tack.empty((lines,), tack.vec(2, idt))
@@ -591,20 +829,37 @@ def _contour_lines(data, field, isovalue, fields=None):
     ends = tack.empty((nf,), tack.vec(2, idt))
     weights = tack.empty((nf,), values.dtype)
     positions = tack.empty((nf,), tack.vec(3, data.dtype))
+    hits = tack.empty((nf,), idt)
     if lines:
         for group in groups:
             _line_pieces(data.domain_view("cells", group), values, isovalue, starts, line_faces,
-                         line_cells, crossed, ends, weights, positions)
-    point_of_face, kept, count = _compact(crossed, odt)
+                         line_cells, crossed, ends, weights, positions, hits)
+        keep = tack.empty((lines,), tack.i32)
+        _distinct_lines(line_faces, hits, keep)
+        slots = tack.empty((lines,), odt)
+        kept_lines = exclusive_scan(keep, slots, lines)
+        if kept_lines < lines:
+            out_faces = tack.empty((kept_lines,), tack.vec(2, idt))
+            out_cells = tack.empty((kept_lines,), idt)
+            _kept_lines(keep, slots, line_faces, line_cells, out_faces, out_cells)
+            line_faces, line_cells, lines = out_faces, out_cells, kept_lines
+    # The points: a face's own crossing, or the point it crosses at, shared by
+    # every face crossing there -- those the kept lines use, in order.
+    np_ = data.num_points
+    used = tack.zeros((nf + np_,), tack.i32)
+    if lines:
+        _used_points(line_faces, hits, used, nf)
+    point_of, kept, count = _compact(used, odt)
     out_ends = tack.empty((count,), tack.vec(2, idt))
     out_weights = tack.empty((count,), values.dtype)
     out_positions = tack.empty((count,), tack.vec(3, data.dtype))
     if count:
-        _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_positions)
+        _iso_points(kept, ends, weights, positions, arrays.materialize(data.geometry.values),
+                    nf, out_ends, out_weights, out_positions)
     types, offsets = uniform_cells(shapes.LINE, lines, odt)
     connectivity = tack.empty((2 * lines,), odt)
     if lines:
-        _line_cells(line_faces, point_of_face, connectivity, lines)
+        _line_cells(line_faces, hits, point_of, nf, connectivity, lines)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
     return carry(data, out, points=Interpolate(out_ends, out_weights), cells=Pieces(line_cells),
                  geometry=Field(H1(out), out_positions), fields=fields)
