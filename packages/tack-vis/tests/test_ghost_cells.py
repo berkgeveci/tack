@@ -208,10 +208,16 @@ def test_update_ghosts_refreshes_point_and_cell_values():
 def test_ghost_cells_refuse_what_they_cannot_do():
     whole = _with_fields(td.wavelet(3))
     plain = _unstructured(td.split(whole, 2))
-    with pytest.raises(NotImplementedError, match="one layer"):
-        td.ghost_cells(plain, layers=2)
-    with pytest.raises(TypeError, match="unstructured pieces"):
-        td.ghost_cells(td.split(whole, 2))
+    for layers in (0, -1, 1.5, True):
+        with pytest.raises(ValueError, match="one or more layers"):
+            td.ghost_cells(plain, layers=layers)
+    structured = list(td.split(whole, 2))
+    with pytest.raises(TypeError, match="not a mix"):
+        td.ghost_cells(td.PartitionedDataSet([structured[0], plain[1]]))
+    with pytest.raises(ValueError, match="tile a box"):
+        td.ghost_cells(td.PartitionedDataSet([structured[0], structured[0]]))
+    with pytest.raises(ValueError, match="already has ghost cells"):
+        td.ghost_cells(td.split(whole, 2, ghost_layers=1))
     with pytest.raises(ValueError, match="already has ghost cells"):
         td.ghost_cells(td.ghost_cells(plain))
     with pytest.raises(TypeError, match="PartitionedDataSet"):
@@ -228,6 +234,106 @@ def test_ghost_cells_refuse_what_they_cannot_do():
         for piece in out:
             piece.fields["dg"] = td.project(piece, "RTData", td.L2(piece, order=1))
         td.update_ghosts(out, "dg")
+
+
+@pytest.mark.parametrize("extent, pieces, layers", [
+    (4, (2, 2, 2), 2), (4, (2, 2, 2), 3), (5, 6, 2),
+    ((0, 7, 0, 3, 0, 3), (4, 1, 1), 3),        # 2-cell pieces: a layer reaches past them
+])
+def test_more_layers_are_splits(extent, pieces, layers):
+    whole = _with_fields(td.wavelet(extent))
+    ours = td.ghost_cells(_unstructured(td.split(whole, pieces)), layers=layers)
+    for a, b in zip(ours, td.split(whole, pieces, ghost_layers=layers)):
+        _same(a, b)
+
+
+def _rectilinear():
+    grid = td.rectilinear_grid(np.cumsum(np.arange(1, 9)) * 0.1, np.linspace(0.0, 1.0, 7),
+                               np.linspace(0.0, 2.0, 6) ** 2)
+    grid.fields["RTData"] = td.Field(td.H1(grid), tack.array(
+        grid.positions()[:, 0].astype(np.float32)))
+    return grid
+
+
+def _curvilinear():
+    x = td.wavelet(3).positions()
+    x = (x + 0.1 * np.sin(x)).astype(np.float32)
+    grid = td.DataSet(td.StructuredTopology((7, 7, 7)), x)
+    grid.fields["RTData"] = td.Field(td.H1(grid), tack.array(x[:, 1].copy()))
+    return grid
+
+
+def _planar():
+    grid = td.uniform_grid((9, 7), spacing=(0.5, 0.5, 1.0))
+    grid.fields["RTData"] = td.Field(td.H1(grid), tack.array(
+        grid.positions()[:, 0].astype(np.float32)))
+    return grid
+
+
+@pytest.mark.parametrize("make", [lambda: td.wavelet(4), _rectilinear, _curvilinear, _planar],
+                         ids=["uniform", "rectilinear", "explicit", "2d"])
+@pytest.mark.parametrize("pieces, layers", [(4, 1), (3, 2), (2, 3)])
+def test_structured_pieces_stay_structured(make, pieces, layers):
+    """Structured pieces become their blocks grown by the layers: split's ghost
+    layers exactly, the topology, its offset and the kind of coordinates too."""
+    whole = _with_fields(make())
+    ours = td.ghost_cells(td.split(whole, pieces), layers=layers)
+    for a, b in zip(ours, td.split(whole, pieces, ghost_layers=layers)):
+        assert isinstance(a.topology, td.StructuredTopology)
+        assert a.topology.point_dims == b.topology.point_dims
+        assert a.topology.offset == b.topology.offset
+        assert type(a.geometry.values) is type(b.geometry.values)
+        _same(a, b)
+
+
+def test_update_ghosts_on_structured_pieces():
+    whole = td.wavelet(6)
+    whole.fields["c"] = td.project(whole, "RTData", td.Constant(whole))
+    pieces = td.ghost_cells(td.split(whole, 4))
+    for piece in pieces:
+        piece.fields["k"] = td.Field(td.Constant(piece), tack.array(np.where(
+            piece.ghosts.cells.numpy() & Ghosts.DUPLICATECELL, -1.0,
+            piece.fields["c"].values.numpy()).astype(np.float32)))
+    td.update_ghosts(pieces, "k")
+    for piece in pieces:
+        np.testing.assert_array_equal(piece.fields["k"].values.numpy(),
+                                      piece.fields["c"].values.numpy())
+
+
+def test_two_layers_serve_two_neighbour_filters_and_global_ids():
+    """With two layers, project to points and point gradients are right on every
+    owned point without a refresh; and global ids number the layered pieces."""
+    whole = td.wavelet(6)
+    whole.fields["c"] = td.project(whole, "RTData", td.Constant(whole))
+    whole.fields["p"] = td.project(whole, "c", td.H1(whole))
+    expected = td.gradients(whole, "p", at="points").values.numpy()
+    where = {_key(x): i for i, x in enumerate(whole.positions())}
+    plain = _unstructured(td.split(whole, 4))
+    pieces = td.ghost_cells(plain, layers=2)
+    for piece in pieces:
+        piece.fields["p"] = td.project(piece, "c", td.H1(piece))
+        got = td.gradients(piece, "p", at="points").values.numpy()
+        owned = (piece.ghosts.points.numpy() & Ghosts.DUPLICATEPOINT) == 0
+        ids = [where[_key(x)] for x in piece.positions()]
+        np.testing.assert_allclose(got[owned], expected[ids][owned], atol=1e-3)
+    numbered = td.generate_global_ids(pieces)
+    owned_ids = np.concatenate([p.global_ids.points.numpy()[
+        (p.ghosts.points.numpy() & Ghosts.DUPLICATEPOINT) == 0] for p in numbered])
+    assert sorted(owned_ids.tolist()) == list(range(whole.num_points))
+
+
+@needs_vtk
+@needs_diy2
+@pytest.mark.parametrize("layers", [2, 3])
+def test_more_layers_are_vtks(layers):
+    image = vtkRTAnalyticSource(whole_extent=(-6, 6, -6, 6, -6, 6))()
+    plain = vtkRedistributeDataSetFilter(number_of_partitions=4,
+                                         preserve_partitions_in_output=True)(image)
+    ours = td.ghost_cells(vtk_to_dataset(plain), layers=layers)
+    reference = vtk_to_dataset(vtkGhostCellsGenerator(number_of_ghost_layers=layers,
+                                                      build_if_required=False)(plain))
+    for a, b in zip(ours, reference):
+        _same(a, b)
 
 
 @needs_vtk
@@ -254,13 +360,13 @@ def test_ghost_cells_across_mpi_ranks(mpiexec):
         assert run.returncode == 0 and "ok" in run.stdout, run.stdout + run.stderr
 
 
-def ghost_cells_across(world):
+def ghost_cells_across(world, layers=1, structured=False):
     """``ghost_cells`` over this rank's share of six pieces of a wavelet: each piece
     described by position, ``{gid: description}``."""
     whole = _with_fields(td.wavelet(4))
-    every = list(_unstructured(td.split(whole, 6)))
+    every = list(td.split(whole, 6)) if structured else list(_unstructured(td.split(whole, 6)))
     share = len(every) // world.size
     mine = td.PartitionedDataSet(every[world.rank * share:(world.rank + 1) * share], world)
-    out = td.ghost_cells(mine)
+    out = td.ghost_cells(mine, layers=layers)
     blocks = tc.Blocks([p.device for p in out], world)
     return {g: described(p) for g, p in zip(blocks.local, out)}
