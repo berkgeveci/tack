@@ -34,9 +34,13 @@ topology and geometry, samples at its point positions, and adds the source
 fields. This is a way to resample onto another grid. A name collision is
 resolved by the sampled field replacing the target's field of that name.
 
-Reuse a `CellLocator` when geometry is fixed and only the sampled fields change.
-Rebuild it after moving geometry; its spatial bins describe the mesh when it
-was constructed. Where a query lies in more than one cell, the smallest cell
+Without a locator, `probe` uses the one the mesh's topology keeps, so probing
+the same mesh again does not rebuild its search bins. A `CellLocator` of your
+own serves any dataset of the same cells and positions. Both follow the
+positions: after Tack writes them (a kernel, `fill` or `copyto`), the kept
+one is rebuilt, and one of your own is refused, since its bins describe the
+mesh as it was. Positions changed through memory shared with another library
+(DLPack) are not seen: make a new locator then. Where a query lies in more than one cell, the smallest cell
 id wins (a query on a face, edge or vertex that cells share is in all of them);
 a cell the query is only within the tolerance of counts only where no cell
 holds it. At a discontinuity that choice can determine which side is

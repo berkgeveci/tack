@@ -208,8 +208,54 @@ def test_probe_keeps_target_topology_ids_and_quadratic_geometry(backend):
 def test_probe_refuses_a_locator_for_another_geometry(backend):
     source = td.uniform_grid((2, 2, 2))
     moved = td.transform(source, [[1, 0, 0, 10], [0, 1, 0, 0], [0, 0, 1, 0]])
-    with pytest.raises(ValueError, match="another dataset"):
+    with pytest.raises(ValueError, match="another topology or geometry"):
         td.probe(source, [[0.5, 0.5, 0.5]], locator=td.CellLocator(moved))
+
+
+@tack.kernel
+def _shift_x(positions, dx):
+    for i in range(positions.shape[0]):
+        p = positions[i]
+        positions[i] = [p[0] + dx, p[1], p[2]]
+
+
+def test_probe_reuses_the_locator_its_topology_keeps_until_the_geometry_changes(backend):
+    """Without a locator, probe uses the one the topology keeps for its geometry:
+    built once, and taken by any dataset of that topology and geometry. Moving
+    the positions in place -- a kernel, or copyto -- makes it stale: probe
+    builds a new one, and refuses a stale one passed in."""
+    grid = td.uniform_grid((5, 5, 5), spacing=(0.25, 0.25, 0.25))
+    positions = tack.array(grid.positions().astype(np.float32), tack.vec3(tack.f32))
+    data = td.DataSet(td.tetrahedralize(grid).topology, positions)
+    data.fields["x"] = td.Field(td.H1(data), tack.array(grid.positions()[:, 0].astype(np.float32)))
+    query = [[0.3, 0.4, 0.5]]
+    td.probe(data, query)
+    kept = data.topology._locator
+    assert kept is not None
+    td.probe(data, query)
+    assert data.topology._locator is kept                       # built once
+    again = td.DataSet(data.topology, data.geometry)              # same cells and points
+    again.fields["x"] = data.fields["x"]
+    td.probe(again, query, locator=kept)
+    assert kept.serves(again)
+
+    _shift_x(positions, 10.0)                                     # moved in place
+    assert not kept.serves(data)
+    with pytest.raises(ValueError, match="written the positions since"):
+        td.probe(data, query, locator=kept)
+    out = td.probe(data, [[10.3, 0.4, 0.5], [0.3, 0.4, 0.5]])
+    assert data.topology._locator is not kept                     # rebuilt
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), [1, 0])
+    np.testing.assert_allclose(out.fields["x"].values.numpy()[0], 0.3, atol=1e-5)
+
+    tack.copyto(positions, grid.positions().astype(np.float32))   # moved back, by copyto
+    out = td.probe(data, query)
+    np.testing.assert_allclose(out.fields["x"].values.numpy(), [0.3], atol=1e-5)
+    # Another geometry on the same cells takes the topology's one locator over.
+    moved = td.transform(data, [[1, 0, 0, 5], [0, 1, 0, 0], [0, 0, 1, 0]])
+    out = td.probe(moved, [[5.3, 0.4, 0.5]])
+    np.testing.assert_allclose(out.fields["x"].values.numpy(), [0.3], atol=1e-5)
+    assert data.topology._locator.serves(moved)
 
 
 def test_probe_preserves_f64_point_coordinates(f64_backend):

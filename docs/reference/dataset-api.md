@@ -835,7 +835,18 @@ data goes to each, the points stay the same.
 ## Locating points, probing and advection
 
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
-uniform grid over the dataset, about `density` bins per cell.
+uniform grid over the dataset, about `density` bins per cell. It records
+the topology, the geometry's values and their state when made;
+`locator.serves(data)` says whether it still locates in `data`'s cells.
+`probe`, `advect` and `streamlines` take a locator for any dataset of the
+same topology and geometry, and refuse one whose positions Tack has written
+since (a kernel, `fill` or `copyto` into them). Given none, they use the
+locator the topology keeps (`tack.dataset.locator.cached_locator`), made
+once and again when the geometry changes or is replaced: repeated probes of
+a mesh build its bins once. Writes Tack does not make, through memory it
+shares (DLPack, `export_memory`, `wrap_ptr`), need a new locator. The state
+is a write count every array's storage keeps (`DeviceBuffer.version`,
+counted by host writes and by every launch that may store to it).
 `locator.find(points)` takes an `(n, 3)` array or a field of 3-vectors and
 returns `Locations(cells, pcs, tets)`, a named tuple: each point's cell (a
 field of the dataset's `id_dtype`, -1 where none holds it), its parametric

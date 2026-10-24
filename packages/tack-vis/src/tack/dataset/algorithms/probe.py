@@ -10,7 +10,7 @@ from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.buckets import bucket_groups
 from tack.dataset.by_id import field_by_id
 from tack.dataset.dataset import DataSet, Field
-from tack.dataset.locator import CellLocator
+from tack.dataset.locator import cached_locator
 from tack.dataset.spaces import H1, Constant, Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -77,9 +77,10 @@ def probe(data, where, fields=None, locator=None):
         where = _vertices(np.asarray(where, float).reshape(-1, 3), data)
     if not isinstance(where.geometry.space, H1):
         raise TypeError("probe needs the probed points: an H1 geometry")
-    locator = locator or CellLocator(data)
-    if locator.data is not data:
-        raise ValueError("the locator was built for another dataset")
+    locator = locator or cached_locator(data)
+    if not locator.serves(data):
+        raise ValueError("the locator was built for another topology or geometry, or "
+                         "Tack has written the positions since: make a new one")
     points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
     found, pcs, tets = locator.find(points)
     m = found.shape[0]

@@ -684,6 +684,26 @@ class RandomNormal(_Implicit):
 
 # ── Any array ───────────────────────────────────────────────────────
 
+def _revision(values):
+    """A token that changes whenever Tack may have changed ``values``: a stored
+    array's buffer and its write count (`DeviceBuffer.version`), and an
+    implicit array's attributes -- its arrays' tokens and its numbers -- so
+    something derived from them can tell it is stale. Equal tokens mean
+    Tack wrote nothing since; writes through shared memory are not seen."""
+    if isinstance(values, _DeviceArray):
+        components = getattr(values, "_components", None)
+        if components is not None:                     # SOA: its components
+            return tuple(_revision(c) for c in components)
+        return (id(values._buffer), values._buffer.version)
+    if isinstance(values, _Implicit):
+        return tuple((name, _revision(value)) for name, value in sorted(vars(values).items()))
+    if isinstance(values, (list, tuple)):
+        return tuple(_revision(v) for v in values)
+    if isinstance(values, (int, float, str, bool, np.generic)) or values is None:
+        return values
+    return id(values)
+
+
 def size_of(values):
     """The number of values."""
     return values.size

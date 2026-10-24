@@ -43,7 +43,7 @@ from tack.dataset.dataset import for_each
 from tack.dataset.shapes import HOLD_TOLERANCE
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ["CellLocator", "Locations"]
+__all__ = ["CellLocator", "Locations", "cached_locator"]
 
 
 class Locations(NamedTuple):
@@ -298,17 +298,32 @@ def _resolve(found, none, ncells):
 
 
 class CellLocator:
-    """Locates points in ``data``'s cells; build once, ``find`` many times. The bins
-    follow the cells' bounding boxes at build time: rebuild after moving the
-    geometry. ``density`` is the bins per cell."""
+    """Locates points in ``data``'s cells; build once, ``find`` many times. ``density``
+    is the bins per cell.
+
+    The bins follow the cells' bounding boxes when it is made. It records the
+    geometry it was made from and that geometry's state (`serves`): `probe`
+    and advection take it for any dataset of the same topology and geometry,
+    and refuse it once Tack has written the positions since (a kernel, `fill`
+    or `copyto` into them). Without one they use the locator the topology
+    keeps (`cached_locator`), made again when the geometry changes. Writes
+    Tack does not see -- through memory shared by DLPack, `export_memory` or
+    `wrap_ptr` -- need a new locator."""
 
     @on_inputs_device
     def __init__(self, data, density=1.0):
+        from tack.dataset.dataset import DataSet
+
         #: Cells with no reference element -- polyhedra, polygons, polylines --
         #: have no parametric coordinates: points are located in a piece of each
         #: cell's fan (a polyline's segment), which ``find`` says (``tets``).
         self.polyhedral = not getattr(data.topology, "reference_cells", True)
-        self.data = data
+        #: The cells and their positions, without the fields: what the bins and
+        #: searches read, held by a locator a topology keeps.
+        self.data = DataSet(data.topology, data.geometry)
+        self.density = density
+        self._geometry = data.geometry.values
+        self._revision = arrays._revision(self._geometry)
         n = data.num_cells
         dtype = data.dtype
         self.lo = tack.empty((n,), tack.vec(3, dtype))
@@ -345,6 +360,14 @@ class CellLocator:
         self.inverse = np.where(live, self.dims / np.where(live, extent, 1.0), 0.0)
         # A point this close to the grid can be within a cell's tolerance.
         self.slack = _TOLERANCE * float(np.linalg.norm(extent))
+
+    def serves(self, data):
+        """Whether it locates in ``data``'s cells as they are: the topology and the
+        geometry's values it was made from, with nothing written to them by Tack
+        since."""
+        return (data.topology is self.data.topology
+                and data.geometry.values is self._geometry
+                and arrays._revision(self._geometry) == self._revision)
 
     def _grid(self):
         return (*map(float, self.origin), *map(float, self.inverse), *map(int, self.dims))
@@ -465,4 +488,15 @@ class CellLocator:
         return Locations(ids.as_ids(found, data.id_dtype), pcs)
 
 
-
+@on_inputs_device
+def cached_locator(data):
+    """The locator ``data``'s topology keeps (one, at the default density), made
+    now if it has none or the one it has does not serve ``data``: another
+    geometry, or positions Tack has written since. `probe` and advection use
+    it when given no locator, so repeated calls build the bins once."""
+    topology = data.topology
+    locator = topology._locator
+    if locator is None or not locator.serves(data):
+        locator = CellLocator(data)
+        topology._locator = locator
+    return locator

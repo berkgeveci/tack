@@ -199,6 +199,9 @@ class _Topology:
     _faces = None
     _edges = None
     _point_links = None
+    #: The last `CellLocator` made for this topology's cells without one given
+    #: (`locator.cached_locator`), for whatever geometry it was made from.
+    _locator = None
 
     #: The arrays it is built from, which say its device.
     _STORED = ()

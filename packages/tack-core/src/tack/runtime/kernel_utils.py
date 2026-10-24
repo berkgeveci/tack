@@ -506,7 +506,8 @@ def _written_array_args(template, effective_args) -> tuple:
 
 
 def check_writable_arrays(kernel_name, written_arrays, args):
-    """Refuse a read-only array where the kernel may store to it.
+    """Refuse a read-only array where the kernel may store to it, and count the
+    store on every other (`DeviceBuffer.version`).
 
     `array_from_ptr` makes read-only arrays by default, and a read-only
     DLPack tensor imports as one; `copyto` and `fill` already honour
@@ -514,11 +515,13 @@ def check_writable_arrays(kernel_name, written_arrays, args):
     Runs on every dispatch, over only the arrays the kernel writes.
     """
     for index, name in written_arrays:
-        if not args[index]._writable:
+        array = args[index]
+        if not array._writable:
             raise ValueError(
                 f"Kernel '{kernel_name}': {name} may be written, "
                 f"but its array is read-only. Pass writable=True to "
                 f"array_from_ptr() if the memory may be modified.")
+        array._buffer.version += 1
 
 
 def _source_name(name, held):
