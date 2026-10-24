@@ -376,11 +376,33 @@ trusted_span = _RP_BOUND_SPAN_RATIO · workers · call_overhead_ns     (ratio 20
 
 and `serial_floor_ns` then becomes the *lesser* of that sample and the
 smoothed `r_p`: one high draw could otherwise set the floor at the serial
-rate, and the smoothed rate carries samples from short fan-outs.
-`_set_serial_cost` applies the floor at once, so an estimate taken from a
-cheap region is corrected on the first fan-out. The floor is still `P_eff`
-below the true serial rate; it only stops a range the kernel has shown to
-thread well from flipping to "too small to thread".
+rate, and the smoothed rate carries samples from short fan-outs. The floor
+is still `P_eff` below the true serial rate; it only stops a range the
+kernel has shown to thread well from flipping to "too small to thread".
+
+**When `r_p` comes out above `r_s`.** Then either the estimate came from
+a cheap region, or the fan-out lost: its threads contend. A histogram over
+a mesh of one cell type puts every worker on one atomic counter, and on 28
+cores of an EPYC 7453 it ran 9x slower threaded than serially, with `r_p`
+7–12x `r_s` (2026-10-24). The floor assumed the first, lifted `r_s` to the
+contended rate, and the threshold formula, which caps `r_p` at 0.9 `r_s`,
+still credited a fan-out with a gain, so the kernel fanned out on every
+call; later serial samples, whole-range runs included, were held under
+the floor. A slice cannot tell the two cases apart. So such a fan-out sets
+no floor but `arbitrate`, and the next dispatch runs the whole range
+serially (`_arbitrate`). After a fan-out that sample is an upper bound,
+so one below `r_p` is conclusive: the kernel is `contended`, takes the
+sample as `r_s` with no floor, and its threshold is `_NEVER`. Otherwise
+`r_s` is the whole range's sample and the floor `r_p`, which is what the
+floor did before, now with a sample behind it, one dispatch later. A
+contended kernel still fans out on P9's back-off (`_parallel_recheck_due`;
+`_arbitrate` sets `rate_confirmed` and measures the fan-out cost if the
+first-sight path had not), and a recheck faster per element than `r_s`
+clears `contended`: contention depends on the data -- the same histogram
+over 256 types spread evenly was 2.5x slower threaded, over one type 6.6x
+-- so it is not final. On jura the histogram then runs serially from its
+second call, 4.5 against 41 ms at 1M cells, with a fan-out at dispatches
+3, 7, 15, and so on.
 
 **Retiring the floor.** Runtime scalars and array contents can change the
 work without a new compiled variant. When a whole-range fan-out
@@ -505,6 +527,7 @@ Each mechanism above exists because a specific failure was measured:
 | **One-way door, threading side.** Only serial runs measure `r_s`, and threading stops serial runs; a corrupt-high estimate predicts an even slower serial run, so it cannot be caught against itself. | Rechecks on a geometric back-off that time a slice; a far-lower sample believed outright. | `recheck_due`, recheck branch of `_run` |
 | **One-way door, serial side.** Only fan-outs measure `r_p`. Worker rates for identical fan-outs varied 8x on a 1-socket Xeon (October 2026), and one high draw held 6–34 M-element dispatches of a cheap kernel serial, up to 6x slower (`_parallel_recheck_due`'s docstring). | Parallel rechecks on the same back-off; the floor takes the lesser of sample and smoothed rate. | `_parallel_recheck_due`, `_record_parallel_cost` |
 | **Scattered samples.** A sample after a fan-out, or on untouched pages, reads dear; believed, it keeps the backend fanning out, which keeps the next sample scattered. | `scattered` tracking; scattered samples only lower an affordable estimate; confirmation before the first near-threshold fan-out; first clean sample believed. | `scattered`, `rate_confirmed`, `_run_serial`, `_needs_confirmation` |
+| **Contention.** Threads on one atomic counter or a few shared lines run slower than one thread, `r_p` above `r_s`; the floor turned that rate into the serial estimate and the kernel fanned out on every call, 8–9x slower (jura, 2026-10-24). | An `r_p` above `r_s` sets no floor but a whole-range serial run on the next dispatch; slower threaded, the kernel is `contended` and serial, until a P9 recheck fans out faster. | `_record_parallel_cost`, `_arbitrate`, `_threshold` |
 | **Stale floors.** A floor learned on expensive inputs survives when the same compiled kernel gets cheap inputs, and keeps it threading. | A whole-range fan-out with every span short retires the floor and schedules a serial sample. | `retire_floor` in `_parallel_execute`, `_record_parallel_cost` |
 | **Fixed cost dominating short samples.** For a cheap kernel the call is most of a sample; for a short chunk the GIL hand-back is most of a span. | Call overhead subtracted; slices sized to 10x it; worker rates ignored below 1 µs; spans trusted as a floor only above `trusted_span`. | `_measure_call_overhead`, `_SAMPLE_OVERHEAD_RATIO`, `_RP_MIN_WORKER_NS`, `_RP_BOUND_SPAN_RATIO` |
 | **Load, descheduling, a moving fan-out cost.** Load and idle states change the fan-out cost mid-program; a descheduled worker dominates a max; a high estimate stops the fan-outs that would lower it. | Idle curve; free and scheduled refreshes, including the hot knot's recovery probe; median worker; work-share condition; derived margin. | `_fan_out_estimate`, `_record_fan_out`, `_refresh_fan_out`, `_margin` |
@@ -610,6 +633,7 @@ The CPU backend fans a loop range out to its thread pool only when the serial ru
 - Once a kernel threads, occasional rechecks (dispatches 1, 2, 4, … 1024, then every 1024) re-time a serial slice. The slice walks the range in golden-ratio steps rather than always sampling the prefix, because an image kernel's first rows are background and a prefix sample read a volume render 10–70× too cheap. A range whose serial run costs no more than a fan-out is re-timed whole; sufficiently long worker spans establish a floor under the serial estimate. Worker spans and rates are summarized by `_worker_median`, the lower middle value for an even count: the upper one of two workers is the slower worker, so one descheduled thread set the floor on two-thread machines. If every worker of a complete dispatch later finishes below that duration, the old floor is retired and the next call rechecks serial cost. Cheap partial slices or a short median alone cannot retire it.
 - A serial sample is *clean* only when a serial run laid the range out before it (`CompiledKernel.scattered` is false). One taken on untouched pages, or straight after a fan-out while other cores own the lines, reads a bandwidth-bound kernel 3–5× dear, and believing it was a fixed point: it kept the kernel fanning out, which kept the next sample dear (P7 in the audit). A scattered sample may lower the estimate but not raise it, wherever a serial run of the range costs at most `_CONFIRM_BAND` margin-weighted fan-outs; and until a kernel has one clean sample, a fan-out inside that budget runs serially instead, at most twice per kernel. The first clean sample is believed outright when it is lower, since everything before it was an upper bound; smoothing it in left the estimate stuck near 3× in two harness runs of three. Outside the budget a rise is real evidence (an image kernel's estimate starts low) and is believed as before. A recheck slice reading 8× under the estimate is believed outright only if a second slice from later in the range agrees (`_second_opinion`); otherwise one background-row slice could send an image kernel's whole frame serial.
 - The parallel rate has the same one-way door from the other side (P9): only fan-outs measure `r_p`, so a high one holds a kernel serial and nothing corrects it. When a range would fan out on the serial rate alone but `r_p` keeps it serial, the backend fans out anyway on the recheck back-off schedule (`_parallel_recheck_due`). The serial floor takes the lesser of the qualifying sample and the smoothed `r_p`: worker rates for identical fan-outs spread 8× run to run, and a floor from one high draw raised `r_s` to `r_p`, where the formula credits threading with no gain. `scattered` is cleared by `_run_whole_serial` around `_run_serial`, not inside it, because tests replace `_run_serial` with a four-argument lambda.
+- A fan-out whose `r_p` comes out above `r_s` (on spans trusted as a bound) does not set the floor: the next dispatch runs the whole range serially (`_arbitrate`). Below `r_p`, the kernel is `contended`: that sample is `r_s`, no floor, threshold `_NEVER` (`_threshold`); a P9 recheck that fans out faster per element than `r_s` clears it. Otherwise the floor is `r_p` as before. Contended atomics (one counter for every worker) made the floor lift `r_s` to the contended rate, and the kernel fanned out on every call, 8-9x slower on 28 cores.
 
 A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for `out[i] = x[i]*2+1`, ~130K for a `sqrt`/`sin` expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.
 

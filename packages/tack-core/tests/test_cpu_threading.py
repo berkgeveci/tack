@@ -360,21 +360,85 @@ def test_serial_estimate_never_sits_below_the_parallel_rate(cpu, monkeypatch):
     assert compiled.ns_per_elem >= honest * 50
 
 
-def test_a_parallel_measurement_lifts_a_low_serial_estimate(cpu):
-    """The floor applies as soon as a fan-out has measured the range, not
-    only on the next serial sample, which may be 1024 dispatches away."""
-    backend = CPUBackend()
-    compiled, _ = _measured(backend, _scale, 4096)
+def _above_the_serial_rate(backend, monkeypatch, whole_range_rate):
+    """A kernel whose fan-out measured `r_p` at 100x its serial estimate,
+    then the next dispatch, whose whole-range serial run reads
+    `whole_range_rate` times that estimate. Returns the kernel, the
+    estimate, and the threshold before."""
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
     honest = compiled.ns_per_elem
     before = compiled.parallel_min_elems
-
+    _pin_fan_out(monkeypatch, backend)
     workers = 4
     backend._record_parallel_cost(compiled, [honest * 400.0] * workers, workers,
                                   bounds_serial=True)
-
     assert compiled.ns_per_elem_parallel == pytest.approx(honest * 100.0)
-    assert compiled.ns_per_elem >= compiled.ns_per_elem_parallel
+    assert compiled.arbitrate and compiled.serial_floor_ns == 0.0, (
+        "an r_p above the serial rate must go to arbitration, not the floor")
+    assert compiled.ns_per_elem == honest
+
+    ranges = []
+    real = backend._run_serial
+    backend._run_serial = lambda c, p, a, b: (ranges.append((a, b)), real(c, p, a, b))[1]
+    _controlled_serial_clock(backend, lambda a, b: honest * whole_range_rate)
+    backend._run(compiled, compiled.bind(args), n)
+    assert ranges == [(0, n)], f"arbitration ran {ranges}, not the whole range"
+    assert not compiled.arbitrate
+    return compiled, honest, before
+
+
+def test_a_parallel_measurement_lifts_a_low_serial_estimate(cpu, monkeypatch):
+    """A fan-out measuring `r_p` above `r_s` says the estimate came from a
+    cheap slice -- or that the fan-out lost. The next dispatch runs the
+    whole range serially, and when that agrees the range is dear, the
+    floor applies then, not on a serial sample 1024 dispatches away."""
+    backend = CPUBackend()
+    compiled, honest, before = _above_the_serial_rate(backend, monkeypatch, 300.0)
+
+    assert not compiled.contended
+    assert compiled.ns_per_elem == pytest.approx(honest * 300.0, rel=0.01)
+    assert compiled.serial_floor_ns == pytest.approx(compiled.ns_per_elem_parallel)
     assert compiled.parallel_min_elems < before
+
+
+def test_a_fan_out_slower_than_serial_settles_serial(cpu, monkeypatch):
+    """Contention: every worker on one atomic counter made a histogram 9x
+    slower threaded than serial on 28 cores, and `r_p` far above `r_s`.
+    The floor used to lift `r_s` to that contended rate, where the
+    threshold formula still credited a fan-out with a gain, so the kernel
+    fanned out on every call. When the whole range runs serially faster
+    than the fan-out did, the kernel is contended: its own serial rate,
+    no floor, and no threshold."""
+    backend = CPUBackend()
+    compiled, honest, _ = _above_the_serial_rate(backend, monkeypatch, 1.0)
+
+    assert compiled.contended
+    assert compiled.serial_floor_ns == 0.0
+    assert compiled.ns_per_elem == pytest.approx(honest, rel=0.01)
+    assert compiled.parallel_min_elems == cpu_mod._NEVER
+    assert compiled.rate_confirmed, "P9's rechecks need a confirmed rate"
+
+
+def test_a_contended_kernel_threads_again_when_a_recheck_wins(cpu, monkeypatch):
+    """Contention depends on the data (one key, or keys spread over many
+    counters), so it is not final: a P9 recheck whose fan-out beats the
+    serial rate clears it, and the threshold comes back."""
+    backend = CPUBackend()
+    compiled, honest, _ = _above_the_serial_rate(backend, monkeypatch, 1.0)
+    workers = 4
+
+    backend._record_parallel_cost(compiled, [honest * 400.0] * workers, workers,
+                                  bounds_serial=True)
+    assert compiled.contended, "a recheck that lost again changed nothing"
+    assert not compiled.arbitrate
+    assert compiled.parallel_min_elems == cpu_mod._NEVER
+
+    backend._record_parallel_cost(compiled, [honest * 2.0] * workers, workers,
+                                  bounds_serial=True)
+    assert not compiled.contended
+    assert compiled.ns_per_elem_parallel == pytest.approx(honest * 0.5)
+    assert compiled.parallel_min_elems < cpu_mod._NEVER
 
 
 def test_a_short_fan_out_does_not_floor_the_serial_estimate(cpu, monkeypatch):
@@ -1104,11 +1168,14 @@ def test_one_stalled_worker_does_not_set_the_serial_floor(cpu, threads):
 
 def test_two_slow_workers_still_set_the_serial_floor(cpu):
     """The lower median still believes a kernel that is slow on every
-    worker: with both of two workers taking long, the floor is set."""
+    worker: with both of two workers taking long, the floor is set. The
+    serial estimate is as slow (a kernel slow everywhere), since an `r_p`
+    above it goes to `_arbitrate` rather than to the floor."""
     backend = CPUBackend(num_threads=2)
     n = 4096
     compiled, args = _measured(backend, _scale, n)
     prefix = compiled.bind(args)
+    backend._set_serial_cost(compiled, 1e6)       # 2 ms per chunk is ~1000 ns/element
     real = compiled.call_range
 
     def slow(*call_args, **kwargs):
@@ -1471,6 +1538,38 @@ def test_a_dear_kernel_over_a_large_range_is_fanned_out(cpu, monkeypatch):
         backend._dispatch(compiled, args, n)
         assert bool(fanned) == expect, (
             f"{rate} ns/elem over {n}: fanned {fanned}, expected {expect}")
+
+
+@pytest.mark.timing
+def test_timing_a_contended_kernel_settles_serial(cpu, require_idle):
+    """Real clock, real contention: every iteration adds to one element,
+    so a fan-out is slower than one thread. After its first fan-out and
+    one whole-range serial run the kernel runs serially, fanning out again
+    only on P9's back-off (dispatches 2, 4, 8 of these twelve)."""
+    backend = CPUBackend(num_threads=min(8, CPUBackend().num_threads))
+    if backend.num_threads < 4:
+        pytest.skip("contention needs a few threads")
+    require_idle(backend.num_threads)
+
+    n = 1 << 20
+    x = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    total = tack.zeros((1,))
+    compiled = _compile_for(backend, _sum_into, [x, total, n])
+    fanned = []
+    real = backend._parallel_execute
+    backend._parallel_execute = lambda c, p, a, b, **kw: (fanned.append((a, b)),
+                                                        real(c, p, a, b, **kw))[1]
+    dispatches = 12
+    for _ in range(dispatches):
+        backend._dispatch(compiled, [x, total, n], n)
+
+    assert total.numpy()[0] == dispatches * n
+    assert compiled.contended, (
+        f"not contended: serial {compiled.ns_per_elem:.2f} ns/elem, parallel "
+        f"{compiled.ns_per_elem_parallel:.2f}, threads {backend.num_threads}, "
+        f"load {os.getloadavg()[0]:.1f}")
+    assert len(fanned) <= 6, f"fanned out {len(fanned)} times in {dispatches}: {fanned}"
 
 
 @pytest.mark.timing

@@ -697,6 +697,14 @@ class CompiledKernel:
         # finds out it was wrong. These schedule an occasional fan-out.
         self.serial_since_rp = 0
         self.rp_recheck_after = 1
+        # A fan-out measured `r_p` above `r_s`: it lost, or `r_s` is too
+        # low. The next dispatch runs the whole range serially to say
+        # which (`_arbitrate`), instead of the floor assuming the second.
+        self.arbitrate = False
+        # The whole-range run said the first: threads contend (one atomic
+        # counter, a few shared cache lines), so the kernel runs serially,
+        # fanning out only on P9's back-off to see if that has changed.
+        self.contended = False
 
     def recheck_due(self) -> bool:
         """Whether this parallel dispatch should re-measure instead.
@@ -1163,6 +1171,9 @@ class CPUBackend(Backend):
     def _run(self, compiled: CompiledKernel, prefix: tuple, loop_end: int):
         """Choose serial or fan-out, and run it."""
         compiled.loop_end = loop_end
+        if compiled.arbitrate and loop_end > 0:
+            self._arbitrate(compiled, prefix, loop_end)
+            return
         if loop_end >= compiled.parallel_min_elems:
             if self._needs_confirmation(compiled, loop_end):
                 # Ahead of calibrating the fan-out, too: for a small cheap
@@ -1174,8 +1185,7 @@ class CPUBackend(Backend):
                 # First range big enough to want threads: measure what they
                 # actually cost here, then re-check against the real number.
                 self._calibrate_fan_out(compiled, prefix)
-                compiled.parallel_min_elems = self._min_elems(compiled.ns_per_elem,
-                                                    compiled.ns_per_elem_parallel)
+                compiled.parallel_min_elems = self._threshold(compiled)
                 if loop_end < compiled.parallel_min_elems:
                     self._run_whole_serial(compiled, prefix, loop_end)
                     return
@@ -1380,6 +1390,47 @@ class CPUBackend(Backend):
         self._run_serial(compiled, prefix, 0, loop_end)
         compiled.scattered = False
 
+    def _arbitrate(self, compiled: CompiledKernel, prefix: tuple,
+                   loop_end: int):
+        """Settle a fan-out that measured `r_p` above `r_s`, with one serial
+        run of the whole range.
+
+        Either the fan-out lost -- its threads contend: a histogram over a
+        mesh of one cell type puts every worker on one atomic counter, 9x
+        slower threaded than serial on 28 cores of an EPYC 7453 -- or `r_s`
+        came from a cheap slice, an image kernel's background rows, and is
+        too low. The floor assumed the second, and for a contended kernel
+        it lifted `r_s` to the contended rate, where a fan-out still looked
+        like a gain, so the kernel fanned out on every call. A slice cannot
+        tell the two apart; the whole range can, and after a fan-out its
+        sample is an upper bound (`scattered`), so one below `r_p` is
+        conclusive.
+
+        Contended: `r_s` is that sample, there is no floor, and the
+        threshold is `_NEVER` until a P9 recheck fans out faster
+        (`_record_parallel_cost`). The rechecks' back-off counts the
+        fan-out that started this as its first, and they need a measured
+        fan-out cost, which the first-sight path does not take. Not
+        contended: `r_s` is the whole range's sample and the floor `r_p`,
+        which is what the floor would have done, now with a sample behind it.
+        """
+        compiled.arbitrate = False
+        self._run_whole_serial(compiled, prefix, loop_end)
+        sample = compiled.last_sample
+        if sample < compiled.ns_per_elem_parallel:
+            compiled.contended = True
+            compiled.serial_floor_ns = 0.0
+            # A whole range, so as good as a clean sample for P9's purpose.
+            compiled.rate_confirmed = True
+            compiled.serial_since_rp = 0
+            compiled.rp_recheck_after = min(compiled.rp_recheck_after * 2,
+                                            _RECHECK_CAP)
+            if self._fan_out_ns is None:
+                self._calibrate_fan_out(compiled, prefix)
+        else:
+            compiled.serial_floor_ns = compiled.ns_per_elem_parallel
+        self._set_serial_cost(compiled, sample)
+
     def _probe_min_range(self) -> int:
         """Smallest range worth splitting a timing probe off.
 
@@ -1543,21 +1594,30 @@ class CPUBackend(Backend):
         first-sight samples and rechecks alike, is the fix; this is the
         backstop. A fan-out cannot make an element cheaper than it is
         serially (`r_p` is the worker rate divided by the workers that
-        ran), so `r_s >= r_p`. `serial_floor_ns` holds a parallel rate
+        ran), so `r_s >= r_p` -- unless the threads contend, when the
+        fan-out lost; an `r_p` above `r_s` is settled by `_arbitrate`
+        before it may floor anything. `serial_floor_ns` holds a parallel rate
         trusted as that bound: the lesser of a sample from worker spans
         long enough for the per-worker clock (`_RP_BOUND_SPAN_RATIO`) and
         the smoothed `r_p` (P9), retired when every worker of a complete
         dispatch finishes below that span (`_record_parallel_cost`). It
-        catches a low estimate on the first dispatch after a fan-out
-        rather than never. It does not make the estimate right -- `r_p`
+        catches a low estimate within a dispatch of a fan-out rather than
+        never. It does not make the estimate right -- `r_p`
         is `r_s / P_eff`, so the floor is still P_eff below the truth --
         but it keeps the decision from flipping to "too small to thread"
         on a range the kernel has already shown to thread well.
         """
         ns_per_elem = max(ns_per_elem, compiled.serial_floor_ns)
         compiled.ns_per_elem = ns_per_elem
-        compiled.parallel_min_elems = self._min_elems(
-            ns_per_elem, compiled.ns_per_elem_parallel)
+        compiled.parallel_min_elems = self._threshold(compiled)
+
+    def _threshold(self, compiled: CompiledKernel) -> int:
+        """The kernel's `parallel_min_elems`: never while it is contended,
+        otherwise `_min_elems` on its rates."""
+        if compiled.contended:
+            return _NEVER
+        return self._min_elems(compiled.ns_per_elem,
+                               compiled.ns_per_elem_parallel)
 
     def _min_elems(self, ns_per_elem: float,
                    ns_per_elem_parallel: float = 0.0) -> int:
@@ -2000,7 +2060,20 @@ class CPUBackend(Backend):
         compiled.ns_per_elem_parallel = (
             sample if prev <= 0.0
             else prev + _COST_SMOOTHING * (sample - prev))
-        if bounds_serial:
+        if compiled.contended:
+            # A P9 recheck. Faster per element than a serial run: the
+            # contention has gone (other data, fewer threads), and the
+            # rate is believed outright, as a far-lower serial sample is.
+            if sample < compiled.ns_per_elem:
+                compiled.contended = False
+                compiled.ns_per_elem_parallel = sample
+        elif (bounds_serial and 0.0 < compiled.ns_per_elem
+              < compiled.ns_per_elem_parallel):
+            # Above the serial rate on spans long enough to believe: the
+            # fan-out lost, or `r_s` is low. Flooring would assume the
+            # second; the next dispatch finds out (`_arbitrate`).
+            compiled.arbitrate = True
+        elif bounds_serial:
             # The lesser of this sample and the smoothed rate (P9). Each
             # is wrong in its own direction. Worker rates for identical
             # fan-outs spread 8x run to run, and a floor taken from one
@@ -2013,10 +2086,10 @@ class CPUBackend(Backend):
             # it takes the smaller.
             compiled.serial_floor_ns = min(sample,
                                            compiled.ns_per_elem_parallel)
-        # The serial estimate may only have seen a cheap prefix; this
-        # measurement saw the whole range. Apply the `r_s >= r_p` floor
-        # now rather than waiting up to `_RECHECK_CAP` dispatches for the
-        # next serial sample to apply it.
+        # The threshold, from the new `r_p`. A floor set here is at most
+        # `r_s` -- a higher `r_p` goes to `_arbitrate`, which lifts `r_s`
+        # on the next dispatch if the whole range agrees -- so it guards
+        # the later slices rather than lifting the estimate now.
         self._set_serial_cost(compiled, compiled.ns_per_elem)
 
     def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
