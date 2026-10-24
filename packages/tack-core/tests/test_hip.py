@@ -642,3 +642,24 @@ def test_cache_target_reads_the_device_strings():
     from tack.runtime import dispatch
     target = dispatch.get_backend().cache_target()
     assert "gfx" in target and "hip-python" in target
+
+
+def test_memory_for_a_gpu_aware_mpi():
+    """HIP arrays come from the stream-ordered pool, which MVAPICH-Plus's UCX takes
+    for host memory; tack.communication hands a GPU-aware MPI copies in
+    ``hipMalloc`` memory instead (``mpi_direct``, ``allocate_mpi_array``)."""
+    from tack.communication._world import _direct
+    from tack.lang.array import _empty_for_mpi
+
+    backend = tack.device("hip")._backend
+    values = tack.array(np.arange(12, dtype=np.float32).reshape(4, 3), tack.vec3(),
+                        device="hip")
+    pooled = values._buffer._queue.pooled
+    assert backend.mpi_direct(values._buffer) is (not pooled)
+    plain = _empty_for_mpi((4,), tack.vec3(), "hip")
+    assert backend.mpi_direct(plain._buffer) and not plain._buffer._pooled
+    sent = _direct(values)
+    assert (sent is values) is (not pooled)
+    np.testing.assert_array_equal(sent.numpy(), values.numpy())
+    del plain, sent                                     # freed as they were made
+    tack.sync()

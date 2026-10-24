@@ -266,12 +266,15 @@ def test_across_simulated_ranks(cpu, name):
     check(_run_ranks(ranks, body))
 
 
-@pytest.mark.parametrize("gpu_aware", [False, True], ids=["staged", "gpu-aware"])
-def test_across_mpi_ranks(mpiexec, gpu_aware):
+@pytest.mark.parametrize("mode", [[], ["--gpu-aware"], ["--gpu-aware", "--not-direct"]],
+                         ids=["staged", "gpu-aware", "gpu-aware-not-direct"])
+def test_across_mpi_ranks(mpiexec, mode):
     """Every case under ``mpiexec -n 3``, through MPI; GPU-aware hands the
-    arrays themselves to MPI through DLPack (CPU arrays here)."""
+    arrays themselves to MPI through DLPack (CPU arrays here), or, where the
+    backend says MPI may not take them as they are (HIP's pool), device copies
+    in ``allocate_mpi_array``'s memory."""
     script = os.path.join(os.path.dirname(__file__), "_communication_mpi.py")
-    run = mpiexec(3, script, *(["--gpu-aware"] if gpu_aware else []))
+    run = mpiexec(3, script, *mode)
     report = run.stdout + run.stderr
     assert run.returncode == 0, report
     for name in cases.CASES:
@@ -359,3 +362,31 @@ def test_routing_prefers_the_higher_rank_then_the_lower_block(cpu, second):
     ranks = {0: [1, 1, 0], 1: [2, 1, 0], 2: [2, 2, 0]}       # per point, by block
     routing = tc.Routing(blocks, x, boxes, lambda g, p: np.array(ranks[g]))
     assert routing.destination[0].tolist() == [1, 2, -1]
+
+
+def test_gpu_aware_sends_copy_what_mpi_cannot_take(cpu, second):
+    """``_direct``: an array whose memory the backend says MPI may not take as it
+    is (HIP's stream-ordered pool) goes as a device copy in
+    ``allocate_mpi_array``'s memory; one it may take goes as it is."""
+    from tack.communication._world import _direct
+
+    backend = second._backend
+    made = []
+    backend.mpi_direct = lambda buffer: getattr(buffer, "_for_mpi", False)
+    plain = backend.allocate_mpi_array
+
+    def counted(dtype, shape):
+        buffer = plain(dtype, shape)
+        buffer._for_mpi = True
+        made.append(shape)
+        return buffer
+    backend.allocate_mpi_array = counted
+    values = tack.array(np.arange(12, dtype=np.float32).reshape(4, 3), tack.vec3(),
+                        device=second)
+    sent = _direct(values)
+    assert sent is not values and made == [(12,)]
+    assert sent.dtype == values.dtype and _on(second, sent)
+    np.testing.assert_array_equal(sent.numpy(), values.numpy())
+    assert _direct(sent) is sent                     # already MPI's memory
+    other = tack.zeros(3, device=cpu)
+    assert _direct(other) is other                   # the default: as it is

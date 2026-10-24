@@ -343,16 +343,20 @@ class HIPBuffer(DeviceBuffer):
     # returning, as on Metal and CUDA.
     _shared = False
 
-    def __init__(self, numpy_dtype, shape, queue=None):
+    def __init__(self, numpy_dtype, shape, queue=None, pooled=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
         self._queue = queue = queue or _queue()
+        # From the device's stream-ordered pool when it has one, unless asked
+        # not to: memory for a GPU-aware MPI (``pooled=False``,
+        # ``allocate_mpi_array``), whose UCX may not know pool memory.
+        self._pooled = queue.pooled if pooled is None else (pooled and queue.pooled)
         with _on_device(queue.device):
             # hip-python returns None for a zero-byte request, which a launch
             # cannot pass as a pointer; an empty array gets one byte it never
             # reads, as on CUDA and Level Zero.
-            if queue.pooled:
+            if self._pooled:
                 err, self._device_ptr = hip.hipMallocAsync(max(self._nbytes, 1),
                                                            queue.stream)
             else:
@@ -487,7 +491,7 @@ class HIPBuffer(DeviceBuffer):
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
                 with self._on_device():
-                    if self._queue.pooled:
+                    if getattr(self, "_pooled", self._queue.pooled):
                         # In stream order: after every launch queued so far,
                         # which may still be using this memory.
                         hip.hipFreeAsync(self._device_ptr, self._stream)
@@ -879,6 +883,17 @@ class HIPBackend(GPUBackend):
     def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
         return HIPBuffer(dtype.numpy_dtype, shape, getattr(self, "_queue", None))
+
+    def mpi_direct(self, buffer) -> bool:
+        """Pool memory (``hipMallocAsync``) is not for a GPU-aware MPI: HSA calls it
+        ``HSA_EXT_POINTER_TYPE_HSA_VMEM``, and MVAPICH-Plus 4.1's UCX took it for
+        host memory (an assertion in ``rndv_rtr.c``, or a segfault; illyad,
+        2026-10-24). ``hipMalloc`` memory went through at 44 GB/s a rank."""
+        return not getattr(buffer, "_pooled", False)
+
+    def allocate_mpi_array(self, dtype: ScalarType, shape: tuple[int, ...]) -> HIPBuffer:
+        return HIPBuffer(dtype.numpy_dtype, shape, getattr(self, "_queue", None),
+                         pooled=False)
 
     def memory_space(self, ptr) -> str:
         """Query where a pointer resides: 'cpu', 'hip', or 'hip_managed'.
