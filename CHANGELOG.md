@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `connected_components(data)`: cells connected through shared points, as
+  VTK's `vtkConnectivityFilter` (all regions, numbered alike) and Viskores'
+  `CellSetConnectivity`: `region` on the cells and `point_region` on the
+  points, by union-find on the device. Of a `PartitionedDataSet` too: each
+  piece labels its own, the copies of shared points join regions across
+  pieces, and regions are numbered across every piece and MPI rank, as on
+  the whole dataset where the pieces carry its global ids.
+
 - `ghost_cells(pds, layers=n)` makes any number of layers, each grown from
   the points of the layer before (cells of any piece, so pieces thinner than
   `n` cells are fine), equal to `split`'s and `vtkGhostCellsGenerator`'s for
