@@ -111,7 +111,10 @@ print(f"against MFEM at element centers: values within {value_error:.1e}, "
 
 # Filters on a curved, quadratic dataset. They read each cell's corners: the
 # contour and slice are of the field and geometry at the corners, linearized.
-iso = td.contour(data, "u", 0.5 * peak)
+# contour refuses an order-2 field, whose cells it would have to subdivide, so
+# it is given u's order-1 interpolant: projected into order-1 H1, a continuous
+# field keeps its values at the points.
+iso = td.contour(data, alg.project(data, field, td.H1(data)), 0.5 * peak)
 cut = td.slice_plane(data, data.positions().mean(axis=0), (1.0, 0.3, 0.2))
 outside = td.extract_surface(data)
 flux = alg.net_flux(data, alg.upwind_flux(data, field, (1.0, 0.0, 0.0)))
