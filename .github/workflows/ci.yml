@@ -288,6 +288,7 @@ jobs:
           packages/tack-vis/tests/test_ghost_cells.py
           packages/tack-vis/tests/test_global_ids.py
           packages/tack-vis/tests/test_reductions_across_ranks.py
+          packages/tack-vis/tests/test_particles_across_pieces.py
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not

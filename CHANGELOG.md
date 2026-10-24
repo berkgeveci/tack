@@ -7,6 +7,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Particles across pieces: `advect` and `streamlines` of a
+  `PartitionedDataSet` route each particle to the piece owning the cell
+  that holds it, advance it there, and hand it on when a whole step ends in
+  a ghost cell, in rounds until none is in flight, on any devices or MPI
+  ranks (each rank its own seeds). With a ghost layer wider than a step the
+  paths are the whole mesh's up to rounding (checked: positions within
+  1.2e-6, the same steps and status); without ghost cells particles cross
+  by the short step to the boundary. `streamlines` gives each piece the
+  stretches it traced, with `seed` and `segment`.
+- `advect` takes its own output as seeds and goes on from there: times,
+  steps and status carried, stopped particles left as they are.
+
 - `statistics` and `entropy` of a `PartitionedDataSet` work across MPI
   ranks: each rank passes its pieces (`PartitionedDataSet(..., world=)`),
   and the pieces' moments and histograms are gathered and combined in the

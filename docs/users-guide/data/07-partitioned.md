@@ -251,10 +251,28 @@ its own device, and `statistics` and `entropy` reduce each piece where it
 is. `packages/tack-vis/examples/44_partitioned_data.py` does this when there
 are several devices of the chosen type.
 
+## Particles across pieces
+
+`advect` and `streamlines` take a partitioned dataset too, and particles
+cross from piece to piece:
+
+```python
+pieces = td.split(data, 8, ghost_layers=1)
+particles = td.advect(pieces, "velocity", seeds, 0.01, 500)  # a dataset per piece
+paths = td.streamlines(pieces, "velocity", seeds, 0.01, 500) # each piece's stretches
+```
+
+With a ghost layer wider than a step (`step_size` times the speed), the
+paths are the whole mesh's up to rounding: a particle that ends a step in a
+ghost cell is handed to the cell's owner, which goes on with whole steps.
+Without ghost cells it crosses at the boundary by a shortened step. Each
+particle is in one piece of the result, with its `seed`; a path's stretches
+are in the pieces that traced them, each after the first starting at a
+point marked `DUPLICATEPOINT`.
+
 ## Not here yet
 
-More than one generated ghost layer, and particles that cross pieces, are
-the next steps.
+More than one generated ghost layer is the next step.
 
 ## Run and check
 

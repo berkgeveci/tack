@@ -1010,6 +1010,31 @@ The rules are Viskores':
   velocity;
 - a seed outside the mesh does not move and loses `SUCCESS`.
 
+**Going on.** `advect` takes its own output as `seeds`: the particles go on
+from where they stopped, with their times and the steps they took (`steps`
+counts those too), and a particle that stopped outside, at zero velocity
+or after the new limit stays. Two calls of 20 and then 40 steps give 40
+steps' particles exactly; a `seed` field comes along.
+
+**Over pieces.** Given a `PartitionedDataSet` (and the field's name),
+`advect` and `streamlines` let particles cross from piece to piece, in
+rounds: each particle in flight goes to the lowest piece one of whose own
+cells (not a ghost) holds it, found from the pieces' boxes and their
+locators; each piece advances what it took; repeat until none is in
+flight. On pieces with ghost cells a particle stops after a whole step
+that ends in a ghost cell and the cell's owner goes on with whole steps,
+so the paths are the whole mesh's, up to rounding, wherever a step
+(`step_size` times the speed) fits in the ghost layer. Without ghost cells
+a particle crosses by the short step to the boundary and the push out, so
+it differs by about a step. `advect` returns a `PartitionedDataSet` of the
+particles on the pieces they stopped in (or left the domain from), each
+with a `seed` (its number among all the seeds); `streamlines` one of each
+piece's stretches of the paths, with `seed` and `segment` on the cells,
+each stretch after the first starting at a `DUPLICATEPOINT`, so every
+path's points are owned once. Pieces may be on any devices, or on MPI
+ranks, each rank passing its own seeds, numbered after the ranks before
+it; one process gives the same particles.
+
 Each particle's whole path is one thread of one launch. Its stages locate
 it from the particle's side (`CellLocator.cell_bins()`, each bin's
 candidate cells) and reach the cell by id through the topology's flat
