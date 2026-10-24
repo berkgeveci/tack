@@ -4194,6 +4194,15 @@ combine pieces.</p>
   one back); across MPI ranks every rank's points are probed over every
   rank's pieces. Built on <code>tack.communication.Routing</code>, which particles
   across pieces use too.
+- <strong><code>merge_pieces(pds, root=0, fields=None, device=None)</code></strong> gives the
+  pieces back as one dataset, every owned cell and every point once, as
+  VTK's <code>vtkMergeBlocks</code> after <code>vtkRemoveGhosts</code>: for writing one file, or
+  for code that knows no pieces. Points are matched and numbered as
+  <code>generate_global_ids</code> does; ghost cells go, hidden cells stay marked, the
+  pieces' own global ids come along. Structured pieces that tile a box come
+  back as that box's structured grid (<code>split</code>'s input exactly, offset and
+  coordinates included); other pieces as an unstructured dataset. Across
+  MPI ranks the result is on <code>root</code> (<code>None</code> elsewhere).
 - <strong><code>update_ghosts(pds, *fields)</code></strong> copies the named point and cell fields'
   values on ghost points and cells from their owners, in place, for pieces
   <code>ghost_cells</code> made (it keeps the two exchanges as
@@ -4889,6 +4898,10 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 <tr>
 <td><code>update_ghosts(pds, *fields)</code></td>
 <td>ghost values refreshed from their owners, in place, for pieces <code>ghost_cells</code> made</td>
+</tr>
+<tr>
+<td><code>merge_pieces(pds, root=0)</code></td>
+<td>the pieces as one dataset, each cell and point once (see <em>Partitioned datasets</em>)</td>
 </tr>
 <tr>
 <td><code>generate_global_ids(pds)</code></td>

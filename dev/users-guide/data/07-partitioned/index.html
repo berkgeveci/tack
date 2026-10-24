@@ -1542,6 +1542,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#one-dataset-again" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One dataset again
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3334,6 +3345,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#one-dataset-again" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One dataset again
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3672,9 +3694,16 @@ a cut has one number everywhere:</p>
 <div class="highlight"><pre><span></span><code><span class="n">regions</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">connected_components</span><span class="p">(</span><span class="n">pieces</span><span class="p">)</span>          <span class="c1"># region, point_region on each piece</span>
 </code></pre></div>
 <p>With global ids on the pieces, regions are numbered as on the whole dataset.</p>
+<h2 id="one-dataset-again">One dataset again<a class="headerlink" href="#one-dataset-again" title="Permanent link">&para;</a></h2>
+<p><code>merge_pieces</code> gives the pieces back as one dataset, each cell and point
+once, ghosts dropped: to write one file, or to hand to code that knows no
+pieces. Structured pieces come back as one structured grid; across MPI ranks
+the result is on the root rank.</p>
+<div class="highlight"><pre><span></span><code><span class="n">whole</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">merge_pieces</span><span class="p">(</span><span class="n">pieces</span><span class="p">)</span>                    <span class="c1"># None on the other ranks</span>
+</code></pre></div>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p><code>merge_points</code> (one dataset of the pieces, for writing one file) is the next
-step.</p>
+<p>Asynchronous exchange, should particles across MPI ranks need it, and
+rebalancing pieces are not planned for now.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_partitioned.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packages/tack-vis/examples/44_partitioned_data.py<span class="w"> </span>--pieces<span class="w"> </span><span class="m">8</span>
