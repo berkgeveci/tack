@@ -212,6 +212,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- Implicit functions (`Plane`, `Sphere`, `Cylinder`, `Box`, `Planes`) give
+  the same bits on every backend: each product in `value` is named, so the
+  float contract rounds it on its own and no backend fuses it into a sum.
+  A slice through grid points made 1015 triangles on Metal and 883 on the
+  CPU (Metal's fused multiply-adds left noise about zero where the CPU had
+  exact zeros, which `contour` merges); both now make 883.
+
 - `as_polyhedra` and `extract_surface` scanned their faces' point counts (4
   a face) into the mesh's own id type, which a mesh is given for 12 per
   cell: a structured grid of 170M cells, or 120M hexahedra that share no

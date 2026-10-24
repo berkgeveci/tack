@@ -218,6 +218,26 @@ def test_planes_follow_the_datas_precision(f64_backend):
     assert (cut.positions()[:, 0] <= 0.1 + 1e-12).all()
 
 
+def test_functions_give_the_same_bits_on_every_backend(backend):
+    """Every product in a function's value is named, so it is rounded on its own and
+    no backend fuses it into a sum: the values are NumPy's, computed step by step
+    in f32, bit for bit. With a fused multiply-add, Metal's values at points on
+    a plane were noise about zero where the CPU's were 0, and a slice through
+    grid points came out as 1015 triangles on one and 883 on the other."""
+    f32 = np.float32
+    data = td.wavelet(8)
+    x = data.positions().astype(f32)
+    o, n = (f32(0.3), f32(0.2), f32(0.1)), np.array([1.0, 2.0, 3.0]) / np.sqrt(14.0)
+    n = n.astype(f32)
+    plane = td.implicit_values(data, td.Plane((0.3, 0.2, 0.1), (1.0, 2.0, 3.0))).values
+    a, b, c = ((x[:, k] - o[k]) * n[k] for k in range(3))
+    np.testing.assert_array_equal(plane.numpy(), (a + b) + c)
+    sphere = td.implicit_values(data, td.Sphere((0.5, 0.25, 0.0), 3.0)).values
+    d = x - np.array([0.5, 0.25, 0.0], f32)
+    xx, yy, zz = d[:, 0] * d[:, 0], d[:, 1] * d[:, 1], d[:, 2] * d[:, 2]
+    np.testing.assert_array_equal(sphere.numpy(), ((xx + yy) + zz) - f32(9.0))
+
+
 def test_moving_a_function_compiles_nothing_new(backend):
     """Its parameters are instance values: runtime arguments, not constants."""
     from tack.runtime.dispatch import get_backend

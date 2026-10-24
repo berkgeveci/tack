@@ -12,6 +12,13 @@ values: a kernel takes it as a template and calls ``f.value(p)`` on a
 3-vector, and moving a sphere or resizing a box does not compile anything
 anew. ``algorithms.implicit_values`` evaluates one on a dataset's geometry;
 ``slice``, ``extract_geometry`` and ``extract_points`` take one.
+
+Every product in a ``value`` is named, so the float contract rounds it on its
+own and no backend fuses it into a sum: a function gives the same bits on
+every backend. A slice through mesh points -- whose values are then exactly
+the level, and merge (``contour``) -- cuts alike everywhere; with a fused
+multiply-add, Metal's noise around zero cut a plane through grid points into
+1015 triangles where the CPU made 883.
 """
 
 import numpy as np
@@ -46,8 +53,11 @@ class Plane:
 
     @tack.func
     def value(self, p):
-        return ((p[0] - self.ox) * self.nx + (p[1] - self.oy) * self.ny
-                + (p[2] - self.oz) * self.nz)
+        # Each product named, so rounded on its own (the module's docstring).
+        a = (p[0] - self.ox) * self.nx
+        b = (p[1] - self.oy) * self.ny
+        c = (p[2] - self.oz) * self.nz
+        return a + b + c
 
 
 @tack.device_class
@@ -65,7 +75,10 @@ class Sphere:
         dx = p[0] - self.cx
         dy = p[1] - self.cy
         dz = p[2] - self.cz
-        return dx * dx + dy * dy + dz * dz - self.r2
+        xx = dx * dx
+        yy = dy * dy
+        zz = dz * dz
+        return xx + yy + zz - self.r2
 
 
 @tack.device_class
@@ -85,11 +98,20 @@ class Cylinder:
         dx = p[0] - self.cx
         dy = p[1] - self.cy
         dz = p[2] - self.cz
-        t = dx * self.ax + dy * self.ay + dz * self.az
-        rx = dx - t * self.ax
-        ry = dy - t * self.ay
-        rz = dz - t * self.az
-        return rx * rx + ry * ry + rz * rz - self.r2
+        tx = dx * self.ax
+        ty = dy * self.ay
+        tz = dz * self.az
+        t = tx + ty + tz
+        sx = t * self.ax
+        sy = t * self.ay
+        sz = t * self.az
+        rx = dx - sx
+        ry = dy - sy
+        rz = dz - sz
+        xx = rx * rx
+        yy = ry * ry
+        zz = rz * rz
+        return xx + yy + zz - self.r2
 
 
 @tack.device_class
@@ -112,7 +134,10 @@ class Box:
         ox = max(qx, 0.0)
         oy = max(qy, 0.0)
         oz = max(qz, 0.0)
-        return sqrt(ox * ox + oy * oy + oz * oz) + min(max(qx, max(qy, qz)), 0.0)
+        xx = ox * ox
+        yy = oy * oy
+        zz = oz * oz
+        return sqrt(xx + yy + zz) + min(max(qx, max(qy, qz)), 0.0)
 
 
 @tack.device_class
@@ -162,8 +187,8 @@ class Planes:
         most = -3.0e38
         for k in range(self.planes.shape[0] // 6):
             b = 6 * k
-            d = ((p[0] - self.planes[b]) * self.planes[b + 3]
-                 + (p[1] - self.planes[b + 1]) * self.planes[b + 4]
-                 + (p[2] - self.planes[b + 2]) * self.planes[b + 5])
-            most = max(most, d)
+            x = (p[0] - self.planes[b]) * self.planes[b + 3]
+            y = (p[1] - self.planes[b + 1]) * self.planes[b + 4]
+            z = (p[2] - self.planes[b + 2]) * self.planes[b + 5]
+            most = max(most, x + y + z)
         return most
