@@ -629,3 +629,27 @@ def test_the_contour_tables_are_the_generators():
     kept = (package / "src" / "tack" / "dataset" / "_contour_tables.py").read_text()
     version = re.compile(r"VTK \d+(\.\d+)*")
     assert version.sub("VTK", made) == version.sub("VTK", kept)
+
+
+def _check_apex(dtype):
+    rng = np.random.default_rng(5)
+    cells = np.array([_random_cell(sh.Pyramid, rng, rng.uniform(-1, 1, 3) + 100 * k)
+                      for k in range(8)])
+    pcs = np.array([[0.5, 0.5, 1.0], [0.0, 0.0, 1.0], [1.0, 1.0, 1.0], [0.3, 0.9, 1.0],
+                    [0.5, 0.5, 1.0 - 1e-7], [0.5, 0.5, 1.0], [0.2, 0.6, 1.0], [0.5, 0.5, 1.0]])
+    _, found, converged = _run_round_trip(sh.Pyramid, (cells, pcs, np.zeros_like(pcs)), dtype)
+    assert converged.all(), converged
+    np.testing.assert_allclose(found[:, 2], 1.0, atol=1e-5)
+    np.testing.assert_allclose(found[:, :2], 0.5, atol=1e-5)
+
+
+def test_a_pyramids_apex_inverts(backend):
+    """Every (r, s) at t = 1 maps to the apex, so Newton's Jacobian is singular
+    there: it did not converge, and no cell held a mesh point at an apex. The
+    apex, and a point a little inside it, come back at t = 1 (r and s are any
+    there; the apex's are 0.5)."""
+    _check_apex(tack.f32)
+
+
+def test_a_pyramids_apex_inverts_in_f64(f64_backend):
+    _check_apex(tack.f64)

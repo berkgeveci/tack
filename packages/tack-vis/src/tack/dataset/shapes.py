@@ -113,6 +113,11 @@ NEWTON_DIVERGED = tack.constant(1e6)
 #: own tolerance: a point this close to a neighbour is extrapolated by at most
 #: this much in it.
 HOLD_TOLERANCE = tack.constant(1e-5)
+#: A point this close to a pyramid's apex, relative to the pyramid's size, is
+#: taken to be at it (``Pyramid.world_to_parametric``): there every ``(r, s)``
+#: at ``t = 1`` is the same point, Newton's Jacobian is singular, and it did
+#: not converge within 1e-8 of the apex.
+APEX_SNAP = tack.constant(1e-6)
 
 # Edges as point pairs and faces as four points (-1 pads a triangle),
 # flattened. Each is VTK's GetEdge/GetFace order.
@@ -376,6 +381,14 @@ class Shape:
         The residual is taken relative to the cell's first point, so cells
         far from the origin keep their precision in f32.
         """
+        pc, converged = self._newton(pts, x)
+        return pc, converged
+
+    @tack.func
+    def _newton(self, pts, x):
+        """``world_to_parametric``'s Newton iteration. A shape that answers some
+        points itself (the pyramid, at its apex) overrides
+        ``world_to_parametric`` and calls this for the rest."""
         pc = self.parametric_center()
         converged = 0
         p0 = _point(pts, 0)
@@ -494,7 +507,10 @@ class Vertex(Shape):
         return pc
 
     @tack.func
-    def world_to_parametric(self, pts, x):
+    def _newton(self, pts, x):
+        # No iteration: every point's coordinates are (0, 0, 0). Overriding
+        # _newton rather than world_to_parametric leaves Shape's Newton loop,
+        # which needs a _newton_step the vertex lacks, out of its template.
         return tack.vec3(0.0, 0.0, 0.0), 1
 
 
@@ -1074,6 +1090,26 @@ class Pyramid(_Solid):
         fb = _linear(b, pc[1])
         return tack.vec3((2.0 * a - 1.0) * fb * (1.0 - pc[2]),
                          fa * (2.0 * b - 1.0) * (1.0 - pc[2]), -fa * fb)
+
+    @tack.func
+    def world_to_parametric(self, pts, x):
+        """As ``Shape.world_to_parametric``, but at the apex, where every
+        ``(r, s)`` at ``t = 1`` is the same point: the map's Jacobian is singular
+        there, Newton did not converge, and no cell held a mesh point at a
+        pyramid's apex. Within ``APEX_SNAP`` of the pyramid's size of the apex,
+        ``x`` is taken to be at it: ``(0.5, 0.5, 1)``, converged, where every
+        base corner's shape function is 0 and the apex's 1."""
+        apex = _point(pts, 4)
+        size = (_point(pts, 0) - apex).norm()
+        for j in range(1, 4):
+            size = max(size, (_point(pts, j) - apex).norm())
+        d = x - apex
+        reach = APEX_SNAP * size
+        pc = tack.vec3(0.5, 0.5, 1.0)
+        converged = 1
+        if d.dot(d) > reach * reach:
+            pc, converged = self._newton(pts, x)
+        return pc, converged
 
     @tack.func
     def is_inside(self, pc, tol):
