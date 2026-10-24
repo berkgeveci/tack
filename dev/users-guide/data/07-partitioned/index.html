@@ -1487,6 +1487,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#global-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global ids
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pieces-on-several-devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3235,6 +3246,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#global-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global ids
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pieces-on-several-devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3534,6 +3556,17 @@ owners:</p>
 </code></pre></div>
 <p><code>ghost_cells</code> keeps the exchanges, so each <code>update_ghosts</code> is one copy per
 neighbour, not a new matching.</p>
+<h2 id="global-ids">Global ids<a class="headerlink" href="#global-ids" title="Permanent link">&para;</a></h2>
+<p>Each piece numbers its points and cells from 0. Global ids number them
+across all the pieces, one id per point and per cell wherever it is held:
+<code>piece.global_ids.points</code> and <code>.cells</code>, <code>i64</code> arrays (<code>td.GlobalIds</code>).
+VTK's <code>GlobalIds</code> arrays come in as them, and <code>generate_global_ids</code> makes
+them, as <code>vtkGenerateGlobalIds</code> does:</p>
+<div class="highlight"><pre><span></span><code><span class="n">pieces</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">generate_global_ids</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">plain</span><span class="p">))</span>
+<span class="n">ids</span> <span class="o">=</span> <span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">global_ids</span><span class="o">.</span><span class="n">points</span>                  <span class="c1"># the same at a shared point</span>
+</code></pre></div>
+<p>Filters keep the ids of the points and cells they keep (<code>threshold</code>,
+<code>extract_cells</code>, <code>remove_ghosts</code>); what they make has none.</p>
 <h2 id="pieces-on-several-devices">Pieces on several devices<a class="headerlink" href="#pieces-on-several-devices" title="Permanent link">&para;</a></h2>
 <p>A piece is a dataset, so it can live on any device:
 <code>td.PartitionedDataSet(piece.to_device(f"cuda:{i % 2}") for i, piece in
@@ -3542,8 +3575,8 @@ its own device, and <code>statistics</code> and <code>entropy</code> reduce each
 is. <code>packages/tack-vis/examples/44_partitioned_data.py</code> does this when there
 are several devices of the chosen type.</p>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p>Global ids, <code>statistics</code> and <code>entropy</code> across MPI ranks, more than one
-generated ghost layer, and particles that cross pieces are the next steps.</p>
+<p><code>statistics</code> and <code>entropy</code> across MPI ranks, more than one generated ghost
+layer, and particles that cross pieces are the next steps.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_partitioned.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packages/tack-vis/examples/44_partitioned_data.py<span class="w"> </span>--pieces<span class="w"> </span><span class="m">8</span>
