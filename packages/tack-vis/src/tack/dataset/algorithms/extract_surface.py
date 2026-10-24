@@ -75,14 +75,17 @@ def extract_surface(data, faces=None, fields=None):
     faces = data.topology.faces()
     idt = data.id_dtype
     n = ids.shape[0]
+    # Up to 4 points a face: past the topology's own bound (12 a cell) for a
+    # surface of faces that share no points.
+    odt = id_types.for_output(data, 4 * n)
     sizes = tack.empty((n,), tack.i32)
-    starts = tack.empty((n,), idt)
+    starts = tack.empty((n,), odt)
     if n:
         _surface_sizes(ids, faces.kinds, sizes)
     length = exclusive_scan(sizes, starts, n) if n else 0
     types = tack.empty((n,), tack.u8)
-    offsets = tack.zeros((n + 1,), idt)
-    connectivity = tack.empty((length,), idt)
+    offsets = tack.zeros((n + 1,), odt)
+    connectivity = tack.empty((length,), odt)
     if n:
         _surface_cells(ids, faces.kinds, faces.rows, starts, types, offsets, connectivity,
                        length, n)

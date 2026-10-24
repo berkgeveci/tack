@@ -2,7 +2,7 @@
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import shapes
+from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Same, carry
 from tack.dataset.polyhedra import PolyhedralTopology
@@ -63,13 +63,16 @@ def as_polyhedra(data, fields=None):
     faces = topology.faces()
     nf = faces.num_faces
     idt = topology.id_dtype
+    # The faces' points: 4 a face, past 12 a cell when faces are not shared (a
+    # hexahedron has 24), and the polyhedral topology holds twice that.
+    fdt = ids.at_least(idt, 8 * nf)
     sizes = tack.empty((nf,), tack.i32)
-    starts = tack.empty((nf + 1,), idt)
+    starts = tack.empty((nf + 1,), fdt)
     if nf:
         _face_sizes(faces.kinds, sizes)
     total = exclusive_scan(sizes, starts, nf) if nf else 0
     _close(starts, nf, total)
-    face_points = tack.empty((total,), idt)
+    face_points = tack.empty((total,), fdt)
     if nf:
         _face_rows(faces.rows, starts, sizes, face_points)
 
