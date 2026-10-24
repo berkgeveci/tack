@@ -725,6 +725,12 @@ of input cell `ids[i]` (`Pieces`), or a point between two input points
 | values on edges | through the edge map, given only where the edges are the input's (`as_polyhedra`) |
 | traces, anything without a map | left behind |
 
+**Provenance** comes from the same rules: a cell field of the input's cell
+ids, `data.fields["source"] = td.cell_ids(data)` (an implicit counting
+array, nothing stored), reaches every output cell as the id of the input
+cell it came from -- kept, a piece of, or a face of -- and `point_ids` does
+the same for kept points. No filter needs an option for it.
+
 What each filter gives:
 
 | Filter | points | cells | faces | edges |
