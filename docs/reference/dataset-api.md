@@ -421,7 +421,10 @@ combine pieces.
 
   Pieces with no values are skipped. Each piece counts only what it owns
   (below), so where every shared cell and point has one owner, the result
-  is the whole's.
+  is the whole's. Across MPI ranks each rank passes its own pieces, and the
+  pieces' moments and histograms are gathered over `pds.world` and combined
+  in the pieces' global order: the same bits however they are shared out,
+  and as in one process.
 - **`split(data, pieces, ghost_layers=0)`** cuts a structured grid by index
   ranges, x fastest. `pieces` is a count, factored over the axes (each prime factor,
   largest first, cuts the axis whose pieces have most cells), or a tuple of
@@ -558,8 +561,7 @@ with ghost layers, their marks, work in a loop, reductions of the grid and
 of the pieces' isosurfaces checked against the whole, pieces spread over
 several GPUs where there are, and `.vtpd` files for ParaView.
 
-**Next** (the partitioned-data proposal's later phases): `statistics` and
-`entropy` across ranks, more than one generated layer, and
+**Next** (the partitioned-data proposal's later phases): more than one generated layer, and
 the algorithms that need more than ghosts (particles across pieces, probe of
 a partitioned source), on `tack.communication`.
 

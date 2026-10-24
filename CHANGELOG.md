@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `statistics` and `entropy` of a `PartitionedDataSet` work across MPI
+  ranks: each rank passes its pieces (`PartitionedDataSet(..., world=)`),
+  and the pieces' moments and histograms are gathered and combined in the
+  pieces' global order, so the result has the same bits however the pieces
+  are shared out, a rank with none included, and as in one process.
+
 - Global ids: `data.global_ids` (`tack.dataset.GlobalIds`), an `i64` per
   point and per cell, the same on every piece holding it. VTK's `GlobalIds`
   attributes come in as them (no longer as fields) and go back out;

@@ -4,6 +4,7 @@ import numpy as np
 
 from tack.arrays import size_of, width_of
 from tack.dataset.algorithms._common import _field
+from tack.dataset.algorithms.statistics import _over_pieces
 from tack.dataset.ghosts import owned_values
 from tack.dataset.partitioned import PartitionedDataSet, fields_of
 from tack.runtime.dispatch import on_inputs_device
@@ -42,16 +43,21 @@ def entropy(data, field, bins=10):
 
     Over a ``PartitionedDataSet``, ``field`` names a field every piece has: the
     range is the whole's, and each piece's histogram over what it owns, made on
-    its own device, is summed."""
+    its own device, is summed, over every rank of ``data.world``."""
     if isinstance(data, PartitionedDataSet):
         fields_of(data, field, "entropy")
-        pieces = [(piece, _extrema(piece, field)) for piece in data]
-        pieces = [(piece, e) for piece, e in pieces if e is not None]
-        if not pieces:
+        extrema = [e for e in _over_pieces(data, lambda piece: _extrema(piece, field))
+                   if e is not None]
+        if not extrema:
             raise ValueError("entropy of no values")
-        value_range = (float(np.min([e[0] for _, e in pieces])),
-                       float(np.max([e[1] for _, e in pieces])))
-        p = sum(_counts(piece, field, bins, value_range) for piece, _ in pieces)
+        value_range = (float(np.min([e[0] for e in extrema])),
+                       float(np.max([e[1] for e in extrema])))
+
+        def counts(piece):
+            if _extrema(piece, field) is None:
+                return np.zeros(bins)
+            return _counts(piece, field, bins, value_range)
+        p = sum(_over_pieces(data, counts))
     else:
         if _extrema(data, field) is None:
             raise ValueError("entropy of no values")
