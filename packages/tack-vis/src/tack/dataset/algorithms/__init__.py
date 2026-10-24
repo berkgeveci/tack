@@ -37,6 +37,7 @@ from tack.dataset.algorithms.log_values import log_values
 from tack.dataset.algorithms.magnitude import magnitude
 from tack.dataset.algorithms.mask import mask
 from tack.dataset.algorithms.mask_points import mask_points
+from tack.dataset.algorithms.merge_pieces import merge_pieces
 from tack.dataset.algorithms.net_flux import net_flux
 from tack.dataset.algorithms.perot import perot
 from tack.dataset.algorithms.point_elevation import point_elevation
@@ -101,6 +102,7 @@ __all__ = [
     "magnitude",
     "mask",
     "mask_points",
+    "merge_pieces",
     "net_flux",
     "perot",
     "point_elevation",

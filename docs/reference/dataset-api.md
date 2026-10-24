@@ -498,6 +498,15 @@ combine pieces.
   one back); across MPI ranks every rank's points are probed over every
   rank's pieces. Built on `tack.communication.Routing`, which particles
   across pieces use too.
+- **`merge_pieces(pds, root=0, fields=None, device=None)`** gives the
+  pieces back as one dataset, every owned cell and every point once, as
+  VTK's `vtkMergeBlocks` after `vtkRemoveGhosts`: for writing one file, or
+  for code that knows no pieces. Points are matched and numbered as
+  `generate_global_ids` does; ghost cells go, hidden cells stay marked, the
+  pieces' own global ids come along. Structured pieces that tile a box come
+  back as that box's structured grid (`split`'s input exactly, offset and
+  coordinates included); other pieces as an unstructured dataset. Across
+  MPI ranks the result is on `root` (`None` elsewhere).
 - **`update_ghosts(pds, *fields)`** copies the named point and cell fields'
   values on ghost points and cells from their owners, in place, for pieces
   `ghost_cells` made (it keeps the two exchanges as
@@ -925,6 +934,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `connected_components(data)` | which cells are connected through shared points, as VTK's `vtkConnectivityFilter` (all regions, colored) and Viskores' `CellSetConnectivity`: `data` with `region` on the cells and `point_region` on the points, numbered from 0 in order of their lowest cell (VTK's numbering); -1 for hidden cells and unused points; union-find on the device. Of a `PartitionedDataSet` too: regions numbered across every piece and rank, in order of their lowest global cell id where pieces have global ids (the whole's numbering for the whole's ids) |
 | `ghost_cells(pds, layers=1)` | unstructured pieces with a layer of their neighbours' cells, as `vtkGhostCellsGenerator` (see *Partitioned datasets*) |
 | `update_ghosts(pds, *fields)` | ghost values refreshed from their owners, in place, for pieces `ghost_cells` made |
+| `merge_pieces(pds, root=0)` | the pieces as one dataset, each cell and point once (see *Partitioned datasets*) |
 | `generate_global_ids(pds)` | the pieces' points and cells numbered across all of them, as `vtkGenerateGlobalIds` (see *Partitioned datasets*) |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |

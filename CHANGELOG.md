@@ -7,6 +7,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `merge_pieces(pds)`: the pieces of a partitioned dataset as one dataset,
+  each owned cell and each point once, as `vtkMergeBlocks` after
+  `vtkRemoveGhosts`. Points matched and numbered as `generate_global_ids`
+  does; hidden cells and global ids kept. Structured pieces that tile a box
+  come back as that box's grid, `split`'s input exactly; others as an
+  unstructured dataset. Across MPI ranks it is gathered on a root rank.
+
 - `connected_components(data)`: cells connected through shared points, as
   VTK's `vtkConnectivityFilter` (all regions, numbered alike) and Viskores'
   `CellSetConnectivity`: `region` on the cells and `point_region` on the

@@ -291,6 +291,7 @@ jobs:
           packages/tack-vis/tests/test_particles_across_pieces.py
           packages/tack-vis/tests/test_probe_pieces.py
           packages/tack-vis/tests/test_connected_components.py
+          packages/tack-vis/tests/test_merge_pieces.py
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not
