@@ -26,15 +26,23 @@ class PartitionedDataSet:
     piece where the piece is.
 
     It is a container, not a dataset: iterate over it (``for piece in pds``),
-    index it (``pds[i]``) or take its length."""
+    index it (``pds[i]``) or take its length.
 
-    def __init__(self, partitions=()):
+    Across MPI ranks, it holds this rank's pieces, and ``world`` (a
+    ``tack.communication.World``; this process alone by default) is where the
+    others are, for the algorithms that combine pieces."""
+
+    def __init__(self, partitions=(), world=None):
         partitions = tuple(partitions)
         for i, piece in enumerate(partitions):
             if not isinstance(piece, DataSet):
                 raise TypeError(f"partition {i} is a {type(piece).__name__}, not a "
                                 "tack.dataset.DataSet")
         self._partitions = partitions
+        if world is None:
+            from tack.communication import World
+            world = World()
+        self.world = world
 
     @property
     def partitions(self):

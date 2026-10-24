@@ -7,6 +7,24 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `ghost_cells(pds)` gives each unstructured piece of a partitioned dataset
+  a layer of its neighbours' cells, as VTK's `vtkGhostCellsGenerator` does:
+  the same cells, points, marks (a shared point belongs to the lowest piece
+  holding it) and values, checked against it and against `split`'s ghost
+  layers. Pieces may be on any devices, or on MPI ranks (each rank its own
+  pieces; `PartitionedDataSet(..., world=)`), the same code through
+  `tack.communication`: boundary points matched by a distributed sort of
+  their positions, cells sent to neighbours by `exchange`.
+  `update_ghosts(pds, *fields)` refreshes ghost values from their owners
+  through the two `Plan`s `ghost_cells` keeps, so a second filter that needs
+  neighbours (point gradients of projected values) is right on every owned
+  point.
+
+- `tack.communication.sort_by_key(blocks, keys, values)`: every block's keys
+  sorted together, the global order cut into one range per block, every
+  copy of a key on one block (a sample sort, as DIY's), in one process and
+  across MPI ranks.
+
 - `tack.communication`: communication between blocks (units of work with
   global ids, each on a device, such as a partitioned dataset's pieces), the
   patterns that algorithms over pieces are written on. `Blocks.exchange`
