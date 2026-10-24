@@ -252,8 +252,9 @@ jobs:
 
   # ── MPI ────────────────────────────────────────────────────────────
   # tack.communication across ranks: its cases under `mpiexec -n 3`,
-  # host-staged and GPU-aware (CPU arrays handed to MPI through DLPack), and a
-  # ghost refresh over split's pieces on 2 and 3 ranks. Open MPI from apt;
+  # host-staged and GPU-aware (CPU arrays handed to MPI through DLPack), a
+  # ghost refresh over split's pieces and ghost generation on 2 and 3 ranks
+  # (with the rest of those files, which need no MPI). Open MPI from apt;
   # mpi4py builds against it. TACK_REQUIRE_MPI makes a missing MPI fail the
   # job rather than skip, and oversubscription lets 3 ranks run on any runner.
   mpi:
@@ -284,6 +285,7 @@ jobs:
         run: >-
           uv run pytest -q -rs packages/tack-core/tests/test_communication.py
           packages/tack-vis/tests/test_ghost_update.py
+          packages/tack-vis/tests/test_ghost_cells.py
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not

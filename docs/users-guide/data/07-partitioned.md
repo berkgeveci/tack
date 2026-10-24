@@ -193,6 +193,39 @@ pieces = vtk_to_dataset(cut(mesh))                 # mesh: any vtkDataSet
 
 The filters' rules hold over these pieces as over `split`'s.
 
+## Generate ghost cells
+
+Unstructured pieces without ghost cells, from VTK's redistribution, a
+reader or your own partitioner, get a layer from `ghost_cells`, as VTK's
+`vtkGhostCellsGenerator` would give them, marks and values alike:
+
+```python
+plain = vtk_to_dataset(vtkRedistributeDataSetFilter(number_of_partitions=4,
+                                                    preserve_partitions_in_output=True)(mesh))
+pieces = td.ghost_cells(plain)                     # one layer, marked
+```
+
+Pieces neighbour where they share points at exactly the same position, and
+a shared point belongs to the lowest piece holding it. The pieces may be on
+different devices, or on different MPI ranks (each rank passes its own
+pieces and a `tack.communication.World`; see the API reference).
+
+A filter that needs each entity's neighbours is right on what a piece owns
+but wrong on the rim of the ghost layer, whose neighbours the piece lacks.
+Before a second such filter reads those values, copy them from their
+owners:
+
+```python
+for piece in pieces:
+    piece.fields["p"] = td.project(piece, "c", td.H1(piece))  # a cell field "c" to points
+td.update_ghosts(pieces, "p")                      # ghost values from their owners
+for piece in pieces:
+    piece.fields["grad"] = td.gradients(piece, "p", at="points")   # right where owned
+```
+
+`ghost_cells` keeps the exchanges, so each `update_ghosts` is one copy per
+neighbour, not a new matching.
+
 ## Pieces on several devices
 
 A piece is a dataset, so it can live on any device:
@@ -204,8 +237,8 @@ are several devices of the chosen type.
 
 ## Not here yet
 
-Generating ghost cells in Tack itself (today they come from `split` or
-VTK), global ids, and pieces across MPI ranks are the next steps.
+Global ids, `statistics` and `entropy` across MPI ranks, more than one
+generated ghost layer, and particles that cross pieces are the next steps.
 
 ## Run and check
 

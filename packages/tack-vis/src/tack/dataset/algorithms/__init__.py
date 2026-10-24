@@ -26,6 +26,7 @@ from tack.dataset.algorithms.extract_surface import extract_surface
 from tack.dataset.algorithms.face_centers import face_centers
 from tack.dataset.algorithms.face_geometry import FaceGeometry, face_geometry
 from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantities
+from tack.dataset.algorithms.ghost_cells import ghost_cells, update_ghosts
 from tack.dataset.algorithms.gradients import gradients
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.algorithms.interpolate import interpolate
@@ -87,6 +88,7 @@ __all__ = [
     "face_centers",
     "face_geometry",
     "flow_quantities",
+    "ghost_cells",
     "gradients",
     "implicit_values",
     "interpolate",
@@ -114,6 +116,7 @@ __all__ = [
     "threshold_points",
     "transform",
     "triangulate",
+    "update_ghosts",
     "upwind_flux",
     "values_at_centers",
     "warp",

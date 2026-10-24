@@ -276,3 +276,50 @@ def test_across_mpi_ranks(mpiexec, gpu_aware):
     assert run.returncode == 0, report
     for name in cases.CASES:
         assert f"ok {name}" in run.stdout, report
+
+
+# -- sort --------------------------------------------------------------------
+
+def test_a_sort_spans_devices_and_keeps_equal_keys_together(cpu, second):
+    blocks = tc.Blocks([cpu, second, cpu])
+    rng = np.random.default_rng(1)
+    host = {g: rng.integers(0, 2**40, 200 * (g + 1)).astype(np.uint64) % np.uint64(97)
+            for g in blocks.local}
+    keys = {g: tack.array(host[g], tack.u64, device=blocks.device(g)) for g in blocks.local}
+    out, values = tc.sort_by_key(blocks, keys)
+    assert values is None
+    assert all(_on(blocks.device(g), out[g]) for g in blocks.local)
+    got = [out[g].numpy() for g in blocks.local]
+    np.testing.assert_array_equal(np.concatenate(got), np.sort(np.concatenate(list(host.values()))))
+    sets = [set(k.tolist()) for k in got]
+    assert not (sets[0] & sets[1]) and not (sets[1] & sets[2]) and not (sets[0] & sets[2])
+    sizes = [len(k) for k in got]
+    assert min(sizes) > 0.5 * sum(sizes) / 3                 # roughly even
+
+
+def test_a_sort_of_one_block_and_of_nothing(cpu):
+    one = tc.Blocks(["cpu"])
+    out, values = tc.sort_by_key(one, {0: tack.array(np.array([3, 1, 2], np.int32))},
+                                 {0: {"v": tack.array(np.array([30., 10., 20.], np.float32))}})
+    assert out[0].numpy().tolist() == [1, 2, 3] and values[0]["v"].numpy().tolist() == [10, 20, 30]
+    blocks = tc.Blocks(["cpu"] * 3)
+    out, values = tc.sort_by_key(blocks, {g: tack.empty(0, tack.i64) for g in blocks.local},
+                                 {g: {"v": tack.empty(0, tack.vec3())} for g in blocks.local})
+    assert all(out[g].size == 0 and out[g].dtype == tack.i64 for g in blocks.local)
+    assert all(values[g]["v"].dtype == tack.vec3() for g in blocks.local)
+
+
+def test_a_sort_refuses_what_it_cannot_sort(cpu, second):
+    blocks = tc.Blocks([cpu, second])
+    keys = {0: tack.zeros(3, tack.i32, device=cpu), 1: tack.zeros(2, tack.i32, device=second)}
+    with pytest.raises(TypeError, match="i32, u32, i64 or u64"):
+        tc.sort_by_key(blocks, {0: tack.zeros(3, device=cpu), 1: keys[1]})
+    with pytest.raises(TypeError, match="one key type"):
+        tc.sort_by_key(blocks, {0: tack.zeros(3, tack.i64, device=cpu), 1: keys[1]})
+    with pytest.raises(ValueError, match="one element per key"):
+        tc.sort_by_key(blocks, keys, {0: {"v": tack.zeros(2, device=cpu)},
+                                      1: {"v": tack.zeros(2, device=second)}})
+    with pytest.raises(ValueError, match="not on the block's device"):
+        tc.sort_by_key(blocks, {0: keys[1], 1: keys[1]})
+    with pytest.raises(ValueError, match="every block on this rank"):
+        tc.sort_by_key(blocks, {0: keys[0]})

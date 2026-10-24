@@ -14,6 +14,9 @@ over them:
 - `Blocks.link_by_bounds`: each block's neighbours, by overlapping boxes.
 - `Plan`: an exchange kept for reuse -- which elements each block sends to
   which, and where the receiver puts them -- as ghost values are refreshed.
+- `sort_by_key`: every block's keys sorted together, the global order cut
+  into one range per block, every copy of a key on one block -- where equal
+  keys (matching points, global ids) are grouped.
 
 A `World` is the transport: ``World()`` is one process, blocks on any of its
 devices, a message moved by copying its arrays to the destination block's
@@ -27,6 +30,7 @@ instead of bytes, and functions in place of callbacks: ``exchange`` takes
 
 from ._blocks import Blocks
 from ._plan import Plan
+from ._sort import sort_by_key
 from ._world import World
 
-__all__ = ["Blocks", "Plan", "World"]
+__all__ = ["Blocks", "Plan", "World", "sort_by_key"]

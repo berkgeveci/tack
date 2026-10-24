@@ -398,11 +398,14 @@ node sets, MFEM boundary attributes).
 
 ## Partitioned datasets
 
-A `PartitionedDataSet(partitions)` is a dataset in pieces: an ordered list
-of `DataSet`s, as VTK's `vtkPartitionedDataSet`. Each piece is a whole
-dataset, with its own topology, numbering, geometry, fields, sets and
-device, and may have no cells. Iterate over it, index it (`pds[i]`) or take
-its length; `pds.partitions` is the tuple of pieces.
+A `PartitionedDataSet(partitions, world=None)` is a dataset in pieces: an
+ordered list of `DataSet`s, as VTK's `vtkPartitionedDataSet`. Each piece is
+a whole dataset, with its own topology, numbering, geometry, fields, sets
+and device, and may have no cells. Iterate over it, index it (`pds[i]`) or
+take its length; `pds.partitions` is the tuple of pieces. Across MPI ranks
+it holds this rank's pieces, and `world` (a `tack.communication.World`, this
+process alone by default) is where the others are, for the algorithms that
+combine pieces.
 
 - **Work on one piece takes the piece.** Filters, analyses, selections and
   `for_each` take a `DataSet`, as everywhere else; loop over the pieces:
@@ -434,8 +437,29 @@ its length; `pds.partitions` is the tuple of pieces.
   several pieces' own cells is the first such piece's, x fastest, and a
   duplicate in the others, as are the points of the ghost layers; the
   input's own ghost marks come along. An unstructured mesh is partitioned by
-  VTK (`vtkRedistributeDataSetFilter`, then `vtkGhostCellsGenerator` for
-  ghost cells) or by its host application.
+  VTK (`vtkRedistributeDataSetFilter`) or by its host application.
+- **`ghost_cells(pds, layers=1, world=None, fields=None)`** gives each
+  unstructured piece a layer of its neighbours' cells, as VTK's
+  `vtkGhostCellsGenerator` does, in one process (pieces on any devices) or
+  across MPI ranks. Pieces neighbour where they share points at exactly the
+  same position; a piece gains the cells of others that use a point it
+  shares with them (`DUPLICATECELL`) and the points of those it lacks
+  (`DUPLICATEPOINT`); a shared point belongs to the lowest piece holding it,
+  and is `DUPLICATEPOINT` in the others. That is VTK's rule too: the cells,
+  points, marks and values equal `vtkGhostCellsGenerator`'s, and `split`'s
+  ghost layer's. Point and cell fields come along (`fields` chooses), and
+  point and cell sets keep their members. Boundary points are matched by a
+  sort of their positions over every piece
+  (`tack.communication.sort_by_key`), and each piece sends each neighbour
+  its cells around their shared points. One layer; structured pieces get
+  more from `split`.
+- **`update_ghosts(pds, *fields)`** copies the named point and cell fields'
+  values on ghost points and cells from their owners, in place, for pieces
+  `ghost_cells` made (it keeps the two exchanges as
+  `tack.communication.Plan`s). A filter that needs each entity's neighbours
+  (`project` to points, point gradients) is right on what a piece owns and
+  wrong on the ghost layer's rim; refreshing the ghosts in between makes a
+  second such filter right too.
 
 **Ghost marks.** Every cell and point that several pieces hold has exactly one
 owner; every other copy is a ghost. `data.ghosts` is a
@@ -509,8 +533,10 @@ with ghost layers, their marks, work in a loop, reductions of the grid and
 of the pieces' isosurfaces checked against the whole, pieces spread over
 several GPUs where there are, and `.vtpd` files for ParaView.
 
-**Next** (the partitioned-data proposal's later phases): global ids; ghost
-cells generated in one process; then MPI.
+**Next** (the partitioned-data proposal's later phases): global ids,
+`statistics` and `entropy` across ranks, more than one generated layer, and
+the algorithms that need more than ghosts (particles across pieces, probe of
+a partitioned source), on `tack.communication`.
 
 ## Kernels
 
@@ -852,6 +878,8 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as `numpy.histogram` does); of a `PartitionedDataSet` too |
 | `split(data, pieces, ghost_layers=0)` | a structured grid cut into a `PartitionedDataSet`, with ghost layers (see *Partitioned datasets*) |
 | `remove_ghosts(data)` | `data` without its duplicate and hidden cells, keeping the points it owns (see *Partitioned datasets*) |
+| `ghost_cells(pds, layers=1)` | unstructured pieces with a layer of their neighbours' cells, as `vtkGhostCellsGenerator` (see *Partitioned datasets*) |
+| `update_ghosts(pds, *fields)` | ghost values refreshed from their owners, in place, for pieces `ghost_cells` made |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 
