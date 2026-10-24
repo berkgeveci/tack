@@ -34,6 +34,7 @@ from tack import arrays
 from tack import communication as tc
 from tack.dataset import _matching
 from tack.dataset._matching import INDEX_BITS, INDEX_MASK
+from tack.dataset.algorithms._structured_ghosts import structured_ghost_cells
 from tack.dataset.carry import _take
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
@@ -41,7 +42,7 @@ from tack.dataset.global_ids import GlobalIds
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1, Constant, Values
-from tack.dataset.topology import UnstructuredTopology
+from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
 __all__ = ["ghost_cells", "update_ghosts"]
 
@@ -50,8 +51,9 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     """``data``'s pieces, each with a layer of its neighbours' cells added as ghosts:
     a new ``PartitionedDataSet``, as VTK's ``vtkGhostCellsGenerator`` makes.
 
-    ``data`` holds this rank's pieces, unstructured (``UnstructuredTopology``)
-    and without ghost cells, on any devices; ``world`` is the
+    ``data`` holds this rank's pieces, all unstructured
+    (``UnstructuredTopology``) or all structured (below), without ghost cells,
+    on any devices; ``world`` is the
     ``tack.communication.World`` they live in (``data.world``, this process
     alone, by default). Pieces neighbour where they share points at exactly
     the same position. Each piece gains the cells of other pieces that use a
@@ -73,8 +75,13 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     a point of the layer before (a corner's diagonal neighbours included), as
     ``split``'s ghost layers and ``vtkGhostCellsGenerator``'s grow. Pieces
     thinner than ``layers`` cells are fine: a layer reaches past them to the
-    pieces beyond. Structured pieces get theirs from
-    ``split(..., ghost_layers=n)``.
+    pieces beyond.
+
+    Structured pieces (``StructuredTopology``, each placed by its ``offset``,
+    together tiling a box of cells, as ``split``'s and VTK's image pieces do)
+    stay structured: each becomes its block grown by ``layers`` cells, as far
+    as the box goes, with its values from the pieces that own them, and its
+    implicit coordinates grown with it.
     """
     if isinstance(layers, bool) or not isinstance(layers, (int, np.integer)) or layers < 1:
         raise ValueError(f"ghost_cells makes one or more layers, not {layers!r}")
@@ -88,6 +95,17 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     blocks = tc.Blocks([piece.device for piece in pieces], world)
     if blocks.count > 1 << (63 - INDEX_BITS):
         raise ValueError(f"ghost_cells handles up to {1 << (63 - INDEX_BITS)} pieces")
+    structured = {g: int(isinstance(p.topology, StructuredTopology))
+                  for g, p in zip(blocks.local, pieces)}
+    every = blocks.all_gather(structured)
+    if blocks.count and all(every):
+        out, plans = structured_ghost_cells(blocks, pieces, int(layers), names, _kind)
+        result = PartitionedDataSet(out, world=world)
+        result._ghost_plans = plans
+        return result
+    if any(every):
+        raise TypeError("ghost_cells takes pieces all structured or all unstructured, "
+                        "not a mix")
 
     hosts = {g: _host(piece) for g, piece in zip(blocks.local, pieces)}
     # Global ids come along where every piece has them, and points are matched
@@ -189,10 +207,9 @@ def _carried(pieces, fields):
 
 
 def _check_piece(i, piece):
-    if not isinstance(piece.topology, UnstructuredTopology):
-        raise TypeError(f"ghost_cells takes unstructured pieces; partition {i} is "
-                        f"{type(piece.topology).__name__} (split(..., ghost_layers=n) adds "
-                        f"them to structured pieces)")
+    if not isinstance(piece.topology, (UnstructuredTopology, StructuredTopology)):
+        raise TypeError(f"ghost_cells takes unstructured or structured pieces; partition "
+                        f"{i} is {type(piece.topology).__name__}")
     marks = piece.ghosts
     if marks is not None and marks.cells is not None and \
             (marks.cells.numpy() & Ghosts.DUPLICATECELL).any():

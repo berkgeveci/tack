@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `ghost_cells(pds, layers=n)` makes any number of layers, each grown from
+  the points of the layer before (cells of any piece, so pieces thinner than
+  `n` cells are fine), equal to `split`'s and `vtkGhostCellsGenerator`'s for
+  two and three layers. Structured pieces stay structured: pieces tiling a
+  box of cells become their blocks grown by the layers, with their offsets,
+  values from their owners and grown coordinates (uniform, rectilinear or
+  explicit), `split`'s ghost layers exactly; `update_ghosts` works on them.
+
 - `probe` of a `PartitionedDataSet`: each point goes to the lowest piece one
   of whose own cells holds it (holding ahead of the locator's tolerance),
   is evaluated there, and its values come back, equal to probing the whole

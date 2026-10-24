@@ -454,8 +454,15 @@ combine pieces.
   point and cell sets keep their members. Boundary points are matched by a
   sort of their positions over every piece
   (`tack.communication.sort_by_key`), and each piece sends each neighbour
-  its cells around their shared points. One layer; structured pieces get
-  more from `split`.
+  its cells around their shared points. `layers=n` grows each further layer
+  from the points of the layer before, cells of any piece included, so pieces
+  thinner than `n` cells are fine; two and three layers equal `split`'s and
+  `vtkGhostCellsGenerator`'s. **Structured pieces stay structured**: pieces
+  that tile a box of cells (each placed by its topology's `offset`, as
+  `split`'s and VTK's image pieces are) become their blocks grown by `n`
+  cells, with their offsets, their values from the pieces that own them, and
+  their coordinates grown with them (uniform, rectilinear, or explicit
+  positions); the result is `split`'s ghost layers exactly.
 - **Global ids.** `data.global_ids` is a `tack.dataset.GlobalIds` (or
   `None`), kept apart from the fields as the marks are: an `i64` per point
   (`points`) and per cell (`cells`), either of which may be `None`, the same

@@ -203,7 +203,12 @@ reader or your own partitioner, get a layer from `ghost_cells`, as VTK's
 plain = vtk_to_dataset(vtkRedistributeDataSetFilter(number_of_partitions=4,
                                                     preserve_partitions_in_output=True)(mesh))
 pieces = td.ghost_cells(plain)                     # one layer, marked
+deeper = td.ghost_cells(plain, layers=2)           # two, for two neighbour filters in a row
 ```
+
+Structured pieces, `split`'s or VTK's image pieces, stay structured: each
+becomes its block grown by the layers, with the right offset and
+coordinates.
 
 Pieces neighbour where they share points at exactly the same position, and
 a shared point belongs to the lowest piece holding it. The pieces may be on
@@ -283,7 +288,7 @@ values.fields["RTData"], values.fields["valid"]    # valid 0 outside every piece
 
 ## Not here yet
 
-More than one generated ghost layer is the next step.
+Connected components across pieces and `merge_points` are the next steps.
 
 ## Run and check
 
