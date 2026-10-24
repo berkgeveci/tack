@@ -7,6 +7,22 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.communication`: communication between blocks (units of work with
+  global ids, each on a device, such as a partitioned dataset's pieces), the
+  patterns that algorithms over pieces are written on. `Blocks.exchange`
+  sends messages, each a dict of named Tack arrays, from any block to any
+  block, arriving on the destination block's device; `all_reduce`,
+  `all_gather` and `exclusive_scan` combine small host values over every
+  block in global-id order, so a sum has the same bits however blocks are
+  assigned; `link_by_bounds` finds neighbours by overlapping boxes; a `Plan`
+  keeps an exchange (elements gathered on one block, scattered on another)
+  for reuse, as ghost values are refreshed from their owners. DIY's model,
+  with Tack arrays as the messages. `World()` is one process, blocks on any
+  of its devices; `World(comm)` spans an mpi4py communicator's ranks (the
+  new `mpi` extra), staging arrays through the host or, with
+  `gpu_aware=True`, handing them to MPI through DLPack. The same cases run
+  on both, and a CI job runs them under `mpiexec`.
+
 - `contour` takes a sequence of values, and `slice` and `slice_plane` take
   one as `value` (parallel planes for `slice_plane`): every value's contour
   in one dataset, made in one pass over the cells, each output cell's value

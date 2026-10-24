@@ -187,7 +187,8 @@ def texture3d(source_array, shape=None, interp='linear'):
 
 #: Public submodules, loaded on first use, so ``import tack`` alone reaches
 #: ``tack.arrays.CountingArray``. ``dataset`` and ``interop`` are tack-vis's.
-_SUBMODULES = frozenset({"algorithms", "arrays", "cache", "math", "random", "dataset", "interop"})
+_SUBMODULES = frozenset({"algorithms", "arrays", "cache", "communication", "math", "random",
+                         "dataset", "interop"})
 
 
 def __getattr__(name):

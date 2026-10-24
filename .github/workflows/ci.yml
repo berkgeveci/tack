@@ -250,6 +250,41 @@ jobs:
       - name: Run the dataset tests with i64 ids
         run: uv run pytest -q --ids=i64 packages/tack-vis/tests
 
+  # ── MPI ────────────────────────────────────────────────────────────
+  # tack.communication across ranks: its cases under `mpiexec -n 3`,
+  # host-staged and GPU-aware (CPU arrays handed to MPI through DLPack), and a
+  # ghost refresh over split's pieces on 2 and 3 ranks. Open MPI from apt;
+  # mpi4py builds against it. TACK_REQUIRE_MPI makes a missing MPI fail the
+  # job rather than skip, and oversubscription lets 3 ranks run on any runner.
+  mpi:
+    name: mpi
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TACK_REQUIRE_MPI: "1"
+      OMPI_MCA_rmaps_base_oversubscribe: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Open MPI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopenmpi-dev openmpi-bin
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Sync the workspace
+        run: uv sync --extra cpu --extra dev --extra mpi
+
+      - name: Run the communication tests
+        run: >-
+          uv run pytest -q -rs packages/tack-core/tests/test_communication.py
+          packages/tack-vis/tests/test_ghost_update.py
+
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not
   # include llvmlite — it is a CPU-only dependency. So a GPU install must
