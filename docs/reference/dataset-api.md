@@ -757,8 +757,9 @@ cell of no volume NaN.
 
 `tack.dataset.Plane(origin, normal)`, `Sphere(center, radius)`,
 `Cylinder(center, axis, radius)` (infinite), `Box(lower, upper)`
-(axis-aligned) and `Planes(origins, normals, dtype=tack.f32)` (the convex region
-below every plane: a frustum, a box at any angle; `dtype=tack.f64` for f64 data). `value(p)` is negative inside, zero on
+(axis-aligned) and `Planes(origins, normals)` (the convex region below every
+plane: a frustum, a box at any angle; its planes are evaluated at the data's
+precision, as the others' numbers are). `value(p)` is negative inside, zero on
 the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.

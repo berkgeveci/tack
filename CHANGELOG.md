@@ -92,6 +92,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking:** `Planes(origins, normals)` follows the data's precision, as
+  the other implicit functions do, and takes no `dtype`: filters evaluate a
+  copy of its planes in the geometry's floating type on its device, made
+  once. A plane at x = 0.1 was off by about 1e-9 on f64 data unless
+  `dtype=tack.f64` was asked for.
+
 - `tetrahedralize` makes tetrahedra that meet face to face, as VTK's
   `vtkDataSetTriangleFilter` does. Viskores' fixed tables split each
   hexahedron the same way, so neighbours cut their shared face along
