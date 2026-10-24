@@ -112,7 +112,7 @@ holds them. Kernels specialize on their fields' types, so the same kernels
 serve both, and an `i32` mesh pays nothing for the `i64` path.
 
 A filter's output keeps its input's type, or takes `i64` when the output
-can be too large for `i32` (a hexahedron tetrahedralizes into 20
+can be too large for `i32` (a hexahedron tetrahedralizes into 24
 connectivity entries), so a pipeline that starts in `i64` stays there.
 Sort keys are tuples of ids, never ids packed into one integer, so 64-bit
 ids sort as 32-bit ones do.
@@ -827,7 +827,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 
 | | |
 |---|---|
-| `tetrahedralize(data)` | 3D cells as tetrahedra by Viskores' tables (hexahedron or voxel 5, wedge 3, pyramid 2), one wedge tetrahedron turned the right way out |
+| `tetrahedralize(data)` | 3D cells as tetrahedra that meet face to face, as VTK's `vtkDataSetTriangleFilter` makes them: a structured grid's hexahedra in 5, the two mirror splits alternating with the parity of (i, j, k); any other cell the cone from its corner of smallest point id over the faces without it, each quadrilateral face split from its own smallest corner, so neighbours split a shared face alike (hexahedron or voxel 6, wedge 3, pyramid 2). Viskores' fixed tables, used before, did not conform |
 | `triangulate(data)` | 2D cells as triangles: quads and pixels in two, polygons in fans |
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
 | `statistics(data, f)` | a `Statistics` named tuple of Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis; of a `PartitionedDataSet` too (see *Partitioned datasets*) |

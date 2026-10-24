@@ -84,6 +84,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `tetrahedralize` makes tetrahedra that meet face to face, as VTK's
+  `vtkDataSetTriangleFilter` does. Viskores' fixed tables split each
+  hexahedron the same way, so neighbours cut their shared face along
+  different diagonals: on a 2 x 2 x 2 cube of hexahedra, `extract_surface`
+  of the tetrahedra returned every inner face too (96 triangles for 48).
+  Now a structured grid's hexahedra take 5 tetrahedra, the two mirror splits
+  alternating with the parity of (i, j, k), and any other cell is the cone
+  from its corner of smallest point id over the faces without it, each
+  quadrilateral face split from its own smallest corner, whatever order the
+  cells and points come in: hexahedra and voxels give 6 tetrahedra (were 5),
+  wedges 3, pyramids 2, as VTK's counts.
+
 - `probe`, `advect` and `streamlines` given no locator reuse the one the
   mesh's topology keeps (`cached_locator`), instead of building one per
   call: probing 100k points in 1M hexahedra again takes 13 ms instead of
