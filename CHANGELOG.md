@@ -148,6 +148,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A point at a pyramid's apex was located in no cell: every `(r, s)` at
+  `t = 1` maps to the apex, so Newton's Jacobian is singular there and it
+  did not converge. `Pyramid.world_to_parametric` now takes a point within
+  `shapes.APEX_SNAP` (1e-6 of the pyramid's size) of the apex to be at
+  `(0.5, 0.5, 1)`. In `vtkCellTypeSource`'s pyramid grid, all 18 apexes were
+  found by no cell; both searches find them now. A point just outside a
+  pyramid beside its apex, on the mesh's boundary, is still not found.
 - `CellLocator.find`, `probe` and advection: which cell held a point on a
   face, edge or vertex that cells share was the sign of rounding noise, so
   the searches from the points and from the cells could put a mesh point in
