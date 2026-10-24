@@ -68,14 +68,16 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     a field's ghost values from their owners afterwards, after a filter that
     is right only where it sees every neighbour.
 
-    One layer, which every filter needs to give each piece its share of the
-    whole's output; more are not made yet. Structured pieces get theirs from
+    ``layers`` layers: the first, every filter's need, is the cells that use
+    a point a piece shares; each further layer the cells, of any piece, that use
+    a point of the layer before (a corner's diagonal neighbours included), as
+    ``split``'s ghost layers and ``vtkGhostCellsGenerator``'s grow. Pieces
+    thinner than ``layers`` cells are fine: a layer reaches past them to the
+    pieces beyond. Structured pieces get theirs from
     ``split(..., ghost_layers=n)``.
     """
-    if layers != 1:
-        raise NotImplementedError(f"ghost_cells makes one layer of ghost cells, not "
-                                  f"{layers!r}; structured pieces get more from "
-                                  f"split(..., ghost_layers=n)")
+    if isinstance(layers, bool) or not isinstance(layers, (int, np.integer)) or layers < 1:
+        raise ValueError(f"ghost_cells makes one or more layers, not {layers!r}")
     if not isinstance(data, PartitionedDataSet):
         raise TypeError(f"ghost_cells takes a PartitionedDataSet, not {type(data).__name__}")
     world = data.world if world is None else world
@@ -108,7 +110,8 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     owners = {g: _matching.owners(g, hosts[g]["num_points"], partners[g],
                                   np.zeros(hosts[g]["num_points"], bool))
               for g in blocks.local}
-    sent = _ghost_parts(blocks, pieces, hosts, partners, owners, names, numbered)
+    needed = _needed(blocks, hosts, partners, owners, int(layers))
+    sent = _ghost_parts(blocks, pieces, hosts, needed, owners, names, numbered)
     incoming = blocks.exchange(sent)
 
     out, receive_points, receive_cells = [], {}, {}
@@ -222,35 +225,91 @@ def _host(piece):
     }
 
 
-
-
-
-
-# -- matching --------------------------------------------------------------
-
-
-
-
-
-
-
 # -- what each piece sends -------------------------------------------------
 
-def _ghost_parts(blocks, pieces, hosts, partners, owners, names, numbered):
-    """Each piece's message to each neighbour: its cells using a point they share."""
+def _needed(blocks, hosts, partners, owners, layers):
+    """The cells each piece sends each other piece, ``{gid: {other: cells}}`` for
+    this rank's pieces, in ``layers`` rounds of identities only.
+
+    A piece asks for the cells around its frontier -- first its points other
+    pieces share, then the points of the cells the last round brought that it
+    had not seen -- by the points' identities. Every piece offers its cells
+    within ``layers`` steps of its boundary, each under its points' identities.
+    Requests and offers of one identity meet in a sort over every block
+    (``_matching.match``); each offered cell a piece has not been sent goes to
+    it, and it hears the identities of that cell's points for the next round."""
+    needed = {g: {} for g in blocks.local}
+    seen, frontier, offers = {}, {}, {}
+    for g in blocks.local:
+        host = hosts[g]
+        seen[g] = np.unique(owners[g])
+        frontier[g] = np.unique(owners[g][np.unique(partners[g][0])])
+        offers[g] = _offers(host, owners[g], layers)
+    for _ in range(layers):
+        entries = {}
+        for g in blocks.local:
+            cells, ids = offers[g]
+            ask = frontier[g]
+            index = np.concatenate([cells, -1 - np.arange(len(ask), dtype=np.int64)])
+            values = np.concatenate([ids, ask]).astype(np.int64).view(np.uint64)
+            flags = np.concatenate([np.zeros(len(cells), np.uint8), np.ones(len(ask), np.uint8)])
+            entries[g] = (index, [values], flags)
+        found = _matching.match(blocks, entries)
+        outgoing = {}
+        for g in blocks.local:
+            index, other, _, other_flag = found[g]
+            offered = (index >= 0) & (other_flag == 1)
+            outgoing[g] = {}
+            host = hosts[g]
+            for b in np.unique(other[offered]).tolist():
+                cells = np.unique(index[offered & (other == b)])
+                cells = np.setdiff1d(cells, needed[g].get(b, np.zeros(0, np.int64)))
+                if not len(cells):
+                    continue
+                needed[g][b] = np.union1d(needed[g].get(b, np.zeros(0, np.int64)), cells)
+                points = np.concatenate([host["connectivity"][host["offsets"][c]:
+                                                              host["offsets"][c + 1]]
+                                         for c in cells])
+                outgoing[g][int(b)] = {"ids": tack.array(owners[g][np.unique(points)],
+                                                         tack.i64, device=blocks.device(g))}
+        incoming = blocks.exchange(outgoing)
+        for g in blocks.local:
+            ids = [m["ids"].numpy() for m in incoming[g].values()]
+            new = np.setdiff1d(np.unique(np.concatenate(ids)) if ids else
+                               np.zeros(0, np.int64), seen[g])
+            frontier[g] = new
+            seen[g] = np.union1d(seen[g], new)
+    return needed
+
+
+def _offers(host, identity, layers):
+    """A piece's cells within ``layers`` steps of its boundary, one entry per
+    (cell, point): ``(cells, point identities)``."""
+    offsets, connectivity = host["offsets"], host["connectivity"]
+    counts = np.diff(offsets)
+    cell_of = np.repeat(np.arange(host["num_cells"]), counts)
+    reached = np.zeros(host["num_points"], bool)
+    reached[host["candidates"]] = True
+    chosen = np.zeros(host["num_cells"], bool)
+    for _ in range(layers):
+        touching = np.zeros(host["num_cells"], bool)
+        touching[cell_of[reached[connectivity]]] = True
+        chosen |= touching
+        reached[connectivity[chosen[cell_of]]] = True
+    rows = chosen[cell_of]
+    return cell_of[rows].astype(np.int64), identity[connectivity[rows]].astype(np.int64)
+
+
+def _ghost_parts(blocks, pieces, hosts, needed, owners, names, numbered):
+    """Each piece's message to each other piece: the cells it needs (``_needed``)."""
     outgoing = {}
     for g, piece in zip(blocks.local, pieces):
         host = hosts[g]
-        index, other, _, _ = partners[g]
         offsets, connectivity = host["offsets"], host["connectivity"]
         counts = np.diff(offsets)
-        cell_of = np.repeat(np.arange(host["num_cells"]), counts)
         device = blocks.device(g)
         outgoing[g] = {}
-        for neighbour in np.unique(other).tolist():
-            shared = np.zeros(host["num_points"], bool)
-            shared[index[other == neighbour]] = True
-            cells = np.unique(cell_of[shared[connectivity]])
+        for neighbour, cells in sorted(needed[g].items()):
             used = np.concatenate([connectivity[offsets[c]:offsets[c + 1]] for c in cells])
             points, local = np.unique(used, return_inverse=True)
             sizes = counts[cells]
