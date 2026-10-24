@@ -56,6 +56,24 @@ def test_tuples_are_the_stable_lexicographic_order(backend, dtype, width):
                                   np.unique(keys, axis=0, return_counts=True)[1])
 
 
+@pytest.mark.parametrize("indices", ID_TYPES, ids=lambda t: t.name)
+@pytest.mark.parametrize("width", [1, 2, 4])
+def test_buckets_either_side_of_the_local_sort(backend, width, indices):
+    """Buckets of up to 16 entries are sorted in a local array, larger ones (up
+    to the radix sort's threshold) in place: sizes 0 to 40, in reverse order
+    within each so that every entry moves, with ties to keep stable."""
+    rng = np.random.default_rng(width)
+    sizes = np.r_[np.arange(41), 15, 16, 17]
+    first = np.repeat(np.arange(len(sizes)), sizes)
+    rest = rng.integers(0, 3, (len(first), width - 1))
+    keys = np.c_[first, rest][::-1] if width > 1 else first[::-1]
+    order, starts = bucket_order(_keys(keys, tack.i32), len(sizes), indices)
+    assert order.dtype == indices
+    expected = _stable(keys if width > 1 else keys[:, None])
+    np.testing.assert_array_equal(order.numpy(), expected)
+    np.testing.assert_array_equal(starts.numpy(), np.r_[0, np.cumsum(sizes)])
+
+
 def test_ids_past_32_bits(backend):
     """Second components past 2**32 compare in full: nothing is packed."""
     keys = np.array([[1, 2**40 + 5], [1, 2**40 + 1], [0, 2**33], [1, 7]])

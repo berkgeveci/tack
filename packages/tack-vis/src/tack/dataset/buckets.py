@@ -166,17 +166,39 @@ def _close(starts, n, total):
         starts[n] = total
 
 
+# A bucket of up to 16 entries is read into a local array, sorted there and
+# written back once: by insertion in global memory, each shift is a store that
+# the next comparison reads back, which on an MI210 cost three times the
+# comparisons themselves (faces of 1M hexahedra, about 6 entries a bucket:
+# 2.48 ms, 0.76 sorted locally; an H100 0.40 either way). Larger buckets, up to
+# _LARGEST, keep the insertion in place.
 @tack.kernel
 def _sort_buckets(keys, starts, order, nbuckets):
     for b in range(nbuckets):
         begin = starts[b]
-        for i in range(begin + 1, starts[b + 1]):
-            e = order[i]
-            j = i - 1
-            while j >= begin and keys.before(e, order[j]):
-                order[j + 1] = order[j]
-                j -= 1
-            order[j + 1] = e
+        end = starts[b + 1]
+        if end - begin <= 16:
+            local = tack.local_array_like(order, 16)
+            m = end - begin
+            for i in range(m):
+                local[i] = order[begin + i]
+            for i in range(1, m):
+                e = local[i]
+                j = i - 1
+                while j >= 0 and keys.before(e, local[j]):
+                    local[j + 1] = local[j]
+                    j -= 1
+                local[j + 1] = e
+            for i in range(m):
+                order[begin + i] = local[i]
+        else:
+            for i in range(begin + 1, end):
+                e = order[i]
+                j = i - 1
+                while j >= begin and keys.before(e, order[j]):
+                    order[j + 1] = order[j]
+                    j -= 1
+                order[j + 1] = e
 
 
 @tack.kernel
