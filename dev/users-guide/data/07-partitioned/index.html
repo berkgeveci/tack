@@ -1476,6 +1476,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#generate-ghost-cells" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generate ghost cells
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pieces-on-several-devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3213,6 +3224,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#generate-ghost-cells" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generate ghost cells
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pieces-on-several-devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3488,6 +3510,30 @@ an unstructured mesh with ghost cells, use VTK's filters (no MPI needed):</p>
 <span class="n">pieces</span> <span class="o">=</span> <span class="n">vtk_to_dataset</span><span class="p">(</span><span class="n">cut</span><span class="p">(</span><span class="n">mesh</span><span class="p">))</span>                 <span class="c1"># mesh: any vtkDataSet</span>
 </code></pre></div>
 <p>The filters' rules hold over these pieces as over <code>split</code>'s.</p>
+<h2 id="generate-ghost-cells">Generate ghost cells<a class="headerlink" href="#generate-ghost-cells" title="Permanent link">&para;</a></h2>
+<p>Unstructured pieces without ghost cells, from VTK's redistribution, a
+reader or your own partitioner, get a layer from <code>ghost_cells</code>, as VTK's
+<code>vtkGhostCellsGenerator</code> would give them, marks and values alike:</p>
+<div class="highlight"><pre><span></span><code><span class="n">plain</span> <span class="o">=</span> <span class="n">vtk_to_dataset</span><span class="p">(</span><span class="n">vtkRedistributeDataSetFilter</span><span class="p">(</span><span class="n">number_of_partitions</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+                                                    <span class="n">preserve_partitions_in_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)(</span><span class="n">mesh</span><span class="p">))</span>
+<span class="n">pieces</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">plain</span><span class="p">)</span>                     <span class="c1"># one layer, marked</span>
+</code></pre></div>
+<p>Pieces neighbour where they share points at exactly the same position, and
+a shared point belongs to the lowest piece holding it. The pieces may be on
+different devices, or on different MPI ranks (each rank passes its own
+pieces and a <code>tack.communication.World</code>; see the API reference).</p>
+<p>A filter that needs each entity's neighbours is right on what a piece owns
+but wrong on the rim of the ghost layer, whose neighbours the piece lacks.
+Before a second such filter reads those values, copy them from their
+owners:</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">:</span>
+    <span class="n">piece</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">piece</span><span class="p">))</span>  <span class="c1"># a cell field &quot;c&quot; to points</span>
+<span class="n">td</span><span class="o">.</span><span class="n">update_ghosts</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="s2">&quot;p&quot;</span><span class="p">)</span>                      <span class="c1"># ghost values from their owners</span>
+<span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">:</span>
+    <span class="n">piece</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;grad&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">at</span><span class="o">=</span><span class="s2">&quot;points&quot;</span><span class="p">)</span>   <span class="c1"># right where owned</span>
+</code></pre></div>
+<p><code>ghost_cells</code> keeps the exchanges, so each <code>update_ghosts</code> is one copy per
+neighbour, not a new matching.</p>
 <h2 id="pieces-on-several-devices">Pieces on several devices<a class="headerlink" href="#pieces-on-several-devices" title="Permanent link">&para;</a></h2>
 <p>A piece is a dataset, so it can live on any device:
 <code>td.PartitionedDataSet(piece.to_device(f"cuda:{i % 2}") for i, piece in
@@ -3496,8 +3542,8 @@ its own device, and <code>statistics</code> and <code>entropy</code> reduce each
 is. <code>packages/tack-vis/examples/44_partitioned_data.py</code> does this when there
 are several devices of the chosen type.</p>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p>Generating ghost cells in Tack itself (today they come from <code>split</code> or
-VTK), global ids, and pieces across MPI ranks are the next steps.</p>
+<p>Global ids, <code>statistics</code> and <code>entropy</code> across MPI ranks, more than one
+generated ghost layer, and particles that cross pieces are the next steps.</p>
 <h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_partitioned.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packages/tack-vis/examples/44_partitioned_data.py<span class="w"> </span>--pieces<span class="w"> </span><span class="m">8</span>
