@@ -316,6 +316,38 @@ def test_a_read_only_reshaped_view_stays_read_only(backend):
         _bump(view)
 
 
+def test_writes_are_counted_on_the_buffer(backend):
+    """Every write Tack makes counts on the array's buffer (`DeviceBuffer.version`):
+    host writes (fill, copyto, uploads) and launches of kernels that may store
+    to it, not those that only read it. Views share the count; the revision
+    token of tack.arrays changes with it, so something derived from the
+    values can tell it is stale."""
+    from tack.arrays import UniformCoordinates, _revision
+
+    a = tack.empty((8,))
+    out = tack.empty((8,))
+    view = a.reshape((2, 4))
+    start = a._buffer.version
+    a.fill(1.0)
+    tack.copyto(a, np.arange(8, dtype=np.float32))
+    assert a._buffer.version == start + 2
+    token = _revision(a)
+    _scale_into(a, out)                          # reads a, writes out
+    assert _revision(a) == token
+    _scale_into(out, view)                       # writes a through its view
+    assert view._buffer.version == a._buffer.version == start + 3
+    assert _revision(a) != token
+    _bump(a)                                     # atomics store too
+    assert a._buffer.version == start + 4
+    tack.copyto(a, out)                          # a device copy is a launch
+    assert a._buffer.version > start + 4
+    # An implicit array's token follows its numbers and the arrays it holds.
+    grid = UniformCoordinates((3, 3, 3), (0, 0, 0), (1, 1, 1))
+    token = _revision(grid)
+    grid._origin = (1.0, 0.0, 0.0)
+    assert _revision(grid) != token
+
+
 # --- fill() with one element's value ---
 
 def test_fill_takes_an_element_of_a_vector_or_matrix_array(backend):

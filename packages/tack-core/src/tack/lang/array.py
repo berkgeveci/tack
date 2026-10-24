@@ -51,6 +51,15 @@ class DeviceBuffer:
     #: it anyway waited for every queued launch, a round trip per `zeros`.
     starts_zeroed: bool = False
 
+    #: How many times Tack has written the buffer: counted by every host write
+    #: (`Array._check_writable`, which `fill`, `copyto` and uploads call) and by
+    #: every kernel launch that may store to it (`check_writable_arrays`), so
+    #: something derived from the values (a `CellLocator` from positions) can
+    #: tell it is stale. An instance attribute once written; views of one
+    #: buffer share it. Writes Tack does not make -- through memory it shares
+    #: (DLPack, `export_memory`, `wrap_ptr`) -- are not counted.
+    version: int = 0
+
     def from_numpy(self, arr: np.ndarray):
         raise NotImplementedError
 
@@ -290,10 +299,13 @@ class Array:
         return self._buffer.starts_zeroed
 
     def _check_writable(self):
+        """Refuse a host write to a read-only array; count one to any other (every
+        host write calls this first)."""
         if not self._writable:
             raise RuntimeError(
                 "Array is read-only (created from an external pointer). "
                 "Use writable=True in array_from_ptr() to enable writes.")
+        self._buffer.version += 1
 
     def _vector_shape(self):
         """``(*shape, n)`` for a vector array, ``(*shape, rows, columns)`` for a

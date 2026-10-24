@@ -296,5 +296,5 @@ def test_advection_preserves_f64_positions(f64_backend):
 def test_advection_refuses_a_foreign_locator(backend):
     data = _uniform()
     locator = td.CellLocator(_uniform())
-    with pytest.raises(ValueError, match="another dataset"):
+    with pytest.raises(ValueError, match="another topology or geometry"):
         td.advect(data, "v", [[1., 1., 1.]], 0.1, 1, locator=locator)

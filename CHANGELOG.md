@@ -74,6 +74,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `probe`, `advect` and `streamlines` given no locator reuse the one the
+  mesh's topology keeps (`cached_locator`), instead of building one per
+  call: probing 100k points in 1M hexahedra again takes 13 ms instead of
+  48 on an M1 Max's CPU. A locator records its geometry's state, and is
+  rebuilt (the kept one) or refused (one passed in) once Tack has written
+  the positions, through a write count on every array's storage
+  (`DeviceBuffer.version`, which kernel launches and host writes keep, at
+  no measurable cost per launch). A locator passed in now serves any
+  dataset of the same topology and geometry, not only the dataset it was
+  made from. Writes through memory shared with another library are not
+  seen.
+
 - `contour` and `slice` where the isovalue equals a point's value: the
   crossings of every edge at that point are now that point, once, and a
   triangle, polygon or line left with two corners at one point is dropped,
