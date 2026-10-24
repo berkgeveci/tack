@@ -288,6 +288,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- The CPU threading policy kept fanning out kernels whose threads contend
+  (many atomics on a few counters: a cell-type histogram over one type, a
+  hot bucket), at 8-9x their serial time on 28 cores. A fan-out measured
+  slower per element than serial was folded into the serial estimate, and
+  the threshold still credited threads with a 10% gain. Now, in a kernel
+  with atomics, such a fan-out is settled by one whole-range serial run: if serial wins, the kernel is
+  contended and runs serially, with the back-off rechecks still trying
+  threads now and then. jura: histogram 41.2 to 4.8 ms (one thread 4.6);
+  yavin, one atomic counter over 1M elements: 39.2 to 2.3 ms. Found and
+  fixed on jura.
+
 - Implicit functions (`Plane`, `Sphere`, `Cylinder`, `Box`, `Planes`) give
   the same bits on every backend: each product in `value` is named, so the
   float contract rounds it on its own and no backend fuses it into a sum.
