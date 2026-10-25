@@ -160,6 +160,35 @@ assert np.isclose(sj.max(), 1.0) and np.isclose(sj.min(), 1 / np.sqrt(2))
 assert worst.num_cells == np.count_nonzero(sj < 0.75)
 ```
 
+## Feature edges
+
+`feature_edges(data, angle=30.0)` finds a surface's edges by how many cells
+meet there and at what angle, as VTK's `vtkFeatureEdges`: **boundary** edges
+(one cell), **feature** edges (two cells whose normals are at least `angle`
+degrees apart), **non-manifold** edges (three or more cells) and, if asked,
+**manifold** edges (the rest of the two-cell edges). The result is line cells
+on the same points with a `kind` cell field (`EdgeKind`), point fields
+carried. A volume mesh's surface comes from `extract_surface` first.
+
+<!-- tack-check: feature-edges -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+box = td.uniform_grid((4, 3, 3))
+surface = td.extract_surface(box, td.boundary_faces(box))
+edges = td.feature_edges(surface)                 # the box's 12 edges, in segments
+kinds = edges.fields["kind"].values.numpy()
+print(edges.num_cells, "feature edges")
+assert (kinds == td.EdgeKind.FEATURE).all() and edges.num_cells == 4 * 3 + 4 * 2 + 4 * 2
+open_top = td.uniform_grid((4, 4))
+assert td.feature_edges(open_top).num_cells == 12           # its boundary
+```
+
 ## Check algorithm support before building a pipeline
 
 | Task | Shape-based | Polyhedral / polygonal | Polyline |
