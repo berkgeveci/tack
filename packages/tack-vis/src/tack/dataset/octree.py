@@ -48,21 +48,23 @@ def _unkey(k, depth, dimension):
 
 
 @tack.kernel
-def _node_geometry(tree, level, key, root_lo, root_size, dimension, lo, size):
+def _node_geometry(tree, level, key, root_lo, root_size, dimension, one, lo, size):
     # Each node's lower corner and sides: its tree's root cell, divided by 2 per
-    # level, at the integer coordinates its key interleaves.
+    # level, at the integer coordinates its key interleaves. Integers become
+    # floats by ``one`` (1.0), a scalar in the arrays' type: f64 where the
+    # device has it, f32 on one that has not (Metal).
     for n in range(lo.shape[0]):
         t = tree[n]
         depth = level[n]
         i, j, m = _unkey(key[n], depth, dimension)
-        scale = 1.0 / tack.f64(tack.u64(1) << tack.u64(depth))
+        scale = 1.0 / ((tack.u64(1) << tack.u64(depth)) * one)
         r = root_size[t]
         s = [r[0] * scale, r[1] * scale, r[2] * scale]
         if dimension == 2:
             s = [s[0], s[1], r[2]]
         base = root_lo[t]
-        lo[n] = [base[0] + tack.f64(i) * s[0], base[1] + tack.f64(j) * s[1],
-                 base[2] + tack.f64(m) * s[2]]
+        lo[n] = [base[0] + (i * one) * s[0], base[1] + (j * one) * s[1],
+                 base[2] + (m * one) * s[2]]
         size[n] = s
 
 
@@ -102,24 +104,25 @@ def _numbered(order, ids, connectivity):
 
 
 @tack.func
-def _along(axis, n, index, finest):
+def _along(axis, n, index, finest, one):
     # The position of lattice line ``index`` along a root axis of ``n`` cells.
     c = min(index >> tack.i64(finest), tack.i64(n - 1))
-    f = tack.f64(index - (c << tack.i64(finest))) / tack.f64(tack.i64(1) << tack.i64(finest))
+    f = ((index - (c << tack.i64(finest))) * one) / ((tack.i64(1) << tack.i64(finest)) * one)
     return axis[c] + f * (axis[c + 1] - axis[c])
 
 
 @tack.kernel
 def _lattice_points(si, sj, sk, flags, ids, ax, ay, az, nx, ny, nz, finest, dimension,
-                    plane, out):
+                    plane, one, out):
     # Each distinct corner's position, from its lattice index alone, so every
     # cell that shares it shares the same bits.
     for s in range(flags.shape[0]):
         if flags[s] == 1:
             z = plane
             if dimension == 3:
-                z = _along(az, nz, sk[s], finest)
-            out[ids[s] - 1] = [_along(ax, nx, si[s], finest), _along(ay, ny, sj[s], finest), z]
+                z = _along(az, nz, sk[s], finest, one)
+            out[ids[s] - 1] = [_along(ax, nx, si[s], finest, one),
+                               _along(ay, ny, sj[s], finest, one), z]
 
 
 @tack.func
@@ -142,17 +145,17 @@ def _root_cell(axis, n, x, tolerance):
 
 
 @tack.func
-def _lattice_index(axis, c, x, finest):
+def _lattice_index(axis, c, x, finest, one):
     # x's integer coordinate in root cell c at the finest level, clamped inside.
     cells = tack.i64(1) << tack.i64(finest)
     f = (x - axis[c]) / (axis[c + 1] - axis[c])
-    index = tack.i64(floor(max(f, 0.0) * tack.f64(cells)))
+    index = tack.i64(floor(max(f, 0.0) * (cells * one)))
     return tack.u64(min(index, cells - 1))
 
 
 @tack.kernel
 def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tree, level,
-                 carried, finest, marks, hidden, found):
+                 carried, finest, marks, hidden, one, found):
     # The leaf holding each point: its root cell by binary searches of the axes,
     # its code at the finest level, then the last node whose (tree, key carried
     # to the finest level) is at most the point's -- in pre-order, the leaf whose
@@ -166,11 +169,11 @@ def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tr
         if dimension == 3:
             cz = _root_cell(az, nz, p[2], tolerance)
         if cx >= 0 and cy >= 0 and cz >= 0:
-            i = _lattice_index(ax, cx, p[0], finest)
-            j = _lattice_index(ay, cy, p[1], finest)
+            i = _lattice_index(ax, cx, p[0], finest, one)
+            j = _lattice_index(ay, cy, p[1], finest, one)
             m = tack.u64(0)
             if dimension == 3:
-                m = _lattice_index(az, cz, p[2], finest)
+                m = _lattice_index(az, cz, p[2], finest, one)
             code = tack.u64(0)
             for b in range(finest):
                 code = code | (((i >> tack.u64(b)) & tack.u64(1)) << tack.u64(dimension * b))
@@ -192,7 +195,7 @@ def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tr
                 # A point outside the roots (or off a 2D octree's plane) is held
                 # within the share of the leaf's diagonal a dataset's locator
                 # accepts outside a cell.
-                scale = 1.0 / tack.f64(tack.i64(1) << tack.i64(level[n]))
+                scale = 1.0 / ((tack.i64(1) << tack.i64(level[n])) * one)
                 sx = (ax[cx + 1] - ax[cx]) * scale
                 sy = (ay[cy + 1] - ay[cy]) * scale
                 sz = 0.0
@@ -340,7 +343,7 @@ class OctreeDataSet:
                 sides = tack.empty((self.num_nodes,), tack.vec3(dtype))
                 if self.num_nodes:
                     _node_geometry(self.tree, self.level, self.key, root_lo, root_size,
-                                   self.dimension, corner, sides)
+                                   self.dimension, 1.0, corner, sides)
             self._geometry = (corner, sides)
         return self._geometry
 
@@ -408,7 +411,7 @@ class OctreeDataSet:
             positions = tack.empty((points,), tack.vec3(self.roots.dtype))
             if points:
                 _lattice_points(si, sj, sk, flags, numbers, *axes, nx, ny, nz, finest, d,
-                                plane, positions)
+                                plane, 1.0, positions)
             types, offsets = uniform_cells(shapes.VOXEL if d == 3 else shapes.PIXEL, count,
                                            idt)
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=points)
@@ -480,7 +483,7 @@ class OctreeDataSet:
                 axes, plane = self._axes(dtype)
                 _find_leaves(points, *axes, nx, ny, nz, self.dimension, plane, _TOLERANCE,
                              self.tree, self.level, self._carried(), self.finest, self.marks,
-                             int(Ghosts.HIDDENCELL), found)
+                             int(Ghosts.HIDDENCELL), 1.0, found)
         return found
 
     def _probed(self, x, names):

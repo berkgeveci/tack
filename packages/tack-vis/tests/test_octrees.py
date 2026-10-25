@@ -449,6 +449,33 @@ def test_an_octree_on_a_second_device():
                                   td.probe(here, x).fields["T"].values.numpy())
 
 
+@pytest.mark.parametrize("d", [2, 3])
+def test_an_octree_on_each_backend(backend, d):
+    """Every backend measures an octree, makes its leaves and probes it as the CPU
+    does: in f64 where the device has it, in f32 on one that has not (Metal),
+    whose kernels must ask for no f64. Probed at the leaves' centres, each point
+    takes its own leaf on any backend."""
+    device = tack.device(backend)
+    roots, level, centre, rho, temperature = ramses_like(d)
+    here = td.OctreeDataSet.from_cells(roots, level, centre, fields={"T": temperature})
+    there = td.OctreeDataSet.from_cells(roots.to_device(device), level, centre,
+                                        fields={"T": temperature})
+    atol = 1e-12 if device._backend.supports_f64 else 1e-5
+    np.testing.assert_allclose(there.centers(), here.centers(), rtol=0, atol=atol)
+    np.testing.assert_allclose(there.measures(), here.measures(), rtol=1e-6)
+    leaves, expected = there.leaves(), here.leaves()
+    assert leaves.device == device
+    np.testing.assert_array_equal(arrays.materialize(leaves.topology.connectivity).numpy(),
+                                  arrays.materialize(expected.topology.connectivity).numpy())
+    np.testing.assert_allclose(leaves.positions(), expected.positions(), rtol=0, atol=atol)
+    leaf = np.flatnonzero(here.is_leaf)
+    x = here.centers()[leaf]
+    probed = td.probe(there, x)
+    np.testing.assert_array_equal(probed.fields["valid"].values.numpy(), 1)
+    np.testing.assert_array_equal(probed.fields["T"].values.numpy(),
+                                  here.fields["T"].numpy()[leaf])
+
+
 def test_octrees_across_mpi_ranks(mpiexec):
     script = os.path.join(os.path.dirname(__file__), "_octree_mpi.py")
     for ranks in (2, 3):
