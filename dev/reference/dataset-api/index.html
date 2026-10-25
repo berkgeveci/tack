@@ -3036,6 +3036,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#origins-and-point-clouds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Origins and point clouds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3366,6 +3377,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#origins-and-point-clouds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Origins and point clouds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3544,7 +3566,9 @@ current state. What is missing is listed with each part, and under
 <li>A <strong>space</strong> says where values live and how they are interpolated, if at
   all. It is built on a topology and owns its layout.</li>
 <li>The <strong>geometry</strong> is a field, so point positions are data like any other.
-  It is kept apart from the named fields, as <code>data.geometry</code>.</li>
+  It is kept apart from the named fields, as <code>data.geometry</code>. Its values are
+  relative to the dataset's <strong>origin</strong>, three doubles on the host (<em>Origins
+  and point clouds</em>).</li>
 <li><strong>Kernels</strong> run over an iteration domain (cells, faces, edges or a face
   set) through <code>for_each</code>. That makes one launch per group of like entities,
   and each field argument becomes a view specialized to the group.</li>
@@ -4031,6 +4055,74 @@ field. It is kept apart from <code>fields</code>: <code>data.geometry</code> ret
 <code>data.positions()</code> gives the positions on the host. Algorithms move it with
 the cells; it is never among the fields they carry or select. An <code>L2</code> geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.</p>
+<h2 id="origins-and-point-clouds">Origins and point clouds<a class="headerlink" href="#origins-and-point-clouds" title="Permanent link">&para;</a></h2>
+<p>A position is <code>data.origin + value</code>: the origin is three floats kept in double
+precision on the host (<code>(0.0, 0.0, 0.0)</code> unless set), the value the geometry's,
+in <code>tack.f32</code> or, on a device that has it, <code>tack.f64</code>. Kernels see only the
+values, so coordinates far from zero keep their precision: single precision
+resolves 0.25 m at 4,000 km, a LiDAR survey's eastings, but a millimetre
+within a few kilometres of an origin. LAS files store scaled integers and an
+offset for the same reason.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DataSet(..., origin=)</code>, <code>data.origin</code></td>
+<td>set it; assigning it moves every point (the values stay)</td>
+</tr>
+<tr>
+<td><code>data.world_positions()</code></td>
+<td><code>origin + positions()</code>, a float64 host array; <code>positions()</code> stays the values</td>
+</tr>
+<tr>
+<td><code>data.rebased(origin)</code></td>
+<td>the same world positions relative to another origin: each value moved by the difference of the origins, taken in double precision, added in the geometry's type</td>
+</tr>
+<tr>
+<td><code>point_cloud(positions, fields=None, origin=None, dtype=tack.f32)</code></td>
+<td>a dataset of one implicit vertex cell per point (types, offsets and connectivity stored nowhere), <code>fields</code> as point data. Host positions are world positions, taken relative to <code>origin</code> in double precision; without one, float64 positions get the lower corner of their box rounded down, others zero. A Tack array of 3-vectors is relative to <code>origin</code> already. Floating-point fields take <code>dtype</code>, integer fields (a classification, intensities) keep their type; <code>tack.f64</code> is refused on a device without it</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Filters keep it</strong>: an output dataset has its input's origin (through <code>carry</code>,
+<code>keep_marks</code> and <code>drop_marks</code>), as <code>to_device</code>, <code>split</code>, <code>ghost_cells</code> and
+<code>merge_pieces</code> do. Lengths, areas, gradients and normals do not depend on it.
+What takes or gives absolute positions converts on the host in double
+precision:</p>
+<ul>
+<li><strong>Implicit functions</strong> are given in world coordinates. <code>Plane</code>, <code>Sphere</code>,
+  <code>Cylinder</code>, <code>Box</code> and <code>Planes</code> move their parameters by the origin exactly
+  (<code>implicit.relative_to</code>); another object with a <code>value</code> is evaluated at the
+  value plus the origin, added in the geometry's type.</li>
+<li><strong><code>probe</code> points and <code>advect</code>/<code>streamlines</code> seeds</strong> given as host arrays are
+  world positions; a dataset's points (a target, <code>advect</code>'s particles) are its
+  own, relative to its origin, and moved by the difference of the origins; a
+  Tack array of seeds is relative to the data's origin.</li>
+<li><strong><code>point_elevation</code>'s points</strong> are world positions. <strong><code>interpolate</code>'s
+  function</strong> is called with world positions (the value plus the origin, in the
+  geometry's type).</li>
+<li><strong><code>transform</code></strong> moves the origin by the map, in double precision, and applies
+  only its linear part to the values. <strong><code>cylindrical</code> and <code>spherical</code></strong> convert
+  world positions, and give an origin of zero.</li>
+<li><strong>The VTK interop</strong>: <code>vtk_to_dataset(..., origin=)</code> takes VTK's points, an
+  image's origin and a rectilinear grid's lines relative to it in double
+  precision; <code>dataset_to_vtk</code> writes world positions (double-precision points
+  where the origin is not zero).</li>
+<li><strong>Position-valued fields</strong> (<code>cell_geometry(...).centroid</code>, a field holding
+  positions) are relative to the dataset's origin, as its geometry is.</li>
+<li><strong><code>CellLocator.find</code></strong> takes positions relative to the dataset's origin.</li>
+</ul>
+<p>Pieces whose positions are compared or moved between them must share one
+origin: <code>ghost_cells</code>, <code>generate_global_ids</code>, <code>merge_pieces</code>,
+<code>connected_components</code>, <code>probe</code> and advection over a <code>PartitionedDataSet</code> refuse
+two (<code>partitioned.common_origin</code>, over every rank); <code>rebased</code> puts a piece on
+another. An image's own origin (<code>UniformCoordinates</code>) is separate from the
+dataset's and computed in the geometry's type.</p>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>A dataset is on the device its arrays are on, and it computes there: every
 algorithm, every derived entity (faces, edges, point links, groups, layouts),
@@ -4740,7 +4832,9 @@ the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.</p>
 <p>Each is a <code>@tack.device_class</code> object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
-template and calls <code>f.value(p)</code>. Taking one:</p>
+template and calls <code>f.value(p)</code>. Their parameters are world positions: on a
+dataset with an origin, each is moved by it in double precision (<em>Origins and
+point clouds</em>). Taking one:</p>
 <table>
 <thead>
 <tr>

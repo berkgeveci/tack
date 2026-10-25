@@ -3506,6 +3506,22 @@ respect each cell's geometry; not every algorithm supports that representation.<
 or explicit position storage. Those are <strong>value-array representations</strong>, not
 different finite-element spaces. Image and rectilinear geometry are explained
 in <a href="../02-meshes/#image-rectilinear-and-curvilinear-data">Build Meshes</a>.</p>
+<p>The geometry's values are relative to the dataset's <code>origin</code>, three doubles
+kept on the host. Survey data far from zero keeps its precision in single
+precision that way: a point cloud at UTM coordinates stores millimetres as
+offsets from a nearby origin, which single precision resolves, where its raw
+eastings would be rounded to a quarter metre.</p>
+<div class="highlight"><pre><span></span><code><span class="n">cloud</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">point_cloud</span><span class="p">(</span><span class="n">lidar_xyz</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;classification&quot;</span><span class="p">:</span> <span class="n">classes</span><span class="p">})</span>  <span class="c1"># float64 xyz</span>
+<span class="n">cloud</span><span class="o">.</span><span class="n">origin</span>             <span class="c1"># the lower corner of the box, rounded down</span>
+<span class="n">cloud</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>        <span class="c1"># float32 offsets from it, what kernels see</span>
+<span class="n">cloud</span><span class="o">.</span><span class="n">world_positions</span><span class="p">()</span>  <span class="c1"># float64 again</span>
+<span class="n">ground</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold_points</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="s2">&quot;classification&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>            <span class="c1"># keeps the origin</span>
+</code></pre></div>
+<p>Filters keep the origin, and arguments that are positions -- implicit
+functions, probe points, seeds -- are given in world coordinates and moved by
+the origin in double precision. The <a href="../../../reference/dataset-api/#origins-and-point-clouds">dataset API
+reference</a> lists what
+converts.</p>
 <h2 id="importing-mfem-preserves-the-separation">Importing MFEM preserves the separation<a class="headerlink" href="#importing-mfem-preserves-the-separation" title="Permanent link">&para;</a></h2>
 <p><code>mfem_to_dataset(mesh, fields={...})</code> constructs topology from the elements'
 corner lists, then converts geometry and each supplied grid function through
