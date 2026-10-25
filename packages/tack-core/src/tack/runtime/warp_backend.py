@@ -144,7 +144,8 @@ class WarpBackend(GPUBackend):
         registered with `linecache` under a name of its own; the module
         name is unique too, so each variant is a Warp module of its own.
         """
-        source, entry = generate_warp_source(typed_ir)
+        wp = _warp()
+        source, entry, tables = generate_warp_source(typed_ir)
         number = next(_modules)
         filename = f"<tack-warp-{number}>"
         linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
@@ -152,6 +153,11 @@ class WarpBackend(GPUBackend):
         exec(compile(source, filename, "exec"), namespace)
         kernel = namespace[entry]
         kernel.tack_source = source
+        # Constant tables, made once on the device and passed at every launch.
+        kernel.tack_tables = [
+            wp.array(np.asarray(values, dtype=dtype.numpy_dtype),
+                     dtype=getattr(wp, _WARP_TYPES[dtype][3:]), device=self.wp_device)
+            for dtype, values in tables]
         return kernel
 
     def _launch(self, compiled, kernel_args, loop_end, extents):
@@ -159,6 +165,7 @@ class WarpBackend(GPUBackend):
         inputs = [a._buffer.array if isinstance(a, Array) else a for a in kernel_args]
         inputs.append(loop_end)
         inputs.extend(extents)
+        inputs.extend(compiled.tack_tables)
         _warp().launch(compiled, dim=loop_end, inputs=inputs, device=self.wp_device)
 
     def _launch_guard(self, variant):

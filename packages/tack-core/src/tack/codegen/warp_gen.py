@@ -98,6 +98,8 @@ class WarpCodeGen:
         self._locals: dict[str, ScalarType] = {}
         self._helpers: dict[str, list[str]] = {}
         self._tables: dict[tuple, str] = {}
+        #: ``(dtype, values)`` of each constant table, in parameter order.
+        self.tables: list[tuple[ScalarType, tuple]] = []
         self._fresh = 0
 
     # ── Entry ────────────────────────────────────────────────────────
@@ -121,16 +123,18 @@ class WarpCodeGen:
         params.extend(f"__ext_{k}__: wp.int64" for k in range(len(loop.dims or ())))
 
         entry = kernel_entry_name(func.name)
-        self._emit("@wp.kernel")
-        self._emit(f"def {entry}({', '.join(params)}):")
         self._indent += 1
         self._declare_locals(func.body)
         self._body(func.body)
         self._indent -= 1
+        # The tables the body read follow every other parameter.
+        params.extend(f"{name}: wp.array(dtype={warp_type(dtype)})"
+                      for (dtype, _), name in zip(self.tables, self._tables.values()))
 
         lines = ["import warp as wp", ""]
         for helper in self._helpers.values():
             lines += [*helper, ""]
+        lines += ["@wp.kernel", f"def {entry}({', '.join(params)}):"]
         return "\n".join(lines + self._lines) + "\n", entry
 
     # ── Statements ───────────────────────────────────────────────────
@@ -392,18 +396,31 @@ class WarpCodeGen:
         return f"{_MATH[name]}({', '.join(args)})"
 
     def _table_load(self, node: ir.IRTableLoad) -> str:
-        """A constant table, a module-level ``wp.constant`` vector, read at a
-        runtime index; past either end, the last value (as ``tables.py``)."""
+        """A constant table read at a runtime index; past either end, the last
+        value (as ``tables.py``). Each table is an array argument the backend
+        fills once per variant: a ``wp.constant`` vector became a local
+        ``wp::vec_t`` that every thread built, 15 KB for a hexahedron's
+        triangles, which made a contour 30 times slower on CUDA."""
         key = (node.dtype.name, node.values)
         if key not in self._tables:
-            name = f"__tack_table_{len(self._tables)}__"
-            self._tables[key] = name
-            items = ", ".join(self._constant(v, node.dtype) for v in node.values)
-            vector = f"wp.types.vector(length={len(node.values)}, dtype={warp_type(node.dtype)})"
-            self._helpers[name] = [f"{name} = wp.constant({vector}({items}))"]
-        index = f"wp.int32({self._typed(node.index, _INDEX)})"
-        n = len(node.values)
-        return f"{self._tables[key]}[({index} if ({index} >= 0 and {index} < {n}) else {n - 1})]"
+            self._tables[key] = f"__tack_table_{len(self._tables)}__"
+            self.tables.append((node.dtype, node.values))
+        return f"{self._table_helper(node.dtype)}({self._tables[key]}, {self._index(node.index)})"
+
+    def _table_helper(self, t):
+        name = f"tack_table_{t.name}"
+        if name not in self._helpers:
+            w = warp_type(t)
+            self._helpers[name] = [
+                "@wp.func",
+                f"def {name}(table: wp.array(dtype={w}), i: wp.int64) -> {w}:",
+                "    n = wp.int64(table.shape[0])",
+                "    k = n - wp.int64(1)",
+                "    if i >= wp.int64(0) and i < n:",
+                "        k = i",
+                "    return table[k]",
+            ]
+        return name
 
     def _bounds_check(self, node: ir.IRBoundsCheck) -> str:
         """Debug mode: the flat index, or -1 when an index is out of bounds
@@ -544,6 +561,10 @@ class WarpCodeGen:
         return name
 
 
-def generate_warp_source(ir_func: ir.IRFunction) -> tuple[str, str]:
-    """``(source, entry name)`` of the Warp kernel for typed ``ir_func``."""
-    return WarpCodeGen(ir_func).generate()
+def generate_warp_source(ir_func: ir.IRFunction) -> tuple[str, str, list]:
+    """``(source, entry name, tables)`` of the Warp kernel for typed
+    ``ir_func``: ``tables`` holds ``(dtype, values)`` of each constant table,
+    which the kernel takes as array arguments after every other."""
+    gen = WarpCodeGen(ir_func)
+    source, entry = gen.generate()
+    return source, entry, gen.tables
