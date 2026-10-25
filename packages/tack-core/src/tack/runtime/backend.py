@@ -83,6 +83,11 @@ class Backend:
     #: supported atomic types/scopes, or safe partial-workgroup execution.
     supports_workgroups: bool = False
 
+    #: Whether `tack.inspect` shows this backend's kernels. The Warp backend
+    #: says no: its generated code is Warp's Python, which Warp compiles
+    #: further out of Tack's sight; inspect the kernel on another device.
+    supports_inspect: bool = True
+
     #: Keyword options `tack.device()` forwards to this backend's constructor.
     #: Anything else is rejected there, so a misspelt or misdirected option
     #: cannot be silently dropped.

@@ -6,8 +6,9 @@ is a ``@wp.kernel`` that `codegen/warp_gen.py` writes from the typed IR,
 which Warp compiles (and caches) and launches on its own stream. Scalars
 go to Warp as kernel arguments, so nothing is packed.
 
-Not yet: textures, workgroups, device reductions and the disk cache's
-variants (Warp's own kernel cache keeps the compiled code).
+Not offered: ``tack.inspect`` (``supports_inspect``). Not yet: textures,
+workgroups, device reductions and the disk cache's variants (Warp's own
+kernel cache keeps the compiled code).
 """
 
 import itertools
@@ -82,6 +83,7 @@ class WarpBackend(GPUBackend):
     supported_dtypes = frozenset(_WARP_TYPES)
     supports_device_reductions = False
     supports_workgroups = False
+    supports_inspect = False
     #: wp.tid() is a 32-bit index.
     _max_launch = 2**31 - 1
 

@@ -134,9 +134,15 @@ def inspect(kernel, *args, mode="source"):
     if not isinstance(kernel, Kernel):
         raise TypeError(f"Expected a @tack.kernel, got {type(kernel).__name__}")
 
+    from tack.runtime.dispatch import launch_backend
+    backend = launch_backend(kernel.name, args)
+    if not backend.supports_inspect:
+        raise NotImplementedError(
+            f"tack.inspect does not show kernels on the {backend.label} backend; "
+            f"inspect '{kernel.name}' with arrays on another device")
+
     if mode == "ir":
-        from tack.runtime.dispatch import launch_backend
-        ir_func, _ = _prepare_ir(kernel, args, backend=launch_backend(kernel.name, args))
+        ir_func, _ = _prepare_ir(kernel, args, backend=backend)
         return ir.dump(ir_func)
 
     if mode == "source":

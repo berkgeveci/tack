@@ -354,3 +354,13 @@ def test_debug_mode_checks_bounds(warp, monkeypatch):
     with pytest.raises(IndexError, match=r"a\[i \+ 2\]"):
         _past_the_end(a, out)
     np.testing.assert_array_equal(out.numpy(), [2.0, 3.0, 0.0, 0.0])
+
+
+def test_inspect_is_not_offered(warp):
+    """`supports_inspect` is false: tack.inspect refuses the Warp device in every
+    mode, and says where to look instead."""
+    assert not warp._backend.supports_inspect and tack.device("cpu")._backend.supports_inspect
+    x = tack.array(np.ones(4, np.float32), device=warp)
+    for mode in ("ir", "source", "optimized"):
+        with pytest.raises(NotImplementedError, match="another device"):
+            tack.inspect(_saxpy, 1.0, x, x, x, mode=mode)
