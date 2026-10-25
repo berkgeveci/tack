@@ -1,12 +1,14 @@
 # Visualization Guide
 
 `tack.dataset` (the `tack-vis` package) holds meshes and point clouds and the
-fields on them, and the algorithms that work on both: contour, slice, clip, threshold, external faces, gradients,
-projections between spaces, streamlines and the rest. Like VTK and Viskores,
-it works on structured grids, unstructured meshes of the linear cells,
-polyhedra, polygons and polylines. Unlike them, the algorithms are ordinary
-Tack kernels, so they run on every backend, and the kernels you write
-yourself see a mesh the way the built-in ones do.
+fields on them, and the algorithms that work on both: contour, slice, clip,
+threshold, external faces, gradients, projections between spaces,
+streamlines, point-cloud cleaning and gridding, SPH interpolation, halo
+finding and the rest. Like VTK and Viskores, it works on structured grids,
+unstructured meshes of the linear cells, polyhedra, polygons, polylines and
+point clouds. Unlike them, the algorithms are ordinary Tack kernels, so they
+run on every backend, and the kernels you write yourself see a mesh the way
+the built-in ones do.
 
 ```bash
 uv sync --extra cpu      # in a clone; both packages are installed
@@ -51,11 +53,13 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Function Space Fundamentals](00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
 | [Understand a Dataset](01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
 | [Build Meshes](02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
+| [Point Clouds and Particles](08-point-clouds.md) | Clean and grid LiDAR, resample SPH particles, find halos |
 | [Fields and Spaces](03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
 | [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
 | [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
-| [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells, on one device or several |
+| [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells |
+| [Algorithms Across Pieces](09-pieces-across.md) | Pieces from VTK, on several devices or MPI ranks; probes, particles, regions and point clouds across them |
 | [Worked Examples](examples.md) | Run complete programs with analytic checks |
 
 The [Dataset API reference](reference/dataset-api.md) lists every class and
