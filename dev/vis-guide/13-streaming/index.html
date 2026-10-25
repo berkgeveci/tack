@@ -2115,6 +2115,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#advection-pathlines-and-streaklines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advection, pathlines and streaklines
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3625,6 +3636,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#advection-pathlines-and-streaklines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advection, pathlines and streaklines
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3720,8 +3742,71 @@ writes, are kept as they are.</p>
 so every step must bring the same pieces, and the output is pieces too. Over
 MPI ranks each rank feeds its own pieces; the statistics and derivatives need
 nothing from other ranks.</p>
-<p>Advection of particles through the steps, with new particles injected at any
-time, and pathlines built from it, are the next phase.</p>
+<h2 id="advection-pathlines-and-streaklines">Advection, pathlines and streaklines<a class="headerlink" href="#advection-pathlines-and-streaklines" title="Permanent link">&para;</a></h2>
+<p><code>Advection(field, seeds)</code> carries particles through the steps: each update
+moves every particle from its time to the step's, the velocity linear in time
+between the previous step (kept as a copy) and this one, and returns the
+particles at their current points -- a point cloud at the step's time with
+<code>seed</code> (each particle's number), <code>source</code>, <code>release</code>, <code>time</code> and <code>status</code>
+(<code>ParticleStatus</code> bits, as <code>advect</code>'s). <code>inject(points, time=)</code> releases more
+particles at any time from the last step's on; each starts at its own release
+time, and one released after the coming step waits for a step that reaches it.</p>
+<!-- tack-check: pathlines -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="n">t</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A swirl that speeds up: a simulation&#39;s step at time t (seconds).&quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">21</span><span class="p">,</span> <span class="mi">21</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m&quot;</span><span class="p">)</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">time_unit</span> <span class="o">=</span> <span class="n">t</span><span class="p">,</span> <span class="s2">&quot;s&quot;</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">-</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]</span>
+    <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="o">-</span><span class="n">x</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">))],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.2</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;v&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">()),</span>
+                                <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m/s&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span>
+
+
+<span class="n">seeds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">7.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">],</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">]])</span>
+<span class="n">pathlines</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Pathlines</span><span class="p">(</span><span class="s2">&quot;v&quot;</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="n">step_size</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+<span class="n">streaklines</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Streaklines</span><span class="p">(</span><span class="s2">&quot;v&quot;</span><span class="p">,</span> <span class="n">seeds</span><span class="p">[:</span><span class="mi">1</span><span class="p">],</span> <span class="n">releases</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">3.01</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">):</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">step</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">t</span> <span class="o">==</span> <span class="mf">1.0</span><span class="p">:</span>
+        <span class="n">pathlines</span><span class="o">.</span><span class="n">inject</span><span class="p">([[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">]])</span>          <span class="c1"># a particle released mid-run</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">pathlines</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>                   <span class="c1"># every particle&#39;s path so far</span>
+    <span class="n">streak</span> <span class="o">=</span> <span class="n">streaklines</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>                <span class="c1"># the line of the seed&#39;s particles</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">paths</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;paths,&quot;</span><span class="p">,</span> <span class="n">paths</span><span class="o">.</span><span class="n">num_points</span><span class="p">,</span> <span class="s2">&quot;points;&quot;</span><span class="p">,</span> <span class="n">streak</span><span class="o">.</span><span class="n">num_points</span><span class="p">,</span> <span class="s2">&quot;in the streak&quot;</span><span class="p">)</span>
+<span class="n">radius</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">paths</span><span class="o">.</span><span class="n">world_positions</span><span class="p">()[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="p">[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">radius</span><span class="p">[</span><span class="n">paths</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;seed&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">],</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">paths</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">streak</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="mi">1</span>
+</code></pre></div>
+<p>The velocity is the probe of each step's own mesh, so the mesh may change
+between steps; over a <code>PartitionedDataSet</code>, each point is probed on the rank
+whose cells hold it, so particles stay on the rank that released them. A
+particle that leaves the mesh stops where it last was, marked
+<code>SPATIAL_BOUNDS</code>. <code>integrator</code> is <code>"rk4"</code> or <code>"euler"</code>; <code>step_size</code> (in the
+steps' time unit) bounds each substep. Times convert between the steps' unit
+and the velocity's: steps in milliseconds with a velocity in metres per second
+work.</p>
+<p><code>extend_paths(paths, particles)</code> joins one step's particles onto the paths so
+far, by <code>seed</code>: a polyline through each particle's points in time (<code>seed</code> and
+<code>time</code> on the points), a particle's first point alone until it has moved. It
+stands alone, so particles written step by step can be joined afterwards.
+<code>Pathlines</code> is <code>Advection</code> and <code>extend_paths</code> together, returning the current
+pathlines every step. <code>Streaklines</code> releases particles at its seeds every step
+(<code>releases</code> of them, spread over the interval since the previous step) and
+returns a polyline per seed through its particles still in the mesh, newest
+first.</p>
+<p>The particles live on the host in double precision, and each substep probes
+both steps for every particle: point location runs on the device, but each
+probe is its own set of launches, so this suits thousands of particles more
+than millions.</p>
 
 
 

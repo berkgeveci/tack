@@ -4869,6 +4869,18 @@ hands filters one step at a time, and each step is a dataset at its time.</p>
 <td><code>TimeDerivative(fields, copy=True)</code></td>
 <td><code>&lt;name&gt;_dt</code>, the backward difference since the previous step, in the field's unit over the time unit; <code>None</code> on the first step; one mesh, increasing time</td>
 </tr>
+<tr>
+<td><code>Advection(field, seeds=None, integrator="rk4", step_size=None, copy=True)</code></td>
+<td>particles through the steps, the velocity linear in time between the kept previous step and this one (each probed in its own mesh, over ranks where pieces are); <code>update</code> returns them (<code>seed</code>, <code>source</code>, <code>release</code>, <code>time</code>, <code>status</code>); <code>inject(points, time=None)</code> releases more at any time</td>
+</tr>
+<tr>
+<td><code>extend_paths(paths, particles)</code></td>
+<td>joins a step's particles onto the paths so far, by <code>seed</code>: polylines through each particle's points in time</td>
+</tr>
+<tr>
+<td><code>Pathlines(field, seeds, ...)</code>, <code>Streaklines(field, seeds, releases=1, ...)</code></td>
+<td>the current pathlines every step; the line of each seed's released particles, newest first</td>
+</tr>
 </tbody>
 </table>
 <p>See <a href="../../13-streaming/">Streaming Steps</a>.</p>
