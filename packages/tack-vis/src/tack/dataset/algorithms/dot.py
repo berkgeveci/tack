@@ -3,6 +3,7 @@
 import tack
 from tack import arrays
 from tack.arrays import materialize, width_of
+from tack.dataset import units
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _scalars
 from tack.dataset.dataset import Field
 from tack.runtime.dispatch import on_inputs_device
@@ -27,4 +28,4 @@ def dot(data, a, b):
     out = _scalars(n, arrays.dtype_of(a.values))
     if n:
         _dots(materialize(a.values), materialize(b.values), out)
-    return Field(space, out)
+    return Field(space, out, units.named(units.derived(a.unit, b.unit)))

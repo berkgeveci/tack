@@ -16,6 +16,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the origin in double precision, or a field, offsets included. The VTK
   interop maps `UNITS_LABEL`. Tack knows the US survey foot (`ftUS`).
   tack-vis now depends on unyt (pure Python), imported on first use.
+- Derived units: gradients (per spatial unit), jumps, `dot` and `cross` (by SI
+  name where one fits: N m is J), `composite`, cell and face measures, edge
+  lengths, fluxes and their divergence, `perot`, statistics
+  (`Statistics.unit`, `weight_unit` and `unit_of(name)`), deposits (counts,
+  `per_volume`), SPH density and sums, halo masses and radii, outlier
+  distances, normals, particle times. A difference of degrees Celsius is in
+  kelvin; such values are not multiplied. `log_values` refuses a dimensioned
+  field. `interpolate(..., unit=)` states a function's unit.
 - Octrees, a first pass: `td.OctreeDataSet`, a grid of octrees (VTK's
   HyperTreeGrid with branching factor 2) stored as a linear octree for GPUs,
   each node its tree, level and Morton key, sorted in pre-order; leaves,

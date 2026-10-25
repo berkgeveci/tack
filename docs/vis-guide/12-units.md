@@ -39,6 +39,13 @@ assert isinstance(metres.geometry.values, tack.arrays.UniformCoordinates)  # sti
 assert np.allclose(metres.world_positions(), image.world_positions() * 1200 / 3937)
 assert np.allclose(kelvin.fields["T"].values.numpy(), celsius + 273.15)
 
+# Derived quantities derive their units; a difference of degrees Celsius is in
+# kelvin, so a temperature gradient is in kelvin per foot.
+assert td.gradients(image, "T").unit == "K/ftUS"
+stats = td.statistics(image, "T")
+print(stats.unit_of("mean"), stats.unit_of("population_variance"))
+assert stats.unit_of("population_variance") == "K**2"
+
 # Positions in two different units do not meet.
 try:
     td.probe(image, td.point_cloud(np.array([[1_400_010.0, 600_010.0, 5.0]]), unit="m"))
@@ -77,10 +84,37 @@ filters whose result is the same quantity: `project`, `values_at_centers`,
 traces, `magnitude`, `voxel_downsample`'s means, SPH interpolation, and
 `cell_centers` and `face_centers` (positions, in the spatial unit).
 
-Anything else gives `None` for now: gradients, products, measures, fluxes and
-the like derive a unit, which a later phase adds. Cylindrical and spherical
-coordinates give an unknown spatial unit, since an angle and lengths are no
-one unit.
+Cylindrical and spherical coordinates give an unknown spatial unit, since an
+angle and lengths are no one unit.
+
+## Derived units
+
+Filters that compute a new quantity derive its unit from their inputs':
+
+| Filter | Unit |
+|---|---|
+| `gradients` | the field's per spatial unit; `flow_quantities`' divergence and vorticity the gradient's, the Q-criterion its square |
+| `jump` | the field's |
+| `dot`, `cross` | the product of the two, by its SI name where it has one (`N` times `m` is `J`) |
+| `composite` | the fields' one unit (two known units are refused) |
+| `log_values` | a pure number, of a pure number (a dimensioned field is refused) |
+| `cell_geometry` | measures in the spatial unit to the cells' dimension (`m**3`, `m**2`, `m`), centroids in it |
+| `face_geometry`, `edge_lengths` | areas in the spatial unit to the faces' dimension (an edge's length on a surface), unit normals pure numbers; lengths in it |
+| `net_flux`, `divergence`, `perot` | the flux's; it over the cells' measure; the faces' components' |
+| `statistics` | `Statistics.unit` and `weight_unit`, and `unit_of(name)` for each number: the mean, extremes and deviations in the field's unit, the variances in its square, `sum` times the weights', skewness and kurtosis pure numbers |
+| `deposit` | counts pure numbers, sums, means and extremes in the field's; `per_volume` over the cells' measure (`1/m**3`, `kg/m**3`) |
+| `sph_density`, `sph_interpolate` | the mass per volume; the field's, times `m / (rho L^d)` (a pure number for consistent units) |
+| `halo_catalog`, `outliers`, `point_normals` | masses in the mass field's, radii and centres and mean distances in the spatial unit; normals pure numbers |
+| `advect`, `streamlines` | `time` in the spatial unit over the velocity's |
+| `interpolate(..., unit=)` | what the caller says: a function's code does not say its unit |
+
+A difference of values with an offset zero -- degrees Celsius or Fahrenheit --
+is in the absolute unit of the same size, kelvin or Rankine: gradients, jumps,
+variances and deviations. Such values are not multiplied (`dot` refuses them):
+convert to kelvin first. Labels, ids, flags and counts that are not
+quantities (`region`, `cell_ids`, `outlier`, `neighbors`) have no unit, and a
+result computed from a bare number -- `upwind_flux`'s constant velocity, a
+mass given as one number, the potential's `G` -- is unknown.
 
 ## Mismatches are refused
 

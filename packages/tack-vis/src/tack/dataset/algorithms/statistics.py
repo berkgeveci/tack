@@ -1,7 +1,7 @@
 """``statistics``: descriptive statistics of a scalar field's values, as Viskores' Statistics filter gives them: a ``Statistics`` (a NamedTuple) of ``n``, ``min``, ``max``, ``sum``, ``mean``, the central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance`` (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis`` (``n m4 / m2^2``, not the excess), the last two 0 for a constant field. Moments are taken about the mean, in a second pass."""
 
 import math
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import numpy as np
 
@@ -45,7 +45,10 @@ def _weighted_powers(values, weights, mean, p2, p3, p4):
 
 
 class Statistics(NamedTuple):
-    """What ``statistics`` returns: Python numbers, by name (``s.mean``)."""
+    """What ``statistics`` returns: Python numbers, by name (``s.mean``), and the
+    field's ``unit`` and the weights' (``weight_unit``: ``"dimensionless"``
+    without weights, a measure's unit for ``"volume"``); ``unit_of(name)`` gives
+    each number's."""
     n: int
     min: float
     max: float
@@ -62,6 +65,37 @@ class Statistics(NamedTuple):
     kurtosis: float
     #: The sum of the weights: ``n`` without them.
     weight: float = 0.0
+    #: The values' unit (``Field.unit``), or ``None`` if unknown.
+    unit: Optional[str] = None
+    #: The weights' unit: ``"dimensionless"`` without weights.
+    weight_unit: Optional[str] = None
+
+    def unit_of(self, name):
+        """The unit of the statistic ``name`` (``"mean"``, ``"sum"``, ...), or
+        ``None`` if unknown: ``min``, ``max`` and ``mean`` are in the values'
+        unit, ``sum`` in it times the weights', the moment sums ``m2`` ... ``m4``
+        in its powers times the weights', the variances in its square and the
+        standard deviations in it (a difference of degrees Celsius is in
+        kelvin), ``skewness``, ``kurtosis`` and ``n`` pure numbers, ``weight``
+        in the weights' unit."""
+        from tack.dataset import units
+
+        u, w = self.unit, self.weight_unit
+        if name not in self._fields or name in ("unit", "weight_unit"):
+            raise KeyError(f"no statistic {name!r}")
+        if name in ("min", "max", "mean"):
+            return u
+        if name == "sum":
+            return u if w == "dimensionless" else units.derived(u, w)
+        if name in ("m2", "m3", "m4"):
+            return units.derived((units.delta(u), int(name[1])), w)
+        if name.endswith("variance"):
+            return units.derived((units.delta(u), 2))
+        if name.endswith("stddev"):
+            return units.delta(u)
+        if name == "weight":
+            return w
+        return "dimensionless"                   # n, skewness, kurtosis
 
 
 @on_inputs_device
@@ -76,6 +110,18 @@ def _moments(data, field, weights=None):
     source = owned_values(data, field)
     return _array_moments(source, None if weights is None
                           else owned_values(data, _weights(data, field, weights)))
+
+
+def _units(data, field, weights):
+    """``(unit, weight_unit)`` of one dataset's ``field`` weighted by ``weights``."""
+    from tack.dataset.algorithms._common import _measure_unit
+
+    field = _field(data, field)
+    if weights is None:
+        return field.unit, "dimensionless"
+    if isinstance(weights, str) and weights == "volume":
+        return field.unit, _measure_unit(data)
+    return field.unit, _field(data, weights).unit
 
 
 def _weights(data, field, weights):
@@ -226,12 +272,20 @@ def statistics(data, field, weights=None, level=None):
         data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
         fields_of(data, field, "statistics")
+        from tack.dataset import units
+
+        # Every rank's pieces' units, so a rank holding none agrees with the rest.
+        every = [pair for part in data.world._allgather(
+            [_units(piece, field, weights) for piece in data]) for pair in part]
+        unit = units.common("statistics' pieces' field", [u for u, _ in every])
+        weight_unit = units.common("statistics' pieces' weights", [w for _, w in every])
         moments = None
         for part in _over_pieces(data, lambda piece: _moments(piece, field, weights)):
             if part is not None:
                 moments = part if moments is None else _merged(moments, part)
     else:
+        unit, weight_unit = _units(data, field, weights)
         moments = _moments(data, field, weights)
     if moments is None:
         raise ValueError("statistics of no values")
-    return _summary(*moments)
+    return _summary(*moments)._replace(unit=unit, weight_unit=weight_unit)

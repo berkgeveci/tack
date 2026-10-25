@@ -15,6 +15,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
+from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.algorithms.sph import _per_particle
 from tack.dataset.buckets import bucket_order
@@ -366,9 +367,14 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
     halo_labels = tack.empty((halos,), labels.dtype)
     if halos:
         _halo_labels(sorted_labels, offsets, start, halo_labels)
-    for name, values in (("halo", halo_labels), ("count", counts), ("mass", total),
-                         ("mbp", mbp), ("potential", potential), ("radius", radius)):
-        out.fields[name] = Field(points, values)
+    # The mass is the particles' mass field's; the potential's G is a number, so
+    # its unit is unknown; labels, counts and indices are not quantities.
+    mass_unit = _field(particles, mass).unit if isinstance(mass, (str, Field)) else None
+    for name, values, unit in (("halo", halo_labels, None), ("count", counts, None),
+                               ("mass", total, mass_unit), ("mbp", mbp, None),
+                               ("potential", potential, None),
+                               ("radius", radius, particles.unit)):
+        out.fields[name] = Field(points, values, unit)
     out.fields["com"] = Field(H1(out), com, particles.unit)
     if velocity is not None:
         field = particles.fields[velocity] if isinstance(velocity, str) else velocity
@@ -443,8 +449,9 @@ def _catalog_pieces(data, region, mass, velocity, center, softening, G, periodic
         with blocks.device(g):
             cloud = _vertices(got["x"], piece)
             cloud.fields["region"] = Field(H1(cloud), sorted_keys[g])
-            masses = Field(H1(cloud), got["m"]) if by_name else mass
-            speeds = Field(H1(cloud), got["v"]) if velocity is not None else None
+            masses = Field(H1(cloud), got["m"], piece.fields[mass].unit) if by_name else mass
+            speeds = Field(H1(cloud), got["v"], piece.fields[velocity].unit) \
+                if velocity is not None else None
             catalog = halo_catalog(cloud, "region", mass=masses, velocity=speeds,
                                    center=center, softening=softening, G=G, periodic=periodic)
             best = catalog.fields["mbp"].values

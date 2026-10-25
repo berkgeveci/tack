@@ -16,6 +16,7 @@ import numpy as np
 
 import tack
 from tack import arrays
+from tack.dataset import units
 from tack.dataset.algorithms.outliers import _locator
 from tack.dataset.carry import _point_values
 from tack.dataset.dataset import DataSet, Field
@@ -230,6 +231,13 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     if n:
         _volumes(_per_particle(particles, mass, "mass"),
                  _per_particle(particles, density, "density"), volumes)
+    units.check("sph_interpolate's target and particles' spatial unit", target.unit,
+                particles.unit)
+    # Each term is f times m/rho, a volume, times W, per volume: m / (rho L^d) is
+    # a pure number for consistent units, unknown where the mass or density is a
+    # number.
+    weight_unit = units.derived(_unit_of(particles, mass), (_unit_of(particles, density), -1),
+                                (particles.unit, -dimension))
     locator = _locator(particles, locator, periodic)
     m = target.num_points
     queries = arrays.materialize(_point_values(target.geometry.values, m))
@@ -262,12 +270,13 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
                           result, shepard)
             if normalize:
                 _normalized(result, shepard)
-        # Each term is m/rho (a volume) times W (per volume) times f: f's unit.
-        out.fields[name] = Field(H1(out), result, field.unit)
+        same = normalize or weight_unit == "dimensionless"
+        out.fields[name] = Field(H1(out), result, field.unit if same else
+                                 units.derived(field.unit, weight_unit))
     if not names and n and m:                      # no fields: the Shepard sum alone
         _interpolated(grid, w, support, reach, queries, smoothing, volumes, volumes,
                       tack.zeros((m,), particles.dtype), shepard)
-    out.fields["shepard"] = Field(H1(out), shepard)
+    out.fields["shepard"] = Field(H1(out), shepard, weight_unit)
     return keep_marks(target, out)
 
 
@@ -293,5 +302,13 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
                    _per_particle(particles, mass, "mass"), density)
     out = DataSet(particles.topology, particles.geometry, fields=dict(particles.fields),
                   sets=dict(particles.sets), dtype=particles.dtype, origin=particles.origin, unit=particles.unit)
-    out.fields["density"] = Field(H1(out), density)
+    out.fields["density"] = Field(H1(out), density, units.derived(
+        _unit_of(particles, mass), (particles.unit, -dimension)))
     return keep_marks(particles, out)
+
+
+def _unit_of(particles, value):
+    """The unit of a per-particle argument: a field's, by name; a number's is
+    unknown."""
+    return particles.fields[value].unit if isinstance(value, str) else None
+

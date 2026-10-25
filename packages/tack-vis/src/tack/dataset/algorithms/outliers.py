@@ -96,7 +96,7 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
             host = arrays.to_host(means).astype(np.float64)
             limit = host.mean() + float(deviations) * host.std()
             _above(means, float(limit), marks)
-        out.fields["mean_distance"] = Field(points, means)
+        out.fields["mean_distance"] = Field(points, means, data.unit)
     out.fields["outlier"] = Field(points, marks)
     from tack.dataset.ghosts import keep_marks
 
@@ -154,7 +154,8 @@ def _outliers_pieces(data, radius, min_neighbors, k, deviations, periodic):
             result = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
                              sets=dict(piece.sets), dtype=piece.dtype, origin=piece.origin, unit=piece.unit)
             for name, values in found[g].items():
-                result.fields[name] = Field(Values(result, "points"), values)
+                result.fields[name] = Field(Values(result, "points"), values,
+                                            piece.unit if name == "mean_distance" else None)
             out.append(keep_marks(piece, result))
     return PartitionedDataSet(out, world=data.world)
 

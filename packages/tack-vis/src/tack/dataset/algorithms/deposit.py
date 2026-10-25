@@ -6,6 +6,7 @@ import tack
 from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.arrays import UniformCoordinates
+from tack.dataset import units
 from tack.dataset.carry import _point_values
 from tack.dataset.dataset import Field
 from tack.dataset.ghosts import Ghosts
@@ -161,8 +162,34 @@ def deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=Fa
         raise TypeError("deposit goes onto an axis-aligned image (uniform_grid)")
     if isinstance(data, PartitionedDataSet):
         return _deposit_pieces(data, grid, field, reduce, method, per_volume)
+    unit = _unit(data, grid, field, reduce, per_volume)
     out, on = _deposited(data, grid, field, reduce, method, per_volume)
-    return Field(Values(grid, on), out)
+    return Field(Values(grid, on), out, unit)
+
+
+def _unit(data, grid, field, reduce, per_volume, pieces=None, world=None):
+    """The deposited values' unit: a count is a pure number, a sum, mean, minimum or
+    maximum is in the field's unit, and ``per_volume`` divides by the cells'
+    measure, the spatial unit to the image's number of axes. ``data``'s and
+    ``grid``'s spatial units must agree (``pieces``: every piece's on every rank
+    of ``world``)."""
+    sources = pieces if pieces is not None else [data]
+    counted = field is None or reduce == "count"
+    mine = [(piece.unit, None if counted else
+             (piece.fields[field] if isinstance(field, str) else field).unit)
+            for piece in sources]
+    if world is not None:
+        mine = [pair for part in world._allgather(mine) for pair in part]
+    spatial = units.common("deposit's points' spatial unit",
+                           [grid.unit] + [u for u, _ in mine])
+    base = "dimensionless" if counted else units.common("deposit's field",
+                                                        [f for _, f in mine])
+    if not per_volume:
+        return base
+    axes = int((np.asarray(grid.geometry.values.dims) > 1).sum())
+    if spatial is None:
+        spatial = next((u for u in [grid.unit] + [u for u, _ in mine] if u), None)
+    return units.derived(base, (spatial, -axes))
 
 
 def _deposited(data, grid, field, reduce, method, per_volume, skip_copies=False):
@@ -260,6 +287,7 @@ def _deposit_pieces(data, grid, field, reduce, method, per_volume):
         raise TypeError("deposit of a PartitionedDataSet takes a field's name: a Field "
                         "belongs to one partition's topology")
     pieces = list(data)
+    unit = _unit(None, grid, field, reduce, per_volume, pieces=pieces, world=data.world)
     blocks = tc.Blocks([piece.device for piece in pieces], data.world)
     # A mean is a sum over a count; each piece's other reductions combine as
     # they are. Volumes divide once, at the end.
@@ -311,4 +339,4 @@ def _deposit_pieces(data, grid, field, reduce, method, per_volume):
         values = (values * values.dtype.type(scale)).astype(values.dtype)
     with grid.device:
         out = tack.array(np.ascontiguousarray(values))
-    return Field(Values(grid, on), out)
+    return Field(Values(grid, on), out, unit)
