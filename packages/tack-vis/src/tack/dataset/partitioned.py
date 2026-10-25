@@ -76,3 +76,17 @@ def fields_of(data, field, what):
             raise KeyError(f"partition {i} has no field {field!r}: it has "
                            f"{', '.join(map(repr, piece.fields)) or 'none'}")
     return field
+
+
+def common_origin(data, what, world=None):
+    """The origin every piece of ``data`` has, on every rank of ``world``
+    (``data.world`` by default): ``what`` (an algorithm that compares or moves
+    positions between pieces) refuses pieces on two origins. ``(0.0, 0.0, 0.0)``
+    with no pieces anywhere."""
+    world = data.world if world is None else world
+    mine = sorted({piece.origin for piece in data})
+    every = sorted({o for part in world._allgather(mine) for o in part})
+    if len(every) > 1:
+        raise ValueError(f"{what} needs its pieces on one origin, not {every}: rebase "
+                         "them to one first (DataSet.rebased)")
+    return every[0] if every else (0.0, 0.0, 0.0)

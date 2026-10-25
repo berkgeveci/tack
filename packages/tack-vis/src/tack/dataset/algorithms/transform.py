@@ -24,7 +24,9 @@ def _affine(positions, m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m2
 def transform(data, matrix, fields=None):
     """The geometry under an affine map: a 4x4 matrix (its last row 0 0 0 1) or 3x4,
     applied to each position as a column (Viskores' PointTransform, VTK's
-    vtkTransformFilter)."""
+    vtkTransformFilter). On a dataset with an origin the map moves the origin,
+    in double precision, and only its linear part acts on the geometry's values,
+    so a rotation far from zero loses nothing."""
     m = np.asarray(matrix, float)
     if m.shape == (4, 4):
         if not np.allclose(m[3], [0, 0, 0, 1]):
@@ -32,8 +34,15 @@ def transform(data, matrix, fields=None):
         m = m[:3]
     if m.shape != (3, 4):
         raise ValueError(f"transform takes a 4x4 or 3x4 matrix, not {m.shape}")
+    origin = None
+    if any(data.origin):
+        origin = m[:, :3] @ np.asarray(data.origin) + m[:, 3]
+        m = np.hstack([m[:, :3], np.zeros((3, 1))])
     n = size_of(data.geometry.values)
     out = _vectors(n, data.dtype)
     if n:
         _affine(materialize(data.geometry.values), *map(float, m.reshape(-1)), out)
-    return _moved(data, out, fields)
+    out = _moved(data, out, fields)
+    if origin is not None:
+        out.origin = origin
+    return out

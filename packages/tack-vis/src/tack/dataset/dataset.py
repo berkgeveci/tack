@@ -122,6 +122,42 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
 
 # ── Geometry ────────────────────────────────────────────────────────
 
+def as_origin(origin):
+    """``origin`` as three Python floats: ``(0.0, 0.0, 0.0)`` for ``None``; refuses
+    anything else that is not three finite numbers."""
+    if origin is None:
+        return (0.0, 0.0, 0.0)
+    try:
+        values = np.asarray(origin, np.float64).reshape(-1)
+    except (TypeError, ValueError):
+        values = None
+    if values is None or values.shape != (3,) or not np.all(np.isfinite(values)):
+        raise ValueError(f"an origin is three finite numbers, not {origin!r}")
+    return tuple(float(v) for v in values)
+
+
+def same_origin(what, datasets):
+    """The origin every one of ``datasets`` has, or ``ValueError`` naming ``what``
+    if two differ: positions compared or moved between datasets must be relative
+    to one origin."""
+    origins = {d.origin for d in datasets}
+    if len(origins) > 1:
+        raise ValueError(f"{what} needs its datasets on one origin, not "
+                         f"{sorted(origins)}: rebase them to one first (DataSet.rebased)")
+    return origins.pop() if origins else (0.0, 0.0, 0.0)
+
+
+def relative_positions(where, origin):
+    """``where``'s points relative to ``origin``, as a float64 host array ``(n, 3)``:
+    a dataset's positions plus the difference of the two origins (none when they
+    are equal), or an array of world positions less ``origin``."""
+    origin = np.asarray(as_origin(origin))
+    if isinstance(where, DataSet):
+        x = where.positions().astype(np.float64)
+        return x if where.origin == tuple(origin) else x + (np.asarray(where.origin) - origin)
+    return np.asarray(where, np.float64).reshape(-1, 3) - origin
+
+
 def _as_geometry(geometry, topology, dtype):
     """``geometry`` as a ``Field``: positions per point (a host array, or any array of
     3-vectors, such as a ``CartesianProduct``) become an ``H1`` field on ``topology``;
@@ -182,13 +218,23 @@ class DataSet:
     one of the fields they carry or select. ``ghosts``, a
     ``tack.dataset.Ghosts`` or ``None``, marks the cells and points
     another piece of a partitioned dataset owns; ``global_ids``, a
-    ``tack.dataset.GlobalIds`` or ``None``, numbers them across the pieces."""
+    ``tack.dataset.GlobalIds`` or ``None``, numbers them across the pieces.
+
+    ``origin``, three floats kept in double precision on the host, is where the
+    geometry's coordinates start: a position is ``origin + value``, the value
+    in the geometry's type (``tack.f32``, or ``tack.f64`` on a device that has
+    it). Kernels see only the values, so coordinates far from zero -- a LiDAR
+    survey's eastings and northings -- keep their precision in single
+    precision. Filters keep it; what takes or gives absolute positions
+    (implicit functions, probe points, seeds, ``world_positions``, the VTK
+    interop) converts on the host in double precision."""
 
     @on_inputs_device
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32,
-                 ghosts=None, global_ids=None):
+                 ghosts=None, global_ids=None, origin=None):
         self.topology = topology
         self._geometry = _as_geometry(geometry, topology, dtype)
+        self.origin = origin
         self.fields = dict(fields or {})
         for name, field in self.fields.items():
             if field.space.topology is not topology:
@@ -242,7 +288,8 @@ class DataSet:
         global_ids = None if self.global_ids is None else self.global_ids.to_device(target)
         out = DataSet(topology, moved(self.geometry),
                       {name: moved(field) for name, field in self.fields.items()},
-                      sets, dtype=self.dtype, ghosts=ghosts, global_ids=global_ids)
+                      sets, dtype=self.dtype, ghosts=ghosts, global_ids=global_ids,
+                      origin=self.origin)
         out._ghosts_lost = self._ghosts_lost
         return out
 
@@ -316,8 +363,20 @@ class DataSet:
         self._global_ids = global_ids
 
     @property
+    def origin(self):
+        """Where the geometry's coordinates start, ``(x, y, z)`` in double precision:
+        a position is ``origin`` plus the geometry's value. ``(0.0, 0.0, 0.0)``
+        unless set."""
+        return self._origin
+
+    @origin.setter
+    def origin(self, origin):
+        self._origin = as_origin(origin)
+
+    @property
     def geometry(self):
-        """The geometry, a field of positions in ``H1`` or ``L2``."""
+        """The geometry, a field of positions in ``H1`` or ``L2``, relative to
+        ``origin``."""
         return self._geometry
 
     @geometry.setter
@@ -344,11 +403,32 @@ class DataSet:
 
     def positions(self):
         """Every point's position as a host array, ``(num_points, 3)``: an ``H1``
-        geometry's values. An ``L2`` geometry has none per point."""
+        geometry's values, relative to ``origin`` (``world_positions`` adds it).
+        An ``L2`` geometry has none per point."""
         if isinstance(self.geometry.space, L2):
             raise ValueError("an L2 geometry has positions per cell corner, not per point")
         # An order-2 geometry's first values are the points'.
         return arrays.to_host(self.geometry.values)[:self.num_points]
+
+    def rebased(self, origin):
+        """This dataset with its geometry relative to ``origin`` instead: the same
+        world positions, each value moved by the difference of the two origins
+        (taken in double precision, added in the geometry's type). An implicit
+        geometry (an image's, a grid's lines) becomes positions per point."""
+        from tack.dataset.algorithms._moving import _moved, _shifted
+
+        origin = as_origin(origin)
+        if origin == self.origin:
+            return self
+        offset = np.asarray(self.origin) - np.asarray(origin)
+        out = _moved(self, _shifted(self, offset))
+        out.origin = origin
+        return out
+
+    def world_positions(self):
+        """Every point's position as a float64 host array, ``(num_points, 3)``:
+        ``origin`` plus ``positions()``, added in double precision."""
+        return self.positions().astype(np.float64) + np.asarray(self.origin)
 
     @on_inputs_device
     def domain_groups(self, domain):
@@ -714,3 +794,58 @@ def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), directio
     topology = grid_topology(dims, device=device)   # the sizes as given, before padding
     return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype,
                                                 device=device))
+
+
+def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None):
+    """A point cloud: a dataset of ``positions``, one vertex cell per point (types,
+    offsets and connectivity implicit, stored nowhere), with ``fields`` (a dict of
+    names to one value per point, scalars or rows of components) as point data.
+
+    ``positions`` is an ``(n, 3)`` host array of world positions, or a Tack array
+    of 3-vectors already relative to ``origin``. Host positions are taken
+    relative to ``origin`` in double precision before they become ``dtype``;
+    without one, float64 positions get the lower corner of their box, rounded
+    down to whole units, so a LiDAR survey's eastings and northings keep their
+    precision in single precision, and other positions get zero. ``dtype`` is
+    ``tack.f32``, or ``tack.f64`` on a device that has it. Floating-point fields
+    become ``dtype`` too; integer fields (a LAS classification, intensities) keep
+    their type."""
+    from tack.dataset import ids
+    from tack.dataset.algorithms._extract import _vertex_cells
+    from tack.dataset.topology import UnstructuredTopology
+
+    target = as_device(backend_of(device))
+    if dtype not in target._backend.supported_dtypes:
+        raise TypeError(f"the {target} device has no {dtype} arrays; a point cloud there "
+                        f"takes positions of {tack.f32} relative to an origin")
+    if isinstance(positions, tack.Array):
+        n = int(positions.shape[0])
+        local = positions
+    else:
+        world = np.asarray(positions, np.float64 if np.asarray(positions).dtype == np.float64
+                           else None).reshape(-1, 3)
+        n = len(world)
+        if origin is None and world.dtype == np.float64 and n:
+            origin = np.floor(world.min(axis=0))
+        local = world.astype(np.float64) - np.asarray(as_origin(origin))
+    with target:
+        topology = UnstructuredTopology(*_vertex_cells(n, ids.choose(None, n)), num_points=n)
+        data = DataSet(topology, local, dtype=dtype, origin=origin)
+        for name, values in (fields or {}).items():
+            if not isinstance(values, tack.Array):
+                host = np.asarray(values)
+                if host.shape[:1] != (n,):
+                    raise ValueError(f"field {name!r} has {host.shape[:1]} values for "
+                                     f"{n} points")
+                if host.dtype.kind == "f":
+                    host = host.astype(dtype.numpy_dtype)
+                width = host.shape[1] if host.ndim == 2 else None
+                if width:
+                    from tack.lang.types import from_numpy_dtype
+
+                    values = tack.array(np.ascontiguousarray(host),
+                                        tack.vec(width, from_numpy_dtype(host.dtype)))
+                else:
+                    values = tack.array(np.ascontiguousarray(host))
+            data.fields[name] = Field(H1(data), values)
+    return data

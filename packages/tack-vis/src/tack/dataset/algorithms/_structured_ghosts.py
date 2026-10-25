@@ -158,7 +158,8 @@ def structured_ghost_cells(blocks, pieces, layers, names, kind_of):
             cell_marks = spread["cells"]["\0marks"].numpy() | np.where(
                 c_owner != g, Ghosts.DUPLICATECELL, 0).astype(np.uint8)
             data = DataSet(topology, geometry, dtype=piece.dtype,
-                           ghosts=Ghosts(cells=cell_marks, points=point_marks))
+                           ghosts=Ghosts(cells=cell_marks, points=point_marks),
+                           origin=piece.origin)
             for name in names:
                 field = piece.fields[name]
                 space = field.space

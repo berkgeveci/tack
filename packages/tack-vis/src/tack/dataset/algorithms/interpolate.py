@@ -14,10 +14,24 @@ __all__ = ['interpolate']
 
 @tack.device_class
 class _Of:
-    """The function as a template attribute: a kernel takes no callable arguments."""
+    """The function as a template attribute: a kernel takes no callable arguments.
+    ``at`` gives it world positions: the geometry's value plus the dataset's
+    origin, added in the geometry's type, where the origin is not zero (compiled
+    in, so a dataset at zero runs the function on its values as they are)."""
 
-    def __init__(self, function):
+    SHIFTED = 0
+
+    def __init__(self, function, origin):
         self.f = function
+        self.ox, self.oy, self.oz = origin
+        if any(origin):
+            self.SHIFTED = 1
+
+    @tack.func
+    def at(self, p):
+        if self.SHIFTED:
+            return self.f([p[0] + self.ox, p[1] + self.oy, p[2] + self.oz])
+        return self.f(p)
 
 
 @tack.kernel
@@ -25,7 +39,7 @@ def _at_space_nodes(nodes, fn, values):
     # Each of the space's nodes once, where the geometry puts it (node_views).
     for i in nodes:
         for j in range(nodes.node_count(i)):
-            values[nodes.node_dof(i, j)] = fn.f(nodes.node_position(i, j))
+            values[nodes.node_dof(i, j)] = fn.at(nodes.node_position(i, j))
 
 
 @tack.kernel
@@ -58,7 +72,7 @@ def _at_corners(cells, fn, writers, start, values):
         first = start + cells.index(c) * cells.NUM_POINTS
         for j in range(cells.NUM_POINTS):
             if writers[first + j] == 1:
-                values[cells.point_id(c, j)] = fn.f(cells.position(c, cells.parametric_point(j)))
+                values[cells.point_id(c, j)] = fn.at(cells.position(c, cells.parametric_point(j)))
 
 
 @tack.kernel
@@ -67,7 +81,7 @@ def _at_nodes(cells, t, fn, writers, start, first_node, values):
         first = start + cells.index(c) * cells.NUM_QUADRATIC
         for k in range(first_node, cells.NUM_QUADRATIC):
             if writers[first + k] == 1:
-                values[t.dof_index(c, k)] = fn.f(cells.position(c, cells.quadratic_node(k)))
+                values[t.dof_index(c, k)] = fn.at(cells.position(c, cells.quadratic_node(k)))
 
 
 def _writers(data, space, target):
@@ -131,7 +145,7 @@ def interpolate(data, function, space, dtype=None):
         raise TypeError(f"interpolate gives values at points or cells, not on {space.on}")
     if not isinstance(space, (H1, L2, Constant, Values)):
         raise TypeError(f"interpolate takes H1, L2, Constant or Values, not {space!r}")
-    fn = _Of(function)
+    fn = _Of(function, data.origin)
     values = tack.zeros((space.size,), dtype or data.dtype)
     out = Field(space, values)
     shared = isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")

@@ -366,7 +366,8 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
         raise
 
 
-def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None):
+def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
+                   origin=None):
     """Copy a ``vtkUnstructuredGrid``, ``vtkStructuredGrid``, ``vtkRectilinearGrid`` or
     ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
     ``UniformCoordinates`` (with its direction matrix), a rectilinear grid's as a
@@ -389,6 +390,11 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     (``PolyhedralTopology.from_cell_faces``); without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
     ``i32`` unless the grid is too large for it (``tack.dataset.ids``).
+
+    ``origin`` (three numbers) becomes the dataset's ``origin``: VTK's points,
+    an image's origin and a rectilinear grid's lines are taken relative to it,
+    subtracted in double precision before they become ``dtype``, so points far
+    from zero keep their precision.
 
     A ``vtkPartitionedDataSet`` becomes a ``PartitionedDataSet``, each piece
     converted as above (null pieces skipped), and a
@@ -420,7 +426,11 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     from tack.dataset.ghosts import Ghosts
     from tack.dataset.global_ids import GlobalIds
 
-    options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype}
+    options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype,
+               "origin": origin}
+    from tack.dataset.dataset import as_origin
+
+    shift = np.asarray(as_origin(origin))
     if isinstance(grid, vtkPartitionedDataSetCollection):
         return _collection_to_datasets(grid, options)
     if isinstance(grid, vtkPartitionedDataSet):
@@ -437,7 +447,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
             polyhedral = 42 in present
     if isinstance(grid, vtkUnstructuredGrid) and polyhedral:
         topology = _polyhedral_topology(grid, orient=orient, id_dtype=id_dtype)
-        geometry = _vtk_points(grid)
+        geometry = _vtk_points(grid) - shift
     elif isinstance(grid, vtkUnstructuredGrid):
         cells = grid.cells
         offsets = _from_vtk(cells.offsets_array)
@@ -461,20 +471,21 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         else:
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
-        geometry = _vtk_points(grid)
+        geometry = _vtk_points(grid) - shift
     elif isinstance(grid, vtkImageData):
         dims = list(grid.dimensions)
         matrix = grid.direction_matrix              # a vtkMatrix3x3: no indexing in 9.7.1
         direction = np.array([[matrix.GetElement(r, c) for c in range(3)] for r in range(3)])
         spacing = np.asarray(grid.spacing)
         # Points are origin + direction @ (ijk * spacing), ijk from the extent's start.
-        origin = np.asarray(grid.origin) + direction @ (np.asarray(grid.extent[0::2]) * spacing)
-        geometry = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
+        start = np.asarray(grid.origin) + direction @ (np.asarray(grid.extent[0::2]) * spacing)
+        geometry = UniformCoordinates(dims, start - shift, spacing, direction, dtype=dtype)
         topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
     elif isinstance(grid, vtkRectilinearGrid):
-        geometry = CartesianProduct(np.asarray(grid.x_coordinates),
-                                    np.asarray(grid.y_coordinates),
-                                    np.asarray(grid.z_coordinates), dtype=dtype)
+        geometry = CartesianProduct(np.asarray(grid.x_coordinates, np.float64) - shift[0],
+                                    np.asarray(grid.y_coordinates, np.float64) - shift[1],
+                                    np.asarray(grid.z_coordinates, np.float64) - shift[2],
+                                    dtype=dtype)
         dims = list(grid.dimensions)
         if dims != list(geometry.dims):
             raise ValueError(f"grid dimensions {dims} do not match its coordinates")
@@ -483,7 +494,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         dims = [0, 0, 0]
         grid.GetDimensions(dims)        # not a readable property on a structured grid in 9.7.1
         topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
-        geometry = _vtk_points(grid)
+        geometry = _vtk_points(grid) - shift
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkStructuredGrid, "
                         f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
@@ -496,7 +507,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     global_ids = None if cells is None and points is None else GlobalIds(cells=cells,
                                                                          points=points)
     return DataSet(topology, geometry, fields=fields, dtype=dtype, ghosts=ghosts,
-                   global_ids=global_ids)
+                   global_ids=global_ids, origin=origin)
 
 
 def _to_vtk_types(types):
@@ -560,11 +571,12 @@ def _vtk_points(grid):
 def _vtk_points_of(data):
     """``data``'s positions as vtkPoints of the geometry's own precision:
     ``vtkPoints(data=...)`` given a NumPy array stores doubles, so give it a
-    typed array (f32 positions as a vtkFloatArray)."""
+    typed array (f32 positions as a vtkFloatArray). A dataset with an origin
+    gives its world positions, in double precision."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkFloatArray, vtkPoints
 
-    positions = data.positions()
+    positions = data.world_positions() if any(data.origin) else data.positions()
     typed = vtkFloatArray if positions.dtype == np.float32 else vtkDoubleArray
     return vtkPoints(data=typed(np.ascontiguousarray(positions)))
 
@@ -651,14 +663,19 @@ def dataset_to_vtk(data):
         topology.num_cells == 0 and isinstance(coordinates, (UniformCoordinates,
                                                              CartesianProduct)))
     if grid and isinstance(coordinates, UniformCoordinates):
-        grid = vtkImageData(dimensions=coordinates.dims, origin=coordinates._origin,
+        grid = vtkImageData(dimensions=coordinates.dims,
+                            origin=tuple(np.asarray(coordinates._origin, np.float64)
+                                         + np.asarray(data.origin)),
                             spacing=coordinates._spacing,
                             direction_matrix=tuple(coordinates._matrix.reshape(-1)))
     elif grid and isinstance(coordinates, CartesianProduct):
         grid = vtkRectilinearGrid(dimensions=coordinates.dims)
-        grid.x_coordinates = np.array(coordinates.x.numpy())
-        grid.y_coordinates = np.array(coordinates.y.numpy())
-        grid.z_coordinates = np.array(coordinates.z.numpy())
+        axes = (coordinates.x, coordinates.y, coordinates.z)
+        if any(data.origin):        # world lines, in double precision
+            axes = [a.numpy().astype(np.float64) + o for a, o in zip(axes, data.origin)]
+        else:
+            axes = [np.array(a.numpy()) for a in axes]
+        grid.x_coordinates, grid.y_coordinates, grid.z_coordinates = axes
     elif isinstance(topology, StructuredTopology):
         # Explicit coordinates, as a warp or transform leaves; both number the
         # points x fastest.

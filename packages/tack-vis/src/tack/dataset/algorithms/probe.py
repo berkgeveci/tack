@@ -9,7 +9,7 @@ from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.buckets import bucket_groups
 from tack.dataset.by_id import field_by_id
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, relative_positions
 from tack.dataset.locator import cached_locator
 from tack.dataset.spaces import H1, Constant, Values
 from tack.runtime.dispatch import on_inputs_device
@@ -73,7 +73,12 @@ def probe(data, where, fields=None, locator=None):
     gives one back, each piece probed -- and every rank's points are probed
     over every rank's pieces of ``data.world``. A point on a face two pieces
     share takes the lower piece's values, as one dataset takes its lower
-    cell's."""
+    cell's.
+
+    Points given as an array are world positions; a dataset's are its own,
+    relative to its origin. Either way they are taken relative to ``data``'s
+    origin in double precision before they are located (the pieces of a
+    ``PartitionedDataSet`` share one)."""
     from tack.dataset.partitioned import PartitionedDataSet
 
     if isinstance(data, PartitionedDataSet):
@@ -89,7 +94,7 @@ def probe(data, where, fields=None, locator=None):
     from tack.dataset.carry import _point_values, selected
 
     if not isinstance(where, DataSet):
-        where = _vertices(np.asarray(where, float).reshape(-1, 3), data)
+        where = _vertices(relative_positions(where, data.origin), data)
     if not isinstance(where.geometry.space, H1):
         raise TypeError("probe needs the probed points: an H1 geometry")
     locator = locator or cached_locator(data)
@@ -97,6 +102,11 @@ def probe(data, where, fields=None, locator=None):
         raise ValueError("the locator was built for another topology or geometry, or "
                          "Tack has written the positions since: make a new one")
     points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
+    if where.origin != data.origin:
+        from tack.dataset.algorithms._moving import _shifted_values
+
+        points = _shifted_values(points, where.dtype,
+                                 np.asarray(where.origin) - np.asarray(data.origin))
     found, pcs, tets = locator.find(points)
     m = found.shape[0]
     # Fields read by cell id where find searched from the points; built only
@@ -174,7 +184,7 @@ def _probe_pieces(data, where, fields):
     from tack import communication as tc
     from tack.communication._kernels import gather
     from tack.dataset.ghosts import Ghosts, keep_marks, visible
-    from tack.dataset.partitioned import PartitionedDataSet
+    from tack.dataset.partitioned import PartitionedDataSet, common_origin
 
     pieces = []
     for piece in data:                       # each piece's work on its own device
@@ -185,15 +195,17 @@ def _probe_pieces(data, where, fields):
         raise ValueError("probe of a PartitionedDataSet needs pieces on this rank to "
                          "start from")
 
-    # This rank's targets, their points end to end, from its first block.
+    # This rank's targets, their points end to end, from its first block, relative
+    # to the pieces' one origin.
+    origin = common_origin(data, "probe of a PartitionedDataSet")
     many = isinstance(where, PartitionedDataSet)
     targets = list(where) if many else [where]
     for i, target in enumerate(targets):
         if not isinstance(target, DataSet):
-            targets[i] = _vertices(np.asarray(target, float).reshape(-1, 3), pieces[0])
+            targets[i] = _vertices(relative_positions(target, origin), pieces[0])
         elif not isinstance(target.geometry.space, H1):
             raise TypeError("probe needs the probed points: an H1 geometry")
-    points = [np.asarray(t.positions(), np.float64).reshape(-1, 3) for t in targets]
+    points = [relative_positions(t, origin) for t in targets]
     counts = [len(p) for p in points]
     first = blocks.local.start
     positions = {g: (np.concatenate(points) if g == first and points else np.zeros((0, 3)))
@@ -234,8 +246,8 @@ def _probe_pieces(data, where, fields):
     for g, piece in zip(blocks.local, pieces):
         x, _ = arrived[g]
         if len(x):
-            with piece.device:
-                probed = probe(piece, x, fields)
+            with piece.device:       # relative to the pieces' origin, as a dataset on it
+                probed = probe(piece, _vertices(x, piece), fields)
             answers[g] = {n: probed.fields[n].values for n in names}
     replied = routing.reply(answers, like)[first]
 

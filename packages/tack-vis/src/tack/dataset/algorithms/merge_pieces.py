@@ -10,7 +10,7 @@ from tack.arrays import CartesianProduct, UniformCoordinates
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
-from tack.dataset.partitioned import PartitionedDataSet
+from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.spaces import H1, Constant, Values
 from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
@@ -42,6 +42,7 @@ def merge_pieces(data, root=0, fields=None, device=None):
 
     pieces = list(data)
     names = _carried(pieces, fields)
+    common_origin(data, "merge_pieces")
     blocks = tc.Blocks([piece.device for piece in pieces], data.world)
     world = blocks.world
     if not 0 <= root < world.size:
@@ -197,7 +198,7 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
             # cells out, so the marks go aside and come back (every cell and
             # point is kept, in order).
             bare = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
-                           dtype=piece.dtype, global_ids=piece.global_ids)
+                           dtype=piece.dtype, global_ids=piece.global_ids, origin=piece.origin)
             with piece.device:
                 converted_piece = extract_cells(bare, np.arange(piece.num_cells))
             converted_piece.ghosts = piece.ghosts
@@ -315,7 +316,7 @@ def _assembled(topology, geometry, like, names, kind_of, parts):
     if marks_cells.any() or marks_points.any():
         ghosts = Ghosts(cells=marks_cells if marks_cells.any() else None,
                         points=marks_points if marks_points.any() else None)
-    out = DataSet(topology, geometry, dtype=like.dtype, ghosts=ghosts)
+    out = DataSet(topology, geometry, dtype=like.dtype, ghosts=ghosts, origin=like.origin)
     for name in names:
         field = like.fields[name]
         space = field.space

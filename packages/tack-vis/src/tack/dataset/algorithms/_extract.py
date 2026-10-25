@@ -337,4 +337,5 @@ def _vertices(points, like=None):
     n = int(points.shape[0])
     idt = ids.for_output(like, n) if like is not None else ids.choose(None, n)
     return DataSet(UnstructuredTopology(*_vertex_cells(n, idt), num_points=n), points,
-                   dtype=like.dtype if like is not None else tack.f32)
+                   dtype=like.dtype if like is not None else tack.f32,
+                   origin=like.origin if like is not None else None)

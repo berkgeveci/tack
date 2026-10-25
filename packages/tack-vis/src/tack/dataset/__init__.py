@@ -90,6 +90,7 @@ from tack.dataset.dataset import (
     DataSet,
     Field,
     for_each,
+    point_cloud,
     rectilinear_grid,
     uniform_grid,
 )
@@ -184,6 +185,7 @@ __all__ = [
     "net_flux",
     "orient",
     "perot",
+    "point_cloud",
     "point_elevation",
     "point_ids",
     "polyhedra",

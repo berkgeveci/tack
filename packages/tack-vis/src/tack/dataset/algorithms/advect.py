@@ -1,5 +1,7 @@
 """``advect``: seeds moved through the velocity ``field`` (a 3-vector field or its name: point data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as Viskores' ParticleAdvection: a dataset of the particles where they stopped, one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``, ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of 3-vectors; ``integrator`` ``"rk4"`` or ``"euler"``; ``locator`` reuses a ``CellLocator`` of ``data``."""
 
+import numpy as np
+
 from tack.dataset.algorithms._advection import ParticleStatus, _run
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.dataset import DataSet, Field
@@ -38,7 +40,7 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
         data, field = visible(data, field)
     else:
         refuse_hidden(data, "advect with a locator")
-    seeds, resume, seed_ids = _resumed(seeds)
+    seeds, resume, seed_ids = _resumed(seeds, data)
     xs, times, taken, status, _, _, _ = _run(data, field, seeds, step_size, steps,
                                              integrator, locator, record=False,
                                              resume=resume)
@@ -51,7 +53,7 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
     return out
 
 
-def _resumed(seeds):
+def _resumed(seeds, data):
     """``seeds`` as positions, and the state to go on from when they are what
     ``advect`` returned: ``(positions, (times, steps, status) or None, seed ids
     or None)``."""
@@ -64,4 +66,10 @@ def _resumed(seeds):
                          f"{', '.join(missing)}")
     resume = tuple(seeds.fields[n].values for n in ("time", "steps", "status"))
     ids = seeds.fields["seed"].values if "seed" in seeds.fields else None
-    return seeds.geometry.values, resume, ids
+    values = seeds.geometry.values
+    if seeds.origin != data.origin:              # positions relative to data's origin
+        from tack.dataset.algorithms._moving import _shifted_values
+
+        values = _shifted_values(values, seeds.dtype,
+                                 np.asarray(seeds.origin) - np.asarray(data.origin))
+    return values, resume, ids

@@ -13,6 +13,14 @@ values: a kernel takes it as a template and calls ``f.value(p)`` on a
 anew. ``algorithms.implicit_values`` evaluates one on a dataset's geometry;
 ``slice``, ``extract_geometry`` and ``extract_points`` take one.
 
+Parameters are positions in world coordinates. On a dataset with an origin
+(``DataSet.origin``) a filter evaluates the function at the geometry's values
+-- positions relative to that origin -- through ``relative_to``: each
+function here moves its parameters by the origin in double precision
+(``_relative_to``), so nothing is lost far from zero; any other object with a
+``value`` gets the origin added to the position it is given, in the
+geometry's type.
+
 Every product in a ``value`` is named, so the float contract rounds it on its
 own and no backend fuses it into a sum: a function gives the same bits on
 every backend. A slice through mesh points -- whose values are then exactly
@@ -26,6 +34,27 @@ import numpy as np
 import tack
 
 __all__ = ["Box", "Cylinder", "Plane", "Planes", "Sphere"]
+
+
+def relative_to(function, origin):
+    """``function`` for positions relative to ``origin`` (three floats): itself at
+    a zero origin, a copy with its parameters moved where the function has
+    ``_relative_to``, else ``function`` evaluated at the position plus
+    ``origin``."""
+    if not any(origin):
+        return function
+    moved = getattr(type(function), "_relative_to", None)
+    if moved is not None:
+        return moved(function, np.asarray(origin, np.float64))
+    return _Shifted(function, origin)
+
+
+def _copy(function, **values):
+    """A copy of ``function`` with some instance values replaced."""
+    out = object.__new__(type(function))
+    out.__dict__.update(function.__dict__)
+    out.__dict__.update(values)
+    return out
 
 
 def _vector(value, name):
@@ -51,6 +80,10 @@ class Plane:
         self.ox, self.oy, self.oz = map(float, _vector(origin, "origin"))
         self.nx, self.ny, self.nz = map(float, _unit(normal, "normal"))
 
+    def _relative_to(self, origin):
+        return _copy(self, ox=self.ox - origin[0], oy=self.oy - origin[1],
+                     oz=self.oz - origin[2])
+
     @tack.func
     def value(self, p):
         # Each product named, so rounded on its own (the module's docstring).
@@ -69,6 +102,10 @@ class Sphere:
         if not radius > 0:
             raise ValueError(f"radius must be positive, not {radius!r}")
         self.r2 = float(radius) ** 2
+
+    def _relative_to(self, origin):
+        return _copy(self, cx=self.cx - origin[0], cy=self.cy - origin[1],
+                     cz=self.cz - origin[2])
 
     @tack.func
     def value(self, p):
@@ -92,6 +129,10 @@ class Cylinder:
         if not radius > 0:
             raise ValueError(f"radius must be positive, not {radius!r}")
         self.r2 = float(radius) ** 2
+
+    def _relative_to(self, origin):
+        return _copy(self, cx=self.cx - origin[0], cy=self.cy - origin[1],
+                     cz=self.cz - origin[2])
 
     @tack.func
     def value(self, p):
@@ -125,6 +166,10 @@ class Box:
             raise ValueError(f"lower {lo} must be below upper {hi} on every axis")
         self.cx, self.cy, self.cz = map(float, (lo + hi) / 2)
         self.hx, self.hy, self.hz = map(float, (hi - lo) / 2)
+
+    def _relative_to(self, origin):
+        return _copy(self, cx=self.cx - origin[0], cy=self.cy - origin[1],
+                     cz=self.cz - origin[2])
 
     @tack.func
     def value(self, p):
@@ -170,6 +215,10 @@ class Planes:
         tack.copyto(planes, self._rows.astype(dtype.numpy_dtype))
         return planes
 
+    def _relative_to(self, origin):
+        rows = self._rows.reshape(-1, 6)
+        return Planes(rows[:, :3] - origin, rows[:, 3:])
+
     def _matching(self, dtype, device):
         """These planes in ``dtype`` on ``device``: itself, or a copy made once."""
         if self.planes.dtype is dtype and self.planes.device == device:
@@ -192,3 +241,19 @@ class Planes:
             z = (p[2] - self.planes[b + 2]) * self.planes[b + 5]
             most = max(most, x + y + z)
         return most
+
+
+@tack.device_class
+class _Shifted:
+    """A function given positions relative to an origin: its own ``value`` at the
+    position plus the origin, added in the position's type (``relative_to``,
+    for functions without ``_relative_to``)."""
+
+    def __init__(self, function, origin):
+        self.function = function
+        self.ox, self.oy, self.oz = (float(v) for v in origin)
+
+    @tack.func
+    def value(self, p):
+        return self.function.value([p[0] + self.ox, p[1] + self.oy, p[2] + self.oz])
+
