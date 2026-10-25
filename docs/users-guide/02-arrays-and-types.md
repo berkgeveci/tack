@@ -436,7 +436,7 @@ writable exactly when what it writes through is: a store into a
 the kernel compiles, and a read-only stored array stays read-only behind
 any wrapper. Your own classes
 join the same way: see [Indexable Objects](06-templates.md#indexable-objects).
-The [dataset reference](../reference/dataset-api.md#fields-and-arrays) lists
+The [dataset reference](../vis-guide/reference/dataset-api.md#fields-and-arrays) lists
 every implicit array with its VTK and Viskores counterparts.
 
 ## Scalar Types

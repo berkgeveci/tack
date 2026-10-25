@@ -1,7 +1,7 @@
 """The template views kernels iterate: one entity kind, one shape, at a time.
 
 A view's class combines mixins, made once per combination and reused, so
-every compiled kernel is specialized to it (``docs/design/dataset-api.md``
+every compiled kernel is specialized to it (``docs/vis-guide/design/dataset-api.md``
 §4):
 
 - an entity *kind*: the cells of an unstructured or structured topology,
@@ -385,7 +385,7 @@ def _closest_on_triangle(p, a, b, c):
 
 class _PolyhedralLocation:
     """Where a point is in a polyhedron, which has no parametric coordinates: in which
-    of its *sub-tetrahedra*, and where in that one (``docs/design/polyhedra.md``,
+    of its *sub-tetrahedra*, and where in that one (``docs/vis-guide/design/polyhedra.md``,
     section 13).
 
     Each face is fanned from its *face point*, the mean of its points, and the

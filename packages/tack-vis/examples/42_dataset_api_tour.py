@@ -1,4 +1,4 @@
-"""42 -- A tour of tack.dataset, the dataset API (docs/reference/dataset-api.md).
+"""42 -- A tour of tack.dataset, the dataset API (docs/vis-guide/reference/dataset-api.md).
 
 One mixed unstructured grid (hexahedra, wedges, pyramids and tetrahedra)
 and one rectilinear grid, each run through the same algorithms:

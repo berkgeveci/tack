@@ -1,4 +1,4 @@
-"""Tack's dataset API: see ``docs/reference/dataset-api.md``.
+"""Tack's dataset API: see ``docs/vis-guide/reference/dataset-api.md``.
 
 ``shapes`` holds the linear cells as template classes; ``arrays`` the
 arrays a field's values may be, explicit or implicit; ``topology`` the

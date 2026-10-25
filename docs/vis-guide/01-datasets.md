@@ -6,7 +6,7 @@ faces. `tack.dataset` keeps those relationships explicit so the same field can b
 interpolated, filtered and sampled without each stage inventing its
 own connectivity and indexing rules.
 
-Start with the [visualization quick start](../09-visualization.md#quick-start)
+Start with the [visualization quick start](index.md#quick-start)
 if you want to run a filter first. This chapter explains the objects it uses.
 The [function-space fundamentals](00-function-spaces.md) explain H1, L2,
 polynomial order and degrees of freedom before the code examples below.
@@ -159,7 +159,7 @@ physical gradients against `[0.5, 2, 3]` and `[1.5, 2, 3]`.
 uv run python docs/examples/data_spaces.py --arch cpu --check
 ```
 
-[Download the independent-spaces program](../../examples/data_spaces.py).
+[Download the independent-spaces program](../examples/data_spaces.py).
 
 ## Geometry is a field, too
 
@@ -195,7 +195,7 @@ ground = td.threshold_points(cloud, "classification", 2, 2)            # keeps t
 Filters keep the origin, and arguments that are positions -- implicit
 functions, probe points, seeds -- are given in world coordinates and moved by
 the origin in double precision. The [dataset API
-reference](../../reference/dataset-api.md#origins-and-point-clouds) lists what
+reference](reference/dataset-api.md#origins-and-point-clouds) lists what
 converts.
 
 ## Importing MFEM preserves the separation
@@ -223,7 +223,7 @@ Unsupported collections or orders are refused. Current order-2 pyramid bases
 and geometry above order 2 are not imported.
 
 The [pipeline chapter](06-pipelines.md#exchange-whole-datasets-with-vtk) and
-[reference](../../reference/dataset-api.md#interoperability) describe the entry points.
+[reference](reference/dataset-api.md#interoperability) describe the entry points.
 
 ## A simpler first-order field
 
@@ -301,6 +301,6 @@ The check compares point values with the analytic formula, cell temperatures
 with `[2.75, 3.25]`, and gradients with `[1, 2, 3]`. It also checks projection
 and face jumps, developed in [Fields and Spaces](03-fields-and-spaces.md).
 
-[Download the complete example](../../examples/data_fields.py).
+[Download the complete example](../examples/data_fields.py).
 Continue with [Building Meshes](02-meshes.md), or move directly to
 [Fields and Spaces](03-fields-and-spaces.md) if your mesh already comes from a reader.

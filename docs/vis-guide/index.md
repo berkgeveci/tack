@@ -1,7 +1,7 @@
-# Datasets and visualization
+# Visualization Guide
 
-`tack.dataset` holds meshes and the fields on them, and the algorithms that work
-on both: contour, slice, clip, threshold, external faces, gradients,
+`tack.dataset` (the `tack-vis` package) holds meshes and point clouds and the
+fields on them, and the algorithms that work on both: contour, slice, clip, threshold, external faces, gradients,
 projections between spaces, streamlines and the rest. Like VTK and Viskores,
 it works on structured grids, unstructured meshes of the linear cells,
 polyhedra, polygons and polylines. Unlike them, the algorithms are ordinary
@@ -13,7 +13,7 @@ uv sync --extra cpu      # in a clone; both packages are installed
 ```
 
 This overview is a tour; the chapters below develop the data model and complete
-workflows. The [Dataset API reference](../reference/dataset-api.md) has the
+workflows. The [Dataset API reference](reference/dataset-api.md) has the
 signatures and full support tables.
 
 ## Quick start
@@ -40,7 +40,7 @@ print(td.statistics(data, "radius_squared").mean)
 ```
 
 Save this as a `.py` file and run it after installing the packages above, or use
-`uv run python` from a checkout installed as in [Getting Started](01-getting-started.md).
+`uv run python` from a checkout installed as in [Getting Started](../users-guide/01-getting-started.md).
 The scalar coefficients are sampled from `x*x + y*y + z*z`; the contour is
 an approximation to a sphere. This example needs no VTK installation.
 
@@ -48,19 +48,26 @@ an approximation to a sphere. This example needs no VTK installation.
 
 | Chapter | Start here when you want to… |
 |---|---|
-| [Function Space Fundamentals](data/00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
-| [Understand a Dataset](data/01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
-| [Build Meshes](data/02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
-| [Fields and Spaces](data/03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
-| [Filter and Analyze](data/04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
-| [Write Mesh Algorithms](data/05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
-| [Sample and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
-| [Work with Data in Pieces](data/07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells, on one device or several |
+| [Function Space Fundamentals](00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
+| [Understand a Dataset](01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
+| [Build Meshes](02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
+| [Fields and Spaces](03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
+| [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
+| [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
+| [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
+| [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells, on one device or several |
+| [Worked Examples](examples.md) | Run complete programs with analytic checks |
+
+The [Dataset API reference](reference/dataset-api.md) lists every class and
+algorithm. The design records, [Dataset API](design/dataset-api.md) and
+[Polyhedra](design/polyhedra.md), say how the model came to be. Kernels
+themselves -- the language, arrays, backends -- are in the core
+[User's Guide](../users-guide/index.md).
 
 For a first reading, follow the fundamentals, dataset and mesh chapters,
 then the field and filter chapters.
-The [field-space comparison](data/03-fields-and-spaces.md#a-material-interface-exposes-the-difference)
-and [filter comparison](data/04-filters.md#select-cells-cut-cells-or-extract-a-surface)
+The [field-space comparison](03-fields-and-spaces.md#a-material-interface-exposes-the-difference)
+and [filter comparison](04-filters.md#select-cells-cut-cells-or-extract-a-surface)
 show why two plausible images can represent different numerical operations.
 
 ## Common conventions
@@ -89,7 +96,7 @@ it. H1 order 1 shares corner values; H1 order 2 adds shared higher-order
 nodes. `Constant` is a separate constant per cell; L2 can keep each cell's
 own coefficients. `Values(data, on)` describes attributes without a basis.
 Every field chooses its own space on the common topology, including geometry.
-The [dataset chapter](data/01-datasets.md#each-field-has-its-own-space) demonstrates
+The [dataset chapter](01-datasets.md#each-field-has-its-own-space) demonstrates
 12 corner positions, 45 quadratic temperature values and 16 discontinuous
 pressure values on the same two cells.
 
@@ -154,10 +161,10 @@ and [unstructured tour](../examples/datasets.py) include that setup.
     ```
 
 All four recipes use the same `DataSet(topology, geometry)` constructor.
-The [mesh chapter](data/02-meshes.md#image-rectilinear-and-curvilinear-data)
+The [mesh chapter](02-meshes.md#image-rectilinear-and-curvilinear-data)
 explains their coordinate representations and also builds
-[polyhedral](data/02-meshes.md#construct-polyhedra-from-face-rings),
-[polygonal and polyline](data/02-meshes.md#polygons-and-polylines-are-different-objects)
+[polyhedral](02-meshes.md#construct-polyhedra-from-face-rings),
+[polygonal and polyline](02-meshes.md#polygons-and-polylines-are-different-objects)
 datasets from their own connectivity and geometry.
 
 The rest of this tour uses `mesh`, the hex-and-pyramid dataset from the
@@ -186,7 +193,7 @@ a dataset's topology and geometry do not depend on where its values originated.
 `vtk_to_dataset` and `tack.interop.mfem` import datasets from VTK and MFEM.
 Neither library is required for the constructions above. In a checkout,
 `uv sync --extra cpu --extra interop` installs the optional readers where
-supported. See [dataset interoperability](data/06-pipelines.md#exchange-whole-datasets-with-vtk).
+supported. See [dataset interoperability](06-pipelines.md#exchange-whole-datasets-with-vtk).
 
 ## Algorithms
 
@@ -298,7 +305,7 @@ streamlines are polylines, one per seed:
 --8<-- "docs/examples/datasets.py:lines"
 ```
 
-The [reference](../reference/dataset-api.md#algorithms-and-filters) has a
+The [reference](reference/dataset-api.md#algorithms-and-filters) has a
 table of which algorithm runs on which topology.
 
 ## 64-bit ids
@@ -352,7 +359,7 @@ exports as 1000 tuples of three as well. `vtk_to_array(array,
 flatten=True)` and `array_to_vtk(values, n_components=3)` use the flat
 interleaved layout instead. This requires a VTK build exposing
 `vtkmodules.util.dlpack_support`. Not every VTK installation provides device
-arrays. See [Sharing arrays with other libraries](16-interoperability.md) for
+arrays. See [Sharing arrays with other libraries](../users-guide/16-interoperability.md) for
 lifetime and read-only rules.
 
 ### Level Zero

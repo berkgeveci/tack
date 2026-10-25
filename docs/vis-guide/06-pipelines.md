@@ -123,11 +123,11 @@ These whole-dataset conversions copy arrays and provide a straightforward
 host boundary. Zero-copy array exchange is a separate route using
 `array_to_vtk`, `vtk_to_array` and a DLPack-enabled VTK build. A standard VTK
 wheel sufficient for file I/O may not expose that route. Level Zero sharing
-also needs a shared allocation context. See [Sharing Arrays](../16-interoperability.md).
+also needs a shared allocation context. See [Sharing Arrays](../users-guide/16-interoperability.md).
 
 MFEM meshes and grid functions enter through `tack.interop.mfem`; supported
 spaces include H1 orders 1 and 2, and L2 orders 0 and 1, with supported curved
-geometry at order 2. Check the [interop reference](../../reference/dataset-api.md#interoperability)
+geometry at order 2. Check the [interop reference](reference/dataset-api.md#interoperability)
 for signatures and the current mapping limits.
 
 ## Measure the boundaries you actually use
@@ -144,7 +144,7 @@ for signatures and the current mapping limits.
 Queued GPU launches preserve Tack's program order, but host reads synchronize.
 Call `tack.sync()` before stopping a timer when the next operation is not a
 readback. Separate first-use compilation from repeated work, and include the
-output stage when reporting application time. See [Debugging and Timing](../15-debugging-and-timing.md).
+output stage when reporting application time. See [Debugging and Timing](../users-guide/15-debugging-and-timing.md).
 
 ## Complete programs to run next
 
@@ -153,6 +153,6 @@ uv run python docs/examples/data_analysis.py --arch cpu --check
 uv run python docs/examples/datasets.py --arch cpu --check
 ```
 
-The [analysis program](../../examples/data_analysis.py) covers probing and flow,
-and the [dataset tour](../../examples/datasets.py) connects mixed meshes,
+The [analysis program](../examples/data_analysis.py) covers probing and flow,
+and the [dataset tour](../examples/datasets.py) connects mixed meshes,
 spaces, sets and streamlines.

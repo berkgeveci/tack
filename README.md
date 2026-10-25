@@ -406,8 +406,8 @@ surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
 print(surface.num_cells, "triangles")
 ```
 
-See [Datasets and visualization](docs/users-guide/09-visualization.md) in the
-User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
+See the [Visualization Guide](docs/vis-guide/index.md) and its
+[Dataset API reference](docs/vis-guide/reference/dataset-api.md).
 
 ## Examples
 

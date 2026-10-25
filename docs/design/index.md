@@ -118,11 +118,14 @@ the test that guards it, and when it can go.
 libraries and frameworks without copying: wrapping external pointers,
 DLPack, exported device memory, and VTK interop.
 
-**[Dataset API](dataset-api.md).** The design record of `tack.dataset`: how
+The two design records of `tack.dataset` are kept with the
+[Visualization Guide](../vis-guide/index.md):
+
+**[Dataset API](../vis-guide/design/dataset-api.md).** The design record of `tack.dataset`: how
 its data model (topologies, spaces, fields, sets), its algorithms and its
 partitioned data and ghost marks were reasoned out. The API as it stands is the
-[Dataset API reference](../reference/dataset-api.md).
+[Dataset API reference](../vis-guide/reference/dataset-api.md).
 
-**[Polyhedra](polyhedra.md).** The design record of the polyhedral path in
+**[Polyhedra](../vis-guide/design/polyhedra.md).** The design record of the polyhedral path in
 `tack.dataset`: faces shared between cells, their orientation, and the
 algorithms that run on arbitrary polyhedra.

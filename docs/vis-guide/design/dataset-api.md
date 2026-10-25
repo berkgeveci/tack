@@ -752,7 +752,7 @@ widely (say 1 to 12); group by order otherwise.
 
 Added 2026-10-21 to 10-23, after the rest of this record: data in pieces,
 as VTK's partitioned datasets and MPI decompositions give it. The user's
-side is [Work with Data in Pieces](../users-guide/data/07-partitioned.md);
+side is [Work with Data in Pieces](../07-partitioned.md);
 this section records why it is shaped as it is.
 
 **A list of datasets, and no wrappers.** A `PartitionedDataSet` is an

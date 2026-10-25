@@ -9,7 +9,7 @@ Python functions. **The same supported kernel source runs on five backends**, wi
 each backend's [capabilities](contracts/backend-capabilities.md). Metal has
 no `f64`, for example, and the CPU has no workgroup primitives.
 
-Start with [Datasets and Visualization](users-guide/09-visualization.md) for a
+Start with the [Visualization Guide](vis-guide/index.md) for a
 mesh-to-image workflow, or [Getting Started](users-guide/01-getting-started.md)
 to write a first kernel. A small compute example is:
 
@@ -93,10 +93,11 @@ scalar types each backend supports.
 
 <div class="grid cards" markdown>
 
--   **[Datasets and Visualization](users-guide/09-visualization.md)**
+-   **[Visualization Guide](vis-guide/index.md)**
 
-    Meshes and field spaces, scientific filters, custom cell and face kernels,
-    probing and streamlines, then simulation and rendering pipelines. Start
+    Meshes, point clouds and field spaces, scientific filters, custom cell and
+    face kernels, probing and streamlines, data in pieces, then simulation and
+    rendering pipelines. Start
     with complete programs whose results are checked independently.
 
 -   **[User's Guide](users-guide/index.md)**

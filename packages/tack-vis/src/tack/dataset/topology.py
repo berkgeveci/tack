@@ -1,6 +1,6 @@
 """Topology: cells, and the faces and edges derived from them.
 
-Two kinds of topology, as in ``docs/design/dataset-api.md`` §3.1:
+Two kinds of topology, as in ``docs/vis-guide/design/dataset-api.md`` §3.1:
 
 - ``UnstructuredTopology(types, offsets, connectivity)``: any mix of the
   linear shapes, stored as a ``vtkUnstructuredGrid`` stores them.
