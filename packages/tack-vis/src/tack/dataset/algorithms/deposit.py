@@ -135,7 +135,9 @@ def deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=Fa
     ground's. A cell nothing reaches holds 0 for counts and sums, NaN for the
     rest. ``per_volume`` divides by a cell's volume (area, length on images of
     fewer axes): a number or mass density. Each target sums its entries in
-    point order, so the result has the same bits on every backend.
+    point order, so the result has the same bits from run to run. Counts,
+    minima and maxima are the same on every backend; sums and means agree to
+    rounding (a GPU may fuse a weight's multiply-add).
 
     ``data`` and ``grid`` may have different origins: the points are moved to
     the image's by the difference, taken in double precision.

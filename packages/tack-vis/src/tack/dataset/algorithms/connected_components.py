@@ -76,8 +76,7 @@ def _hook_near(grid, ncells, used, r, labels, changed):
                         for s in range(grid.first(b), grid.end(b)):
                             p = grid.point(s)
                             if p > q and used[p] == 1:
-                                d = grid.offset(p, x)
-                                if d.dot(d) <= r2:
+                                if grid.distance2(p, x) <= r2:
                                     a = labels[ncells + q]
                                     c = labels[ncells + p]
                                     if a != c:

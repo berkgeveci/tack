@@ -259,3 +259,18 @@ def test_sources_take_a_device(second):
                                       0.5))
     axes = tack.array(np.array([0.0, 1.0, 2.0], np.float32), device=second)
     assert _on(second, td.rectilinear_grid(axes, [0, 1], [0, 1]))   # the axes' device
+
+
+def test_a_point_locator_searches_on_its_datasets_device(second):
+    """Found on every GPU (2026-10-25): with no Tack array among its arguments (its
+    own points as the queries, or host positions), a search ran on the default
+    device and met the locator's bins on another."""
+    x = np.random.default_rng(0).random((500, 3)).astype(np.float32)
+    here = td.point_cloud(x, origin=(0.0, 0.0, 0.0))
+    want, got = td.PointLocator(here), td.PointLocator(here.to_device(second))
+    for points in (None, x[::5].astype(np.float64)):
+        for found, expected in ((got.neighbors(0.1, points), want.neighbors(0.1, points)),
+                                (got.nearest(4, points), want.nearest(4, points))):
+            for a, b in zip(found, expected):
+                assert _on(second, a)
+                np.testing.assert_array_equal(a.numpy(), b.numpy())

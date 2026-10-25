@@ -385,14 +385,14 @@ SPIR-V *in process* by `_compile_to_spirv`, which calls `oclocInvoke` in
 `libocloc.so` with
 
 ```
-compile -spv_only -device 0x<deviceId> -options -cl-std=CL2.0 -file kernel.cl
+compile -spv_only -device 0x<deviceId> -options "-cl-std=CL2.0 -cl-fp32-correctly-rounded-divide-sqrt" -file kernel.cl
 ```
 
 and passes the source from memory, null-terminated, because ocloc treats
 in-memory sources as C strings. The options are the module constant
 `_OCLOC_OPTIONS`. The `.spv` output is handed to `_create_module`, which
 calls `zeModuleCreate` as `ZE_MODULE_FORMAT_IL_SPIRV` with build flags
-`_MODULE_BUILD_FLAGS` (`-cl-std=CL2.0`); a failure raises `RuntimeError`
+`_MODULE_BUILD_FLAGS` (the same OpenCL options, `_OPENCL_OPTIONS`); a failure raises `RuntimeError`
 with the module build log and the source. `zeKernelCreate` then returns the kernel handle. When the
 source uses `double`, the generator adds
 `#pragma OPENCL EXTENSION cl_khr_fp64 : enable`.

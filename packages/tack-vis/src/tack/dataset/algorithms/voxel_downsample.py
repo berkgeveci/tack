@@ -10,6 +10,7 @@ from tack.dataset.carry import _point_values, selected
 from tack.dataset.dataset import Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
+from tack.dataset.point_locator import squared_length
 from tack.dataset.spaces import H1, Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -48,16 +49,16 @@ def _run_firsts(order, offsets, flags):
 
 @tack.kernel
 def _run_nearest(positions, centroids, order, offsets, flags):
-    # Each voxel's point nearest its centroid, the lowest index on a tie.
+    # Each voxel's point nearest its centroid, the lowest index on a tie. A
+    # voxel of two points has them equidistant: the distances must round alike
+    # on every backend (squared_length), or the tie falls differently.
     for r in range(centroids.shape[0]):
         c = centroids[r]
         best = order[offsets[r]]
-        d = positions[best] - c
-        nearest = d.dot(d)
+        nearest = squared_length(positions[best] - c)
         for s in range(offsets[r] + 1, offsets[r + 1]):
             p = order[s]
-            e = positions[p] - c
-            d2 = e.dot(e)
+            d2 = squared_length(positions[p] - c)
             if d2 < nearest or (d2 == nearest and p < best):
                 nearest = d2
                 best = p
@@ -78,7 +79,10 @@ def voxel_downsample(data, size, keep="centroid", fields=None):
     centroid (the lowest-numbered on a tie). The last two keep input points,
     in input order, with their fields and ghost marks. Point fields come along
     (``fields`` choosing, as filters do); cell fields do not. Each voxel is
-    reduced in index order, so the result has the same bits on every backend.
+    reduced in index order, so the result has the same bits from run to run,
+    and the voxels and kept points are the same on every backend: the
+    nearest point's distances are rounded alike everywhere
+    (``squared_length``), so a tie falls the same way.
 
     Over a ``PartitionedDataSet``, the grid is anchored at the lower corner of
     every piece's points, and each voxel's owned points are brought to one

@@ -3,8 +3,11 @@
 ``PointLocator`` puts each point in a bin of a uniform grid over the points'
 box and sorts the points by bin (``buckets.bucket_order``: a count, a scan, a
 scatter, each bin in index order), as VTK's ``vtkStaticPointLocator`` does.
-Nothing is atomic, so every query visits the same points in the same order on
-every backend and its answer has the same bits.
+Nothing is atomic, so every query visits the same points in the same order
+every time. Distances are compared through ``squared_length``, whose products
+no backend fuses into its sum, so which points are within a radius, and which
+are the k nearest, is the same on every backend; the squared distances
+``nearest`` reports agree to rounding.
 
 A kernel searches through ``locator.grid()``, a ``@tack.device_class`` holding
 the sorted points and the grid: ``span(x, r)`` gives the bins a ball touches,
@@ -36,6 +39,18 @@ MAX_K = 32
 #: Bins along one axis at most, and bins in all at most per point.
 _AXIS_BINS = 1 << 20
 _BINS_PER_POINT = 4
+
+
+@tack.func
+def squared_length(d):
+    """``d.dot(d)``, each product a value of its own: a GPU may fuse a product into
+    a sum within one expression, rounding once where the CPU rounds twice, and a
+    comparison of such distances could then fall the other way. Named products
+    are rounded alike everywhere."""
+    xx = d[0] * d[0]
+    yy = d[1] * d[1]
+    zz = d[2] * d[2]
+    return xx + yy + zz
 
 
 @tack.device_class
@@ -115,7 +130,8 @@ class _PointGrid:
     def _image(self, d, length):
         e = d
         if self.PERIODIC == 1:
-            e = d - length * floor(d / length + 0.5)
+            shift = length * floor(d / length + 0.5)      # its own value: not fused
+            e = d - shift
         return e
 
     @tack.func
@@ -126,6 +142,12 @@ class _PointGrid:
             d = [self._image(d[0], self.lx), self._image(d[1], self.ly),
                  self._image(d[2], self.lz)]
         return d
+
+    @tack.func
+    def distance2(self, p, x):
+        """The squared distance from ``x`` to point ``p`` (its nearest image in a
+        periodic box), the same bits on every backend."""
+        return squared_length(self.offset(p, x))
 
     @tack.func
     def ring_bin(self, i, c, n):
@@ -170,8 +192,7 @@ def _count_within(grid, queries, r, own, counts):
                     b = grid.bin(i, j, k)
                     for s in range(grid.first(b), grid.end(b)):
                         p = grid.point(s)
-                        d = grid.offset(p, x)
-                        if d.dot(d) <= r2 and (own == 0 or p != q):
+                        if grid.distance2(p, x) <= r2 and (own == 0 or p != q):
                             c += 1
         counts[q] = c
 
@@ -189,8 +210,7 @@ def _fill_within(grid, queries, r, own, offsets, ids):
                     b = grid.bin(i, j, k)
                     for s in range(grid.first(b), grid.end(b)):
                         p = grid.point(s)
-                        d = grid.offset(p, x)
-                        if d.dot(d) <= r2 and (own == 0 or p != q):
+                        if grid.distance2(p, x) <= r2 and (own == 0 or p != q):
                             ids[at] = p
                             at += 1
 
@@ -219,8 +239,7 @@ def _nearest(grid, queries, k, own, ids, d2s):
                             for s in range(grid.first(b), grid.end(b)):
                                 p = grid.point(s)
                                 if own == 0 or p != q:
-                                    d = grid.offset(p, x)
-                                    d2 = d.dot(d)
+                                    d2 = grid.distance2(p, x)
                                     take = 0
                                     if found < k:
                                         take = 1
@@ -326,6 +345,12 @@ class PointLocator:
         if n:
             _bins(self.grid(), keys)
         self.order, self.starts = bucket_order(keys, nbins)
+
+    @property
+    def _device(self):
+        # Its dataset's: searches run there, host query points included.
+        data = self.__dict__.get("data")
+        return data._device if data is not None else None
 
     def serves(self, data, periodic=None):
         """Whether it finds ``data``'s points as they are -- the topology and the
