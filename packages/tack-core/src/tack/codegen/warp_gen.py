@@ -20,7 +20,8 @@ Where Warp's semantics differ from Tack's, helpers carry Tack's:
   clang folded ``(x * y) // y`` to ``x``);
 - sequential loops count their trips in 64 bits (Warp's ``range`` is 32-bit);
 - floating min/max prefer a number to NaN, and floating negation is a
-  product with -1 (Warp's gives +0.0 for 0.0).
+  product with -1 (Warp's gives +0.0 for 0.0);
+- no floating contraction (``fuse_fp``), so a named value is rounded once.
 
 Debug mode's bounds checks (``IRBoundsCheck``) call one helper per kernel,
 as ``codegen/bounds.py`` has it in C.
@@ -136,7 +137,12 @@ class WarpCodeGen:
             lines += [*helper, ""]
         # A module of its own, named by the kernel's content: variants with the
         # same code share one, and Warp's cache finds it in every process.
-        lines += ['@wp.kernel(module="unique")', f"def {entry}({', '.join(params)}):"]
+        # Without contraction: Warp writes every operation as a statement of
+        # its own, so NVRTC fused a named product into a later statement's
+        # sum, and Tack rounds a named value once (CUDACodeGen's
+        # `_rounded_products` keeps it so on Tack's own CUDA backend).
+        lines += ['@wp.kernel(module="unique", module_options={"fuse_fp": False})',
+                  f"def {entry}({', '.join(params)}):"]
         return "\n".join(lines + self._lines) + "\n", entry
 
     # ── Statements ───────────────────────────────────────────────────
