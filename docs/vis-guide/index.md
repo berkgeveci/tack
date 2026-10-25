@@ -61,7 +61,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
 | [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
-| [Streaming Steps](13-streaming.md) | Analyze a simulation step by step, in situ: running statistics, time derivatives |
+| [Streaming Steps](13-streaming.md) | Analyze a simulation step by step, in situ: running statistics, time derivatives, pathlines |
 | [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells |
 | [Algorithms Across Pieces](09-pieces-across.md) | Pieces from VTK, on several devices or MPI ranks; probes, particles, regions and point clouds across them |
 | [Worked Examples](examples.md) | Run complete programs with analytic checks |

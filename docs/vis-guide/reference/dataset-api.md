@@ -372,6 +372,9 @@ hands filters one step at a time, and each step is a dataset at its time.
 | `tack.dataset.temporal` | filters fed one step at a time (`update(data)`, which returns the step's output), keeping copies of what they need of earlier steps (`copy=False` keeps references); a `PartitionedDataSet` streams piece by piece |
 | `RunningStatistics(fields)` | per point or cell over the steps so far: `<name>_mean`, `_variance` (population), `_min`, `_max` (Welford, f64 where the device has it); `count`; one mesh over the steps (remesh first) |
 | `TimeDerivative(fields, copy=True)` | `<name>_dt`, the backward difference since the previous step, in the field's unit over the time unit; `None` on the first step; one mesh, increasing time |
+| `Advection(field, seeds=None, integrator="rk4", step_size=None, copy=True)` | particles through the steps, the velocity linear in time between the kept previous step and this one (each probed in its own mesh, over ranks where pieces are); `update` returns them (`seed`, `source`, `release`, `time`, `status`); `inject(points, time=None)` releases more at any time |
+| `extend_paths(paths, particles)` | joins a step's particles onto the paths so far, by `seed`: polylines through each particle's points in time |
+| `Pathlines(field, seeds, ...)`, `Streaklines(field, seeds, releases=1, ...)` | the current pathlines every step; the line of each seed's released particles, newest first |
 
 See [Streaming Steps](../13-streaming.md).
 

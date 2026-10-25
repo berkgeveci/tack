@@ -122,13 +122,21 @@ from tack.dataset.polyhedra import (
 from tack.dataset.sets import Set
 from tack.dataset.sources import amr_gaussian_pulse, tangle, wavelet
 from tack.dataset.spaces import H1, L2, Constant, SideTraces, Space, Values
-from tack.dataset.temporal import RunningStatistics, TimeDerivative
+from tack.dataset.temporal import (
+    Advection,
+    Pathlines,
+    RunningStatistics,
+    Streaklines,
+    TimeDerivative,
+    extend_paths,
+)
 from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
 __all__ = [
     "H1",
     "L2",
     "AMRDataSet",
+    "Advection",
     "Box",
     "CellGeometry",
     "CellLocator",
@@ -144,6 +152,7 @@ __all__ = [
     "OctreeDataSet",
     "ParticleStatus",
     "PartitionedDataSet",
+    "Pathlines",
     "Plane",
     "Planes",
     "PointLocator",
@@ -157,6 +166,7 @@ __all__ = [
     "Space",
     "Sphere",
     "Statistics",
+    "Streaklines",
     "StructuredTopology",
     "TimeDerivative",
     "UnstructuredTopology",
@@ -184,6 +194,7 @@ __all__ = [
     "dot",
     "edge_lengths",
     "entropy",
+    "extend_paths",
     "extract_cells",
     "extract_edges",
     "extract_geometry",
