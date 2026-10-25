@@ -5,7 +5,9 @@ whole dataset -- its own topology, numbering, geometry, fields, sets and
 device -- so work that needs one piece at a time takes the piece: the caller
 iterates over them. Only algorithms whose answer depends on more than one
 piece take the partitioned dataset itself: ``statistics`` and ``entropy``
-combine what each piece holds. ``split`` makes one from a structured grid,
+combine what each piece holds, and ``connected_components``, ``probe``,
+``advect``, ``outliers``, ``voxel_downsample``, ``deposit`` and
+``halo_catalog`` combine what pieces hold near each other. ``split`` makes one from a structured grid,
 and ``tack.interop.vtk`` converts VTK's partitioned datasets and collections.
 
 Every cell and point that several pieces hold has one owner; the other

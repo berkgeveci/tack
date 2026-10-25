@@ -20,6 +20,8 @@ from tack.dataset.algorithms.sph import _per_particle
 from tack.dataset.buckets import bucket_order
 from tack.dataset.carry import _point_values
 from tack.dataset.dataset import Field
+from tack.dataset.ghosts import Ghosts
+from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.point_locator import periodic_box
 from tack.dataset.spaces import H1, Values
 from tack.runtime.dispatch import on_inputs_device
@@ -291,8 +293,19 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
     before anything is summed, so a halo across a face is whole, and its points
     are put back in the box. Positions are relative to the particles' origin,
     which the catalogue shares. Every sum runs in particle order: the result is
-    the same on every backend."""
+    the same on every backend.
+
+    Over a ``PartitionedDataSet`` (labels numbered across the pieces, as
+    ``connected_components`` numbers them), each halo's owned particles are
+    brought to one block by a sort over the blocks, in order of piece and then
+    index, and catalogued there: a ``PartitionedDataSet`` of catalogues, the
+    halos in order of label across them, each ``mbp`` an index in the piece
+    ``mbp_piece`` (a global piece id)."""
     if center not in _CENTER:
+        raise ValueError(f"center is one of {', '.join(map(repr, _CENTER))}, not {center!r}")
+    if isinstance(particles, PartitionedDataSet):
+        return _catalog_pieces(particles, region, mass, velocity, center, softening, G,
+                               periodic)
         raise ValueError(f"center is one of {', '.join(map(repr, _CENTER))}, not {center!r}")
     if not isinstance(particles.geometry.space, H1):
         raise TypeError("halo_catalog needs the particles' positions: an H1 geometry")
@@ -377,3 +390,63 @@ def _taken(values, order, n):
     if n:
         _take(values, order, out)
     return out
+
+
+def _catalog_pieces(data, region, mass, velocity, center, softening, G, periodic):
+    """``halo_catalog`` over pieces: each halo's owned particles sorted to one block
+    (``tack.communication.sort_by_key`` by label), catalogued there."""
+    from tack import communication as tc
+    from tack.dataset.carry import _take
+
+    for what, value in (("region", region), ("velocity", velocity)):
+        if value is not None and not isinstance(value, str):
+            raise TypeError(f"halo_catalog of a PartitionedDataSet takes {what} by name: a "
+                            "Field belongs to one partition's topology")
+    by_name = isinstance(mass, str)
+    if not by_name and not isinstance(mass, (int, float, np.integer, np.floating)):
+        raise TypeError("halo_catalog of a PartitionedDataSet takes mass by name or as a "
+                        "number")
+    common_origin(data, "halo_catalog of a PartitionedDataSet")
+    pieces = list(data)
+    blocks = tc.Blocks([piece.device for piece in pieces], data.world)
+    keys, values = {}, {}
+    for g, piece in zip(blocks.local, pieces):
+        if not isinstance(piece.geometry.space, H1):
+            raise TypeError("halo_catalog needs the particles' positions: an H1 geometry")
+        n = piece.num_points
+        labels = np.asarray(arrays.to_host(_point_values(piece.fields[region].values, n)),
+                            np.int64).reshape(-1)
+        owned = labels >= 0
+        if piece.ghosts is not None and piece.ghosts.points is not None:
+            owned &= (piece.ghosts.points.numpy() & Ghosts.DUPLICATEPOINT) == 0
+        chosen = np.flatnonzero(owned).astype(np.int64)
+        device = blocks.device(g)
+        with device:
+            at = tack.array(chosen, tack.i64)
+            keys[g] = tack.array(labels[chosen], tack.i64)
+            values[g] = {
+                "x": _take(arrays.materialize(_point_values(piece.geometry.values, n)), at),
+                "piece": tack.full((len(chosen),), g, tack.i64), "index": at}
+            if by_name:
+                values[g]["m"] = _take(arrays.materialize(
+                    _point_values(piece.fields[mass].values, n)), at).astype(piece.dtype)
+            if velocity is not None:
+                values[g]["v"] = _take(arrays.materialize(
+                    _point_values(piece.fields[velocity].values, n)), at)
+    sorted_keys, sorted_values = tc.sort_by_key(blocks, keys, values)
+    out = []
+    for g, piece in zip(blocks.local, pieces):
+        got = sorted_values[g]
+        with blocks.device(g):
+            cloud = _vertices(got["x"], piece)
+            cloud.fields["region"] = Field(H1(cloud), sorted_keys[g])
+            masses = Field(H1(cloud), got["m"]) if by_name else mass
+            speeds = Field(H1(cloud), got["v"]) if velocity is not None else None
+            catalog = halo_catalog(cloud, "region", mass=masses, velocity=speeds,
+                                   center=center, softening=softening, G=G, periodic=periodic)
+            best = catalog.fields["mbp"].values
+            points = Values(catalog, "points")
+            catalog.fields["mbp"] = Field(points, _take(got["index"], best))
+            catalog.fields["mbp_piece"] = Field(points, _take(got["piece"], best))
+        out.append(catalog)
+    return PartitionedDataSet(out, world=data.world)

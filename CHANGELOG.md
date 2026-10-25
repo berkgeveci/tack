@@ -41,6 +41,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   bound particle is exact, with Viskores' pruned search on every large halo,
   tightened to bound each particle against each far bin. Viskores' two test
   cases give the same halos and centres.
+- Point clouds in pieces. `ghost_points(pds, radius= | k=)` gives each piece
+  copies of the other pieces' points within a radius of its box, or exactly
+  those among its points' k nearest (images across a periodic box's faces),
+  with fields, sets and global ids; `update_ghosts` refreshes them. Normals,
+  the radius outlier test and the SPH filters then run per piece with the
+  whole's answers. `connected_components(pds, radius=, min_size=,
+  periodic=)`, `outliers`, `voxel_downsample`, `deposit` and `halo_catalog`
+  take a partitioned point cloud, in one process or across MPI ranks: pieces
+  cut in index order give the whole's clusters, centroids and catalogues bit
+  for bit. Regions over pieces are now joined from the regions that cross
+  pieces alone and numbered by a sort over the pieces, so no rank holds every
+  region; `min_size` works on meshes in pieces too, counting each point once.
+- `tack.communication.Plan` lets a block send to itself, as a piece in a
+  periodic box is its own neighbour.
 - `td.point_cloud(positions, fields)`: a dataset of one implicit vertex cell
   per point (stored nowhere), float64 positions on an origin of their own,
   integer fields (a LAS classification, intensities) kept in their type. The

@@ -224,14 +224,24 @@ def test_a_plan_moves_whole_elements_and_several_arrays(cpu, second):
     assert vec[1].numpy()[0].tolist() == [100, 101, 102]
 
 
+def test_a_plan_sends_a_block_its_own_elements(cpu, second):
+    # A piece in a periodic box is its own neighbour: what a block sends itself
+    # is read before anything is written.
+    blocks = tc.Blocks([cpu, second])
+    plan = tc.Plan(blocks, {0: {0: [0, 1], 1: [2]}}, {0: {0: [1, 2]}, 1: {0: [0]}})
+    values = {0: tack.array(np.array([5.0, 6.0, 7.0]), device=cpu),
+              1: tack.array(np.array([1.0]), device=second)}
+    plan.run(values)
+    assert values[0].numpy().tolist() == [5.0, 5.0, 6.0]
+    assert values[1].numpy().tolist() == [7.0]
+
+
 def test_a_plan_refuses_mismatched_sides(cpu, second):
     blocks = tc.Blocks([cpu, second])
     with pytest.raises(ValueError, match="sends 2 elements to block 1, which receives 1"):
         tc.Plan(blocks, {0: {1: [0, 1]}}, {1: {0: [0]}})
     with pytest.raises(ValueError, match="receives 1 elements from block 0, which sends 0"):
         tc.Plan(blocks, {}, {1: {0: [0]}})
-    with pytest.raises(ValueError, match="with itself"):
-        tc.Plan(blocks, {0: {0: [0]}}, {0: {0: [0]}})
     with pytest.raises(TypeError, match="not integers"):
         tc.Plan(blocks, {0: {1: [0.5]}}, {1: {0: [0]}})
     with pytest.raises(ValueError, match="not on block 0's device"):

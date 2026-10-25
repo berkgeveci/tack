@@ -8,6 +8,8 @@ from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.arrays import UniformCoordinates
 from tack.dataset.carry import _point_values
 from tack.dataset.dataset import Field
+from tack.dataset.ghosts import Ghosts
+from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.spaces import H1, Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -136,7 +138,13 @@ def deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=Fa
     point order, so the result has the same bits on every backend.
 
     ``data`` and ``grid`` may have different origins: the points are moved to
-    the image's by the difference, taken in double precision."""
+    the image's by the difference, taken in double precision.
+
+    Over a ``PartitionedDataSet``, each piece deposits its owned points (not
+    the copies ``ghost_points`` adds) and the pieces' grids combine over every
+    rank, in order of piece: sums and counts add, means divide the sums by the
+    counts, minima and maxima take the least and the greatest. Every rank gets
+    the whole grid's field, on ``grid``'s device; ``field`` is a name."""
     if method not in _METHOD:
         raise ValueError(f"method is one of {', '.join(map(repr, _METHOD))}, not {method!r}")
     reduce = reduce or ("sum" if field is not None else "count")
@@ -146,11 +154,22 @@ def deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=Fa
         raise ValueError(f"reduce={reduce!r} needs a field to reduce")
     if method == "cic" and reduce in ("min", "max"):
         raise ValueError("cloud in cell weighs each point: it sums, counts or averages")
-    if not isinstance(data.geometry.space, H1):
-        raise TypeError("deposit needs the points' positions: an H1 geometry")
     coordinates = grid.geometry.values
     if not isinstance(coordinates, UniformCoordinates) or coordinates.ORIENTED == 1:
         raise TypeError("deposit goes onto an axis-aligned image (uniform_grid)")
+    if isinstance(data, PartitionedDataSet):
+        return _deposit_pieces(data, grid, field, reduce, method, per_volume)
+    out, on = _deposited(data, grid, field, reduce, method, per_volume)
+    return Field(Values(grid, on), out)
+
+
+def _deposited(data, grid, field, reduce, method, per_volume, skip_copies=False):
+    """``deposit``'s values on ``grid`` and whether they are on its ``"cells"`` or
+    ``"points"``, computed on ``data``'s device; ``skip_copies`` leaves out the
+    points marked ``DUPLICATEPOINT``."""
+    if not isinstance(data.geometry.space, H1):
+        raise TypeError("deposit needs the points' positions: an H1 geometry")
+    coordinates = grid.geometry.values
     n = data.num_points
     positions = arrays.materialize(_point_values(data.geometry.values, n))
     if data.origin != grid.origin:
@@ -184,12 +203,15 @@ def deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=Fa
     elif entries:
         _corner_weights(positions, *grid_args, int(dims[0]), int(dims[1]), corners,
                         targets, weights)
+    marks = data.ghosts.points if data.ghosts is not None else None
+    if skip_copies and entries and marks is not None:
+        _skip_copies(marks, corners, int(Ghosts.DUPLICATEPOINT), targets)
     if method == "nearest":
         size = int(np.prod(np.maximum(cells, 1))) if cells.any() else 0
-        space = Values(grid, "cells")
+        on = "cells"
     else:
         size = int(np.prod(dims))
-        space = Values(grid, "points")
+        on = "points"
     integral = field is None or reduce == "count"
     if integral and method == "nearest":
         dtype = data.id_dtype
@@ -216,4 +238,75 @@ def deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=Fa
             per = corners if not integral else 1
             _reduce_runs(order, offsets, sorted_targets, weights, reduced, per,
                          0 if integral else how, scale, out, start)
-    return Field(space, out)
+    return out, on
+
+
+@tack.kernel
+def _skip_copies(marks, corners, bit, targets):
+    for e in range(targets.shape[0]):
+        if (tack.i32(marks[e // corners]) & bit) != 0:
+            targets[e] = -1
+
+
+def _deposit_pieces(data, grid, field, reduce, method, per_volume):
+    """``deposit`` over pieces: each piece's grid, of its owned points, combined over
+    the blocks in order of global id."""
+    from tack import communication as tc
+    from tack.dataset import ids
+
+    if field is not None and not isinstance(field, str):
+        raise TypeError("deposit of a PartitionedDataSet takes a field's name: a Field "
+                        "belongs to one partition's topology")
+    pieces = list(data)
+    blocks = tc.Blocks([piece.device for piece in pieces], data.world)
+    # A mean is a sum over a count; each piece's other reductions combine as
+    # they are. Volumes divide once, at the end.
+    parts = ("sum", "count") if reduce == "mean" else (reduce,)
+    found, on = {}, None
+    for g, piece in zip(blocks.local, pieces):
+        with piece.device:
+            found[g] = {}
+            for part in parts:
+                values, on = _deposited(piece, grid, field if part != "count" or
+                                        reduce == "count" else None, part, method, False, True)
+                found[g][part] = values.numpy()
+    kinds = blocks.all_gather({g: (on, {part: found[g][part].dtype.str for part in parts},
+                                   pieces[g - blocks.local.start].dtype.name,
+                                   pieces[g - blocks.local.start].num_points)
+                               for g in blocks.local})
+    if not kinds:
+        raise ValueError("deposit of a PartitionedDataSet needs a piece somewhere")
+    on = kinds[0][0]
+    total = sum(k[3] for k in kinds)
+    combined = {}
+    for part in parts:
+        local = {g: found[g][part].astype(np.dtype(kinds[0][1][part])) for g in blocks.local}
+        if part in ("min", "max"):
+            # A grid point no piece reaches is NaN on each; the others take the
+            # least (greatest) of the pieces that reach it.
+            empty = np.inf if part == "min" else -np.inf
+            local = {g: np.where(np.isnan(v), empty, v) for g, v in local.items()}
+            joined = blocks.all_reduce(local, part)
+            combined[part] = np.where(np.isinf(joined) & (joined == empty), np.nan, joined)
+        else:
+            combined[part] = blocks.all_reduce(local, "sum")
+    if reduce == "mean":
+        with np.errstate(invalid="ignore", divide="ignore"):
+            values = (combined["sum"] / combined["count"]).astype(combined["sum"].dtype)
+    else:
+        values = combined[reduce]
+    coordinates = grid.geometry.values
+    cells = np.maximum(np.asarray(coordinates.dims, np.int64) - 1, 0)
+    dtype = tack.f32 if kinds[0][2] == "f32" else tack.f64
+    if np.dtype(values.dtype).kind in "iu":
+        if per_volume:
+            values = values.astype(dtype.numpy_dtype)
+        else:
+            values = values.astype(ids.choose(None, total).numpy_dtype)
+    if per_volume:
+        spacing = np.asarray(coordinates._spacing, np.float64)
+        scale = 1.0 / float(np.prod(np.where(cells > 0, spacing, 1.0)))
+        values = (values * values.dtype.type(scale)).astype(values.dtype)
+    with grid.device:
+        out = tack.array(np.ascontiguousarray(values))
+    return Field(Values(grid, on), out)

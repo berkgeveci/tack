@@ -434,6 +434,29 @@ uses it), and the pruned most-bound-particle search on every large halo.
 |---|---|
 | `halo_catalog(particles, region="point_region", mass=1.0, velocity=None, center="mbp", softening=0.0, G=1.0, periodic=None)` | one point per halo (labels of `region` >= 0), at its most bound particle or centre of mass, with `halo`, `count`, `mass` (per-particle masses or one number), `com`, `mbp` (the index of the particle of least potential `-G sum m / sqrt(r^2 + softening^2)`), `potential`, `radius` (the farthest particle from the point), and with `velocity` its mass-weighted mean and one-dimensional `dispersion`. Each halo is unwrapped about its first particle in a periodic box, and its points put back in. The MBP is exact: halos up to 2048 particles sum every pair; larger ones use Viskores' MxN pruning, tightened by bounding each particle against each far bin's box rather than bin against bin (on a concentrated halo of 40,000, 3% are summed exactly instead of 69%). The catalogue shares the particles' origin; every sum runs in particle order |
 
+### Point clouds in pieces
+
+A point cloud in pieces (a `PartitionedDataSet` of `point_cloud`s, on one
+origin) works as a mesh in pieces does: filters over neighbours run per piece
+on pieces with copies of their neighbours' points, and the algorithms whose
+answer needs every piece take the partitioned dataset.
+
+| | |
+|---|---|
+| `ghost_points(pds, radius=None, k=None, periodic=None, around=None, fields=None)` | each piece with copies of the other pieces' points it needs appended, vertex cells marked `DUPLICATECELL` at points marked `DUPLICATEPOINT`, owned where they came from. With `radius`, every point within `radius` of the piece's box, found by the boxes in one exchange (`around`, a piece for each, widens a piece's box to its own piece's points: the targets `sph_interpolate` resamples onto there). With `k`, exactly the points among an owned point's `k` nearest: each point's `k` nearest in its own piece bound the true distance, a point whose ball reaches another piece's box asks that piece for its `k` nearest, and the best are fetched. In a `periodic` box a copy across a face is an image, moved by the box's side, so the pieces are ordinary clouds: run filters on them without `periodic`. Fields, sets and global ids come along, and `update_ghosts` refreshes copies from their owners |
+| per piece, after `ghost_points` | `point_normals`, `outliers`' radius test, `sph_density` (then `update_ghosts(pds, "density")`), `sph_interpolate` onto `around`'s pieces: each owned point (and each target) gets the whole's answer |
+| `connected_components(pds, radius=, min_size=None, periodic=None)` | each piece labelled with copies within `radius`, each copy's region joined to its owner's: the whole's clusters and friends-of-friends halos, numbered as the whole numbers them (by the lowest global id, else (piece, point)). Only regions that cross pieces are gathered; the rest are numbered by a sort over the pieces, so no rank holds every region. `min_size` counts each point once, where it is owned (meshes in pieces take it too) |
+| `outliers(pds, ...)` | both tests over copies (`ghost_points` inside), the statistical test's mean and deviation over every piece's points; the pieces come back without the copies |
+| `voxel_downsample(pds, size, keep=)` | the grid anchored at every piece's lower corner; each voxel's owned points brought to one piece by a sort over the pieces and reduced there in (piece, index) order. A centroid goes to the piece of its voxel's first point; `"first"` and `"nearest"` keep points on their own pieces |
+| `deposit(pds, grid, field=None, ...)` | each piece deposits its owned points; the grids combine over every rank in piece order (sums and counts add, means divide them, extrema take the least or greatest). Every rank gets the whole grid's field; `field` is a name |
+| `halo_catalog(pds, region="point_region", mass=, velocity=None, ...)` | each halo's owned particles sorted to one piece by label, in (piece, index) order, and catalogued there: a `PartitionedDataSet` of catalogues, halos in label order across them, `mbp` an index in piece `mbp_piece` |
+
+Pieces cut from a cloud in index order give the whole's answers bit for bit
+where the answer is reduced in point order (clusters' numbers, centroids,
+halo catalogues, including each MBP); in a periodic box, values measured
+through an image agree to a rounding, since an image's position is rounded
+once more than the whole's minimum-image offset.
+
 ## Devices
 
 A dataset is on the device its arrays are on, and it computes there: every
@@ -522,7 +545,9 @@ combine pieces.
     combines them pairwise (Pébay's update), so the result is the whole's
     up to rounding;
   - `entropy(pds, "T", bins)` bins the whole's range and sums each piece's
-    histogram over it.
+    histogram over it;
+  - `connected_components`, `outliers`, `voxel_downsample`, `deposit` and
+    `halo_catalog` on point clouds in pieces ("Point clouds in pieces").
 
   Pieces with no values are skipped. Each piece counts only what it owns
   (below), so where every shared cell and point has one owner, the result
@@ -614,7 +639,7 @@ combine pieces.
   MPI ranks the result is on `root` (`None` elsewhere).
 - **`update_ghosts(pds, *fields)`** copies the named point and cell fields'
   values on ghost points and cells from their owners, in place, for pieces
-  `ghost_cells` made (it keeps the two exchanges as
+  `ghost_cells` or `ghost_points` made (they keep the exchanges as
   `tack.communication.Plan`s). A filter that needs each entity's neighbours
   (`project` to points, point gradients) is right on what a piece owns and
   wrong on the ghost layer's rim; refreshing the ghosts in between makes a

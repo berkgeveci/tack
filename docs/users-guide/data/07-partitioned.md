@@ -297,6 +297,40 @@ regions = td.connected_components(pieces)          # region, point_region on eac
 ```
 
 With global ids on the pieces, regions are numbered as on the whole dataset.
+`min_size` drops regions of fewer points, each point counted once.
+
+## Point clouds in pieces
+
+A point cloud's pieces share no points, so a filter over a point's
+neighbours needs copies of the points near it that other pieces hold.
+`ghost_points` appends them, marked as ghosts, either every point within a
+radius of the piece or exactly those among its points' k nearest. Then the
+neighbour filters run per piece, as mesh filters do after `ghost_cells`, and
+each owned point gets the whole's answer:
+
+```python
+ghosted = td.ghost_points(pieces, k=10)
+normals = [td.point_normals(piece, k=10) for piece in ghosted]
+
+ghosted = td.ghost_points(pieces, radius=2 * h_max)            # an SPH kernel's reach
+for piece in ghosted:
+    piece.fields["density"] = td.sph_density(piece).fields["density"]
+td.update_ghosts(ghosted, "density")                           # the copies' from their owners
+```
+
+Clusters, statistical outliers, voxel downsampling, deposition onto a grid
+and halo catalogues need every piece, so they take the pieces, here or across
+MPI ranks:
+
+```python
+halos = td.connected_components(pieces, radius=linking, min_size=100, periodic=box)
+catalog = td.halo_catalog(halos, mass=particle_mass, velocity="v", periodic=box)
+density = td.deposit(pieces, grid, method="cic")               # the whole grid, on every rank
+```
+
+In a periodic box the copies across a face are images, moved by the box's
+side, so run the per-piece filters on `ghost_points`' pieces without
+`periodic`.
 
 ## One dataset again
 
