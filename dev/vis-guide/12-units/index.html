@@ -1796,6 +1796,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#derived-units" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Derived units
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#mismatches-are-refused" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3554,6 +3565,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#derived-units" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Derived units
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#mismatches-are-refused" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3632,6 +3654,13 @@ from an unknown unit is guessed.</p>
 <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">metres</span><span class="o">.</span><span class="n">world_positions</span><span class="p">(),</span> <span class="n">image</span><span class="o">.</span><span class="n">world_positions</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1200</span> <span class="o">/</span> <span class="mi">3937</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">kelvin</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">celsius</span> <span class="o">+</span> <span class="mf">273.15</span><span class="p">)</span>
 
+<span class="c1"># Derived quantities derive their units; a difference of degrees Celsius is in</span>
+<span class="c1"># kelvin, so a temperature gradient is in kelvin per foot.</span>
+<span class="k">assert</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;K/ftUS&quot;</span>
+<span class="n">stats</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">statistics</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;mean&quot;</span><span class="p">),</span> <span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;population_variance&quot;</span><span class="p">))</span>
+<span class="k">assert</span> <span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;population_variance&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;K**2&quot;</span>
+
 <span class="c1"># Positions in two different units do not meet.</span>
 <span class="k">try</span><span class="p">:</span>
     <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">point_cloud</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">1_400_010.0</span><span class="p">,</span> <span class="mf">600_010.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">]]),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m&quot;</span><span class="p">))</span>
@@ -3666,10 +3695,83 @@ transform, probe, pieces, ghost cells, merging and <code>to_device</code>. So do
 filters whose result is the same quantity: <code>project</code>, <code>values_at_centers</code>,
 traces, <code>magnitude</code>, <code>voxel_downsample</code>'s means, SPH interpolation, and
 <code>cell_centers</code> and <code>face_centers</code> (positions, in the spatial unit).</p>
-<p>Anything else gives <code>None</code> for now: gradients, products, measures, fluxes and
-the like derive a unit, which a later phase adds. Cylindrical and spherical
-coordinates give an unknown spatial unit, since an angle and lengths are no
-one unit.</p>
+<p>Cylindrical and spherical coordinates give an unknown spatial unit, since an
+angle and lengths are no one unit.</p>
+<h2 id="derived-units">Derived units<a class="headerlink" href="#derived-units" title="Permanent link">&para;</a></h2>
+<p>Filters that compute a new quantity derive its unit from their inputs':</p>
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>Unit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gradients</code></td>
+<td>the field's per spatial unit; <code>flow_quantities</code>' divergence and vorticity the gradient's, the Q-criterion its square</td>
+</tr>
+<tr>
+<td><code>jump</code></td>
+<td>the field's</td>
+</tr>
+<tr>
+<td><code>dot</code>, <code>cross</code></td>
+<td>the product of the two, by its SI name where it has one (<code>N</code> times <code>m</code> is <code>J</code>)</td>
+</tr>
+<tr>
+<td><code>composite</code></td>
+<td>the fields' one unit (two known units are refused)</td>
+</tr>
+<tr>
+<td><code>log_values</code></td>
+<td>a pure number, of a pure number (a dimensioned field is refused)</td>
+</tr>
+<tr>
+<td><code>cell_geometry</code></td>
+<td>measures in the spatial unit to the cells' dimension (<code>m**3</code>, <code>m**2</code>, <code>m</code>), centroids in it</td>
+</tr>
+<tr>
+<td><code>face_geometry</code>, <code>edge_lengths</code></td>
+<td>areas in the spatial unit to the faces' dimension (an edge's length on a surface), unit normals pure numbers; lengths in it</td>
+</tr>
+<tr>
+<td><code>net_flux</code>, <code>divergence</code>, <code>perot</code></td>
+<td>the flux's; it over the cells' measure; the faces' components'</td>
+</tr>
+<tr>
+<td><code>statistics</code></td>
+<td><code>Statistics.unit</code> and <code>weight_unit</code>, and <code>unit_of(name)</code> for each number: the mean, extremes and deviations in the field's unit, the variances in its square, <code>sum</code> times the weights', skewness and kurtosis pure numbers</td>
+</tr>
+<tr>
+<td><code>deposit</code></td>
+<td>counts pure numbers, sums, means and extremes in the field's; <code>per_volume</code> over the cells' measure (<code>1/m**3</code>, <code>kg/m**3</code>)</td>
+</tr>
+<tr>
+<td><code>sph_density</code>, <code>sph_interpolate</code></td>
+<td>the mass per volume; the field's, times <code>m / (rho L^d)</code> (a pure number for consistent units)</td>
+</tr>
+<tr>
+<td><code>halo_catalog</code>, <code>outliers</code>, <code>point_normals</code></td>
+<td>masses in the mass field's, radii and centres and mean distances in the spatial unit; normals pure numbers</td>
+</tr>
+<tr>
+<td><code>advect</code>, <code>streamlines</code></td>
+<td><code>time</code> in the spatial unit over the velocity's</td>
+</tr>
+<tr>
+<td><code>interpolate(..., unit=)</code></td>
+<td>what the caller says: a function's code does not say its unit</td>
+</tr>
+</tbody>
+</table>
+<p>A difference of values with an offset zero -- degrees Celsius or Fahrenheit --
+is in the absolute unit of the same size, kelvin or Rankine: gradients, jumps,
+variances and deviations. Such values are not multiplied (<code>dot</code> refuses them):
+convert to kelvin first. Labels, ids, flags and counts that are not
+quantities (<code>region</code>, <code>cell_ids</code>, <code>outlier</code>, <code>neighbors</code>) have no unit, and a
+result computed from a bare number -- <code>upwind_flux</code>'s constant velocity, a
+mass given as one number, the potential's <code>G</code> -- is unknown.</p>
 <h2 id="mismatches-are-refused">Mismatches are refused<a class="headerlink" href="#mismatches-are-refused" title="Permanent link">&para;</a></h2>
 <p>Positions compared or moved between datasets must be in one spatial unit, as
 they must be relative to one origin: probe's points, pieces of a

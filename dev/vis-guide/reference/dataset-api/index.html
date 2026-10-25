@@ -4756,15 +4756,24 @@ a unit. See <a href="../../12-units/">Physical Units</a>.</p>
 <td>the geometry (origin scaled in double precision; images stay images) or a field in <code>unit</code>, scaled and offset on the device</td>
 </tr>
 <tr>
+<td><code>Statistics.unit</code>, <code>.weight_unit</code>, <code>.unit_of(name)</code></td>
+<td>the field's and the weights' units, and each statistic's (variances in the square, <code>sum</code> times the weights')</td>
+</tr>
+<tr>
+<td><code>interpolate(..., unit=)</code></td>
+<td>the function's values' unit, which its code does not say</td>
+</tr>
+<tr>
 <td><code>tack.dataset.units</code></td>
-<td><code>canonical</code>, <code>conversion</code> (factor and offset), <code>same</code>, <code>compatible</code>, <code>common</code>; the registry is unyt's plus <code>ftUS</code>, the US survey foot</td>
+<td><code>canonical</code>, <code>conversion</code> (factor and offset), <code>same</code>, <code>compatible</code>, <code>common</code>, <code>derived</code> (products of powers), <code>delta</code> (degrees Celsius to kelvin for differences), <code>named</code> (<code>Pa*m**3</code> as <code>J</code>); the registry is unyt's plus <code>ftUS</code>, the US survey foot</td>
 </tr>
 </tbody>
 </table>
 <p>Filters that keep a quantity keep its unit (everything <code>carry</code> takes along,
-<code>project</code>, <code>values_at_centers</code>, traces, <code>magnitude</code>, means, SPH
-interpolation, centres in the spatial unit); the rest give <code>None</code> until
-derived units arrive. Positions in two known spatial units do not meet:
+<code>project</code>, <code>values_at_centers</code>, traces, <code>magnitude</code>, means, centres in the
+spatial unit); those that compute one derive it (gradients, products,
+measures, fluxes, statistics, deposits, SPH, particle times: the table in
+<a href="../../12-units/#derived-units">Physical Units</a>). Positions in two known spatial units do not meet:
 probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
 interop maps each array's <code>UNITS_LABEL</code>.</p>
 <h2 id="origins-and-point-clouds">Origins and point clouds<a class="headerlink" href="#origins-and-point-clouds" title="Permanent link">&para;</a></h2>
