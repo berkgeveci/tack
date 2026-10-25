@@ -17,6 +17,7 @@ import pytest
 
 import tack
 import tack.dataset as td
+from tack import arrays
 from tack.dataset import Ghosts
 from tack.runtime import dispatch
 from tack.runtime.cpu import CPUBackend
@@ -101,7 +102,7 @@ def test_the_geometry_is_vtks(dims):
                                atol=1e-12)
     np.testing.assert_allclose(octree.measures(), octree.fields["CellSize"].numpy(),
                                rtol=1e-12)
-    valid = octree.leaves() & ((octree.marks.numpy() & Ghosts.HIDDENCELL) == 0)
+    valid = octree.is_leaf & ((octree.marks.numpy() & Ghosts.HIDDENCELL) == 0)
     np.testing.assert_array_equal(valid, octree.fields["ValidCell"].numpy() != 0)
     total = float(np.asarray(fields.GetOutput().GetFieldData().GetArray("TotalVisibleVolume"))[0])
     assert np.isclose(octree.measures()[valid].sum(), total)
@@ -142,7 +143,7 @@ def test_ramses_cells_make_a_tree_of_whole_octs(d):
     roots, level, centre, rho, temperature = ramses_like(d)
     octree = td.OctreeDataSet.from_cells(roots, level, centre,
                                          fields={"rho": rho, "T": temperature})
-    leaves = octree.leaves()
+    leaves = octree.is_leaf
     assert leaves.sum() == len(level)              # every cell given is a leaf
     np.testing.assert_allclose(octree.measures()[leaves].sum(), roots.num_cells)
     # Each leaf is a cell given, at its centre, with its values; the added
@@ -191,7 +192,7 @@ def test_statistics_of_the_leaves_weighted_and_not(d):
     roots, level, centre, rho, temperature = ramses_like(d)
     octree = td.OctreeDataSet.from_cells(roots, level, centre,
                                          fields={"rho": rho, "T": temperature})
-    leaves = octree.leaves()
+    leaves = octree.is_leaf
     t = octree.fields["T"].numpy()[leaves].astype(np.float64)
     volume = octree.measures()[leaves]
     mass = octree.fields["rho"].numpy()[leaves].astype(np.float64) * volume
@@ -225,7 +226,7 @@ def test_statistics_of_the_leaves_weighted_and_not(d):
 def test_entropy_weighted_and_not():
     roots, level, centre, rho, temperature = ramses_like(3)
     octree = td.OctreeDataSet.from_cells(roots, level, centre, fields={"T": temperature})
-    leaves = octree.leaves()
+    leaves = octree.is_leaf
     t = octree.fields["T"].numpy()[leaves].astype(np.float64)
     volume = octree.measures()[leaves]
     for weights, w in ((None, np.ones(len(t))), ("volume", volume)):
@@ -258,6 +259,172 @@ def test_volume_weights_on_other_kinds_of_data():
         td.statistics(grid, "c", level=1)
 
 
+# -- leaves as cells, and probes ---------------------------------------------------------
+
+def _corner_rows(data, positions, connectivity):
+    """Each cell's corners as one row, rows sorted: cells compared as sets."""
+    rows = np.round(positions[connectivity].reshape(len(connectivity), -1), 6)
+    return rows[np.lexsort(rows.T[::-1])]
+
+
+@needs_vtk
+@pytest.mark.parametrize("dims", [(4, 3, 3), (4, 3, 1)])
+def test_the_leaves_are_vtks_cells_with_shared_corners(dims):
+    from vtkmodules.vtkFiltersHyperTree import vtkHyperTreeGridToUnstructuredGrid
+
+    source = vtkRandomHyperTreeGridSource(dimensions=dims, max_depth=4, seed=7,
+                                          split_fraction=0.5)
+    source.Update()
+    octree = vtk_to_dataset(source.GetOutput(), dtype=tack.f64)
+    leaves = octree.leaves()
+    convert = vtkHyperTreeGridToUnstructuredGrid()
+    convert.SetInputData(source.GetOutput())
+    convert.Update()
+    vtk_cells = convert.GetOutput()
+    # VTK gives every leaf its own corners; Tack's share them, and give the same
+    # cells (VTK's points are f32).
+    corners = 2 ** octree.dimension
+    vtk_conn = np.asarray(vtk_cells.GetCells().GetConnectivityArray()).reshape(-1, corners)
+    conn = leaves.topology.connectivity.numpy().reshape(-1, corners)
+    np.testing.assert_allclose(
+        _corner_rows(leaves, leaves.positions().astype(np.float64), conn),
+        _corner_rows(None, np.asarray(vtk_cells.points.data, np.float64), vtk_conn),
+        atol=1e-5)
+    assert {vtk_cells.GetCellType(c) for c in range(vtk_cells.number_of_cells)} == \
+        set(np.asarray(arrays.materialize(leaves.topology.types).numpy()).tolist())
+    assert len(np.unique(leaves.positions(), axis=0)) == leaves.num_points
+    np.testing.assert_array_equal(leaves.fields["Depth"].values.numpy(),
+                                  octree.fields["Depth"].numpy()[octree.is_leaf])
+    # Cell c is the c-th leaf: its centre is the node's.
+    centres = leaves.positions().astype(np.float64)[conn].mean(axis=1)
+    np.testing.assert_allclose(centres, octree.centers()[octree.is_leaf], atol=1e-12)
+
+
+def test_leaves_share_corners_and_keep_hanging_ones():
+    """One root refined into eight, one of them again: 27 corners, then the
+    refined child's 3x3x3 lattice adds 19, hanging ones on its faces included."""
+    roots = td.uniform_grid((2, 2, 2))
+    tree = [0] * 17
+    level = [0] + [1] * 8 + [2] * 8
+    key = [0] + list(range(8)) + [(5 << 3) | c for c in range(8)]
+    octree = td.OctreeDataSet(roots, tree, level, key)
+    leaves = octree.leaves()
+    assert (leaves.num_cells, leaves.num_points) == (15, 46)
+    x = leaves.positions()
+    lattice = np.round(x * 4).astype(int)
+    np.testing.assert_allclose(x, lattice / 4)
+    assert len(np.unique(lattice, axis=0)) == 46
+
+
+def test_hidden_leaves_are_hidden_cells_and_reductions_agree():
+    roots, level, centre, rho, temperature = ramses_like(3)
+    whole = td.OctreeDataSet.from_cells(roots, level, centre, fields={"T": temperature})
+    hidden = np.zeros(whole.num_nodes, bool)
+    hidden[3::5] = True
+    octree = td.OctreeDataSet(roots, whole._tree, whole._level, whole._key,
+                              fields={"T": whole.fields["T"].numpy()}, mask=hidden)
+    leaves = octree.leaves()
+    marks = leaves.ghosts.cells.numpy()
+    np.testing.assert_array_equal(marks != 0, hidden[octree.is_leaf])
+    assert np.all(marks[marks != 0] == Ghosts.HIDDENCELL)
+    a, b = td.statistics(octree, "T"), td.statistics(leaves, "T")
+    assert a.n == b.n
+    np.testing.assert_allclose([a.mean, a.population_variance],
+                               [b.mean, b.population_variance], rtol=1e-12)
+
+
+@needs_vtk
+@pytest.mark.parametrize("dims", [(4, 3, 3), (4, 3, 1)])
+def test_probe_is_vtks(dims):
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import vtkPolyData
+    from vtkmodules.vtkFiltersCore import vtkHyperTreeGridProbeFilter
+
+    source = vtkRandomHyperTreeGridSource(dimensions=dims, max_depth=4, seed=7,
+                                          split_fraction=0.5)
+    source.Update()
+    octree = vtk_to_dataset(source.GetOutput(), dtype=tack.f64)
+    rng = np.random.default_rng(3)
+    x = rng.uniform(-11.0, 11.0, (500, 3))
+    if dims[2] == 1:
+        x[:, 2] = 0.0
+    points = vtkPolyData()
+    points.points = vtkPoints(data=x)
+    reference = vtkHyperTreeGridProbeFilter()
+    reference.SetInputData(points)
+    reference.SetSourceData(source.GetOutput())
+    reference.Update()
+    want_valid = np.asarray(reference.GetOutput().point_data["vtkValidPointMask"]).view(
+        np.uint8)
+    want = np.asarray(reference.GetOutput().point_data["Depth"])
+    got = td.probe(octree, x)
+    valid = got.fields["valid"].values.numpy()
+    np.testing.assert_array_equal(valid, want_valid)
+    depth = got.fields["Depth"].values.numpy()
+    np.testing.assert_array_equal(depth[valid == 1], want[want_valid == 1])
+    assert np.all(depth[valid == 0] == 0)
+
+
+@pytest.mark.parametrize("d", [2, 3])
+def test_probe_is_the_probe_of_the_leaves(d):
+    roots, level, centre, rho, temperature = ramses_like(d)
+    velocity = np.stack([rho, temperature, rho * temperature], axis=1)
+    octree = td.OctreeDataSet.from_cells(roots, level, centre,
+                                         fields={"rho": rho, "v": velocity})
+    rng = np.random.default_rng(5)
+    x = rng.uniform(-0.2, 2.2, (2000, 3))
+    if d == 2:
+        x[:, 2] = 0.0
+    got, want = td.probe(octree, x), td.probe(octree.leaves(), x)
+    valid = got.fields["valid"].values.numpy()
+    np.testing.assert_array_equal(valid, want.fields["valid"].values.numpy())
+    assert 0 < valid.sum() < len(x)
+    inside = valid == 1
+    # Away from faces, where both take the same leaf (on a face, the leaf whose
+    # lower face it is, as one cell's search may take either).
+    lattice = x[:, :d] * 2 ** octree.finest
+    away = inside & np.all(np.abs(lattice - np.round(lattice)) > 1e-6, axis=1)
+    for name in ("rho", "v"):
+        np.testing.assert_array_equal(got.fields[name].values.numpy()[away],
+                                      want.fields[name].values.numpy()[away])
+    assert got.fields["v"].values.numpy().shape == (len(x), 3)
+
+
+def test_probe_onto_a_dataset_keeps_it_and_chooses_fields():
+    roots, level, centre, rho, temperature = ramses_like(3)
+    octree = td.OctreeDataSet.from_cells(roots, level, centre,
+                                         fields={"rho": rho, "T": temperature})
+    image = td.uniform_grid((9, 9, 9), spacing=(0.25, 0.25, 0.25))
+    image.fields["here"] = td.Field(td.H1(image), tack.zeros((image.num_points,), tack.f32))
+    out = td.probe(octree, image, fields=["rho"])
+    assert out.topology is image.topology
+    assert set(out.fields) == {"here", "rho", "valid"}
+    assert out.fields["valid"].values.numpy().all()
+    # A point inside a leaf takes that leaf's value.
+    x = image.positions().astype(np.float64)
+    nodes = np.flatnonzero(octree.is_leaf)
+    corner, sides = (a.numpy().reshape(-1, 3)[nodes] for a in octree.geometry())
+    rho_leaves = octree.fields["rho"].numpy()[nodes]
+    probed = out.fields["rho"].values.numpy()
+    for q in range(0, len(x), 37):
+        inside = np.all((x[q] >= corner) & (x[q] <= corner + sides), axis=1)
+        assert probed[q] in rho_leaves[inside]
+    with pytest.raises(KeyError, match="no field 'nothing'"):
+        td.probe(octree, image, fields=["nothing"])
+
+
+def test_probe_skips_hidden_leaves_and_points_off_a_2d_plane():
+    roots = td.uniform_grid((3, 2), spacing=(1.0, 1.0))
+    octree = td.OctreeDataSet(roots, [0, 1], [0, 0], [0, 0], fields={"f": [1.0, 2.0]},
+                              mask=[0, 1])
+    got = td.probe(octree, np.array([[0.5, 0.5, 0.0], [1.5, 0.5, 0.0], [0.5, 0.5, 0.3],
+                                     [0.5, 0.5, 1e-5], [2.0, 1.0, 0.0], [2.5, 0.5, 0.0]]))
+    np.testing.assert_array_equal(got.fields["valid"].values.numpy(), [1, 0, 0, 1, 0, 0])
+    np.testing.assert_array_equal(got.fields["f"].values.numpy(), [1, 0, 0, 1, 0, 0])
+    with pytest.raises(ValueError, match="takes no locator"):
+        td.probe(octree, np.zeros((1, 3)), locator=object())
+
+
 def test_an_octree_on_a_second_device():
     second = dispatch.as_device(_SecondCPU())
     roots, level, centre, rho, temperature = ramses_like(2)
@@ -268,6 +435,15 @@ def test_an_octree_on_a_second_device():
     a, b = td.statistics(here, "T", weights="volume"), td.statistics(there, "T",
                                                                      weights="volume")
     assert a == b
+    leaves = there.leaves()
+    assert leaves.device == second and leaves.fields["T"].values.device == second
+    np.testing.assert_array_equal(leaves.positions(), here.leaves().positions())
+    x = np.random.default_rng(2).uniform(0.0, 2.0, (300, 3))
+    x[:, 2] = 0.0
+    probed = td.probe(there, x)
+    assert probed.fields["T"].values.device == tack.device("cpu")   # where x's points are
+    np.testing.assert_array_equal(probed.fields["T"].values.numpy(),
+                                  td.probe(here, x).fields["T"].values.numpy())
 
 
 def test_octrees_across_mpi_ranks(mpiexec):
@@ -287,3 +463,18 @@ def across(world):
                               world=world)
     return (td.statistics(octree, "T", weights="volume"), td.entropy(octree, "T", bins=6),
             td.statistics(whole, "T", weights="volume"), td.entropy(whole, "T", bins=6))
+
+
+def probe_across(world):
+    """This rank's points (a different number on each) probed over every rank's
+    share of the trees, and over the whole octree."""
+    roots, level, centre, rho, temperature = ramses_like(3, trees=(3, 2, 2))
+    fields = {"T": temperature, "v": np.stack([rho, temperature, rho], axis=1)}
+    whole = td.OctreeDataSet.from_cells(roots, level, centre, fields=fields)
+    mine = np.isin(whole._tree, np.arange(roots.num_cells)[world.rank::world.size])
+    octree = td.OctreeDataSet(roots, whole._tree[mine], whole._level[mine],
+                              whole._key[mine],
+                              fields={n: whole.fields[n].numpy()[mine] for n in fields},
+                              world=world)
+    x = np.random.default_rng(world.rank).uniform(-0.2, 3.2, (100 + 37 * world.rank, 3))
+    return td.probe(octree, x), td.probe(whole, x)

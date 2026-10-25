@@ -70,6 +70,12 @@ def probe(data, where, fields=None, locator=None):
     cell holds it (refined cells hold nothing), so a probe onto an image
     resamples the hierarchy, as VTK's ``vtkAMRResampleFilter`` does.
 
+    ``data`` may be an ``OctreeDataSet``: each point takes the values of the leaf
+    holding it (cell data, constant over the leaf), found by one binary search
+    of the keys, as VTK's ``vtkHyperTreeGridProbeFilter`` does; a hidden leaf
+    holds nothing. Over ranks, each point goes to the rank whose trees hold it
+    and the values come back, as for a ``PartitionedDataSet``.
+
     ``data`` may be a ``PartitionedDataSet``: each point goes to the piece one
     of whose own cells (not a ghost) holds it, the lowest such piece, which
     evaluates it there, and the values come back. ``where`` is then this
@@ -84,8 +90,14 @@ def probe(data, where, fields=None, locator=None):
     origin in double precision before they are located (the pieces of a
     ``PartitionedDataSet`` share one)."""
     from tack.dataset.amr import AMRDataSet
+    from tack.dataset.octree import OctreeDataSet
     from tack.dataset.partitioned import PartitionedDataSet
 
+    if isinstance(data, OctreeDataSet):
+        if locator is not None:
+            raise ValueError("probe of an OctreeDataSet searches its keys: it takes no "
+                             "locator")
+        return data._probe(where, fields)
     if isinstance(data, AMRDataSet):
         if locator is not None:
             raise ValueError("probe of an AMRDataSet uses each box's own locator")

@@ -15,6 +15,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   and entropy count each region once. `OctreeDataSet.from_cells` takes cells'
   levels and positions (RAMSES, yt); `vtkHyperTreeGrid` converts both ways
   through each tree's breadth-first descriptor.
+- An octree's leaves as cells and its probe: `octree.leaves()` is an
+  unstructured dataset of voxels (pixels in 2D) with the fields as cell data,
+  coinciding corners one point (sorted on the finest level's lattice), hanging
+  ones kept; `probe(octree, where)` takes each point's leaf by one binary search
+  of the keys, as VTK's `vtkHyperTreeGridProbeFilter`, and over MPI ranks sends
+  each point to the rank whose trees hold it. The boolean `octree.leaves()` of
+  the first pass is now `octree.is_leaf`.
 - Weighted statistics: `statistics(data, name, weights="volume" or a field)`
   and `entropy(..., weights=)`, for datasets, pieces, AMR hierarchies and
   octrees: a volume-weighted mean over cells of different sizes, a mass from

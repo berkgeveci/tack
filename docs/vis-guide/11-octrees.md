@@ -12,7 +12,9 @@ stored.
 
 This first pass holds cell data (one value per node, refined ones included, as
 the codes store them) and is about **statistics**. Nodes that are not leaves are
-`REFINEDCELL`, so reductions count each region once, over the leaves.
+`REFINEDCELL`, so reductions count each region once, over the leaves. The
+leaves are also a dataset of cells, for every filter, and an octree can be
+probed.
 
 <!-- tack-check: octree -->
 ```python
@@ -51,9 +53,9 @@ print(octree)
 plain = td.statistics(octree, "rho")
 by_volume = td.statistics(octree, "rho", weights="volume")
 print(f"mean rho {plain.mean:.4f}, by volume {by_volume.mean:.4f}, mass {by_volume.sum:.4f}")
-leaves = octree.leaves()
-volume = octree.measures()[leaves]
-assert np.isclose(by_volume.sum, octree.fields["rho"].numpy()[leaves] @ volume)
+leaf = octree.is_leaf
+volume = octree.measures()[leaf]
+assert np.isclose(by_volume.sum, octree.fields["rho"].numpy()[leaf] @ volume)
 assert np.isclose(by_volume.weight, 1.0) and plain.mean > by_volume.mean
 ```
 
@@ -77,7 +79,58 @@ nodes instead of the leaves.
 - `vtk_to_dataset` takes a `vtkHyperTreeGrid` (branching factor 2) and
   `dataset_to_vtk` gives one back, a mask as `HIDDENCELL`.
 
+## Leaves as cells, and probes
+
+`octree.leaves()` is the leaves as an unstructured `DataSet` of voxels (pixels
+in 2D) with every field as cell data: cell `c` is the `c`-th leaf in the
+nodes' order (`np.flatnonzero(octree.is_leaf)[c]`), and hidden leaves are
+`HIDDENCELL`. Corners that coincide are one point, found by sorting their
+indices on the finest level's lattice, so the cells are connected; corners on
+a finer neighbour's face stay hanging, as the tree has them. Every filter that
+reads cell data works on it: `threshold`, `cell_centers`, `extract_cells`,
+`probe`.
+
+`probe(octree, points)` gives each point the values of the leaf holding it,
+found by one binary search over the keys per point: the point's key on the
+finest level is compared with each node's key carried there, and in pre-order
+the last node at or below it is the leaf. Values are constant over a leaf, as
+VTK's `vtkHyperTreeGridProbeFilter` gives them; `valid` is 0 outside, on
+hidden leaves and off a 2D octree's plane. A probe onto an image resamples the
+octree. Over MPI ranks, each point goes to the rank whose trees hold it.
+
+<!-- tack-check: octree-leaves -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+# Two root cells side by side; the first refined once, one of its children again.
+roots = td.uniform_grid((3, 2, 2))
+tree = [0] + [0] * 8 + [0] * 8 + [1]
+level = [0] + [1] * 8 + [2] * 8 + [0]
+key = [0] + list(range(8)) + [(7 << 3) | c for c in range(8)] + [0]
+octree = td.OctreeDataSet(roots, tree, level, key,
+                          fields={"level": np.array(level, np.float32)})
+
+leaves = octree.leaves()
+print(leaves.num_cells, "cells,", leaves.num_points, "points")
+assert leaves.num_cells == 16
+# 27 corners in the refined root, 19 more in its refined child, 4 more for the
+# coarse root beside it (its face's 4 corners are already there).
+assert leaves.num_points == 27 + 19 + 4
+
+# Each point takes its leaf's value.
+probed = td.probe(octree, np.array([[0.1, 0.1, 0.1], [0.9, 0.9, 0.9], [1.5, 0.5, 0.5],
+                                    [3.0, 0.5, 0.5]]))
+print(probed.fields["level"].values.numpy(), probed.fields["valid"].values.numpy())
+assert list(probed.fields["level"].values.numpy()) == [1, 2, 0, 0]
+assert list(probed.fields["valid"].values.numpy()) == [1, 1, 1, 0]
+```
+
 ## Not here yet
 
-Leaves as an unstructured grid (so every cell-data filter works on them),
-probing, point data and contours (the dual grid) come later.
+Point data, coarse values from the leaves (HyperTreeGrid's `EvaluateCoarse`),
+and contours (the dual grid) come later.

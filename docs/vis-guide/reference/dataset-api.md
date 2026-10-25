@@ -509,7 +509,9 @@ node's ancestors must be given, and a refined node all its children.
 |---|---|
 | `octree.tree`, `.level`, `.key`, `.marks` | the nodes, device arrays; marks `REFINEDCELL` on non-leaves, `HIDDENCELL` where masked |
 | `octree.fields` | cell data: one value per node (`dict` of arrays) |
-| `octree.leaves()`, `.centers()`, `.measures()`, `.geometry()` | from the keys, in a kernel: which nodes are leaves, centres, volumes (areas), lower corners and sides |
+| `octree.is_leaf`, `.centers()`, `.measures()`, `.geometry()` | from the keys: which nodes are leaves, centres, volumes (areas), lower corners and sides |
+| `octree.leaves()` | the leaves as an unstructured `DataSet` of voxels (pixels in 2D), cell `c` the `c`-th leaf, fields as cell data, hidden leaves `HIDDENCELL`; coinciding corners one point (sorted on the finest level's lattice), hanging ones kept |
+| `probe(octree, where)` | each point's leaf values (one binary search of the keys carried to the finest level), `valid` 0 outside, on hidden leaves and off a 2D plane; over ranks, each point to the rank whose trees hold it |
 | `OctreeDataSet.from_cells(roots, level, position, fields)` | from cells' levels and positions (whole octs, as RAMSES writes them), ancestors added with NaN values |
 | `statistics(octree, name, weights=None, level=None)`, `entropy(...)` | over the leaves (or one level's nodes), every rank's trees |
 | interop | `vtk_to_dataset(vtkHyperTreeGrid)` (each tree's breadth-first descriptor read in one call, turned into keys) and `dataset_to_vtk(octree)`; the mask as `HIDDENCELL` |
