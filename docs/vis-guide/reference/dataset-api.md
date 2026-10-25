@@ -492,6 +492,36 @@ level covers is a matter of integer boxes. VTK's AMR holds images and (since
 Not here: crack-free contouring across levels, periodic domains, tagging and
 regridding, conservative interpolation (the vault's AMR proposal).
 
+## Octrees
+
+An `OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None)`
+is a grid of octrees, VTK's `vtkHyperTreeGrid` with branching factor 2, stored
+as a linear octree for GPUs: `roots` the grid of root cells (an image or a
+rectilinear grid, 2D or 3D; root cell `t`, x fastest, is tree `t`), and every
+node of every tree, refined ones included, as its tree, its level (0 at the
+root) and its Morton key at that level (integer coordinates in the tree
+interleaved, x lowest, so a child's key is its parent's shifted by the
+dimension with its index, x fastest, below). Nodes are sorted in pre-order --
+tree, key carried to the finest level, level -- so a subtree is one run. Each
+node's ancestors must be given, and a refined node all its children.
+
+| | |
+|---|---|
+| `octree.tree`, `.level`, `.key`, `.marks` | the nodes, device arrays; marks `REFINEDCELL` on non-leaves, `HIDDENCELL` where masked |
+| `octree.fields` | cell data: one value per node (`dict` of arrays) |
+| `octree.leaves()`, `.centers()`, `.measures()`, `.geometry()` | from the keys, in a kernel: which nodes are leaves, centres, volumes (areas), lower corners and sides |
+| `OctreeDataSet.from_cells(roots, level, position, fields)` | from cells' levels and positions (whole octs, as RAMSES writes them), ancestors added with NaN values |
+| `statistics(octree, name, weights=None, level=None)`, `entropy(...)` | over the leaves (or one level's nodes), every rank's trees |
+| interop | `vtk_to_dataset(vtkHyperTreeGrid)` (each tree's breadth-first descriptor read in one call, turned into keys) and `dataset_to_vtk(octree)`; the mask as `HIDDENCELL` |
+
+**Weighted statistics**, for every kind of data: `statistics(data, name,
+weights=...)` with `"volume"` (cell measures, cell fields only) or a scalar
+field's name on the same entities. `mean` is `sum(w x) / W`, `sum` is `sum(w
+x)`, the moments are `sum(w (x - mean)^k)`, `weight` is `W`, the population
+variance `m2 / W`, the sample variance `m2 / (W - sum(w^2) / W)` (reliability
+weights, NumPy's `aweights`), and skewness and kurtosis take `W` for `n`.
+`entropy(..., weights=...)` shares each bin by the weights in it.
+
 ## Devices
 
 A dataset is on the device its arrays are on, and it computes there: every

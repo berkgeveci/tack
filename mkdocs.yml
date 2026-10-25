@@ -137,6 +137,7 @@ nav:
           - Build Meshes: vis-guide/02-meshes.md
           - Point Clouds and Particles: vis-guide/08-point-clouds.md
           - AMR Hierarchies: vis-guide/10-amr.md
+          - Octrees: vis-guide/11-octrees.md
           - Filter and Analyze: vis-guide/04-filters.md
           - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
           - Sample and Connect Simulations: vis-guide/06-pipelines.md

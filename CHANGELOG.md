@@ -7,6 +7,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Octrees, a first pass: `td.OctreeDataSet`, a grid of octrees (VTK's
+  HyperTreeGrid with branching factor 2) stored as a linear octree for GPUs,
+  each node its tree, level and Morton key, sorted in pre-order; leaves,
+  centres and measures from the keys in kernels. Cell data on every node, as
+  RAMSES and HyperTreeGrids store it; non-leaves `REFINEDCELL`, so statistics
+  and entropy count each region once. `OctreeDataSet.from_cells` takes cells'
+  levels and positions (RAMSES, yt); `vtkHyperTreeGrid` converts both ways
+  through each tree's breadth-first descriptor.
+- Weighted statistics: `statistics(data, name, weights="volume" or a field)`
+  and `entropy(..., weights=)`, for datasets, pieces, AMR hierarchies and
+  octrees: a volume-weighted mean over cells of different sizes, a mass from
+  a density. `Statistics.weight` is the weights' sum.
 - Block-structured AMR, a first pass: `td.AMRDataSet(levels, ratios)`, levels of
   structured boxes placed by their topologies' `offset`, the hierarchy in index
   space as AMReX's, so boxes may be images, rectilinear or curvilinear grids

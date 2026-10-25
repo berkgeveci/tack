@@ -25,6 +25,25 @@ def _central_powers(values, mean, p2, p3, p4):
         p4[i] = d2 * d2
 
 
+@tack.kernel
+def _weighted(values, weights, wx, w2):
+    for i in range(wx.shape[0]):
+        w = weights[i]
+        wx[i] = w * values[i]
+        w2[i] = w * w
+
+
+@tack.kernel
+def _weighted_powers(values, weights, mean, p2, p3, p4):
+    for i in range(p2.shape[0]):
+        w = weights[i]
+        d = values[i] - mean
+        d2 = d * d
+        p2[i] = w * d2
+        p3[i] = w * d2 * d
+        p4[i] = w * d2 * d2
+
+
 class Statistics(NamedTuple):
     """What ``statistics`` returns: Python numbers, by name (``s.mean``)."""
     n: int
@@ -41,20 +60,50 @@ class Statistics(NamedTuple):
     population_stddev: float
     skewness: float
     kurtosis: float
+    #: The sum of the weights: ``n`` without them.
+    weight: float = 0.0
 
 
 @on_inputs_device
-def _moments(data, field):
-    """``(n, min, max, sum, mean, m2, m3, m4)`` of one dataset's scalar field, over the
-    values it owns (not its ghosts), the moments about their own mean in a
-    second pass; ``None`` for no values."""
+def _moments(data, field, weights=None):
+    """``(n, W, W2, min, max, sum, mean, m2, m3, m4)`` of one dataset's scalar field,
+    over the values it owns (not its ghosts), the moments about their own mean
+    in a second pass, weighted by ``weights`` (``W`` their sum, ``W2`` the sum of
+    their squares; both ``n`` without); ``None`` for no values."""
     field = _field(data, field)
     if width_of(field.values):
         raise TypeError("statistics takes a scalar field")
     source = owned_values(data, field)
+    return _array_moments(source, None if weights is None
+                          else owned_values(data, _weights(data, field, weights)))
+
+
+def _weights(data, field, weights):
+    """The ``Field`` of weights: each cell's measure for ``"volume"``, or a field of
+    ``data`` (a name or a ``Field``) on the same entities as ``field``."""
+    from tack.dataset.algorithms.cell_geometry import cell_geometry
+    from tack.dataset.algorithms.ghost_cells import _kind
+
+    kind = _kind(field)
+    if isinstance(weights, str) and weights == "volume":
+        if kind != "cells":
+            raise TypeError("volume weights are a cell's measure: they take a cell field")
+        return cell_geometry(data).measure
+    weights = _field(data, weights)
+    if _kind(weights) != kind or width_of(weights.values):
+        raise TypeError("weights are a scalar field on the same entities as the field "
+                        "(points or cells), or \"volume\"")
+    return weights
+
+
+@on_inputs_device
+def _array_moments(source, weights=None):
+    """``_moments`` of an array of values (and of weights, one per value)."""
     n = size_of(source)
     if n == 0:
         return None
+    if weights is not None:
+        return _weighted_moments(source, weights, n)
     values = _converted(source, _floating_dtype(source))
     # Integer sums are exact in f64 up to 2**53 and cannot wrap; summing the
     # converted f32 values was off by 57 for a million i32 values of 1001.
@@ -65,15 +114,36 @@ def _moments(data, field):
     # The powers of differences from a mean are fractions, whatever the values are.
     p2, p3, p4 = (tack.empty((n,), values.dtype) for _ in range(3))
     _central_powers(values, mean, p2, p3, p4)
-    return n, source.min(), source.max(), total, mean, p2.sum(), p3.sum(), p4.sum()
+    return (n, float(n), float(n), source.min(), source.max(), total, mean, p2.sum(),
+            p3.sum(), p4.sum())
+
+
+def _weighted_moments(source, weights, n):
+    from tack import arrays
+
+    values = _converted(source, _floating_dtype(source))
+    weights = _converted(arrays.materialize(weights), values.dtype)
+    wx, w2 = tack.empty((n,), values.dtype), tack.empty((n,), values.dtype)
+    _weighted(values, weights, wx, w2)
+    total_weight = weights.sum()
+    if not total_weight > 0:
+        raise ValueError("statistics with weights needs a positive sum of weights")
+    total = wx.sum()
+    mean = total / total_weight
+    p2, p3, p4 = (tack.empty((n,), values.dtype) for _ in range(3))
+    _weighted_powers(values, weights, mean, p2, p3, p4)
+    return (n, total_weight, w2.sum(), source.min(), source.max(), total, mean, p2.sum(),
+            p3.sum(), p4.sum())
 
 
 def _merged(a, b):
     """The moments of two sets of values from each one's (Pebay's pairwise update,
     "Formulas for robust, one-pass parallel computation of covariances and
     arbitrary-order statistical moments", 2008)."""
-    na, mina, maxa, suma, meana, m2a, m3a, m4a = a
-    nb, minb, maxb, sumb, meanb, m2b, m3b, m4b = b
+    count_a, wa, w2a, mina, maxa, suma, meana, m2a, m3a, m4a = a
+    count_b, wb, w2b, minb, maxb, sumb, meanb, m2b, m3b, m4b = b
+    # Weights stand for counts; without weights they are the counts.
+    na, nb = wa, wb
     n = na + nb
     d = meanb - meana
     m2 = m2a + m2b + d * d * na * nb / n
@@ -84,8 +154,8 @@ def _merged(a, b):
           + 4.0 * d * (na * m3b - nb * m3a) / n)
     total = suma + sumb
     # NaN propagates through the extrema, as an array's own do.
-    return (n, float(np.min([mina, minb])), float(np.max([maxa, maxb])), total, total / n,
-            m2, m3, m4)
+    return (count_a + count_b, n, w2a + w2b, float(np.min([mina, minb])),
+            float(np.max([maxa, maxb])), total, total / n, m2, m3, m4)
 
 
 def _over_pieces(data, each):
@@ -98,20 +168,25 @@ def _over_pieces(data, each):
     return blocks.all_gather({g: each(piece) for g, piece in zip(blocks.local, pieces)})
 
 
-def _summary(n, low, high, total, mean, m2, m3, m4):
-    skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
-    kurtosis = n * m4 / (m2 * m2) if m2 else 0.0
+def _summary(n, weight, weight2, low, high, total, mean, m2, m3, m4):
+    # With weights, W stands for n; the sample variance takes them as
+    # reliability weights (NumPy's aweights), m2 / (W - W2 / W), which is
+    # m2 / (n - 1) without them.
+    skewness = math.sqrt(weight) * m3 / m2 ** 1.5 if m2 else 0.0
+    kurtosis = weight * m4 / (m2 * m2) if m2 else 0.0
+    dof = weight - weight2 / weight
+    sample = m2 / dof if n > 1 and dof > 0 else 0.0
     return Statistics(n=n, min=low, max=high, sum=total, mean=mean,
                       m2=m2, m3=m3, m4=m4,
-                      sample_variance=m2 / (n - 1) if n > 1 else 0.0,
-                      population_variance=m2 / n,
-                      sample_stddev=math.sqrt(m2 / (n - 1)) if n > 1 else 0.0,
-                      population_stddev=math.sqrt(m2 / n),
-                      skewness=skewness, kurtosis=kurtosis)
+                      sample_variance=sample,
+                      population_variance=m2 / weight,
+                      sample_stddev=math.sqrt(sample),
+                      population_stddev=math.sqrt(m2 / weight),
+                      skewness=skewness, kurtosis=kurtosis, weight=weight)
 
 
 @on_inputs_device
-def statistics(data, field):
+def statistics(data, field, weights=None, level=None):
     """Descriptive statistics of a scalar field's values, as Viskores' Statistics
     filter gives them: a ``Statistics`` of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
     central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance``
@@ -129,19 +204,34 @@ def statistics(data, field):
     every shared cell and point has one owner, the result is the whole's up to
     rounding. Over an ``AMRDataSet``, the same over every box of every level:
     refined cells and points are left out, so each region of space counts
-    once, at its finest level."""
-    from tack.dataset.amr import AMRDataSet
+    once, at its finest level. Over an ``OctreeDataSet``, its leaves (or the
+    nodes of one ``level``), every rank's.
 
+    ``weights`` weighs each value: ``"volume"``, each cell's measure (a cell
+    field's), or a scalar field on the same entities, by name (a density, for
+    mass-weighted moments). Then ``mean`` is ``sum(w x) / W``, ``sum`` is ``sum(w
+    x)``, the moments are ``sum(w (x - mean)^k)``, ``weight`` is ``W``, the sum of
+    the weights, the population variance ``m2 / W``, the sample variance
+    ``m2 / (W - sum(w^2) / W)`` (reliability weights, NumPy's ``aweights``), and
+    skewness and kurtosis take ``W`` for ``n``. Cells of different sizes -- an
+    AMR hierarchy's levels, an octree's leaves -- then count by their size."""
+    from tack.dataset.amr import AMRDataSet
+    from tack.dataset.octree import OctreeDataSet
+
+    if isinstance(data, OctreeDataSet):
+        return data._statistics(field, weights, level)
+    if level is not None:
+        raise TypeError("level= picks an octree's level; this is not an OctreeDataSet")
     if isinstance(data, AMRDataSet):
         data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
         fields_of(data, field, "statistics")
         moments = None
-        for part in _over_pieces(data, lambda piece: _moments(piece, field)):
+        for part in _over_pieces(data, lambda piece: _moments(piece, field, weights)):
             if part is not None:
                 moments = part if moments is None else _merged(moments, part)
     else:
-        moments = _moments(data, field)
+        moments = _moments(data, field, weights)
     if moments is None:
         raise ValueError("statistics of no values")
     return _summary(*moments)
