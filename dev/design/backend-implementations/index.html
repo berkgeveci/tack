@@ -4289,13 +4289,13 @@ copy.</p>
 <p><strong>Compilation.</strong> OpenCL C from <code>generate_opencl_source</code> is compiled to
 SPIR-V <em>in process</em> by <code>_compile_to_spirv</code>, which calls <code>oclocInvoke</code> in
 <code>libocloc.so</code> with</p>
-<div class="highlight"><pre><span></span><code>compile -spv_only -device 0x&lt;deviceId&gt; -options -cl-std=CL2.0 -file kernel.cl
+<div class="highlight"><pre><span></span><code>compile -spv_only -device 0x&lt;deviceId&gt; -options &quot;-cl-std=CL2.0 -cl-fp32-correctly-rounded-divide-sqrt&quot; -file kernel.cl
 </code></pre></div>
 <p>and passes the source from memory, null-terminated, because ocloc treats
 in-memory sources as C strings. The options are the module constant
 <code>_OCLOC_OPTIONS</code>. The <code>.spv</code> output is handed to <code>_create_module</code>, which
 calls <code>zeModuleCreate</code> as <code>ZE_MODULE_FORMAT_IL_SPIRV</code> with build flags
-<code>_MODULE_BUILD_FLAGS</code> (<code>-cl-std=CL2.0</code>); a failure raises <code>RuntimeError</code>
+<code>_MODULE_BUILD_FLAGS</code> (the same OpenCL options, <code>_OPENCL_OPTIONS</code>); a failure raises <code>RuntimeError</code>
 with the module build log and the source. <code>zeKernelCreate</code> then returns the kernel handle. When the
 source uses <code>double</code>, the generator adds
 <code>#pragma OPENCL EXTENSION cl_khr_fp64 : enable</code>.</p>

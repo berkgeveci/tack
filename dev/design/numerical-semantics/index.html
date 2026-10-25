@@ -4521,7 +4521,7 @@ options:</p>
 <tr>
 <td>Level Zero</td>
 <td><code>runtime/level_zero_backend.py</code></td>
-<td>build flags <code>-cl-std=CL2.0</code> only; no relaxed-math option</td>
+<td><code>_OPENCL_OPTIONS</code>: <code>-cl-std=CL2.0 -cl-fp32-correctly-rounded-divide-sqrt</code> (f32 division and sqrt correctly rounded, as CUDA's <code>--prec-div</code>/<code>--prec-sqrt</code>); no relaxed-math option</td>
 </tr>
 </tbody>
 </table>

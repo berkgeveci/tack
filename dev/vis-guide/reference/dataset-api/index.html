@@ -4648,8 +4648,11 @@ dataset's and computed in the geometry's type.</p>
 uniform bins over their box (about <code>points_per_bin</code> a bin, cubes along the
 axes they span) and sorts them by bin, each bin in index order
 (<code>buckets.bucket_order</code>), as VTK's <code>vtkStaticPointLocator</code>. Nothing is
-atomic, so every query visits the same points in the same order and its
-answer has the same bits on every backend. Like <code>CellLocator</code>, it records its
+atomic, so every query visits the same points in the same order every time,
+and distances are compared with each product rounded on its own
+(<code>squared_length</code>, which no backend fuses), so the neighbours within a radius
+and the k nearest are the same on every backend; reported distances agree to
+rounding. Like <code>CellLocator</code>, it records its
 geometry (<code>serves</code>) and is refused once Tack has written the positions; the
 filters below use the one the topology keeps (<code>cached_point_locator</code>) unless
 given one.</p>
@@ -4692,7 +4695,7 @@ and pass it on; without one, nothing changes (it is compiled out).</p>
 <tbody>
 <tr>
 <td><code>voxel_downsample(data, size, keep="centroid")</code></td>
-<td>one point per occupied voxel of side <code>size</code> (or three sides) anchored at the points' lower corner: the voxel's centroid (new points: floating-point fields averaged, integer fields its first point's; ghost marks dropped), its first point, or its point nearest the centroid (input points, in input order, fields and marks kept). Voxels by a stable sort, each reduced in index order, so the same bits everywhere. VTK's <code>vtkVoxelGrid</code> fits a whole number of bins to the box, so its voxels are not exactly <code>size</code>; PDAL's <code>filters.voxeldownsize</code> is this</td>
+<td>one point per occupied voxel of side <code>size</code> (or three sides) anchored at the points' lower corner: the voxel's centroid (new points: floating-point fields averaged, integer fields its first point's; ghost marks dropped), its first point, or its point nearest the centroid (input points, in input order, fields and marks kept). Voxels by a stable sort, each reduced in index order: the same bits run to run, and the same voxels and kept points on every backend. VTK's <code>vtkVoxelGrid</code> fits a whole number of bins to the box, so its voxels are not exactly <code>size</code>; PDAL's <code>filters.voxeldownsize</code> is this</td>
 </tr>
 <tr>
 <td><code>outliers(data, radius=, min_neighbors=)</code></td>
@@ -4712,7 +4715,7 @@ and pass it on; without one, nothing changes (it is compiled out).</p>
 </tr>
 <tr>
 <td><code>deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=False)</code></td>
-<td>points onto an axis-aligned image: into the cell holding each (<code>"nearest"</code>, a field on the cells) or onto its corners by trilinear weights (<code>"cic"</code>, cloud in cell, on the points), as Viskores' particle density filters and yt. Counts without a field; with one, <code>"sum"</code>, <code>"mean"</code>, <code>"count"</code>, and for <code>"nearest"</code> <code>"min"</code> and <code>"max"</code> (a LiDAR surface model: the highest return per cell of a 2D image). Empty cells hold 0, or NaN for means and extrema; <code>per_volume</code> divides by the cell's volume. Points outside are left out. Each target reduced in point order, by a sort: the same bits everywhere</td>
+<td>points onto an axis-aligned image: into the cell holding each (<code>"nearest"</code>, a field on the cells) or onto its corners by trilinear weights (<code>"cic"</code>, cloud in cell, on the points), as Viskores' particle density filters and yt. Counts without a field; with one, <code>"sum"</code>, <code>"mean"</code>, <code>"count"</code>, and for <code>"nearest"</code> <code>"min"</code> and <code>"max"</code> (a LiDAR surface model: the highest return per cell of a 2D image). Empty cells hold 0, or NaN for means and extrema; <code>per_volume</code> divides by the cell's volume. Points outside are left out. Each target reduced in point order, by a sort: the same bits run to run; counts, minima and maxima the same on every backend, sums and means to rounding</td>
 </tr>
 <tr>
 <td><code>sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_length="h", mass="mass", density="density", normalize=False, dimension=3)</code></td>

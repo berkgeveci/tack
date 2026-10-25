@@ -4372,7 +4372,9 @@ parenthesized sums with cancellation to retain their order.</p>
 <code>--prec-div=true</code>, <code>--prec-sqrt=true</code>, and <code>--fmad=true</code>, without
 <code>--use_fast_math</code>. Metal sets <code>fastMathEnabled</code> false. Both apply to
 ordinary kernels and runtime reduction sources. CPU emits no LLVM
-fast-math flags; HIP and OpenCL receive no unsafe/relaxed-math options.
+fast-math flags; HIP and OpenCL receive no unsafe/relaxed-math options, and
+OpenCL asks for correctly rounded f32 division and square root
+(<code>-cl-fp32-correctly-rounded-divide-sqrt</code>).
 HIP compiles with <code>-ffp-contract=on</code>: hipRTC's default, <code>fast</code>, fuses
 across statements, and on AMD GPUs fused a product into one read of a
 variable while another read it rounded.
