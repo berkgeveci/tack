@@ -13,6 +13,7 @@ from tack.dataset.algorithms._common import (
     _crossing,
     _field,
     _floating_dtype,
+    _in_unit_of,
 )
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.buckets import bucket_order, run_offsets
@@ -251,6 +252,8 @@ def clip(data, by, value=0.0, inside=False, fields=None):
         space = field.space
         if not (isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")):
             raise TypeError(f"clip takes point data or an implicit function, not {space!r}")
+    # In the field's unit; an implicit function's values have none.
+    value = _in_unit_of(field, value, "clip's value")
     if arrays.width_of(field.values):
         raise TypeError("clip needs a scalar field")
     precision = _floating_dtype(field.values)

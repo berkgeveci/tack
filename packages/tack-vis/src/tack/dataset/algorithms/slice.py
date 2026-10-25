@@ -1,5 +1,6 @@
 """``slice``: where ``function`` (``tack.dataset.implicit``) is zero: a contour of its values on the geometry, carrying fields as ``contour`` does. ``slice_plane`` is this with a ``Plane``."""
 
+from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms.contour import contour
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.algorithms.project import project
@@ -37,5 +38,7 @@ def slice_plane(data, origin, normal, merge_points=True, fields=None, value=0.0)
     the cells' own. ``value``, a signed distance along the unit normal, or a
     sequence of them, gives parallel planes, all in one pass. ``slice`` with a
     ``Plane``."""
+    origin = _length(data, origin, "slice_plane's origin")
+    value = _length(data, value, "slice_plane's distance")
     return slice(data, Plane(origin, normal), merge_points=merge_points, fields=fields,
                  value=value)

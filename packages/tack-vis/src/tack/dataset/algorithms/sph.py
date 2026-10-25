@@ -17,6 +17,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.dataset import units
+from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms.outliers import _locator
 from tack.dataset.carry import _point_values
 from tack.dataset.dataset import DataSet, Field
@@ -211,6 +212,10 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     ``dimension`` dimensions. ``periodic`` (a box) reaches across its faces.
     ``locator`` reuses a ``PointLocator`` of the particles. The target's points are moved to the particles' origin by the
     difference of the two, in double precision."""
+    smoothing_length = _smoothing(particles, smoothing_length)
+    mass, mass_unit = _given(particles, mass, "mass")
+    density, density_unit = _given(particles, density, "density")
+    periodic = _length(particles, periodic, "the periodic box")
     from tack.dataset.algorithms._extract import _vertices
     from tack.dataset.dataset import relative_positions
     from tack.dataset.ghosts import keep_marks
@@ -236,8 +241,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     # Each term is f times m/rho, a volume, times W, per volume: m / (rho L^d) is
     # a pure number for consistent units, unknown where the mass or density is a
     # number.
-    weight_unit = units.derived(_unit_of(particles, mass), (_unit_of(particles, density), -1),
-                                (particles.unit, -dimension))
+    weight_unit = units.derived(mass_unit, (density_unit, -1), (particles.unit, -dimension))
     locator = _locator(particles, locator, periodic)
     m = target.num_points
     queries = arrays.materialize(_point_values(target.geometry.values, m))
@@ -287,6 +291,9 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
     W(|x_i - x_j|, h_i)`` -- itself included, from its own smoothing length (the
     gather form, as SPLASH computes it) -- for particles that come without one.
     The arguments are ``sph_interpolate``'s."""
+    smoothing_length = _smoothing(particles, smoothing_length)
+    mass, mass_unit = _given(particles, mass, "mass")
+    periodic = _length(particles, periodic, "the periodic box")
     from tack.dataset.ghosts import keep_marks
 
     w, support = _checked(kernel, dimension)
@@ -303,12 +310,32 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
     out = DataSet(particles.topology, particles.geometry, fields=dict(particles.fields),
                   sets=dict(particles.sets), dtype=particles.dtype, origin=particles.origin, unit=particles.unit)
     out.fields["density"] = Field(H1(out), density, units.derived(
-        _unit_of(particles, mass), (particles.unit, -dimension)))
+        mass_unit, (particles.unit, -dimension)))
     return keep_marks(particles, out)
 
 
 def _unit_of(particles, value):
-    """The unit of a per-particle argument: a field's, by name; a number's is
-    unknown."""
-    return particles.fields[value].unit if isinstance(value, str) else None
+    """The unit of a per-particle argument: a field's, by name or object; a
+    number's is unknown (``_given`` takes a quantity's unit first)."""
+    if isinstance(value, str):
+        return particles.fields[value].unit
+    return value.unit if isinstance(value, Field) else None
+
+
+def _given(particles, value, what):
+    """A per-particle argument and its unit: a field (by name or object) as given
+    with its unit, a quantity (``"2e30 kg"``, ``(1.0, "Msun")``) as its number
+    and unit, a number as given with no unit."""
+    if isinstance(value, Field) or (isinstance(value, str) and value in particles.fields):
+        return value, _unit_of(particles, value)
+    number, unit = units.number_and_unit(value)
+    return number, unit
+
+
+def _smoothing(particles, value):
+    """The smoothing length: a field as given, a length converted to the spatial
+    unit (``"0.5 kpc"``), a number as given."""
+    if isinstance(value, Field) or (isinstance(value, str) and value in particles.fields):
+        return value
+    return _length(particles, value, "the smoothing length")
 

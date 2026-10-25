@@ -4,6 +4,7 @@ import numpy as np
 
 import tack
 from tack import arrays
+from tack.dataset.algorithms._common import _length
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.point_locator import MAX_K, _count_within, cached_point_locator
@@ -63,6 +64,8 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
     ``radius``, or its points' ``k`` nearest), and the statistical test's mean
     and deviation are over every piece's points: each point gets the whole's
     answer. The pieces come back without the copies."""
+    radius = _length(data, radius, "outliers's radius")
+    periodic = _length(data, periodic, "outliers's periodic box")
     radial = radius is not None or min_neighbors is not None
     if radial == (k is not None):
         raise ValueError("outliers takes radius and min_neighbors, or k (and deviations)")

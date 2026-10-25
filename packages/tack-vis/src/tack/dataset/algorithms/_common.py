@@ -83,10 +83,55 @@ def _measure_unit(data):
 
 def _time_unit(data, velocity):
     """The unit of time a particle moved by ``velocity`` (a field or its name) keeps:
-    the spatial unit over the velocity's, or ``None`` if either is unknown."""
+    the spatial unit over the velocity's, or ``None`` if either is unknown. Over a
+    partitioned dataset, every rank's pieces'."""
+    from tack.dataset import units
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet):
+        every = data.world._allgather([piece.fields[velocity].unit for piece in data])
+        speed = units.common("the pieces' velocity", [u for part in every for u in part])
+        return units.derived(_spatial_unit(data), (speed, -1))
+    return units.derived(data.unit, (_field(data, velocity).unit, -1))
+
+
+def _spatial_unit(data):
+    """A dataset's spatial unit, or a partitioned dataset's: every rank's pieces'
+    one unit (a rank holding none agrees with the rest)."""
+    from tack.dataset import units
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet):
+        every = data.world._allgather([piece.unit for piece in data])
+        return units.common("the pieces' geometry", [u for part in every for u in part])
+    return data.unit
+
+
+def _length(data, value, what):
+    """A length parameter (a radius, a size, a periodic box) as numbers in ``data``'s
+    spatial unit: a quantity (``"10 cm"``, ``(0.1, "m")``) converted, a plain
+    number as given."""
     from tack.dataset import units
 
-    return units.derived(data.unit, (_field(data, velocity).unit, -1))
+    if not _has_quantity(value):
+        return value
+    return units.magnitude(value, _spatial_unit(data), what)
+
+
+def _in_unit_of(field, value, what):
+    """A value compared with ``field``'s (an isovalue, a threshold) as a number in
+    its unit: a quantity converted, offsets included (``"20 degC"`` on a field
+    in kelvin), a plain number as given."""
+    from tack.dataset import units
+
+    return units.magnitude(value, field.unit, what) if _has_quantity(value) else value
+
+
+def _has_quantity(value):
+    from tack.dataset import units
+
+    return units.quantity(value) is not None or (
+        isinstance(value, (tuple, list)) and any(units.quantity(v) is not None for v in value))
 
 
 def _floating_dtype(*values):

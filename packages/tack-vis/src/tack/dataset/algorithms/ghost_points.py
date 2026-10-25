@@ -30,6 +30,7 @@ from tack import arrays
 from tack import communication as tc
 from tack.dataset import _matching, shapes
 from tack.dataset._matching import INDEX_BITS
+from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.algorithms.ghost_cells import _carried, _joined, _kind
 from tack.dataset.carry import _point_values, _take
@@ -78,6 +79,8 @@ def ghost_points(data, radius=None, k=None, periodic=None, around=None, fields=N
     an image, moved by the box's side: run filters on the result without
     ``periodic``. ``data`` holds this rank's pieces, on any devices, in
     ``world`` (``data.world`` by default), on one origin, without ghosts."""
+    radius = _length(data, radius, "ghost_points' radius")
+    periodic = _length(data, periodic, "ghost_points' periodic box")
     ghosted = _ghosted(data, radius, k, periodic, around, fields, world)
     result = PartitionedDataSet(ghosted.pieces, world=ghosted.blocks.world)
     result._ghost_plans = {"points": ghosted.plan, "cells": ghosted.plan}

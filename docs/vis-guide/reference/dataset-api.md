@@ -347,6 +347,7 @@ a unit. See [Physical Units](../12-units.md).
 | `convert(data, unit, field=None)` | the geometry (origin scaled in double precision; images stay images) or a field in `unit`, scaled and offset on the device |
 | `Statistics.unit`, `.weight_unit`, `.unit_of(name)` | the field's and the weights' units, and each statistic's (variances in the square, `sum` times the weights') |
 | `interpolate(..., unit=)` | the function's values' unit, which its code does not say |
+| quantities as parameters | lengths (`"10 cm"`, `(0.1, "m")`, a unyt or pint quantity) converted to the spatial unit, isovalues and thresholds to the field's, step sizes to the particles' time unit; a mass, density or velocity given as one quantity brings its unit (see [Physical Units](../12-units.md#quantities-as-parameters)) |
 | `tack.dataset.units` | `canonical`, `conversion` (factor and offset), `same`, `compatible`, `common`, `derived` (products of powers), `delta` (degrees Celsius to kelvin for differences), `named` (`Pa*m**3` as `J`); the registry is unyt's plus `ftUS`, the US survey foot |
 
 Filters that keep a quantity keep its unit (everything `carry` takes along,

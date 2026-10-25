@@ -13,6 +13,7 @@ from tack.dataset.algorithms._common import (
     _compact,
     _crossing,
     _field,
+    _in_unit_of,
     _scalar_floating,
     _with_basis,
 )
@@ -226,6 +227,7 @@ def contour(data, field, value, merge_points=True, fields=None):
     fields (``Constant``, values on cells) onto its triangles, from the cell
     each came from.
     """
+    value = _in_unit_of(_field(data, field), value, "contour's value")
     from tack.dataset.ghosts import visible
 
     data, field = visible(data, field)

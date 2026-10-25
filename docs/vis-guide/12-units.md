@@ -46,6 +46,14 @@ stats = td.statistics(image, "T")
 print(stats.unit_of("mean"), stats.unit_of("population_variance"))
 assert stats.unit_of("population_variance") == "K**2"
 
+# Parameters take quantities: a threshold in degrees Celsius on a field in
+# kelvin, a radius in metres on positions in feet.
+warm = td.threshold(kelvin, "T", "20 degC", "30 degC")
+assert warm.num_cells == td.threshold(kelvin, "T", 293.15, 303.15).num_cells
+cloud = td.point_cloud(image.world_positions(), unit="ftUS")
+coarse = td.voxel_downsample(cloud, "10 m")             # 32.8 US survey feet
+assert coarse.num_points == td.voxel_downsample(cloud, 10 * 3937 / 1200).num_points
+
 # Positions in two different units do not meet.
 try:
     td.probe(image, td.point_cloud(np.array([[1_400_010.0, 600_010.0, 5.0]]), unit="m"))
@@ -115,6 +123,25 @@ convert to kelvin first. Labels, ids, flags and counts that are not
 quantities (`region`, `cell_ids`, `outlier`, `neighbors`) have no unit, and a
 result computed from a bare number -- `upwind_flux`'s constant velocity, a
 mass given as one number, the potential's `G` -- is unknown.
+
+## Quantities as parameters
+
+A parameter in a unit takes a quantity: a string such as `"10 cm"`, a pair
+`(value, unit)` (the value a number or an array), or a unyt or pint quantity.
+It is converted to what the parameter is compared with; a plain number is
+taken to be in that unit already, as before.
+
+| Parameter | Converted to |
+|---|---|
+| `voxel_downsample`'s size; `radius=` of `outliers`, `connected_components`, `point_normals`, `ghost_points`; `periodic=` boxes; `PointLocator`'s bin size and `neighbors`' radius; SPH smoothing lengths given as one number; the halo catalogue's softening; `slice_plane`'s origin and distances | the spatial unit |
+| `threshold`'s and `threshold_points`' bounds, `contour`'s values, `clip`'s value by a field | the field's unit, offsets included (`"20 degC"` on a field in kelvin) |
+| `advect`'s and `streamlines`' step size | the spatial unit over the velocity's |
+| a mass or density given as one number to SPH or the halo catalogue, `upwind_flux`'s velocity | none: the quantity brings its unit, so the result has one (`mass=(1e10, "Msun")` makes densities in `Msun/kpc**3`) |
+
+A quantity needs a unit to convert to: one given for a dataset or field of
+unknown unit is refused, as is one for an implicit function's values, which
+have none. A string that names a field (`smoothing_length="h"`) is the
+field.
 
 ## Mismatches are refused
 

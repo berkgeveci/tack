@@ -293,10 +293,13 @@ class PointLocator:
 
     @on_inputs_device
     def __init__(self, data, bin_size=None, points_per_bin=4, periodic=None):
+        from tack.dataset.algorithms._common import _length
         from tack.dataset.carry import _point_values
         from tack.dataset.dataset import DataSet
         from tack.dataset.spaces import H1
 
+        bin_size = _length(data, bin_size, "the bin size")
+        periodic = _length(data, periodic, "the periodic box")
         if not isinstance(data.geometry.space, H1):
             raise TypeError("a PointLocator needs an H1 geometry: one position per point")
         if bin_size is not None and not bin_size > 0:
@@ -395,6 +398,9 @@ class PointLocator:
         ``(offsets, ids)``, the neighbours of query ``q`` at ``ids[offsets[q]:
         offsets[q + 1]]``, by bin and then by index. The queries are the points
         themselves (each leaving itself out) unless ``points`` are given."""
+        from tack.dataset.algorithms._common import _length
+
+        radius = _length(self.data, radius, "the radius")
         if not radius >= 0:
             raise ValueError(f"radius must be at least zero, not {radius!r}")
         self.check_radius(radius)
