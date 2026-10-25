@@ -1915,6 +1915,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ghost-cells" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ghost cells
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3487,6 +3498,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ghost-cells" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ghost cells
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3587,10 +3609,25 @@ and curvilinear boxes have no such constraint. Ratios may differ per axis.</p>
 back for images and rectilinear grids; a hierarchy with curvilinear boxes goes
 to VTK as a <code>vtkPartitionedDataSetCollection</code> of a partitioned dataset per
 level. <code>amr_gaussian_pulse</code> makes VTK's Gaussian pulse hierarchy, for tests.</p>
+<h2 id="ghost-cells">Ghost cells<a class="headerlink" href="#ghost-cells" title="Permanent link">&para;</a></h2>
+<p><code>ghost_cells(amr, layers=1)</code> grows every box by a layer within its level's
+domain. A ghost a sibling box holds is copied from it; one no sibling holds
+comes from the coarser level, the coarse cell's value for a cell and an
+interpolation of the coarse cell's corners for a point. A grid's positions are
+filled the same way, so curvilinear and rectilinear boxes grow as images do.
+A ghost neither holds is hidden. Afterwards, <code>update_ghosts(amr, "name")</code>
+refreshes the ghosts after a filter changed the owned values, and
+<code>average_down(amr, "name")</code> puts the fine levels' data into the coarse cells
+and points they cover:</p>
+<div class="highlight"><pre><span></span><code><span class="n">grown</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">amr</span><span class="p">)</span>                <span class="c1"># every box a layer wider</span>
+<span class="k">for</span> <span class="n">level</span><span class="p">,</span> <span class="n">box</span> <span class="ow">in</span> <span class="n">grown</span><span class="p">:</span>
+    <span class="n">box</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;g&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">box</span><span class="p">,</span> <span class="s2">&quot;f&quot;</span><span class="p">,</span> <span class="n">at</span><span class="o">=</span><span class="s2">&quot;points&quot;</span><span class="p">)</span>   <span class="c1"># right where owned</span>
+<span class="n">td</span><span class="o">.</span><span class="n">update_ghosts</span><span class="p">(</span><span class="n">grown</span><span class="p">,</span> <span class="s2">&quot;g&quot;</span><span class="p">)</span>               <span class="c1"># the ghosts&#39; from their owners</span>
+<span class="n">td</span><span class="o">.</span><span class="n">average_down</span><span class="p">(</span><span class="n">grown</span><span class="p">,</span> <span class="s2">&quot;g&quot;</span><span class="p">)</span>                <span class="c1"># coarse cells under fine ones: the fine average</span>
+</code></pre></div>
 <h2 id="next">Next<a class="headerlink" href="#next" title="Permanent link">&para;</a></h2>
-<p>Ghost cells (copied from sibling boxes, and interpolated from the coarser
-level where none holds the cell), <code>average_down</code>, probing at the finest level
-and resampling onto one image are the next phases.</p>
+<p>Probing at the finest level, resampling onto one image, and boxes spread over
+MPI ranks and devices are the next phase.</p>
 
 
 

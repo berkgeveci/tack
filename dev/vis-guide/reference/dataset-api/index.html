@@ -4898,13 +4898,24 @@ level covers is a matter of integer boxes. VTK's AMR holds images and (since
 <td>VTK's <code>vtkAMRGaussianPulseSource</code>: two levels, <code>Gaussian-Pulse</code> and <code>Centroid</code> on the cells</td>
 </tr>
 <tr>
+<td><code>ghost_cells(amr, layers=1, fields=None)</code></td>
+<td>each box grown by <code>layers</code> cells within its level's domain (<code>amr.level_domain(level)</code>), the ghosts marked <code>DUPLICATECELL</code> and <code>DUPLICATEPOINT</code>: a ghost a sibling box holds is its value, copied (AMReX's <code>FillBoundary</code>); one no sibling holds takes the coarser level's -- the coarse cell's value for a cell (injection), the coarse cell's corners by linear weights for a point (<code>FillPatchTwoLevels</code>) -- read from each value's owner; one neither holds is <code>HIDDENCELL</code>/<code>HIDDENPOINT</code>. A grid's ghost positions are filled the same way (an image's are its lattice), so rectilinear and curvilinear boxes grow too, a hidden point's position extrapolated along the grid. Ghosts a finer box covers are refined. <code>amr.layers</code> says how many</td>
+</tr>
+<tr>
+<td><code>update_ghosts(amr, *names)</code></td>
+<td>refreshes both kinds of ghost, and the points a box shares with a lower sibling, from their owners, after a filter: one <code>tack.communication.Plan</code> per kind, kept, and a kernel summing by weight</td>
+</tr>
+<tr>
+<td><code>average_down(amr, name)</code></td>
+<td>in place, finest level first: each refined coarse cell the volume-weighted average of the fine cells over it, each refined coarse point the coinciding fine point's value (AMReX's <code>average_down</code>)</td>
+</tr>
+<tr>
 <td>interop</td>
 <td><code>vtk_to_dataset(vtkOverlappingAMR)</code> gives an <code>AMRDataSet</code> (blocks placed by their <code>vtkAMRBox</code>); <code>dataset_to_vtk(amr)</code> a <code>vtkOverlappingAMR</code> when every box is an image or a rectilinear grid and each ratio is the same along every axis, else a <code>vtkPartitionedDataSetCollection</code> of a partitioned dataset per level. VTK's <code>BlankCells</code> marks the export as Tack does</td>
 </tr>
 </tbody>
 </table>
-<p>Ghost cells (from siblings and from the coarser level), <code>average_down</code>,
-<code>probe</code> at the finest level and resampling onto one image are the next phases
+<p><code>probe</code> at the finest level and resampling onto one image are the next phase
 (the vault's AMR proposal).</p>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>A dataset is on the device its arrays are on, and it computes there: every
