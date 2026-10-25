@@ -83,11 +83,57 @@ class AMRDataSet:
             self._first.append(int(sum(len(part) for part in every[:world.rank])))
             boxes.append(np.concatenate(every).reshape(-1, 2, 3))
         self._boxes = boxes
+        #: Each box's arrays' cell-index box: the box itself, or grown by ghost
+        #: layers (``ghost_cells``).
+        self._extents = [b.copy() for b in boxes]
+        self.layers = 0
+        self._fills = None
         self.domain = self._domain(domain)
         self._check(given)
         self.levels = tuple(PartitionedDataSet([self._marked(level, k, piece)
                                                 for k, piece in enumerate(pieces)], world)
                             for level, pieces in enumerate(given))
+
+    @classmethod
+    def _grown(cls, base, levels, extents, layers, fills):
+        """A hierarchy of ``base``'s boxes grown by ghost layers: ``levels`` the grown
+        boxes (marks made), ``extents`` their cell-index boxes, ``fills`` what
+        refreshes their ghosts."""
+        out = cls.__new__(cls)
+        out.world, out.dimension, out.ratios = base.world, base.dimension, base.ratios
+        out._boxes, out._first, out.domain = base._boxes, base._first, base.domain
+        out._extents, out.layers, out._fills = extents, layers, fills
+        out.levels = tuple(PartitionedDataSet(pieces, base.world) for pieces in levels)
+        return out
+
+    def level_domain(self, level):
+        """``domain`` refined to ``level``: its cell-index box there."""
+        scale = np.ones(3, np.int64)
+        for r in self.ratios[:level]:
+            scale *= np.asarray(r, np.int64)
+        lo, hi = (np.asarray(c, np.int64) for c in self.domain)
+        return lo * scale, hi * scale
+
+    def _refined(self, level, lo, hi):
+        """Which cells and points of the cell-index box ``[lo, hi)`` of ``level`` a
+        finer level covers: two bool arrays shaped z, y, x (``dimension`` axes)."""
+        d = self.dimension
+        lo, hi = np.asarray(lo)[:d], np.asarray(hi)[:d]
+        cells = np.zeros(tuple(int(v) for v in (hi - lo)[::-1]), bool)
+        points = np.zeros(tuple(int(v) + 1 for v in (hi - lo)[::-1]), bool)
+        if level + 1 < self.num_levels:
+            ratio = np.asarray(self.ratios[level])[:d]
+            for child in self._boxes[level + 1]:
+                clo, chi = _coarsened(child, self.ratios[level])
+                a, b = np.maximum(clo[:d], lo), np.minimum(chi[:d], hi)
+                if (a < b).all():
+                    cells[_slices(a - lo, b - lo)] = True
+                # A point refined: its location p * ratio is one of the child's points.
+                a = np.maximum(-(-child[0, :d] // ratio), lo)
+                b = np.minimum(child[1, :d] // ratio, hi)
+                if (a <= b).all():
+                    points[_slices(a - lo, b - lo + 1)] = True
+        return cells, points
 
     # -- what it holds ---------------------------------------------------
 
@@ -218,20 +264,9 @@ class AMRDataSet:
         lo, hi = box[0, :d], box[1, :d]
         cell_shape = tuple(int(v) for v in (hi - lo)[::-1])
         point_shape = tuple(int(v) + 1 for v in (hi - lo)[::-1])
-        cells = np.zeros(cell_shape, np.uint8)
-        points = np.zeros(point_shape, np.uint8)
-        if level + 1 < self.num_levels:
-            ratio = np.asarray(self.ratios[level])[:d]
-            for child in self._boxes[level + 1]:
-                clo, chi = _coarsened(child, self.ratios[level])
-                a, b = np.maximum(clo[:d], lo), np.minimum(chi[:d], hi)
-                if (a < b).all():
-                    cells[_slices(a - lo, b - lo)] |= Ghosts.REFINEDCELL
-                # A point refined: its location p * ratio is one of the child's points.
-                a = np.maximum(-(-child[0, :d] // ratio), lo)
-                b = np.minimum(child[1, :d] // ratio, hi)
-                if (a <= b).all():
-                    points[_slices(a - lo, b - lo + 1)] |= Ghosts.REFINEDPOINT
+        refined_cells, refined_points = self._refined(level, box[0], box[1])
+        cells = np.where(refined_cells, Ghosts.REFINEDCELL, 0).astype(np.uint8)
+        points = np.where(refined_points, Ghosts.REFINEDPOINT, 0).astype(np.uint8)
         index = self._first[level] + k
         for other in self._boxes[level][:index]:
             a, b = np.maximum(other[0, :d], lo), np.minimum(other[1, :d], hi)
