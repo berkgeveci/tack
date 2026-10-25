@@ -165,8 +165,8 @@ REFUSED = {"log_values": "takes a pure number"}
 
 #: Filters whose output's geometry is not in the input's spatial unit:
 #: cylindrical and spherical coordinates mix an angle with lengths, and probe
-#: gives back its target, a dataset of no unit here.
-UNKNOWN_SPACE = {"cylindrical", "spherical", "probe"}
+#: and voxelize give back their target, a dataset of no unit here.
+UNKNOWN_SPACE = {"cylindrical", "spherical", "probe", "voxelize"}
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))

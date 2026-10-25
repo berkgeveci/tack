@@ -1198,6 +1198,13 @@ data goes to each, the points stay the same.
 
 ## Locating points, probing and advection
 
+`voxelize(data, grid, fields=None, samples=4)` puts ``data`` on the voxels
+(cells) of an image: `fraction`, the share of each voxel the data covers, and
+each field's mean over it, as cell data, by `samples` probes a side per voxel
+(the same bits every run; batched); voxels the data does not reach are
+`HIDDENCELL`. It takes what `probe` takes (datasets, pieces, AMR hierarchies,
+octrees); with one sample it is the probe at the voxel centres.
+
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
 uniform grid over the dataset, about `density` bins per cell. It records
 the topology, the geometry's values and their state when made;

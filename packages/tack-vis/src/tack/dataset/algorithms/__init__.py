@@ -69,6 +69,7 @@ from tack.dataset.algorithms.triangulate import triangulate
 from tack.dataset.algorithms.upwind_flux import upwind_flux
 from tack.dataset.algorithms.values_at_centers import values_at_centers
 from tack.dataset.algorithms.voxel_downsample import voxel_downsample
+from tack.dataset.algorithms.voxelize import voxelize
 from tack.dataset.algorithms.warp import warp
 
 __all__ = [
@@ -149,5 +150,6 @@ __all__ = [
     "upwind_flux",
     "values_at_centers",
     "voxel_downsample",
+    "voxelize",
     "warp",
 ]

@@ -51,6 +51,43 @@ Probing takes shape-based cells, polyhedra (located in sub-tetrahedra), polygons
 segments). A `Values` field on faces is not a
 continuous field that can be sampled arbitrarily through the volume.
 
+## Voxelize onto a uniform grid
+
+`probe` onto an image samples one point per image point. `voxelize(data,
+grid)` gives each **voxel** (an image cell) the share of its volume the data
+covers, `fraction`, and each field's mean over that share, as cell data:
+what a simulation's fields are on a uniform grid, for analysis or for
+learning. Each voxel is sampled at `samples` points a side (4 by default, so
+64 in 3D) through `probe`, so `fraction` is right to about one sample's share
+and a mean is the samples' mean; voxels the data does not reach are hidden.
+It takes anything `probe` takes: datasets, pieces over MPI ranks, AMR
+hierarchies and octrees.
+
+<!-- tack-check: voxelize -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+# A ball of tetrahedra, cut from a cube, with a temperature rising along x.
+mesh = td.tetrahedralize(td.uniform_grid((11, 11, 11), spacing=(0.1, 0.1, 0.1)))
+x = mesh.positions().astype(np.float64)
+mesh.fields["r"] = td.Field(td.H1(mesh), tack.array(np.linalg.norm(x - 0.5, axis=1)))
+mesh.fields["T"] = td.Field(td.H1(mesh), tack.array(300.0 + 10.0 * x[:, 0]), unit="K")
+ball = td.clip(mesh, "r", 0.4, inside=True)
+
+voxels = td.uniform_grid((6, 6, 6), spacing=(0.2, 0.2, 0.2))
+v = td.voxelize(ball, voxels, samples=6)
+covered = v.fields["fraction"].values.numpy().sum() * 0.2 ** 3
+volume = td.cell_geometry(ball).measure.values.numpy().sum()
+print(f"covered {covered:.4f} of the ball's {volume:.4f}")
+assert abs(covered - volume) < 0.02 * volume
+assert v.fields["T"].unit == "K"
+```
+
 ## Integrate a steady velocity field
 
 ```python

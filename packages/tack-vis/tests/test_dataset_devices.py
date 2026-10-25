@@ -181,6 +181,7 @@ CALLS = {
     "point_normals_radius": lambda d: td.point_normals(d, radius=1.0),
     "connected_components_radius": lambda d: td.connected_components(d, radius=0.5, min_size=2),
     "deposit": lambda d: td.deposit(d, _image(d)),
+    "voxelize": lambda d: td.voxelize(d, _image(d), samples=2),
     "deposit_cic": lambda d: td.deposit(d, _image(d), "s", "mean", method="cic"),
     "sph_interpolate": lambda d: td.sph_interpolate(d, d, ["s", "v"], smoothing_length=0.6,
                                                     mass=1.0, density=1.0),

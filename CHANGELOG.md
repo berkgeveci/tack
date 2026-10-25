@@ -7,6 +7,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Voxelization: `td.voxelize(data, grid, fields=None, samples=4)`, each voxel
+  of an image the fraction of its volume the data covers and each field's
+  mean over it, by sampling through `probe`, so for datasets, pieces, AMR
+  hierarchies and octrees alike.
 - Cell quality: `td.cell_quality(data, measures)`, the scaled Jacobian,
   Jacobian ratio, condition number, edge ratio and shortest and longest edge
   of every cell, each 1 on its shape's ideal cell. Verdict's definitions
