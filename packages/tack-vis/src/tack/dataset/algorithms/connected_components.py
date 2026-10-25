@@ -8,6 +8,7 @@ import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids
+from tack.dataset.algorithms._common import _length
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
@@ -236,6 +237,8 @@ def connected_components(data, radius=None, min_size=None, periodic=None, locato
     the same order. ``periodic`` (a box, as ``PointLocator`` takes it) joins
     points across its faces, as a cosmology box needs. ``locator`` reuses a
     ``PointLocator`` of ``data``."""
+    radius = _length(data, radius, "connected_components's radius")
+    periodic = _length(data, periodic, "connected_components's periodic box")
     if radius is not None and not radius >= 0:
         raise ValueError(f"radius must be at least zero, not {radius!r}")
     if isinstance(data, PartitionedDataSet):

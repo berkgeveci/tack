@@ -24,6 +24,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   distances, normals, particle times. A difference of degrees Celsius is in
   kelvin; such values are not multiplied. `log_values` refuses a dimensioned
   field. `interpolate(..., unit=)` states a function's unit.
+- Quantities as parameters: lengths (`voxel_downsample(cloud, "10 cm")`,
+  radii, periodic boxes, smoothing lengths, softening, `slice_plane`'s
+  origin), thresholds and isovalues (`threshold(data, "T", "20 degC", ...)`)
+  and step sizes take a string, a `(value, unit)` pair or a unyt or pint
+  quantity, converted on the host; a plain number is as before. A mass,
+  density or velocity given as one quantity brings its unit to the result.
 - Octrees, a first pass: `td.OctreeDataSet`, a grid of octrees (VTK's
   HyperTreeGrid with branching factor 2) stored as a linear octree for GPUs,
   each node its tree, level and Morton key, sorted in pre-order; leaves,

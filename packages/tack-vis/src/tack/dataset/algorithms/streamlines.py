@@ -2,9 +2,9 @@
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import ids
+from tack.dataset import ids, units
 from tack.dataset.algorithms._advection import _run
-from tack.dataset.algorithms._common import _close, _time_unit
+from tack.dataset.algorithms._common import _close, _has_quantity, _time_unit
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -57,6 +57,9 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
     piece, each piece holding the stretches it traced
     (``_particles.streamlines_pieces``)."""
+    # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
+    if _has_quantity(step_size):
+        step_size = units.magnitude(step_size, _time_unit(data, field), "streamlines's step size")
     from tack.dataset.partitioned import PartitionedDataSet
 
     if isinstance(data, PartitionedDataSet):

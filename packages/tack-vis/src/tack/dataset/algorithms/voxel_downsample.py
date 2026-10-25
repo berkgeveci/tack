@@ -5,6 +5,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
+from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms._extract import _keep_points, _vertices
 from tack.dataset.carry import _point_values, selected
 from tack.dataset.dataset import Field
@@ -90,6 +91,7 @@ def voxel_downsample(data, size, keep="centroid", fields=None):
     reduced there. A voxel belongs to the piece of its first point, which keeps
     its centroid; ``"first"`` and ``"nearest"`` keep input points on their own
     pieces. Each piece of the result holds its share of the whole's points."""
+    size = _length(data, size, "voxel_downsample's size")
     if keep not in _KEEP:
         raise ValueError(f"keep is one of {', '.join(map(repr, _KEEP))}, not {keep!r}")
     sizes = np.broadcast_to(np.asarray(size, np.float64), (3,)).astype(float)

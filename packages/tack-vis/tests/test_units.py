@@ -499,3 +499,102 @@ def test_interpolate_takes_the_unit_it_cannot_infer():
     data = _labelled(_hexes(tack.device("cpu")))
     assert td.interpolate(data, _height, td.H1(data), unit="m").unit == "m"
     assert td.interpolate(data, _height, td.H1(data)).unit is None
+
+
+# -- quantities as parameters (U2) -------------------------------------------------------
+
+def test_quantities_parse_and_convert():
+    assert units.quantity("10 cm") == (10.0, "cm")
+    assert units.quantity((2, "ft")) == (2, "ft")
+    assert units.quantity("h") is None and units.quantity(3.0) is None
+    assert units.quantity("4") == (4.0, "dimensionless")
+    from unyt import unyt_quantity
+
+    assert units.quantity(unyt_quantity(5.0, "kpc")) == (5.0, "kpc")
+    assert units.magnitude("10 cm", "m", "x") == pytest.approx(0.1)
+    assert units.magnitude("20 degC", "K", "x") == pytest.approx(293.15)
+    assert units.magnitude(0.3, "m", "x") == 0.3                      # as given
+    np.testing.assert_allclose(units.magnitude(([1, 2, 3], "km"), "m", "x"), [1e3, 2e3, 3e3])
+    np.testing.assert_allclose(units.magnitude(["300 K", "310 K"], "degC", "x"),
+                               [26.85, 36.85])
+    with pytest.raises(ValueError, match="radius is given in 'm', but"):
+        units.magnitude("1 m", None, "radius")
+
+
+def _cloud(unit="m", n=300, seed=0):
+    rng = np.random.default_rng(seed)
+    return td.point_cloud(rng.uniform(0.0, 4.0, (n, 3)),
+                          fields={"m": np.full(n, 2.0), "rho": np.full(n, 4.0),
+                                  "h": np.full(n, 0.8), "T": 280 + 30 * rng.random(n),
+                                  "v": rng.random((n, 3))},
+                          unit=unit, units={"m": "kg", "rho": "kg/m**3", "h": "m", "T": "K",
+                                            "v": "m/s"}, origin=(0.0, 0.0, 0.0))
+
+
+def test_lengths_take_quantities():
+    cloud = _cloud()
+    same = lambda a, b: np.testing.assert_array_equal(a.positions(), b.positions())
+    same(td.voxel_downsample(cloud, "50 cm"), td.voxel_downsample(cloud, 0.5))
+    a = td.outliers(cloud, radius="600 mm", min_neighbors=3)
+    b = td.outliers(cloud, radius=0.6, min_neighbors=3)
+    np.testing.assert_array_equal(a.fields["outlier"].values.numpy(),
+                                  b.fields["outlier"].values.numpy())
+    a = td.connected_components(cloud, radius=(0.5, "m"), periodic="4 m")
+    b = td.connected_components(cloud, radius=0.5, periodic=4.0)
+    np.testing.assert_array_equal(a.fields["region"].values.numpy(),
+                                  b.fields["region"].values.numpy())
+    a = td.point_normals(cloud, radius="1 m")
+    np.testing.assert_array_equal(a.fields["normals"].values.numpy(),
+                                  td.point_normals(cloud, radius=1.0).fields["normals"]
+                                  .values.numpy())
+    locator = td.PointLocator(cloud, bin_size="1 m")
+    offsets, ids = locator.neighbors("50 cm")
+    expected = td.PointLocator(cloud, bin_size=1.0).neighbors(0.5)
+    np.testing.assert_array_equal(ids.numpy(), expected[1].numpy())
+    pieces = td.split(td.uniform_grid((6, 5, 4), unit="m"), (2, 1, 1))
+    clouds = td.PartitionedDataSet([td.point_cloud(p.world_positions(), unit="m",
+                                                   origin=(0, 0, 0)) for p in pieces])
+    ghosted = td.ghost_points(clouds, radius="1.5 m")
+    assert [p.num_points for p in ghosted] == [p.num_points for p in
+                                               td.ghost_points(clouds, radius=1.5)]
+    # A length needs a spatial unit to convert to.
+    with pytest.raises(ValueError, match="no unit"):
+        td.voxel_downsample(td.point_cloud(np.zeros((4, 3))), "1 m")
+
+
+def test_field_values_take_quantities():
+    data = _labelled(_hexes(tack.device("cpu")))           # s in kelvin
+    a = td.threshold(data, "s", "-273.15 degC", "-270.15 degC")
+    b = td.threshold(data, "s", 0.0, 3.0)
+    assert a.num_cells == b.num_cells
+    assert td.threshold_points(data, "s", 0.0, "3000 mK").num_points == \
+        td.threshold_points(data, "s", 0.0, 3.0).num_points
+    np.testing.assert_array_equal(td.contour(data, "s", ["2 K", "3 K"]).positions(),
+                                  td.contour(data, "s", [2.0, 3.0]).positions())
+    assert td.clip(data, "s", "3000 mK").num_cells == td.clip(data, "s", 3.0).num_cells
+    with pytest.raises(ValueError, match="no unit"):
+        td.clip(data, td.Sphere((0, 0, 0), 1.0), "1 m")   # a function's values have none
+    np.testing.assert_allclose(
+        td.slice_plane(data, ((50.0, 0.0, 0.0), "cm"), (1, 0, 0)).positions(),
+        td.slice_plane(data, (0.5, 0.0, 0.0), (1, 0, 0)).positions())
+
+
+def test_parameters_that_bring_their_own_units():
+    cloud = _cloud(unit="cm")
+    density = td.sph_density(cloud, smoothing_length="80 cm", mass=(2.0, "kg"))
+    assert density.fields["density"].unit == "kg/cm**3"
+    np.testing.assert_array_equal(density.fields["density"].values.numpy(),
+                                  td.sph_density(cloud, smoothing_length=80.0, mass=2.0)
+                                  .fields["density"].values.numpy())
+    labelled = td.connected_components(cloud, radius="40 cm")
+    catalog = td.halo_catalog(labelled, mass="1e10 Msun", softening="1 cm")
+    assert catalog.fields["mass"].unit == "Msun"
+    data = _labelled(_hexes(tack.device("cpu")))
+    flux = td.upwind_flux(data, "s", ((1.0, 0.5, 0.0), "m/s"))
+    assert flux.unit == units.canonical("K*m**3/s")
+    assert td.upwind_flux(data, "s", (1.0, 0.5, 0.0)).unit is None
+    seeds = np.array([[0.5, 0.5, 0.5]], np.float32)
+    a = td.advect(data, "v", seeds, "10 ms", 3)
+    b = td.advect(data, "v", seeds, 0.01, 3)
+    np.testing.assert_array_equal(a.positions(), b.positions())
+    assert a.fields["time"].unit == "s"

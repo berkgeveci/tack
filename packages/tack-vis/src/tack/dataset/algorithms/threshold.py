@@ -2,7 +2,7 @@
 
 import tack
 from tack import arrays
-from tack.dataset.algorithms._common import _field, _with_basis
+from tack.dataset.algorithms._common import _field, _in_unit_of, _with_basis
 from tack.dataset.algorithms._extract import _keep_cells
 from tack.dataset.spaces import Constant
 from tack.runtime.dispatch import on_inputs_device
@@ -50,6 +50,8 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
     topology's polylines their chains; their facets' values, whose numbering is
     derived afresh, are left behind.
     """
+    lower, upper = (_in_unit_of(_field(data, field), v, "threshold's bounds")
+                    for v in (lower, upper))
     field = _field(data, field)
     if arrays.width_of(field.values):
         raise TypeError("threshold needs a scalar field")

@@ -15,7 +15,8 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
-from tack.dataset.algorithms._common import _field
+from tack.dataset import units
+from tack.dataset.algorithms._common import _field, _length
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.algorithms.sph import _per_particle
 from tack.dataset.buckets import bucket_order
@@ -305,11 +306,17 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
     index, and catalogued there: a ``PartitionedDataSet`` of catalogues, the
     halos in order of label across them, each ``mbp`` an index in the piece
     ``mbp_piece`` (a global piece id)."""
+    softening = _length(particles, softening, "the softening")
+    periodic = _length(particles, periodic, "the periodic box")
+    # One mass for every particle may bring its unit ("1e10 Msun", (1e10, "Msun")).
+    given_mass_unit = None
+    if units.quantity(mass) is not None:
+        mass, given_mass_unit = units.number_and_unit(mass)
     if center not in _CENTER:
         raise ValueError(f"center is one of {', '.join(map(repr, _CENTER))}, not {center!r}")
     if isinstance(particles, PartitionedDataSet):
         return _catalog_pieces(particles, region, mass, velocity, center, softening, G,
-                               periodic)
+                               periodic, given_mass_unit)
         raise ValueError(f"center is one of {', '.join(map(repr, _CENTER))}, not {center!r}")
     if not isinstance(particles.geometry.space, H1):
         raise TypeError("halo_catalog needs the particles' positions: an H1 geometry")
@@ -369,7 +376,8 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
         _halo_labels(sorted_labels, offsets, start, halo_labels)
     # The mass is the particles' mass field's; the potential's G is a number, so
     # its unit is unknown; labels, counts and indices are not quantities.
-    mass_unit = _field(particles, mass).unit if isinstance(mass, (str, Field)) else None
+    mass_unit = _field(particles, mass).unit if isinstance(mass, (str, Field)) else \
+        given_mass_unit
     for name, values, unit in (("halo", halo_labels, None), ("count", counts, None),
                                ("mass", total, mass_unit), ("mbp", mbp, None),
                                ("potential", potential, None),
@@ -401,7 +409,8 @@ def _taken(values, order, n):
     return out
 
 
-def _catalog_pieces(data, region, mass, velocity, center, softening, G, periodic):
+def _catalog_pieces(data, region, mass, velocity, center, softening, G, periodic,
+                    mass_unit=None):
     """``halo_catalog`` over pieces: each halo's owned particles sorted to one block
     (``tack.communication.sort_by_key`` by label), catalogued there."""
     from tack import communication as tc
@@ -449,7 +458,8 @@ def _catalog_pieces(data, region, mass, velocity, center, softening, G, periodic
         with blocks.device(g):
             cloud = _vertices(got["x"], piece)
             cloud.fields["region"] = Field(H1(cloud), sorted_keys[g])
-            masses = Field(H1(cloud), got["m"], piece.fields[mass].unit) if by_name else mass
+            masses = Field(H1(cloud), got["m"], piece.fields[mass].unit) if by_name else \
+                (mass if mass_unit is None else (mass, mass_unit))
             speeds = Field(H1(cloud), got["v"], piece.fields[velocity].unit) \
                 if velocity is not None else None
             catalog = halo_catalog(cloud, "region", mass=masses, velocity=speeds,

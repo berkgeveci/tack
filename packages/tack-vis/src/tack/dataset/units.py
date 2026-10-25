@@ -20,12 +20,20 @@ takes, is in kelvin (Rankine), the same size of degree with zero at zero
 (``delta``). ``named`` shows a derived unit by its SI name (``Pa*m**3`` as
 ``J``) where a filter names what it computes.
 
+Parameters take quantities (``quantity``, ``magnitude``): a string such as
+``"10 cm"``, a pair ``(value, unit)`` (the value a number or an array), or a
+unyt or pint quantity. A plain number is in the unit the parameter is in (the
+geometry's for a length, the field's for an isovalue), as before.
+
 unyt (with sympy) is imported on first use, so a program that gives no unit
 pays nothing. Tack hands out strings only, never unyt objects.
 """
 
 import math
+import re
 from functools import lru_cache
+
+import numpy as np
 
 _registry = None
 
@@ -190,4 +198,66 @@ def dimensionless_or_none(what, unit):
         return "dimensionless"
     raise ValueError(f"{what} takes a pure number, not values in {unit!r}: convert to "
                      "'dimensionless' (divide by a reference) first")
+
+
+_NUMBER = re.compile(r"^\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(.*?)\s*$")
+
+
+def quantity(value):
+    """``(magnitude, unit)`` of a quantity -- a string ``"10 cm"``, a pair ``(value,
+    unit)`` with ``unit`` a string, or a unyt or pint quantity (``.units`` and
+    ``.value`` or ``.magnitude``) -- or ``None`` for anything else (a plain
+    number, an array, a field's name is not parsed here). A string with a number
+    and no unit is a pure number."""
+    if isinstance(value, str):
+        match = _NUMBER.match(value)
+        if match is None:
+            return None
+        number, unit = match.groups()
+        return float(number), canonical(unit or "dimensionless")
+    if isinstance(value, (tuple, list)) and len(value) == 2 and isinstance(value[1], str) \
+            and not isinstance(value[0], str):
+        return value[0], canonical(value[1])
+    units_of = getattr(value, "units", None)
+    if units_of is not None:
+        number = getattr(value, "value", None)
+        if number is None:
+            number = getattr(value, "magnitude", None)
+        if number is not None:
+            if np.ndim(number) == 0:
+                number = float(number)
+            return number, canonical(str(units_of))
+    return None
+
+
+def magnitude(value, unit, what):
+    """``value`` as a number (or numbers) in ``unit``: a quantity (``quantity``)
+    converted, scale and offset; a sequence of quantities each; anything else
+    as given, taken to be in ``unit`` already. Converting a quantity needs
+    ``unit`` known; ``what`` names the parameter in the refusal."""
+    found = quantity(value)
+    if found is None:
+        if isinstance(value, (tuple, list)) and any(quantity(v) is not None
+                                                    for v in value):
+            return type(value)(magnitude(v, unit, what) for v in value)
+        return value
+    number, given = found
+    if unit is None:
+        raise ValueError(f"{what} is given in {given!r}, but what it is compared with has "
+                         "no unit: give the dataset (or field) a unit, or pass a plain "
+                         "number")
+    factor, offset = conversion(given, unit)
+    if factor == 1.0 and offset == 0.0:
+        return number
+    if isinstance(number, (int, float)):
+        return factor * number + offset
+    return np.asarray(number, np.float64) * factor + offset
+
+
+def number_and_unit(value):
+    """``(number, unit)`` of a parameter that may bring its own unit (a mass, a
+    velocity): a quantity's magnitude and unit, else the value as given and
+    ``None``."""
+    found = quantity(value)
+    return (value, None) if found is None else found
 
