@@ -134,7 +134,9 @@ class WarpCodeGen:
         lines = ["import warp as wp", ""]
         for helper in self._helpers.values():
             lines += [*helper, ""]
-        lines += ["@wp.kernel", f"def {entry}({', '.join(params)}):"]
+        # A module of its own, named by the kernel's content: variants with the
+        # same code share one, and Warp's cache finds it in every process.
+        lines += ['@wp.kernel(module="unique")', f"def {entry}({', '.join(params)}):"]
         return "\n".join(lines + self._lines) + "\n", entry
 
     # ── Statements ───────────────────────────────────────────────────

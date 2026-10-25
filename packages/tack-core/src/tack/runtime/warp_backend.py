@@ -95,6 +95,7 @@ class WarpBackend(GPUBackend):
         wp.init()
         self.wp_device = wp.get_device()
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: variant}
+        self._kernels = {}                # generated source -> its wp.Kernel
 
     @property
     def memory_domain(self) -> tuple:
@@ -146,6 +147,12 @@ class WarpBackend(GPUBackend):
         """
         wp = _warp()
         source, entry, tables = generate_warp_source(typed_ir)
+        kernel = self._kernels.get(source)
+        if kernel is not None:
+            # Two variants that differ only in what the code does not depend
+            # on (a CPU-only disjointness, a dimension it never reads) compiled
+            # the same module twice.
+            return kernel
         number = next(_modules)
         filename = f"<tack-warp-{number}>"
         linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
@@ -153,6 +160,7 @@ class WarpBackend(GPUBackend):
         exec(compile(source, filename, "exec"), namespace)
         kernel = namespace[entry]
         kernel.tack_source = source
+        self._kernels[source] = kernel
         # Constant tables, made once on the device and passed at every launch.
         kernel.tack_tables = [
             wp.array(np.asarray(values, dtype=dtype.numpy_dtype),
