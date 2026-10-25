@@ -45,10 +45,6 @@
          <lastmod>2026-10-25</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/dev/design/dataset-api/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
          <loc>https://berkgeveci.github.io/tack/dev/design/interoperability/</loc>
          <lastmod>2026-10-25</lastmod>
     </url>
@@ -62,10 +58,6 @@
     </url>
     <url>
          <loc>https://berkgeveci.github.io/tack/dev/design/parallel-execution/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/design/polyhedra/</loc>
          <lastmod>2026-10-25</lastmod>
     </url>
     <url>
@@ -125,10 +117,6 @@
          <lastmod>2026-10-25</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/dev/reference/dataset-api/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
          <loc>https://berkgeveci.github.io/tack/dev/reference/language-contract/</loc>
          <lastmod>2026-10-25</lastmod>
     </url>
@@ -169,10 +157,6 @@
          <lastmod>2026-10-25</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/09-visualization/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
          <loc>https://berkgeveci.github.io/tack/dev/users-guide/11-reductions-and-scans/</loc>
          <lastmod>2026-10-25</lastmod>
     </url>
@@ -205,38 +189,6 @@
          <lastmod>2026-10-25</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/00-function-spaces/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/01-datasets/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/02-meshes/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/03-fields-and-spaces/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/04-filters/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/05-mesh-kernels/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/06-pipelines/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/data/07-partitioned/</loc>
-         <lastmod>2026-10-25</lastmod>
-    </url>
-    <url>
          <loc>https://berkgeveci.github.io/tack/dev/users-guide/tutorials/</loc>
          <lastmod>2026-10-25</lastmod>
     </url>
@@ -262,6 +214,58 @@
     </url>
     <url>
          <loc>https://berkgeveci.github.io/tack/dev/users-guide/tutorials/physarum/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/00-function-spaces/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/01-datasets/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/02-meshes/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/03-fields-and-spaces/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/04-filters/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/05-mesh-kernels/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/06-pipelines/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/07-partitioned/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/examples/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/design/dataset-api/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/design/polyhedra/</loc>
+         <lastmod>2026-10-25</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/reference/dataset-api/</loc>
          <lastmod>2026-10-25</lastmod>
     </url>
 </urlset>

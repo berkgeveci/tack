@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Kitware, Inc.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Run the user guide's small numerical checks on one explicitly chosen backend."""
+"""Run the guides' small numerical checks on one explicitly chosen backend."""
 
 import argparse
 import re
@@ -13,28 +13,30 @@ EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
             "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
             "data_analysis", "data_mesh_kernels", "data_spaces", "data_partitioned")
 QUICKSTARTS = (
-    "01-getting-started", "02-arrays-and-types", "11-reductions-and-scans",
-    "12-execution-model", "14-vectors-and-matrices",
-    "09-visualization", "15-debugging-and-timing", "16-interoperability",
+    "users-guide/01-getting-started", "users-guide/02-arrays-and-types",
+    "users-guide/11-reductions-and-scans", "users-guide/12-execution-model",
+    "users-guide/14-vectors-and-matrices", "users-guide/15-debugging-and-timing",
+    "users-guide/16-interoperability", "vis-guide/index",
 )
+GUIDES = ("users-guide", "vis-guide")
 
 
 def check_quickstarts():
     """Execute the complete opening examples, including the actual Markdown code."""
-    guide = Path(__file__).resolve().parents[1] / "users-guide"
+    docs = Path(__file__).resolve().parents[1]
     checked = 0
     with tempfile.TemporaryDirectory(prefix="tack-guide-check-") as temporary:
         for name in QUICKSTARTS:
-            page = guide / f"{name}.md"
+            page = docs / f"{name}.md"
             blocks = re.findall(r"```python\n(.*?)```", page.read_text(encoding="utf-8"), flags=re.S)
             if not blocks:
                 raise RuntimeError(f"No Python quick start in {page.name}")
             code = blocks[0]
             if "import tack" not in code or "tack.set_default_device" not in code:
                 raise RuntimeError(f"The first Python example in {page.name} is not standalone")
-            if name == "09-visualization":
+            if name == "vis-guide/index":
                 code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'
-            script = Path(temporary) / f"{name}.py"
+            script = Path(temporary) / f"{name.replace('/', '-')}.py"
             script.write_text(code, encoding="utf-8")
             print(f"Checking Markdown quick start: {page.name} on cpu", flush=True)
             subprocess.run([sys.executable, str(script)], check=True, timeout=120,
@@ -45,12 +47,12 @@ def check_quickstarts():
         # <!-- tack-check: example-name --> immediately before a Python fence.
         # Execute the displayed Markdown so its inputs and assertions cannot
         # drift away from a separate validation script.
-        for page in sorted(guide.glob("*.md")):
+        for page in sorted(p for guide in GUIDES for p in (docs / guide).glob("*.md")):
             blocks = re.findall(
                 r"<!-- tack-check: ([a-z0-9-]+) -->\s*```python\n(.*?)```",
                 page.read_text(encoding="utf-8"), flags=re.S)
             for name, code in blocks:
-                script = Path(temporary) / f"{page.stem}-{name}.py"
+                script = Path(temporary) / f"{page.parent.name}-{page.stem}-{name}.py"
                 script.write_text(code, encoding="utf-8")
                 print(f"Checking Markdown example: {page.name}/{name} on cpu", flush=True)
                 subprocess.run([sys.executable, str(script)], check=True, timeout=120,
