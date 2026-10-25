@@ -18,7 +18,9 @@ class Plan:
     each source, in matching order. Indices are integer Tack arrays on the
     block's device, or anything ``numpy.asarray`` makes integers of. Every send
     must have a receive of its length on the other block, and the other way
-    round; this is checked across ranks when the plan is made.
+    round; this is checked across ranks when the plan is made. A block may send
+    to itself, as a piece in a periodic box is its own neighbour: what it sends
+    is gathered before anything is written.
     """
 
     def __init__(self, blocks, sends, receives):
@@ -108,8 +110,6 @@ def _indices(blocks, table, what, other_name):
         kept = {}
         for other in sorted(entries):
             blocks._check_gid(other, f"a {other_name} in Plan's {what}")
-            if other == gid:
-                raise ValueError(f"Plan's {what} has block {gid} exchanging with itself")
             indices = entries[other]
             if isinstance(indices, Array):
                 if indices.dtype not in (tack.i32, tack.i64, tack.u32, tack.u64):

@@ -148,7 +148,8 @@ def ghost_cells(data, layers=1, world=None, fields=None):
 
 def update_ghosts(data, *fields):
     """Copy the named fields' values on ghost points and cells from the pieces that
-    own them, in place, for a ``PartitionedDataSet`` that ``ghost_cells`` made.
+    own them, in place, for a ``PartitionedDataSet`` that ``ghost_cells`` or
+    ``ghost_points`` made.
 
     A filter that needs each entity's neighbours -- ``project`` to points, point
     gradients -- is right on what a piece owns and wrong on the ghost layer's
@@ -157,8 +158,8 @@ def update_ghosts(data, *fields):
     exchange moves all the point fields, one all the cell fields."""
     plans = getattr(data, "_ghost_plans", None)
     if plans is None:
-        raise ValueError("update_ghosts needs the PartitionedDataSet ghost_cells made, "
-                         "which keeps the exchanges")
+        raise ValueError("update_ghosts needs the PartitionedDataSet ghost_cells or "
+                         "ghost_points made, which keeps the exchanges")
     pieces = list(data)
     blocks = plans["points"].blocks
     by_kind = {"points": {g: {} for g in blocks.local}, "cells": {g: {} for g in blocks.local}}

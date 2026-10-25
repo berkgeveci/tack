@@ -228,7 +228,7 @@ def test_ghost_cells_refuse_what_they_cannot_do():
         td.ghost_cells(plain)
     out = td.ghost_cells(plain, fields=["RTData", "c"])
     assert sorted(out[0].fields) == ["RTData", "c"]
-    with pytest.raises(ValueError, match="ghost_cells made"):
+    with pytest.raises(ValueError, match="ghost_cells or ghost_points made"):
         td.update_ghosts(plain, "RTData")
     with pytest.raises(TypeError, match="point and cell fields"):
         for piece in out:

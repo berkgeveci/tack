@@ -223,7 +223,11 @@ def connected_components(data, radius=None, min_size=None, periodic=None, locato
     every rank: each piece labels its own, and pieces join the regions that
     meet at the points they share (``_components_pieces``). With global ids on
     every piece, regions are numbered in order of their lowest global cell id
-    -- the whole's numbering, for pieces carrying the whole's ids.
+    -- the whole's numbering, for pieces carrying the whole's ids -- else of
+    their lowest (piece, cell). With ``radius``, the pieces are point clouds:
+    each labels itself with copies of the other pieces' points within
+    ``radius`` (``ghost_points``), and a copy joins its region to its owner's.
+    ``min_size`` counts each point once, where it is owned.
 
     With ``radius``, points within that distance of each other (inclusive) are
     connected too: on a point cloud, whose cells are its points, that is
@@ -236,10 +240,13 @@ def connected_components(data, radius=None, min_size=None, periodic=None, locato
     if radius is not None and not radius >= 0:
         raise ValueError(f"radius must be at least zero, not {radius!r}")
     if isinstance(data, PartitionedDataSet):
-        if radius is not None or min_size is not None:
-            raise NotImplementedError("connected_components of a PartitionedDataSet by radius "
-                                      "or size needs ghost points, not built yet")
-        return _components_pieces(data)
+        if locator is not None:
+            raise ValueError("a PointLocator finds one piece's points; pieces take none")
+        if radius is not None:
+            return _components_near(data, float(radius), min_size, periodic)
+        if periodic is not None:
+            raise ValueError("periodic joins points within a radius across the box's faces")
+        return _components_pieces(data, min_size)
     cell_region, point_region, count = _labels(data, radius, locator, periodic)
     if min_size is not None and count:
         _smallest_dropped(cell_region, point_region, count, int(min_size))
@@ -270,20 +277,18 @@ def _with_regions(data, cell_region, point_region):
     return keep_marks(data, out)
 
 
-def _components_pieces(data):
+def _components_pieces(data, least=None):
     """``connected_components`` over the pieces of every rank.
 
     Each piece labels its own cells and points (``_labels``). Points several
     pieces hold -- the copies matched by global ids where every piece has them,
     else by exact position (``_matching.match``) -- join the local regions they
     lie in: each piece sends its partners, for each shared point, its region
-    there, and the edges between (piece, region) pairs, a small graph, are
-    gathered and joined on the host. A global region takes the lowest key of
-    its pieces' regions: the lowest global id of an owned cell, else (piece,
-    cell)."""
+    there, and the edges between (piece, region) pairs are joined
+    (``_joined_regions``). A global region takes the lowest key of its pieces'
+    regions: the lowest global id of an owned cell, else (piece, cell)."""
     from tack import communication as tc
     from tack.dataset import _matching
-    from tack.dataset._matching import INDEX_BITS
 
     pieces = list(data)
     common_origin(data, "connected_components of a PartitionedDataSet")
@@ -293,7 +298,7 @@ def _components_pieces(data):
         with piece.device:
             local[g] = _labels(piece)
     counts = {g: local[g][2] for g in blocks.local}
-    starts, total = blocks.exclusive_scan(counts)
+    starts = _starts(blocks, counts)
 
     # Copies of points across pieces.
     numbered = bool(blocks.all_reduce({g: int(p.global_ids is not None and
@@ -335,8 +340,8 @@ def _components_pieces(data):
                 "point": tack.array(pairs[:, 0].copy(), tack.i64, device=blocks.device(g)),
                 "region": tack.array(pairs[:, 1].copy(), tack.i64, device=blocks.device(g))}
     incoming = blocks.exchange(outgoing)
-    edges = {}
-    for g in blocks.local:
+    edges, keys, sizes = {}, {}, {}
+    for g, piece in zip(blocks.local, pieces):
         point_region = local[g][1].numpy()
         found = []
         for d, message in incoming[g].items():
@@ -345,27 +350,144 @@ def _components_pieces(data):
             keep = ours >= 0
             found.append(np.stack([starts[g] + ours[keep], starts[d] + theirs[keep]], axis=1))
         edges[g] = np.unique(np.concatenate(found), axis=0) if found else np.zeros((0, 2), np.int64)
+        keys[g] = _lowest_owned_cells(g, piece, local[g], numbered)
+        if least is not None:
+            # Each point counted once: where its lowest unmarked copy is.
+            marks = piece.ghosts.points.numpy() if piece.ghosts is not None and \
+                piece.ghosts.points is not None else np.zeros(piece.num_points, np.uint8)
+            identity = _matching.owners(g, piece.num_points, partners[g],
+                                        (marks & Ghosts.DUPLICATEPOINT) != 0)
+            sizes[g] = _owned_sizes(point_region, (identity >> _matching.INDEX_BITS) == g,
+                                    counts[g])
+    number = _joined_regions(blocks, counts, edges, keys,
+                             sizes if least is not None else None, least)
+    return PartitionedDataSet([_renumbered_piece(piece, local[g], number[g]) for g, piece
+                               in zip(blocks.local, pieces)], world=data.world)
 
-    # Each local region's key: its lowest owned cell, by global id or (piece, cell).
-    keys = {}
-    for g, piece in zip(blocks.local, pieces):
-        cell_region, _, count = local[g]
-        regions = cell_region.numpy()
-        owned = regions >= 0
-        if piece.ghosts is not None and piece.ghosts.cells is not None:
-            owned &= (piece.ghosts.cells.numpy() & Ghosts.DUPLICATECELL) == 0
-        if numbered and piece.global_ids.cells is not None:
-            key = piece.global_ids.cells.numpy().astype(np.int64)
-        else:
-            key = (np.int64(g) << INDEX_BITS) | np.arange(piece.num_cells, dtype=np.int64)
-        lowest = np.full(count, np.iinfo(np.int64).max, np.int64)
-        np.minimum.at(lowest, regions[owned], key[owned])
-        keys[g] = lowest
-    every_edges = blocks.all_gather({g: edges[g] for g in blocks.local})
-    every_keys = blocks.all_gather({g: keys[g] for g in blocks.local})
 
-    # Join on the host: the graph has one node per piece's region.
-    parent = np.arange(total, dtype=np.int64)
+def _components_near(data, radius, least, periodic):
+    """``connected_components(radius=)`` over pieces of point clouds: each piece
+    labelled with copies of the other pieces' points within ``radius``
+    (``ghost_points``; images in a periodic box), each copy's region joined to
+    its owner's region at that point, which the copies' plan brings."""
+    from tack.dataset._matching import INDEX_BITS
+    from tack.dataset.algorithms.ghost_points import _ghosted
+
+    if not radius >= 0:
+        raise ValueError(f"radius must be at least zero, not {radius!r}")
+    ghosted = _ghosted(data, radius, None, periodic, None, [], None)
+    blocks = ghosted.blocks
+    local, owner_region = {}, {}
+    for g, piece in zip(blocks.local, ghosted.pieces):
+        with piece.device:
+            local[g] = _labels(piece, radius)
+            owner_region[g] = local[g][1].astype(tack.i64)
+    ghosted.plan.run(owner_region)         # each copy: its owner's region there
+    counts = {g: local[g][2] for g in blocks.local}
+    starts = _starts(blocks, counts)
+    numbered = bool(blocks.all_reduce({g: int(p.global_ids is not None and
+                                              p.global_ids.cells is not None)
+                                       for g, p in zip(blocks.local, data)}, "min")) \
+        if blocks.count else False
+    edges, keys, sizes = {}, {}, {}
+    for g, piece, source in zip(blocks.local, ghosted.pieces, data):
+        n = ghosted.owned[g]
+        point_region = local[g][1].numpy().astype(np.int64)
+        theirs = owner_region[g].numpy()[n:]
+        ours = point_region[n:]
+        owner = ghosted.identity[g][n:] >> INDEX_BITS
+        keep = (ours >= 0) & (theirs >= 0)
+        a, b = ours[keep], starts[owner[keep]] + theirs[keep]
+        owned = np.bincount(point_region[:n][point_region[:n] >= 0], minlength=counts[g])
+        # A region of copies alone that meets one region of their owners is an
+        # alias of it, and joins nothing.
+        alias = owned[a] == 0
+        if alias.any():
+            pairs = np.unique(np.stack([a[alias], b[alias]], axis=1), axis=0)
+            meets = np.bincount(pairs[:, 0], minlength=counts[g])
+            alias &= meets[a] < 2
+        edges[g] = np.unique(np.stack([starts[g] + a[~alias], b[~alias]], axis=1), axis=0) \
+            if len(a) else np.zeros((0, 2), np.int64)
+        cells, _, count = _host_labels(local[g])
+        keys[g] = _lowest_owned_cells(g, source, (cells[:n], None, count), numbered)
+        sizes[g] = owned.astype(np.int64)
+    number = _joined_regions(blocks, counts, edges, keys, sizes, least)
+    out = []
+    for g, source in zip(blocks.local, data):
+        n = ghosted.owned[g]
+        cells, points, count = _host_labels(local[g])
+        with source.device:
+            out.append(_renumbered_piece(source, (cells[:n], points[:n], count), number[g],
+                                         local[g][0].dtype))
+    return PartitionedDataSet(out, world=data.world)
+
+
+def _host_labels(labels):
+    cell_region, point_region, count = labels
+    return cell_region.numpy().astype(np.int64), point_region.numpy().astype(np.int64), count
+
+
+def _starts(blocks, counts):
+    """Every block's first global node: the local regions' counts scanned."""
+    every = blocks.all_gather(counts)
+    return np.concatenate(([0], np.cumsum(every, dtype=np.int64))).astype(np.int64)
+
+
+def _lowest_owned_cells(g, piece, labels, numbered):
+    """Each local region's key: its lowest owned cell, by global id or (piece, cell);
+    the largest i64 for a region with no owned cell."""
+    from tack.dataset._matching import INDEX_BITS
+
+    cell_region, _, count = labels
+    regions = cell_region if isinstance(cell_region, np.ndarray) else cell_region.numpy()
+    regions = regions.astype(np.int64)
+    owned = regions >= 0
+    if piece.ghosts is not None and piece.ghosts.cells is not None:
+        owned &= (piece.ghosts.cells.numpy()[:len(regions)] & Ghosts.DUPLICATECELL) == 0
+    if numbered and piece.global_ids.cells is not None:
+        key = piece.global_ids.cells.numpy().astype(np.int64)[:len(regions)]
+    else:
+        key = (np.int64(g) << INDEX_BITS) | np.arange(len(regions), dtype=np.int64)
+    lowest = np.full(count, np.iinfo(np.int64).max, np.int64)
+    np.minimum.at(lowest, regions[owned], key[owned])
+    return lowest
+
+
+def _owned_sizes(point_region, owned, count):
+    regions = point_region[owned]
+    return np.bincount(regions[regions >= 0], minlength=count).astype(np.int64)
+
+
+def _joined_regions(blocks, counts, edges, keys, sizes=None, least=None):
+    """Each local region's global number (-1 if dropped), ``{g: array}``.
+
+    ``counts`` is each block's local region count, ``edges`` its pairs of global
+    nodes (a block's first node is its regions' count scanned) that are one
+    region, ``keys`` each local region's key, ``sizes`` its owned points. Regions
+    no edge reaches stay as they are, on their block; the rest -- the edges and
+    their nodes' keys and sizes, which only pieces' boundaries make -- are
+    gathered and joined on every rank, each component keyed by its lowest key,
+    sized by its sum. Regions of fewer than ``least`` points are dropped, and
+    the rest numbered in order of key (ties by node) by a sort over the blocks,
+    so no rank holds every region."""
+    from tack import communication as tc
+
+    starts = _starts(blocks, counts)
+    every = blocks.all_gather({g: edges[g] for g in blocks.local})
+    pairs = np.concatenate(every).reshape(-1, 2) if every else np.zeros((0, 2), np.int64)
+    nodes = np.unique(pairs)
+    mine = {}
+    for g in blocks.local:
+        here = nodes[(nodes >= starts[g]) & (nodes < starts[g + 1])] - starts[g]
+        mine[g] = (keys[g][here], sizes[g][here] if sizes is not None
+                   else np.zeros(len(here), np.int64))
+    gathered = blocks.all_gather(mine)
+    node_key = np.concatenate([k for k, _ in gathered]) if gathered else np.zeros(0, np.int64)
+    node_size = np.concatenate([s for _, s in gathered]) if gathered else np.zeros(0, np.int64)
+
+    # Join on the host: nodes are sorted, so the root of a component, its
+    # smallest index, is its smallest node.
+    parent = np.arange(len(nodes), dtype=np.int64)
 
     def find(x):
         while parent[x] != x:
@@ -373,32 +495,81 @@ def _components_pieces(data):
             x = parent[x]
         return x
 
-    for e in every_edges:
-        for a, b in e.tolist():
-            ra, rb = find(a), find(b)
-            if ra != rb:
-                parent[max(ra, rb)] = min(ra, rb)
-    roots = np.array([find(x) for x in range(total)], np.int64)
-    key = np.concatenate(every_keys) if every_keys else np.zeros(0, np.int64)
-    root_key = np.full(total, np.iinfo(np.int64).max, np.int64)
-    np.minimum.at(root_key, roots, key)
-    distinct = np.unique(roots)
-    order = distinct[np.argsort(root_key[distinct], kind="stable")]
-    number = np.empty(total, np.int64)
-    number[order] = np.arange(len(order))
-    region_of = number[roots]
+    for a, b in np.searchsorted(nodes, pairs).tolist():
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+    roots = np.array([find(x) for x in range(len(nodes))], np.int64)
+    component_key = np.full(len(nodes), np.iinfo(np.int64).max, np.int64)
+    np.minimum.at(component_key, roots, node_key)
+    component_size = np.zeros(len(nodes), np.int64)
+    np.add.at(component_size, roots, node_size)
 
-    out = []
-    for g, piece in zip(blocks.local, pieces):
-        cell_region, point_region, _ = local[g]
-        with piece.device:
-            mapping = region_of[starts[g]:starts[g] + counts[g]]
-            cells = cell_region.numpy()
-            points = point_region.numpy()
-            dtype = cell_region.dtype
-            cells = np.where(cells >= 0, mapping[np.maximum(cells, 0)] if counts[g] else -1, -1)
-            points = np.where(points >= 0, mapping[np.maximum(points, 0)] if counts[g] else -1,
-                              -1)
-            out.append(_with_regions(piece, tack.array(cells.astype(dtype.numpy_dtype), dtype),
-                                     tack.array(points.astype(dtype.numpy_dtype), dtype)))
-    return PartitionedDataSet(out, world=data.world)
+    # Every surviving region once: a region no edge reaches on its block, a
+    # component on the block of its root.
+    entries, in_graph = {}, {}
+    for g in blocks.local:
+        node = starts[g] + np.arange(counts[g], dtype=np.int64)
+        at = np.searchsorted(nodes, node)
+        hit = np.zeros(counts[g], bool)
+        valid = at < len(nodes)
+        hit[valid] = nodes[at[valid]] == node[valid]
+        in_graph[g] = (hit, at)
+        key, size = keys[g].copy(), (sizes[g].copy() if sizes is not None else None)
+        root = np.zeros(counts[g], bool)
+        root[hit] = roots[at[hit]] == at[hit]
+        key[hit] = component_key[at[hit]]
+        if size is not None:
+            size[hit] = component_size[at[hit]]
+        alive = ~hit | root
+        if least is not None:
+            alive &= size >= least
+        entries[g] = (key[alive], node[alive])
+    device = blocks.device
+    sorted_keys, sorted_values = tc.sort_by_key(
+        blocks, {g: tack.array(entries[g][0], tack.i64, device=device(g)) for g in blocks.local},
+        {g: {"node": tack.array(entries[g][1], tack.i64, device=device(g))}
+         for g in blocks.local})
+    first, _ = blocks.exclusive_scan({g: int(sorted_keys[g].size) for g in blocks.local})
+    outgoing = {}
+    for g in blocks.local:
+        node = sorted_values[g]["node"].numpy()
+        rank = first[g] + np.arange(len(node), dtype=np.int64)
+        home = np.searchsorted(starts, node, side="right") - 1
+        outgoing[g] = {int(b): {"node": tack.array(node[home == b], tack.i64, device=device(g)),
+                                "number": tack.array(rank[home == b], tack.i64,
+                                                     device=device(g))}
+                       for b in np.unique(home).tolist()}
+    incoming = blocks.exchange(outgoing)
+    numbers, root_numbers = {}, {}
+    for g in blocks.local:
+        number = np.full(counts[g], -1, np.int64)
+        for message in incoming[g].values():
+            number[message["node"].numpy() - starts[g]] = message["number"].numpy()
+        numbers[g] = number
+        hit, at = in_graph[g]
+        is_root = np.zeros(counts[g], bool)
+        is_root[hit] = roots[at[hit]] == at[hit]
+        root_numbers[g] = (at[is_root], number[is_root])
+    every_root = blocks.all_gather(root_numbers)
+    by_root = np.full(len(nodes), -1, np.int64)
+    for at, number in every_root:
+        by_root[at] = number
+    for g in blocks.local:
+        hit, at = in_graph[g]
+        numbers[g][hit] = by_root[roots[at[hit]]]
+    return numbers
+
+
+def _renumbered_piece(piece, labels, mapping, dtype=None):
+    """``piece`` with its local regions ``labels`` numbered by ``mapping``."""
+    cell_region, point_region, _ = labels
+    dtype = dtype or cell_region.dtype
+    cells = cell_region if isinstance(cell_region, np.ndarray) else cell_region.numpy()
+    points = point_region if isinstance(point_region, np.ndarray) else point_region.numpy()
+    with piece.device:
+        cells = np.where(cells >= 0, mapping[np.maximum(cells, 0)] if len(mapping) else -1, -1)
+        points = np.where(points >= 0, mapping[np.maximum(points, 0)] if len(mapping) else -1,
+                          -1)
+        return _with_regions(piece, tack.array(cells.astype(dtype.numpy_dtype), dtype),
+                             tack.array(points.astype(dtype.numpy_dtype), dtype))

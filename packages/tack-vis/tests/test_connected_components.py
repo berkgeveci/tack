@@ -109,10 +109,10 @@ def test_hidden_cells_and_unused_points():
     assert _regions(td.connected_components(lonely))[1].tolist() == [0, 0, 0, 0, -1]
 
 
-def _across(pieces):
+def _across(pieces, min_size=None):
     """Each cell's region by its global id, refusing two regions for one cell."""
     out = {}
-    for piece in td.connected_components(pieces):
+    for piece in td.connected_components(pieces, min_size=min_size):
         cells, _ = _regions(piece)
         for gid, r in zip(piece.global_ids.cells.numpy().tolist(), cells.tolist()):
             assert out.setdefault(gid, r) == r, f"cell {gid} in two regions"
@@ -128,6 +128,21 @@ def test_pieces_number_regions_as_the_whole(layers):
     pieces = td.PartitionedDataSet([td.threshold(p, "tangle", lo, hi)
                                     for p in td.split(data, (2, 2, 2), ghost_layers=layers)])
     assert _across(pieces) == whole
+
+
+@pytest.mark.parametrize("layers", [0, 1])
+def test_pieces_drop_small_regions_as_the_whole(layers):
+    """``min_size`` over pieces counts each shared point once, where it is owned."""
+    data, lo, hi = lobes()
+    blobs = td.threshold(data, "tangle", lo, hi)
+    sizes = np.bincount(_regions(td.connected_components(blobs))[1] + 1)[1:]
+    least = int(np.sort(sizes)[len(sizes) // 2])
+    regions = _regions(td.connected_components(blobs, min_size=least))[0]
+    assert 0 < regions.max() + 1 < len(sizes)
+    whole = dict(zip(blobs.global_ids.cells.numpy().tolist(), regions.tolist()))
+    pieces = td.PartitionedDataSet([td.threshold(p, "tangle", lo, hi)
+                                    for p in td.split(data, (2, 2, 2), ghost_layers=layers)])
+    assert _across(pieces, least) == whole
 
 
 def test_pieces_without_global_ids_and_on_two_devices():
