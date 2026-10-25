@@ -31,6 +31,7 @@ from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantit
 from tack.dataset.algorithms.generate_global_ids import generate_global_ids
 from tack.dataset.algorithms.ghost_cells import ghost_cells, update_ghosts
 from tack.dataset.algorithms.gradients import gradients
+from tack.dataset.algorithms.halo_catalog import halo_catalog
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.algorithms.interpolate import interpolate
 from tack.dataset.algorithms.jump import jump
@@ -101,6 +102,7 @@ __all__ = [
     "generate_global_ids",
     "ghost_cells",
     "gradients",
+    "halo_catalog",
     "implicit_values",
     "interpolate",
     "jump",

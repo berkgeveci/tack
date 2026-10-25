@@ -63,9 +63,9 @@ def _smallest_axis(a00, a01, a02, a11, a12, a22):
 
 
 @tack.kernel
-def _normals(positions, offsets, ids, vx, vy, vz, toward_point, normals):
+def _normals(grid, offsets, ids, vx, vy, vz, toward_point, normals):
     for q in range(normals.shape[0]):
-        x = positions[q]
+        x = grid.positions[q]
         first = offsets[q]
         count = 0                     # the k nearest end in -1s where points ran out
         for s in range(first, offsets[q + 1]):
@@ -74,9 +74,9 @@ def _normals(positions, offsets, ids, vx, vy, vz, toward_point, normals):
         normal = x * 0.0
         if count >= 3:
             # Centred on the neighbourhood's mean, so the covariance is of offsets.
-            mean = positions[ids[first]] - x
+            mean = grid.offset(ids[first], x)
             for s in range(first + 1, first + count):
-                mean += positions[ids[s]] - x
+                mean += grid.offset(ids[s], x)
             mean = mean / count
             a00 = mean[0] * 0.0
             a01 = a00
@@ -85,7 +85,7 @@ def _normals(positions, offsets, ids, vx, vy, vz, toward_point, normals):
             a12 = a00
             a22 = a00
             for s in range(first, first + count):
-                d = positions[ids[s]] - x - mean
+                d = grid.offset(ids[s], x) - mean
                 a00 += d[0] * d[0]
                 a01 += d[0] * d[1]
                 a02 += d[0] * d[2]
@@ -108,7 +108,7 @@ def _normals(positions, offsets, ids, vx, vy, vz, toward_point, normals):
 
 @on_inputs_device
 def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0, 1.0),
-                  locator=None):
+                  periodic=None, locator=None):
     """``data`` with ``normals``, each point's unit normal: the direction in which
     its neighbourhood -- its ``k`` nearest points (at most 32), itself among
     them, or the points within ``radius`` -- spreads least, from the
@@ -118,12 +118,13 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
 
     A normal's sign is chosen to point toward ``viewpoint`` (a world position)
     when one is given, else along ``direction`` (up, by default: the outside
-    of terrain). ``locator`` reuses a ``PointLocator`` of ``data``."""
+    of terrain). ``periodic`` (a box) takes neighbours across its faces.
+    ``locator`` reuses a ``PointLocator`` of ``data``."""
     if (k is None) == (radius is None):
         raise ValueError("point_normals takes k or radius")
     if not isinstance(data.geometry.space, H1):
         raise TypeError("point_normals needs an H1 geometry: one position per point")
-    locator = _locator(data, locator)
+    locator = _locator(data, locator, periodic)
     n = data.num_points
     positions = locator.positions
     if k is not None:
@@ -145,7 +146,7 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
         toward_point = 0
     normals = tack.empty((n,), tack.vec(3, data.dtype))
     if n:
-        _normals(positions, offsets, ids, *map(float, toward), toward_point, normals)
+        _normals(locator.grid(), offsets, ids, *map(float, toward), toward_point, normals)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
                   sets=dict(data.sets), dtype=data.dtype, origin=data.origin)
     out.fields["normals"] = Field(H1(out), normals)

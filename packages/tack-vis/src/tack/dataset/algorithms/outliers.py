@@ -38,7 +38,8 @@ def _above(values, limit, marks):
 
 
 @on_inputs_device
-def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, locator=None):
+def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, periodic=None,
+             locator=None):
     """``data`` with each point marked an outlier or not: ``outlier``, a u8 point
     field, 1 for an outlier. Two tests, as VTK's two filters:
 
@@ -52,14 +53,15 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, loca
       taken in double precision on the host.
 
     The points are marked, not removed, as PDAL marks them (class 7):
-    ``threshold_points(out, "outlier", 0, 0)`` keeps the rest. ``locator``
-    reuses a ``PointLocator`` of ``data``."""
+    ``threshold_points(out, "outlier", 0, 0)`` keeps the rest. ``periodic`` (a
+    box) measures across its faces. ``locator`` reuses a ``PointLocator`` of
+    ``data``."""
     radial = radius is not None or min_neighbors is not None
     if radial == (k is not None):
         raise ValueError("outliers takes radius and min_neighbors, or k (and deviations)")
     if not isinstance(data.geometry.space, H1):
         raise TypeError("outliers needs an H1 geometry: one position per point")
-    locator = _locator(data, locator)
+    locator = _locator(data, locator, periodic)
     n = data.num_points
     marks = tack.zeros((n,), tack.u8)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
@@ -69,6 +71,7 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, loca
         if radius is None or min_neighbors is None or not radius >= 0:
             raise ValueError("the radius test takes a radius of at least zero and "
                              "min_neighbors")
+        locator.check_radius(radius)
         counts = tack.empty((n,), data.id_dtype)
         if n:
             _count_within(locator.grid(), locator.positions, float(radius), 1, counts)
@@ -91,10 +94,10 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, loca
     return keep_marks(data, out)
 
 
-def _locator(data, locator):
+def _locator(data, locator, periodic=None):
     if locator is None:
-        return cached_point_locator(data)
-    if not locator.serves(data):
-        raise ValueError("the locator was built for another topology or geometry, or "
-                         "Tack has written the positions since: make a new one")
+        return cached_point_locator(data, periodic)
+    if not locator.serves(data, periodic):
+        raise ValueError("the locator was built for another topology, geometry or periodic "
+                         "box, or Tack has written the positions since: make a new one")
     return locator

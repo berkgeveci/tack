@@ -109,7 +109,7 @@ def _interpolated(grid, kernel, support, reach, queries, smoothing, volumes, val
                     for s in range(grid.first(b), grid.end(b)):
                         p = grid.point(s)
                         h = smoothing[p]
-                        d = grid.positions[p] - x
+                        d = grid.offset(p, x)
                         r = sqrt(d.dot(d))
                         if r < support * h:
                             w = volumes[p] * kernel.value(r, h)
@@ -147,7 +147,7 @@ def _densities(grid, kernel, support, smoothing, mass, density):
                     b = grid.bin(i, j, k)
                     for s in range(grid.first(b), grid.end(b)):
                         p = grid.point(s)
-                        d = grid.positions[p] - x
+                        d = grid.offset(p, x)
                         r = sqrt(d.dot(d))
                         if r < support * h:
                             total += mass[p] * kernel.value(r, h)
@@ -188,7 +188,7 @@ def _checked(kernel, dimension):
 @on_inputs_device
 def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_length="h",
                     mass="mass", density="density", normalize=False, dimension=3,
-                    locator=None):
+                    periodic=None, locator=None):
     """``particles``' point fields at ``target``'s points by SPH kernel sums: ``A(x) =
     sum_j (m_j / rho_j) A_j W(|x - x_j|, h_j)``, each particle reaching to its
     kernel's support (2, 2.5 or 3 smoothing lengths), as VTK's
@@ -206,8 +206,8 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     ``smoothing_length``, ``mass`` and ``density`` are the particles' point
     fields (names or ``Field``s) or numbers for all of them. ``kernel`` is
     ``"cubic"``, ``"quartic"``, ``"quintic"`` or ``"wendland"``, normalized in
-    ``dimension`` dimensions. ``locator`` reuses a ``PointLocator`` of the
-    particles. The target's points are moved to the particles' origin by the
+    ``dimension`` dimensions. ``periodic`` (a box) reaches across its faces.
+    ``locator`` reuses a ``PointLocator`` of the particles. The target's points are moved to the particles' origin by the
     difference of the two, in double precision."""
     from tack.dataset.algorithms._extract import _vertices
     from tack.dataset.dataset import relative_positions
@@ -229,7 +229,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     if n:
         _volumes(_per_particle(particles, mass, "mass"),
                  _per_particle(particles, density, "density"), volumes)
-    locator = _locator(particles, locator)
+    locator = _locator(particles, locator, periodic)
     m = target.num_points
     queries = arrays.materialize(_point_values(target.geometry.values, m))
     if target.origin != particles.origin:
@@ -240,6 +240,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     if queries.dtype != particles.geometry.values.dtype:
         queries = queries.astype(tack.vec(3, particles.dtype))
     reach = support * (float(arrays.to_host(smoothing).max()) if n else 0.0)
+    locator.check_radius(reach)
     out = DataSet(target.topology, target.geometry, fields=dict(target.fields),
                   sets=dict(target.sets), dtype=target.dtype, origin=target.origin)
     shepard = tack.zeros((m,), particles.dtype)
@@ -270,7 +271,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
 
 @on_inputs_device
 def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", dimension=3,
-                locator=None):
+                periodic=None, locator=None):
     """``particles`` with ``density``, each particle's SPH density ``rho_i = sum_j m_j
     W(|x_i - x_j|, h_i)`` -- itself included, from its own smoothing length (the
     gather form, as SPLASH computes it) -- for particles that come without one.
@@ -283,8 +284,10 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
     n = particles.num_points
     density = tack.zeros((n,), particles.dtype)
     if n:
-        _densities(_locator(particles, locator).grid(), w, support,
-                   _per_particle(particles, smoothing_length, "smoothing_length"),
+        found = _locator(particles, locator, periodic)
+        smoothing = _per_particle(particles, smoothing_length, "smoothing_length")
+        found.check_radius(support * float(arrays.to_host(smoothing).max()))
+        _densities(found.grid(), w, support, smoothing,
                    _per_particle(particles, mass, "mass"), density)
     out = DataSet(particles.topology, particles.geometry, fields=dict(particles.fields),
                   sets=dict(particles.sets), dtype=particles.dtype, origin=particles.origin)

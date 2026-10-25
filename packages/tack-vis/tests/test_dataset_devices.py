@@ -159,7 +159,21 @@ CALLS = {
     "sph_interpolate": lambda d: td.sph_interpolate(d, d, ["s", "v"], smoothing_length=0.6,
                                                     mass=1.0, density=1.0),
     "sph_density": lambda d: td.sph_density(d, smoothing_length=0.6, mass=1.0),
+    "connected_components_periodic": lambda d: td.connected_components(
+        d, radius=0.6, periodic=_box(d)),
+    "point_normals_periodic": lambda d: td.point_normals(d, k=6, periodic=_box(d)),
+    "halo_catalog": lambda d: td.halo_catalog(td.connected_components(d, radius=1.1),
+                                              velocity="v"),
+    "halo_catalog_periodic": lambda d: td.halo_catalog(
+        td.connected_components(d, radius=1.1, periodic=_box(d)), center="com",
+        periodic=_box(d)),
 }
+
+
+def _box(data):
+    """A periodic box about ``data``'s points, in world coordinates."""
+    return (tuple(np.add((-0.5, -0.5, -0.5), data.origin)),
+            tuple(np.add((2.5, 2.5, 2.5), data.origin)))
 
 
 def _image(data):
