@@ -13,6 +13,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   (matched to VTK's `vtkMeshQuality` where it defines them), extended to every
   shape: order-2 cells along their curved edges, wedges and pyramids, and
   polyhedra and polygons by their fan tetrahedra and triangles.
+- Feature edges: `td.feature_edges(data, angle=30.0, boundary=True,
+  feature=True, non_manifold=True, manifold=False)`, a surface's edges by the
+  cells meeting there and their angle, as VTK's `vtkFeatureEdges` (matched
+  edge for edge), as line cells on the same points with an `EdgeKind` cell
+  field.
 - Time on datasets, for filters that stream steps (in situ): `DataSet(...,
   time=, time_unit=)`, kept by every filter as the origin is; pieces and AMR
   boxes at two times are refused; VTK's `DATA_TIME_STEP` both ways.

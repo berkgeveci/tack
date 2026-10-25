@@ -30,6 +30,7 @@ from tack.dataset.algorithms.extract_points import extract_points
 from tack.dataset.algorithms.extract_surface import extract_surface
 from tack.dataset.algorithms.face_centers import face_centers
 from tack.dataset.algorithms.face_geometry import FaceGeometry, face_geometry
+from tack.dataset.algorithms.feature_edges import EdgeKind, feature_edges
 from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantities
 from tack.dataset.algorithms.generate_global_ids import generate_global_ids
 from tack.dataset.algorithms.ghost_cells import ghost_cells, update_ghosts
@@ -72,6 +73,7 @@ from tack.dataset.algorithms.warp import warp
 
 __all__ = [
     "CellGeometry",
+    "EdgeKind",
     "FaceGeometry",
     "FlowQuantities",
     "ParticleStatus",
@@ -105,6 +107,7 @@ __all__ = [
     "extract_surface",
     "face_centers",
     "face_geometry",
+    "feature_edges",
     "flow_quantities",
     "generate_global_ids",
     "ghost_cells",

@@ -127,6 +127,7 @@ CALLS = {
     "external_faces": td.extract_surface,
     "boundary_faces": td.boundary_faces,
     "extract_edges": td.extract_edges,
+    "feature_edges": lambda d: td.feature_edges(td.extract_surface(d, td.boundary_faces(d))),
     "tetrahedralize": td.tetrahedralize,
     "shrink": td.shrink,
     "warp": lambda d: td.warp(d, (0, 0, 1), scale=0.5),

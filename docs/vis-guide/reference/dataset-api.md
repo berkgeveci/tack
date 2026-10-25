@@ -1018,6 +1018,7 @@ and "polyline" `PolylineTopology`.
 |---|---|---|---|---|
 | `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume, area or length; centroid) | yes | yes | yes | yes |
 | `cell_quality` (scaled Jacobian, Jacobian ratio, condition, edge ratio, shortest and longest edge) | yes (order 2 along its curved edges; a pyramid by its four tetrahedra) | yes (by its fan tetrahedra) | yes (by its fan triangles) | edges only |
+| `feature_edges` (boundary, feature, non-manifold, manifold edges of a surface) | yes (2D cells) | no (a volume: `extract_surface` first) | yes | no |
 | `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
 | `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |

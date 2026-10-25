@@ -21,6 +21,7 @@ from tack.dataset import (
 )
 from tack.dataset.algorithms import (
     CellGeometry,
+    EdgeKind,
     FaceGeometry,
     FlowQuantities,
     ParticleStatus,
@@ -54,6 +55,7 @@ from tack.dataset.algorithms import (
     extract_surface,
     face_centers,
     face_geometry,
+    feature_edges,
     flow_quantities,
     generate_global_ids,
     ghost_cells,
@@ -144,6 +146,7 @@ __all__ = [
     "Constant",
     "Cylinder",
     "DataSet",
+    "EdgeKind",
     "FaceGeometry",
     "Field",
     "FlowQuantities",
@@ -204,6 +207,7 @@ __all__ = [
     "extract_surface",
     "face_centers",
     "face_geometry",
+    "feature_edges",
     "flow_quantities",
     "for_each",
     "generate_global_ids",
