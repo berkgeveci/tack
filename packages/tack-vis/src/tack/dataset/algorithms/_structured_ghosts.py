@@ -159,7 +159,7 @@ def structured_ghost_cells(blocks, pieces, layers, names, kind_of):
                 c_owner != g, Ghosts.DUPLICATECELL, 0).astype(np.uint8)
             data = DataSet(topology, geometry, dtype=piece.dtype,
                            ghosts=Ghosts(cells=cell_marks, points=point_marks),
-                           origin=piece.origin, unit=piece.unit)
+                           **piece._frame())
             for name in names:
                 field = piece.fields[name]
                 space = field.space

@@ -198,7 +198,7 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
             # cells out, so the marks go aside and come back (every cell and
             # point is kept, in order).
             bare = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
-                           dtype=piece.dtype, global_ids=piece.global_ids, origin=piece.origin, unit=piece.unit)
+                           dtype=piece.dtype, global_ids=piece.global_ids, **piece._frame())
             with piece.device:
                 converted_piece = extract_cells(bare, np.arange(piece.num_cells))
             converted_piece.ghosts = piece.ghosts
@@ -316,7 +316,7 @@ def _assembled(topology, geometry, like, names, kind_of, parts):
     if marks_cells.any() or marks_points.any():
         ghosts = Ghosts(cells=marks_cells if marks_cells.any() else None,
                         points=marks_points if marks_points.any() else None)
-    out = DataSet(topology, geometry, dtype=like.dtype, ghosts=ghosts, origin=like.origin, unit=like.unit)
+    out = DataSet(topology, geometry, dtype=like.dtype, ghosts=ghosts, **like._frame())
     for name in names:
         field = like.fields[name]
         space = field.space

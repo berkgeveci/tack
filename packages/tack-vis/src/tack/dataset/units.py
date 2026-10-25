@@ -261,3 +261,14 @@ def number_and_unit(value):
     found = quantity(value)
     return (value, None) if found is None else found
 
+
+def time_unit(unit):
+    """``unit`` (a string or ``None``) canonical, refused unless it is a unit of
+    time."""
+    unit = canonical(unit)
+    if unit is not None:
+        unyt, _ = _unyt()
+        if _parsed(unit).dimensions != unyt.dimensions.time:
+            raise ValueError(f"{unit!r} is not a unit of time")
+    return unit
+

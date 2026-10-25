@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Time on datasets, for filters that stream steps (in situ): `DataSet(...,
+  time=, time_unit=)`, kept by every filter as the origin is; pieces and AMR
+  boxes at two times are refused; VTK's `DATA_TIME_STEP` both ways.
+  `tack.dataset.temporal` holds what the temporal filters share: a step cache
+  that copies what it keeps (`copy=False` keeps references) and the time
+  between steps, converted between units.
 - Physical units, a first pass: `Field(..., unit=)` holds the values' unit, a
   string in unyt's canonical spelling (`None` is unknown), and the spatial
   unit is the geometry's (`data.unit`; `uniform_grid`, `rectilinear_grid`,

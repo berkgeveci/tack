@@ -151,7 +151,7 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
     if n:
         _normals(locator.grid(), offsets, ids, *map(float, toward), toward_point, normals)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
-                  sets=dict(data.sets), dtype=data.dtype, origin=data.origin, unit=data.unit)
+                  sets=dict(data.sets), dtype=data.dtype, **data._frame())
     out.fields["normals"] = Field(H1(out), normals, "dimensionless")
     from tack.dataset.ghosts import keep_marks
 

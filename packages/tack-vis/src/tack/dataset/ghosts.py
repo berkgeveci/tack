@@ -34,12 +34,12 @@ __all__ = ["Ghosts"]
 def keep_marks(source, out):
     """``out``, a dataset on ``source``'s cells and points (the same topology), with
     ``source``'s ghost marks -- and its record of having lost them -- and its
-    origin and spatial unit."""
+    origin, spatial unit and time."""
     out.ghosts = source.ghosts
     out._ghosts_lost = source._ghosts_lost
     out.global_ids = source.global_ids
     out.origin = source.origin
-    return _keep_unit(source, out)
+    return _keep_frame(source, out)
 
 
 def drop_marks(source, out, reason=True):
@@ -51,17 +51,19 @@ def drop_marks(source, out, reason=True):
     if source.ghosts is not None or source._ghosts_lost:
         out._ghosts_lost = source._ghosts_lost or reason
     out.origin = source.origin
-    return _keep_unit(source, out)
+    return _keep_frame(source, out)
 
 
-def _keep_unit(source, out):
-    """``out`` in ``source``'s spatial unit, as its origin is, unless the filter gave
-    it one."""
+def _keep_frame(source, out):
+    """``out`` in ``source``'s spatial unit and at its time, as at its origin, unless
+    the filter gave it its own."""
     if out.unit is None and source.unit is not None:
         from tack.dataset.dataset import Field
 
         geometry = out.geometry
         out._geometry = Field(geometry.space, geometry.values, source.unit)
+    if out.time is None and out.time_unit is None:
+        out.time, out.time_unit = source.time, source.time_unit
     return out
 
 
@@ -463,7 +465,7 @@ def visible(data, *arguments):
     source = data
     if names:
         source = DataSet(data.topology, data.geometry, fields={**data.fields, **names},
-                         sets=dict(data.sets), ghosts=data.ghosts, origin=data.origin, unit=data.unit)
+                         sets=dict(data.sets), ghosts=data.ghosts, **data._frame())
     keep = tack.empty((data.num_cells,), tack.i32)
     keep.fill(1)
     out = _keep_cells(source, keep)

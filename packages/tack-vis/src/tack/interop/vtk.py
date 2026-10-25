@@ -444,7 +444,19 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``vtkPartitionedDataSetCollection`` a ``dict`` of them, keyed by each
     partitioned dataset's ``vtkCompositeDataSet.NAME()`` (``"block<i>"`` where
     it has none, ``"<name>#<i>"`` for a name already taken).
-    """
+
+    VTK's ``DATA_TIME_STEP`` becomes the step's time (``time``), its unit
+    unknown."""
+    out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
+                          id_dtype=id_dtype, origin=origin)
+    if grid.GetInformation().Has(_time_key()):
+        _stamp(out, grid.GetInformation().Get(_time_key()))
+    return out
+
+
+def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
+                   origin=None):
+    """``vtk_to_dataset`` before the time is stamped."""
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
         vtkImageData,
@@ -619,7 +631,7 @@ def _amr_to_dataset(amr, options):
             fields = {name: _rehomed(field, placed) for name, field in data.fields.items()}
             boxes.append(DataSet(placed, data.geometry.values, fields=fields,
                                  dtype=data.dtype, ghosts=data.ghosts,
-                                 global_ids=data.global_ids, origin=data.origin, unit=data.unit))
+                                 global_ids=data.global_ids, **data._frame()))
         levels.append(boxes)
         if level + 1 < amr.GetNumberOfLevels():
             ratios.append(int(amr.GetRefinementRatio(level)))
@@ -923,7 +935,20 @@ def dataset_to_vtk(data):
     points, so it must be ``H1``. Implicit types, offsets and connectivity,
     and constant and counting field values, become VTK's constant and affine
     arrays. Ghost marks become ``vtkGhostType`` arrays.
-    """
+
+    The step's time (``data.time``) becomes VTK's ``DATA_TIME_STEP``; VTK has
+    no unit for it."""
+    out = _dataset_to_vtk(data)
+    time = _time_of(data)
+    if time is not None:
+        from vtkmodules.vtkCommonDataModel import vtkDataObject
+
+        out.GetInformation().Set(vtkDataObject.DATA_TIME_STEP(), time)
+    return out
+
+
+def _dataset_to_vtk(data):
+    """``dataset_to_vtk`` before the time is stamped."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkAffineArray, vtkUnsignedCharArray
     from vtkmodules.vtkCommonDataModel import (
@@ -1093,3 +1118,42 @@ def _datasets_to_collection(datasets):
         out.SetPartitionedDataSet(i, dataset_to_vtk(pieces))
         out.GetMetaData(i).Set(vtkCompositeDataSet.NAME(), str(name))
     return out
+
+
+def _time_key():
+    from vtkmodules.vtkCommonDataModel import vtkDataObject
+
+    return vtkDataObject.DATA_TIME_STEP()
+
+
+def _time_of(data):
+    """The time a Tack dataset (or pieces, a hierarchy, an octree) is at, or
+    ``None``."""
+    from tack.dataset import AMRDataSet, PartitionedDataSet
+
+    if isinstance(data, AMRDataSet):
+        data = data._as_pieces()
+    if isinstance(data, PartitionedDataSet):
+        times = [piece.time for piece in data if piece.time is not None]
+        return times[0] if times else None
+    return getattr(data, "time", None)
+
+
+def _stamp(out, time):
+    """Give what ``vtk_to_dataset`` made the time VTK says, where it has none."""
+    from tack.dataset import AMRDataSet, OctreeDataSet, PartitionedDataSet
+
+    if isinstance(out, OctreeDataSet):
+        out = out.roots
+    if isinstance(out, AMRDataSet):
+        for _, box in out:
+            _stamp(box, time)
+    elif isinstance(out, PartitionedDataSet):
+        for piece in out:
+            _stamp(piece, time)
+    elif isinstance(out, dict):
+        for value in out.values():
+            _stamp(value, time)
+    elif out.time is None:
+        out.time = time
+
