@@ -153,7 +153,20 @@ CALLS = {
     "outliers_statistical": lambda d: td.outliers(d, k=4),
     "point_normals": lambda d: td.point_normals(d, k=6),
     "point_normals_radius": lambda d: td.point_normals(d, radius=1.0),
+    "connected_components_radius": lambda d: td.connected_components(d, radius=0.5, min_size=2),
+    "deposit": lambda d: td.deposit(d, _image(d)),
+    "deposit_cic": lambda d: td.deposit(d, _image(d), "s", "mean", method="cic"),
+    "sph_interpolate": lambda d: td.sph_interpolate(d, d, ["s", "v"], smoothing_length=0.6,
+                                                    mass=1.0, density=1.0),
+    "sph_density": lambda d: td.sph_density(d, smoothing_length=0.6, mass=1.0),
 }
+
+
+def _image(data):
+    """An image over ``data``'s points, on its device and at its origin."""
+    image = td.uniform_grid((4, 3, 3), spacing=(0.7, 1.0, 1.0), device=data.device)
+    image.origin = data.origin
+    return image
 
 
 def _results(value):

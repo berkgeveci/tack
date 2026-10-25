@@ -53,6 +53,62 @@ def _hook(cell_of, members, ncells, hidden, labels, changed):
 
 
 @tack.kernel
+def _used_points(cell_of, members, hidden, used):
+    # The points a visible cell uses: the ones a radius may join.
+    for e in range(members.shape[0]):
+        if hidden[cell_of[e]] == 0:
+            used[members[e]] = 1
+
+
+@tack.kernel
+def _hook_near(grid, ncells, used, r, labels, changed):
+    # Points within ``r`` of each other join, each pair once (p > q), through the
+    # locator's bins: nothing is stored per pair.
+    for q in range(used.shape[0]):
+        if used[q] == 1:
+            x = grid.positions[q]
+            r2 = r * r
+            i0, i1, j0, j1, k0, k1 = grid.span(x, r)
+            for k in range(k0, k1 + 1):
+                for j in range(j0, j1 + 1):
+                    for i in range(i0, i1 + 1):
+                        b = grid.bin(i, j, k)
+                        for s in range(grid.first(b), grid.end(b)):
+                            p = grid.point(s)
+                            if p > q and used[p] == 1:
+                                d = grid.positions[p] - x
+                                if d.dot(d) <= r2:
+                                    a = labels[ncells + q]
+                                    c = labels[ncells + p]
+                                    if a != c:
+                                        tack.atomic_min(labels, max(a, c), min(a, c))
+                                        tack.atomic_max(changed, 0, 1)
+
+
+@tack.kernel
+def _region_sizes(point_region, sizes):
+    for p in range(point_region.shape[0]):
+        r = point_region[p]
+        if r >= 0:
+            tack.atomic_add(sizes, r, 1)
+
+
+@tack.kernel
+def _big_enough(sizes, least, flags):
+    for r in range(flags.shape[0]):
+        flags[r] = 1 if sizes[r] >= least else 0
+
+
+@tack.kernel
+def _renumbered(region, flags, index):
+    # Regions too small become -1; the others are numbered again, in order.
+    for v in range(region.shape[0]):
+        r = region[v]
+        if r >= 0:
+            region[v] = index[r] if flags[r] == 1 else -1
+
+
+@tack.kernel
 def _jump(labels):
     # Every node straight to its root.
     for v in range(labels.shape[0]):
@@ -100,10 +156,11 @@ def _cell_points(data):
     return cell_of, members
 
 
-def _labels(data):
+def _labels(data, radius=None, locator=None):
     """Each cell's and point's component on ``data``'s device: ``(cell regions,
     point regions, count)``, regions numbered from 0 in order of their lowest
-    cell, -1 for hidden cells and points no visible cell uses."""
+    cell, -1 for hidden cells and points no visible cell uses. With ``radius``,
+    points of visible cells within it of each other join too."""
     ncells, npoints = data.num_cells, data.num_points
     dtype = ids.at_least(tack.i32, ncells + npoints + 1)
     if dtype not in get_backend().supported_atomic_dtypes:
@@ -116,9 +173,18 @@ def _labels(data):
     cell_of, members = _cell_points(data)
     labels = tack.arange(ncells + npoints, dtype=dtype)
     changed = tack.zeros((1,), tack.i32)
+    near = None
+    if radius is not None and npoints and members.shape[0]:
+        from tack.dataset.algorithms.outliers import _locator
+
+        used = tack.zeros((npoints,), tack.u8)
+        _used_points(cell_of, members, hidden, used)
+        near = (_locator(data, locator).grid(), used)
     while members.shape[0]:
         changed.fill(0)
         _hook(cell_of, members, ncells, hidden, labels, changed)
+        if near is not None:
+            _hook_near(near[0], ncells, near[1], float(radius), labels, changed)
         _jump(labels)
         if not int(changed.numpy()[0]):
             break
@@ -138,7 +204,7 @@ def _labels(data):
 
 
 @on_inputs_device
-def connected_components(data):
+def connected_components(data, radius=None, min_size=None, locator=None):
     """Which cells are connected, through shared points: ``data`` with ``region``, a
     field on its cells and one on its points, the regions numbered from 0 in
     order of their lowest cell id, as VTK's vtkConnectivityFilter (``RegionId``,
@@ -155,11 +221,39 @@ def connected_components(data):
     every rank: each piece labels its own, and pieces join the regions that
     meet at the points they share (``_components_pieces``). With global ids on
     every piece, regions are numbered in order of their lowest global cell id
-    -- the whole's numbering, for pieces carrying the whole's ids."""
+    -- the whole's numbering, for pieces carrying the whole's ids.
+
+    With ``radius``, points within that distance of each other (inclusive) are
+    connected too: on a point cloud, whose cells are its points, that is
+    Euclidean clustering (VTK's vtkEuclideanClusterExtraction, PCL's) and,
+    with the linking length, friends-of-friends halo finding (yt's FoF).
+    ``min_size`` gives regions of fewer points -1, the rest numbered again in
+    the same order. ``locator`` reuses a ``PointLocator`` of ``data``."""
+    if radius is not None and not radius >= 0:
+        raise ValueError(f"radius must be at least zero, not {radius!r}")
     if isinstance(data, PartitionedDataSet):
+        if radius is not None or min_size is not None:
+            raise NotImplementedError("connected_components of a PartitionedDataSet by radius "
+                                      "or size needs ghost points, not built yet")
         return _components_pieces(data)
-    cell_region, point_region, _ = _labels(data)
+    cell_region, point_region, count = _labels(data, radius, locator)
+    if min_size is not None and count:
+        _smallest_dropped(cell_region, point_region, count, int(min_size))
     return _with_regions(data, cell_region, point_region)
+
+
+def _smallest_dropped(cell_region, point_region, count, least):
+    """Regions of fewer than ``least`` points made -1, the rest renumbered in order."""
+    sizes = tack.zeros((count,), point_region.dtype)
+    if point_region.shape[0]:
+        _region_sizes(point_region, sizes)
+    flags = tack.empty((count,), point_region.dtype)
+    index = tack.empty((count,), point_region.dtype)
+    _big_enough(sizes, least, flags)
+    exclusive_scan(flags, index, count)
+    for region in (cell_region, point_region):
+        if region.shape[0]:
+            _renumbered(region, flags, index)
 
 
 def _with_regions(data, cell_region, point_region):

@@ -15,6 +15,7 @@ from tack.dataset.algorithms.connected_components import connected_components
 from tack.dataset.algorithms.contour import contour
 from tack.dataset.algorithms.cross import cross
 from tack.dataset.algorithms.cylindrical import cylindrical
+from tack.dataset.algorithms.deposit import deposit
 from tack.dataset.algorithms.divergence import divergence
 from tack.dataset.algorithms.dot import dot
 from tack.dataset.algorithms.edge_lengths import edge_lengths
@@ -49,6 +50,7 @@ from tack.dataset.algorithms.project import project
 from tack.dataset.algorithms.remove_ghosts import remove_ghosts
 from tack.dataset.algorithms.shrink import shrink
 from tack.dataset.algorithms.slice import slice, slice_plane
+from tack.dataset.algorithms.sph import sph_density, sph_interpolate
 from tack.dataset.algorithms.spherical import spherical
 from tack.dataset.algorithms.split import split
 from tack.dataset.algorithms.statistics import Statistics, statistics
@@ -83,6 +85,7 @@ __all__ = [
     "contour",
     "cross",
     "cylindrical",
+    "deposit",
     "divergence",
     "dot",
     "edge_lengths",
@@ -118,6 +121,8 @@ __all__ = [
     "shrink",
     "slice",
     "slice_plane",
+    "sph_density",
+    "sph_interpolate",
     "spherical",
     "split",
     "statistics",

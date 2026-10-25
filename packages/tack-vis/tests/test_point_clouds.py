@@ -1,6 +1,7 @@
 """Point clouds: the point locator and the filters on it (``voxel_downsample``,
-``outliers``, ``point_normals``), against brute force in NumPy and against VTK's
-vtkFiltersPoints where VTK computes the same thing."""
+``outliers``, ``point_normals``, clusters by ``connected_components``, ``deposit``,
+``sph_interpolate``, ``sph_density``), against brute force in NumPy and against
+VTK's vtkFiltersPoints where VTK computes the same thing."""
 
 import numpy as np
 import pytest
@@ -15,9 +16,15 @@ try:
     from vtkmodules.vtkCommonCore import vtkFloatArray, vtkPoints
     from vtkmodules.vtkCommonDataModel import vtkPolyData
     from vtkmodules.vtkFiltersPoints import (
+        vtkEuclideanClusterExtraction,
         vtkPCANormalEstimation,
         vtkRadiusOutlierRemoval,
+        vtkSPHCubicKernel,
+        vtkSPHInterpolator,
+        vtkSPHQuarticKernel,
+        vtkSPHQuinticKernel,
         vtkStatisticalOutlierRemoval,
+        vtkWendlandQuinticKernel,
     )
 except ImportError:
     if env_flag("TACK_REQUIRE_VTK"):
@@ -321,3 +328,234 @@ def test_normals_are_vtks():
     ours = td.point_normals(td.point_cloud(x), k=12, viewpoint=(5.0, 5.0, 100.0))
     cos = (theirs * ours.fields["normals"].values.numpy()).sum(axis=1)
     assert np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))).max() < 0.1
+
+
+# ── Clusters ────────────────────────────────────────────────────────
+
+def _blobs(seed=7):
+    rng = np.random.default_rng(seed)
+    centres = rng.random((12, 3)) * 50
+    x = np.vstack([c + rng.normal(0, 0.6, (rng.integers(5, 200), 3)) for c in centres])
+    return np.vstack([x, rng.random((30, 3)) * 50]).astype(np.float32)
+
+
+def _union_find(x, radius):
+    """Each point's cluster, numbered by its lowest point, by brute force."""
+    parent = np.arange(len(x))
+
+    def root(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    near = np.triu(((x[:, None] - x[None]) ** 2).sum(-1) <= radius * radius, 1)
+    for i, j in zip(*np.nonzero(near)):
+        a, b = root(i), root(j)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+    return np.unique([root(i) for i in range(len(x))], return_inverse=True)[1].reshape(-1)
+
+
+def test_clusters_by_radius_are_brute_forces():
+    x = _blobs()
+    out = td.connected_components(td.point_cloud(x), radius=1.0)
+    expected = _union_find(x, 1.0)
+    np.testing.assert_array_equal(out.fields["point_region"].values.numpy(), expected)
+    np.testing.assert_array_equal(out.fields["region"].values.numpy(), expected)
+    sizes = np.bincount(expected)
+    big = td.connected_components(td.point_cloud(x), radius=1.0, min_size=20)
+    kept = np.cumsum(sizes >= 20) - 1
+    np.testing.assert_array_equal(big.fields["point_region"].values.numpy(),
+                                  np.where(sizes[expected] >= 20, kept[expected], -1))
+
+
+def test_a_radius_also_joins_cells_that_come_near():
+    """On a mesh, pieces within the radius of each other join; cells still join
+    through their shared points."""
+    two = td.extract_cells(td.wavelet(2), [0, 7])          # opposite corners, apart
+    alone = td.connected_components(two).fields["region"].values.numpy()
+    assert alone.tolist() == [0, 1]
+    near = td.connected_components(two, radius=2.0).fields["region"].values.numpy()
+    assert near.tolist() == [0, 0]
+
+
+@needs_vtk
+def test_clusters_are_vtks():
+    x = _blobs(11)
+    euclid = vtkEuclideanClusterExtraction(radius=1.0)
+    euclid.SetExtractionModeToAllClusters()
+    euclid.ColorClustersOn()
+    euclid.SetInputData(_vtk(x))
+    euclid.Update()
+    theirs = np.asarray(euclid.GetOutput().point_data["ClusterId"])
+    where = {tuple(p): i for i, p in enumerate(x.tolist())}
+    rows = [where[tuple(p)] for p in np.asarray(euclid.GetOutput().points.data).tolist()]
+    ours = td.connected_components(td.point_cloud(x), radius=1.0).fields["point_region"]
+    pairs = set(zip(theirs.tolist(), ours.values.numpy()[rows].tolist()))
+    assert len(pairs) == len({a for a, _ in pairs}) == len({b for _, b in pairs})
+
+
+# ── deposit ─────────────────────────────────────────────────────────
+
+def _deposited():
+    rng = np.random.default_rng(8)
+    x = (rng.random((4000, 3)) * [8, 6, 4] - 1).astype(np.float32)     # some outside
+    m = rng.random(4000).astype(np.float32)
+    grid = td.uniform_grid((7, 5, 3), spacing=(1.0, 1.0, 1.5))
+    f = x / np.array([1.0, 1.0, 1.5])
+    cells = np.array([6, 4, 2])
+    inside = np.all((f >= 0) & (f <= cells), axis=1)
+    ijk = np.minimum(np.floor(f).astype(int), cells - 1)
+    return td.point_cloud(x, fields={"m": m}), grid, m, inside, ijk[:, 0] + 6 * (
+        ijk[:, 1] + 4 * ijk[:, 2])
+
+
+@pytest.mark.parametrize("reduce", ["count", "sum", "mean", "min", "max"])
+def test_deposit_by_nearest_grid_point_is_numpys(reduce):
+    cloud, grid, m, inside, cell = _deposited()
+    got = td.deposit(cloud, grid, None if reduce == "count" else "m", reduce)
+    assert isinstance(got.space, td.Values) and got.space.on == "cells"
+    expected = np.full(48, 0.0 if reduce in ("count", "sum") else np.nan)
+    for t in range(48):
+        mine = m[inside & (cell == t)]
+        if len(mine):
+            expected[t] = {"count": len(mine), "sum": mine.sum(), "mean": mine.mean(),
+                           "min": mine.min(), "max": mine.max()}[reduce]
+    np.testing.assert_allclose(got.values.numpy(), expected, atol=1e-5)
+    if reduce == "count":
+        assert got.values.dtype is tack.i32
+        np.testing.assert_allclose(td.deposit(cloud, grid, per_volume=True).values.numpy(),
+                                   expected / 1.5)
+
+
+def test_deposit_in_cells_keeps_what_it_is_given():
+    cloud, grid, m, inside, _ = _deposited()
+    weights = td.deposit(cloud, grid, method="cic")
+    assert weights.space.on == "points"
+    assert abs(float(weights.values.numpy().sum()) - inside.sum()) < 1e-2
+    mass = td.deposit(cloud, grid, "m", method="cic").values.numpy().sum()
+    assert abs(float(mass) - float(m[inside].sum())) < 1e-3
+    one = td.point_cloud(np.array([[0.25, 0.5, 0.75]]))
+    corners = td.deposit(one, td.uniform_grid((2, 2, 2)), method="cic").values.numpy()
+    tx, ty, tz = 0.25, 0.5, 0.75
+    np.testing.assert_allclose(corners, [(1 - tx) * (1 - ty) * (1 - tz), tx * (1 - ty) * (1 - tz),
+                                         (1 - tx) * ty * (1 - tz), tx * ty * (1 - tz),
+                                         (1 - tx) * (1 - ty) * tz, tx * (1 - ty) * tz,
+                                         (1 - tx) * ty * tz, tx * ty * tz], atol=1e-6)
+
+
+def test_a_surface_model_of_a_survey():
+    """The highest return per cell of a 2D image, the survey and the image far from
+    zero on their own origins."""
+    rng = np.random.default_rng(12)
+    world = ORIGIN * [1, 1, 0] + rng.random((5000, 3)) * [100, 100, 30]
+    lidar = td.point_cloud(world)
+    lidar.fields["z"] = td.Field(td.H1(lidar), tack.array(
+        lidar.world_positions()[:, 2].astype(np.float32)))
+    image = td.uniform_grid((11, 11), spacing=(10.0, 10.0, 1.0))
+    image.origin = tuple(ORIGIN * [1, 1, 0])
+    surface = td.deposit(lidar, image, "z", "max").values.numpy()
+    ij = np.minimum(np.floor((world[:, :2] - ORIGIN[:2]) / 10).astype(int), 9)
+    expected = np.full(100, -np.inf)
+    np.maximum.at(expected, ij[:, 0] + 10 * ij[:, 1], world[:, 2])
+    np.testing.assert_allclose(surface, expected, atol=1e-4)
+
+
+def test_deposit_refuses_what_it_cannot_do():
+    cloud, grid, _, _, _ = _deposited()
+    with pytest.raises(ValueError, match="needs a field"):
+        td.deposit(cloud, grid, reduce="sum")
+    with pytest.raises(ValueError, match="sums, counts or averages"):
+        td.deposit(cloud, grid, "m", "max", method="cic")
+    with pytest.raises(TypeError, match="axis-aligned image"):
+        td.deposit(cloud, td.rectilinear_grid([0.0, 1.0, 3.0], [0.0, 1.0], [0.0, 1.0]))
+    cloud.fields["v"] = td.Field(td.H1(cloud), tack.array(cloud.positions(), tack.vec3()))
+    with pytest.raises(TypeError, match="each component"):
+        td.deposit(cloud, grid, "v")
+
+
+# ── SPH ─────────────────────────────────────────────────────────────
+
+def _particles(n=4000, seed=9, h=0.25):
+    rng = np.random.default_rng(seed)
+    x = (rng.random((n, 3)) * 4).astype(np.float32)
+    rho = (1.0 + 0.1 * rng.random(n)).astype(np.float32)
+    mass = (rho * (64.0 / n)).astype(np.float32)
+    f = (np.sin(x[:, 0]) + x[:, 1]).astype(np.float32)
+    return td.point_cloud(x, fields={"h": np.full(n, h, np.float32), "mass": mass,
+                                     "density": rho, "f": f}), x, mass, rho, f
+
+
+@needs_vtk
+@pytest.mark.parametrize("kernel", ["cubic", "quartic", "quintic", "wendland"])
+@pytest.mark.parametrize("dimension", [2, 3])
+def test_sph_interpolation_is_vtks(kernel, dimension):
+    particles, x, mass, rho, f = _particles()
+    if dimension == 2:
+        x = x.copy()
+        x[:, 2] = 0.0
+        particles = td.point_cloud(x, fields={n: particles.fields[n].values.numpy()
+                                              for n in ("h", "mass", "density", "f")})
+    probe = (np.random.default_rng(1).random((300, 3)) * 3 + 0.5).astype(np.float32)
+    if dimension == 2:
+        probe[:, 2] = 0.0
+    source = _vtk(x)
+    for name, values in (("mass", mass), ("density", rho), ("f", f)):
+        array = vtkFloatArray(values)
+        array.SetName(name)
+        source.point_data.AddArray(array)
+    for normalize in (False, True):
+        kind = {"cubic": vtkSPHCubicKernel, "quartic": vtkSPHQuarticKernel,
+                "quintic": vtkSPHQuinticKernel, "wendland": vtkWendlandQuinticKernel}[kernel]()
+        kind.SetSpatialStep(0.25)
+        kind.SetDimension(dimension)
+        interpolator = vtkSPHInterpolator()
+        interpolator.SetInputData(_vtk(probe))
+        interpolator.SetSourceData(source)
+        interpolator.SetKernel(kind)
+        interpolator.SetMassArrayName("mass")
+        interpolator.SetDensityArrayName("density")
+        interpolator.SetShepardNormalization(normalize)
+        interpolator.Update()
+        theirs = np.asarray(interpolator.GetOutput().point_data["f"])
+        ours = td.sph_interpolate(particles, probe, kernel=kernel, normalize=normalize,
+                                  dimension=dimension).fields["f"].values.numpy()
+        assert np.abs(ours - theirs).max() <= 1e-5 * np.abs(theirs).max()
+
+
+def test_sph_density_is_the_sum():
+    particles, x, mass, _, _ = _particles(1500, h=0.3)
+    got = td.sph_density(particles).fields["density"].values.numpy()
+    q = np.sqrt(((x[:, None].astype(np.float64) - x[None]) ** 2).sum(-1)) / 0.3
+    shape = np.where(q < 1, 1 - 1.5 * q ** 2 + 0.75 * q ** 3,
+                     np.where(q < 2, 0.25 * (2 - q) ** 3, 0.0))
+    expected = (shape * mass[None]).sum(axis=1) / (np.pi * 0.3 ** 3)
+    np.testing.assert_allclose(got, expected, rtol=1e-4)
+
+
+def test_sph_onto_an_image_with_shepard_normalization():
+    """Resampled onto an image, with normalization a constant is exact wherever the
+    particles reach, and ``shepard`` says where that is."""
+    particles, x, _, _, _ = _particles()
+    particles.fields["one"] = td.Field(td.H1(particles), tack.ones((len(x),)))
+    image = td.uniform_grid((9, 9, 9), origin=(0.0, 0.0, 0.0), spacing=(0.5, 0.5, 0.5))
+    out = td.sph_interpolate(particles, image, ["one"], normalize=True)
+    reached = out.fields["shepard"].values.numpy() > 0
+    np.testing.assert_allclose(out.fields["one"].values.numpy()[reached], 1.0, rtol=1e-5)
+    assert out.origin == image.origin and isinstance(out.topology, td.StructuredTopology)
+
+
+def test_sph_takes_numbers_and_leaves_integers():
+    particles, x, _, _, _ = _particles(500)
+    particles.fields["class"] = td.Field(td.H1(particles), tack.array(
+        np.arange(500, dtype=np.int32)))
+    out = td.sph_interpolate(particles, x[:10], smoothing_length=0.3, mass=0.1,
+                             density=1.0)
+    assert "class" not in out.fields and "f" in out.fields and "h" in out.fields
+    named = td.sph_interpolate(particles, x[:10])     # its h, mass and density by name
+    assert sorted(named.fields) == ["f", "shepard"]
+    with pytest.raises(ValueError, match="no 1D form"):
+        td.sph_interpolate(particles, particles, kernel="wendland", dimension=1)
+    with pytest.raises(ValueError, match="kernel is one of"):
+        td.sph_density(particles, kernel="gaussian")

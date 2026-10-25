@@ -24,6 +24,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `vtkRadiusOutlierRemoval` and `vtkStatisticalOutlierRemoval` keep the same
   points) and `point_normals` (PCA over the k nearest or a radius, signed
   toward a viewpoint or up; within 0.1 degrees of `vtkPCANormalEstimation`).
+- On the point locator: `connected_components(data, radius=, min_size=)`
+  (Euclidean clusters, friends-of-friends; VTK's
+  `vtkEuclideanClusterExtraction` one to one), `deposit` (points onto an image
+  by nearest grid point or cloud in cell: counts, sums, means, minima, maxima,
+  per volume; LiDAR surface models), and `sph_interpolate`/`sph_density`
+  (VTK's four SPH kernels in 1 to 3 dimensions, Shepard normalization; within
+  float rounding of `vtkSPHInterpolator`). All deterministic.
 - `td.point_cloud(positions, fields)`: a dataset of one implicit vertex cell
   per point (stored nowhere), float64 positions on an origin of their own,
   integer fields (a LAS classification, intensities) kept in their type. The
