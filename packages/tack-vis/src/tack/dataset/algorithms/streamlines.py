@@ -4,7 +4,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids
 from tack.dataset.algorithms._advection import _run
-from tack.dataset.algorithms._common import _close
+from tack.dataset.algorithms._common import _close, _time_unit
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -101,5 +101,5 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     topology = PolylineTopology(line_offsets, line_points, num_points=total, id_dtype=idt)
     out = DataSet(topology, points, origin=data.origin, unit=data.unit)
     out.fields["seed"] = Field(Values(out, "cells"), seed_of)
-    out.fields["time"] = Field(Values(out, "points"), point_times)
+    out.fields["time"] = Field(Values(out, "points"), point_times, _time_unit(data, field))
     return out

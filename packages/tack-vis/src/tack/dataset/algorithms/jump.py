@@ -2,6 +2,7 @@
 
 import tack
 from tack.arrays import materialize
+from tack.dataset import units
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._faces import _on_cells
 from tack.dataset.algorithms.traces import traces
@@ -44,4 +45,4 @@ def jump(data, field):
         for_each(_cell_jump, data, "faces", materialize(field.values), out)
     else:
         for_each(_jump, data, "faces", traces(data, field), out)
-    return Field(Values(data, "faces"), out)
+    return Field(Values(data, "faces"), out, units.delta(field.unit))

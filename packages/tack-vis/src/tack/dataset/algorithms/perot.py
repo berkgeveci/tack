@@ -49,4 +49,5 @@ def perot(data, flux):
         if group.count and group.shape.DIMENSION == data.topology.dimension:
             _perot(data.domain_view("cells", group), materialize(flux.values), areas.values,
                    centers.values, centroids.values, volumes.values, out)
-    return Field(Values(data, "cells"), out)
+    # Areas times offsets over volumes cancel: the components' unit.
+    return Field(Values(data, "cells"), out, flux.unit)

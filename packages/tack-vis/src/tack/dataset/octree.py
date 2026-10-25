@@ -627,7 +627,13 @@ class OctreeDataSet:
                 moments = part if moments is None else _merged(moments, part)
         if moments is None:
             raise ValueError("statistics of no values")
-        return _summary(*moments)
+        if weights is None:
+            weight_unit = "dimensionless"
+        elif isinstance(weights, str) and weights == "volume":
+            weight_unit = _units.derived((self.unit, self.dimension))
+        else:
+            weight_unit = self.units.get(weights)
+        return _summary(*moments)._replace(unit=self.units.get(name), weight_unit=weight_unit)
 
     def _entropy(self, name, bins, weights, level):
         from tack.dataset.algorithms.entropy import _bits, _weighted_counts

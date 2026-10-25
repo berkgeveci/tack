@@ -115,19 +115,52 @@ def test_fields_and_datasets_carry_units():
 
 #: What a filter that gives a field (rather than a dataset) gives it, from the
 #: point field ``s`` in kelvin, ``v`` in metres per second and positions in
-#: metres. Everything else gives ``None``: a derived unit is phase U1's, and
-#: until then it is unknown, not guessed.
+#: metres. Labels, ids and flags give ``None``, as does a result computed from
+#: a bare number (upwind_flux's velocity, perot's faces of ones here).
 FIELD_UNITS = {
     "cell_centers": "m",
     "face_centers": "m",
     "values_at_centers": "K",
+    "gradients": "K/m",
+    "gradients_at_points": "K/m",
     "to_cells": "K",
     "to_points": "K",
     "discontinuous": "K",
     "project": "K",
     "traces": "K",
+    "jump": "K",
+    "edge_lengths": "m",
     "magnitude": "m/s",
+    "dot": "m**2/s**2",
+    "cross": "m**2/s**2",
+    "composite": "K",
+    "cell_geometry": "m**3",
+    "face_geometry": "m**2",
+    "flow_quantities": "1/s",
+    "net_flux": "dimensionless",            # of the faces' unit normals
+    "deposit": "dimensionless",             # a count
+    "deposit_cic": "K",                     # a mean of s
 }
+
+#: Fields a filter that gives a dataset computes, and their units; every other
+#: field it has from the input keeps the input's unit. SPH interpolation here
+#: takes its masses and densities as numbers, so its sums' units are unknown.
+DATASET_UNITS = {
+    "sph_interpolate": {"s": None, "v": None, "shepard": None},
+    "sph_density": {"density": None},
+    "outliers_statistical": {"mean_distance": "m"},
+    "point_normals": {"normals": "dimensionless"},
+    "point_normals_radius": {"normals": "dimensionless"},
+    "point_normals_periodic": {"normals": "dimensionless"},
+    "advect": {"time": "s"},
+    "streamlines": {"time": "s"},
+    "halo_catalog": {"com": "m", "radius": "m", "mass": None, "velocity": "m/s",
+                     "dispersion": "m/s"},
+    "halo_catalog_periodic": {"com": "m", "radius": "m", "mass": None},
+}
+
+#: Filters a unit refuses: the logarithm of kelvin.
+REFUSED = {"log_values": "takes a pure number"}
 
 #: Filters whose output's geometry is not in the input's spatial unit:
 #: cylindrical and spherical coordinates mix an angle with lengths, and probe
@@ -136,13 +169,20 @@ UNKNOWN_SPACE = {"cylindrical", "spherical", "probe"}
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
-def test_every_algorithm_keeps_a_quantitys_unit_and_forgets_no_other(name):
+def test_every_algorithm_keeps_or_derives_units(name):
     data = _labelled(_hexes(tack.device("cpu")))
+    if name in REFUSED:
+        with pytest.raises(ValueError, match=REFUSED[name]):
+            CALLS[name](data)
+        return
     out = CALLS[name](data)
     if isinstance(out, td.DataSet):
         assert out.unit == (None if name in UNKNOWN_SPACE else "m")
+        computed = DATASET_UNITS.get(name, {})
         for field_name, field in out.fields.items():
-            if field_name in data.fields:
+            if field_name in computed:
+                assert field.unit == computed[field_name], field_name
+            elif field_name in data.fields:
                 assert field.unit == data.fields[field_name].unit, field_name
     elif isinstance(out, td.Field):
         assert out.unit == FIELD_UNITS.get(name)
@@ -314,3 +354,148 @@ def test_hypertreegrid_units_both_ways():
                                          units={"T": "K"})
     back = vtk_to_dataset(dataset_to_vtk(octree))
     assert back.unit == "kpc" and back.units == {"T": "K"}
+
+
+# -- derived units (U1) ------------------------------------------------------------------
+
+def test_derived_units_deltas_and_names():
+    assert units.derived(("K", 1), ("m", -1)) == "K/m"
+    assert units.derived("kg/m**3", "m/s", ("m", 2)) == "kg/s"
+    assert units.derived("dimensionless", ("m", -3)) == units.canonical("1/m**3")
+    assert units.derived(None, "m") is None
+    with pytest.raises(ValueError, match="offset zero"):
+        units.derived("degC", "m")
+    # A difference of degrees Celsius is in kelvin, of Fahrenheit in Rankine.
+    assert units.delta("degC") == "K" and units.delta("degF") == "R"
+    assert units.delta("m") == "m" and units.delta(None) is None
+    # Only the dimensions and the size decide a name.
+    assert units.named(units.derived("Pa", ("m", 3))) == "J"
+    assert units.named(units.derived("m", "N")) == "J"
+    assert units.named("kg*m/s**2") == "N"
+    assert units.named("dyn*cm") == "dyn*cm"           # 1e-7 J: not renamed
+    assert units.named("1/s") == "1/s"                 # Hz and Bq: left out
+    assert units.dimensionless_or_none("x", "1") == "dimensionless"
+    assert units.dimensionless_or_none("x", None) is None
+    with pytest.raises(ValueError, match="x takes a pure number"):
+        units.dimensionless_or_none("x", "km/m")
+
+
+def _celsius(data):
+    t = td.Field(data.fields["s"].space, data.fields["s"].values, "degC")
+    return td.DataSet(data.topology, data.geometry, fields={**data.fields, "t": t},
+                      unit=data.unit)
+
+
+def test_differences_of_celsius_are_in_kelvin():
+    data = _celsius(_labelled(_hexes(tack.device("cpu"))))
+    assert td.gradients(data, "t").unit == "K/m"
+    assert td.jump(data, td.project(data, "t", td.L2(data))).unit == "K"
+    stats = td.statistics(data, "t")
+    assert stats.unit == "°C" and stats.unit_of("mean") == "°C"
+    assert stats.unit_of("population_variance") == "K**2"
+    assert stats.unit_of("sample_stddev") == "K"
+    with pytest.raises(ValueError, match="offset zero"):
+        td.dot(data, "v", td.composite(data, "t", "t", "t"))
+
+
+def test_statistics_give_each_number_its_unit():
+    data = _labelled(_hexes(tack.device("cpu")))
+    plain = td.statistics(data, "s")
+    assert (plain.unit, plain.weight_unit) == ("K", "dimensionless")
+    assert plain.unit_of("sum") == "K" and plain.unit_of("m2") == "K**2"
+    assert plain.unit_of("skewness") == plain.unit_of("n") == "dimensionless"
+    cells = td.project(data, "s", td.Constant(data))
+    data.fields["c"] = cells
+    data.fields["rho"] = td.Field(td.Constant(data), tack.ones((data.num_cells,)), "kg/m**3")
+    by_volume = td.statistics(data, "c", weights="volume")
+    assert by_volume.weight_unit == "m**3" and by_volume.unit_of("weight") == "m**3"
+    assert by_volume.unit_of("sum") == "K*m**3" and by_volume.unit_of("mean") == "K"
+    by_density = td.statistics(data, "c", weights="rho")
+    assert by_density.unit_of("sum") == units.canonical("K*kg/m**3")
+    with pytest.raises(KeyError, match="no statistic"):
+        plain.unit_of("median")
+    import test_octrees
+
+    roots, level, centre, rho, temperature = test_octrees.ramses_like(3)
+    roots = td.uniform_grid(tuple(n for n in roots.topology.point_dims), unit="kpc")
+    octree = td.OctreeDataSet.from_cells(roots, level, centre, fields={"T": temperature},
+                                         units={"T": "K"})
+    stats = td.statistics(octree, "T", weights="volume")
+    assert stats.unit == "K" and stats.weight_unit == "kpc**3"
+
+
+def test_products_composites_and_logarithms():
+    data = _labelled(_hexes(tack.device("cpu")))
+    data.fields["F"] = td.Field(data.fields["v"].space, data.fields["v"].values, "N")
+    data.fields["d"] = td.Field(data.fields["v"].space, data.fields["v"].values, "m")
+    assert td.dot(data, "F", "d").unit == "J"            # N m folds to its name
+    assert td.cross(data, "d", "F").unit == "J"
+    data.fields["r"] = td.Field(data.fields["s"].space, data.fields["s"].values, "1")
+    assert td.log_values(data, "r").unit == "dimensionless"
+    with pytest.raises(ValueError, match="takes a pure number"):
+        td.log_values(data, "s")
+    with pytest.raises(ValueError, match="composite's fields is in"):
+        td.composite(data, "s", "r", "s")
+
+
+def test_geometry_and_fluxes():
+    data = _labelled(_hexes(tack.device("cpu")))
+    assert td.cell_geometry(data).centroid.unit == "m"
+    normal, area = td.face_geometry(data)
+    assert normal.unit == "dimensionless" and area.unit == "m**2"
+    flux = td.Field(td.Values(data, "faces", oriented=True), tack.ones(
+        (data.topology.faces().num_faces,)), "kg/s")
+    assert td.net_flux(data, flux).unit == "kg/s"
+    assert td.divergence(data, flux).unit == units.canonical("kg/(m**3*s)")
+    velocity = td.Field(td.Values(data, "faces"), tack.ones(
+        (data.topology.faces().num_faces,)), "m/s")
+    assert td.perot(data, velocity).unit == "m/s"
+    surface = td.uniform_grid((3, 3), unit="km")
+    assert td.cell_geometry(surface).measure.unit == "km**2"
+    assert td.face_geometry(surface).area.unit == "km"   # a 2D mesh's faces are edges
+    gradient = td.gradients(data, "v")
+    quantities = td.flow_quantities(data, gradient)
+    assert gradient.unit == "1/s" and quantities.q_criterion.unit == "s**(-2)"
+
+
+def test_deposits_and_particles():
+    rng = np.random.default_rng(0)
+    cloud = td.point_cloud(rng.uniform(0.0, 2.0, (200, 3)),
+                           fields={"m": np.full(200, 2.0), "rho": np.full(200, 4.0),
+                                   "h": np.full(200, 0.5), "T": rng.random(200),
+                                   "v": rng.random((200, 3))},
+                           unit="m", units={"m": "kg", "rho": "kg/m**3", "h": "m",
+                                            "T": "K", "v": "m/s"}, origin=(0, 0, 0))
+    image = td.uniform_grid((5, 5, 5), spacing=(0.5, 0.5, 0.5), unit="m")
+    assert td.deposit(cloud, image).unit == "dimensionless"
+    assert td.deposit(cloud, image, per_volume=True).unit == units.canonical("1/m**3")
+    assert td.deposit(cloud, image, "m", per_volume=True).unit == "kg/m**3"
+    assert td.deposit(cloud, image, "T", "mean").unit == "K"
+    feet = td.uniform_grid((5, 5, 5), spacing=(0.5, 0.5, 0.5), unit="ft")
+    with pytest.raises(ValueError, match="spatial unit is in"):
+        td.deposit(cloud, feet)
+    density = td.sph_density(cloud, smoothing_length="h", mass="m")
+    assert density.fields["density"].unit == "kg/m**3"
+    sampled = td.sph_interpolate(cloud, image, ["T"], smoothing_length="h", mass="m",
+                                 density="rho")
+    assert sampled.fields["T"].unit == "K" and sampled.fields["shepard"].unit == "dimensionless"
+    normalized = td.sph_interpolate(cloud, image, ["T"], smoothing_length="h", mass=1.0,
+                                    density=1.0, normalize=True)
+    assert normalized.fields["T"].unit == "K"
+    labelled = td.connected_components(cloud, radius=0.4)
+    catalog = td.halo_catalog(labelled, mass="m", velocity="v")
+    assert catalog.fields["mass"].unit == "kg" and catalog.fields["radius"].unit == "m"
+    grid = _labelled(_hexes(tack.device("cpu")))
+    moved = td.advect(grid, "v", np.array([[0.5, 0.5, 0.5]], np.float32), 0.01, 3)
+    assert moved.fields["time"].unit == "s"
+
+
+@tack.func
+def _height(x):
+    return x[2]
+
+
+def test_interpolate_takes_the_unit_it_cannot_infer():
+    data = _labelled(_hexes(tack.device("cpu")))
+    assert td.interpolate(data, _height, td.H1(data), unit="m").unit == "m"
+    assert td.interpolate(data, _height, td.H1(data)).unit is None

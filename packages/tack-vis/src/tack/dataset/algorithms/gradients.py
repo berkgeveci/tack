@@ -3,7 +3,7 @@
 import tack
 from tack import arrays
 from tack.arrays import materialize, size_of, width_of
-from tack.dataset import shapes
+from tack.dataset import shapes, units
 from tack.dataset.algorithms._common import _field, _vectors, _with_basis
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.carry import _take
@@ -217,9 +217,11 @@ def gradients(data, field, at="cells"):
     if at not in ("cells", "points"):
         raise ValueError(f"gradients are at 'cells' or 'points', not {at!r}")
     space = Values(data, at)
+    # Per unit length; a difference of degrees Celsius is in kelvin.
+    unit = units.derived(units.delta(field.unit), (data.unit, -1))
     width = width_of(field.values)
     if not width:
-        return Field(space, _scalar_gradients(data, field, at))
+        return Field(space, _scalar_gradients(data, field, at), unit)
     n = data.num_cells if at == "cells" else data.num_points
     out = tack.empty((n,), tack.vec(3 * width, data.dtype))
     values = materialize(field.values)
@@ -230,4 +232,4 @@ def gradients(data, field, at="cells"):
         rows = _scalar_gradients(data, Field(field.space, part), at)
         if n:
             _place_rows(rows, k, out)
-    return Field(space, out)
+    return Field(space, out, unit)

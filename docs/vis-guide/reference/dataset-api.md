@@ -345,12 +345,15 @@ a unit. See [Physical Units](../12-units.md).
 | `DataSet(..., unit=)`, `data.unit` | the spatial unit, the geometry field's; `uniform_grid`, `rectilinear_grid` and `point_cloud` take `unit=`, `point_cloud` also `units={name: unit}` |
 | `OctreeDataSet(..., units={name: unit})`, `octree.unit`, `octree.units` | the fields' units, and the roots' spatial unit |
 | `convert(data, unit, field=None)` | the geometry (origin scaled in double precision; images stay images) or a field in `unit`, scaled and offset on the device |
-| `tack.dataset.units` | `canonical`, `conversion` (factor and offset), `same`, `compatible`, `common`; the registry is unyt's plus `ftUS`, the US survey foot |
+| `Statistics.unit`, `.weight_unit`, `.unit_of(name)` | the field's and the weights' units, and each statistic's (variances in the square, `sum` times the weights') |
+| `interpolate(..., unit=)` | the function's values' unit, which its code does not say |
+| `tack.dataset.units` | `canonical`, `conversion` (factor and offset), `same`, `compatible`, `common`, `derived` (products of powers), `delta` (degrees Celsius to kelvin for differences), `named` (`Pa*m**3` as `J`); the registry is unyt's plus `ftUS`, the US survey foot |
 
 Filters that keep a quantity keep its unit (everything `carry` takes along,
-`project`, `values_at_centers`, traces, `magnitude`, means, SPH
-interpolation, centres in the spatial unit); the rest give `None` until
-derived units arrive. Positions in two known spatial units do not meet:
+`project`, `values_at_centers`, traces, `magnitude`, means, centres in the
+spatial unit); those that compute one derive it (gradients, products,
+measures, fluxes, statistics, deposits, SPH, particle times: the table in
+[Physical Units](../12-units.md#derived-units)). Positions in two known spatial units do not meet:
 probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
 interop maps each array's `UNITS_LABEL`.
 

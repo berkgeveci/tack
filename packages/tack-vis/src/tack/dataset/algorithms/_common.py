@@ -64,6 +64,31 @@ def _with_basis(data, field):
     return field
 
 
+def _cell_dimension(data):
+    """The one dimension of ``data``'s cells (3 for solids, 2 for surfaces, 1 for
+    lines), or ``None`` where they mix dimensions or there are none."""
+    dims = {group.shape.DIMENSION for group in data.topology.groups() if group.count}
+    return dims.pop() if len(dims) == 1 and 0 not in dims else None
+
+
+def _measure_unit(data):
+    """The unit of ``data``'s cells' measures: the spatial unit to the cells'
+    dimension (volume, area, length), or ``None`` where the cells mix
+    dimensions or the spatial unit is unknown."""
+    from tack.dataset import units
+
+    k = _cell_dimension(data)
+    return None if k is None else units.derived((data.unit, k))
+
+
+def _time_unit(data, velocity):
+    """The unit of time a particle moved by ``velocity`` (a field or its name) keeps:
+    the spatial unit over the velocity's, or ``None`` if either is unknown."""
+    from tack.dataset import units
+
+    return units.derived(data.unit, (_field(data, velocity).unit, -1))
+
+
 def _floating_dtype(*values):
     """Fractional arithmetic: f64 for an f64 operand, otherwise f32.
 

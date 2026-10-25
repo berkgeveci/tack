@@ -115,7 +115,7 @@ def _writers(data, space, target):
 
 
 @on_inputs_device
-def interpolate(data, function, space, dtype=None):
+def interpolate(data, function, space, dtype=None, unit=None):
     """A ``Field`` in ``space`` whose values are ``function`` at each of the space's
     nodes: ``function`` is a ``@tack.func`` of a world position (a 3-vector of
     the geometry's type) returning a scalar or a vector, and ``dtype`` its
@@ -136,7 +136,9 @@ def interpolate(data, function, space, dtype=None):
     space's nodal interpolant. On polyhedra, polygons and polylines -- no
     reference element -- only point values (``H1`` of order 1 and
     ``Values(data, "points")``) of an ``H1`` geometry interpolate.
-    """
+
+    ``unit`` is the values' unit (``Field.unit``): a function's code does not say
+    it, so by default it is unknown."""
     if not isinstance(function, Func):
         raise TypeError(f"interpolate takes a @tack.func of position, not {function!r}")
     if space.topology is not data.topology:
@@ -147,7 +149,7 @@ def interpolate(data, function, space, dtype=None):
         raise TypeError(f"interpolate takes H1, L2, Constant or Values, not {space!r}")
     fn = _Of(function, data.origin)
     values = tack.zeros((space.size,), dtype or data.dtype)
-    out = Field(space, values)
+    out = Field(space, values, unit)
     shared = isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")
     if not (shared and not isinstance(data.geometry.space, H1)):
         # Every node once, from the space's node views.
