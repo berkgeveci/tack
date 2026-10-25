@@ -413,15 +413,31 @@ class DataSet:
     def rebased(self, origin):
         """This dataset with its geometry relative to ``origin`` instead: the same
         world positions, each value moved by the difference of the two origins
-        (taken in double precision, added in the geometry's type). An implicit
-        geometry (an image's, a grid's lines) becomes positions per point."""
+        (taken in double precision, added in the geometry's type). An image
+        stays an image, its corner moved in double precision, so an image at
+        survey coordinates rebased to a nearby origin holds its points exactly;
+        a rectilinear grid moves its axes. Other implicit geometry becomes
+        positions per point."""
+        from tack.arrays import CartesianProduct, UniformCoordinates
         from tack.dataset.algorithms._moving import _moved, _shifted
 
         origin = as_origin(origin)
         if origin == self.origin:
             return self
         offset = np.asarray(self.origin) - np.asarray(origin)
-        out = _moved(self, _shifted(self, offset))
+        values = self.geometry.values
+        if isinstance(values, UniformCoordinates):
+            moved = UniformCoordinates(values.dims, np.asarray(values._origin) + offset,
+                                       values._spacing,
+                                       values._matrix if values.ORIENTED else None,
+                                       dtype=values.dtype, device=self.device)
+        elif isinstance(values, CartesianProduct):
+            axes = [arrays.to_host(axis).astype(np.float64).reshape(-1) + offset[a]
+                    for a, axis in enumerate((values.xs, values.ys, values.zs))]
+            moved = CartesianProduct(*axes, dtype=values.dtype, device=self.device)
+        else:
+            moved = _shifted(self, offset)
+        out = _moved(self, moved)
         out.origin = origin
         return out
 
@@ -790,7 +806,15 @@ def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), directio
     (ijk * spacing)``: VTK's image data, Viskores' uniform data set. Nothing per
     point is stored (``UniformCoordinates``). A size of 1 adds no cells, in any
     position, and a grid with no axis of two points has none (``grid_topology``).
-    It is on ``device`` (by default the default device)."""
+    ``origin`` and ``spacing`` take a value per size given (or three), and
+    ``direction`` is 3 x 3 (2 x 2 for a 2D image). It is on ``device`` (by
+    default the default device).
+
+    The image's coordinates are in the geometry's type, so one far from zero
+    -- a raster at survey coordinates -- loses digits in single precision:
+    ``rebased(origin)`` keeps it an image with its corner relative to a nearby
+    dataset origin, moved in double precision, as a point cloud's origin
+    keeps its points."""
     topology = grid_topology(dims, device=device)   # the sizes as given, before padding
     return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype,
                                                 device=device))

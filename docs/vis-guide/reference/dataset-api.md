@@ -345,7 +345,7 @@ offset for the same reason.
 |---|---|
 | `DataSet(..., origin=)`, `data.origin` | set it; assigning it moves every point (the values stay) |
 | `data.world_positions()` | `origin + positions()`, a float64 host array; `positions()` stays the values |
-| `data.rebased(origin)` | the same world positions relative to another origin: each value moved by the difference of the origins, taken in double precision, added in the geometry's type |
+| `data.rebased(origin)` | the same world positions relative to another origin: each value moved by the difference of the origins, taken in double precision, added in the geometry's type. An image stays an image, its corner moved in double precision (a raster at survey coordinates, rebased near it, holds its points exactly); a rectilinear grid moves its axes; other implicit geometry becomes positions per point |
 | `point_cloud(positions, fields=None, origin=None, dtype=tack.f32)` | a dataset of one implicit vertex cell per point (types, offsets and connectivity stored nowhere), `fields` as point data. Host positions are world positions, taken relative to `origin` in double precision; without one, float64 positions get the lower corner of their box rounded down, others zero. A Tack array of 3-vectors is relative to `origin` already. Floating-point fields take `dtype`, integer fields (a classification, intensities) keep their type; `tack.f64` is refused on a device without it |
 
 **Filters keep it**: an output dataset has its input's origin (through `carry`,

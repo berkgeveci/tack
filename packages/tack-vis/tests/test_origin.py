@@ -141,6 +141,51 @@ def test_world_positions_and_rebased():
     assert sorted(moved.fields) == sorted(data.fields) and "corner" in moved.sets
 
 
+def test_an_image_takes_a_value_per_size():
+    flat = td.uniform_grid((4, 3), origin=(1.0, 2.0), spacing=(0.5, 0.25))
+    full = td.uniform_grid((4, 3), origin=(1.0, 2.0, 0.0), spacing=(0.5, 0.25, 1.0))
+    np.testing.assert_array_equal(flat.positions(), full.positions())
+    turned = td.uniform_grid((4, 3), direction=[[0.0, -1.0], [1.0, 0.0]])
+    np.testing.assert_array_equal(turned.positions()[1], [0.0, 1.0, 0.0])
+    np.testing.assert_array_equal(td.uniform_grid((5,), spacing=(0.5,)).positions()[:, 0],
+                                  np.arange(5) * 0.5)
+    with pytest.raises(ValueError, match="one to three values"):
+        td.uniform_grid((4, 3), spacing=(1.0, 1.0, 1.0, 1.0))
+    with pytest.raises(ValueError, match="2 x 2"):
+        td.uniform_grid((4, 3), direction=np.eye(4))
+
+
+def test_an_image_rebased_stays_an_image_with_its_points_exact():
+    """A 2 m raster at survey coordinates: its own corner in single precision is
+    half a metre coarse at 4.58e6; rebased near it, the corner is moved in double
+    precision and the points are where they should be."""
+    corner = (431_001.3, 4_580_003.3, 0.0)
+    image = td.uniform_grid((51, 51), origin=corner[:2], spacing=(2.0, 2.0))
+    near = image.rebased((431_000.0, 4_580_000.0, 0.0))
+    assert isinstance(near.geometry.values, tack.arrays.UniformCoordinates)
+    assert near.num_cells == image.num_cells
+    i, j = np.meshgrid(np.arange(51), np.arange(51), indexing="xy")
+    exact = np.stack([corner[0] + 2.0 * i.ravel(), corner[1] + 2.0 * j.ravel(),
+                      np.zeros(i.size)], axis=1)
+    assert np.abs(image.world_positions() - exact).max() > 0.1
+    np.testing.assert_allclose(near.world_positions(), exact, rtol=0, atol=1e-5)
+    # The image is still one to deposit onto, now in the points' frame.
+    inner = (i.ravel() < 50) & (j.ravel() < 50)
+    centres = td.point_cloud(exact[inner] + [1.0, 1.0, 0.0], origin=near.origin)
+    np.testing.assert_array_equal(td.deposit(centres, near).values.numpy(), 1)
+    # Oriented images keep their direction; a rectilinear grid moves its axes.
+    turned = td.uniform_grid((3, 3, 3), origin=ORIGIN, direction=[[0, -1, 0], [1, 0, 0],
+                                                                    [0, 0, 1]])
+    np.testing.assert_allclose(turned.rebased(ORIGIN).world_positions(),
+                               turned.world_positions(), rtol=0, atol=0.5)
+    assert turned.rebased(ORIGIN).geometry.values.ORIENTED == 1
+    lines = td.rectilinear_grid([0.0, 1.0, 3.0], [0.0, 2.0], [5.0, 6.0])
+    moved = lines.rebased((-10.0, 0.0, 1.0))
+    assert isinstance(moved.geometry.values, tack.arrays.CartesianProduct)
+    np.testing.assert_array_equal(moved.world_positions(), lines.world_positions())
+    np.testing.assert_array_equal(moved.geometry.values.xs.numpy(), [10.0, 11.0, 13.0])
+
+
 @pytest.mark.parametrize("name", sorted(_calls()))
 def test_every_algorithm_keeps_the_origin_and_its_values(name):
     call = _calls()[name]

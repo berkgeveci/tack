@@ -321,28 +321,53 @@ def _point_dims(dims):
     return tuple(dims)
 
 
+def _three(values, fill, what):
+    """Up to three numbers as three floats, the missing ones ``fill``."""
+    values = tuple(float(v) for v in np.asarray(values, float).reshape(-1))
+    if not 1 <= len(values) <= 3:
+        raise ValueError(f"an image's {what} has one to three values, not {len(values)}")
+    return values + (fill,) * (3 - len(values))
+
+
 @tack.device_class
 class UniformCoordinates(_Implicit):
     """The points of an image: ``origin + direction @ ((i, j, k) * spacing)`` at index
     ``i + nx * (j + ny * k)``, as VTK's image data (with its direction matrix) and
-    Viskores' uniform point coordinates. Nothing per point is stored."""
+    Viskores' uniform point coordinates. Nothing per point is stored.
+
+    ``dims`` has one to three sizes; ``origin`` and ``spacing`` as many values
+    or three, the rest taken as 0 and 1, and ``direction`` is 3 x 3 or, for a
+    2D image, 2 x 2."""
 
     ORIENTED = 0                              # compile-time: apply ``direction``
 
     def __init__(self, dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
                  dtype=tack.f32, device=None):
-        dims = tuple(int(d) for d in dims) + (1,) * (3 - len(dims))
+        dims = tuple(int(d) for d in dims)
+        if not 1 <= len(dims) <= 3:
+            raise ValueError(f"an image has one to three sizes, not {dims!r}")
+        dims += (1,) * (3 - len(dims))
         self.dims = dims
         self.px, self.py = dims[0], dims[1]
-        self.ox, self.oy, self.oz = (float(v) for v in origin)
-        self.sx, self.sy, self.sz = (float(v) for v in spacing)
-        matrix = np.eye(3) if direction is None else np.asarray(direction, float).reshape(3, 3)
+        origin, spacing = _three(origin, 0.0, "origin"), _three(spacing, 1.0, "spacing")
+        self.ox, self.oy, self.oz = origin
+        self.sx, self.sy, self.sz = spacing
+        matrix = np.eye(3)
+        if direction is not None:
+            given = np.asarray(direction, float)
+            if given.shape == (2, 2):
+                matrix[:2, :2] = given
+            elif given.size == 9:
+                matrix = given.reshape(3, 3)
+            else:
+                raise ValueError(f"direction is a 3 x 3 matrix, or 2 x 2 for a 2D image, not "
+                                 f"{given.shape}")
         if direction is not None and not np.allclose(matrix, np.eye(3)):
             self.ORIENTED = 1
         # Always present, so an f64 grid's scalars are f64 in the kernel; it
         # puts the grid on ``device`` (by default the default device).
         self.direction = _store(matrix.reshape(-1), dtype, device)
-        self._origin, self._spacing, self._matrix = tuple(origin), tuple(spacing), matrix
+        self._origin, self._spacing, self._matrix = origin, spacing, matrix
         _metadata(self, math.prod(dims), 3, dtype)
 
     @property
