@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Cell quality: `td.cell_quality(data, measures)`, the scaled Jacobian,
+  Jacobian ratio, condition number, edge ratio and shortest and longest edge
+  of every cell, each 1 on its shape's ideal cell. Verdict's definitions
+  (matched to VTK's `vtkMeshQuality` where it defines them), extended to every
+  shape: order-2 cells along their curved edges, wedges and pyramids, and
+  polyhedra and polygons by their fan tetrahedra and triangles.
 - Time on datasets, for filters that stream steps (in situ): `DataSet(...,
   time=, time_unit=)`, kept by every filter as the origin is; pieces and AMR
   boxes at two times are refused; VTK's `DATA_TIME_STEP` both ways.

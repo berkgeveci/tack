@@ -135,6 +135,7 @@ FIELD_UNITS = {
     "cross": "m**2/s**2",
     "composite": "K",
     "cell_geometry": "m**3",
+    "cell_quality": "dimensionless",
     "face_geometry": "m**2",
     "flow_quantities": "1/s",
     "net_flux": "dimensionless",            # of the faces' unit normals

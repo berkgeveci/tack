@@ -121,6 +121,45 @@ a stretched mesh. Choose cell measures and a suitable quadrature when the
 quantity you need is a physical integral. The function returns Python values
 and therefore waits for the device work it reads.
 
+## Cell quality
+
+`cell_quality(data, measures)` measures how well shaped each cell is, a cell
+field per measure, each 1 on the ideal cell of its shape (equilateral; a cube,
+a regular tetrahedron):
+
+| Measure | What it says |
+|---|---|
+| `scaled_jacobian` | the worst corner's edges' determinant, edges scaled to unit length, relative to the ideal cell's: 1 ideal, 0 flat, negative inverted |
+| `jacobian_ratio` | the least corner determinant over the greatest: 1 for every simplex, below 1 as a cell tapers |
+| `condition` | the worst corner's condition number against the ideal cell's: 1 ideal, growing as it distorts, the largest float when inverted |
+| `edge_ratio`, `min_edge`, `max_edge` | the longest edge over the shortest; the shortest and longest, in the spatial unit |
+
+They are Verdict's definitions (VTK's `vtkMeshQuality`), matched to VTK where
+it defines them, and extended to every shape Tack has: the corners' edges are
+the geometry's Jacobian applied to the reference cell's edge directions, so
+order-2 cells are measured along their curved edges, and wedges and pyramids
+get every measure. Polyhedra and polygons, which have no reference cell, are
+measured by the fan tetrahedra and triangles Tack evaluates them in.
+
+<!-- tack-check: cell-quality -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+mesh = td.tetrahedralize(td.uniform_grid((4, 4, 4)))
+quality = td.cell_quality(mesh, ["scaled_jacobian", "condition", "edge_ratio"])
+sj = quality["scaled_jacobian"].values.numpy()
+print(f"scaled Jacobian {sj.min():.3f} to {sj.max():.3f}")
+mesh.fields["sj"] = quality["scaled_jacobian"]
+worst = td.threshold(mesh, "sj", -1.0, 0.75)          # the right-corner tetrahedra
+assert np.isclose(sj.max(), 1.0) and np.isclose(sj.min(), 1 / np.sqrt(2))
+assert worst.num_cells == np.count_nonzero(sj < 0.75)
+```
+
 ## Check algorithm support before building a pipeline
 
 | Task | Shape-based | Polyhedral / polygonal | Polyline |

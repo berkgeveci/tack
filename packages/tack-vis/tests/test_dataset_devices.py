@@ -157,6 +157,7 @@ CALLS = {
     "implicit_values": lambda d: td.implicit_values(d, td.Sphere((0, 0, 0), 1.0)),
     "point_elevation": td.point_elevation,
     "cell_geometry": lambda d: td.cell_geometry(d).measure,
+    "cell_quality": lambda d: td.cell_quality(d)["scaled_jacobian"],
     "face_geometry": lambda d: td.face_geometry(d).area,
     "flow_quantities": lambda d: td.flow_quantities(d, td.gradients(d, "v")).divergence,
     "upwind_flux": lambda d: td.upwind_flux(d, "s", (1.0, 0.5, 0.0)),
