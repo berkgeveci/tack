@@ -27,6 +27,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   fine data into the coarse cells and points it covers. Each is a kept
   `tack.communication.Plan` and a weighted sum, so they run over devices and
   MPI ranks.
+- `probe(amr, where)`: each point in the finest level's cell holding it, over
+  every rank's boxes; onto an image, the hierarchy resampled, equal to VTK's
+  `vtkAMRResampleFilter` (which leaves points on the domain's upper faces
+  unset).
 - A dataset's origin: `DataSet.origin`, three doubles on the host, where its
   geometry's coordinates start. Kernels see only the geometry's values
   (`tack.f32`, or `tack.f64` where the device has it), so points far from

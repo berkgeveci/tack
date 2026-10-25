@@ -1,16 +1,15 @@
-"""Block-structured AMR (``AMRDataSet``): the hierarchy, its marks, and what reads
-them.
+"""Block-structured AMR (``AMRDataSet``): the hierarchy, its marks, ghost cells and
+averages. Probing and the MPI runs, which compile probe's kernels, are in
+``test_amr_probe.py``.
 
 The marks are held to VTK's ``vtkAMRUtilities::BlankCells`` and its Gaussian
 pulse source, cell for cell. The same hierarchy as images, as rectilinear
 grids and as curvilinear grids gives the same marks, since they are computed
 in index space. Reductions count each region of space and each location once,
 checked against the hierarchy's geometry by brute force. The same checks run
-with boxes on a simulated second device and over 2 and 3 MPI ranks
-(``_amr_mpi.py``).
+with boxes on a simulated second device.
 """
 
-import os
 
 import numpy as np
 import pytest
@@ -459,13 +458,6 @@ def test_ghost_cells_in_3d():
     assert hidden_somewhere              # the level-2 box grows past its coarse box
 
 
-def test_amr_across_mpi_ranks(mpiexec):
-    script = os.path.join(os.path.dirname(__file__), "_amr_mpi.py")
-    for ranks in (2, 3):
-        run = mpiexec(ranks, script)
-        assert run.returncode == 0 and "ok" in run.stdout, run.stdout + run.stderr
-
-
 def across(world):
     """This rank's share of each level's boxes: their marks by (level, global index),
     and the statistics of the cell field over the hierarchy."""
@@ -483,6 +475,9 @@ def across(world):
             out[(level, whole)] = (box.ghosts.cells.numpy().tolist(),
                                    (box.ghosts.points.numpy() & (0xFF ^ Ghosts.DUPLICATEPOINT))
                                    .tolist())
+    points = np.column_stack([np.linspace(0.1, 7.9, 40), np.linspace(7.9, 0.1, 40),
+                              np.zeros(40)])[world.rank::world.size]
+    out["probe", world.rank] = td.probe(amr, points).fields["c"].values.numpy().tolist()
     grown = td.ghost_cells(amr)
     for level, boxes in enumerate(grown.levels):
         for box, whole in zip(boxes, keys[level]):

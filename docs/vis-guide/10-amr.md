@@ -98,7 +98,26 @@ td.update_ghosts(grown, "g")               # the ghosts' from their owners
 td.average_down(grown, "g")                # coarse cells under fine ones: the fine average
 ```
 
-## Next
+## Probe and resample
 
-Probing at the finest level, resampling onto one image, and boxes spread over
-MPI ranks and devices are the next phase.
+`probe(amr, where)` evaluates each point in the finest level's cell holding it,
+so probing onto an image resamples the hierarchy, as VTK's
+`vtkAMRResampleFilter` does:
+
+```python
+image = td.uniform_grid((64, 64), origin=(0.0, 0.0), spacing=(8 / 63, 8 / 63, 1.0))
+resampled = td.probe(amr, image)           # each point from the finest level holding it
+```
+
+## In pieces
+
+The boxes of a hierarchy may be on several devices and spread over MPI ranks:
+each rank passes its own boxes of each level and the world
+(`td.AMRDataSet(levels, ratios, world=tc.World(comm))`). The hierarchy gathers
+every rank's boxes when it is made, and its marks, ghost cells,
+`average_down`, probes and reductions work across the ranks.
+
+## Not here
+
+Crack-free contouring across levels, periodic domains, tagging and regridding,
+and conservative interpolation are not part of Tack yet.

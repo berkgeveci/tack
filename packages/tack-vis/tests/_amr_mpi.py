@@ -30,6 +30,11 @@ def main():
             for k, box in enumerate(boxes):
                 expected[(level, k, "ghosts")] = (box.fields["c"].values.numpy().tolist(),
                                                   box.fields["p"].values.numpy().tolist())
+        points = case.np.column_stack([case.np.linspace(0.1, 7.9, 40),
+                                       case.np.linspace(7.9, 0.1, 40), case.np.zeros(40)])
+        probed = case.td.probe(whole, points).fields["c"].values.numpy()
+        for rank in range(comm.size):
+            expected["probe", rank] = probed[rank::comm.size].tolist()
         got = {}
         for part, n in gathered:
             got.update(part)
