@@ -2404,6 +2404,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#origins-and-point-clouds" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3975,6 +3986,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#origins-and-point-clouds" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4780,6 +4802,39 @@ measures, fluxes, statistics, deposits, SPH, particle times: the table in
 <a href="../../12-units/#derived-units">Physical Units</a>). Positions in two known spatial units do not meet:
 probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
 interop maps each array's <code>UNITS_LABEL</code>.</p>
+<h2 id="time">Time<a class="headerlink" href="#time" title="Permanent link">&para;</a></h2>
+<p>Tack holds no series of steps: a simulation in situ, or a reader's loop,
+hands filters one step at a time, and each step is a dataset at its time.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DataSet(..., time=, time_unit=)</code>, <code>data.time</code>, <code>data.time_unit</code></td>
+<td>the step's time, a double on the host or <code>None</code>, in a unit of time or <code>None</code></td>
+</tr>
+<tr>
+<td>kept by</td>
+<td>every filter, as the origin and spatial unit are (<code>carry</code>, <code>keep_marks</code>, <code>drop_marks</code>, <code>to_device</code>); <code>probe</code> gives back its target's</td>
+</tr>
+<tr>
+<td>refused</td>
+<td>pieces of a <code>PartitionedDataSet</code> and boxes of an <code>AMRDataSet</code> at two times (compared in one unit); an octree's time is its roots'</td>
+</tr>
+<tr>
+<td>VTK</td>
+<td><code>vtkDataObject::DATA_TIME_STEP</code> both ways; VTK has no time unit</td>
+</tr>
+<tr>
+<td><code>tack.dataset.temporal</code></td>
+<td>filters fed one step at a time (<code>update(data)</code>), keeping copies of what they need of earlier steps (<code>copy=False</code> keeps references) -- running statistics, time derivatives, advection and pathlines follow</td>
+</tr>
+</tbody>
+</table>
 <h2 id="origins-and-point-clouds">Origins and point clouds<a class="headerlink" href="#origins-and-point-clouds" title="Permanent link">&para;</a></h2>
 <p>A position is <code>data.origin + value</code>: the origin is three floats kept in double
 precision on the host (<code>(0.0, 0.0, 0.0)</code> unless set), the value the geometry's,
