@@ -651,7 +651,7 @@ class OctreeDataSet:
     def _weights(self, weights):
         if isinstance(weights, str) and weights == "volume":
             with self.device:
-                return tack.array(self.measures())
+                return tack.array(_device_floats(self.measures(), self.device))
         return self._field(weights)
 
 
@@ -778,17 +778,25 @@ def _with_ancestors(tree, level, key, fields, d):
 
 
 def _reordered(values, order, device, n, name):
-    """A field's values in the nodes' order, on ``device``."""
+    """A field's values in the nodes' order, on ``device``; f64 values become f32 on
+    a device without f64 (Metal), as a point cloud's fields do."""
     host = np.asarray(arrays.to_host(values) if isinstance(values, tack.Array) else values)
     if host.shape[:1] != (n,):
         raise ValueError(f"field {name!r} has {host.shape[:1]} values for {n} nodes")
-    host = host[order]
+    host = _device_floats(host[order], device)
     with device:
         if host.ndim == 2:
             from tack.lang.types import from_numpy_dtype
             return tack.array(np.ascontiguousarray(host),
                               tack.vec(host.shape[1], from_numpy_dtype(host.dtype)))
         return tack.array(np.ascontiguousarray(host))
+
+
+def _device_floats(host, device):
+    """``host`` as the device can hold it: f64 as f32 where it has no f64."""
+    if host.dtype == np.float64 and tack.f64 not in device._backend.supported_dtypes:
+        return host.astype(np.float32)
+    return host
 
 
 def _compute_type(device, fallback):

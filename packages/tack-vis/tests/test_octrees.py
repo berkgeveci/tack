@@ -449,13 +449,41 @@ def test_an_octree_on_a_second_device():
                                   td.probe(here, x).fields["T"].values.numpy())
 
 
+class _NoF64CPU(CPUBackend):
+    """A CPU backend posing as a device without f64, as Metal is: an f64 array
+    reaching a kernel is refused, as it is there."""
+
+    display_name = "device without f64"
+
+    def __init__(self):
+        super().__init__()
+        self.supported_dtypes = frozenset(d for d in self.supported_dtypes
+                                          if d is not tack.f64)
+
+    @property
+    def memory_domain(self):
+        return ("cpu", 2)
+
+
 @pytest.mark.parametrize("d", [2, 3])
 def test_an_octree_on_each_backend(backend, d):
     """Every backend measures an octree, makes its leaves and probes it as the CPU
     does: in f64 where the device has it, in f32 on one that has not (Metal),
     whose kernels must ask for no f64. Probed at the leaves' centres, each point
     takes its own leaf on any backend."""
-    device = tack.device(backend)
+    _on_device(tack.device(backend), d)
+
+
+@pytest.mark.parametrize("d", [2, 3])
+def test_an_octree_on_a_device_without_f64(d):
+    """As on Metal, everywhere: Metal's CI job found f64 fields from NumPy reaching
+    its kernels."""
+    device = dispatch.as_device(_NoF64CPU())
+    assert not device._backend.supports_f64
+    _on_device(device, d)
+
+
+def _on_device(device, d):
     roots, level, centre, rho, temperature = ramses_like(d)
     here = td.OctreeDataSet.from_cells(roots, level, centre, fields={"T": temperature})
     there = td.OctreeDataSet.from_cells(roots.to_device(device), level, centre,
@@ -472,8 +500,11 @@ def test_an_octree_on_each_backend(backend, d):
     x = here.centers()[leaf]
     probed = td.probe(there, x)
     np.testing.assert_array_equal(probed.fields["valid"].values.numpy(), 1)
+    # A device without f64 holds the field in f32.
     np.testing.assert_array_equal(probed.fields["T"].values.numpy(),
-                                  here.fields["T"].numpy()[leaf])
+                                  there.fields["T"].numpy()[leaf])
+    weighted, expected = (td.statistics(o, "T", weights="volume") for o in (there, here))
+    np.testing.assert_allclose(weighted.mean, expected.mean, rtol=1e-5)
 
 
 def test_octrees_across_mpi_ranks(mpiexec):
