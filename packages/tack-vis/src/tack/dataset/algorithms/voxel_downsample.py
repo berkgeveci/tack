@@ -46,18 +46,28 @@ def _run_firsts(order, offsets, flags):
         flags[order[offsets[r]]] = 1
 
 
+@tack.func
+def _squared_length(d):
+    # Each square is a named value, rounded on its own, so no backend fuses it
+    # into the sum (d.dot(d) is one expression, which GPUs may contract): a
+    # voxel of two points has its centroid between them, and only rounding
+    # decides which is nearer, the same way everywhere.
+    x = d[0] * d[0]
+    y = d[1] * d[1]
+    z = d[2] * d[2]
+    return x + y + z
+
+
 @tack.kernel
 def _run_nearest(positions, centroids, order, offsets, flags):
     # Each voxel's point nearest its centroid, the lowest index on a tie.
     for r in range(centroids.shape[0]):
         c = centroids[r]
         best = order[offsets[r]]
-        d = positions[best] - c
-        nearest = d.dot(d)
+        nearest = _squared_length(positions[best] - c)
         for s in range(offsets[r] + 1, offsets[r + 1]):
             p = order[s]
-            e = positions[p] - c
-            d2 = e.dot(e)
+            d2 = _squared_length(positions[p] - c)
             if d2 < nearest or (d2 == nearest and p < best):
                 nearest = d2
                 best = p

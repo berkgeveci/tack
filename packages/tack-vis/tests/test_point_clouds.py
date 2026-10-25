@@ -185,6 +185,28 @@ def test_voxel_first_and_nearest_keep_input_points():
         assert d[np.isin(members, nearest)].min() <= d.min() + 1e-6
 
 
+def test_voxel_nearest_ties_fall_the_same_way_everywhere(backend):
+    """Voxels of two points, whose centroid is between them: only rounding says
+    which is nearer, and every backend must round as the host does, each square
+    on its own. ``d.dot(d)`` let the GPUs fuse it (2 voxels of 12556 in a
+    LiDAR tile chose the other point on an MI210 and an H100)."""
+    rng = np.random.default_rng(3)
+    cells = np.stack(np.meshgrid(*[np.arange(30)] * 3, indexing="ij"), -1).reshape(-1, 3)
+    pairs = (cells[:, None, :] + rng.uniform(0.05, 0.95, (len(cells), 2, 3))).astype(np.float32)
+    pairs[0, 0] = 0.0                       # the grid's corner, so voxels are the cells
+    x = pairs.reshape(-1, 3)
+    cloud = td.point_cloud(x, fields={"id": np.arange(len(x), dtype=np.int32)})
+    kept = td.voxel_downsample(cloud.to_device(backend), 1.0, keep="nearest")
+    c = (pairs[:, 0] + pairs[:, 1]) / np.float32(2)
+
+    def squared(e):
+        return (e[:, 0] * e[:, 0] + e[:, 1] * e[:, 1]) + e[:, 2] * e[:, 2]
+
+    second = squared(pairs[:, 1] - c) < squared(pairs[:, 0] - c)
+    expected = 2 * np.arange(len(cells)) + second
+    assert kept.fields["id"].values.numpy().tolist() == sorted(expected.tolist())
+
+
 def test_voxel_downsample_refuses_what_it_cannot_do():
     cloud = td.point_cloud(_cloud(10))
     for size in (0, -1, np.nan, (1, 0, 1)):
