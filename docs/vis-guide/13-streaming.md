@@ -88,5 +88,74 @@ so every step must bring the same pieces, and the output is pieces too. Over
 MPI ranks each rank feeds its own pieces; the statistics and derivatives need
 nothing from other ranks.
 
-Advection of particles through the steps, with new particles injected at any
-time, and pathlines built from it, are the next phase.
+## Advection, pathlines and streaklines
+
+`Advection(field, seeds)` carries particles through the steps: each update
+moves every particle from its time to the step's, the velocity linear in time
+between the previous step (kept as a copy) and this one, and returns the
+particles at their current points -- a point cloud at the step's time with
+`seed` (each particle's number), `source`, `release`, `time` and `status`
+(`ParticleStatus` bits, as `advect`'s). `inject(points, time=)` releases more
+particles at any time from the last step's on; each starts at its own release
+time, and one released after the coming step waits for a step that reaches it.
+
+<!-- tack-check: pathlines -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+
+def step(t):
+    """A swirl that speeds up: a simulation's step at time t (seconds)."""
+    data = td.uniform_grid((21, 21, 3), spacing=(0.5, 0.5, 0.5), unit="m")
+    data.time, data.time_unit = t, "s"
+    x = data.positions().astype(np.float64) - [5.0, 5.0, 0.0]
+    v = np.stack([-x[:, 1], x[:, 0], np.zeros(len(x))], axis=1) * (0.2 + 0.1 * t)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(v.astype(np.float32), tack.vec3()),
+                                unit="m/s")
+    return data
+
+
+seeds = np.array([[7.0, 5.0, 0.5], [5.0, 8.0, 0.5]])
+pathlines = td.Pathlines("v", seeds, step_size=0.1)
+streaklines = td.Streaklines("v", seeds[:1], releases=4)
+for t in np.arange(0.0, 3.01, 0.5):
+    data = step(t)
+    if t == 1.0:
+        pathlines.inject([[3.0, 5.0, 0.5]])          # a particle released mid-run
+    paths = pathlines.update(data)                   # every particle's path so far
+    streak = streaklines.update(data)                # the line of the seed's particles
+
+print(paths.num_cells, "paths,", paths.num_points, "points;", streak.num_points, "in the streak")
+radius = np.linalg.norm(paths.world_positions()[:, :2] - [5.0, 5.0], axis=1)
+assert np.allclose(radius[paths.fields["seed"].values.numpy() == 0], 2.0, atol=1e-3)
+assert paths.num_cells == 3 and streak.num_cells == 1
+```
+
+The velocity is the probe of each step's own mesh, so the mesh may change
+between steps; over a `PartitionedDataSet`, each point is probed on the rank
+whose cells hold it, so particles stay on the rank that released them. A
+particle that leaves the mesh stops where it last was, marked
+`SPATIAL_BOUNDS`. `integrator` is `"rk4"` or `"euler"`; `step_size` (in the
+steps' time unit) bounds each substep. Times convert between the steps' unit
+and the velocity's: steps in milliseconds with a velocity in metres per second
+work.
+
+`extend_paths(paths, particles)` joins one step's particles onto the paths so
+far, by `seed`: a polyline through each particle's points in time (`seed` and
+`time` on the points), a particle's first point alone until it has moved. It
+stands alone, so particles written step by step can be joined afterwards.
+`Pathlines` is `Advection` and `extend_paths` together, returning the current
+pathlines every step. `Streaklines` releases particles at its seeds every step
+(`releases` of them, spread over the interval since the previous step) and
+returns a polyline per seed through its particles still in the mesh, newest
+first.
+
+The particles live on the host in double precision, and each substep probes
+both steps for every particle: point location runs on the device, but each
+probe is its own set of launches, so this suits thousands of particles more
+than millions.

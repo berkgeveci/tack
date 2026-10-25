@@ -20,6 +20,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   step, in the field's unit over the time unit), each fed `update(data)` a
   step at a time, piece by piece for a `PartitionedDataSet`; one mesh over the
   steps (a new topology object over the same mesh is the same mesh).
+- Advection through streamed steps: `td.Advection(field, seeds)` carries
+  particles from step to step, the velocity linear in time between the kept
+  previous step and the current one (each probed in its own mesh, so meshes
+  may change; over ranks for pieces), with `inject(points, time=)` releasing
+  particles at any time; `td.extend_paths` joins each step's particles into
+  paths; `td.Pathlines` and `td.Streaklines` return the current lines every
+  step.
 - Physical units, a first pass: `Field(..., unit=)` holds the values' unit, a
   string in unyt's canonical spelling (`None` is unknown), and the spatial
   unit is the geometry's (`data.unit`; `uniform_grid`, `rectilinear_grid`,

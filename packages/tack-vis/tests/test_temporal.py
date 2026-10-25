@@ -293,3 +293,207 @@ def test_streaming_on_a_device_without_f64():
     np.testing.assert_allclose(out.fields["T_mean"].values.numpy(), np.mean(seen, 0),
                                rtol=1e-5)
     assert d.fields["T_dt"].values.dtype == tack.f32
+
+
+# -- advection, paths, pathlines and streaklines (T2) ------------------------------------
+
+def _flow(t, velocity, unit="s", dims=(11, 11, 3), time_unit=None):
+    """A step at ``t``: a grid with a velocity field ``velocity(positions, t)``."""
+    grid = td.uniform_grid(dims, spacing=(1.0, 1.0, 1.0), unit="m")
+    grid.time, grid.time_unit = t, time_unit or unit
+    v = velocity(grid.positions().astype(np.float64), t).astype(np.float32)
+    grid.fields["v"] = td.Field(td.H1(grid), tack.array(v, tack.vec3()), "m/s")
+    return grid
+
+
+def _along_x(speed):
+    def velocity(x, t):
+        v = np.zeros_like(x)
+        v[:, 0] = speed(t)
+        return v
+    return velocity
+
+
+def test_advection_is_exact_for_a_velocity_linear_in_time():
+    """v(t) = t along x: a particle moves (t1^2 - t0^2) / 2, which RK4 over a
+    velocity linear in time between steps gives exactly, an injected particle
+    from its own release time."""
+    advection = td.Advection("v", seeds=[[1.0, 5.0, 1.0]])
+    advection.inject([[1.0, 4.0, 1.0]], time=0.5)
+    for t in (0.0, 1.0, 2.0):
+        particles = advection.update(_flow(t, _along_x(lambda t: t)))
+    x = particles.world_positions()
+    np.testing.assert_allclose(x[:, 0], [1.0 + 2.0, 1.0 + (4.0 - 0.25) / 2], rtol=1e-6)
+    np.testing.assert_array_equal(particles.fields["seed"].values.numpy(), [0, 1])
+    np.testing.assert_array_equal(particles.fields["release"].values.numpy(), [0.0, 0.5])
+    assert particles.time == 2.0 and particles.fields["time"].unit == "s"
+    assert (particles.fields["status"].values.numpy() == 17).all()   # SUCCESS, TOOK_ANY_STEPS
+
+
+def test_advection_matches_advect_in_a_steady_flow():
+    def rotation(x, t):
+        v = np.zeros_like(x)
+        v[:, 0], v[:, 1] = -(x[:, 1] - 5.0), x[:, 0] - 5.0
+        return v
+
+    seeds = np.array([[7.0, 5.0, 1.0], [5.0, 3.5, 1.0]])
+    advection = td.Advection("v", seeds, step_size=0.05)
+    for t in (0.0, 1.0):
+        particles = advection.update(_flow(t, rotation))
+    steady = td.advect(_flow(0.0, rotation), "v", seeds.astype(np.float32), 0.05, 20)
+    np.testing.assert_allclose(particles.world_positions(), steady.world_positions(),
+                               atol=2e-5)
+
+
+def test_particles_leaving_the_mesh_stop_and_outside_seeds_are_marked():
+    advection = td.Advection("v", seeds=[[9.0, 5.0, 1.0], [50.0, 5.0, 1.0]])
+    for t in (0.0, 1.0, 2.0):
+        particles = advection.update(_flow(t, _along_x(lambda t: 1.0)))
+    status = particles.fields["status"].values.numpy()
+    assert status[0] & td.ParticleStatus.SPATIAL_BOUNDS and status[0] & td.ParticleStatus.TERMINATE
+    assert not status[1] & td.ParticleStatus.SUCCESS             # released outside
+    assert particles.world_positions()[0, 0] <= 10.0
+
+
+def test_advection_converts_times_and_refuses_what_it_cannot_integrate():
+    """Steps in milliseconds with a velocity in metres per second."""
+    advection = td.Advection("v", seeds=[[1.0, 5.0, 1.0]])
+    for t in (0.0, 500.0, 1000.0):
+        particles = advection.update(_flow(t, _along_x(lambda t: 2.0), time_unit="ms"))
+    np.testing.assert_allclose(particles.world_positions()[0, 0], 3.0, rtol=1e-6)
+    with pytest.raises(ValueError, match="do not increase"):
+        advection.update(_flow(900.0, _along_x(lambda t: 2.0), time_unit="ms"))
+    with pytest.raises(ValueError, match="before the last step's time"):
+        advection.inject([[1.0, 1.0, 1.0]], time=10.0)
+    late = td.Advection("v")
+    late.inject([[1.0, 1.0, 1.0]], time=-1.0)
+    with pytest.raises(ValueError, match="before the first step's time"):
+        late.update(_flow(0.0, _along_x(lambda t: 1.0)))
+    with pytest.raises(ValueError, match="'rk4' or 'euler'"):
+        td.Advection("v", integrator="rk45")
+
+
+def test_a_pending_release_waits_for_its_step():
+    advection = td.Advection("v")
+    advection.update(_flow(0.0, _along_x(lambda t: 1.0)))
+    advection.inject([[1.0, 5.0, 1.0]], time=1.5)
+    assert advection.update(_flow(1.0, _along_x(lambda t: 1.0))).num_points == 0
+    particles = advection.update(_flow(2.0, _along_x(lambda t: 1.0)))
+    np.testing.assert_allclose(particles.world_positions()[0, 0], 1.5, rtol=1e-6)
+
+
+def test_the_mesh_may_change_between_steps():
+    """Each step's velocity is probed in its own mesh: a finer grid, then a coarser
+    one, of the same uniform flow."""
+    advection = td.Advection("v", seeds=[[1.0, 5.0, 1.0]])
+    advection.update(_flow(0.0, _along_x(lambda t: 1.0), dims=(21, 21, 3)))
+    particles = advection.update(_flow(1.0, _along_x(lambda t: 1.0), dims=(11, 11, 3)))
+    np.testing.assert_allclose(particles.world_positions()[0, 0], 2.0, rtol=1e-6)
+
+
+def test_advection_keeps_a_copy_of_the_previous_step():
+    """The simulation overwrites its velocity buffer in place: a copy blends the
+    two steps' velocities, references only the last."""
+    grid = td.uniform_grid((11, 11, 3), unit="m")
+    buffer = tack.array(np.zeros((grid.num_points, 3), np.float32), tack.vec3())
+    copied = td.Advection("v", seeds=[[1.0, 5.0, 1.0]])
+    shared = td.Advection("v", seeds=[[1.0, 5.0, 1.0]], copy=False)
+    for t, speed in ((0.0, 0.0), (1.0, 2.0)):
+        values = np.zeros((grid.num_points, 3), np.float32)
+        values[:, 0] = speed
+        tack.copyto(buffer, values)
+        step = td.DataSet(grid.topology, grid.geometry, unit="m", time=t, time_unit="s",
+                          fields={"v": td.Field(td.H1(grid), buffer, "m/s")})
+        a, b = copied.update(step), shared.update(step)
+    np.testing.assert_allclose(a.world_positions()[0, 0], 1.0 + 1.0, rtol=1e-6)  # mean 1 m/s
+    np.testing.assert_allclose(b.world_positions()[0, 0], 1.0 + 2.0, rtol=1e-6)
+
+
+def test_extend_paths_joins_particles_written_step_by_step():
+    advection = td.Advection("v", seeds=[[1.0, 5.0, 1.0], [1.0, 2.0, 1.0]])
+    written = [advection.update(_flow(t, _along_x(lambda t: 1.0))) for t in (0.0, 1.0, 2.0)]
+    paths = None
+    for particles in written:
+        paths = td.extend_paths(paths, particles)
+    assert paths.num_cells == 2 and paths.num_points == 6
+    np.testing.assert_array_equal(paths.fields["seed"].values.numpy(), [0, 0, 0, 1, 1, 1])
+    np.testing.assert_allclose(paths.world_positions()[:3, 0], [1.0, 2.0, 3.0], rtol=1e-6)
+    again = td.extend_paths(paths, written[-1])                    # nothing new
+    assert again.num_points == paths.num_points
+
+
+def test_pathlines_and_streaklines():
+    pathlines = td.Pathlines("v", seeds=[[1.0, 5.0, 1.0]])
+    first = pathlines.update(_flow(0.0, _along_x(lambda t: 1.0)))
+    assert first.num_points == 1 and first.num_cells == 0          # one point, no line yet
+    for t in (1.0, 2.0, 3.0):
+        paths = pathlines.update(_flow(t, _along_x(lambda t: 1.0)))
+    assert paths.num_cells == 1
+    np.testing.assert_allclose(paths.world_positions()[:, 0], [1.0, 2.0, 3.0, 4.0], rtol=1e-6)
+    streaks = td.Streaklines("v", seeds=[[1.0, 5.0, 1.0], [1.0, 2.0, 1.0]], releases=2)
+    for t in (0.0, 1.0, 2.0):
+        line = streaks.update(_flow(t, _along_x(lambda t: 1.0)))
+    assert line.num_cells == 2 and line.num_points == 10
+    first_line = line.fields["source"].values.numpy() == 0
+    np.testing.assert_allclose(line.world_positions()[first_line, 0], [1.0, 1.5, 2.0, 2.5, 3.0],
+                               rtol=1e-6)          # newest, at the seed, first
+    np.testing.assert_allclose(line.fields["release"].values.numpy()[first_line],
+                               [2.0, 1.5, 1.0, 0.5, 0.0])
+
+
+def test_advection_over_pieces_is_the_wholes():
+    def rotation(x, t):
+        v = np.zeros_like(x)
+        v[:, 0], v[:, 1] = -(x[:, 1] - 5.0), (x[:, 0] - 5.0) * (1.0 + 0.2 * t)
+        return v
+
+    seeds = np.array([[7.0, 5.0, 1.0], [5.0, 3.5, 1.0], [4.0, 6.0, 1.0]])
+    whole, pieces = td.Advection("v", seeds, step_size=0.1), td.Advection("v", seeds,
+                                                                           step_size=0.1)
+    for t in (0.0, 0.5, 1.0):
+        step = _flow(t, rotation)
+        a = whole.update(step)
+        b = pieces.update(td.split(step, (2, 2, 1)))
+    assert isinstance(b, td.PartitionedDataSet)
+    np.testing.assert_allclose(b[0].world_positions(), a.world_positions(), atol=1e-5)
+
+
+def test_advection_on_a_device_without_f64():
+    from test_dataset_devices import _NoF64CPU
+
+    device = dispatch.as_device(_NoF64CPU())
+    advection = td.Advection("v", seeds=[[1.0, 5.0, 1.0]])
+    for t in (0.0, 1.0):
+        particles = advection.update(_flow(t, _along_x(lambda t: 1.0)).to_device(device))
+    assert particles.device == device
+    np.testing.assert_allclose(particles.world_positions()[0, 0], 2.0, rtol=1e-6)
+
+
+def _swirl(x, t):
+    v = np.zeros_like(x)
+    v[:, 0], v[:, 1] = -(x[:, 1] - 5.0), (x[:, 0] - 5.0) * (1.0 + 0.2 * t)
+    return v
+
+
+def advect_across(world):
+    """This rank's particles (its own seeds) advected through steps whose pieces are
+    shared out over ``world``'s ranks, and the same seeds through the whole steps."""
+    seeds = np.array([[7.0, 5.0, 1.0], [5.0, 3.5, 1.0], [4.0, 6.0, 1.0],
+                      [6.0, 6.5, 1.0]])[world.rank::world.size]
+    shared, whole = td.Advection("v", seeds, step_size=0.1), td.Advection("v", seeds,
+                                                                           step_size=0.1)
+    for t in (0.0, 0.5, 1.0):
+        step = _flow(t, _swirl)
+        pieces = list(td.split(step, (2, 2, 1)))[world.rank::world.size]
+        got = shared.update(td.PartitionedDataSet(pieces, world=world))
+        want = whole.update(step)
+    return got[0], want
+
+
+def test_advection_across_mpi_ranks(mpiexec):
+    import os
+
+    script = os.path.join(os.path.dirname(__file__), "_temporal_mpi.py")
+    for ranks in (2, 3):
+        run = mpiexec(ranks, script)
+        assert run.returncode == 0 and "ok" in run.stdout, run.stdout + run.stderr

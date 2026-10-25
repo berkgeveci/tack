@@ -19,9 +19,14 @@ state, so every step must bring the same pieces.
 - ``RunningStatistics``: per point or cell, the mean, variance, minimum and
   maximum of fields over the steps so far.
 - ``TimeDerivative``: each field's rate of change since the previous step.
+- ``Advection``: particles carried by a velocity field through the steps, new
+  ones injected at any time; ``extend_paths`` joins its particles, step after
+  step, into paths; ``Pathlines`` and ``Streaklines`` are built on them.
 """
 
 import math
+
+import numpy as np
 
 import tack
 from tack import arrays
@@ -29,7 +34,8 @@ from tack.dataset import units
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.partitioned import PartitionedDataSet
 
-__all__ = ["RunningStatistics", "TimeDerivative"]
+__all__ = ["Advection", "Pathlines", "RunningStatistics", "Streaklines", "TimeDerivative",
+           "extend_paths"]
 
 
 def _elapsed(earlier, later, unit=None):
@@ -343,4 +349,333 @@ class TimeDerivative(_Streamed):
 
         return keep_marks(data, DataSet(data.topology, data.geometry, fields=out,
                                         sets=dict(data.sets)))
+
+
+# -- advection ------------------------------------------------------------------
+
+def _kept_dataset(data, field, copy):
+    """What advection keeps of a step: a dataset of the step's topology (by
+    reference) with copies of its positions and velocity (``_Step``), at its
+    origin, spatial unit and time; piece by piece for pieces."""
+    if isinstance(data, PartitionedDataSet):
+        return PartitionedDataSet([_kept_dataset(piece, field, copy) for piece in data],
+                                  world=data.world)
+    step = _Step(data, [field], positions=True, copy=copy)
+    return DataSet(step.topology, step.geometry, fields=dict(step.fields), **data._frame())
+
+
+def _frame_of(data):
+    """A dataset's, or the first piece's, ``_frame()`` and device."""
+    first = next(iter(data)) if isinstance(data, PartitionedDataSet) else data
+    return first._frame(), first.device
+
+
+def _velocities(data, field, x):
+    """The velocity at world points ``x`` (``(n, 3)`` f64) and whether a cell holds
+    each: ``probe``, over pieces routed to the rank whose cells hold them."""
+    from tack.dataset.algorithms.probe import probe
+
+    if not len(x):
+        return np.zeros((0, 3)), np.zeros(0, bool)
+    out = probe(data, x, fields=[field])
+    values = np.asarray(out.fields[field].values.numpy(), np.float64).reshape(len(x), -1)
+    return values, out.fields["valid"].values.numpy() == 1
+
+
+class Advection:
+    """Particles carried by ``field`` (a velocity field's name) through the steps:
+    each ``update(data)`` moves every particle from its time to the step's, with
+    the velocity linear in time between the previous step (kept, as a copy unless
+    ``copy`` is false) and this one, and returns the particles at their current
+    points -- a point cloud at the step's time with ``seed`` (each particle's
+    number), ``source`` (the seed point it came from, or -1), ``release`` (its
+    release time), ``time`` and ``status`` (``ParticleStatus`` bits, as
+    ``advect``'s).
+
+    ``seeds`` (an ``(n, 3)`` array of world positions) are released at the first
+    step's time; ``inject(points, time=None)`` adds particles at any later time
+    (by default the last step's). The velocity is the probe of each step's own
+    mesh, so the mesh may change between steps, and over a ``PartitionedDataSet``
+    each point is probed on the rank whose cells hold it: the particles stay on
+    the rank that released them. ``integrator`` is ``"rk4"`` or ``"euler"``;
+    ``step_size`` (in the steps' time unit) bounds each substep, by default one
+    substep from step to step. A particle leaving the mesh stops where it last
+    was, marked ``SPATIAL_BOUNDS``; one released outside has ``SUCCESS``
+    cleared. Times convert between the steps' unit and the velocity's (a
+    velocity in m/s over steps in minutes)."""
+
+    def __init__(self, field, seeds=None, integrator="rk4", step_size=None, copy=True):
+        if integrator not in ("rk4", "euler"):
+            raise ValueError(f"integrator is 'rk4' or 'euler', not {integrator!r}")
+        if step_size is not None and not step_size > 0:
+            raise ValueError(f"step_size must be positive, not {step_size!r}")
+        self.field, self.integrator = field, integrator
+        self.step_size, self.copy = step_size, copy
+        self.x = np.zeros((0, 3))
+        self.time = np.zeros(0)
+        self.release = np.zeros(0)
+        self.seed = np.zeros(0, np.int64)
+        self.source = np.zeros(0, np.int64)
+        self.status = np.zeros(0, np.int32)
+        self._pending = []                       # (points, time or None, sources)
+        self._previous = None                    # the kept previous step
+        self._last = None                        # its time, in the stream's unit
+        self._unit = None                        # the stream's time unit
+        self._released = 0
+        if seeds is not None:
+            points = np.asarray(seeds, np.float64).reshape(-1, 3)
+            self.inject(points, None, np.arange(len(points)))
+
+    def inject(self, points, time=None, sources=None):
+        """Release particles at world ``points`` at ``time`` (in the steps' time
+        unit; by default the last step's, or the first step's before any); the next
+        update carries each from its release time. ``sources`` numbers the seed
+        point each came from (``-1`` by default). A time before the last step is
+        refused: that interval has been integrated."""
+        points = np.asarray(points, np.float64).reshape(-1, 3)
+        if time is not None and self._last is not None and time < self._last:
+            raise ValueError(f"particles released at {time}, before the last step's time "
+                             f"{self._last}: that interval is integrated")
+        sources = np.full(len(points), -1, np.int64) if sources is None else \
+            np.asarray(sources, np.int64).reshape(-1)
+        if len(sources) != len(points):
+            raise ValueError("one source per point")
+        self._pending.append((points, None if time is None else float(time), sources))
+
+    def _stream_time(self, data):
+        """``data``'s time in the stream's time unit (the first step's)."""
+        frame, _ = _frame_of(data)
+        if frame["time"] is None:
+            raise ValueError("advection needs each step's time (DataSet.time)")
+        if self._last is None:
+            self._unit = frame["time_unit"]
+            return frame["time"]
+        unit = frame["time_unit"]
+        if (unit is None) != (self._unit is None):
+            raise ValueError("the steps' times change from a unit to none, or back")
+        if unit is not None and unit != self._unit:
+            factor, offset = units.conversion(unit, self._unit)
+            return frame["time"] * factor + offset
+        return frame["time"]
+
+    def _velocity_scale(self, data):
+        """Steps' time unit to the velocity's: the factor to multiply a time by."""
+        from tack.dataset.algorithms._common import _time_unit
+
+        if self._unit is None:
+            return 1.0
+        velocity_time = _time_unit(data, self.field)
+        if velocity_time is None:
+            return 1.0
+        return units.conversion(self._unit, velocity_time)[0]
+
+    def _release(self, data, t1):
+        """Particles pending with a release time at or before ``t1``."""
+        keep = []
+        for points, time, sources in self._pending:
+            time = (self._last if self._last is not None else t1) if time is None else time
+            if time > t1:
+                keep.append((points, time, sources))
+                continue
+            if self._last is None and time < t1:
+                raise ValueError(f"particles released at {time}, before the first step's "
+                                 f"time {t1}")
+            n = len(points)
+            ids = self._released + np.arange(n, dtype=np.int64)
+            if isinstance(data, PartitionedDataSet):
+                ids += np.int64(data.world.rank) << np.int64(40)
+            self._released += n
+            # Released outside any cell: SUCCESS cleared, as advect's seeds.
+            where = self._previous if self._previous is not None and time < t1 else data
+            _, inside = _velocities(where, self.field, points)
+            status = np.where(inside, 1, 0).astype(np.int32)
+            for name, values in (("x", points), ("time", np.full(n, time)),
+                                 ("release", np.full(n, time)), ("seed", ids),
+                                 ("source", sources), ("status", status)):
+                setattr(self, name, np.concatenate([getattr(self, name), values]))
+        self._pending = keep
+
+    def update(self, data):
+        """Carry the particles to ``data``'s time and return them (see the class)."""
+        t1 = self._stream_time(data)
+        if self._last is not None and not t1 > self._last:
+            raise ValueError(f"the steps' times do not increase: {self._last} then {t1}")
+        self._release(data, t1)
+        if self._previous is not None:
+            self._advance(self._previous, data, self._last, t1)
+        self._previous = _kept_dataset(data, self.field, self.copy)
+        self._last = t1
+        return self._particles(data)
+
+    def _advance(self, before, now, t0, t1):
+        scale = self._velocity_scale(now)
+        span = t1 - t0
+
+        def velocity(x, t):
+            a = np.clip((t - t0) / span, 0.0, 1.0)[:, None]
+            v0, in0 = _velocities(before, self.field, x)
+            v1, in1 = _velocities(now, self.field, x)
+            return (1.0 - a) * v0 + a * v1, in0 & in1
+
+        limit = self.step_size if self.step_size is not None else span
+        while True:
+            moving = np.flatnonzero(((self.status & 1) != 0) & ((self.status & 2) == 0)
+                                    & (self.time < t1 - 1e-12 * max(abs(t1), 1.0)))
+            if not len(moving):
+                break
+            x, t = self.x[moving], self.time[moving]
+            h = np.minimum(limit, t1 - t)
+            k1, ok = velocity(x, t)
+            if self.integrator == "euler":
+                step = k1
+            else:
+                k2, ok2 = velocity(x + 0.5 * (h * scale)[:, None] * k1, t + 0.5 * h)
+                k3, ok3 = velocity(x + 0.5 * (h * scale)[:, None] * k2, t + 0.5 * h)
+                k4, ok4 = velocity(x + (h * scale)[:, None] * k3, t + h)
+                ok = ok & ok2 & ok3 & ok4
+                step = (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+            end = x + (h * scale)[:, None] * step
+            _, inside = velocity(end, t + h)
+            ok &= inside
+            # A particle whose step leaves the mesh stops where it was.
+            left = moving[~ok]
+            self.status[left] |= 2 | 4
+            went = moving[ok]
+            self.x[went] = end[ok]
+            self.time[went] = (t + h)[ok]
+            self.status[went] |= 16
+
+    def _particles(self, data):
+        from tack.dataset.dataset import point_cloud
+
+        frame, device = _frame_of(data)
+        fields = {"seed": self.seed, "source": self.source, "release": self.release,
+                  "time": self.time, "status": self.status}
+        time_units = {"release": self._unit, "time": self._unit} if self._unit else {}
+        cloud = point_cloud(self.x, fields=fields, origin=frame["origin"], device=device,
+                            unit=frame["unit"], units=time_units)
+        cloud.time, cloud.time_unit = frame["time"], frame["time_unit"]
+        if isinstance(data, PartitionedDataSet):
+            return PartitionedDataSet([cloud], world=data.world)
+        return cloud
+
+
+def _rows(particles):
+    """A particle cloud's (or a piece list's) world positions and fields, host."""
+    pieces = list(particles) if isinstance(particles, PartitionedDataSet) else [particles]
+    x = np.concatenate([p.world_positions() for p in pieces]) if pieces else np.zeros((0, 3))
+    get = lambda name: np.concatenate([np.asarray(p.fields[name].values.numpy())
+                                       for p in pieces]) if pieces else np.zeros(0)
+    return x, {name: get(name) for name in ("seed", "time", "status")}, pieces
+
+
+def _lines(groups, x, frame, like, point_fields):
+    """A dataset of the world points ``x`` (sorted by group) and a polyline through
+    each group of two or more; a group of one point keeps its point, in no line."""
+    from tack.dataset.polyhedra import PolylineTopology
+    from tack.dataset.spaces import H1, Values
+
+    _, starts, counts = np.unique(groups, return_index=True, return_counts=True)
+    lined = counts >= 2
+    offsets = np.concatenate([[0], np.cumsum(counts[lined])]).astype(np.int64)
+    members = np.concatenate([np.arange(a, a + c) for a, c in
+                              zip(starts[lined], counts[lined])]) if lined.any() else \
+        np.zeros(0, np.int64)
+    with like.device:
+        topology = PolylineTopology(offsets, members.astype(np.int64), num_points=len(x))
+        origin = np.asarray(frame["origin"])
+        out = DataSet(topology, (x - origin).astype(like.dtype.numpy_dtype), dtype=like.dtype,
+                      **frame)
+        for name, (values, unit) in point_fields.items():
+            kind = values.dtype.kind
+            stored = values.astype(out.dtype.numpy_dtype if kind == "f" else np.int64)
+            out.fields[name] = Field(H1(out) if kind == "f" else Values(out, "points"),
+                                     tack.array(stored), unit)
+    return out
+
+
+def extend_paths(paths, particles):
+    """``paths`` (``None``, or what this returned before) with ``particles`` -- an
+    ``Advection``'s output -- appended: each particle's points in time (``seed``
+    and ``time`` on the points), and a polyline through those of each particle
+    with two or more. Each step adds the particles that moved since (a
+    stopped one adds nothing). It stands alone, so particles written step by
+    step can be joined into paths afterwards."""
+    x, rows, pieces = _rows(particles)
+    seed, time = rows["seed"].astype(np.int64), rows["time"].astype(np.float64)
+    if paths is not None:
+        old_seed = paths.fields["seed"].values.numpy().astype(np.int64)
+        old_time = paths.fields["time"].values.numpy().astype(np.float64)
+        # A particle's point is new when it is later than its path's last.
+        order = np.lexsort((old_time, old_seed))
+        last_of = dict(zip(old_seed[order].tolist(), old_time[order].tolist()))
+        new = np.array([t_ > last_of.get(s_, -np.inf)
+                        for s_, t_ in zip(seed.tolist(), time.tolist())], bool)
+        x = np.concatenate([paths.world_positions(), x[new]])
+        seed = np.concatenate([old_seed, seed[new]])
+        time = np.concatenate([old_time, time[new]])
+    order = np.lexsort((time, seed))
+    like = pieces[0]
+    unit = like.fields["time"].unit
+    return _lines(seed[order], x[order], like._frame(), like,
+                  {"seed": (seed[order], None), "time": (time[order], unit)})
+
+
+class Pathlines:
+    """Each particle's path through the steps: ``Advection`` (its arguments) and
+    ``extend_paths``, each ``update(data)`` returning the current pathlines -- a
+    polyline per particle (``seed`` and ``time`` on the points), a particle's
+    first point alone until it has moved.
+    ``inject`` releases particles as ``Advection.inject`` does."""
+
+    def __init__(self, field, seeds=None, integrator="rk4", step_size=None, copy=True):
+        self.advection = Advection(field, seeds, integrator, step_size, copy)
+        self.paths = None
+
+    def inject(self, points, time=None):
+        self.advection.inject(points, time)
+
+    def update(self, data):
+        self.paths = extend_paths(self.paths, self.advection.update(data))
+        return self.paths
+
+
+class Streaklines:
+    """The lines of particles released at ``seeds`` (world positions) through the
+    steps: every update releases ``releases`` particles at each seed, at times
+    spread evenly over the interval since the previous step (one at each step's
+    time by default), carries them all (``Advection``), and returns a polyline per
+    seed (``source`` on the cells) through the particles it released still in the
+    mesh, newest (at the seed) first, with ``source``, ``release`` and ``time`` on
+    the points; a seed with one particle so far keeps its point, in no line."""
+
+    def __init__(self, field, seeds, releases=1, integrator="rk4", step_size=None,
+                 copy=True):
+        if int(releases) < 1:
+            raise ValueError("releases is at least 1")
+        self.seeds = np.asarray(seeds, np.float64).reshape(-1, 3)
+        self.releases = int(releases)
+        self.advection = Advection(field, None, integrator, step_size, copy)
+
+    def update(self, data):
+        adv = self.advection
+        t1 = adv._stream_time(data)
+        sources = np.arange(len(self.seeds))
+        if adv._last is None:
+            adv.inject(self.seeds, t1, sources)
+        else:
+            for j in range(1, self.releases + 1):
+                adv.inject(self.seeds, adv._last + (t1 - adv._last) * j / self.releases,
+                           sources)
+        particles = adv.update(data)
+        x, _, pieces = _rows(particles)
+        alive = ((adv.status & 1) != 0) & ((adv.status & 4) == 0) & (adv.source >= 0)
+        x, source = x[alive], adv.source[alive]
+        release, time = adv.release[alive], adv.time[alive]
+        order = np.lexsort((-release, source))          # newest, at the seed, first
+        like = pieces[0]
+        unit = like.fields["time"].unit
+        return _lines(source[order], x[order], like._frame(), like,
+                      {"source": (source[order], None), "release": (release[order], unit),
+                       "time": (time[order], unit)})
 
