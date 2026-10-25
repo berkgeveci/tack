@@ -3044,6 +3044,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Origins and point clouds">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#finding-points-near-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding points near points
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#point-cloud-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Point cloud filters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3384,6 +3412,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Origins and point clouds">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#finding-points-near-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding points near points
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#point-cloud-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Point cloud filters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -4123,6 +4179,65 @@ origin: <code>ghost_cells</code>, <code>generate_global_ids</code>, <code>merge_
 two (<code>partitioned.common_origin</code>, over every rank); <code>rebased</code> puts a piece on
 another. An image's own origin (<code>UniformCoordinates</code>) is separate from the
 dataset's and computed in the geometry's type.</p>
+<h3 id="finding-points-near-points">Finding points near points<a class="headerlink" href="#finding-points-near-points" title="Permanent link">&para;</a></h3>
+<p><code>PointLocator(data, bin_size=None, points_per_bin=4)</code> puts the points in
+uniform bins over their box (about <code>points_per_bin</code> a bin, cubes along the
+axes they span) and sorts them by bin, each bin in index order
+(<code>buckets.bucket_order</code>), as VTK's <code>vtkStaticPointLocator</code>. Nothing is
+atomic, so every query visits the same points in the same order and its
+answer has the same bits on every backend. Like <code>CellLocator</code>, it records its
+geometry (<code>serves</code>) and is refused once Tack has written the positions; the
+filters below use the one the topology keeps (<code>cached_point_locator</code>) unless
+given one.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>locator.neighbors(radius, points=None)</code></td>
+<td>every point within <code>radius</code> (inclusive) of each query, CSR <code>(offsets, ids)</code>; the queries are the points themselves, each leaving itself out, unless <code>points</code> (a host array of world positions, or a Tack array relative to the origin) are given</td>
+</tr>
+<tr>
+<td><code>locator.nearest(k, points=None)</code></td>
+<td>the <code>k</code> nearest (<code>k</code> up to <code>MAX_K</code>, 32), <code>(ids, squared_distances)</code>, each <code>(m, k)</code>, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched</td>
+</tr>
+<tr>
+<td><code>locator.grid()</code></td>
+<td>the sorted points and the grid as a device class, for one's own kernels: <code>span(x, r)</code>, <code>cell(x)</code>, <code>bin(i, j, k)</code>, <code>first(b)</code>, <code>end(b)</code>, <code>point(s)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="point-cloud-filters">Point cloud filters<a class="headerlink" href="#point-cloud-filters" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>voxel_downsample(data, size, keep="centroid")</code></td>
+<td>one point per occupied voxel of side <code>size</code> (or three sides) anchored at the points' lower corner: the voxel's centroid (new points: floating-point fields averaged, integer fields its first point's; ghost marks dropped), its first point, or its point nearest the centroid (input points, in input order, fields and marks kept). Voxels by a stable sort, each reduced in index order, so the same bits everywhere. VTK's <code>vtkVoxelGrid</code> fits a whole number of bins to the box, so its voxels are not exactly <code>size</code>; PDAL's <code>filters.voxeldownsize</code> is this</td>
+</tr>
+<tr>
+<td><code>outliers(data, radius=, min_neighbors=)</code></td>
+<td>marks (<code>outlier</code>, u8) points with fewer than <code>min_neighbors</code> others within <code>radius</code>, with each point's count (<code>neighbors</code>): VTK's <code>vtkRadiusOutlierRemoval</code>, the same points</td>
+</tr>
+<tr>
+<td><code>outliers(data, k=, deviations=1.0)</code></td>
+<td>marks points whose mean distance to their <code>k</code> nearest is more than <code>deviations</code> standard deviations above the mean of those means, with each one (<code>mean_distance</code>): VTK's <code>vtkStatisticalOutlierRemoval</code> and PCL, the same points, mean and deviation. Marked, not removed, as PDAL marks (class 7): <code>threshold_points(out, "outlier", 0, 0)</code> keeps the rest</td>
+</tr>
+<tr>
+<td><code>point_normals(data, k=None, radius=None, viewpoint=None, direction=(0, 0, 1))</code></td>
+<td>each point's unit normal from the covariance of its <code>k</code> nearest points (itself included) or those within <code>radius</code>: the eigenvector of the least eigenvalue, in closed form; signed toward <code>viewpoint</code> (a world position) or along <code>direction</code> (up). Zero with fewer than three neighbours, or on a line. VTK's <code>vtkPCANormalEstimation</code> agrees within 0.1°</td>
+</tr>
+</tbody>
+</table>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>A dataset is on the device its arrays are on, and it computes there: every
 algorithm, every derived entity (faces, edges, point links, groups, layouts),
