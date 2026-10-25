@@ -424,7 +424,7 @@ def test_deposit_by_nearest_grid_point_is_numpys(reduce):
                            "min": mine.min(), "max": mine.max()}[reduce]
     np.testing.assert_allclose(got.values.numpy(), expected, atol=1e-5)
     if reduce == "count":
-        assert got.values.dtype is tack.i32
+        assert got.values.dtype is cloud.id_dtype      # counts in the id type
         np.testing.assert_allclose(td.deposit(cloud, grid, per_volume=True).values.numpy(),
                                    expected / 1.5)
 
