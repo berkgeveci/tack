@@ -78,8 +78,27 @@ back for images and rectilinear grids; a hierarchy with curvilinear boxes goes
 to VTK as a `vtkPartitionedDataSetCollection` of a partitioned dataset per
 level. `amr_gaussian_pulse` makes VTK's Gaussian pulse hierarchy, for tests.
 
+## Ghost cells
+
+`ghost_cells(amr, layers=1)` grows every box by a layer within its level's
+domain. A ghost a sibling box holds is copied from it; one no sibling holds
+comes from the coarser level, the coarse cell's value for a cell and an
+interpolation of the coarse cell's corners for a point. A grid's positions are
+filled the same way, so curvilinear and rectilinear boxes grow as images do.
+A ghost neither holds is hidden. Afterwards, `update_ghosts(amr, "name")`
+refreshes the ghosts after a filter changed the owned values, and
+`average_down(amr, "name")` puts the fine levels' data into the coarse cells
+and points they cover:
+
+```python
+grown = td.ghost_cells(amr)                # every box a layer wider
+for level, box in grown:
+    box.fields["g"] = td.gradients(box, "f", at="points")   # right where owned
+td.update_ghosts(grown, "g")               # the ghosts' from their owners
+td.average_down(grown, "g")                # coarse cells under fine ones: the fine average
+```
+
 ## Next
 
-Ghost cells (copied from sibling boxes, and interpolated from the coarser
-level where none holds the cell), `average_down`, probing at the finest level
-and resampling onto one image are the next phases.
+Probing at the finest level, resampling onto one image, and boxes spread over
+MPI ranks and devices are the next phase.

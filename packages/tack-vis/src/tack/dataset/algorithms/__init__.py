@@ -2,6 +2,7 @@
 re-exports them all."""
 
 from tack.dataset.algorithms.advect import ParticleStatus, advect
+from tack.dataset.algorithms.amr_ghosts import average_down
 from tack.dataset.algorithms.as_polygons import as_polygons
 from tack.dataset.algorithms.as_polyhedra import as_polyhedra
 from tack.dataset.algorithms.boundary_faces import boundary_faces
@@ -76,6 +77,7 @@ __all__ = [
     "advect",
     "as_polygons",
     "as_polyhedra",
+    "average_down",
     "boundary_faces",
     "cell_centers",
     "cell_geometry",

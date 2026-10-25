@@ -26,6 +26,10 @@ def main():
                 expected[(level, k)] = (box.ghosts.cells.numpy().tolist(),
                                         (box.ghosts.points.numpy()
                                          & (0xFF ^ case.Ghosts.DUPLICATEPOINT)).tolist())
+        for level, boxes in enumerate(case.td.ghost_cells(whole).levels):
+            for k, box in enumerate(boxes):
+                expected[(level, k, "ghosts")] = (box.fields["c"].values.numpy().tolist(),
+                                                  box.fields["p"].values.numpy().tolist())
         got = {}
         for part, n in gathered:
             got.update(part)

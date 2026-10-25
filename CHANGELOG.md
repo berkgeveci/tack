@@ -19,6 +19,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   boxes, improper nesting and images off their level's lattice are refused.
   `vtkOverlappingAMR` both ways, `amr_gaussian_pulse` (VTK's source), and the
   boxes' metadata gathered over MPI ranks.
+- AMR ghost cells: `ghost_cells(amr, layers)` grows each box, a ghost from the
+  sibling holding it, else from the coarser level (injection for cells, linear
+  interpolation for points and for a grid's positions, so rectilinear and
+  curvilinear boxes grow too), hidden where neither holds it;
+  `update_ghosts(amr, ...)` refreshes them, and `average_down(amr, name)` puts
+  fine data into the coarse cells and points it covers. Each is a kept
+  `tack.communication.Plan` and a weighted sum, so they run over devices and
+  MPI ranks.
 - A dataset's origin: `DataSet.origin`, three doubles on the host, where its
   geometry's coordinates start. Kernels see only the geometry's values
   (`tack.f32`, or `tack.f64` where the device has it), so points far from

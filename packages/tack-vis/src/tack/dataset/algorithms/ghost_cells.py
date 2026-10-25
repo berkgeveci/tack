@@ -82,9 +82,25 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     stay structured: each becomes its block grown by ``layers`` cells, as far
     as the box goes, with its values from the pieces that own them, and its
     implicit coordinates grown with it.
+
+    An ``AMRDataSet``'s boxes each grow by ``layers`` cells within their level's
+    domain, the ghosts marked ``DUPLICATECELL`` and ``DUPLICATEPOINT``: a ghost a
+    sibling box holds is its value, copied (AMReX's ``FillBoundary``); one no
+    sibling holds takes the coarser level's -- the coarse cell's value for a
+    cell, the coarse cell's corners' by linear weights for a point
+    (``FillPatchTwoLevels``) -- and one neither holds is hidden. A grid's ghost
+    positions are filled the same way, so rectilinear and curvilinear boxes
+    grow too. Ghosts a finer box covers are marked refined. ``update_ghosts``
+    refreshes them, ``average_down`` puts fine data into coarse cells.
     """
     if isinstance(layers, bool) or not isinstance(layers, (int, np.integer)) or layers < 1:
         raise ValueError(f"ghost_cells makes one or more layers, not {layers!r}")
+    from tack.dataset.amr import AMRDataSet
+
+    if isinstance(data, AMRDataSet):
+        from tack.dataset.algorithms.amr_ghosts import amr_ghost_cells
+
+        return amr_ghost_cells(data, int(layers), fields)
     if not isinstance(data, PartitionedDataSet):
         raise TypeError(f"ghost_cells takes a PartitionedDataSet, not {type(data).__name__}")
     world = data.world if world is None else world
@@ -156,6 +172,13 @@ def update_ghosts(data, *fields):
     rim; refreshing the ghosts makes a second such filter right too. Each named
     field is a point or cell field of explicit values on every piece. One
     exchange moves all the point fields, one all the cell fields."""
+    from tack.dataset.amr import AMRDataSet
+
+    if isinstance(data, AMRDataSet):
+        from tack.dataset.algorithms.amr_ghosts import amr_update_ghosts
+
+        amr_update_ghosts(data, fields)
+        return
     plans = getattr(data, "_ghost_plans", None)
     if plans is None:
         raise ValueError("update_ghosts needs the PartitionedDataSet ghost_cells or "

@@ -274,6 +274,191 @@ def test_boxes_on_two_devices():
     assert td.statistics(moved, "c").n == td.statistics(amr, "c").n
 
 
+# -- ghost cells and averages --------------------------------------------------------
+
+SPACING = [1.0, 0.5, 0.25]
+
+
+def _expected_cell_x(amr, level, q):
+    """The ghost cell value ``c`` (its centre's x) that ghost_cells gives cell ``q``:
+    its own where a sibling holds it, else its coarse cell's, injected."""
+    if any(np.all((q >= b[0, :2]) & (q < b[1, :2])) for b in amr.boxes(level)):
+        return (q[0] + 0.5) * SPACING[level]
+    return _expected_cell_x(amr, level - 1, q // 2)
+
+
+@pytest.mark.parametrize("kind", ["image", "rectilinear", "curvilinear"])
+def test_ghost_layers_come_from_siblings_and_the_coarser_level(kind):
+    amr = hierarchy(kind)
+    grown = td.ghost_cells(amr, layers=1)
+    assert grown.layers == 1
+    for (level, box), (_, own) in zip(grown, amr):
+        x = box.world_positions()
+        marks = box.ghosts
+        # Grown by one cell within the level's domain, the extra marked.
+        lo, hi = grown.level_domain(level)
+        valid = amr.boxes(level)
+        extent = np.array([box.topology.offset, np.asarray(box.topology.offset)
+                           + np.asarray(box.topology.point_dims) - 1])
+        assert any((extent[0] == np.maximum(b[0, :2] - 1, lo[:2])).all() and
+                   (extent[1] == np.minimum(b[1, :2] + 1, hi[:2])).all() for b in valid)
+        ghost_cells = (marks.cells.numpy() & Ghosts.DUPLICATECELL) != 0
+        assert ghost_cells.sum() == box.num_cells - own.num_cells
+        # Positions are the lattice everywhere, as an image's would be.
+        ij = np.stack(np.meshgrid(*[np.arange(n) for n in box.topology.point_dims[::-1]],
+                                  indexing="ij")[::-1], -1).reshape(-1, 2) + extent[0]
+        np.testing.assert_allclose(x[:, :2], ij * SPACING[level], atol=1e-6)
+        # A point field linear in position is exact at every ghost point,
+        # copied or interpolated in the coarse cells.
+        np.testing.assert_allclose(box.fields["p"].values.numpy(), x[:, 1], atol=1e-6)
+        # A cell field: a sibling's value, else the coarse cell's.
+        cells = np.stack(np.meshgrid(*[np.arange(n - 1) for n in
+                                       box.topology.point_dims[::-1]],
+                                     indexing="ij")[::-1], -1).reshape(-1, 2) + extent[0]
+        got = box.fields["c"].values.numpy()
+        expected = [_expected_cell_x(amr, level, q) for q in cells[ghost_cells]]
+        np.testing.assert_allclose(got[ghost_cells], expected, atol=1e-6)
+    # Ghosts are copies: the hierarchy's statistics do not change.
+    assert td.statistics(grown, "c").n == td.statistics(amr, "c").n
+    assert td.statistics(grown, "p").n == td.statistics(amr, "p").n
+
+
+def test_every_kind_of_box_grows_alike():
+    grown = [td.ghost_cells(hierarchy(kind)) for kind in ("image", "rectilinear",
+                                                          "curvilinear")]
+    for boxes in zip(*(list(g) for g in grown)):
+        first = boxes[0][1]
+        for _, box in boxes[1:]:
+            np.testing.assert_array_equal(box.ghosts.cells.numpy(), first.ghosts.cells.numpy())
+            np.testing.assert_array_equal(box.ghosts.points.numpy(),
+                                          first.ghosts.points.numpy())
+            np.testing.assert_allclose(box.world_positions(), first.world_positions(),
+                                       atol=1e-6)
+            for name in ("c", "p"):
+                np.testing.assert_array_equal(box.fields[name].values.numpy(),
+                                              first.fields[name].values.numpy())
+
+
+@pytest.mark.parametrize("kind", ["image", "curvilinear"])
+def test_ghosts_nothing_holds_are_hidden(kind):
+    """An L of root boxes, and a fine box at the L's inner corner: ghost cells in the
+    L's notch have no source, and are hidden, as are the points only they use;
+    a curvilinear box's hidden points are extrapolated along the lattice."""
+    root = [image((0, 0), (4, 4), 1.0), image((4, 0), (4, 4), 1.0),
+            image((0, 4), (4, 4), 1.0)]
+    fine = [image((6, 2), (2, 4), 0.5)]
+    amr = td.AMRDataSet([root, fine], [2])
+    if kind == "curvilinear":
+        amr = td.AMRDataSet([[_as(kind, b) for b in level] for level in
+                             ([*amr.levels[0]], [*amr.levels[1]])], [2])
+    grown = td.ghost_cells(amr)
+    second = grown.levels[0][1]                     # grows up into the notch at x 4..8
+    hidden = (second.ghosts.cells.numpy() & Ghosts.HIDDENCELL) != 0
+    assert hidden.sum() == 4                        # the notch's row above it, x 4..8
+    np.testing.assert_allclose(second.world_positions()[:, :2] % 1.0, 0.0, atol=1e-6)
+    kept = td.threshold(second, "c", -1e9, 1e9)
+    assert kept.num_cells == second.num_cells - hidden.sum() - (
+        (second.ghosts.cells.numpy() & Ghosts.REFINEDCELL) != 0).sum() + (
+        hidden & ((second.ghosts.cells.numpy() & Ghosts.REFINEDCELL) != 0)).sum()
+
+
+def test_update_ghosts_refreshes_both_kinds_of_ghost():
+    grown = td.ghost_cells(hierarchy())
+    for _, box in grown:
+        owned = (box.ghosts.points.numpy() & Ghosts.DUPLICATEPOINT) == 0
+        y = box.world_positions()[:, 1]
+        values = np.where(owned, 2.0 * y, -1.0).astype(np.float32)
+        box.fields["p"] = td.Field(td.H1(box), tack.array(values))
+    td.update_ghosts(grown, "p")
+    for _, box in grown:
+        y = box.world_positions()[:, 1]
+        hidden = (box.ghosts.points.numpy() & Ghosts.HIDDENPOINT) != 0
+        np.testing.assert_allclose(box.fields["p"].values.numpy()[~hidden], 2.0 * y[~hidden],
+                                   atol=1e-5)
+
+
+@pytest.mark.parametrize("kind", ["image", "curvilinear"])
+def test_average_down_puts_fine_data_into_coarse_cells_and_points(kind):
+    amr = hierarchy(kind)
+    for _, box in amr:                              # the superseded values, spoilt
+        for name, bit in (("c", Ghosts.REFINEDCELL), ("p", Ghosts.REFINEDPOINT)):
+            marks = box.ghosts.cells if name == "c" else box.ghosts.points
+            values = box.fields[name].values.numpy().copy()
+            values[(marks.numpy() & bit) != 0] = -1.0
+            space = td.Constant(box) if name == "c" else td.H1(box)
+            box.fields[name] = td.Field(space, tack.array(values))
+    td.average_down(amr, "c")
+    td.average_down(amr, "p")
+    for _, box in amr:
+        centres = td.cell_centers(box).values.numpy().reshape(-1, 3)[:, 0]
+        np.testing.assert_allclose(box.fields["c"].values.numpy(), centres, atol=1e-6)
+        np.testing.assert_allclose(box.fields["p"].values.numpy(),
+                                   box.world_positions()[:, 1], atol=1e-6)
+
+
+@pytest.mark.parametrize("kind", ["rectilinear", "curvilinear"])
+def test_ghost_geometry_is_interpolated_in_the_coarse_cells(kind):
+    """A root stretched along x (rectilinear) or sheared (curvilinear), and a fine
+    box whose points subdivide its coarse cells linearly: the fine box's ghost
+    layer, which no sibling holds, gets the same subdivision from the root."""
+    def stretch(i):                     # the root's x, linear between its points
+        i = np.asarray(i, np.float64)
+        lo = np.floor(i)
+        def at(k):
+            return k + 0.05 * k * k
+        return at(lo) + (i - lo) * (at(lo + 1) - at(lo))
+
+    def map_(i, j):                     # world position at fractional root index (i, j)
+        if kind == "rectilinear":
+            return np.stack([stretch(i), j], -1)
+        return np.stack([i + 0.3 * j, j + 0.1 * i], -1)
+
+    def box(lo, cells, ratio):
+        i = (lo[0] + np.arange(cells[0] + 1)) / ratio
+        j = (lo[1] + np.arange(cells[1] + 1)) / ratio
+        topology = td.StructuredTopology((cells[0] + 1, cells[1] + 1), offset=lo)
+        if kind == "rectilinear":
+            geometry = tack.arrays.CartesianProduct(stretch(i), j)
+        else:
+            jj, ii = np.meshgrid(j, i, indexing="ij")
+            xy = map_(ii, jj).reshape(-1, 2)
+            geometry = np.column_stack([xy, np.zeros(len(xy))])
+        out = td.DataSet(topology, geometry)
+        out.fields["p"] = td.Field(td.H1(out), tack.array(out.positions()[:, 1]))
+        return out
+
+    amr = td.AMRDataSet([[box((0, 0), (8, 8), 1)], [box((4, 4), (6, 6), 2)]], [2])
+    fine = td.ghost_cells(amr).levels[1][0]
+    lo = np.asarray(fine.topology.offset)
+    dims = fine.topology.point_dims
+    jj, ii = np.meshgrid(np.arange(dims[1]) + lo[1], np.arange(dims[0]) + lo[0], indexing="ij")
+    expected = map_(ii / 2.0, jj / 2.0).reshape(-1, 2)
+    np.testing.assert_allclose(fine.world_positions()[:, :2], expected, atol=1e-5)
+
+
+def test_ghost_cells_refuses_what_it_cannot_do():
+    grown = td.ghost_cells(hierarchy())
+    with pytest.raises(ValueError, match="already has ghost cells"):
+        td.ghost_cells(grown)
+    with pytest.raises(ValueError, match="ghost_cells made"):
+        td.update_ghosts(hierarchy(), "p")
+    with pytest.raises(TypeError, match="AMRDataSet"):
+        td.average_down(td.PartitionedDataSet([]), "p")
+
+
+def test_ghost_cells_in_3d():
+    grown = td.ghost_cells(hierarchy("curvilinear", 3))
+    hidden_somewhere = False
+    for level, box in grown:
+        x = box.world_positions()
+        filled = (box.ghosts.points.numpy() & Ghosts.HIDDENPOINT) == 0
+        hidden_somewhere |= not filled.all()
+        np.testing.assert_allclose(box.fields["p"].values.numpy()[filled], x[filled, 1],
+                                   atol=1e-6)
+        np.testing.assert_allclose(x[:, 2] % 0.25, 0.0, atol=1e-6)   # extrapolated too
+    assert hidden_somewhere              # the level-2 box grows past its coarse box
+
+
 def test_amr_across_mpi_ranks(mpiexec):
     script = os.path.join(os.path.dirname(__file__), "_amr_mpi.py")
     for ranks in (2, 3):
@@ -298,6 +483,11 @@ def across(world):
             out[(level, whole)] = (box.ghosts.cells.numpy().tolist(),
                                    (box.ghosts.points.numpy() & (0xFF ^ Ghosts.DUPLICATEPOINT))
                                    .tolist())
+    grown = td.ghost_cells(amr)
+    for level, boxes in enumerate(grown.levels):
+        for box, whole in zip(boxes, keys[level]):
+            out[(level, whole, "ghosts")] = (box.fields["c"].values.numpy().tolist(),
+                                             box.fields["p"].values.numpy().tolist())
     return out, td.statistics(amr, "c").n
 
 
