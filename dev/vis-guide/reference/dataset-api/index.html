@@ -1705,6 +1705,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physical Units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2358,6 +2386,17 @@
     <span class="md-ellipsis">
       
         Fields and arrays
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#units" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Units
       
     </span>
   </a>
@@ -3925,6 +3964,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#units" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Units
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#origins-and-point-clouds" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4675,6 +4725,48 @@ field. It is kept apart from <code>fields</code>: <code>data.geometry</code> ret
 <code>data.positions()</code> gives the positions on the host. Algorithms move it with
 the cells; it is never among the fields they carry or select. An <code>L2</code> geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.</p>
+<h2 id="units">Units<a class="headerlink" href="#units" title="Permanent link">&para;</a></h2>
+<p><code>Field(space, values, unit=None)</code>: <code>unit</code> is the values' physical unit, a
+string kept in unyt's canonical spelling (<code>"m/s"</code>, <code>"m*s**-1"</code> and <code>"m/s^1"</code>
+are one unit; <code>"1"</code> is <code>"dimensionless"</code>), or <code>None</code> for unknown. The spatial
+unit is the geometry's, <code>data.unit</code>, and <code>origin</code> is in it. Kernels never see
+a unit. See <a href="../../12-units/">Physical Units</a>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Field(..., unit=)</code>, <code>field.unit</code></td>
+<td>the values' unit, or <code>None</code></td>
+</tr>
+<tr>
+<td><code>DataSet(..., unit=)</code>, <code>data.unit</code></td>
+<td>the spatial unit, the geometry field's; <code>uniform_grid</code>, <code>rectilinear_grid</code> and <code>point_cloud</code> take <code>unit=</code>, <code>point_cloud</code> also <code>units={name: unit}</code></td>
+</tr>
+<tr>
+<td><code>OctreeDataSet(..., units={name: unit})</code>, <code>octree.unit</code>, <code>octree.units</code></td>
+<td>the fields' units, and the roots' spatial unit</td>
+</tr>
+<tr>
+<td><code>convert(data, unit, field=None)</code></td>
+<td>the geometry (origin scaled in double precision; images stay images) or a field in <code>unit</code>, scaled and offset on the device</td>
+</tr>
+<tr>
+<td><code>tack.dataset.units</code></td>
+<td><code>canonical</code>, <code>conversion</code> (factor and offset), <code>same</code>, <code>compatible</code>, <code>common</code>; the registry is unyt's plus <code>ftUS</code>, the US survey foot</td>
+</tr>
+</tbody>
+</table>
+<p>Filters that keep a quantity keep its unit (everything <code>carry</code> takes along,
+<code>project</code>, <code>values_at_centers</code>, traces, <code>magnitude</code>, means, SPH
+interpolation, centres in the spatial unit); the rest give <code>None</code> until
+derived units arrive. Positions in two known spatial units do not meet:
+probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
+interop maps each array's <code>UNITS_LABEL</code>.</p>
 <h2 id="origins-and-point-clouds">Origins and point clouds<a class="headerlink" href="#origins-and-point-clouds" title="Permanent link">&para;</a></h2>
 <p>A position is <code>data.origin + value</code>: the origin is three floats kept in double
 precision on the host (<code>(0.0, 0.0, 0.0)</code> unless set), the value the geometry's,
@@ -4972,7 +5064,8 @@ level covers is a matter of integer boxes. VTK's AMR holds images and (since
 <p>Not here: crack-free contouring across levels, periodic domains, tagging and
 regridding, conservative interpolation (the vault's AMR proposal).</p>
 <h2 id="octrees">Octrees<a class="headerlink" href="#octrees" title="Permanent link">&para;</a></h2>
-<p>An <code>OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None)</code>
+<p>An <code>OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None,
+units=None)</code>
 is a grid of octrees, VTK's <code>vtkHyperTreeGrid</code> with branching factor 2, stored
 as a linear octree for GPUs: <code>roots</code> the grid of root cells (an image or a
 rectilinear grid, 2D or 3D; root cell <code>t</code>, x fastest, is tree <code>t</code>), and every
@@ -5825,6 +5918,10 @@ in <code>data.sets</code> (cells keep their order, not the order given),
 <tr>
 <td><code>magnitude(data, f)</code>, <code>dot(data, a, b)</code>, <code>cross(data, a, b)</code></td>
 <td>a field in the same space</td>
+</tr>
+<tr>
+<td><code>convert(data, unit, field=None)</code></td>
+<td>the geometry, or a field, in another unit (<a href="#units">Units</a>)</td>
 </tr>
 <tr>
 <td><code>composite(data, f, g, ...)</code></td>
