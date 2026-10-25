@@ -1992,6 +1992,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -4831,10 +4859,19 @@ hands filters one step at a time, and each step is a dataset at its time.</p>
 </tr>
 <tr>
 <td><code>tack.dataset.temporal</code></td>
-<td>filters fed one step at a time (<code>update(data)</code>), keeping copies of what they need of earlier steps (<code>copy=False</code> keeps references) -- running statistics, time derivatives, advection and pathlines follow</td>
+<td>filters fed one step at a time (<code>update(data)</code>, which returns the step's output), keeping copies of what they need of earlier steps (<code>copy=False</code> keeps references); a <code>PartitionedDataSet</code> streams piece by piece</td>
+</tr>
+<tr>
+<td><code>RunningStatistics(fields)</code></td>
+<td>per point or cell over the steps so far: <code>&lt;name&gt;_mean</code>, <code>_variance</code> (population), <code>_min</code>, <code>_max</code> (Welford, f64 where the device has it); <code>count</code>; one mesh over the steps (remesh first)</td>
+</tr>
+<tr>
+<td><code>TimeDerivative(fields, copy=True)</code></td>
+<td><code>&lt;name&gt;_dt</code>, the backward difference since the previous step, in the field's unit over the time unit; <code>None</code> on the first step; one mesh, increasing time</td>
 </tr>
 </tbody>
 </table>
+<p>See <a href="../../13-streaming/">Streaming Steps</a>.</p>
 <h2 id="origins-and-point-clouds">Origins and point clouds<a class="headerlink" href="#origins-and-point-clouds" title="Permanent link">&para;</a></h2>
 <p>A position is <code>data.origin + value</code>: the origin is three floats kept in double
 precision on the host (<code>(0.0, 0.0, 0.0)</code> unless set), the value the geometry's,
