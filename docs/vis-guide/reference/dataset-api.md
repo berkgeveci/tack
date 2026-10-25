@@ -358,6 +358,19 @@ measures, fluxes, statistics, deposits, SPH, particle times: the table in
 probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
 interop maps each array's `UNITS_LABEL`.
 
+## Time
+
+Tack holds no series of steps: a simulation in situ, or a reader's loop,
+hands filters one step at a time, and each step is a dataset at its time.
+
+| | |
+|---|---|
+| `DataSet(..., time=, time_unit=)`, `data.time`, `data.time_unit` | the step's time, a double on the host or `None`, in a unit of time or `None` |
+| kept by | every filter, as the origin and spatial unit are (`carry`, `keep_marks`, `drop_marks`, `to_device`); `probe` gives back its target's |
+| refused | pieces of a `PartitionedDataSet` and boxes of an `AMRDataSet` at two times (compared in one unit); an octree's time is its roots' |
+| VTK | `vtkDataObject::DATA_TIME_STEP` both ways; VTK has no time unit |
+| `tack.dataset.temporal` | filters fed one step at a time (`update(data)`), keeping copies of what they need of earlier steps (`copy=False` keeps references) -- running statistics, time derivatives, advection and pathlines follow |
+
 ## Origins and point clouds
 
 A position is `data.origin + value`: the origin is three floats kept in double

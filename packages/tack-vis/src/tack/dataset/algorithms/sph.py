@@ -255,7 +255,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     reach = support * (float(arrays.to_host(smoothing).max()) if n else 0.0)
     locator.check_radius(reach)
     out = DataSet(target.topology, target.geometry, fields=dict(target.fields),
-                  sets=dict(target.sets), dtype=target.dtype, origin=target.origin, unit=target.unit)
+                  sets=dict(target.sets), dtype=target.dtype, **target._frame())
     shepard = tack.zeros((m,), particles.dtype)
     grid = locator.grid()
     for name in names:
@@ -308,7 +308,7 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
         _densities(found.grid(), w, support, smoothing,
                    _per_particle(particles, mass, "mass"), density)
     out = DataSet(particles.topology, particles.geometry, fields=dict(particles.fields),
-                  sets=dict(particles.sets), dtype=particles.dtype, origin=particles.origin, unit=particles.unit)
+                  sets=dict(particles.sets), dtype=particles.dtype, **particles._frame())
     out.fields["density"] = Field(H1(out), density, units.derived(
         mass_unit, (particles.unit, -dimension)))
     return keep_marks(particles, out)

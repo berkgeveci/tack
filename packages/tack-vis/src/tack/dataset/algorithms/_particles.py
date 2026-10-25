@@ -174,7 +174,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
                                         np.asarray(members, np.int64), num_points=count)
             lines = DataSet(topology, points, dtype=piece.dtype,
                             ghosts=Ghosts(points=np.concatenate(marks) if marks
-                                          else np.zeros(0, np.uint8)), origin=piece.origin, unit=piece.unit)
+                                          else np.zeros(0, np.uint8)), **piece._frame())
             lines.fields["seed"] = Field(Values(lines, "cells"),
                                          tack.array(np.asarray(seed, np.int64), tack.i64))
             lines.fields["segment"] = Field(Values(lines, "cells"),

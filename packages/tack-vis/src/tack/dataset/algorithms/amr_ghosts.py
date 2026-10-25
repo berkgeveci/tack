@@ -399,8 +399,8 @@ def _grown_box(amr, level, piece, box, ext, d, assembled, names, positions, hidd
                 geometry = tack.array(grid.astype(piece.dtype.numpy_dtype), tack.vec3(piece.dtype))
     cells, points = _grown_marks(amr, level, piece, box, ext, d, hidden_cells, hidden_points)
     with piece.device:
-        out = DataSet(topology, geometry, dtype=piece.dtype, origin=piece.origin,
-                      ghosts=Ghosts(cells=cells, points=points), unit=piece.unit)
+        out = DataSet(topology, geometry, dtype=piece.dtype,
+                      ghosts=Ghosts(cells=cells, points=points), **piece._frame())
         for name in names:
             field = piece.fields[name]
             if _kind(field) == "points":

@@ -83,19 +83,40 @@ def fields_of(data, field, what):
 def common_origin(data, what, world=None):
     """The origin every piece of ``data`` has, on every rank of ``world``
     (``data.world`` by default): ``what`` (an algorithm that compares or moves
-    positions between pieces) refuses pieces on two origins, or in two spatial
-    units. ``(0.0, 0.0, 0.0)``
+    positions between pieces) refuses pieces on two origins, in two spatial
+    units, or at two times. ``(0.0, 0.0, 0.0)``
     with no pieces anywhere."""
     from tack.dataset import units
 
     world = data.world if world is None else world
     mine = sorted({piece.origin for piece in data})
     spatial = sorted({piece.unit or "" for piece in data})
-    gathered = world._allgather((mine, spatial))
-    every = sorted({o for part, _ in gathered for o in part})
+    times = sorted({(piece.time, piece.time_unit) for piece in data}, key=repr)
+    gathered = world._allgather((mine, spatial, times))
+    every = sorted({o for part, _, _ in gathered for o in part})
     units.common(f"{what}'s pieces' geometry",
-                 [u or None for _, part in gathered for u in part])
+                 [u or None for _, part, _ in gathered for u in part])
+    _one_time(f"{what}'s pieces", [t for _, _, part in gathered for t in part])
     if len(every) > 1:
         raise ValueError(f"{what} needs its pieces on one origin, not {every}: rebase "
                          "them to one first (DataSet.rebased)")
     return every[0] if every else (0.0, 0.0, 0.0)
+
+
+def _one_time(what, times):
+    """Refuse ``times`` (``(time, time_unit)`` pairs) of more than one step: pieces of
+    one dataset are at one time, compared in one unit where both are known. A
+    piece with no time is not checked."""
+    import math
+
+    from tack.dataset import units
+
+    known = sorted({(t, u) for t, u in times if t is not None}, key=repr)
+    for t, u in known[1:]:
+        t0, u0 = known[0]
+        if u is not None and u0 is not None and u != u0:
+            factor, offset = units.conversion(u, u0)
+            t = t * factor + offset
+        if not math.isclose(t, t0, rel_tol=1e-12):
+            raise ValueError(f"{what} are at two times, {known[0]} and {(t, u)}: pieces of "
+                             "one step have one time")

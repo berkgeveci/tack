@@ -305,7 +305,7 @@ class PointLocator:
         if bin_size is not None and not bin_size > 0:
             raise ValueError(f"bin_size must be positive, not {bin_size!r}")
         #: The points, without the fields.
-        self.data = DataSet(data.topology, data.geometry, origin=data.origin, unit=data.unit)
+        self.data = DataSet(data.topology, data.geometry, **data._frame())
         self._geometry = data.geometry.values
         self._revision = arrays._revision(self._geometry)
         n = data.num_points

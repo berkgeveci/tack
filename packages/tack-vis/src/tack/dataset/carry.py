@@ -334,8 +334,7 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     from tack.dataset.global_ids import carry_ids
 
     # A geometry the filter computed is in the input's spatial unit.
-    made = DataSet(out, geometry, fields=carried, sets=sets, origin=data.origin,
-                   unit=data.unit)
+    made = DataSet(out, geometry, fields=carried, sets=sets, **data._frame())
     carry_ids(data, made, points=points, cells=None if faces_to_cells is not None or
               edges_to_cells is not None else cells)
     return carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,

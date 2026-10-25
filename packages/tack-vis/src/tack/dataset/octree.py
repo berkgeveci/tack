@@ -328,6 +328,19 @@ class OctreeDataSet:
         return self.roots.unit
 
     @property
+    def time(self):
+        """The step's time, the roots' (``DataSet.time``)."""
+        return self.roots.time
+
+    @property
+    def time_unit(self):
+        """The unit of ``time``, the roots'."""
+        return self.roots.time_unit
+
+    def _frame(self):
+        return self.roots._frame()
+
+    @property
     def is_leaf(self):
         """Which nodes are leaves: a bool host array, in the nodes' order."""
         return (self.marks.numpy() & Ghosts.REFINEDCELL) == 0
@@ -436,7 +449,7 @@ class OctreeDataSet:
                 hidden = marks.numpy() & Ghosts.HIDDENCELL
                 ghosts = Ghosts(cells=tack.array(hidden.astype(np.uint8), tack.u8))
         return DataSet(topology, positions, fields=fields, dtype=self.roots.dtype,
-                       ghosts=ghosts, origin=self.origin, unit=self.unit)
+                       ghosts=ghosts, **self._frame())
 
     # -- probing ---------------------------------------------------------
 

@@ -253,14 +253,23 @@ class DataSet:
     interop) converts on the host in double precision.
 
     ``unit`` is the spatial unit, the geometry field's (``DataSet.unit``), in
-    which ``origin`` is too; a geometry ``Field`` brings its own."""
+    which ``origin`` is too; a geometry ``Field`` brings its own.
+
+    ``time`` is when the data are, a double on the host or ``None``, in
+    ``time_unit`` (a unit of time, or ``None`` for unknown): one step of a
+    simulation as it streams through filters, which keep both, as they keep
+    the origin. Tack holds no series of steps; filters that need earlier steps
+    keep what they need (``tack.dataset.temporal``)."""
 
     @on_inputs_device
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32,
-                 ghosts=None, global_ids=None, origin=None, unit=None):
+                 ghosts=None, global_ids=None, origin=None, unit=None, time=None,
+                 time_unit=None):
         self.topology = topology
         self._geometry = _as_geometry(geometry, topology, dtype, unit)
         self.origin = origin
+        self.time = time
+        self.time_unit = time_unit
         self.fields = dict(fields or {})
         for name, field in self.fields.items():
             if field.space.topology is not topology:
@@ -316,7 +325,7 @@ class DataSet:
         out = DataSet(topology, moved(self.geometry),
                       {name: moved(field) for name, field in self.fields.items()},
                       sets, dtype=self.dtype, ghosts=ghosts, global_ids=global_ids,
-                      origin=self.origin, unit=self.unit)
+                      **self._frame())
         out._ghosts_lost = self._ghosts_lost
         return out
 
@@ -399,6 +408,36 @@ class DataSet:
     @origin.setter
     def origin(self, origin):
         self._origin = as_origin(origin)
+
+    @property
+    def time(self):
+        """When the data are, a float, or ``None``: one step's time, in
+        ``time_unit``."""
+        return self._time
+
+    @time.setter
+    def time(self, time):
+        if time is not None:
+            value = float(time)
+            if not np.isfinite(value):
+                raise ValueError(f"a time is a finite number or None, not {time!r}")
+            time = value
+        self._time = time
+
+    @property
+    def time_unit(self):
+        """The unit of ``time``, a unit of time, or ``None`` if unknown."""
+        return self._time_unit
+
+    @time_unit.setter
+    def time_unit(self, unit):
+        self._time_unit = units.time_unit(unit)
+
+    def _frame(self):
+        """Where and when its positions are, as keywords for a ``DataSet`` made from
+        it: ``origin``, ``unit``, ``time``, ``time_unit``."""
+        return {"origin": self.origin, "unit": self.unit, "time": self.time,
+                "time_unit": self.time_unit}
 
     @property
     def geometry(self):

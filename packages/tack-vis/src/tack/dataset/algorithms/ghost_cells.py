@@ -451,7 +451,7 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
         topology = UnstructuredTopology(types, offsets, connectivity, num_points=total_points,
                                         id_dtype=piece.topology.id_dtype)
         out = DataSet(topology, positions, dtype=geometry_dtype,
-                      ghosts=Ghosts(cells=cell_marks, points=point_marks), origin=piece.origin, unit=piece.unit)
+                      ghosts=Ghosts(cells=cell_marks, points=point_marks), **piece._frame())
         for name in names:
             field = piece.fields[name]
             kind = _kind(field)
