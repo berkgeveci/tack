@@ -17,6 +17,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `world_positions()` and `rebased(origin)`; `vtk_to_dataset(..., origin=)`,
   and `dataset_to_vtk` writes world positions. Pieces whose positions meet
   must share one origin.
+- `td.PointLocator`: points in uniform bins sorted by bin, for radius
+  neighbours (CSR) and the k nearest, deterministic (no atomics), and a device
+  class for one's own kernels. On it, `voxel_downsample` (centroid, first or
+  nearest point per voxel), `outliers` (radius or statistical, marked; VTK's
+  `vtkRadiusOutlierRemoval` and `vtkStatisticalOutlierRemoval` keep the same
+  points) and `point_normals` (PCA over the k nearest or a radius, signed
+  toward a viewpoint or up; within 0.1 degrees of `vtkPCANormalEstimation`).
 - `td.point_cloud(positions, fields)`: a dataset of one implicit vertex cell
   per point (stored nowhere), float64 positions on an origin of their own,
   integer fields (a LAS classification, intensities) kept in their type. The

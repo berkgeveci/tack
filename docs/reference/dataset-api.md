@@ -383,6 +383,33 @@ two (`partitioned.common_origin`, over every rank); `rebased` puts a piece on
 another. An image's own origin (`UniformCoordinates`) is separate from the
 dataset's and computed in the geometry's type.
 
+### Finding points near points
+
+`PointLocator(data, bin_size=None, points_per_bin=4)` puts the points in
+uniform bins over their box (about `points_per_bin` a bin, cubes along the
+axes they span) and sorts them by bin, each bin in index order
+(`buckets.bucket_order`), as VTK's `vtkStaticPointLocator`. Nothing is
+atomic, so every query visits the same points in the same order and its
+answer has the same bits on every backend. Like `CellLocator`, it records its
+geometry (`serves`) and is refused once Tack has written the positions; the
+filters below use the one the topology keeps (`cached_point_locator`) unless
+given one.
+
+| | |
+|---|---|
+| `locator.neighbors(radius, points=None)` | every point within `radius` (inclusive) of each query, CSR `(offsets, ids)`; the queries are the points themselves, each leaving itself out, unless `points` (a host array of world positions, or a Tack array relative to the origin) are given |
+| `locator.nearest(k, points=None)` | the `k` nearest (`k` up to `MAX_K`, 32), `(ids, squared_distances)`, each `(m, k)`, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched |
+| `locator.grid()` | the sorted points and the grid as a device class, for one's own kernels: `span(x, r)`, `cell(x)`, `bin(i, j, k)`, `first(b)`, `end(b)`, `point(s)` |
+
+### Point cloud filters
+
+| | |
+|---|---|
+| `voxel_downsample(data, size, keep="centroid")` | one point per occupied voxel of side `size` (or three sides) anchored at the points' lower corner: the voxel's centroid (new points: floating-point fields averaged, integer fields its first point's; ghost marks dropped), its first point, or its point nearest the centroid (input points, in input order, fields and marks kept). Voxels by a stable sort, each reduced in index order, so the same bits everywhere. VTK's `vtkVoxelGrid` fits a whole number of bins to the box, so its voxels are not exactly `size`; PDAL's `filters.voxeldownsize` is this |
+| `outliers(data, radius=, min_neighbors=)` | marks (`outlier`, u8) points with fewer than `min_neighbors` others within `radius`, with each point's count (`neighbors`): VTK's `vtkRadiusOutlierRemoval`, the same points |
+| `outliers(data, k=, deviations=1.0)` | marks points whose mean distance to their `k` nearest is more than `deviations` standard deviations above the mean of those means, with each one (`mean_distance`): VTK's `vtkStatisticalOutlierRemoval` and PCL, the same points, mean and deviation. Marked, not removed, as PDAL marks (class 7): `threshold_points(out, "outlier", 0, 0)` keeps the rest |
+| `point_normals(data, k=None, radius=None, viewpoint=None, direction=(0, 0, 1))` | each point's unit normal from the covariance of its `k` nearest points (itself included) or those within `radius`: the eigenvector of the least eigenvalue, in closed form; signed toward `viewpoint` (a world position) or along `direction` (up). Zero with fewer than three neighbours, or on a line. VTK's `vtkPCANormalEstimation` agrees within 0.1° |
+
 ## Devices
 
 A dataset is on the device its arrays are on, and it computes there: every

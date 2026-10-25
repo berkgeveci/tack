@@ -147,6 +147,12 @@ CALLS = {
     "advect": lambda d: td.advect(d, "v", np.array([[0.5, 0.5, 0.5]], np.float32), 0.01, 3),
     "streamlines": lambda d: td.streamlines(d, "v", np.array([[0.5, 0.5, 0.5]], np.float32),
                                             0.01, 3),
+    "voxel_downsample": lambda d: td.voxel_downsample(d, 0.75),
+    "voxel_downsample_nearest": lambda d: td.voxel_downsample(d, 0.75, keep="nearest"),
+    "outliers_radius": lambda d: td.outliers(d, radius=1.0, min_neighbors=3),
+    "outliers_statistical": lambda d: td.outliers(d, k=4),
+    "point_normals": lambda d: td.point_normals(d, k=6),
+    "point_normals_radius": lambda d: td.point_normals(d, radius=1.0),
 }
 
 
