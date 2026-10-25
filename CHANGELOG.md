@@ -283,7 +283,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - The documentation's datasets and visualization chapters are now the
   **Visualization Guide**, a tab of its own (`docs/vis-guide/`) with
   `tack.dataset`'s reference and design records; the User's Guide is about
-  kernels. Pages moved without redirects.
+  kernels. Pages moved without redirects. New chapters: Point Clouds and
+  Particles (LiDAR cleaning and gridding, SPH resampling, halos in a periodic
+  box, each a checked example) and Algorithms Across Pieces (split from Work
+  with Data in Pieces, with running over MPI ranks and point clouds in
+  pieces).
 - **Breaking:** `Planes(origins, normals)` follows the data's precision, as
   the other implicit functions do, and takes no `dtype`: filters evaluate a
   copy of its planes in the geometry's floating type on its device, made

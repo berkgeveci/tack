@@ -14,7 +14,9 @@ pieces into the whole's answer.
   take a `DataSet`, as everywhere else, and you loop over the pieces. There
   is no "apply to every piece" wrapper: the loop says what it does.
 - **Only algorithms whose answer needs every piece take the container:**
-  `statistics` and `entropy`, given a field's name.
+  `statistics` and `entropy`, given a field's name, here; probing,
+  particles, connected regions and the point-cloud filters in
+  [Algorithms Across Pieces](09-pieces-across.md).
 
 ## Cut a grid into pieces
 
@@ -32,7 +34,7 @@ owned cells of the four pieces are the grid's 8000 cells, and the owned
 points its 9261 points.
 
 An unstructured mesh is cut by VTK or by the application that made it (see
-[Pieces from VTK](#pieces-from-vtk) below).
+[Pieces from VTK](09-pieces-across.md#pieces-from-vtk)).
 
 ## Ghost marks
 
@@ -170,184 +172,6 @@ edges chosen by id, and a reused `CellLocator`. Algorithms whose output is
 on the same cells (gradients, projections, calculators) still compute
 there, and the marks stay on those cells.
 
-## Pieces from VTK
-
-`vtk_to_dataset` turns a `vtkPartitionedDataSet` into a
-`PartitionedDataSet`, and a `vtkPartitionedDataSetCollection` into a `dict`
-of names to partitioned datasets; `dataset_to_vtk` does the reverse. To cut
-an unstructured mesh with ghost cells, use VTK's filters (no MPI needed):
-
-```python
-from vtkmodules.vtkFiltersParallelDIY2 import (
-    vtkGhostCellsGenerator,
-    vtkRedistributeDataSetFilter,
-)
-
-from tack.interop.vtk import vtk_to_dataset
-
-cut = (vtkRedistributeDataSetFilter(number_of_partitions=4,
-                                    preserve_partitions_in_output=True)
-       >> vtkGhostCellsGenerator(number_of_ghost_layers=1, build_if_required=False))
-pieces = vtk_to_dataset(cut(mesh))                 # mesh: any vtkDataSet
-```
-
-The filters' rules hold over these pieces as over `split`'s.
-
-## Generate ghost cells
-
-Unstructured pieces without ghost cells, from VTK's redistribution, a
-reader or your own partitioner, get a layer from `ghost_cells`, as VTK's
-`vtkGhostCellsGenerator` would give them, marks and values alike:
-
-```python
-plain = vtk_to_dataset(vtkRedistributeDataSetFilter(number_of_partitions=4,
-                                                    preserve_partitions_in_output=True)(mesh))
-pieces = td.ghost_cells(plain)                     # one layer, marked
-deeper = td.ghost_cells(plain, layers=2)           # two, for two neighbour filters in a row
-```
-
-Structured pieces, `split`'s or VTK's image pieces, stay structured: each
-becomes its block grown by the layers, with the right offset and
-coordinates.
-
-Pieces neighbour where they share points at exactly the same position, and
-a shared point belongs to the lowest piece holding it. The pieces may be on
-different devices, or on different MPI ranks (each rank passes its own
-pieces and a `tack.communication.World`; see the API reference).
-
-A filter that needs each entity's neighbours is right on what a piece owns
-but wrong on the rim of the ghost layer, whose neighbours the piece lacks.
-Before a second such filter reads those values, copy them from their
-owners:
-
-```python
-for piece in pieces:
-    piece.fields["p"] = td.project(piece, "c", td.H1(piece))  # a cell field "c" to points
-td.update_ghosts(pieces, "p")                      # ghost values from their owners
-for piece in pieces:
-    piece.fields["grad"] = td.gradients(piece, "p", at="points")   # right where owned
-```
-
-`ghost_cells` keeps the exchanges, so each `update_ghosts` is one copy per
-neighbour, not a new matching.
-
-## Global ids
-
-Each piece numbers its points and cells from 0. Global ids number them
-across all the pieces, one id per point and per cell wherever it is held:
-`piece.global_ids.points` and `.cells`, `i64` arrays (`td.GlobalIds`).
-VTK's `GlobalIds` arrays come in as them, and `generate_global_ids` makes
-them, as `vtkGenerateGlobalIds` does:
-
-```python
-pieces = td.generate_global_ids(td.ghost_cells(plain))
-ids = pieces[0].global_ids.points                  # the same at a shared point
-```
-
-Filters keep the ids of the points and cells they keep (`threshold`,
-`extract_cells`, `remove_ghosts`); what they make has none.
-
-## Pieces on several devices
-
-A piece is a dataset, so it can live on any device:
-`td.PartitionedDataSet(piece.to_device(f"cuda:{i % 2}") for i, piece in
-enumerate(pieces))` spreads them over two GPUs. Each piece's work runs on
-its own device, and `statistics` and `entropy` reduce each piece where it
-is. `packages/tack-vis/examples/44_partitioned_data.py` does this when there
-are several devices of the chosen type.
-
-## Particles across pieces
-
-`advect` and `streamlines` take a partitioned dataset too, and particles
-cross from piece to piece:
-
-```python
-pieces = td.split(data, 8, ghost_layers=1)
-particles = td.advect(pieces, "velocity", seeds, 0.01, 500)  # a dataset per piece
-paths = td.streamlines(pieces, "velocity", seeds, 0.01, 500) # each piece's stretches
-```
-
-With a ghost layer wider than a step (`step_size` times the speed), the
-paths are the whole mesh's up to rounding: a particle that ends a step in a
-ghost cell is handed to the cell's owner, which goes on with whole steps.
-Without ghost cells it crosses at the boundary by a shortened step. Each
-particle is in one piece of the result, with its `seed`; a path's stretches
-are in the pieces that traced them, each after the first starting at a
-point marked `DUPLICATEPOINT`.
-
-## Probing pieces
-
-`probe` takes a partitioned source: each point is evaluated by the piece
-that holds it, and the values come back in your points' order, equal to
-probing the whole dataset. Ghost cells are not needed for it.
-
-```python
-values = td.probe(pieces, points)                  # points: an array or a dataset
-values.fields["RTData"], values.fields["valid"]    # valid 0 outside every piece
-```
-
-## Connected regions across pieces
-
-`connected_components` labels cells connected through shared points; given
-pieces, it numbers the regions across all of them, so a region that crosses
-a cut has one number everywhere:
-
-```python
-regions = td.connected_components(pieces)          # region, point_region on each piece
-```
-
-With global ids on the pieces, regions are numbered as on the whole dataset.
-`min_size` drops regions of fewer points, each point counted once.
-
-## Point clouds in pieces
-
-A point cloud's pieces share no points, so a filter over a point's
-neighbours needs copies of the points near it that other pieces hold.
-`ghost_points` appends them, marked as ghosts, either every point within a
-radius of the piece or exactly those among its points' k nearest. Then the
-neighbour filters run per piece, as mesh filters do after `ghost_cells`, and
-each owned point gets the whole's answer:
-
-```python
-ghosted = td.ghost_points(pieces, k=10)
-normals = [td.point_normals(piece, k=10) for piece in ghosted]
-
-ghosted = td.ghost_points(pieces, radius=2 * h_max)            # an SPH kernel's reach
-for piece in ghosted:
-    piece.fields["density"] = td.sph_density(piece).fields["density"]
-td.update_ghosts(ghosted, "density")                           # the copies' from their owners
-```
-
-Clusters, statistical outliers, voxel downsampling, deposition onto a grid
-and halo catalogues need every piece, so they take the pieces, here or across
-MPI ranks:
-
-```python
-halos = td.connected_components(pieces, radius=linking, min_size=100, periodic=box)
-catalog = td.halo_catalog(halos, mass=particle_mass, velocity="v", periodic=box)
-density = td.deposit(pieces, grid, method="cic")               # the whole grid, on every rank
-```
-
-In a periodic box the copies across a face are images, moved by the box's
-side, so run the per-piece filters on `ghost_points`' pieces without
-`periodic`.
-
-## One dataset again
-
-`merge_pieces` gives the pieces back as one dataset, each cell and point
-once, ghosts dropped: to write one file, or to hand to code that knows no
-pieces. Structured pieces come back as one structured grid; across MPI ranks
-the result is on the root rank.
-
-```python
-whole = td.merge_pieces(pieces)                    # None on the other ranks
-```
-
-## Not here yet
-
-Asynchronous exchange, should particles across MPI ranks need it, and
-rebalancing pieces are not planned for now.
-
 ## Run and check
 
 ```bash
@@ -359,3 +183,7 @@ The checks compare the pieces against the whole grid: owned cells and
 points, statistics of the grid and of its gradients, and the isosurface's
 triangles and points, before and after `remove_ghosts`.
 [Download the complete program](../examples/data_partitioned.py).
+
+Continue with [Algorithms Across Pieces](09-pieces-across.md): pieces from
+VTK, generated ghost cells, global ids, several devices and MPI ranks, and
+the algorithms whose answer crosses pieces.

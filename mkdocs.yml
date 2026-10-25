@@ -135,10 +135,13 @@ nav:
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
       - Work with Data:
           - Build Meshes: vis-guide/02-meshes.md
+          - Point Clouds and Particles: vis-guide/08-point-clouds.md
           - Filter and Analyze: vis-guide/04-filters.md
           - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
           - Sample and Connect Simulations: vis-guide/06-pipelines.md
+      - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
+          - Algorithms Across Pieces: vis-guide/09-pieces-across.md
       - Worked Examples: vis-guide/examples.md
       - Reference:
           - Dataset API: vis-guide/reference/dataset-api.md
