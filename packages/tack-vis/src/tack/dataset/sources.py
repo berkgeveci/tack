@@ -13,7 +13,7 @@ import tack
 from tack.dataset.dataset import Field, uniform_grid
 from tack.dataset.spaces import H1
 
-__all__ = ["tangle", "wavelet"]
+__all__ = ["amr_gaussian_pulse", "tangle", "wavelet"]
 
 
 def _extent(extent):
@@ -94,3 +94,64 @@ def tangle(dims=(16, 16, 16), dtype=tack.f32, device=None):
     _tangle(out, int(dims[0]), int(dims[1]), *map(float, cells))
     data.fields["tangle"] = Field(H1(data), out)
     return data
+
+
+def amr_gaussian_pulse(dimension=3, root_spacing=0.5, refinement_ratio=2,
+                       pulse_origin=(0.0, 0.0, 0.0), pulse_width=(0.5, 0.5, 0.5),
+                       amplitude=0.0001, dtype=tack.f32, device=None):
+    """A two-level AMR hierarchy with a Gaussian pulse, as VTK's
+    ``vtkAMRGaussianPulseSource`` makes it: a root image of 6 x 6 (x 6) points from
+    ``(-2, -2, 0)``, and two boxes refining parts of it by ``refinement_ratio``.
+
+    Each box has VTK's two cell fields: ``Gaussian-Pulse``, ``amplitude *
+    exp(-sum(((c - pulse_origin) / pulse_width)^2))`` over the first
+    ``dimension`` axes at each cell's centre ``c``, and ``Centroid``, the
+    centres. An ``AMRDataSet``, its refined cells and points marked."""
+    from tack.dataset.amr import AMRDataSet
+    from tack.dataset.spaces import Constant
+
+    if dimension not in (2, 3):
+        raise ValueError(f"dimension is 2 or 3, not {dimension!r}")
+    r = int(refinement_ratio)
+    h = float(root_spacing)
+    origin = np.array([-2.0, -2.0, 0.0])
+    # VTK's patches, as point ranges of the root: x, y (and z) inclusive.
+    patches = ([(0, 2), (0, 3), (0, 5)], [(3, 5), (2, 5), (0, 5)])
+
+    def box(points, spacing, corner, offset):
+        dims = tuple(points)[:dimension]
+        grid = uniform_grid(dims, origin=tuple(corner)[:dimension],
+                            spacing=(spacing,) * dimension, dtype=dtype, device=device)
+        topology = type(grid.topology)(dims, id_dtype=grid.topology.id_dtype,
+                                       device=device, offset=tuple(offset)[:dimension])
+        centres = _cell_centres(dims, corner[:dimension], spacing)
+        d = (centres - np.asarray(pulse_origin, np.float64)[:dimension]) / \
+            np.asarray(pulse_width, np.float64)[:dimension]
+        pulse = float(amplitude) * np.exp(-(d * d).sum(axis=1))
+        full = np.zeros((len(centres), 3))
+        full[:, :dimension] = centres
+        from tack.dataset.dataset import DataSet
+
+        out = DataSet(topology, grid.geometry.values, dtype=dtype)
+        with out.device:
+            out.fields["Gaussian-Pulse"] = Field(Constant(out), tack.array(
+                pulse.astype(dtype.numpy_dtype)))
+            out.fields["Centroid"] = Field(Constant(out), tack.array(
+                full.astype(dtype.numpy_dtype), tack.vec3(dtype)))
+        return out
+
+    root = box((6, 6, 6), h, origin, (0, 0, 0))
+    fine = []
+    for patch in patches:
+        lo = np.array([a for a, _ in patch])
+        points = [r * (b - a) + 1 for a, b in patch]
+        fine.append(box(points, h / r, origin + lo * h, lo * r))
+    return AMRDataSet([[root], fine], ratios=[r])
+
+
+def _cell_centres(dims, corner, spacing):
+    """The centres of an image's cells, x fastest, as an ``(n, dimension)`` array."""
+    axes = [np.asarray(corner[a]) + (np.arange(n - 1) + 0.5) * spacing
+            for a, n in enumerate(dims)]
+    mesh = np.meshgrid(*axes[::-1], indexing="ij")
+    return np.stack([m.reshape(-1) for m in mesh[::-1]], axis=1)

@@ -127,7 +127,13 @@ def statistics(data, field):
     combined pairwise, in the order of the pieces over every rank of
     ``data.world`` -- the same result however the pieces are shared out. Where
     every shared cell and point has one owner, the result is the whole's up to
-    rounding."""
+    rounding. Over an ``AMRDataSet``, the same over every box of every level:
+    refined cells and points are left out, so each region of space counts
+    once, at its finest level."""
+    from tack.dataset.amr import AMRDataSet
+
+    if isinstance(data, AMRDataSet):
+        data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
         fields_of(data, field, "statistics")
         moments = None

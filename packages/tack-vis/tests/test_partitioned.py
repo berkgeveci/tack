@@ -583,9 +583,9 @@ def test_hidden_cells_are_never_processed():
     seeds = np.array([[0.5, 0.5, 0.5]], np.float32)
     probed = td.probe(whole, seeds)
     assert probed.num_points == 1
-    with pytest.raises(NotImplementedError, match="hidden cells"):
+    with pytest.raises(NotImplementedError, match="hidden or refined cells"):
         td.extract_surface(whole, np.arange(4))
-    with pytest.raises(NotImplementedError, match="hidden cells"):
+    with pytest.raises(NotImplementedError, match="hidden or refined cells"):
         td.probe(whole, seeds, locator=td.CellLocator(whole))
 
 

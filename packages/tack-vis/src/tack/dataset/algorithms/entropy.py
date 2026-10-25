@@ -43,7 +43,13 @@ def entropy(data, field, bins=10):
 
     Over a ``PartitionedDataSet``, ``field`` names a field every piece has: the
     range is the whole's, and each piece's histogram over what it owns, made on
-    its own device, is summed, over every rank of ``data.world``."""
+    its own device, is summed, over every rank of ``data.world``. Over an
+    ``AMRDataSet``, the same over every box of every level, refined cells and
+    points left out."""
+    from tack.dataset.amr import AMRDataSet
+
+    if isinstance(data, AMRDataSet):
+        data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
         fields_of(data, field, "entropy")
         extrema = [e for e in _over_pieces(data, lambda piece: _extrema(piece, field))

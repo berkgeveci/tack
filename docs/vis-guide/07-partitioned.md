@@ -46,12 +46,15 @@ pieces. It holds one `u8` per cell (`ghosts.cells`) and one per point
 | Bit | Value | Meaning |
 |---|---|---|
 | `Ghosts.DUPLICATECELL` | 1 | a copy of a cell another piece owns |
-| `Ghosts.HIDDENCELL` | 32 | a cell whose data is not valid here: an AMR cell a finer level covers, a blanked cell |
+| `Ghosts.REFINEDCELL` | 8 | a cell a finer AMR level covers: valid data, superseded ([AMR Hierarchies](10-amr.md)) |
+| `Ghosts.HIDDENCELL` | 32 | a cell whose data is not valid here: a blanked cell |
 | `Ghosts.DUPLICATEPOINT` | 1 | a copy of a point another piece owns |
 | `Ghosts.HIDDENPOINT` | 2 | a point whose data is not valid here |
+| `Ghosts.REFINEDPOINT` | 8 | a point at whose location a finer AMR level has one (Tack's; VTK has no such bit) |
 
 The other cell bits (`HIGHCONNECTIVITYCELL`, `LOWCONNECTIVITYCELL`,
-`REFINEDCELL`, `EXTERIORCELL`) are carried along unread.
+`EXTERIORCELL`) are carried along unread. Filters that make cells leave
+`Ghosts.MASKED_CELLS` (hidden and refined) out.
 `Ghosts.SKIPPED_CELLS` and `Ghosts.SKIPPED_POINTS` are the bits a reduction
 leaves out. The marks are kept apart from the fields, as the geometry is,
 so no algorithm mistakes them for data. `to_device` moves them;

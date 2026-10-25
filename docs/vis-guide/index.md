@@ -54,6 +54,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Understand a Dataset](01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
 | [Build Meshes](02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
 | [Point Clouds and Particles](08-point-clouds.md) | Clean and grid LiDAR, resample SPH particles, find halos |
+| [AMR Hierarchies](10-amr.md) | Hold levels of refined boxes, images or not; reduce and filter them |
 | [Fields and Spaces](03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
 | [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
