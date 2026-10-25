@@ -239,6 +239,24 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- Point filters on GPUs (the validation round on mustafar-linux, headroom
+  and illyad, 2026-10-25):
+  - `PointLocator.neighbors` and `nearest` ran on the default device when no
+    Tack array was among their arguments (the locator's own points, or host
+    query points), and failed with arrays on two devices. The locator now
+    has its dataset's device, as `CellLocator` does.
+  - `voxel_downsample(keep="nearest")` broke a tie the other way on CUDA, HIP
+    and Level Zero: a voxel of two points has them equidistant, and a GPU
+    fused the squared distance into multiply-adds. Distances that decide a
+    neighbour, the k nearest, a friends-of-friends link or a voxel's point
+    are now named products (`squared_length`), rounded alike on every
+    backend, as implicit functions' values already were.
+  - Level Zero compiles with `-cl-fp32-correctly-rounded-divide-sqrt`: its
+    f32 division (2.5 ulp) and square root (3 ulp) put centroids and means a
+    bit off CUDA's, HIP's and the CPU's.
+  - The docs said the point filters' sums had the same bits on every backend.
+    They have them from run to run; counts, labels, neighbours and kept
+    points are the same on every backend, and sums agree to rounding.
 - GPU-aware MPI with HIP arrays: Tack's HIP arrays come from the
   stream-ordered pool (`hipMallocAsync`), which MVAPICH-Plus 4.1's UCX took
   for host memory (an assertion, or a segfault, at the first send; illyad).

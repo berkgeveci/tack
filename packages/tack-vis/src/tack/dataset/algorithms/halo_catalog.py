@@ -292,8 +292,11 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
     ``PointLocator`` takes it) each halo is unwrapped about its first particle
     before anything is summed, so a halo across a face is whole, and its points
     are put back in the box. Positions are relative to the particles' origin,
-    which the catalogue shares. Every sum runs in particle order: the result is
-    the same on every backend.
+    which the catalogue shares. Every sum runs in particle order, so the
+    result has the same bits from run to run; counts and masses are the same
+    on every backend, the other sums agree to rounding (a GPU may fuse a
+    multiply-add), and so the most bound particle can differ between
+    backends only where two potentials tie to rounding.
 
     Over a ``PartitionedDataSet`` (labels numbered across the pieces, as
     ``connected_components`` numbers them), each halo's owned particles are

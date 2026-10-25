@@ -438,7 +438,7 @@ options:
 | CUDA | `runtime/cuda_backend.py`, `_compile_ptx` | `--ftz=false --prec-div=true --prec-sqrt=true --fmad=true`, no `--use_fast_math` |
 | Metal | `runtime/metal.py`, `_compile_kernel` and `_get_reduce_pipeline` | `MTLCompileOptions.setFastMathEnabled_(False)` |
 | HIP | `runtime/hip_backend.py`, `_compile_code_object` | `_HIPRTC_OPTIONS`: `-ffp-contract=on` only; no unsafe or relaxed-math option |
-| Level Zero | `runtime/level_zero_backend.py` | build flags `-cl-std=CL2.0` only; no relaxed-math option |
+| Level Zero | `runtime/level_zero_backend.py` | `_OPENCL_OPTIONS`: `-cl-std=CL2.0 -cl-fp32-correctly-rounded-divide-sqrt` (f32 division and sqrt correctly rounded, as CUDA's `--prec-div`/`--prec-sqrt`); no relaxed-math option |
 
 The same settings apply to the runtime field-reduction kernels.
 

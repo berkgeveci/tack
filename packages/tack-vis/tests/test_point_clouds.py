@@ -185,6 +185,33 @@ def test_voxel_first_and_nearest_keep_input_points():
         assert d[np.isin(members, nearest)].min() <= d.min() + 1e-6
 
 
+def test_distances_decide_alike_on_every_backend(backend):
+    """Found on CUDA, HIP and Level Zero (2026-10-25): a voxel of two points has
+    them equidistant from its centroid, and a GPU that fused ``d.dot(d)`` into
+    multiply-adds broke the tie the other way from the CPU. Distances are named
+    products (``squared_length``), rounded alike everywhere, so the kept points,
+    the neighbours within a radius and the k nearest are the CPU's. (Trivially
+    true on the CPU.)"""
+    rng = np.random.default_rng(5)
+    cells = np.stack(np.meshgrid(*[np.arange(20)] * 3, indexing="ij"), -1).reshape(-1, 3)
+    x = np.repeat(cells, 2, axis=0) + rng.uniform(0.5, 1.4, (2 * len(cells), 3))
+    x[0] = 0.5                         # the grid's corner: each voxel holds one pair
+    cloud = td.point_cloud(x.astype(np.float32), origin=(0.0, 0.0, 0.0),
+                           fields={"id": np.arange(len(x), dtype=np.int32)})
+    here, cpu = cloud.to_device(backend), cloud.to_device("cpu")
+
+    def kept(data):
+        return td.voxel_downsample(data, 1.0, keep="nearest").fields["id"].values.numpy()
+
+    assert len(kept(cpu)) == len(cells)
+    np.testing.assert_array_equal(kept(here), kept(cpu))
+    for found, expected in ((td.PointLocator(here).neighbors(0.6), td.PointLocator(cpu)
+                             .neighbors(0.6)), (td.PointLocator(here).nearest(8)[:1],
+                                                td.PointLocator(cpu).nearest(8)[:1])):
+        for a, b in zip(found, expected):
+            np.testing.assert_array_equal(a.numpy(), b.numpy())
+
+
 def test_voxel_downsample_refuses_what_it_cannot_do():
     cloud = td.point_cloud(_cloud(10))
     for size in (0, -1, np.nan, (1, 0, 1)):

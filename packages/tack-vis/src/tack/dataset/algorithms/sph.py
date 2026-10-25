@@ -5,8 +5,9 @@ vtkSPHQuinticKernel, vtkWendlandQuinticKernel), normalized in one, two or three
 dimensions. A point's value is ``sum_j (m_j / rho_j) A_j W(|x - x_j|, h_j)``,
 each particle reaching as far as its own kernel does (the scatter form, VTK's).
 Each point gathers the particles near it through a ``PointLocator``'s bins, in
-bin and then index order: nothing is atomic, and the sums have the same bits on
-every backend.
+bin and then index order: nothing is atomic, and the sums have the same bits
+from run to run. On another backend they agree to rounding: a GPU may fuse a
+kernel's multiply-adds.
 """
 
 import math

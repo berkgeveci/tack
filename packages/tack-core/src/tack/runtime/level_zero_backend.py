@@ -675,8 +675,13 @@ def _free_ocloc_output(num_outputs, data_outputs, len_outputs, name_outputs):
 # What ocloc is given besides the device, and the flags zeModuleCreate
 # finalizes the SPIR-V with. Part of the disk cache's target: SPIR-V
 # compiled, or a module built, with other options is another artifact.
-_OCLOC_OPTIONS = (b"-spv_only", b"-options", b"-cl-std=CL2.0")
-_MODULE_BUILD_FLAGS = b"-cl-std=CL2.0"
+# OpenCL's f32 division may be 2.5 ulp off and its sqrt 3 without
+# -cl-fp32-correctly-rounded-divide-sqrt: a voxel's centroid and a cell's mean
+# then differed from CUDA's, HIP's and the CPU's in the last bit (headroom,
+# 2026-10-25). CUDA asks for the same (--prec-div, --prec-sqrt).
+_OPENCL_OPTIONS = b"-cl-std=CL2.0 -cl-fp32-correctly-rounded-divide-sqrt"
+_OCLOC_OPTIONS = (b"-spv_only", b"-options", _OPENCL_OPTIONS)
+_MODULE_BUILD_FLAGS = _OPENCL_OPTIONS
 
 
 def _ocloc_version() -> str:
