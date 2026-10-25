@@ -36,6 +36,29 @@ def second():
     tack.set_default_device("cpu")
 
 
+class _NoF64CPU(CPUBackend):
+    """A CPU backend posing as a device without f64, as Metal is: an f64 array
+    reaching a kernel is refused, as it is there."""
+
+    display_name = "device without f64"
+
+    def __init__(self):
+        super().__init__()
+        self.supported_dtypes = frozenset(d for d in self.supported_dtypes
+                                          if d is not tack.f64)
+
+    @property
+    def memory_domain(self):
+        return ("cpu", 3)
+
+
+@pytest.fixture
+def no_f64():
+    tack.set_default_device("cpu")
+    yield dispatch.as_device(_NoF64CPU())
+    tack.set_default_device("cpu")
+
+
 def _on(device, values):
     """Whether ``values`` (an array, a dataset, a field or a set) is on ``device``."""
     dev = values._device
@@ -202,6 +225,17 @@ def test_every_algorithm_runs_on_the_datasets_device(second, name, make):
     for part in _results(result):
         assert _on(second, part), f"{name} left {part!r} on another device"
     assert _on(second, data)          # nothing derived it elsewhere
+
+
+@pytest.mark.parametrize("name", CALLS)
+@pytest.mark.parametrize("make", ["hexes", "grid"])
+def test_every_algorithm_runs_on_a_device_without_f64(no_f64, name, make):
+    """As on Metal, everywhere: an algorithm must not make an f64 array for its
+    kernels on a device that has none (Metal's round found one in ghost_points,
+    and octrees' fields)."""
+    data = (_hexes if make == "hexes" else _grid)(no_f64)
+    for part in _results(CALLS[name](data)):
+        assert _on(no_f64, part), f"{name} left {part!r} on another device"
 
 
 @pytest.mark.parametrize("make", ["hexes", "grid"])

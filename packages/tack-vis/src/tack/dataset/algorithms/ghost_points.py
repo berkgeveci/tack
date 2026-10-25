@@ -277,8 +277,12 @@ def _nearest(blocks, pieces, hosts, k, slack, sides, codes, box):
                 if x.dtype != tack.vec3(piece.dtype):
                     x = x.astype(tack.vec3(piece.dtype))
                 ids, d2s = locators[g].nearest(k, x)
+            # Distances travel as f64 bits in u64, which every device holds (a
+            # device without f64, as Metal, cannot hold them as f64).
+            bits = np.ascontiguousarray(d2s.numpy().reshape(-1).astype(np.float64)
+                                        .view(np.uint64))
             answers[g][source] = {"ids": ids.reshape((ids.size,)).astype(tack.i64),
-                                  "d2": d2s.reshape((d2s.size,)).astype(tack.f64)}
+                                  "d2": tack.array(bits, tack.u64, device=blocks.device(g))}
     replies = blocks.exchange(answers)
 
     # The k best of each owned point's candidates, by distance, then piece, image
@@ -296,7 +300,7 @@ def _nearest(blocks, pieces, hosts, k, slack, sides, codes, box):
             piece_of.append(np.full(len(rows) * k, b, np.int64))
             code_of.append(np.repeat(shifts, k))
             index.append(message["ids"].numpy())
-            distance.append(message["d2"].numpy())
+            distance.append(message["d2"].numpy().view(np.float64))
         point, piece_of, code_of = map(np.concatenate, (point, piece_of, code_of))
         index, distance = np.concatenate(index), np.concatenate(distance)
         real = index >= 0
