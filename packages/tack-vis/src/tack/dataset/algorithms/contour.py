@@ -43,15 +43,16 @@ def _level_values(levels, which, out):
         out[i] = levels[which[i]]
 
 
-def _with_levels(out, levels, which, several):
-    """``out`` with each cell's isovalue (``contour_value``) when several were given."""
+def _with_levels(out, levels, which, several, unit=None):
+    """``out`` with each cell's isovalue (``contour_value``, in the contoured
+    field's ``unit``) when several were given."""
     if several:
         from tack.dataset.spaces import Constant
 
         values = _like(levels, out.num_cells)
         if out.num_cells:
             _level_values(levels, which, values)
-        out.fields["contour_value"] = Field(Constant(out), values)
+        out.fields["contour_value"] = Field(Constant(out), values, unit)
     return out
 
 
@@ -314,7 +315,8 @@ def contour(data, field, value, merge_points=True, fields=None):
     surface = UnstructuredTopology(types, tri_offsets, rows, num_points=count)
     return _with_levels(carry(data, surface, points=Interpolate(edges, weights),
                               cells=Pieces(triangle_cells), geometry=Field(H1(surface), points),
-                              fields=fields), levels, triangle_levels, several)
+                              fields=fields), levels, triangle_levels, several,
+                        field.unit)
 
 
 @tack.func
@@ -638,7 +640,8 @@ def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
     return _with_levels(carry(data, surface, points=Interpolate(ends, weights),
                               cells=Pieces(poly_cells), geometry=Field(H1(surface), positions),
-                              fields=fields), levels, poly_levels, several)
+                              fields=fields), levels, poly_levels, several,
+                        field.unit)
 
 
 # ── Lines of 2D meshes ──────────────────────────────────────────────
@@ -925,7 +928,8 @@ def _contour_cell_lines(data, field, levels, nlevels, several, fields=None):
                                num_points=2 * lines)
     return _with_levels(carry(data, out, points=Interpolate(ends, weights),
                               cells=Pieces(line_cells), geometry=Field(H1(out), positions),
-                              fields=fields), levels, line_levels, several)
+                              fields=fields), levels, line_levels, several,
+                        field.unit)
 
 
 def _contour_lines(data, field, levels, nlevels, several, fields=None):
@@ -940,7 +944,8 @@ def _contour_lines(data, field, levels, nlevels, several, fields=None):
                 raise TypeError("contour needs a field with a basis on the cells")
             from tack.dataset.spaces import Constant
 
-            field = Field((H1 if field.space.on == "points" else Constant)(data), field.values)
+            field = Field((H1 if field.space.on == "points" else Constant)(data), field.values,
+                          field.unit)
         if not getattr(data.topology, "reference_cells", True):
             raise TypeError("contour of polygons takes point data")
         return _contour_cell_lines(data, field, levels, nlevels, several, fields)
@@ -1005,4 +1010,5 @@ def _contour_lines(data, field, levels, nlevels, several, fields=None):
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
     return _with_levels(carry(data, out, points=Interpolate(out_ends, out_weights),
                               cells=Pieces(line_cells), geometry=Field(H1(out), out_positions),
-                              fields=fields), levels, line_levels, several)
+                              fields=fields), levels, line_levels, several,
+                        field.unit)

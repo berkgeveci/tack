@@ -159,17 +159,18 @@ def structured_ghost_cells(blocks, pieces, layers, names, kind_of):
                 c_owner != g, Ghosts.DUPLICATECELL, 0).astype(np.uint8)
             data = DataSet(topology, geometry, dtype=piece.dtype,
                            ghosts=Ghosts(cells=cell_marks, points=point_marks),
-                           origin=piece.origin)
+                           origin=piece.origin, unit=piece.unit)
             for name in names:
                 field = piece.fields[name]
                 space = field.space
                 if kind_of(field) == "points":
                     data.fields[name] = Field(H1(data) if isinstance(space, H1)
                                               else Values(data, "points"),
-                                              spread["points"][name])
+                                              spread["points"][name], field.unit)
                 else:
                     data.fields[name] = Field(Constant(data) if isinstance(space, Constant)
-                                              else Values(data, "cells"), spread["cells"][name])
+                                              else Values(data, "cells"), spread["cells"][name],
+                                              field.unit)
             if "\0ids" in spread["points"] or "\0ids" in spread["cells"]:
                 data.global_ids = GlobalIds(cells=spread["cells"].get("\0ids"),
                                             points=spread["points"].get("\0ids"))

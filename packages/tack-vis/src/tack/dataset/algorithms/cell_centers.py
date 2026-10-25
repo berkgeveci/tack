@@ -34,4 +34,4 @@ def cell_centers(data):
         for_each(_distinct_point_means, data, "cells", materialize(data.geometry.values), out)
     else:
         for_each(_centers, data, "cells", out)
-    return Field(Values(data, "cells"), out)
+    return Field(Values(data, "cells"), out, data.unit)

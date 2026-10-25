@@ -218,7 +218,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     if not isinstance(particles.geometry.space, H1):
         raise TypeError("sph_interpolate needs the particles' positions: an H1 geometry")
     if not isinstance(target, DataSet):
-        target = _vertices(relative_positions(target, particles.origin), particles)
+        target = _vertices(relative_positions(target, particles.origin, particles.unit), particles)
     if not isinstance(target.geometry.space, H1):
         raise TypeError("sph_interpolate needs the target's points: an H1 geometry")
     smoothing = _per_particle(particles, smoothing_length, "smoothing_length")
@@ -243,7 +243,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     reach = support * (float(arrays.to_host(smoothing).max()) if n else 0.0)
     locator.check_radius(reach)
     out = DataSet(target.topology, target.geometry, fields=dict(target.fields),
-                  sets=dict(target.sets), dtype=target.dtype, origin=target.origin)
+                  sets=dict(target.sets), dtype=target.dtype, origin=target.origin, unit=target.unit)
     shepard = tack.zeros((m,), particles.dtype)
     grid = locator.grid()
     for name in names:
@@ -262,7 +262,8 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
                           result, shepard)
             if normalize:
                 _normalized(result, shepard)
-        out.fields[name] = Field(H1(out), result)
+        # Each term is m/rho (a volume) times W (per volume) times f: f's unit.
+        out.fields[name] = Field(H1(out), result, field.unit)
     if not names and n and m:                      # no fields: the Shepard sum alone
         _interpolated(grid, w, support, reach, queries, smoothing, volumes, volumes,
                       tack.zeros((m,), particles.dtype), shepard)
@@ -291,6 +292,6 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
         _densities(found.grid(), w, support, smoothing,
                    _per_particle(particles, mass, "mass"), density)
     out = DataSet(particles.topology, particles.geometry, fields=dict(particles.fields),
-                  sets=dict(particles.sets), dtype=particles.dtype, origin=particles.origin)
+                  sets=dict(particles.sets), dtype=particles.dtype, origin=particles.origin, unit=particles.unit)
     out.fields["density"] = Field(H1(out), density)
     return keep_marks(particles, out)

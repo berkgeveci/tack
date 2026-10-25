@@ -7,6 +7,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Physical units, a first pass: `Field(..., unit=)` holds the values' unit, a
+  string in unyt's canonical spelling (`None` is unknown), and the spatial
+  unit is the geometry's (`data.unit`; `uniform_grid`, `rectilinear_grid`,
+  `point_cloud` and `DataSet` take `unit=`). Filters that keep a quantity keep
+  its unit; the rest give `None`. Two known spatial units do not meet (probe,
+  pieces, AMR boxes). `convert(data, unit, field=None)` converts the geometry,
+  the origin in double precision, or a field, offsets included. The VTK
+  interop maps `UNITS_LABEL`. Tack knows the US survey foot (`ftUS`).
+  tack-vis now depends on unyt (pure Python), imported on first use.
 - Octrees, a first pass: `td.OctreeDataSet`, a grid of octrees (VTK's
   HyperTreeGrid with branching factor 2) stored as a linear octree for GPUs,
   each node its tree, level and Morton key, sorted in pre-order; leaves,

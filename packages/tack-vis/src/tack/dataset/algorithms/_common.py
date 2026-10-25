@@ -58,9 +58,9 @@ def _with_basis(data, field):
 
     space = field.space
     if isinstance(space, Values) and space.on == "points":
-        return Field(H1(data), field.values)
+        return Field(H1(data), field.values, field.unit)
     if isinstance(space, Values) and space.on == "cells":
-        return Field(Constant(data), field.values)
+        return Field(Constant(data), field.values, field.unit)
     return field
 
 

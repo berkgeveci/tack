@@ -337,7 +337,7 @@ class CellLocator:
         self.polyhedral = not getattr(data.topology, "reference_cells", True)
         #: The cells and their positions, without the fields: what the bins and
         #: searches read, held by a locator a topology keeps.
-        self.data = DataSet(data.topology, data.geometry, origin=data.origin)
+        self.data = DataSet(data.topology, data.geometry, origin=data.origin, unit=data.unit)
         self.density = density
         self._geometry = data.geometry.values
         self._revision = arrays._revision(self._geometry)

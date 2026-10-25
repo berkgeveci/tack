@@ -57,6 +57,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [AMR Hierarchies](10-amr.md) | Hold levels of refined boxes, images or not; reduce and filter them |
 | [Octrees](11-octrees.md) | Hold tree-based AMR (RAMSES, HyperTreeGrids); weighted statistics |
 | [Fields and Spaces](03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
+| [Physical Units](12-units.md) | Give fields and positions units, keep them through filters, convert |
 | [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
 | [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |

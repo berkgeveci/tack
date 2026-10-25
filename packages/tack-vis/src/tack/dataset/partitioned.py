@@ -83,11 +83,18 @@ def fields_of(data, field, what):
 def common_origin(data, what, world=None):
     """The origin every piece of ``data`` has, on every rank of ``world``
     (``data.world`` by default): ``what`` (an algorithm that compares or moves
-    positions between pieces) refuses pieces on two origins. ``(0.0, 0.0, 0.0)``
+    positions between pieces) refuses pieces on two origins, or in two spatial
+    units. ``(0.0, 0.0, 0.0)``
     with no pieces anywhere."""
+    from tack.dataset import units
+
     world = data.world if world is None else world
     mine = sorted({piece.origin for piece in data})
-    every = sorted({o for part in world._allgather(mine) for o in part})
+    spatial = sorted({piece.unit or "" for piece in data})
+    gathered = world._allgather((mine, spatial))
+    every = sorted({o for part, _ in gathered for o in part})
+    units.common(f"{what}'s pieces' geometry",
+                 [u or None for _, part in gathered for u in part])
     if len(every) > 1:
         raise ValueError(f"{what} needs its pieces on one origin, not {every}: rebase "
                          "them to one first (DataSet.rebased)")

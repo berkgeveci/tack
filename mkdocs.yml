@@ -133,6 +133,7 @@ nav:
           - Function Space Fundamentals: vis-guide/00-function-spaces.md
           - Understand a Dataset: vis-guide/01-datasets.md
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
+          - Physical Units: vis-guide/12-units.md
       - Work with Data:
           - Build Meshes: vis-guide/02-meshes.md
           - Point Clouds and Particles: vis-guide/08-point-clouds.md

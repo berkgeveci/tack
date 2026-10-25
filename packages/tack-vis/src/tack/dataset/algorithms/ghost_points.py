@@ -401,7 +401,7 @@ def _appended(g, piece, received, names, numbered, blocks):
                 space = H1(out) if isinstance(space, H1) else Values(out, "points")
             else:
                 space = Constant(out) if isinstance(space, Constant) else Values(out, "cells")
-            out.fields[name] = Field(space, values)
+            out.fields[name] = Field(space, values, field.unit)
         for name, members in piece.sets.items():
             if members.on in ("points", "cells"):
                 out.sets[name] = Set(out, members.on, members.ids)

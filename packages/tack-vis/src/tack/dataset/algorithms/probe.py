@@ -4,7 +4,7 @@ import numpy as np
 
 import tack
 from tack import arrays
-from tack.dataset import ids
+from tack.dataset import ids, units
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.buckets import bucket_groups
@@ -116,9 +116,10 @@ def probe(data, where, fields=None, locator=None):
     from tack.dataset.carry import _point_values, selected
 
     if not isinstance(where, DataSet):
-        where = _vertices(relative_positions(where, data.origin), data)
+        where = _vertices(relative_positions(where, data.origin, data.unit), data)
     if not isinstance(where.geometry.space, H1):
         raise TypeError("probe needs the probed points: an H1 geometry")
+    units.check("probe's points and the dataset's spatial unit", where.unit, data.unit)
     locator = locator or cached_locator(data)
     if not locator.serves(data):
         raise ValueError("the locator was built for another topology or geometry, or "
@@ -153,7 +154,7 @@ def probe(data, where, fields=None, locator=None):
         f = _field(data, name)
         space = f.space
         if isinstance(space, Values) and space.on in ("points", "cells"):
-            f = Field((H1 if space.on == "points" else Constant)(data), f.values)
+            f = Field((H1 if space.on == "points" else Constant)(data), f.values, f.unit)
             space = f.space
         if not getattr(space, "interpolated", False) or space.on not in ("points", "cells"):
             continue
@@ -177,7 +178,7 @@ def probe(data, where, fields=None, locator=None):
                 elif group.count:
                     _evaluate(data.domain_view("cells", group), f.view(group), links, order,
                               pcs, values)
-        out[name] = Field(H1(where), values)
+        out[name] = Field(H1(where), values, f.unit)
     valid = tack.empty((m,), tack.i32)
     if m:
         _valid(found, valid)
@@ -222,14 +223,16 @@ def _probe_pieces(data, where, fields, levels=None):
     # This rank's targets, their points end to end, from its first block, relative
     # to the pieces' one origin.
     origin = common_origin(data, "probe of a PartitionedDataSet")
+    spatial = units.common("probe of a PartitionedDataSet's pieces' geometry",
+                           [piece.unit for piece in pieces])
     many = isinstance(where, PartitionedDataSet)
     targets = list(where) if many else [where]
     for i, target in enumerate(targets):
         if not isinstance(target, DataSet):
-            targets[i] = _vertices(relative_positions(target, origin), pieces[0])
+            targets[i] = _vertices(relative_positions(target, origin, spatial), pieces[0])
         elif not isinstance(target.geometry.space, H1):
             raise TypeError("probe needs the probed points: an H1 geometry")
-    points = [relative_positions(t, origin) for t in targets]
+    points = [relative_positions(t, origin, spatial) for t in targets]
     counts = [len(p) for p in points]
     first = blocks.local.start
     positions = {g: (np.concatenate(points) if g == first and points else np.zeros((0, 3)))
@@ -290,7 +293,7 @@ def _probe_pieces(data, where, fields, levels=None):
         for name in names:
             values = gather(replied[name], rows).to_device(target.device)
             space = Values(target, "points") if name == "valid" else H1(target)
-            kept[name] = Field(space, values)
+            kept[name] = Field(space, values, empty.fields[name].unit)
         start += n
         out.append(keep_marks(target, DataSet(target.topology, target.geometry, fields=kept,
                                               sets=dict(target.sets))))

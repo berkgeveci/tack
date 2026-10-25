@@ -147,13 +147,13 @@ def _centroids(data, centroids, order, offsets, nruns, fields):
             averaged = tack.empty((nruns,), values.dtype)
             if nruns:
                 _run_means(values, order, offsets, averaged)
-            out.fields[name] = Field(H1(out), averaged)
+            out.fields[name] = Field(H1(out), averaged, field.unit)
         else:
             if firsts is None:
                 firsts = tack.empty((nruns,), order.dtype)
                 if nruns:
                     _gather_firsts(order, offsets, firsts)
-            out.fields[name] = Field(H1(out), _taken(values, firsts, nruns))
+            out.fields[name] = Field(H1(out), _taken(values, firsts, nruns), field.unit)
     return drop_marks(data, out, "voxel_downsample's centroids are new points, which no "
                                  "piece owns")
 
@@ -309,7 +309,7 @@ def _downsample_pieces(data, size, sizes, keep, fields):
                 else:
                     kept = take_rows(values, firsts) if firsts.size else \
                         tack.empty((0,), values.dtype)
-                result.fields[name] = Field(H1(result), kept)
+                result.fields[name] = Field(H1(result), kept, field.unit)
             out.append(result)
     return PartitionedDataSet(out, world=data.world)
 
