@@ -9,15 +9,21 @@ expression carries its ``dtype``, so none of what Warp's front end lacks
 Warp does not promote mixed operands, so every operand is converted to the
 type the annotator gave its operation (``wp.float32(x)``), and every local
 is declared once, with its type, at kernel scope. Arrays are flat
-``wp.array`` buffers indexed as Tack linearized them. Integer ``//`` and
-``%`` and floating ``%`` go through helpers with Python's semantics:
-Warp's integer ``%`` truncates like C while its ``//`` rounds down.
+``wp.array`` buffers indexed as Tack linearized them.
+
+Where Warp's semantics differ from Tack's, helpers carry Tack's:
+- ``//`` and ``%``, integer and floating (Warp's integer ``%`` truncates
+  like C while its ``//`` rounds down; the floating ones follow
+  ``float_division.py``, signs of zero included);
+- integer ``+``, ``-``, ``*``, ``<<``, negation, ``abs`` and power wrap in
+  an unsigned carrier (Warp's C++ leaves signed overflow undefined, and
+  clang folded ``(x * y) // y`` to ``x``);
+- sequential loops count their trips in 64 bits (Warp's ``range`` is 32-bit);
+- floating min/max prefer a number to NaN, and floating negation is a
+  product with -1 (Warp's gives +0.0 for 0.0).
 
 Not yet: textures, workgroups (shared memory, barriers, block
-reductions), constant tables, ``print`` and debug-mode bounds checks.
-Integer arithmetic is Warp's, which compiles to C++, where signed
-overflow is undefined; Tack's other generators wrap it through unsigned
-carriers (``integer_ops.py``), and this one does not yet.
+reductions), ``print`` and debug-mode bounds checks.
 """
 
 from tack.codegen.identifiers import kernel_entry_name
