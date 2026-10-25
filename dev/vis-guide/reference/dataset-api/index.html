@@ -4601,7 +4601,7 @@ offset for the same reason.</p>
 </tr>
 <tr>
 <td><code>data.rebased(origin)</code></td>
-<td>the same world positions relative to another origin: each value moved by the difference of the origins, taken in double precision, added in the geometry's type</td>
+<td>the same world positions relative to another origin: each value moved by the difference of the origins, taken in double precision, added in the geometry's type. An image stays an image, its corner moved in double precision (a raster at survey coordinates, rebased near it, holds its points exactly); a rectilinear grid moves its axes; other implicit geometry becomes positions per point</td>
 </tr>
 <tr>
 <td><code>point_cloud(positions, fields=None, origin=None, dtype=tack.f32)</code></td>
