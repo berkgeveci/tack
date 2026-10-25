@@ -14,6 +14,7 @@ from tack.dataset.algorithms.clip import clip
 from tack.dataset.algorithms.composite import composite
 from tack.dataset.algorithms.connected_components import connected_components
 from tack.dataset.algorithms.contour import contour
+from tack.dataset.algorithms.convert import convert
 from tack.dataset.algorithms.cross import cross
 from tack.dataset.algorithms.cylindrical import cylindrical
 from tack.dataset.algorithms.deposit import deposit
@@ -87,6 +88,7 @@ __all__ = [
     "composite",
     "connected_components",
     "contour",
+    "convert",
     "cross",
     "cylindrical",
     "deposit",

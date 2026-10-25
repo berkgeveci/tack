@@ -24,6 +24,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.arrays import CartesianProduct, UniformCoordinates
+from tack.dataset import units as _units
 from tack.dataset.ghosts import Ghosts
 
 __all__ = ["OctreeDataSet"]
@@ -236,13 +237,15 @@ class OctreeDataSet:
     order the nodes are given; ``mask`` (one per node, nonzero hides) becomes
     ``HIDDENCELL``. The nodes are sorted in pre-order and the fields with them.
     ``world`` is where other ranks' trees are, for reductions: each rank holds
-    whole trees.
+    whole trees. ``units`` maps field names to their units
+    (``tack.dataset.units``); the spatial unit is the roots' (``unit``).
 
     ``OctreeDataSet.from_cells`` makes one from cells' levels and positions, as
     a RAMSES reader gives them; ``tack.interop.vtk`` converts
     ``vtkHyperTreeGrid``s."""
 
-    def __init__(self, roots, tree, level, key, fields=None, mask=None, world=None):
+    def __init__(self, roots, tree, level, key, fields=None, mask=None, world=None,
+                 units=None):
         from tack.dataset.topology import StructuredTopology
 
         if not isinstance(roots.topology, StructuredTopology) or \
@@ -290,6 +293,10 @@ class OctreeDataSet:
         self.fields = {}
         for name, values in (fields or {}).items():
             self.fields[name] = _reordered(values, order, device, len(order), name)
+        unknown = set(units or {}) - set(self.fields)
+        if unknown:
+            raise KeyError(f"units for fields not given: {', '.join(map(repr, sorted(unknown)))}")
+        self.units = {name: _units.canonical(unit) for name, unit in (units or {}).items()}
         self._geometry = None
         self._carried_keys = None
 
@@ -311,6 +318,11 @@ class OctreeDataSet:
     @property
     def origin(self):
         return self.roots.origin
+
+    @property
+    def unit(self):
+        """The spatial unit, the roots' (``DataSet.unit``)."""
+        return self.roots.unit
 
     @property
     def is_leaf(self):
@@ -412,7 +424,8 @@ class OctreeDataSet:
             types, offsets = uniform_cells(shapes.VOXEL if d == 3 else shapes.PIXEL, count,
                                            idt)
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=points)
-            fields = {name: Field(Constant(topology), gather(values, leaf))
+            fields = {name: Field(Constant(topology), gather(values, leaf),
+                                  self.units.get(name))
                       for name, values in self.fields.items()}
             marks = gather(self.marks, leaf)
             ghosts = None
@@ -420,7 +433,7 @@ class OctreeDataSet:
                 hidden = marks.numpy() & Ghosts.HIDDENCELL
                 ghosts = Ghosts(cells=tack.array(hidden.astype(np.uint8), tack.u8))
         return DataSet(topology, positions, fields=fields, dtype=self.roots.dtype,
-                       ghosts=ghosts, origin=self.origin)
+                       ghosts=ghosts, origin=self.origin, unit=self.unit)
 
     # -- probing ---------------------------------------------------------
 
@@ -441,10 +454,10 @@ class OctreeDataSet:
         targets = list(where) if many else [where]
         for i, target in enumerate(targets):
             if not isinstance(target, DataSet):
-                targets[i] = _vertices(relative_positions(target, self.origin), self.roots)
+                targets[i] = _vertices(relative_positions(target, self.origin, self.unit), self.roots)
             elif not isinstance(target.geometry.space, H1):
                 raise TypeError("probe needs the probed points: an H1 geometry")
-        points = [relative_positions(t, self.origin) for t in targets]
+        points = [relative_positions(t, self.origin, self.unit) for t in targets]
         counts = [len(p) for p in points]
         x = np.concatenate(points) if points else np.zeros((0, 3))
         if self.world.size == 1:
@@ -459,7 +472,7 @@ class OctreeDataSet:
             for name in [*names, "valid"]:
                 array = gather(values[name], rows).to_device(target.device)
                 kept[name] = Field(Values(target, "points") if name == "valid" else
-                                   H1(target), array)
+                                   H1(target), array, self.units.get(name))
             start += n
             out.append(keep_marks(target, DataSet(target.topology, target.geometry,
                                                   fields=kept, sets=dict(target.sets))))
@@ -556,7 +569,7 @@ class OctreeDataSet:
     # -- construction from cells ----------------------------------------
 
     @classmethod
-    def from_cells(cls, roots, level, position, fields=None, world=None):
+    def from_cells(cls, roots, level, position, fields=None, world=None, units=None):
         """An octree of cells given by their ``level`` and ``position`` (an ``(n, 3)``
         world position inside each cell, its centre say), as a RAMSES reader or
         yt gives them -- whole octs: every refined cell's children. Each cell's
@@ -582,7 +595,7 @@ class OctreeDataSet:
                                   (1 << level) - 1).astype(np.int64)
         key = _interleave(index, d)
         tree, level, key, fields = _with_ancestors(tree, level, key, fields or {}, d)
-        return cls(roots, tree, level, key, fields=fields, world=world)
+        return cls(roots, tree, level, key, fields=fields, world=world, units=units)
 
     # -- reductions ------------------------------------------------------
 

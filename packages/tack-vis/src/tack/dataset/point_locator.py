@@ -302,7 +302,7 @@ class PointLocator:
         if bin_size is not None and not bin_size > 0:
             raise ValueError(f"bin_size must be positive, not {bin_size!r}")
         #: The points, without the fields.
-        self.data = DataSet(data.topology, data.geometry, origin=data.origin)
+        self.data = DataSet(data.topology, data.geometry, origin=data.origin, unit=data.unit)
         self._geometry = data.geometry.values
         self._revision = arrays._revision(self._geometry)
         n = data.num_points
@@ -382,7 +382,7 @@ class PointLocator:
             return points, 0
         from tack.dataset.dataset import relative_positions
 
-        local = relative_positions(points, self.data.origin)
+        local = relative_positions(points, self.data.origin, self.data.unit)
         dtype = self.data.dtype
         queries = tack.empty((len(local),), tack.vec(3, dtype))
         if len(local):

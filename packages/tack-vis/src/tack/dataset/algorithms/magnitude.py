@@ -26,4 +26,4 @@ def magnitude(data, field):
     out = _scalars(n, dtype)
     if n:
         _magnitudes(_converted(field.values, dtype), out)
-    return Field(field.space, out)
+    return Field(field.space, out, field.unit)

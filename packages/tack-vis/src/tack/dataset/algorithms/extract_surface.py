@@ -162,9 +162,10 @@ def _keep_order_two(data, out, ids, fields):
     if ids.shape[0]:
         _center_sources(ids, data.topology.faces().kinds, solid_face_dofs, cell_dofs, sources)
     for name in names:
-        out.fields[name] = Field(space, _take(data.fields[name].values, sources))
+        out.fields[name] = Field(space, _take(data.fields[name].values, sources),
+                                 data.fields[name].unit)
     if curved:
-        out.geometry = Field(space, _take(data.geometry.values, sources))
+        out.geometry = Field(space, _take(data.geometry.values, sources), data.unit)
 
 
 @tack.kernel

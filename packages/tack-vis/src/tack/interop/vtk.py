@@ -274,6 +274,42 @@ def _array_to_field(array, float_dtype):
     return field
 
 
+def _units_label(array):
+    """The unit a VTK array's ``UNITS_LABEL`` names, in unyt's spelling, or
+    ``None``: no label, or one that is no unit (VTK's labels are free text;
+    a label that does not parse is dropped with a warning, not guessed at)."""
+    from vtkmodules.vtkCommonCore import vtkDataArray
+
+    from tack.dataset import units
+
+    if array is None or not isinstance(array, vtkDataArray):
+        return None
+    information = array.GetInformation()
+    key = vtkDataArray.UNITS_LABEL()
+    if not information.Has(key):
+        return None
+    label = information.Get(key)
+    if not label or not label.strip():
+        return None
+    try:
+        return units.canonical(label)
+    except ValueError:
+        import warnings
+
+        warnings.warn(f"VTK array {array.GetName()!r} has UNITS_LABEL {label!r}, which is "
+                      "no unit Tack reads: its unit is unknown", stacklevel=3)
+        return None
+
+
+def _label(array, unit):
+    """Set a VTK array's ``UNITS_LABEL`` to ``unit``, if known; returns the array."""
+    from vtkmodules.vtkCommonCore import vtkDataArray
+
+    if unit is not None and array is not None:
+        array.GetInformation().Set(vtkDataArray.UNITS_LABEL(), unit)
+    return array
+
+
 #: VTK's ghost array, ``vtkDataSetAttributes::GhostArrayName()``: it becomes
 #: ``data.ghosts``, not a field.
 _GHOST_ARRAY = "vtkGhostType"
@@ -292,7 +328,8 @@ def _attributes_to_fields(attributes, space, float_dtype):
         # Named data arrays: string and other abstract arrays have no values to compute on,
         # the ghost array becomes the ghost marks and the global ids the global ids.
         if name and name not in skipped and isinstance(array, vtkDataArray):
-            fields[name] = Field(space, _array_to_field(array, float_dtype))
+            fields[name] = Field(space, _array_to_field(array, float_dtype),
+                                 _units_label(array))
     return fields
 
 
@@ -514,13 +551,19 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
     fields = _attributes_to_fields(grid.point_data, H1(topology), dtype)
     fields.update(_attributes_to_fields(grid.cell_data, Constant(topology), dtype))
+    if isinstance(grid, vtkRectilinearGrid):
+        unit = _units_label(grid.x_coordinates)
+    elif isinstance(grid, vtkImageData):
+        unit = None                     # VTK 9.7.1 has nowhere to keep an image's
+    else:
+        unit = _units_label(grid.points.data) if grid.points is not None else None
     cells, points = _ghost_marks(grid.cell_data), _ghost_marks(grid.point_data)
     ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
     cells, points = _global_ids(grid.cell_data), _global_ids(grid.point_data)
     global_ids = None if cells is None and points is None else GlobalIds(cells=cells,
                                                                          points=points)
     return DataSet(topology, geometry, fields=fields, dtype=dtype, ghosts=ghosts,
-                   global_ids=global_ids, origin=origin)
+                   global_ids=global_ids, origin=origin, unit=unit)
 
 
 def _to_vtk_types(types):
@@ -576,7 +619,7 @@ def _amr_to_dataset(amr, options):
             fields = {name: _rehomed(field, placed) for name, field in data.fields.items()}
             boxes.append(DataSet(placed, data.geometry.values, fields=fields,
                                  dtype=data.dtype, ghosts=data.ghosts,
-                                 global_ids=data.global_ids, origin=data.origin))
+                                 global_ids=data.global_ids, origin=data.origin, unit=data.unit))
         levels.append(boxes)
         if level + 1 < amr.GetNumberOfLevels():
             ratios.append(int(amr.GetRefinementRatio(level)))
@@ -613,7 +656,7 @@ def _htg_to_octree(htg, dtype):
         raise ValueError(f"an octree's root grid spans x and y (and z), not points {dims}")
     axes = [np.asarray(c, np.float64) for c in (htg.GetXCoordinates(), htg.GetYCoordinates(),
                                                 htg.GetZCoordinates())][:d]
-    roots = rectilinear_grid(*axes, dtype=dtype)
+    roots = rectilinear_grid(*axes, dtype=dtype, unit=_units_label(htg.GetXCoordinates()))
     cells = [n - 1 for n in dims[:d]] + [1] * (3 - d)
     children = np.arange(2 ** d, dtype=np.uint64)
     tree, level, key, order = [], [], [], []
@@ -644,7 +687,7 @@ def _htg_to_octree(htg, dtype):
     tree, level, key, order = (np.concatenate(a) if a else np.zeros(0, np.int64)
                                for a in (tree, level, key, order))
     data = htg.GetCellData()
-    fields = {}
+    fields, units = {}, {}
     for i in range(data.GetNumberOfArrays()):
         array = data.GetArray(i)
         if array is None or array.GetName() in (None, "", "vtkGhostType"):
@@ -656,10 +699,14 @@ def _htg_to_octree(htg, dtype):
         if values.dtype.kind == "f":
             values = values.astype(dtype.numpy_dtype)
         fields[array.GetName()] = values[order]
+        unit = _units_label(array)
+        if unit is not None:
+            units[array.GetName()] = unit
     mask = None
     if htg.HasMask():
         mask = _bits(htg.GetMask())[order]
-    return OctreeDataSet(roots, tree, level, key.astype(np.uint64), fields=fields, mask=mask)
+    return OctreeDataSet(roots, tree, level, key.astype(np.uint64), fields=fields, mask=mask,
+                         units=units)
 
 
 def _octree_to_htg(octree):
@@ -683,9 +730,9 @@ def _octree_to_htg(octree):
     out.SetBranchFactor(2)
     out.SetDimensions(*([len(a) for a in axes] + [1] * (3 - d)))
     coordinates = [a + origin[i] for i, a in enumerate(axes)] + [np.zeros(1)] * (3 - d)
-    out.SetXCoordinates(vtkDoubleArray(coordinates[0]))
-    out.SetYCoordinates(vtkDoubleArray(coordinates[1]))
-    out.SetZCoordinates(vtkDoubleArray(coordinates[2]))
+    out.SetXCoordinates(_label(vtkDoubleArray(coordinates[0]), octree.unit))
+    out.SetYCoordinates(_label(vtkDoubleArray(coordinates[1]), octree.unit))
+    out.SetZCoordinates(_label(vtkDoubleArray(coordinates[2]), octree.unit))
     tree, level, key = octree._tree, octree._level, octree._key
     marks = octree.marks.numpy()
     # Breadth-first within each tree: by tree, level, then key.
@@ -706,6 +753,7 @@ def _octree_to_htg(octree):
     cell_data = out.GetCellData()
     for name, values in octree.fields.items():
         cell_data[name] = np.ascontiguousarray(np.asarray(values.numpy())[order])
+        _label(cell_data[name], octree.units.get(name))
     hidden = (marks[order] & Ghosts.HIDDENCELL) != 0
     if hidden.any():
         out.SetMask(_to_bits(hidden))
@@ -826,7 +874,9 @@ def _vtk_points_of(data):
 
     positions = data.world_positions() if any(data.origin) else data.positions()
     typed = vtkFloatArray if positions.dtype == np.float32 else vtkDoubleArray
-    return vtkPoints(data=typed(np.ascontiguousarray(positions)))
+    points = vtkPoints(data=typed(np.ascontiguousarray(positions)))
+    _label(points.data, data.unit)
+    return points
 
 
 def _to_vtk_values(values):
@@ -942,6 +992,8 @@ def dataset_to_vtk(data):
         else:
             axes = [np.array(a.numpy()) for a in axes]
         grid.x_coordinates, grid.y_coordinates, grid.z_coordinates = axes
+        for axis in (grid.x_coordinates, grid.y_coordinates, grid.z_coordinates):
+            _label(axis, data.unit)
     elif isinstance(topology, StructuredTopology):
         # Explicit coordinates, as a warp or transform leaves; both number the
         # points x fastest.
@@ -997,8 +1049,10 @@ def dataset_to_vtk(data):
             # An order-2 field's values at the points, its first ones: the grid
             # is linear, as the filters read order-2 data.
             grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points))
+            _label(grid.point_data[name], field.unit)
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
             grid.cell_data[name] = _to_vtk_values(field.values)
+            _label(grid.cell_data[name], field.unit)
     if data.ghosts is not None:
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
 

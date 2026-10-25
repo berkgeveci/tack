@@ -400,7 +400,7 @@ def _grown_box(amr, level, piece, box, ext, d, assembled, names, positions, hidd
     cells, points = _grown_marks(amr, level, piece, box, ext, d, hidden_cells, hidden_points)
     with piece.device:
         out = DataSet(topology, geometry, dtype=piece.dtype, origin=piece.origin,
-                      ghosts=Ghosts(cells=cells, points=points))
+                      ghosts=Ghosts(cells=cells, points=points), unit=piece.unit)
         for name in names:
             field = piece.fields[name]
             if _kind(field) == "points":
@@ -408,7 +408,7 @@ def _grown_box(amr, level, piece, box, ext, d, assembled, names, positions, hidd
             else:
                 space = Constant(out) if isinstance(field.space, Constant) else \
                     Values(out, "cells")
-            out.fields[name] = Field(space, assembled[name])
+            out.fields[name] = Field(space, assembled[name], field.unit)
     return out
 
 

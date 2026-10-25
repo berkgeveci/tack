@@ -207,7 +207,7 @@ def _carry_l2(field, out, cells):
     if count:
         _copy_blocks(materialize(field.values), space.offsets, sources, out_space.offsets,
                      values, count)
-    return Field(out_space, values)
+    return Field(out_space, values, field.unit)
 
 
 def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=None,
@@ -223,26 +223,29 @@ def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=N
         values = _apply(values, points)
         if values is None:
             return None
-        return Field(H1(out) if isinstance(space, H1) else Values(out, "points"), values)
+        return Field(H1(out) if isinstance(space, H1) else Values(out, "points"), values,
+                     field.unit)
     if isinstance(space, Constant) or _on(space, "cells"):
         if cells is None:
             return None
         return Field(Constant(out) if isinstance(space, Constant) else Values(out, "cells"),
-                     _apply(field.values, cells))
+                     _apply(field.values, cells), field.unit)
     if isinstance(space, L2):
         return None if cells is None else _carry_l2(field, out, cells)
     if _on(space, "faces"):
         if faces_to_cells is not None:
-            return Field(Values(out, "cells"), _apply(field.values, faces_to_cells))
+            return Field(Values(out, "cells"), _apply(field.values, faces_to_cells),
+                         field.unit)
         if faces is None:
             return None
         return Field(Values(out, "faces", oriented=space.oriented),
-                     _apply(field.values, faces, oriented=space.oriented))
+                     _apply(field.values, faces, oriented=space.oriented), field.unit)
     if _on(space, "edges"):
         if edges_to_cells is not None:
-            return Field(Values(out, "cells"), _apply(field.values, edges_to_cells))
+            return Field(Values(out, "cells"), _apply(field.values, edges_to_cells),
+                         field.unit)
         if edges is not None:
-            return Field(Values(out, "edges"), _apply(field.values, edges))
+            return Field(Values(out, "edges"), _apply(field.values, edges), field.unit)
     return None
 
 
@@ -330,7 +333,9 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     from tack.dataset.ghosts import carry_marks
     from tack.dataset.global_ids import carry_ids
 
-    made = DataSet(out, geometry, fields=carried, sets=sets, origin=data.origin)
+    # A geometry the filter computed is in the input's spatial unit.
+    made = DataSet(out, geometry, fields=carried, sets=sets, origin=data.origin,
+                   unit=data.unit)
     carry_ids(data, made, points=points, cells=None if faces_to_cells is not None or
               edges_to_cells is not None else cells)
     return carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,

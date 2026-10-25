@@ -81,7 +81,7 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
     n = data.num_points
     marks = tack.zeros((n,), tack.u8)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
-                  sets=dict(data.sets), dtype=data.dtype, origin=data.origin)
+                  sets=dict(data.sets), dtype=data.dtype, origin=data.origin, unit=data.unit)
     points = Values(out, "points")
     if radial:
         locator.check_radius(radius)
@@ -152,7 +152,7 @@ def _outliers_pieces(data, radius, min_neighbors, k, deviations, periodic):
     for g, piece in zip(blocks.local, data):
         with piece.device:
             result = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
-                             sets=dict(piece.sets), dtype=piece.dtype, origin=piece.origin)
+                             sets=dict(piece.sets), dtype=piece.dtype, origin=piece.origin, unit=piece.unit)
             for name, values in found[g].items():
                 result.fields[name] = Field(Values(result, "points"), values)
             out.append(keep_marks(piece, result))

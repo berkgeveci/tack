@@ -451,7 +451,7 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
         topology = UnstructuredTopology(types, offsets, connectivity, num_points=total_points,
                                         id_dtype=piece.topology.id_dtype)
         out = DataSet(topology, positions, dtype=geometry_dtype,
-                      ghosts=Ghosts(cells=cell_marks, points=point_marks), origin=piece.origin)
+                      ghosts=Ghosts(cells=cell_marks, points=point_marks), origin=piece.origin, unit=piece.unit)
         for name in names:
             field = piece.fields[name]
             kind = _kind(field)
@@ -466,10 +466,10 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
             space = field.space
             if kind == "points":
                 out.fields[name] = Field(H1(out) if isinstance(space, H1)
-                                         else Values(out, "points"), values)
+                                         else Values(out, "points"), values, field.unit)
             else:
                 out.fields[name] = Field(Constant(out) if isinstance(space, Constant)
-                                         else Values(out, "cells"), values)
+                                         else Values(out, "cells"), values, field.unit)
         for name, members in piece.sets.items():
             if members.on in ("points", "cells"):
                 out.sets[name] = Set(out, members.on, members.ids)

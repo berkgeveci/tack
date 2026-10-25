@@ -369,7 +369,7 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
     for name, values in (("halo", halo_labels), ("count", counts), ("mass", total),
                          ("mbp", mbp), ("potential", potential), ("radius", radius)):
         out.fields[name] = Field(points, values)
-    out.fields["com"] = Field(H1(out), com)
+    out.fields["com"] = Field(H1(out), com, particles.unit)
     if velocity is not None:
         field = particles.fields[velocity] if isinstance(velocity, str) else velocity
         v = _taken(arrays.materialize(_point_values(field.values, n)), order, n)
@@ -377,8 +377,8 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
         dispersion = tack.empty((halos,), dtype)
         if halos:
             _velocities(v, masses, offsets, start, total, mean, dispersion)
-        out.fields["velocity"] = Field(H1(out), mean)
-        out.fields["dispersion"] = Field(points, dispersion)
+        out.fields["velocity"] = Field(H1(out), mean, field.unit)
+        out.fields["dispersion"] = Field(points, dispersion, field.unit)
     return out
 
 

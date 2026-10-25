@@ -331,6 +331,29 @@ field. It is kept apart from `fields`: `data.geometry` returns it, assigning
 the cells; it is never among the fields they carry or select. An `L2` geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.
 
+## Units
+
+`Field(space, values, unit=None)`: `unit` is the values' physical unit, a
+string kept in unyt's canonical spelling (`"m/s"`, `"m*s**-1"` and `"m/s^1"`
+are one unit; `"1"` is `"dimensionless"`), or `None` for unknown. The spatial
+unit is the geometry's, `data.unit`, and `origin` is in it. Kernels never see
+a unit. See [Physical Units](../12-units.md).
+
+| | |
+|---|---|
+| `Field(..., unit=)`, `field.unit` | the values' unit, or `None` |
+| `DataSet(..., unit=)`, `data.unit` | the spatial unit, the geometry field's; `uniform_grid`, `rectilinear_grid` and `point_cloud` take `unit=`, `point_cloud` also `units={name: unit}` |
+| `OctreeDataSet(..., units={name: unit})`, `octree.unit`, `octree.units` | the fields' units, and the roots' spatial unit |
+| `convert(data, unit, field=None)` | the geometry (origin scaled in double precision; images stay images) or a field in `unit`, scaled and offset on the device |
+| `tack.dataset.units` | `canonical`, `conversion` (factor and offset), `same`, `compatible`, `common`; the registry is unyt's plus `ftUS`, the US survey foot |
+
+Filters that keep a quantity keep its unit (everything `carry` takes along,
+`project`, `values_at_centers`, traces, `magnitude`, means, SPH
+interpolation, centres in the spatial unit); the rest give `None` until
+derived units arrive. Positions in two known spatial units do not meet:
+probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
+interop maps each array's `UNITS_LABEL`.
+
 ## Origins and point clouds
 
 A position is `data.origin + value`: the origin is three floats kept in double
@@ -494,7 +517,8 @@ regridding, conservative interpolation (the vault's AMR proposal).
 
 ## Octrees
 
-An `OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None)`
+An `OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None,
+units=None)`
 is a grid of octrees, VTK's `vtkHyperTreeGrid` with branching factor 2, stored
 as a linear octree for GPUs: `roots` the grid of root cells (an image or a
 rectilinear grid, 2D or 3D; root cell `t`, x fastest, is tree `t`), and every
@@ -1112,6 +1136,7 @@ In `tack.dataset.algorithms` (and `tack.dataset`), in Viskores' conventions:
 | Function | Result |
 |---|---|
 | `magnitude(data, f)`, `dot(data, a, b)`, `cross(data, a, b)` | a field in the same space |
+| `convert(data, unit, field=None)` | the geometry, or a field, in another unit ([Units](#units)) |
 | `composite(data, f, g, ...)` | scalar fields of one space as one vector field |
 | `log_values(data, f, base, min_value)` | the logarithm, values below `min_value` (default the smallest normal float) taken as it |
 | `point_elevation(data, low, high, range)` | position along a line, clamped and mapped to `range` (VTK's elevation filter) |
