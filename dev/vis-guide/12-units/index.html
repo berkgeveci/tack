@@ -1807,6 +1807,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#quantities-as-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quantities as parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#mismatches-are-refused" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3576,6 +3587,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#quantities-as-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quantities as parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#mismatches-are-refused" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3660,6 +3682,14 @@ from an unknown unit is guessed.</p>
 <span class="n">stats</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">statistics</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;mean&quot;</span><span class="p">),</span> <span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;population_variance&quot;</span><span class="p">))</span>
 <span class="k">assert</span> <span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;population_variance&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;K**2&quot;</span>
+
+<span class="c1"># Parameters take quantities: a threshold in degrees Celsius on a field in</span>
+<span class="c1"># kelvin, a radius in metres on positions in feet.</span>
+<span class="n">warm</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">kelvin</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="s2">&quot;20 degC&quot;</span><span class="p">,</span> <span class="s2">&quot;30 degC&quot;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">warm</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">kelvin</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="mf">293.15</span><span class="p">,</span> <span class="mf">303.15</span><span class="p">)</span><span class="o">.</span><span class="n">num_cells</span>
+<span class="n">cloud</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">point_cloud</span><span class="p">(</span><span class="n">image</span><span class="o">.</span><span class="n">world_positions</span><span class="p">(),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;ftUS&quot;</span><span class="p">)</span>
+<span class="n">coarse</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="s2">&quot;10 m&quot;</span><span class="p">)</span>             <span class="c1"># 32.8 US survey feet</span>
+<span class="k">assert</span> <span class="n">coarse</span><span class="o">.</span><span class="n">num_points</span> <span class="o">==</span> <span class="n">td</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="mi">10</span> <span class="o">*</span> <span class="mi">3937</span> <span class="o">/</span> <span class="mi">1200</span><span class="p">)</span><span class="o">.</span><span class="n">num_points</span>
 
 <span class="c1"># Positions in two different units do not meet.</span>
 <span class="k">try</span><span class="p">:</span>
@@ -3772,6 +3802,41 @@ convert to kelvin first. Labels, ids, flags and counts that are not
 quantities (<code>region</code>, <code>cell_ids</code>, <code>outlier</code>, <code>neighbors</code>) have no unit, and a
 result computed from a bare number -- <code>upwind_flux</code>'s constant velocity, a
 mass given as one number, the potential's <code>G</code> -- is unknown.</p>
+<h2 id="quantities-as-parameters">Quantities as parameters<a class="headerlink" href="#quantities-as-parameters" title="Permanent link">&para;</a></h2>
+<p>A parameter in a unit takes a quantity: a string such as <code>"10 cm"</code>, a pair
+<code>(value, unit)</code> (the value a number or an array), or a unyt or pint quantity.
+It is converted to what the parameter is compared with; a plain number is
+taken to be in that unit already, as before.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Converted to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>voxel_downsample</code>'s size; <code>radius=</code> of <code>outliers</code>, <code>connected_components</code>, <code>point_normals</code>, <code>ghost_points</code>; <code>periodic=</code> boxes; <code>PointLocator</code>'s bin size and <code>neighbors</code>' radius; SPH smoothing lengths given as one number; the halo catalogue's softening; <code>slice_plane</code>'s origin and distances</td>
+<td>the spatial unit</td>
+</tr>
+<tr>
+<td><code>threshold</code>'s and <code>threshold_points</code>' bounds, <code>contour</code>'s values, <code>clip</code>'s value by a field</td>
+<td>the field's unit, offsets included (<code>"20 degC"</code> on a field in kelvin)</td>
+</tr>
+<tr>
+<td><code>advect</code>'s and <code>streamlines</code>' step size</td>
+<td>the spatial unit over the velocity's</td>
+</tr>
+<tr>
+<td>a mass or density given as one number to SPH or the halo catalogue, <code>upwind_flux</code>'s velocity</td>
+<td>none: the quantity brings its unit, so the result has one (<code>mass=(1e10, "Msun")</code> makes densities in <code>Msun/kpc**3</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>A quantity needs a unit to convert to: one given for a dataset or field of
+unknown unit is refused, as is one for an implicit function's values, which
+have none. A string that names a field (<code>smoothing_length="h"</code>) is the
+field.</p>
 <h2 id="mismatches-are-refused">Mismatches are refused<a class="headerlink" href="#mismatches-are-refused" title="Permanent link">&para;</a></h2>
 <p>Positions compared or moved between datasets must be in one spatial unit, as
 they must be relative to one origin: probe's points, pieces of a
