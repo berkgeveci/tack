@@ -163,6 +163,9 @@ def test_trees_that_are_not_whole_are_refused():
         td.OctreeDataSet.from_cells(roots, [1, 0], [[0.2, 0.2, 0.0], [1.5, 0.5, 0.0]])
     with pytest.raises(ValueError, match="no parent"):
         td.OctreeDataSet(roots, [0], [1], [0])
+    # Tree 1's children, whose parent is only in tree 0: found in pre-order, not by key.
+    with pytest.raises(ValueError, match="4 nodes have no parent"):
+        td.OctreeDataSet(roots, [0, 1, 1, 1, 1], [0, 1, 1, 1, 1], [0, 0, 1, 2, 3])
     with pytest.raises(ValueError, match="given twice"):
         td.OctreeDataSet(roots, [0, 0], [0, 0], [0, 0])
     with pytest.raises(ValueError, match="too large for its level"):

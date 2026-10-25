@@ -678,32 +678,56 @@ def _leaves(tree, level, key, d):
 
 
 def _check_ancestors(tree, level, key, d):
-    """Refuse a node whose parent is not among the nodes."""
-    codes = _code(tree, level, key, d)
-    if len(np.unique(codes)) != len(codes):
+    """Refuse a node given twice, a node whose parent is not among the nodes, and a
+    refined node without all its children. The nodes are in pre-order, so this
+    takes native arrays and no search over codes: a node twice is two neighbours,
+    and a node's parent, if given, is the last node before it one level up (any
+    node of that level in between would sit inside the parent's run)."""
+    n = len(key)
+    if n > 1 and ((tree[1:] == tree[:-1]) & (level[1:] == level[:-1]) &
+                  (key[1:] == key[:-1])).any():
         raise ValueError("a node is given twice")
-    deep = np.flatnonzero(level > 0)
-    if not len(deep):
-        return
-    sorted_codes = np.sort(codes)
-    parents = _code(tree[deep], level[deep] - 1, key[deep] >> np.uint64(d), d)
-    at = np.minimum(np.searchsorted(sorted_codes, parents), len(sorted_codes) - 1)
-    missing = sorted_codes[at] != parents
-    if missing.any():
-        raise ValueError(f"{int(missing.sum())} nodes have no parent among the nodes: give "
-                         "every node's ancestors (from_cells adds them)")
+    parent = np.full(n, -1, np.int64)
+    missing = 0
+    by_level = [np.flatnonzero(level == lv) for lv in range(int(level.max()) + 1)] if n else []
+    for lv in range(1, len(by_level)):
+        here, above = by_level[lv], by_level[lv - 1]
+        if not len(here):
+            continue
+        if not len(above):
+            missing += len(here)
+            continue
+        k = np.searchsorted(above, here) - 1
+        p = above[np.maximum(k, 0)]
+        found = (k >= 0) & (tree[p] == tree[here]) & ((key[here] >> np.uint64(d)) == key[p])
+        missing += int((~found).sum())
+        parent[here[found]] = p[found]
+    if missing:
+        raise ValueError(f"{missing} nodes have no parent among the nodes: give every "
+                         "node's ancestors (from_cells adds them)")
     # A refined node has all 2^d children, as an oct and a HyperTreeGrid's
     # trees do: a missing one would be a hole no leaf covers.
-    _, counts = np.unique(parents, return_counts=True)
-    if (counts != 2 ** d).any():
-        raise ValueError(f"{int((counts != 2 ** d).sum())} refined nodes have fewer than "
-                         f"{2 ** d} children: give each refined node all its children")
+    counts = np.bincount(parent[parent >= 0], minlength=n)
+    short = int(((counts != 0) & (counts != 2 ** d)).sum())
+    if short:
+        raise ValueError(f"{short} refined nodes have fewer than {2 ** d} children: give each "
+                         "refined node all its children")
 
 
-def _code(tree, level, key, d):
-    """One sortable code per node, (tree, level, key) as one Python integer: a
-    host check, made once."""
-    return (tree.astype(object) << 70) | (level.astype(object) << 64) | key.astype(object)
+def _rows_absent(rows, present):
+    """The rows of ``rows`` (unique, ``(m, 2)`` int64) not among ``present`` (``(k, 2)``)."""
+    if not len(present) or not len(rows):
+        return rows
+    both = np.concatenate([present, rows])
+    order = np.lexsort((both[:, 1], both[:, 0]))
+    ranked = both[order]
+    origin = order >= len(present)                # True where the row is from ``rows``
+    same_as_previous = np.zeros(len(ranked), bool)
+    same_as_previous[1:] = (ranked[1:] == ranked[:-1]).all(axis=1)
+    # A row of ``rows`` is present when an equal row of ``present`` sorts before it
+    # (lexsort is stable, and ``present`` comes first).
+    taken = origin & ~same_as_previous
+    return ranked[taken]
 
 
 def _interleave(index, d):
@@ -721,26 +745,30 @@ def _interleave(index, d):
 
 def _with_ancestors(tree, level, key, fields, d):
     """The nodes and every ancestor none of them is, fields filled with NaN (0 for
-    integers) on the added ones."""
-    have = set(zip(tree.tolist(), level.tolist(), key.tolist()))
-    added = []
-    for t, lv, k in zip(tree.tolist(), level.tolist(), key.tolist()):
-        while lv > 0:
-            lv, k = lv - 1, k >> d
-            if (t, lv, k) in have:
-                break
-            have.add((t, lv, k))
-            added.append((t, lv, k))
+    integers) on the added ones: level by level from the finest, each level's
+    parents less the nodes already there."""
+    trees, levels, keys = [tree], [level], [key]
+    top = int(level.max()) if len(level) else 0
+    for lv in range(top, 0, -1):
+        here = np.concatenate([lv_level == lv for lv_level in levels])
+        all_tree, all_key = np.concatenate(trees), np.concatenate(keys)
+        parents = np.unique(np.stack([all_tree[here], (all_key[here] >> np.uint64(d))
+                                      .astype(np.int64)], axis=1), axis=0)
+        above = np.concatenate(levels) == lv - 1
+        present = np.stack([all_tree[above], all_key[above].astype(np.int64)], axis=1)
+        new = _rows_absent(parents, present)
+        if len(new):
+            trees.append(new[:, 0].astype(np.int64))
+            levels.append(np.full(len(new), lv - 1, np.int64))
+            keys.append(new[:, 1].astype(np.uint64))
+    added = sum(len(t) for t in trees[1:])
     if not added:
         return tree, level, key, fields
-    extra = np.array(added, dtype=object)
-    tree = np.concatenate([tree, extra[:, 0].astype(np.int64)])
-    level = np.concatenate([level, extra[:, 1].astype(np.int64)])
-    key = np.concatenate([key, extra[:, 2].astype(np.uint64)])
+    tree, level, key = (np.concatenate(a) for a in (trees, levels, keys))
     filled = {}
     for name, values in fields.items():
         host = np.asarray(arrays.to_host(values) if isinstance(values, tack.Array) else values)
-        pad = np.full((len(added), *host.shape[1:]), np.nan if host.dtype.kind == "f" else 0,
+        pad = np.full((added, *host.shape[1:]), np.nan if host.dtype.kind == "f" else 0,
                       host.dtype)
         filled[name] = np.concatenate([host, pad])
     return tree, level, key, filled
