@@ -6156,6 +6156,12 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 <p>Tetrahedra and triangles are pieces of their cells (<code>carry</code>'s <code>Pieces</code>): cell
 data goes to each, the points stay the same.</p>
 <h2 id="locating-points-probing-and-advection">Locating points, probing and advection<a class="headerlink" href="#locating-points-probing-and-advection" title="Permanent link">&para;</a></h2>
+<p><code>voxelize(data, grid, fields=None, samples=4)</code> puts <code>data</code> on the voxels
+(cells) of an image: <code>fraction</code>, the share of each voxel the data covers, and
+each field's mean over it, as cell data, by <code>samples</code> probes a side per voxel
+(the same bits every run; batched); voxels the data does not reach are
+<code>HIDDENCELL</code>. It takes what <code>probe</code> takes (datasets, pieces, AMR hierarchies,
+octrees); with one sample it is the probe at the voxel centres.</p>
 <p><code>CellLocator(data, density=1.0)</code> bins the cells' bounding boxes on a
 uniform grid over the dataset, about <code>density</code> bins per cell. It records
 the topology, the geometry's values and their state when made;
