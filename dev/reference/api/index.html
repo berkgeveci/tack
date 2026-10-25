@@ -17585,7 +17585,9 @@ element indices a block reads for each destination, and those it writes from
 each source, in matching order. Indices are integer Tack arrays on the
 block's device, or anything <code>numpy.asarray</code> makes integers of. Every send
 must have a receive of its length on the other block, and the other way
-round; this is checked across ranks when the plan is made.</p>
+round; this is checked across ranks when the plan is made. A block may send
+to itself, as a piece in a periodic box is its own neighbour: what it sends
+is gathered before anything is written.</p>
 
 
 
@@ -17596,9 +17598,7 @@ round; this is checked across ranks when the plan is made.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-core/src/tack/communication/_plan.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">24</span>
-<span class="normal">25</span>
-<span class="normal">26</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">26</span>
 <span class="normal">27</span>
 <span class="normal">28</span>
 <span class="normal">29</span>
@@ -17617,7 +17617,9 @@ round; this is checked across ranks when the plan is made.</p>
 <span class="normal">42</span>
 <span class="normal">43</span>
 <span class="normal">44</span>
-<span class="normal">45</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">blocks</span><span class="p">,</span> <span class="n">sends</span><span class="p">,</span> <span class="n">receives</span><span class="p">):</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">blocks</span><span class="p">,</span> <span class="n">sends</span><span class="p">,</span> <span class="n">receives</span><span class="p">):</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">blocks</span>
     <span class="n">blocks</span><span class="o">.</span><span class="n">_local_keys</span><span class="p">(</span><span class="n">sends</span><span class="p">,</span> <span class="s2">&quot;Plan&#39;s sends&quot;</span><span class="p">)</span>
     <span class="n">blocks</span><span class="o">.</span><span class="n">_local_keys</span><span class="p">(</span><span class="n">receives</span><span class="p">,</span> <span class="s2">&quot;Plan&#39;s receives&quot;</span><span class="p">)</span>
@@ -17678,9 +17680,7 @@ elements are written in place; the others are left as they were.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_plan.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 51</span>
-<span class="normal"> 52</span>
-<span class="normal"> 53</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 53</span>
 <span class="normal"> 54</span>
 <span class="normal"> 55</span>
 <span class="normal"> 56</span>
@@ -17728,7 +17728,9 @@ elements are written in place; the others are left as they were.</p>
 <span class="normal"> 98</span>
 <span class="normal"> 99</span>
 <span class="normal">100</span>
-<span class="normal">101</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy each sent element of ``values`` into its place on the receiving block.</span>
 
 <span class="sd">    ``values`` is ``{gid: array}`` -- or ``{gid: {name: array}}`` to move</span>

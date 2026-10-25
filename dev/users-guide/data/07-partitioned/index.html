@@ -1542,6 +1542,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#point-clouds-in-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Point clouds in pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#one-dataset-again" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3345,6 +3356,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#point-clouds-in-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Point clouds in pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#one-dataset-again" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3693,7 +3715,33 @@ pieces, it numbers the regions across all of them, so a region that crosses
 a cut has one number everywhere:</p>
 <div class="highlight"><pre><span></span><code><span class="n">regions</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">connected_components</span><span class="p">(</span><span class="n">pieces</span><span class="p">)</span>          <span class="c1"># region, point_region on each piece</span>
 </code></pre></div>
-<p>With global ids on the pieces, regions are numbered as on the whole dataset.</p>
+<p>With global ids on the pieces, regions are numbered as on the whole dataset.
+<code>min_size</code> drops regions of fewer points, each point counted once.</p>
+<h2 id="point-clouds-in-pieces">Point clouds in pieces<a class="headerlink" href="#point-clouds-in-pieces" title="Permanent link">&para;</a></h2>
+<p>A point cloud's pieces share no points, so a filter over a point's
+neighbours needs copies of the points near it that other pieces hold.
+<code>ghost_points</code> appends them, marked as ghosts, either every point within a
+radius of the piece or exactly those among its points' k nearest. Then the
+neighbour filters run per piece, as mesh filters do after <code>ghost_cells</code>, and
+each owned point gets the whole's answer:</p>
+<div class="highlight"><pre><span></span><code><span class="n">ghosted</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_points</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">normals</span> <span class="o">=</span> <span class="p">[</span><span class="n">td</span><span class="o">.</span><span class="n">point_normals</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span> <span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">ghosted</span><span class="p">]</span>
+
+<span class="n">ghosted</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_points</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mi">2</span> <span class="o">*</span> <span class="n">h_max</span><span class="p">)</span>            <span class="c1"># an SPH kernel&#39;s reach</span>
+<span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">ghosted</span><span class="p">:</span>
+    <span class="n">piece</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;density&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">sph_density</span><span class="p">(</span><span class="n">piece</span><span class="p">)</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;density&quot;</span><span class="p">]</span>
+<span class="n">td</span><span class="o">.</span><span class="n">update_ghosts</span><span class="p">(</span><span class="n">ghosted</span><span class="p">,</span> <span class="s2">&quot;density&quot;</span><span class="p">)</span>                           <span class="c1"># the copies&#39; from their owners</span>
+</code></pre></div>
+<p>Clusters, statistical outliers, voxel downsampling, deposition onto a grid
+and halo catalogues need every piece, so they take the pieces, here or across
+MPI ranks:</p>
+<div class="highlight"><pre><span></span><code><span class="n">halos</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">connected_components</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="n">linking</span><span class="p">,</span> <span class="n">min_size</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">periodic</span><span class="o">=</span><span class="n">box</span><span class="p">)</span>
+<span class="n">catalog</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">halo_catalog</span><span class="p">(</span><span class="n">halos</span><span class="p">,</span> <span class="n">mass</span><span class="o">=</span><span class="n">particle_mass</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="s2">&quot;v&quot;</span><span class="p">,</span> <span class="n">periodic</span><span class="o">=</span><span class="n">box</span><span class="p">)</span>
+<span class="n">density</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">deposit</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;cic&quot;</span><span class="p">)</span>               <span class="c1"># the whole grid, on every rank</span>
+</code></pre></div>
+<p>In a periodic box the copies across a face are images, moved by the box's
+side, so run the per-piece filters on <code>ghost_points</code>' pieces without
+<code>periodic</code>.</p>
 <h2 id="one-dataset-again">One dataset again<a class="headerlink" href="#one-dataset-again" title="Permanent link">&para;</a></h2>
 <p><code>merge_pieces</code> gives the pieces back as one dataset, each cell and point
 once, ghosts dropped: to write one file, or to hand to code that knows no

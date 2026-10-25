@@ -3080,6 +3080,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#point-clouds-in-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Point clouds in pieces
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3454,6 +3465,17 @@
     <span class="md-ellipsis">
       
         Cosmology halos
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#point-clouds-in-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Point clouds in pieces
       
     </span>
   </a>
@@ -4303,6 +4325,54 @@ uses it), and the pruned most-bound-particle search on every large halo.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="point-clouds-in-pieces">Point clouds in pieces<a class="headerlink" href="#point-clouds-in-pieces" title="Permanent link">&para;</a></h3>
+<p>A point cloud in pieces (a <code>PartitionedDataSet</code> of <code>point_cloud</code>s, on one
+origin) works as a mesh in pieces does: filters over neighbours run per piece
+on pieces with copies of their neighbours' points, and the algorithms whose
+answer needs every piece take the partitioned dataset.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ghost_points(pds, radius=None, k=None, periodic=None, around=None, fields=None)</code></td>
+<td>each piece with copies of the other pieces' points it needs appended, vertex cells marked <code>DUPLICATECELL</code> at points marked <code>DUPLICATEPOINT</code>, owned where they came from. With <code>radius</code>, every point within <code>radius</code> of the piece's box, found by the boxes in one exchange (<code>around</code>, a piece for each, widens a piece's box to its own piece's points: the targets <code>sph_interpolate</code> resamples onto there). With <code>k</code>, exactly the points among an owned point's <code>k</code> nearest: each point's <code>k</code> nearest in its own piece bound the true distance, a point whose ball reaches another piece's box asks that piece for its <code>k</code> nearest, and the best are fetched. In a <code>periodic</code> box a copy across a face is an image, moved by the box's side, so the pieces are ordinary clouds: run filters on them without <code>periodic</code>. Fields, sets and global ids come along, and <code>update_ghosts</code> refreshes copies from their owners</td>
+</tr>
+<tr>
+<td>per piece, after <code>ghost_points</code></td>
+<td><code>point_normals</code>, <code>outliers</code>' radius test, <code>sph_density</code> (then <code>update_ghosts(pds, "density")</code>), <code>sph_interpolate</code> onto <code>around</code>'s pieces: each owned point (and each target) gets the whole's answer</td>
+</tr>
+<tr>
+<td><code>connected_components(pds, radius=, min_size=None, periodic=None)</code></td>
+<td>each piece labelled with copies within <code>radius</code>, each copy's region joined to its owner's: the whole's clusters and friends-of-friends halos, numbered as the whole numbers them (by the lowest global id, else (piece, point)). Only regions that cross pieces are gathered; the rest are numbered by a sort over the pieces, so no rank holds every region. <code>min_size</code> counts each point once, where it is owned (meshes in pieces take it too)</td>
+</tr>
+<tr>
+<td><code>outliers(pds, ...)</code></td>
+<td>both tests over copies (<code>ghost_points</code> inside), the statistical test's mean and deviation over every piece's points; the pieces come back without the copies</td>
+</tr>
+<tr>
+<td><code>voxel_downsample(pds, size, keep=)</code></td>
+<td>the grid anchored at every piece's lower corner; each voxel's owned points brought to one piece by a sort over the pieces and reduced there in (piece, index) order. A centroid goes to the piece of its voxel's first point; <code>"first"</code> and <code>"nearest"</code> keep points on their own pieces</td>
+</tr>
+<tr>
+<td><code>deposit(pds, grid, field=None, ...)</code></td>
+<td>each piece deposits its owned points; the grids combine over every rank in piece order (sums and counts add, means divide them, extrema take the least or greatest). Every rank gets the whole grid's field; <code>field</code> is a name</td>
+</tr>
+<tr>
+<td><code>halo_catalog(pds, region="point_region", mass=, velocity=None, ...)</code></td>
+<td>each halo's owned particles sorted to one piece by label, in (piece, index) order, and catalogued there: a <code>PartitionedDataSet</code> of catalogues, halos in label order across them, <code>mbp</code> an index in piece <code>mbp_piece</code></td>
+</tr>
+</tbody>
+</table>
+<p>Pieces cut from a cloud in index order give the whole's answers bit for bit
+where the answer is reduced in point order (clusters' numbers, centroids,
+halo catalogues, including each MBP); in a periodic box, values measured
+through an image agree to a rounding, since an image's position is rounded
+once more than the whole's minimum-image offset.</p>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>A dataset is on the device its arrays are on, and it computes there: every
 algorithm, every derived entity (faces, edges, point links, groups, layouts),
@@ -4385,7 +4455,9 @@ combine pieces.</p>
     combines them pairwise (Pébay's update), so the result is the whole's
     up to rounding;</li>
 <li><code>entropy(pds, "T", bins)</code> bins the whole's range and sums each piece's
-    histogram over it.</li>
+    histogram over it;</li>
+<li><code>connected_components</code>, <code>outliers</code>, <code>voxel_downsample</code>, <code>deposit</code> and
+    <code>halo_catalog</code> on point clouds in pieces ("Point clouds in pieces").</li>
 </ul>
 <p>Pieces with no values are skipped. Each piece counts only what it owns
   (below), so where every shared cell and point has one owner, the result
@@ -4477,7 +4549,7 @@ combine pieces.</p>
   MPI ranks the result is on <code>root</code> (<code>None</code> elsewhere).
 - <strong><code>update_ghosts(pds, *fields)</code></strong> copies the named point and cell fields'
   values on ghost points and cells from their owners, in place, for pieces
-  <code>ghost_cells</code> made (it keeps the two exchanges as
+  <code>ghost_cells</code> or <code>ghost_points</code> made (they keep the exchanges as
   <code>tack.communication.Plan</code>s). A filter that needs each entity's neighbours
   (<code>project</code> to points, point gradients) is right on what a piece owns and
   wrong on the ghost layer's rim; refreshing the ghosts in between makes a
