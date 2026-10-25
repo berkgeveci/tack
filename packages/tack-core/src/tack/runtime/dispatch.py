@@ -51,6 +51,8 @@ _BACKEND_HELP = {
         "  libze_loader.so (level-zero runtime) and libocloc.so\n"
         "  (intel-opencl-icd)."
     ),
+    "warp": ("Requires NVIDIA Warp (a prototype backend); in a clone:\n"
+             "    pip install warp-lang   (or: uv pip install warp-lang)"),
 }
 
 
@@ -71,6 +73,7 @@ _CONSTRUCTORS = {
     "cuda": ("tack.runtime.cuda_backend", "CUDABackend"),
     "hip": ("tack.runtime.hip_backend", "HIPBackend"),
     "level_zero": ("tack.runtime.level_zero_backend", "LevelZeroBackend"),
+    "warp": ("tack.runtime.warp_backend", "WarpBackend"),
 }
 # Device types that number their devices in a spec ("cuda:0"); the others
 # have one device and are written bare ("cpu", "metal").

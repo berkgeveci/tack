@@ -271,6 +271,15 @@ def _get_device_info(array):
         data_ptr = buf._device_ptr.value if hasattr(buf._device_ptr, 'value') else int(buf._device_ptr)
         return kDLOneAPI, array._backend.ordinal, data_ptr
 
+    if cls_name == "WarpBuffer":
+        # The prototype completes the queued launches now, but not the later
+        # ones that use it, as `share()` does for the other GPU buffers.
+        buf.synchronize()
+        device = array._backend.wp_device
+        if device.is_cuda:
+            return kDLCUDA, device.ordinal, buf.address
+        return kDLCPU, 0, buf.address
+
     raise RuntimeError(f"DLPack not supported for buffer type: {cls_name}")
 
 
