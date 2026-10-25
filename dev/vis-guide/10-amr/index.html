@@ -1926,10 +1926,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#next" class="md-nav__link">
+  <a href="#probe-and-resample" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Next
+        Probe and resample
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#in-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not here
       
     </span>
   </a>
@@ -3509,10 +3531,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#next" class="md-nav__link">
+  <a href="#probe-and-resample" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Next
+        Probe and resample
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#in-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In pieces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not here
       
     </span>
   </a>
@@ -3625,9 +3669,22 @@ and points they cover:</p>
 <span class="n">td</span><span class="o">.</span><span class="n">update_ghosts</span><span class="p">(</span><span class="n">grown</span><span class="p">,</span> <span class="s2">&quot;g&quot;</span><span class="p">)</span>               <span class="c1"># the ghosts&#39; from their owners</span>
 <span class="n">td</span><span class="o">.</span><span class="n">average_down</span><span class="p">(</span><span class="n">grown</span><span class="p">,</span> <span class="s2">&quot;g&quot;</span><span class="p">)</span>                <span class="c1"># coarse cells under fine ones: the fine average</span>
 </code></pre></div>
-<h2 id="next">Next<a class="headerlink" href="#next" title="Permanent link">&para;</a></h2>
-<p>Probing at the finest level, resampling onto one image, and boxes spread over
-MPI ranks and devices are the next phase.</p>
+<h2 id="probe-and-resample">Probe and resample<a class="headerlink" href="#probe-and-resample" title="Permanent link">&para;</a></h2>
+<p><code>probe(amr, where)</code> evaluates each point in the finest level's cell holding it,
+so probing onto an image resamples the hierarchy, as VTK's
+<code>vtkAMRResampleFilter</code> does:</p>
+<div class="highlight"><pre><span></span><code><span class="n">image</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span> <span class="o">/</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">8</span> <span class="o">/</span> <span class="mi">63</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+<span class="n">resampled</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">amr</span><span class="p">,</span> <span class="n">image</span><span class="p">)</span>           <span class="c1"># each point from the finest level holding it</span>
+</code></pre></div>
+<h2 id="in-pieces">In pieces<a class="headerlink" href="#in-pieces" title="Permanent link">&para;</a></h2>
+<p>The boxes of a hierarchy may be on several devices and spread over MPI ranks:
+each rank passes its own boxes of each level and the world
+(<code>td.AMRDataSet(levels, ratios, world=tc.World(comm))</code>). The hierarchy gathers
+every rank's boxes when it is made, and its marks, ghost cells,
+<code>average_down</code>, probes and reductions work across the ranks.</p>
+<h2 id="not-here">Not here<a class="headerlink" href="#not-here" title="Permanent link">&para;</a></h2>
+<p>Crack-free contouring across levels, periodic domains, tagging and regridding,
+and conservative interpolation are not part of Tack yet.</p>
 
 
 
