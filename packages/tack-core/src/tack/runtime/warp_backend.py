@@ -170,10 +170,11 @@ class WarpBackend(GPUBackend):
 
     def _launch(self, compiled, kernel_args, loop_end, extents):
         from tack.lang.array import Array
-        inputs = [a._buffer.array if isinstance(a, Array) else a for a in kernel_args]
+        # Arrays go by address: the generated kernel takes wp.uint64.
+        inputs = [a._buffer.address if isinstance(a, Array) else a for a in kernel_args]
         inputs.append(loop_end)
         inputs.extend(extents)
-        inputs.extend(compiled.tack_tables)
+        inputs.extend(t.ptr for t in compiled.tack_tables)
         _warp().launch(compiled, dim=loop_end, inputs=inputs, device=self.wp_device)
 
     def _launch_guard(self, variant):

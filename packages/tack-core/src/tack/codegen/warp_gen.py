@@ -8,8 +8,12 @@ expression carries its ``dtype``, so none of what Warp's front end lacks
 
 Warp does not promote mixed operands, so every operand is converted to the
 type the annotator gave its operation (``wp.float32(x)``), and every local
-is declared once, with its type, at kernel scope. Arrays are flat
-``wp.array`` buffers indexed as Tack linearized them.
+is declared once, with its type, at kernel scope. Arrays are flat buffers
+passed by address (``wp.uint64``) and read, written and updated through
+native helpers at a 64-bit index, as Tack linearized them: a ``wp.array``
+argument costs a stride from the argument block and a 64-bit multiply at
+every access, and Warp indexes it with a 32-bit ``int``. Local arrays are
+``wp.vector`` values.
 
 Where Warp's semantics differ from Tack's, helpers carry Tack's:
 - ``//`` and ``%``, integer and floating (Warp's integer ``%`` truncates
@@ -96,6 +100,7 @@ class WarpCodeGen:
         self._lines: list[str] = []
         self._indent = 0
         self._arrays: dict[str, ScalarType] = {}
+        self._local_arrays: set[str] = set()
         self._locals: dict[str, ScalarType] = {}
         self._helpers: dict[str, list[str]] = {}
         self._tables: dict[tuple, str] = {}
@@ -115,7 +120,7 @@ class WarpCodeGen:
             t = warp_type(param.type_annotation)
             if param._is_array is not False:
                 self._arrays[param.name] = param.type_annotation
-                params.append(f"{_v(param.name)}: wp.array(dtype={t})")
+                params.append(f"{_v(param.name)}: wp.uint64")
             else:
                 self._locals[param.name] = param.type_annotation
                 params.append(f"{_v(param.name)}: {t}")
@@ -129,8 +134,7 @@ class WarpCodeGen:
         self._body(func.body)
         self._indent -= 1
         # The tables the body read follow every other parameter.
-        params.extend(f"{name}: wp.array(dtype={warp_type(dtype)})"
-                      for (dtype, _), name in zip(self.tables, self._tables.values()))
+        params.extend(f"{name}: wp.uint64" for name in self._tables.values())
 
         lines = ["import warp as wp", ""]
         for helper in self._helpers.values():
@@ -200,14 +204,19 @@ class WarpCodeGen:
                 self._emit(f"{_v(node.target)} = {self._typed(node.value, self._locals[node.target])}")
         elif isinstance(node, ir.IRArrayStore):
             array = self._array_name(node.array)
-            self._emit(f"{_v(array)}[{self._index(node.index)}] = "
-                       f"{self._typed(node.value, self._arrays[array])}")
+            t = self._arrays[array]
+            index, value = self._index(node.index), self._typed(node.value, t)
+            if array in self._local_arrays:
+                self._emit(f"{_v(array)}[{index}] = {value}")
+            else:
+                self._emit(f"{self._memory_helper('store', t)}({_v(array)}, {index}, {value})")
         elif isinstance(node, ir.IRAtomicOp):
             self._emit(self._atomic(node))
         elif isinstance(node, ir.IRLocalAlloc):
             if not isinstance(node.size, ir.IRConstant):
                 raise NotImplementedError("Warp backend: a local array's size must be a constant")
             self._arrays[node.name] = node.dtype
+            self._local_arrays.add(node.name)
             self._emit(f"{_v(node.name)} = wp.vector(dtype={warp_type(node.dtype)}, "
                        f"length={node.size.value})")
         elif isinstance(node, ir.IRReturn):
@@ -333,7 +342,11 @@ class WarpCodeGen:
         if isinstance(node, ir.IRName):
             return _v(node.name)
         if isinstance(node, ir.IRArrayLoad):
-            return f"{_v(self._array_name(node.array))}[{self._index(node.index)}]"
+            array = self._array_name(node.array)
+            if array in self._local_arrays:
+                return f"{_v(array)}[{self._index(node.index)}]"
+            return (f"{self._memory_helper('load', self._arrays[array])}"
+                    f"({_v(array)}, {self._index(node.index)})")
         if isinstance(node, ir.IRBinOp):
             return self._binop(node)
         if isinstance(node, ir.IRUnaryOp):
@@ -413,20 +426,19 @@ class WarpCodeGen:
         if key not in self._tables:
             self._tables[key] = f"__tack_table_{len(self._tables)}__"
             self.tables.append((node.dtype, node.values))
-        return f"{self._table_helper(node.dtype)}({self._tables[key]}, {self._index(node.index)})"
+        return (f"{self._table_helper(node.dtype)}({self._tables[key]}, "
+                f"{self._index(node.index)}, wp.int64({len(node.values)}))")
 
     def _table_helper(self, t):
         name = f"tack_table_{t.name}"
         if name not in self._helpers:
-            w = warp_type(t)
             self._helpers[name] = [
                 "@wp.func",
-                f"def {name}(table: wp.array(dtype={w}), i: wp.int64) -> {w}:",
-                "    n = wp.int64(table.shape[0])",
+                f"def {name}(table: wp.uint64, i: wp.int64, n: wp.int64) -> {warp_type(t)}:",
                 "    k = n - wp.int64(1)",
                 "    if i >= wp.int64(0) and i < n:",
                 "        k = i",
-                "    return table[k]",
+                f"    return {self._memory_helper('load', t)}(table, k)",
             ]
         return name
 
@@ -445,32 +457,55 @@ class WarpCodeGen:
     def _in_bounds_helper(self):
         """Whether ``index`` is in ``[0, extent)``; if not, the first violation's
         site, dimension, index and extent go into the errors array, the first
-        elected by an atomic add on its count (``lang/ir_bounds.py``'s layout)."""
+        elected by an atomic add on its count (``lang/ir_bounds.py``'s layout).
+        The errors array is an address, as every array is."""
         name = "tack_in_bounds"
         if name not in self._helpers:
             b = ir_bounds
+            add, store = self._memory_helper("atomic", i32, "add"), self._memory_helper("store", i32)
             self._helpers[name] = [
                 "@wp.func",
                 (f"def {name}(index: wp.int64, extent: wp.int64, site: wp.int32, dim: wp.int32, "
-                 "errors: wp.array(dtype=wp.int32)) -> wp.int32:"),
+                 "errors: wp.uint64) -> wp.int32:"),
                 "    inside = wp.int32(0)",
                 "    if index >= wp.int64(0) and index < extent:",
                 "        inside = wp.int32(1)",
-                f"    elif wp.atomic_add(errors, {b.COUNT}, wp.int32(1)) == wp.int32(0):",
-                f"        errors[{b.SITE}] = site",
-                f"        errors[{b.DIM}] = dim",
-                f"        errors[{b.INDEX_LO}] = wp.int32(index)",
-                f"        errors[{b.INDEX_HI}] = wp.int32(index >> wp.int64(32))",
-                f"        errors[{b.EXTENT_LO}] = wp.int32(extent)",
-                f"        errors[{b.EXTENT_HI}] = wp.int32(extent >> wp.int64(32))",
+                f"    elif {add}(errors, wp.int64({b.COUNT}), wp.int32(1)) == wp.int32(0):",
+                f"        {store}(errors, wp.int64({b.SITE}), site)",
+                f"        {store}(errors, wp.int64({b.DIM}), dim)",
+                f"        {store}(errors, wp.int64({b.INDEX_LO}), wp.int32(index))",
+                f"        {store}(errors, wp.int64({b.INDEX_HI}), wp.int32(index >> wp.int64(32)))",
+                f"        {store}(errors, wp.int64({b.EXTENT_LO}), wp.int32(extent))",
+                f"        {store}(errors, wp.int64({b.EXTENT_HI}), wp.int32(extent >> wp.int64(32)))",
                 "    return inside",
             ]
         return name
 
+    def _memory_helper(self, kind, t, op=None):
+        """A native load, store or atomic on the ``t`` at index ``i`` of the
+        buffer at address ``p``. Warp's ``wp::atomic_*`` on a pointer are the
+        ones its arrays use, on the CPU and on CUDA."""
+        name = f"tack_{kind}{'_' + op if op else ''}_{t.name}"
+        if name not in self._helpers:
+            w, c = warp_type(t), warp_type(t).replace("wp.", "wp::")
+            if kind == "load":
+                snippet = f"return reinterpret_cast<const {c}*>(p)[i];"
+                stub = f"def {name}(p: wp.uint64, i: wp.int64) -> {w}:"
+            elif kind == "store":
+                snippet = f"reinterpret_cast<{c}*>(p)[i] = v;"
+                stub = f"def {name}(p: wp.uint64, i: wp.int64, v: {w}):"
+            else:
+                snippet = f"return wp::atomic_{op}(reinterpret_cast<{c}*>(p) + i, v);"
+                stub = f"def {name}(p: wp.uint64, i: wp.int64, v: {w}) -> {w}:"
+            self._helpers[name] = [f"@wp.func_native({snippet!r})", stub, "    ..."]
+        return name
+
     def _atomic(self, node: ir.IRAtomicOp) -> str:
         array = self._array_name(node.array)
-        value = self._typed(node.value, self._arrays[array])
-        return f"wp.atomic_{node.op}({_v(array)}, {self._index(node.index)}, {value})"
+        t = self._arrays[array]
+        value = self._typed(node.value, t)
+        return (f"{self._memory_helper('atomic', t, node.op)}"
+                f"({_v(array)}, {self._index(node.index)}, {value})")
 
     # ── Helpers with Python's semantics ──────────────────────────────
 
