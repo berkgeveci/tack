@@ -460,6 +460,35 @@ halo catalogues, including each MBP); in a periodic box, values measured
 through an image agree to a rounding, since an image's position is rounded
 once more than the whole's minimum-image offset.
 
+## Adaptive mesh refinement
+
+An `AMRDataSet(levels, ratios=(), domain=None, world=None)` is a
+block-structured AMR hierarchy, as VTK's `vtkOverlappingAMR` and AMReX's:
+`levels`, each this rank's boxes of a level (a `PartitionedDataSet` or a list
+of datasets), and `ratios[l]`, the refinement from level `l` to `l + 1`, a
+whole number or one per axis. The hierarchy is in index space alone, as
+AMReX's: a box is a dataset of a `StructuredTopology` whose `offset` is its
+first cell's index in its level, and its geometry is anything structured --
+an image, a rectilinear grid, a curvilinear grid -- since which cells a finer
+level covers is a matter of integer boxes. VTK's AMR holds images and (since
+9.6) rectilinear grids; curvilinear boxes are Tack's.
+
+| | |
+|---|---|
+| `amr.levels`, `amr.ratios`, `amr.domain`, `amr.dimension`, `amr.num_levels` | the levels (`PartitionedDataSet`s), the ratios (three per level), level 0's cell-index box |
+| `amr.boxes(level)` | every rank's boxes of a level, `(n, 2, 3)` cell-index boxes `[lo, hi)`, gathered over the world when the hierarchy is made, as VTK's metadata and AMReX's `BoxArray` are replicated |
+| `for level, box in amr` | this rank's boxes, coarsest level first |
+| marks | made with the hierarchy: `REFINEDCELL` on cells a finer box covers; `REFINEDPOINT` on points at whose location a finer level has a point, so a coarse point on the edge of a refined region is one; `DUPLICATEPOINT` on points a lower-numbered sibling also holds. Every location and region is then owned once, at the finest level holding it. Marks given are recomputed; other bits are kept |
+| refused | overlapping boxes in a level; a fine box that, coarsened, is not within its coarser level's boxes (proper nesting); a level's images off one lattice (one spacing and origin, axis-aligned: VTK's model); boxes with ghost cells; boxes of mixed dimension |
+| `statistics(amr, name)`, `entropy(amr, name, bins)` | over every box of every level, each region and location once |
+| per box | every filter: contours, slices, clips and thresholds leave refined cells out (cracks at level boundaries remain); algorithms whose output is on the same cells (gradients, projections) compute there, refined data being valid |
+| `amr_gaussian_pulse(dimension=3, ...)` | VTK's `vtkAMRGaussianPulseSource`: two levels, `Gaussian-Pulse` and `Centroid` on the cells |
+| interop | `vtk_to_dataset(vtkOverlappingAMR)` gives an `AMRDataSet` (blocks placed by their `vtkAMRBox`); `dataset_to_vtk(amr)` a `vtkOverlappingAMR` when every box is an image or a rectilinear grid and each ratio is the same along every axis, else a `vtkPartitionedDataSetCollection` of a partitioned dataset per level. VTK's `BlankCells` marks the export as Tack does |
+
+Ghost cells (from siblings and from the coarser level), `average_down`,
+`probe` at the finest level and resampling onto one image are the next phases
+(the vault's AMR proposal).
+
 ## Devices
 
 A dataset is on the device its arrays are on, and it computes there: every
@@ -653,9 +682,13 @@ owner; every other copy is a ghost. `data.ghosts` is a
 `tack.dataset.Ghosts` (or `None`), kept apart from the fields as the
 geometry is: a `u8` per cell (`cells`) and per point (`points`), either of
 which may be `None`, holding VTK's `vtkGhostType` bits (`Ghosts.DUPLICATECELL`
-1, `HIDDENCELL` 32, `DUPLICATEPOINT` 1, `HIDDENPOINT` 2, and the rest, carried
-unread). A duplicate is a copy of what another piece owns; hidden is data not
-valid there (an AMR cell a finer level covers, a blanked cell).
+1, `REFINEDCELL` 8, `HIDDENCELL` 32, `DUPLICATEPOINT` 1, `HIDDENPOINT` 2, and
+the rest, carried unread) and Tack's `REFINEDPOINT` 8, which VTK lacks. A
+duplicate is a copy of what another piece owns; hidden is data not valid
+there (a blanked cell); refined is data a finer AMR level supersedes (see
+"Adaptive mesh refinement"). Filters that make cells leave hidden and refined
+cells out (`Ghosts.MASKED_CELLS`); reductions leave out every skipped bit
+(`SKIPPED_CELLS`, `SKIPPED_POINTS`).
 
 - `vtk_to_dataset` takes a `vtkGhostType` array as the marks, not as a field,
   and `dataset_to_vtk` writes them back; `split` makes them;

@@ -167,7 +167,7 @@ def _labels(data, radius=None, locator=None, periodic=None):
                                   f"points need {dtype} atomics, which the "
                                   f"{get_backend().name} backend does not have")
     marks = data.ghosts.cells if data.ghosts is not None else None
-    hidden = (tack.array((marks.numpy() & Ghosts.HIDDENCELL).astype(np.uint8), tack.u8)
+    hidden = (tack.array((marks.numpy() & Ghosts.MASKED_CELLS).astype(np.uint8), tack.u8)
               if marks is not None else tack.zeros((max(ncells, 1),), tack.u8))
     cell_of, members = _cell_points(data)
     labels = tack.arange(ncells + npoints, dtype=dtype)

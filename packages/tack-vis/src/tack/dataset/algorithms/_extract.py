@@ -83,7 +83,7 @@ def _keep_cells(data, keep, fields=None, keep_points=None):
     they use, renumbered in order -- and the points whose ``keep_points`` flag is
     1, used or not; fields carried by ``carry``. Polyhedral topologies keep
     their cells' faces too; polygonal and polyline ones their loops and chains.
-    Hidden cells (``HIDDENCELL``) are never kept."""
+    Hidden and refined cells (``HIDDENCELL``, ``REFINEDCELL``) are never kept."""
     from tack.dataset.ghosts import without_hidden
 
     keep = without_hidden(data, keep)

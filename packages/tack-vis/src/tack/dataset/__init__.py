@@ -94,6 +94,7 @@ from tack.dataset.algorithms import (
     voxel_downsample,
     warp,
 )
+from tack.dataset.amr import AMRDataSet
 from tack.dataset.dataset import (
     DataSet,
     Field,
@@ -116,13 +117,14 @@ from tack.dataset.polyhedra import (
     orient,
 )
 from tack.dataset.sets import Set
-from tack.dataset.sources import tangle, wavelet
+from tack.dataset.sources import amr_gaussian_pulse, tangle, wavelet
 from tack.dataset.spaces import H1, L2, Constant, SideTraces, Space, Values
 from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
 __all__ = [
     "H1",
     "L2",
+    "AMRDataSet",
     "Box",
     "CellGeometry",
     "CellLocator",
@@ -154,6 +156,7 @@ __all__ = [
     "Values",
     "advect",
     "algorithms",
+    "amr_gaussian_pulse",
     "as_polygons",
     "as_polyhedra",
     "boundary_faces",

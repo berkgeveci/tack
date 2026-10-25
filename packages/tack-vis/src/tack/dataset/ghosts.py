@@ -74,8 +74,12 @@ class Ghosts:
 
     A cell or point marked ``DUPLICATECELL`` or ``DUPLICATEPOINT`` is a copy of one
     another piece owns. ``HIDDENCELL`` and ``HIDDENPOINT`` mark data that is not
-    valid there (an AMR cell a finer level covers, a blanked cell). The other
-    bits are carried, not read."""
+    valid there (a blanked cell). ``REFINEDCELL`` marks a cell a finer AMR
+    level covers, whose data are valid but superseded, and ``REFINEDPOINT`` (a
+    Tack bit; VTK has no such point bit) a point at whose location a finer
+    level has one. Filters that make cells leave hidden and refined cells out
+    (``MASKED_CELLS``); reductions leave out every skipped bit. The other bits
+    are carried, not read."""
 
     DUPLICATECELL = 1
     HIGHCONNECTIVITYCELL = 2
@@ -85,11 +89,15 @@ class Ghosts:
     HIDDENCELL = 32
     DUPLICATEPOINT = 1
     HIDDENPOINT = 2
+    REFINEDPOINT = 8
 
-    #: What a reduction leaves out: copies of what another piece owns, and
-    #: what is not valid there.
-    SKIPPED_CELLS = DUPLICATECELL | HIDDENCELL
-    SKIPPED_POINTS = DUPLICATEPOINT | HIDDENPOINT
+    #: What a filter that makes cells never processes: data not valid there,
+    #: and data a finer AMR level supersedes (VTK's masked cells).
+    MASKED_CELLS = HIDDENCELL | REFINEDCELL
+    #: What a reduction leaves out: copies of what another piece owns, what is
+    #: not valid there, and what a finer level supersedes.
+    SKIPPED_CELLS = DUPLICATECELL | HIDDENCELL | REFINEDCELL
+    SKIPPED_POINTS = DUPLICATEPOINT | HIDDENPOINT | REFINEDPOINT
 
     def __init__(self, cells=None, points=None):
         self.cells = _marks(cells, "cells")
@@ -413,27 +421,28 @@ def _clear_marked(marks, bits, keep, out):
 
 
 def without_hidden(data, keep):
-    """``keep`` (an i32 flag per cell of ``data``) with ``data``'s hidden cells
-    cleared: ``keep`` itself when it has none."""
+    """``keep`` (an i32 flag per cell of ``data``) with ``data``'s hidden and refined
+    cells (``MASKED_CELLS``) cleared: ``keep`` itself when it has none."""
     ghosts = data.ghosts
-    if ghosts is None or not _has(ghosts.cells, Ghosts.HIDDENCELL):
+    if ghosts is None or not _has(ghosts.cells, Ghosts.MASKED_CELLS):
         return keep
     out = tack.empty((data.num_cells,), tack.i32)
-    _clear_marked(ghosts.cells, Ghosts.HIDDENCELL, keep, out)
+    _clear_marked(ghosts.cells, Ghosts.MASKED_CELLS, keep, out)
     return out
 
 
 def visible(data, *arguments):
-    """``data`` without its hidden cells (``HIDDENCELL``: data not valid there, as
-    an AMR cell a finer level covers), which filters never process: ``data``
-    itself when it has none, else its other cells as ``extract_cells`` keeps
-    them, marks and fields carried. Given field ``arguments`` too (``Field``s of
+    """``data`` without its hidden cells (``HIDDENCELL``: data not valid there) and
+    refined cells (``REFINEDCELL``: an AMR cell a finer level covers), which
+    filters that make cells never process: ``data`` itself when it has none,
+    else its other cells as ``extract_cells`` keeps them, marks and fields
+    carried. Given field ``arguments`` too (``Field``s of
     ``data`` or names; anything else passes through), returns ``(data,
     *arguments)``, each ``Field`` carried onto the cells kept."""
     from tack.dataset.dataset import DataSet, Field
 
     ghosts = data.ghosts
-    if ghosts is None or not _has(ghosts.cells, Ghosts.HIDDENCELL):
+    if ghosts is None or not _has(ghosts.cells, Ghosts.MASKED_CELLS):
         return (data, *arguments) if arguments else data
     from tack.dataset.algorithms._extract import _keep_cells
 
@@ -453,9 +462,9 @@ def visible(data, *arguments):
 
 
 def refuse_hidden(data, what):
-    """Refuse ``data`` with hidden cells where ``what`` (a phrase) cannot leave them
-    out."""
+    """Refuse ``data`` with hidden or refined cells where ``what`` (a phrase) cannot
+    leave them out."""
     ghosts = data.ghosts
-    if ghosts is not None and _has(ghosts.cells, Ghosts.HIDDENCELL):
-        raise NotImplementedError(f"{what} on a dataset with hidden cells (HIDDENCELL) "
-                                  "is not supported yet")
+    if ghosts is not None and _has(ghosts.cells, Ghosts.MASKED_CELLS):
+        raise NotImplementedError(f"{what} on a dataset with hidden or refined cells "
+                                  "(HIDDENCELL, REFINEDCELL) is not supported yet")

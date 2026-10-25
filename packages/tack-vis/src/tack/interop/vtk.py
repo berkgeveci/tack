@@ -396,6 +396,12 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     subtracted in double precision before they become ``dtype``, so points far
     from zero keep their precision.
 
+    A ``vtkOverlappingAMR`` becomes an ``AMRDataSet``: each block (an image or a
+    rectilinear grid) converted as above, placed in its level by its
+    ``vtkAMRBox``, the levels' refinement ratios kept; the refined cells are
+    marked afresh (VTK's ``vtkGhostType`` bits come in and are recomputed).
+    Blocks with ghost layers are refused.
+
     A ``vtkPartitionedDataSet`` becomes a ``PartitionedDataSet``, each piece
     converted as above (null pieces skipped), and a
     ``vtkPartitionedDataSetCollection`` a ``dict`` of them, keyed by each
@@ -405,6 +411,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
         vtkImageData,
+        vtkOverlappingAMR,
         vtkPartitionedDataSet,
         vtkPartitionedDataSetCollection,
         vtkRectilinearGrid,
@@ -431,6 +438,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     from tack.dataset.dataset import as_origin
 
     shift = np.asarray(as_origin(origin))
+    if isinstance(grid, vtkOverlappingAMR):
+        return _amr_to_dataset(grid, options)
     if isinstance(grid, vtkPartitionedDataSetCollection):
         return _collection_to_datasets(grid, options)
     if isinstance(grid, vtkPartitionedDataSet):
@@ -536,6 +545,102 @@ def _to_vtk_ids(values):
     return np.ascontiguousarray(np.asarray(values), np.int64)
 
 
+def _amr_to_dataset(amr, options):
+    """A ``vtkOverlappingAMR`` as an ``AMRDataSet``: each level's blocks, each placed
+    in its level by its ``vtkAMRBox``."""
+    from tack.dataset import AMRDataSet, DataSet, StructuredTopology
+
+    levels, ratios = [], []
+    for level in range(amr.GetNumberOfLevels()):
+        boxes = []
+        for index in range(amr.GetNumberOfBlocks(level)):
+            block = amr.GetDataSetAsCartesianGrid(level, index)
+            if block is None:               # another rank's
+                continue
+            lo, hi = [0, 0, 0], [0, 0, 0]
+            amr.GetAMRBox(level, index).GetDimensions(lo, hi)   # cells, hi inclusive
+            data = vtk_to_dataset(block, **options)
+            topology = data.topology
+            n = len(topology.point_dims)
+            cells = [h - lo_ + 1 for lo_, h in zip(lo[:n], hi[:n])]
+            if [d - 1 for d in topology.point_dims] != cells:
+                raise ValueError(f"block {index} of level {level} has {topology.point_dims} "
+                                 f"points for a box of {cells} cells: blocks with ghost "
+                                 "layers are not taken yet")
+            placed = StructuredTopology(topology.point_dims, id_dtype=topology.id_dtype,
+                                        device=data.device, offset=tuple(lo[:n]))
+            fields = {name: _rehomed(field, placed) for name, field in data.fields.items()}
+            boxes.append(DataSet(placed, data.geometry.values, fields=fields,
+                                 dtype=data.dtype, ghosts=data.ghosts,
+                                 global_ids=data.global_ids, origin=data.origin))
+        levels.append(boxes)
+        if level + 1 < amr.GetNumberOfLevels():
+            ratios.append(int(amr.GetRefinementRatio(level)))
+    return AMRDataSet(levels, ratios)
+
+
+def _rehomed(field, topology):
+    """``field``'s values in the same kind of space on ``topology``, one of the same
+    cells and points."""
+    from tack.dataset import H1, Constant, Field
+
+    space = H1(topology) if isinstance(field.space, H1) else Constant(topology)
+    return Field(space, field.values)
+
+
+def _amr_to_vtk(amr):
+    """An ``AMRDataSet`` of images and rectilinear grids as a ``vtkOverlappingAMR``, or
+    None if VTK's model cannot hold it: a curvilinear box, ratios that differ
+    between axes, or image levels off one lattice."""
+    import numpy as np
+    from vtkmodules.vtkCommonDataModel import vtkAMRBox, vtkOverlappingAMR
+
+    from tack.arrays import CartesianProduct, UniformCoordinates
+
+    d = amr.dimension
+    kinds = {type(box.geometry.values) for _, box in amr}
+    if not kinds <= {UniformCoordinates, CartesianProduct}:
+        return None
+    if any(len(set(r[:d])) > 1 for r in amr.ratios):
+        return None
+    # VTK's origin and spacing per level: from a level-0 box, its lattice for an
+    # image, its first cell for a rectilinear grid (VTK reads blocks' own
+    # coordinates for those).
+    level, first = next((lv, box) for lv, box in amr)
+    if level != 0:
+        return None
+    coordinates = first.geometry.values
+    world = first.world_positions()
+    if isinstance(coordinates, UniformCoordinates):
+        spacing0 = np.asarray(coordinates._spacing, np.float64)
+    else:
+        axes = [a.numpy().astype(np.float64) for a in (coordinates.x, coordinates.y,
+                                                         coordinates.z)]
+        spacing0 = np.array([a[1] - a[0] if len(a) > 1 else 1.0 for a in axes])
+    offset = np.zeros(3)
+    offset[:d] = first.topology.offset
+    origin = world[0] - offset * spacing0
+    out = vtkOverlappingAMR()
+    out.Initialize([len(amr.boxes(level)) for level in range(amr.num_levels)])
+    out.SetOrigin(list(map(float, origin)))
+    spacing = spacing0.copy()
+    for level in range(amr.num_levels):
+        out.SetSpacing(level, list(map(float, spacing)))
+        ratio = amr.ratios[level][0] if level < amr.num_levels - 1 else 2
+        out.SetRefinementRatio(level, int(ratio))
+        for index, box in enumerate(amr.boxes(level)):
+            # Cells, hi inclusive; an axis the boxes do not have is empty (hi -1),
+            # as VTK writes a 2D box.
+            hi = [int(v) - 1 if a < d else -1 for a, v in enumerate(box[1])]
+            out.SetAMRBox(level, index, vtkAMRBox([int(v) for v in box[0]], hi))
+        spacing = spacing / np.asarray(amr.ratios[level] if level < amr.num_levels - 1
+                                       else (1, 1, 1))
+    for level, pieces in enumerate(amr.levels):
+        for k, box in enumerate(pieces):
+            out.SetDataSet(level, amr._first[level] + k, dataset_to_vtk(box))
+    return out
+
+
 def _collection_to_datasets(collection, options):
     """A ``vtkPartitionedDataSetCollection`` as a ``dict`` of name to
     ``PartitionedDataSet``."""
@@ -599,8 +704,13 @@ def _to_vtk_values(values):
 
 
 def dataset_to_vtk(data):
-    """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; a ``PartitionedDataSet``
-    into a ``vtkPartitionedDataSet`` of its pieces, and a ``dict`` of names to
+    """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
+    images and rectilinear grids, its ratios the same along every axis, into a
+    ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into
+    a ``vtkPartitionedDataSetCollection`` of a partitioned dataset per level
+    (``"level<l>"``), VTK's AMR holding no curvilinear grids; a
+    ``PartitionedDataSet`` into a ``vtkPartitionedDataSet`` of its pieces, and a
+    ``dict`` of names to
     ``PartitionedDataSet``s into a ``vtkPartitionedDataSetCollection`` whose
     partitioned datasets carry their names (``vtkCompositeDataSet.NAME()``).
 
@@ -634,6 +744,7 @@ def dataset_to_vtk(data):
     from tack.arrays import CartesianProduct, UniformCoordinates
     from tack.dataset import (
         H1,
+        AMRDataSet,
         Constant,
         PartitionedDataSet,
         PolygonalTopology,
@@ -646,6 +757,14 @@ def dataset_to_vtk(data):
 
     if isinstance(data, dict):
         return _datasets_to_collection(data)
+    if isinstance(data, AMRDataSet):
+        out = _amr_to_vtk(data)
+        if out is not None:
+            return out
+        # VTK's AMR holds images and rectilinear grids: a level per partitioned
+        # dataset of a collection, "level<l>".
+        return _datasets_to_collection({f"level{level}": pieces
+                                        for level, pieces in enumerate(data.levels)})
     if isinstance(data, PartitionedDataSet):
         from vtkmodules.vtkCommonDataModel import vtkPartitionedDataSet
 

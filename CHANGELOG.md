@@ -7,6 +7,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Block-structured AMR, a first pass: `td.AMRDataSet(levels, ratios)`, levels of
+  structured boxes placed by their topologies' `offset`, the hierarchy in index
+  space as AMReX's, so boxes may be images, rectilinear or curvilinear grids
+  (VTK's AMR holds the first two). Made with its marks: `REFINEDCELL` on cells
+  a finer box covers (as VTK's `BlankCells`, which marks Tack's export alike),
+  `REFINEDPOINT` (a new bit, 8; VTK has none) on points a finer level also
+  holds, and siblings' shared points `DUPLICATEPOINT`, so each region and
+  location counts once in `statistics` and `entropy`. Filters that make cells
+  leave hidden and refined cells out (`Ghosts.MASKED_CELLS`). Overlapping
+  boxes, improper nesting and images off their level's lattice are refused.
+  `vtkOverlappingAMR` both ways, `amr_gaussian_pulse` (VTK's source), and the
+  boxes' metadata gathered over MPI ranks.
 - A dataset's origin: `DataSet.origin`, three doubles on the host, where its
   geometry's coordinates start. Kernels see only the geometry's values
   (`tack.f32`, or `tack.f64` where the device has it), so points far from
