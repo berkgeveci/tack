@@ -1943,6 +1943,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#leaves-as-cells-and-probes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaves as cells, and probes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3515,6 +3526,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#leaves-as-cells-and-probes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Leaves as cells, and probes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#not-here-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3557,7 +3579,9 @@ leaf, and its position and size, come from the keys; nothing about position is
 stored.</p>
 <p>This first pass holds cell data (one value per node, refined ones included, as
 the codes store them) and is about <strong>statistics</strong>. Nodes that are not leaves are
-<code>REFINEDCELL</code>, so reductions count each region once, over the leaves.</p>
+<code>REFINEDCELL</code>, so reductions count each region once, over the leaves. The
+leaves are also a dataset of cells, for every filter, and an octree can be
+probed.</p>
 <!-- tack-check: octree -->
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
@@ -3594,9 +3618,9 @@ the codes store them) and is about <strong>statistics</strong>. Nodes that are n
 <span class="n">plain</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">statistics</span><span class="p">(</span><span class="n">octree</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">)</span>
 <span class="n">by_volume</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">statistics</span><span class="p">(</span><span class="n">octree</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="s2">&quot;volume&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mean rho </span><span class="si">{</span><span class="n">plain</span><span class="o">.</span><span class="n">mean</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, by volume </span><span class="si">{</span><span class="n">by_volume</span><span class="o">.</span><span class="n">mean</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, mass </span><span class="si">{</span><span class="n">by_volume</span><span class="o">.</span><span class="n">sum</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="n">leaves</span> <span class="o">=</span> <span class="n">octree</span><span class="o">.</span><span class="n">leaves</span><span class="p">()</span>
-<span class="n">volume</span> <span class="o">=</span> <span class="n">octree</span><span class="o">.</span><span class="n">measures</span><span class="p">()[</span><span class="n">leaves</span><span class="p">]</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">by_volume</span><span class="o">.</span><span class="n">sum</span><span class="p">,</span> <span class="n">octree</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="n">leaves</span><span class="p">]</span> <span class="o">@</span> <span class="n">volume</span><span class="p">)</span>
+<span class="n">leaf</span> <span class="o">=</span> <span class="n">octree</span><span class="o">.</span><span class="n">is_leaf</span>
+<span class="n">volume</span> <span class="o">=</span> <span class="n">octree</span><span class="o">.</span><span class="n">measures</span><span class="p">()[</span><span class="n">leaf</span><span class="p">]</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">by_volume</span><span class="o">.</span><span class="n">sum</span><span class="p">,</span> <span class="n">octree</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="n">leaf</span><span class="p">]</span> <span class="o">@</span> <span class="n">volume</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">by_volume</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="ow">and</span> <span class="n">plain</span><span class="o">.</span><span class="n">mean</span> <span class="o">&gt;</span> <span class="n">by_volume</span><span class="o">.</span><span class="n">mean</span>
 </code></pre></div>
 <h2 id="weights">Weights<a class="headerlink" href="#weights" title="Permanent link">&para;</a></h2>
@@ -3617,9 +3641,55 @@ nodes instead of the leaves.</p>
 <li><code>vtk_to_dataset</code> takes a <code>vtkHyperTreeGrid</code> (branching factor 2) and
   <code>dataset_to_vtk</code> gives one back, a mask as <code>HIDDENCELL</code>.</li>
 </ul>
+<h2 id="leaves-as-cells-and-probes">Leaves as cells, and probes<a class="headerlink" href="#leaves-as-cells-and-probes" title="Permanent link">&para;</a></h2>
+<p><code>octree.leaves()</code> is the leaves as an unstructured <code>DataSet</code> of voxels (pixels
+in 2D) with every field as cell data: cell <code>c</code> is the <code>c</code>-th leaf in the
+nodes' order (<code>np.flatnonzero(octree.is_leaf)[c]</code>), and hidden leaves are
+<code>HIDDENCELL</code>. Corners that coincide are one point, found by sorting their
+indices on the finest level's lattice, so the cells are connected; corners on
+a finer neighbour's face stay hanging, as the tree has them. Every filter that
+reads cell data works on it: <code>threshold</code>, <code>cell_centers</code>, <code>extract_cells</code>,
+<code>probe</code>.</p>
+<p><code>probe(octree, points)</code> gives each point the values of the leaf holding it,
+found by one binary search over the keys per point: the point's key on the
+finest level is compared with each node's key carried there, and in pre-order
+the last node at or below it is the leaf. Values are constant over a leaf, as
+VTK's <code>vtkHyperTreeGridProbeFilter</code> gives them; <code>valid</code> is 0 outside, on
+hidden leaves and off a 2D octree's plane. A probe onto an image resamples the
+octree. Over MPI ranks, each point goes to the rank whose trees hold it.</p>
+<!-- tack-check: octree-leaves -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="c1"># Two root cells side by side; the first refined once, one of its children again.</span>
+<span class="n">roots</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">tree</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+<span class="n">level</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">+</span> <span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">key</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span> <span class="o">+</span> <span class="p">[(</span><span class="mi">7</span> <span class="o">&lt;&lt;</span> <span class="mi">3</span><span class="p">)</span> <span class="o">|</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">)]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">octree</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">OctreeDataSet</span><span class="p">(</span><span class="n">roots</span><span class="p">,</span> <span class="n">tree</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span>
+                          <span class="n">fields</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)})</span>
+
+<span class="n">leaves</span> <span class="o">=</span> <span class="n">octree</span><span class="o">.</span><span class="n">leaves</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">leaves</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;cells,&quot;</span><span class="p">,</span> <span class="n">leaves</span><span class="o">.</span><span class="n">num_points</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">leaves</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="mi">16</span>
+<span class="c1"># 27 corners in the refined root, 19 more in its refined child, 4 more for the</span>
+<span class="c1"># coarse root beside it (its face&#39;s 4 corners are already there).</span>
+<span class="k">assert</span> <span class="n">leaves</span><span class="o">.</span><span class="n">num_points</span> <span class="o">==</span> <span class="mi">27</span> <span class="o">+</span> <span class="mi">19</span> <span class="o">+</span> <span class="mi">4</span>
+
+<span class="c1"># Each point takes its leaf&#39;s value.</span>
+<span class="n">probed</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">octree</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">],</span> <span class="p">[</span><span class="mf">1.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">],</span>
+                                    <span class="p">[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">]]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">probed</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;level&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">probed</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;valid&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+<span class="k">assert</span> <span class="nb">list</span><span class="p">(</span><span class="n">probed</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;level&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span> <span class="o">==</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+<span class="k">assert</span> <span class="nb">list</span><span class="p">(</span><span class="n">probed</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;valid&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span> <span class="o">==</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+</code></pre></div>
 <h2 id="not-here-yet">Not here yet<a class="headerlink" href="#not-here-yet" title="Permanent link">&para;</a></h2>
-<p>Leaves as an unstructured grid (so every cell-data filter works on them),
-probing, point data and contours (the dual grid) come later.</p>
+<p>Point data, coarse values from the leaves (HyperTreeGrid's <code>EvaluateCoarse</code>),
+and contours (the dual grid) come later.</p>
 
 
 

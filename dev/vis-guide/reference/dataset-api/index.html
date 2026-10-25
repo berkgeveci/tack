@@ -4999,8 +4999,16 @@ node's ancestors must be given, and a refined node all its children.</p>
 <td>cell data: one value per node (<code>dict</code> of arrays)</td>
 </tr>
 <tr>
-<td><code>octree.leaves()</code>, <code>.centers()</code>, <code>.measures()</code>, <code>.geometry()</code></td>
-<td>from the keys, in a kernel: which nodes are leaves, centres, volumes (areas), lower corners and sides</td>
+<td><code>octree.is_leaf</code>, <code>.centers()</code>, <code>.measures()</code>, <code>.geometry()</code></td>
+<td>from the keys: which nodes are leaves, centres, volumes (areas), lower corners and sides</td>
+</tr>
+<tr>
+<td><code>octree.leaves()</code></td>
+<td>the leaves as an unstructured <code>DataSet</code> of voxels (pixels in 2D), cell <code>c</code> the <code>c</code>-th leaf, fields as cell data, hidden leaves <code>HIDDENCELL</code>; coinciding corners one point (sorted on the finest level's lattice), hanging ones kept</td>
+</tr>
+<tr>
+<td><code>probe(octree, where)</code></td>
+<td>each point's leaf values (one binary search of the keys carried to the finest level), <code>valid</code> 0 outside, on hidden leaves and off a 2D plane; over ranks, each point to the rank whose trees hold it</td>
 </tr>
 <tr>
 <td><code>OctreeDataSet.from_cells(roots, level, position, fields)</code></td>
