@@ -39,7 +39,7 @@ coordinates back in double precision.
 
 Filters keep the origin, and anything given in world coordinates (a probe
 point, a seed, an implicit function, a viewpoint) is moved to it in double
-precision. A grid to deposit onto takes the same origin, as below. Pieces
+precision. A grid to deposit onto is rebased to the same origin, as below. Pieces
 whose positions meet share one origin.
 
 ## Clean, thin and grid a LiDAR tile
@@ -79,8 +79,8 @@ normals = td.point_normals(thin, k=12).fields["normals"].values.numpy()
 assert np.median(normals[:, 2]) > 0.99
 
 # A surface model: the highest return in each 2 m cell of a 2D image.
-grid = td.uniform_grid((51, 51), spacing=(2.0, 2.0, 1.0))  # 100 m from the tile's corner
-image = td.DataSet(grid.topology, grid.geometry, origin=tile.origin)
+image = td.uniform_grid((51, 51), origin=(431000.0, 4580000.0), spacing=(2.0, 2.0))
+image = image.rebased(tile.origin)                         # its corner exact, near zero
 dsm = td.deposit(kept, image, "z", reduce="max").values.numpy().reshape(50, 50)
 print(f"roof {dsm[25, 25]:.1f} m, ground {dsm[5, 5]:.1f} m")
 assert abs(dsm[25, 25] - 129.0) < 0.2 and abs(dsm[5, 5] - 120.2) < 0.2
@@ -108,9 +108,10 @@ with one it takes the `"sum"`, `"mean"`, `"min"` or `"max"`: the highest
 return per cell is a surface model, the lowest ground return a terrain
 model. Cells nothing reaches hold 0 for counts and sums, NaN otherwise.
 
-The image here is built in the tile's frame and given the tile's origin;
-an image whose own coordinates start at 431,000 m would hold them in single
-precision.
+An image's own coordinates are in the geometry's type too, so one cornered
+at 431,000 m would be half a metre coarse in single precision at 4,580,000 m.
+`rebased(tile.origin)` keeps it an image and moves its corner next to zero
+in double precision, in the tile's frame.
 
 ## Neighbours, directly
 

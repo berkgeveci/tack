@@ -280,6 +280,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `uniform_grid` takes an origin and spacing of one value per size (a 2D
+  image no longer needs a third spacing) and a 2 x 2 direction for a 2D
+  image. `DataSet.rebased` keeps an image an image, its corner moved in double
+  precision, and a rectilinear grid its axes: a raster at survey coordinates
+  rebased near them holds its points exactly, and stays one to deposit onto.
 - The documentation's datasets and visualization chapters are now the
   **Visualization Guide**, a tab of its own (`docs/vis-guide/`) with
   `tack.dataset`'s reference and design records; the User's Guide is about
