@@ -9,8 +9,8 @@ An operation on each value of a field alone, such as scaling it, needs no
 mesh: pass `field.values` to an ordinary kernel and loop over
 `range(len(values))`. That is also how to loop over points.
 
-Read [Device Functions](../05-device-functions.md) and
-[Templates](../06-templates.md) when the kernel syntax is new. The built-in
+Read [Device Functions](../users-guide/05-device-functions.md) and
+[Templates](../users-guide/06-templates.md) when the kernel syntax is new. The built-in
 filters use the same dataset API as the examples here.
 
 ## Separate an algorithm from storage layout
@@ -164,6 +164,6 @@ uv run python docs/examples/data_mesh_kernels.py --arch cpu --check
 uv run python docs/examples/datasets.py --arch cpu --check
 ```
 
-[Download the cell/face kernel program](../../examples/data_mesh_kernels.py).
-The [reference](../../reference/dataset-api.md#kernels) lists the full view methods.
+[Download the cell/face kernel program](../examples/data_mesh_kernels.py).
+The [reference](reference/dataset-api.md#kernels) lists the full view methods.
 Continue with [Sampling, Rendering and Simulation Pipelines](06-pipelines.md).

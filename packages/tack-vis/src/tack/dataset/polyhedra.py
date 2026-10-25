@@ -1,6 +1,6 @@
 """Polyhedral topologies: every cell a list of faces, every face a polygon stored once.
 
-``docs/design/polyhedra.md``, phase 1. A ``PolyhedralTopology`` holds
+``docs/vis-guide/design/polyhedra.md``, phase 1. A ``PolyhedralTopology`` holds
 
 - ``face_offsets``/``face_points``: each face's points (CSR), in the order that
   winds the face out of its side 0 -- the cell its normal points away from;
@@ -311,7 +311,7 @@ class PolygonEdges(_OnItsArrays):
 # ── The topology ────────────────────────────────────────────────────
 
 class PolyhedralTopology(_Topology):
-    """Cells given by their faces, faces stored once (``docs/design/polyhedra.md``).
+    """Cells given by their faces, faces stored once (``docs/vis-guide/design/polyhedra.md``).
 
     ``face_offsets``/``face_points`` (CSR) are each face's points, in the order that
     winds it out of its side 0; ``cell_offsets``/``cell_faces`` (CSR) each cell's

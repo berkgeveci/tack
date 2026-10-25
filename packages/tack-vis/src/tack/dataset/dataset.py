@@ -1,6 +1,6 @@
 """Datasets: a topology, a geometry, fields on spaces, and sets.
 
-As ``docs/design/dataset-api.md`` §3 describes them:
+As ``docs/vis-guide/design/dataset-api.md`` §3 describes them:
 
 - *spaces* (``tack.dataset.spaces``) say where a field's values live, on one
   topology, and own the layout that follows: ``H1(data)`` one per point,

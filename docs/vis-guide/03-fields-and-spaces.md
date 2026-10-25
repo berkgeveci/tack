@@ -51,7 +51,7 @@ are created; do not repair an association by guessing from array length later.
 
 ## Construct an L2 field
 
-The [complete independent-spaces example](../../examples/data_spaces.py) builds
+The [complete independent-spaces example](../examples/data_spaces.py) builds
 L2 pressure and quadratic H1 temperature on the same two hexes. This section
 constructs pressure directly; [the next section](#construct-a-quadratic-h1-field)
 constructs temperature. The snippets assume NumPy, Tack and `tack.dataset`
@@ -150,7 +150,7 @@ On the same mesh, construct `T = x² + 2y + 3z` using `td.H1(data, order=2)`.
 The geometry stays first-order H1 and still has 12 corner positions.
 Temperature has 45 global nodal coefficients, including nodes away from corners.
 
-![A quadratic hex has eight corner nodes, twelve edge midpoints, six face centers and one cell-interior node](../../assets/quadratic-hex-nodes.svg)
+![A quadratic hex has eight corner nodes, twelve edge midpoints, six face centers and one cell-interior node](../assets/quadratic-hex-nodes.svg)
 
 A single quadratic hex uses three nodes per reference coordinate direction:
 the tensor-product layout has `3 × 3 × 3 = 27` nodes. Two adjacent hexes share
@@ -208,7 +208,7 @@ physical gradients `[0.5, 2, 3]` and `[1.5, 2, 3]`. Projecting this temperature
 down to H1 order 1 gives center values `[2.625, 3.125]`. The latter keeps the
 corner values but changes the function between them.
 
-![Actual field evaluations: L2 pressure varies within each cell and has two traces at the interface; quadratic H1 temperature retains curvature that its order-1 projection loses](../../assets/field-basis-profiles.svg)
+![Actual field evaluations: L2 pressure varies within each cell and has two traces at the interface; quadratic H1 temperature retains curvature that its order-1 projection loses](../assets/field-basis-profiles.svg)
 
 Both profiles are evaluated through the fields' actual bases along
 `y = z = 0.5`, including the two separate L2 traces at x = 0.5. The dotted
@@ -233,7 +233,7 @@ The [two-cell example](01-datasets.md) has material 1 on the left and 3 on the
 right. Converting it to shared point data gives value 2 on the common face.
 Converting it to `L2` preserves both sides of the discontinuity:
 
-![Cell values, averaged shared point values, and separate corner values](../../assets/data-spaces.png)
+![Cell values, averaged shared point values, and separate corner values](../assets/data-spaces.png)
 
 The figure is generated from the example's values along the bottom front edge;
 the dashed line is the shared face at x = 0.5. The middle ramp is an effect of
@@ -352,8 +352,8 @@ compatible order. This does not make every filter a higher-order geometric
 algorithm: `extract_surface` keeps a solid's order-2 fields and geometry at
 order 2 (its surface's nodes are the solid's), but other extractions carry
 corner values, and higher-order subdivision remains open work. The
-[reference](../../reference/dataset-api.md#spaces) records the supported layouts
-and [filter propagation rules](../../reference/dataset-api.md#algorithms-and-filters).
+[reference](reference/dataset-api.md#spaces) records the supported layouts
+and [filter propagation rules](reference/dataset-api.md#algorithms-and-filters).
 
 ## Run and reproduce the figure
 
@@ -362,5 +362,5 @@ uv run python docs/examples/data_fields.py --check
 uv run --with matplotlib python docs/examples/data_fields.py --check --output spaces.png
 ```
 
-[Download the complete program](../../examples/data_fields.py).
+[Download the complete program](../examples/data_fields.py).
 Continue with [Filtering and Analysis](04-filters.md).

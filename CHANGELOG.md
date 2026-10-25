@@ -280,6 +280,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- The documentation's datasets and visualization chapters are now the
+  **Visualization Guide**, a tab of its own (`docs/vis-guide/`) with
+  `tack.dataset`'s reference and design records; the User's Guide is about
+  kernels. Pages moved without redirects.
 - **Breaking:** `Planes(origins, normals)` follows the data's precision, as
   the other implicit functions do, and takes no `dtype`: filters evaluate a
   copy of its planes in the geometry's floating type on its device, made

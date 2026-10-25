@@ -58,14 +58,14 @@ them in order. A workgroup barrier cannot synchronize the whole grid. See
 
 | Need | Start with |
 |---|---|
-| Build discontinuous nodal coefficients | [Construct an L2 field](data/03-fields-and-spaces.md#construct-an-l2-field) |
-| Initialize quadratic nodal values | [Construct a quadratic H1 field](data/03-fields-and-spaces.md#construct-a-quadratic-h1-field) |
-| Continuous, per-cell or discontinuous values | [Fields and Spaces](data/03-fields-and-spaces.md) |
-| Select whole cells or cut a region | [Filter and Analyze](data/04-filters.md) |
-| Work per cell or face without hard-coding connectivity | [Write Mesh Algorithms](data/05-mesh-kernels.md) |
-| Evaluate a field at physical positions | [Probing](data/06-pipelines.md#sample-at-physical-positions) |
-| Trace a steady velocity field or render extracted geometry | [Pipelines](data/06-pipelines.md) |
-| Filter and reduce a dataset in pieces, with ghost cells | [Work with Data in Pieces](data/07-partitioned.md) |
+| Build discontinuous nodal coefficients | [Construct an L2 field](../vis-guide/03-fields-and-spaces.md#construct-an-l2-field) |
+| Initialize quadratic nodal values | [Construct a quadratic H1 field](../vis-guide/03-fields-and-spaces.md#construct-a-quadratic-h1-field) |
+| Continuous, per-cell or discontinuous values | [Fields and Spaces](../vis-guide/03-fields-and-spaces.md) |
+| Select whole cells or cut a region | [Filter and Analyze](../vis-guide/04-filters.md) |
+| Work per cell or face without hard-coding connectivity | [Write Mesh Algorithms](../vis-guide/05-mesh-kernels.md) |
+| Evaluate a field at physical positions | [Probing](../vis-guide/06-pipelines.md#sample-at-physical-positions) |
+| Trace a steady velocity field or render extracted geometry | [Pipelines](../vis-guide/06-pipelines.md) |
+| Filter and reduce a dataset in pieces, with ghost cells | [Work with Data in Pieces](../vis-guide/07-partitioned.md) |
 
 `tack.Array` describes storage. `tack.dataset.Field` associates values with a
 topology through a space. A field's association must be correct before a filter

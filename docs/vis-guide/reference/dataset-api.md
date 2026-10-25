@@ -1,7 +1,7 @@
 # Dataset API
 
 `tack.dataset`, in the `tack-vis` package. This page describes the API as it
-stands; the [Datasets and Visualization guide](../users-guide/09-visualization.md)
+stands; the [Visualization Guide](../index.md)
 develops the model, mesh construction, field spaces, filters, mesh kernels and
 complete pipelines with checked examples. For why it is shaped this way and how it got here, see the
 design records: [Dataset API](../design/dataset-api.md) and

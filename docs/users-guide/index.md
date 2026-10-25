@@ -34,8 +34,8 @@ the [quick reference](quick-reference.md) nearby as you write your own program.
 | Combine contributions from many particles | [Gather and scatter](13-memory-and-parallelism.md#gather-and-scatter), then [MPM](tutorials/mpm.md) |
 | Filter items into a variable-size output | [Count, scan, write](tutorials/contours.md) |
 | Organize several kernels around shared state | [Templates](06-templates.md) and [trail-following agents](tutorials/physarum.md) |
-| Understand a discontinuous solution or a face flux | [Fields and Spaces](data/03-fields-and-spaces.md) |
-| Sample a mesh at measurement locations | [Probing](data/06-pipelines.md#sample-at-physical-positions) |
+| Understand a discontinuous solution or a face flux | [Fields and Spaces](../vis-guide/03-fields-and-spaces.md) |
+| Sample a mesh at measurement locations | [Probing](../vis-guide/06-pipelines.md#sample-at-physical-positions) |
 | Share memory with another library | [Sharing arrays](16-interoperability.md) |
 | Investigate wrong results or slow calls | [Debugging and Timing](15-debugging-and-timing.md) |
 
@@ -67,25 +67,12 @@ If you already write GPU kernels, read [Kernels](03-kernels.md),
 
 ## Datasets and visualization
 
-You can use the dataset algorithms before writing a kernel. Begin with the
-[visualization quick start](09-visualization.md#quick-start), then follow
-[Function Space Fundamentals](data/00-function-spaces.md),
-[Understand a Dataset](data/01-datasets.md), and [Filter and Analyze](data/04-filters.md). The examples start with analytic
-arrays so you can check what each filter means, as well as view its output.
-
-| Chapter | What you will learn |
-|---|---|
-| [Function Space Fundamentals](data/00-function-spaces.md) | H1, H2, L2, polynomial order, coefficients and continuity |
-| [Understand a Dataset](data/01-datasets.md) | Topology, geometry, associated fields and named selections |
-| [Build Meshes](data/02-meshes.md) | Structured and mixed meshes, polyhedra, polygons, lines and ids |
-| [Fields and Spaces](data/03-fields-and-spaces.md) | Continuous and discontinuous values, projection, traces and implicit arrays |
-| [Filter and Analyze](data/04-filters.md) | Selection versus cutting, array propagation, gradients and statistics |
-| [Write Mesh Algorithms](data/05-mesh-kernels.md) | Per-shape cell kernels, subsets, faces and oriented flux balances |
-| [Sample and Connect Simulations](data/06-pipelines.md) | Probes, streamlines, retained geometry, VTK/MFEM and repeated pipelines |
-| [Work with Data in Pieces](data/07-partitioned.md) | Partitioned datasets, ghost cells and marks, filters and reductions over pieces |
-
-Read the kernel chapters when you want to initialize data on the device, write
-a custom operation, or connect a simulation's working arrays to the dataset.
+Meshes, point clouds, fields and the filters over them (`tack.dataset`, the
+`tack-vis` package) have their own guide: the
+[Visualization Guide](../vis-guide/index.md). You can use its algorithms
+before writing a kernel; read the kernel chapters here when you want to
+initialize data on the device, write a custom operation, or connect a
+simulation's working arrays to a dataset.
 
 ## Run and diagnose
 

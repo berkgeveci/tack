@@ -228,7 +228,7 @@ def array_to_vtk(array, n_components=None, name=None):
 # both ways -- VTK's constant and affine arrays are Tack's ``ConstantArray``
 # and ``CountingArray``. Values are copied (the DLPack path above shares
 # them). Point data becomes ``H1`` fields and cell data ``Constant`` fields
-# (``docs/design/dataset-api.md`` §5).
+# (``docs/vis-guide/design/dataset-api.md`` §5).
 
 def _from_vtk(array, dtype=None):
     """A VTK array as Tack takes it: a one-component constant array as a

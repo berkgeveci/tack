@@ -42,28 +42,8 @@ geometry and image-panel rendering needs a working VTK rendering backend.
 
 ## Datasets and visualization examples
 
-These programs develop the dataset API with analytic answers, independently of
-a simulation solver. They run with NumPy and a Tack backend; figures are optional.
-
-| Example | Numerical check | Chapter |
-|---|---|---|
-| [data_spaces.py](../../examples/data_spaces.py) | Construct L2 and quadratic H1 fields; node diagrams, a DG jump and basis profiles | [Field construction](../data/03-fields-and-spaces.md#construct-an-l2-field) |
-| [data_meshes.py](../../examples/data_meshes.py) | Grid counts, cube volume, polygon area and chain length | [Build Meshes](../data/02-meshes.md) |
-| [data_fields.py](../../examples/data_fields.py) | Point/cell projection, a material jump and exact affine gradients | [Fields and Spaces](../data/03-fields-and-spaces.md) |
-| [data_analysis.py](../../examples/data_analysis.py) | Threshold/clip volumes, contour area, sampled values and analytic rotation | [Filter and Analyze](../data/04-filters.md) |
-| [data_mesh_kernels.py](../../examples/data_mesh_kernels.py) | A selected-cell output and an oriented face flux balance | [Write Mesh Algorithms](../data/05-mesh-kernels.md) |
-
-[![Point, cell and discontinuous fields](../../assets/data-spaces.png)](../data/03-fields-and-spaces.md)
-
-[![Whole-cell selection versus clipping and contouring](../../assets/data-filters.png)](../data/04-filters.md)
-
-```bash
-uv run python docs/examples/data_analysis.py --arch cpu --check
-uv run --with matplotlib python docs/examples/data_analysis.py --output filters.png
-```
-
-The [pipeline chapter](../data/06-pipelines.md) connects these operations to
-probing, streamline integration and external tools.
+The programs that develop the dataset API, each with an analytic check, are in the
+[Visualization Guide's worked examples](../../vis-guide/examples.md).
 
 ## Images from the examples
 

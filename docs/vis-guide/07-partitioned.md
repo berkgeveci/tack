@@ -358,4 +358,4 @@ uv run python packages/tack-vis/examples/44_partitioned_data.py --pieces 8
 The checks compare the pieces against the whole grid: owned cells and
 points, statistics of the grid and of its gradients, and the isosurface's
 triangles and points, before and after `remove_ghosts`.
-[Download the complete program](../../examples/data_partitioned.py).
+[Download the complete program](../examples/data_partitioned.py).

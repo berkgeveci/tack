@@ -162,7 +162,7 @@ shared nodes, giving `27 + 27 - 9 = 45` global H1 order-2 DOFs. L2 order 1
 instead has `8 + 8 = 16` independent coefficients. Constant has two.
 Geometry can stay in H1 order 1 throughout.
 
-![Front faces of two adjacent hexes: H1 shares interface nodes, quadratic H1 adds nodes, and L2 keeps a separate coefficient on each side](../../assets/field-dof-layouts.svg)
+![Front faces of two adjacent hexes: H1 shares interface nodes, quadratic H1 adds nodes, and L2 keeps a separate coefficient on each side](../assets/field-dof-layouts.svg)
 
 This is a front-face view (`z = 0`) of the **3D hex mesh**, not a 2D
 quadratic-element example. The counts include nodes on the other z layers.

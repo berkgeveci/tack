@@ -1,4 +1,4 @@
-"""Tests for the dataset API prototype (``docs/design/dataset-api.md``).
+"""Tests for the dataset API prototype (``docs/vis-guide/design/dataset-api.md``).
 
 Derived faces and edges are checked against a hand-built mixed mesh and,
 where VTK is installed, against VTK's own cells: every face once, with the

@@ -41,7 +41,7 @@ a cut boundary. For cell data, the cell's one value makes the selection.
 --8<-- "docs/examples/data_analysis.py:filter"
 ```
 
-![Whole-cell selection, clipped cells, and an extracted level set](../../assets/data-filters.png)
+![Whole-cell selection, clipped cells, and an extracted level set](../assets/data-filters.png)
 
 At x = 0.125, no grid plane coincides with the requested boundary. The threshold
 keeps 48 cells starting at x = 0.25, with total volume 3. The clipped region
@@ -139,7 +139,7 @@ An empty supported filter result is a valid dataset. Check `num_cells` before
 assuming an extraction contains visible geometry. Algorithms requiring a
 reference element reject unsupported topologies; storing H1 values alone
 does not change that support. The
-[reference matrix](../../reference/dataset-api.md#algorithms-and-filters) has the details.
+[reference matrix](reference/dataset-api.md#algorithms-and-filters) has the details.
 
 ## Run and check
 
@@ -150,7 +150,7 @@ uv run --with matplotlib python docs/examples/data_analysis.py --check --output 
 
 The checks include counts, independently calculated volumes and areas,
 interpolated velocity, flow derivatives, probe validity and analytic rotation.
-[Download the complete program](../../examples/data_analysis.py).
+[Download the complete program](../examples/data_analysis.py).
 
 Continue with [Mesh Kernels](05-mesh-kernels.md) to implement an operation,
 or [Sample and Connect Simulations](06-pipelines.md) to connect stages.

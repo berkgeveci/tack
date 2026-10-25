@@ -7,8 +7,8 @@ model, or arrays you wrote yourself. [Factory methods](#factory-methods-as-short
 then provide shortcuts for common combinations.
 
 The snippets assume NumPy, Tack and `tack.dataset` imported as `np`, `tack`
-and `td`, with a default device set. The [complete mesh-construction program](../../examples/data_meshes.py)
-and [mixed-cell tour](../../examples/datasets.py) can be downloaded and run.
+and `td`, with a default device set. The [complete mesh-construction program](../examples/data_meshes.py)
+and [mixed-cell tour](../examples/datasets.py) can be downloaded and run.
 
 ## Topology defines corners, geometry defines positions
 
@@ -263,6 +263,6 @@ uv run python docs/examples/datasets.py --arch cpu --check
 The first program checks each explicit construction, the factory equivalence,
 cube volume, polygon area, path length and the cube's six boundary faces.
 The second checks the mixed mesh and its fields.
-[Download the mesh-construction program](../../examples/data_meshes.py).
+[Download the mesh-construction program](../examples/data_meshes.py).
 
 Next, choose how values live on these entities in [Fields and Spaces](03-fields-and-spaces.md).

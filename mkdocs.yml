@@ -114,16 +114,6 @@ nav:
       - Kernel Algorithms:
           - Reductions and Scans: users-guide/11-reductions-and-scans.md
           - Advanced Features: users-guide/07-advanced.md
-      - Datasets and Visualization:
-          - Overview and Quick Start: users-guide/09-visualization.md
-          - Function Space Fundamentals: users-guide/data/00-function-spaces.md
-          - Understand a Dataset: users-guide/data/01-datasets.md
-          - Build Meshes: users-guide/data/02-meshes.md
-          - Fields and Spaces: users-guide/data/03-fields-and-spaces.md
-          - Filter and Analyze: users-guide/data/04-filters.md
-          - Write Mesh Algorithms: users-guide/data/05-mesh-kernels.md
-          - Sample and Connect Simulations: users-guide/data/06-pipelines.md
-          - Work with Data in Pieces: users-guide/data/07-partitioned.md
       - Run and Diagnose:
           - Backends: users-guide/08-backends.md
           - Sharing Arrays: users-guide/16-interoperability.md
@@ -137,6 +127,24 @@ nav:
           - Marching Squares: users-guide/tutorials/contours.md
           - Particle-to-grid Simulation: users-guide/tutorials/mpm.md
           - Tiled N-body Forces: users-guide/tutorials/nbody.md
+  - Visualization Guide:
+      - vis-guide/index.md
+      - The Data Model:
+          - Function Space Fundamentals: vis-guide/00-function-spaces.md
+          - Understand a Dataset: vis-guide/01-datasets.md
+          - Fields and Spaces: vis-guide/03-fields-and-spaces.md
+      - Work with Data:
+          - Build Meshes: vis-guide/02-meshes.md
+          - Filter and Analyze: vis-guide/04-filters.md
+          - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
+          - Sample and Connect Simulations: vis-guide/06-pipelines.md
+          - Work with Data in Pieces: vis-guide/07-partitioned.md
+      - Worked Examples: vis-guide/examples.md
+      - Reference:
+          - Dataset API: vis-guide/reference/dataset-api.md
+      - Design:
+          - Dataset API: vis-guide/design/dataset-api.md
+          - Polyhedra: vis-guide/design/polyhedra.md
   - Design and Implementation:
       - design/index.md
       - Principles: design/principles.md
@@ -150,8 +158,6 @@ nav:
       - Backend Implementations: design/backend-implementations.md
       - Vendor Workarounds: design/vendor-workarounds.md
       - Interoperability: design/interoperability.md
-      - Dataset API: design/dataset-api.md
-      - Polyhedra: design/polyhedra.md
   - Contracts:
       - contracts/index.md
       - Kernel Language Contract: reference/language-contract.md
@@ -171,7 +177,6 @@ nav:
   - Reference:
       - Backends: reference/backends.md
       - API: reference/api.md
-      - Dataset API: reference/dataset-api.md
       - Performance: performance.md
 
 extra:
