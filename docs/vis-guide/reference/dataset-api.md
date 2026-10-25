@@ -369,7 +369,11 @@ hands filters one step at a time, and each step is a dataset at its time.
 | kept by | every filter, as the origin and spatial unit are (`carry`, `keep_marks`, `drop_marks`, `to_device`); `probe` gives back its target's |
 | refused | pieces of a `PartitionedDataSet` and boxes of an `AMRDataSet` at two times (compared in one unit); an octree's time is its roots' |
 | VTK | `vtkDataObject::DATA_TIME_STEP` both ways; VTK has no time unit |
-| `tack.dataset.temporal` | filters fed one step at a time (`update(data)`), keeping copies of what they need of earlier steps (`copy=False` keeps references) -- running statistics, time derivatives, advection and pathlines follow |
+| `tack.dataset.temporal` | filters fed one step at a time (`update(data)`, which returns the step's output), keeping copies of what they need of earlier steps (`copy=False` keeps references); a `PartitionedDataSet` streams piece by piece |
+| `RunningStatistics(fields)` | per point or cell over the steps so far: `<name>_mean`, `_variance` (population), `_min`, `_max` (Welford, f64 where the device has it); `count`; one mesh over the steps (remesh first) |
+| `TimeDerivative(fields, copy=True)` | `<name>_dt`, the backward difference since the previous step, in the field's unit over the time unit; `None` on the first step; one mesh, increasing time |
+
+See [Streaming Steps](../13-streaming.md).
 
 ## Origins and point clouds
 

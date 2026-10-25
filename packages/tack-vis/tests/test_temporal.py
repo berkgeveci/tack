@@ -3,6 +3,8 @@ at ``time`` in ``time_unit``, kept by every filter as the origin is; pieces,
 AMR boxes and octrees at two times are refused; VTK's ``DATA_TIME_STEP`` maps
 both ways; and the step cache and time differences the temporal filters share."""
 
+import itertools
+
 import numpy as np
 import pytest
 from test_dataset_devices import CALLS, _hexes, _SecondCPU
@@ -150,3 +152,144 @@ def test_time_between_steps():
         temporal._elapsed(grid, a)
     with pytest.raises(ValueError, match="no unit to convert from"):
         temporal._elapsed(c, d, "s")
+
+
+# -- running statistics and time derivatives (T1) ----------------------------------------
+
+def _steps(count=5, seed=0, vector=False, make=None):
+    """A stream of steps of one mesh, a new dataset (and topology) each step, as a
+    simulation hands them out, with ``T`` (degrees Celsius) and the values."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for k in range(count):
+        data = make() if make else td.uniform_grid((4, 3, 3), unit="m")
+        data.time, data.time_unit = 0.25 * k * k, "s"            # irregular steps
+        shape = (data.num_points, 3) if vector else (data.num_points,)
+        values = rng.random(shape).astype(np.float32)
+        data.fields["T"] = td.Field(td.H1(data), tack.array(values, tack.vec3()) if vector
+                                    else tack.array(values), "degC")
+        out.append((data, values.astype(np.float64)))
+    return out
+
+
+@pytest.mark.parametrize("vector", [False, True])
+def test_running_statistics_are_numpys(vector):
+    stats = td.RunningStatistics("T")
+    seen = []
+    for data, values in _steps(vector=vector):
+        out = stats.update(data)
+        seen.append(values)
+        stack = np.array(seen)
+        for suffix, expected in (("mean", stack.mean(0)), ("variance", stack.var(0)),
+                                 ("min", stack.min(0)), ("max", stack.max(0))):
+            np.testing.assert_allclose(out.fields[f"T_{suffix}"].values.numpy(), expected,
+                                       rtol=1e-6, atol=1e-7, err_msg=suffix)
+    assert stats.count == 5
+    assert out.fields["T_mean"].unit == "°C" and out.fields["T_variance"].unit == "K**2"
+    assert out.time == data.time and out.fields["T"] is data.fields["T"]
+    earlier = out.fields["T_mean"].values.numpy().copy()
+    stats.update(_steps(1, seed=9)[0][0]) if not vector else None
+    np.testing.assert_array_equal(out.fields["T_mean"].values.numpy(), earlier)  # a copy
+
+
+def _hex_mesh():
+    """A new unstructured topology over the same arrays' values each call."""
+    grid = td.tetrahedralize(td.uniform_grid((3, 3, 3), unit="m"))
+    t = grid.topology
+    topology = td.UnstructuredTopology(tack.array(t.types.numpy() if hasattr(t.types, "numpy")
+                                                  else tack.arrays.materialize(t.types).numpy()),
+                                       tack.arrays.materialize(t.offsets),
+                                       tack.arrays.materialize(t.connectivity),
+                                       num_points=t.num_points)
+    return td.DataSet(topology, grid.geometry.values, unit="m")
+
+
+def test_statistics_take_one_mesh_and_refuse_another():
+    stats = td.RunningStatistics("T")
+    for data, _ in _steps(3, make=_hex_mesh):
+        stats.update(data)                       # new topology objects, the same mesh
+    other, _ = _steps(1, make=lambda: td.uniform_grid((4, 3, 3), unit="m"))[0]
+    with pytest.raises(ValueError, match="remesh it onto the first step's mesh"):
+        stats.update(other)
+    changed = _hex_mesh()                         # another mesh of the same kind and size
+    ids = changed.topology.connectivity.numpy()
+    ids[[0, 1]] = ids[[1, 0]]
+    reordered = td.DataSet(td.UnstructuredTopology(
+        tack.arrays.materialize(changed.topology.types), changed.topology.offsets,
+        tack.array(ids), num_points=changed.num_points), changed.geometry.values)
+    reordered.fields["T"] = td.Field(td.H1(reordered), tack.zeros((changed.num_points,)))
+    with pytest.raises(ValueError, match="remesh"):
+        stats.update(reordered)
+    with pytest.raises(KeyError, match="no field 'p'"):
+        td.RunningStatistics("p").update(other)
+
+
+def test_time_derivatives_are_backward_differences():
+    rate = td.TimeDerivative("T")
+    steps = _steps()
+    assert rate.update(steps[0][0]) is None                     # no previous step
+    for (before, b), (now, v) in itertools.pairwise(steps):
+        out = rate.update(now)
+        np.testing.assert_allclose(out.fields["T_dt"].values.numpy(),
+                                   (v - b) / (now.time - before.time), rtol=1e-6)
+    assert out.fields["T_dt"].unit == "K/s"
+    late = steps[1][0]
+    with pytest.raises(ValueError, match="do not increase"):
+        rate.update(late)
+    minutes = _steps(2)
+    minutes[1][0].time, minutes[1][0].time_unit = 0.25 / 60, "min"   # 0.25 s, in minutes
+    other = td.TimeDerivative("T")
+    other.update(minutes[0][0])
+    got = other.update(minutes[1][0])
+    assert got.fields["T_dt"].unit == "K/min"
+    np.testing.assert_allclose(got.fields["T_dt"].values.numpy(),
+                               (minutes[1][1] - minutes[0][1]) / (0.25 / 60), rtol=1e-5)
+
+
+def test_the_previous_step_is_a_copy_unless_asked():
+    """A simulation overwriting its buffer in place: a copied previous step gives the
+    true rate, references the overwritten values (no change)."""
+    grid = td.uniform_grid((3, 3, 3))
+    buffer = tack.array(np.zeros(27, np.float32))
+    copied, shared = td.TimeDerivative("T"), td.TimeDerivative("T", copy=False)
+    for k in range(2):
+        tack.copyto(buffer, np.full(27, float(k), np.float32))
+        step = td.DataSet(grid.topology, grid.geometry,
+                          fields={"T": td.Field(td.H1(grid), buffer)}, time=float(k))
+        a, b = copied.update(step), shared.update(step)
+    np.testing.assert_array_equal(a.fields["T_dt"].values.numpy(), 1.0)
+    np.testing.assert_array_equal(b.fields["T_dt"].values.numpy(), 0.0)
+
+
+def test_pieces_stream_piece_by_piece():
+    stats, rate = td.RunningStatistics("T"), td.TimeDerivative("T")
+    seen = []
+    for data, values in _steps(4):
+        pieces = td.split(data, (2, 1, 1))
+        out, d = stats.update(pieces), rate.update(pieces)
+        seen.append(values)
+    assert isinstance(out, td.PartitionedDataSet) and len(out) == 2
+    whole = td.RunningStatistics("T")
+    for data, _ in _steps(4):
+        expected = whole.update(data)
+    merged = td.merge_pieces(out)
+    np.testing.assert_allclose(merged.fields["T_mean"].values.numpy(),
+                               expected.fields["T_mean"].values.numpy(), rtol=1e-6)
+    assert isinstance(d, td.PartitionedDataSet)
+    with pytest.raises(ValueError, match="brings? .*pieces|2 pieces, then 3"):
+        stats.update(td.split(_steps(1)[0][0], (3, 1, 1)))
+
+
+def test_streaming_on_a_device_without_f64():
+    from test_dataset_devices import _NoF64CPU
+
+    device = dispatch.as_device(_NoF64CPU())
+    stats, rate = td.RunningStatistics("T"), td.TimeDerivative("T")
+    seen = []
+    for data, values in _steps(3):
+        there = data.to_device(device)
+        out, d = stats.update(there), rate.update(there)
+        seen.append(values)
+    np.testing.assert_allclose(out.fields["T_mean"].values.numpy(), np.mean(seen, 0),
+                               rtol=1e-5)
+    assert d.fields["T_dt"].values.dtype == tack.f32
