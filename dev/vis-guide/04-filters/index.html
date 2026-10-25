@@ -2043,6 +2043,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cell-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell quality
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#check-algorithm-support-before-building-a-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3670,6 +3681,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cell-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell quality
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#check-algorithm-support-before-building-a-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3882,6 +3904,59 @@ An arithmetic mean of point temperatures is not a volume-weighted mean on
 a stretched mesh. Choose cell measures and a suitable quadrature when the
 quantity you need is a physical integral. The function returns Python values
 and therefore waits for the device work it reads.</p>
+<h2 id="cell-quality">Cell quality<a class="headerlink" href="#cell-quality" title="Permanent link">&para;</a></h2>
+<p><code>cell_quality(data, measures)</code> measures how well shaped each cell is, a cell
+field per measure, each 1 on the ideal cell of its shape (equilateral; a cube,
+a regular tetrahedron):</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>What it says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scaled_jacobian</code></td>
+<td>the worst corner's edges' determinant, edges scaled to unit length, relative to the ideal cell's: 1 ideal, 0 flat, negative inverted</td>
+</tr>
+<tr>
+<td><code>jacobian_ratio</code></td>
+<td>the least corner determinant over the greatest: 1 for every simplex, below 1 as a cell tapers</td>
+</tr>
+<tr>
+<td><code>condition</code></td>
+<td>the worst corner's condition number against the ideal cell's: 1 ideal, growing as it distorts, the largest float when inverted</td>
+</tr>
+<tr>
+<td><code>edge_ratio</code>, <code>min_edge</code>, <code>max_edge</code></td>
+<td>the longest edge over the shortest; the shortest and longest, in the spatial unit</td>
+</tr>
+</tbody>
+</table>
+<p>They are Verdict's definitions (VTK's <code>vtkMeshQuality</code>), matched to VTK where
+it defines them, and extended to every shape Tack has: the corners' edges are
+the geometry's Jacobian applied to the reference cell's edge directions, so
+order-2 cells are measured along their curved edges, and wedges and pyramids
+get every measure. Polyhedra and polygons, which have no reference cell, are
+measured by the fan tetrahedra and triangles Tack evaluates them in.</p>
+<!-- tack-check: cell-quality -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="n">mesh</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">tetrahedralize</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">)))</span>
+<span class="n">quality</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">cell_quality</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">,</span> <span class="s2">&quot;edge_ratio&quot;</span><span class="p">])</span>
+<span class="n">sj</span> <span class="o">=</span> <span class="n">quality</span><span class="p">[</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;scaled Jacobian </span><span class="si">{</span><span class="n">sj</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">sj</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">mesh</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;sj&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">quality</span><span class="p">[</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">]</span>
+<span class="n">worst</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="s2">&quot;sj&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">)</span>          <span class="c1"># the right-corner tetrahedra</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">sj</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">sj</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
+<span class="k">assert</span> <span class="n">worst</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="n">np</span><span class="o">.</span><span class="n">count_nonzero</span><span class="p">(</span><span class="n">sj</span> <span class="o">&lt;</span> <span class="mf">0.75</span><span class="p">)</span>
+</code></pre></div>
 <h2 id="check-algorithm-support-before-building-a-pipeline">Check algorithm support before building a pipeline<a class="headerlink" href="#check-algorithm-support-before-building-a-pipeline" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
