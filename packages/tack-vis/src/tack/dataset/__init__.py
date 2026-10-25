@@ -97,6 +97,7 @@ from tack.dataset.algorithms import (
     upwind_flux,
     values_at_centers,
     voxel_downsample,
+    voxelize,
     warp,
 )
 from tack.dataset.amr import AMRDataSet
@@ -260,6 +261,7 @@ __all__ = [
     "upwind_flux",
     "values_at_centers",
     "voxel_downsample",
+    "voxelize",
     "warp",
     "wavelet",
 ]

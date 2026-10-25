@@ -57,9 +57,9 @@ def test_a_dataset_is_at_a_time():
     assert data.time is None
 
 
-#: Filters whose output is not at the input's step: probe gives back its
-#: target, a dataset of no time here.
-OTHER_TIME = {"probe"}
+#: Filters whose output is not at the input's step: probe and voxelize give
+#: back their target, a dataset of no time here.
+OTHER_TIME = {"probe", "voxelize"}
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
