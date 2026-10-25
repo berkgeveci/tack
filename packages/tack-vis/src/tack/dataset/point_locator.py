@@ -336,6 +336,11 @@ class PointLocator:
                 and arrays._revision(self._geometry) == self._revision
                 and self.periodic == periodic_box(periodic))
 
+    @property
+    def _device(self):
+        data = self.__dict__.get("data")
+        return data._device if data is not None else None
+
     def grid(self):
         """The sorted points and the grid, as a template for kernels (``_PointGrid``)."""
         return _PointGrid(self.positions, self.order, self.starts, self.origin,

@@ -221,6 +221,19 @@ def test_derived_state_and_iteration_are_on_the_datasets_device(second, make):
     assert _on(second, found.cells) and _on(second, found.pcs) and found.tets is None
 
 
+def test_a_point_locator_answers_host_queries_on_its_device(second):
+    """Queries given as host positions are copied to the locator's device. Before,
+    they were made on the default device and the search met them there ("arrays
+    on two devices")."""
+    data, here = _hexes(second), _hexes(tack.device("cpu"))
+    q = data.positions()[[0, 13, 26]] + 0.1
+    for call in (lambda loc: loc.neighbors(1.0, q), lambda loc: loc.nearest(4, q)):
+        got, want = call(td.PointLocator(data)), call(td.PointLocator(here))
+        assert all(_on(second, a) for a in got)
+        for a, b in zip(got, want):
+            np.testing.assert_array_equal(a.numpy(), b.numpy())
+
+
 def test_a_dataset_refuses_parts_on_two_devices(second):
     data = _hexes(second)
     with pytest.raises(ValueError, match="two devices"):
