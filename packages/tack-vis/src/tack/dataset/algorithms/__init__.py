@@ -9,6 +9,7 @@ from tack.dataset.algorithms.boundary_faces import boundary_faces
 from tack.dataset.algorithms.cell_centers import cell_centers
 from tack.dataset.algorithms.cell_geometry import CellGeometry, cell_geometry
 from tack.dataset.algorithms.cell_ids import cell_ids
+from tack.dataset.algorithms.cell_quality import cell_quality
 from tack.dataset.algorithms.check_winding import check_winding
 from tack.dataset.algorithms.clip import clip
 from tack.dataset.algorithms.composite import composite
@@ -83,6 +84,7 @@ __all__ = [
     "cell_centers",
     "cell_geometry",
     "cell_ids",
+    "cell_quality",
     "check_winding",
     "clip",
     "composite",
