@@ -485,11 +485,12 @@ level covers is a matter of integer boxes. VTK's AMR holds images and (since
 | `amr_gaussian_pulse(dimension=3, ...)` | VTK's `vtkAMRGaussianPulseSource`: two levels, `Gaussian-Pulse` and `Centroid` on the cells |
 | `ghost_cells(amr, layers=1, fields=None)` | each box grown by `layers` cells within its level's domain (`amr.level_domain(level)`), the ghosts marked `DUPLICATECELL` and `DUPLICATEPOINT`: a ghost a sibling box holds is its value, copied (AMReX's `FillBoundary`); one no sibling holds takes the coarser level's -- the coarse cell's value for a cell (injection), the coarse cell's corners by linear weights for a point (`FillPatchTwoLevels`) -- read from each value's owner; one neither holds is `HIDDENCELL`/`HIDDENPOINT`. A grid's ghost positions are filled the same way (an image's are its lattice), so rectilinear and curvilinear boxes grow too, a hidden point's position extrapolated along the grid. Ghosts a finer box covers are refined. `amr.layers` says how many |
 | `update_ghosts(amr, *names)` | refreshes both kinds of ghost, and the points a box shares with a lower sibling, from their owners, after a filter: one `tack.communication.Plan` per kind, kept, and a kernel summing by weight |
+| `probe(amr, where)` | each point evaluated in the finest level's cell holding it (refined cells hold nothing; on a level boundary the finer box wins), over every rank's boxes: a probe onto an image is the hierarchy resampled, as VTK's `vtkAMRResampleFilter` gives it (equal at every point VTK sets; VTK leaves points on the domain's upper faces unset) |
 | `average_down(amr, name)` | in place, finest level first: each refined coarse cell the volume-weighted average of the fine cells over it, each refined coarse point the coinciding fine point's value (AMReX's `average_down`) |
 | interop | `vtk_to_dataset(vtkOverlappingAMR)` gives an `AMRDataSet` (blocks placed by their `vtkAMRBox`); `dataset_to_vtk(amr)` a `vtkOverlappingAMR` when every box is an image or a rectilinear grid and each ratio is the same along every axis, else a `vtkPartitionedDataSetCollection` of a partitioned dataset per level. VTK's `BlankCells` marks the export as Tack does |
 
-`probe` at the finest level and resampling onto one image are the next phase
-(the vault's AMR proposal).
+Not here: crack-free contouring across levels, periodic domains, tagging and
+regridding, conservative interpolation (the vault's AMR proposal).
 
 ## Devices
 

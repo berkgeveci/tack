@@ -66,6 +66,10 @@ def probe(data, where, fields=None, locator=None):
     from that cell, and ``valid`` (1, or 0 where no cell holds the point and the
     values are 0). ``locator`` reuses a ``CellLocator`` of ``data``.
 
+    ``data`` may be an ``AMRDataSet``: each point goes to the finest level whose
+    cell holds it (refined cells hold nothing), so a probe onto an image
+    resamples the hierarchy, as VTK's ``vtkAMRResampleFilter`` does.
+
     ``data`` may be a ``PartitionedDataSet``: each point goes to the piece one
     of whose own cells (not a ghost) holds it, the lowest such piece, which
     evaluates it there, and the values come back. ``where`` is then this
@@ -79,8 +83,14 @@ def probe(data, where, fields=None, locator=None):
     relative to its origin. Either way they are taken relative to ``data``'s
     origin in double precision before they are located (the pieces of a
     ``PartitionedDataSet`` share one)."""
+    from tack.dataset.amr import AMRDataSet
     from tack.dataset.partitioned import PartitionedDataSet
 
+    if isinstance(data, AMRDataSet):
+        if locator is not None:
+            raise ValueError("probe of an AMRDataSet uses each box's own locator")
+        return _probe_pieces(data._as_pieces(), where, fields,
+                             levels=[level for level, _ in data])
     if isinstance(data, PartitionedDataSet):
         if locator is not None:
             raise ValueError("probe of a PartitionedDataSet uses each piece's own locator")
@@ -179,8 +189,10 @@ def _held_box(piece):
     return lower - grow, upper + grow
 
 
-def _probe_pieces(data, where, fields):
-    """``probe`` with a partitioned source (``probe``'s docstring)."""
+def _probe_pieces(data, where, fields, levels=None):
+    """``probe`` with a partitioned source (``probe``'s docstring). With ``levels``
+    (each local piece's AMR level), a point two pieces' cells hold goes to the
+    finer one, after holding ahead of coming within the tolerance."""
     from tack import communication as tc
     from tack.communication._kernels import gather
     from tack.dataset.ghosts import Ghosts, keep_marks, visible
@@ -230,9 +242,16 @@ def _probe_pieces(data, where, fields):
         if marks is not None:
             owned &= (marks.numpy()[np.maximum(cells, 0)] & Ghosts.SKIPPED_CELLS) == 0
         # Holding the point ranks ahead of coming within the tolerance, as one
-        # dataset's locator ranks its cells.
-        return np.where(owned, 1 + held.numpy(), 0)
+        # dataset's locator ranks its cells; then, in an AMR hierarchy, the
+        # finer level.
+        rank = 1 + held.numpy().astype(np.int64)
+        if levels is not None:
+            rank = rank * depth + levels[g - blocks.local.start]
+        return np.where(owned, rank, 0)
 
+    depth = 1 + max(blocks.all_reduce({g: int(levels[g - blocks.local.start])
+                                       for g in blocks.local}, "max"), 0) \
+        if levels is not None else 1
     routing = tc.Routing(blocks, positions, boxes, holds)
     arrived = routing.send()
 
