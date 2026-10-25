@@ -22,12 +22,15 @@ Where Warp's semantics differ from Tack's, helpers carry Tack's:
 - floating min/max prefer a number to NaN, and floating negation is a
   product with -1 (Warp's gives +0.0 for 0.0).
 
+Debug mode's bounds checks (``IRBoundsCheck``) call one helper per kernel,
+as ``codegen/bounds.py`` has it in C.
+
 Not yet: textures, workgroups (shared memory, barriers, block
-reductions), ``print`` and debug-mode bounds checks.
+reductions) and ``print``.
 """
 
 from tack.codegen.identifiers import kernel_entry_name
-from tack.lang import ir
+from tack.lang import ir, ir_bounds
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import (
     ScalarType,
@@ -347,6 +350,8 @@ class WarpCodeGen:
             return self._atomic(node)
         if isinstance(node, ir.IRTableLoad):
             return self._table_load(node)
+        if isinstance(node, ir.IRBoundsCheck):
+            return self._bounds_check(node)
         raise NotImplementedError(f"Warp backend: expression {type(node).__name__}")
 
     def _binop(self, node: ir.IRBinOp) -> str:
@@ -399,6 +404,43 @@ class WarpCodeGen:
         index = f"wp.int32({self._typed(node.index, _INDEX)})"
         n = len(node.values)
         return f"{self._tables[key]}[({index} if ({index} >= 0 and {index} < {n}) else {n - 1})]"
+
+    def _bounds_check(self, node: ir.IRBoundsCheck) -> str:
+        """Debug mode: the flat index, or -1 when an index is out of bounds
+        (``codegen/bounds.py``'s rule). The dimensions are tested in order with
+        Warp's short-circuiting ``and``, so the first failing one is recorded."""
+        helper = self._in_bounds_helper()
+        errors = self._expr(node.errors)
+        tests = " and ".join(
+            f"({helper}({self._typed(index, _INDEX)}, {self._typed(extent, _INDEX)}, "
+            f"wp.int32({node.site}), wp.int32({dim}), {errors}) != wp.int32(0))"
+            for dim, (index, extent) in enumerate(zip(node.indices, node.extents)))
+        return f"({self._typed(node.flat, _INDEX)} if ({tests}) else wp.int64(-1))"
+
+    def _in_bounds_helper(self):
+        """Whether ``index`` is in ``[0, extent)``; if not, the first violation's
+        site, dimension, index and extent go into the errors array, the first
+        elected by an atomic add on its count (``lang/ir_bounds.py``'s layout)."""
+        name = "tack_in_bounds"
+        if name not in self._helpers:
+            b = ir_bounds
+            self._helpers[name] = [
+                "@wp.func",
+                (f"def {name}(index: wp.int64, extent: wp.int64, site: wp.int32, dim: wp.int32, "
+                 "errors: wp.array(dtype=wp.int32)) -> wp.int32:"),
+                "    inside = wp.int32(0)",
+                "    if index >= wp.int64(0) and index < extent:",
+                "        inside = wp.int32(1)",
+                f"    elif wp.atomic_add(errors, {b.COUNT}, wp.int32(1)) == wp.int32(0):",
+                f"        errors[{b.SITE}] = site",
+                f"        errors[{b.DIM}] = dim",
+                f"        errors[{b.INDEX_LO}] = wp.int32(index)",
+                f"        errors[{b.INDEX_HI}] = wp.int32(index >> wp.int64(32))",
+                f"        errors[{b.EXTENT_LO}] = wp.int32(extent)",
+                f"        errors[{b.EXTENT_HI}] = wp.int32(extent >> wp.int64(32))",
+                "    return inside",
+            ]
+        return name
 
     def _atomic(self, node: ir.IRAtomicOp) -> str:
         array = self._array_name(node.array)

@@ -6,8 +6,8 @@ is a ``@wp.kernel`` that `codegen/warp_gen.py` writes from the typed IR,
 which Warp compiles (and caches) and launches on its own stream. Scalars
 go to Warp as kernel arguments, so nothing is packed.
 
-Not yet: textures, workgroups, device reductions, ``wrap_ptr`` and the
-disk cache's variants (Warp's own kernel cache keeps the compiled code).
+Not yet: textures, workgroups, device reductions and the disk cache's
+variants (Warp's own kernel cache keeps the compiled code).
 """
 
 import itertools
@@ -19,7 +19,7 @@ import numpy as np
 from tack.codegen.warp_gen import _WARP_TYPES, generate_warp_source
 from tack.lang.array import DeviceBuffer
 from tack.runtime.gpu_backend import GPUBackend, _no_guard
-from tack.runtime.kernel_utils import new_kernel_cache
+from tack.runtime.kernel_utils import as_address, new_kernel_cache
 
 _modules = itertools.count()
 
@@ -29,18 +29,24 @@ def _warp():
     return wp
 
 
+def _warp_dtype(dtype):
+    return getattr(_warp(), _WARP_TYPES[dtype][3:])
+
+
 class WarpBuffer(DeviceBuffer):
     """A flat ``wp.array`` holding an array's elements."""
 
     backend_name = "warp"
 
-    def __init__(self, backend, dtype, shape):
+    def __init__(self, backend, dtype, shape, array=None):
         wp = _warp()
         self._backend = backend
         self._shape = tuple(shape)
         self._dtype = dtype
-        self.array = wp.empty(math.prod(self._shape), dtype=getattr(wp, _WARP_TYPES[dtype][3:]),
-                              device=backend.wp_device)
+        if array is None:
+            array = wp.empty(math.prod(self._shape), dtype=_warp_dtype(dtype),
+                             device=backend.wp_device)
+        self.array = array
 
     def from_numpy(self, arr: np.ndarray):
         wp = _warp()
@@ -96,7 +102,24 @@ class WarpBackend(GPUBackend):
         return WarpBuffer(self, dtype, shape)
 
     def wrap_ptr(self, ptr, dtype, shape):
-        raise NotImplementedError("Warp backend: wrap_ptr is not supported yet")
+        """Wrap memory someone else owns: an address on Warp's device, or on
+        Warp's CPU a NumPy array, as the CPU backend takes. Warp does not free
+        it (no deleter), and launches using it complete before returning
+        (``_shared``), as on the other GPU backends."""
+        count = math.prod(shape)
+        nbytes = count * np.dtype(dtype.numpy_dtype).itemsize
+        owner = None
+        if isinstance(ptr, np.ndarray):
+            if self.wp_device.is_cuda:
+                raise TypeError("the Warp backend wraps a NumPy array only on Warp's CPU")
+            owner = ptr                       # keeps the memory alive
+            ptr = ptr.ctypes.data
+        array = _warp().array(ptr=as_address(ptr), dtype=_warp_dtype(dtype), shape=(count,),
+                              capacity=nbytes, device=self.wp_device)
+        buf = WarpBuffer(self, dtype, shape, array)
+        buf._owner = owner
+        buf._shared = True
+        return buf
 
     def synchronize(self):
         _warp().synchronize_device(self.wp_device)
@@ -139,6 +162,3 @@ class WarpBackend(GPUBackend):
     def _launch_guard(self, variant):
         # Every launch passes all its arguments; nothing is shared between calls.
         return _no_guard
-
-    def _must_complete(self, kernel_args) -> bool:
-        return False

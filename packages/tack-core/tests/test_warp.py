@@ -318,3 +318,39 @@ def test_float_min_and_max_prefer_a_number_to_nan(warp):
     _extrema(tack.array(np.array([np.nan, 1.0], np.float32), device=warp),
              tack.array(np.array([2.0, np.nan], np.float32), device=warp), out)
     np.testing.assert_array_equal(out.numpy(), [[2.0, 2.0], [1.0, 1.0]])
+
+
+def test_wrap_ptr_shares_memory_both_ways(warp):
+    """`array_from_ptr` on Warp wraps memory it does not own: a Warp array's, and
+    on Warp's CPU a NumPy array's; writes through either side are seen by both."""
+    owner = wp.array(np.arange(6, dtype=np.float32), device=warp._backend.wp_device)
+    a = tack.array_from_ptr(owner.ptr, (6,), tack.f32, device=warp, writable=True)
+    out = tack.empty(6, tack.f32, device=warp)
+    _saxpy(2.0, a, a, out)
+    np.testing.assert_array_equal(out.numpy(), np.arange(6) * 3.0)
+    _saxpy(1.0, out, a, a)                  # store through the wrapped memory
+    np.testing.assert_array_equal(owner.numpy(), np.arange(6) * 4.0)
+    if not warp._backend.wp_device.is_cuda:
+        host = np.ones(4, np.float32)
+        h = tack.array_from_ptr(host, host.shape, tack.f32, device=warp, writable=True)
+        _saxpy(5.0, h, h, h)
+        np.testing.assert_array_equal(host, np.full(4, 6.0))
+
+
+@tack.kernel
+def _past_the_end(a, out):
+    for i in range(out.shape[0]):
+        out[i] = a[i + 2]
+
+
+def test_debug_mode_checks_bounds(warp, monkeypatch):
+    """Debug mode on Warp: the access past the end is refused, recorded and
+    raised as IndexError naming it, and nothing is read or written out of
+    bounds (Warp's CPU arrays have no guard pages)."""
+    from tack.runtime import dispatch
+    monkeypatch.setattr(dispatch, "_debug", True)
+    a = tack.array(np.arange(4, dtype=np.float32), device=warp)
+    out = tack.zeros(4, tack.f32, device=warp)
+    with pytest.raises(IndexError, match=r"a\[i \+ 2\]"):
+        _past_the_end(a, out)
+    np.testing.assert_array_equal(out.numpy(), [2.0, 3.0, 0.0, 0.0])
