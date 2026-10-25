@@ -142,6 +142,7 @@ nav:
           - Filter and Analyze: vis-guide/04-filters.md
           - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
           - Sample and Connect Simulations: vis-guide/06-pipelines.md
+          - Stream Steps: vis-guide/13-streaming.md
       - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md

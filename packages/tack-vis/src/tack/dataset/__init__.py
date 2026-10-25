@@ -122,6 +122,7 @@ from tack.dataset.polyhedra import (
 from tack.dataset.sets import Set
 from tack.dataset.sources import amr_gaussian_pulse, tangle, wavelet
 from tack.dataset.spaces import H1, L2, Constant, SideTraces, Space, Values
+from tack.dataset.temporal import RunningStatistics, TimeDerivative
 from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
 __all__ = [
@@ -149,6 +150,7 @@ __all__ = [
     "PolygonalTopology",
     "PolyhedralTopology",
     "PolylineTopology",
+    "RunningStatistics",
     "Set",
     "SideTraces",
     "SizeBuckets",
@@ -156,6 +158,7 @@ __all__ = [
     "Sphere",
     "Statistics",
     "StructuredTopology",
+    "TimeDerivative",
     "UnstructuredTopology",
     "Values",
     "advect",

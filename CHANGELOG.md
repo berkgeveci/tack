@@ -13,6 +13,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `tack.dataset.temporal` holds what the temporal filters share: a step cache
   that copies what it keeps (`copy=False` keeps references) and the time
   between steps, converted between units.
+- Running statistics and time derivatives over streamed steps:
+  `td.RunningStatistics(fields)` (per point or cell mean, variance, minimum and
+  maximum over the steps so far, by Welford's method on the device) and
+  `td.TimeDerivative(fields)` (the backward difference since the previous
+  step, in the field's unit over the time unit), each fed `update(data)` a
+  step at a time, piece by piece for a `PartitionedDataSet`; one mesh over the
+  steps (a new topology object over the same mesh is the same mesh).
 - Physical units, a first pass: `Field(..., unit=)` holds the values' unit, a
   string in unyt's canonical spelling (`None` is unknown), and the spatial
   unit is the geometry's (`data.unit`; `uniform_grid`, `rectilinear_grid`,
