@@ -3069,6 +3069,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#cosmology-halos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cosmology halos
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3432,6 +3443,17 @@
     <span class="md-ellipsis">
       
         Point cloud filters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cosmology-halos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cosmology halos
       
     </span>
   </a>
@@ -4207,10 +4229,16 @@ given one.</p>
 </tr>
 <tr>
 <td><code>locator.grid()</code></td>
-<td>the sorted points and the grid as a device class, for one's own kernels: <code>span(x, r)</code>, <code>cell(x)</code>, <code>bin(i, j, k)</code>, <code>first(b)</code>, <code>end(b)</code>, <code>point(s)</code></td>
+<td>the sorted points and the grid as a device class, for one's own kernels: <code>span(x, r)</code>, <code>cell(x)</code>, <code>bin(i, j, k)</code>, <code>first(b)</code>, <code>end(b)</code>, <code>point(s)</code>, <code>offset(p, x)</code> (point <code>p</code> less <code>x</code>, to its nearest image in a periodic box)</td>
 </tr>
 </tbody>
 </table>
+<p><code>PointLocator(..., periodic=box)</code> takes a periodic box in world coordinates (a
+side, the box from zero; three sides; or <code>(lower, upper)</code> corners), as a
+cosmology simulation's: the bins tile the box exactly, points outside it wrap
+in, and every distance is to a point's nearest image. A search radius must stay
+under half the box (<code>check_radius</code>). The point filters below take <code>periodic=</code>
+and pass it on; without one, nothing changes (it is compiled out).</p>
 <h3 id="point-cloud-filters">Point cloud filters<a class="headerlink" href="#point-cloud-filters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -4251,6 +4279,27 @@ given one.</p>
 <tr>
 <td><code>sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass")</code></td>
 <td>each particle's density by the SPH sum with its own smoothing length (the gather form, SPLASH's), itself included</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cosmology-halos">Cosmology halos<a class="headerlink" href="#cosmology-halos" title="Permanent link">&para;</a></h3>
+<p>Dark matter halos are friends-of-friends groups,
+<code>connected_components(particles, radius=linking_length, min_size=..., periodic=box)</code>,
+and <code>halo_catalog</code> describes them. Ported from Viskores' cosmotools and
+ParaView's LANL halo finder, with what they lacked: per-particle masses,
+softening, periodic boxes, an applied minimum size (Viskores stores it and never
+uses it), and the pruned most-bound-particle search on every large halo.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>halo_catalog(particles, region="point_region", mass=1.0, velocity=None, center="mbp", softening=0.0, G=1.0, periodic=None)</code></td>
+<td>one point per halo (labels of <code>region</code> &gt;= 0), at its most bound particle or centre of mass, with <code>halo</code>, <code>count</code>, <code>mass</code> (per-particle masses or one number), <code>com</code>, <code>mbp</code> (the index of the particle of least potential <code>-G sum m / sqrt(r^2 + softening^2)</code>), <code>potential</code>, <code>radius</code> (the farthest particle from the point), and with <code>velocity</code> its mass-weighted mean and one-dimensional <code>dispersion</code>. Each halo is unwrapped about its first particle in a periodic box, and its points put back in. The MBP is exact: halos up to 2048 particles sum every pair; larger ones use Viskores' MxN pruning, tightened by bounding each particle against each far bin's box rather than bin against bin (on a concentrated halo of 40,000, 3% are summed exactly instead of 69%). The catalogue shares the particles' origin; every sum runs in particle order</td>
 </tr>
 </tbody>
 </table>
