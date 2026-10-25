@@ -32,6 +32,21 @@ __all__ = ["OctreeDataSet"]
 MAX_LEVEL = {2: 29, 3: 19}
 
 
+@tack.func
+def _unkey(k, depth, dimension):
+    # A key's integer coordinates in its tree at its level: every dimension-th
+    # bit, x lowest.
+    i = tack.u64(0)
+    j = tack.u64(0)
+    m = tack.u64(0)
+    for b in range(depth):
+        i = i | (((k >> tack.u64(dimension * b)) & tack.u64(1)) << tack.u64(b))
+        j = j | (((k >> tack.u64(dimension * b + 1)) & tack.u64(1)) << tack.u64(b))
+        if dimension == 3:
+            m = m | (((k >> tack.u64(dimension * b + 2)) & tack.u64(1)) << tack.u64(b))
+    return i, j, m
+
+
 @tack.kernel
 def _node_geometry(tree, level, key, root_lo, root_size, dimension, lo, size):
     # Each node's lower corner and sides: its tree's root cell, divided by 2 per
@@ -39,15 +54,7 @@ def _node_geometry(tree, level, key, root_lo, root_size, dimension, lo, size):
     for n in range(lo.shape[0]):
         t = tree[n]
         depth = level[n]
-        k = key[n]
-        i = tack.u64(0)
-        j = tack.u64(0)
-        m = tack.u64(0)
-        for b in range(depth):
-            i = i | (((k >> tack.u64(dimension * b)) & tack.u64(1)) << tack.u64(b))
-            j = j | (((k >> tack.u64(dimension * b + 1)) & tack.u64(1)) << tack.u64(b))
-            if dimension == 3:
-                m = m | (((k >> tack.u64(dimension * b + 2)) & tack.u64(1)) << tack.u64(b))
+        i, j, m = _unkey(key[n], depth, dimension)
         scale = 1.0 / tack.f64(tack.u64(1) << tack.u64(depth))
         r = root_size[t]
         s = [r[0] * scale, r[1] * scale, r[2] * scale]
@@ -57,6 +64,162 @@ def _node_geometry(tree, level, key, root_lo, root_size, dimension, lo, size):
         lo[n] = [base[0] + tack.f64(i) * s[0], base[1] + tack.f64(j) * s[1],
                  base[2] + tack.f64(m) * s[2]]
         size[n] = s
+
+
+@tack.kernel
+def _leaf_corners(leaf, tree, level, key, nx, ny, dimension, finest, ci, cj, ck):
+    # Each leaf's 2^d corners on the lattice of the finest level over every root
+    # cell (root t's lower corner at (tx, ty, tz) * 2^finest): corner v of leaf
+    # c, x fastest (a voxel's order), at entry c * 2^d + v.
+    for c in range(leaf.shape[0]):
+        n = leaf[c]
+        t = tree[n]
+        depth = level[n]
+        i, j, m = _unkey(key[n], depth, dimension)
+        step = tack.i64(1) << tack.i64(finest - depth)
+        bi = ((t % nx) << tack.i64(finest)) + tack.i64(i) * step
+        bj = (((t // nx) % ny) << tack.i64(finest)) + tack.i64(j) * step
+        bk = ((t // (nx * ny)) << tack.i64(finest)) + tack.i64(m) * step
+        corners = 1 << dimension
+        for v in range(corners):
+            ci[c * corners + v] = bi + tack.i64(v & 1) * step
+            cj[c * corners + v] = bj + tack.i64((v >> 1) & 1) * step
+            ck[c * corners + v] = bk + tack.i64((v >> 2) & 1) * step
+
+
+@tack.kernel
+def _run_starts(si, sj, sk, flags):
+    for s in range(flags.shape[0]):
+        flags[s] = 1 if s == 0 or si[s] != si[s - 1] or sj[s] != sj[s - 1] or \
+            sk[s] != sk[s - 1] else 0
+
+
+@tack.kernel
+def _numbered(order, ids, connectivity):
+    # Each corner entry's point: its run's number.
+    for s in range(order.shape[0]):
+        connectivity[order[s]] = ids[s] - 1
+
+
+@tack.func
+def _along(axis, n, index, finest):
+    # The position of lattice line ``index`` along a root axis of ``n`` cells.
+    c = min(index >> tack.i64(finest), tack.i64(n - 1))
+    f = tack.f64(index - (c << tack.i64(finest))) / tack.f64(tack.i64(1) << tack.i64(finest))
+    return axis[c] + f * (axis[c + 1] - axis[c])
+
+
+@tack.kernel
+def _lattice_points(si, sj, sk, flags, ids, ax, ay, az, nx, ny, nz, finest, dimension,
+                    plane, out):
+    # Each distinct corner's position, from its lattice index alone, so every
+    # cell that shares it shares the same bits.
+    for s in range(flags.shape[0]):
+        if flags[s] == 1:
+            z = plane
+            if dimension == 3:
+                z = _along(az, nz, sk[s], finest)
+            out[ids[s] - 1] = [_along(ax, nx, si[s], finest), _along(ay, ny, sj[s], finest), z]
+
+
+@tack.func
+def _root_cell(axis, n, x, tolerance):
+    # The cell of axis lines axis[0..n] holding x (the last at its upper end), or
+    # -1 outside by more than ``tolerance`` of the end cell's width.
+    cell = -1
+    if x >= axis[0] - tolerance * (axis[1] - axis[0]) and \
+            x <= axis[n] + tolerance * (axis[n] - axis[n - 1]):
+        lo = 0
+        hi = n - 1
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if axis[mid] <= x:
+                lo = mid
+            else:
+                hi = mid - 1
+        cell = lo
+    return cell
+
+
+@tack.func
+def _lattice_index(axis, c, x, finest):
+    # x's integer coordinate in root cell c at the finest level, clamped inside.
+    cells = tack.i64(1) << tack.i64(finest)
+    f = (x - axis[c]) / (axis[c + 1] - axis[c])
+    index = tack.i64(floor(max(f, 0.0) * tack.f64(cells)))
+    return tack.u64(min(index, cells - 1))
+
+
+@tack.kernel
+def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tree, level,
+                 carried, finest, marks, hidden, found):
+    # The leaf holding each point: its root cell by binary searches of the axes,
+    # its code at the finest level, then the last node whose (tree, key carried
+    # to the finest level) is at most the point's -- in pre-order, the leaf whose
+    # run of codes holds it.
+    for q in range(found.shape[0]):
+        p = points[q]
+        found[q] = -1
+        cx = _root_cell(ax, nx, p[0], tolerance)
+        cy = _root_cell(ay, ny, p[1], tolerance)
+        cz = 0
+        if dimension == 3:
+            cz = _root_cell(az, nz, p[2], tolerance)
+        if cx >= 0 and cy >= 0 and cz >= 0:
+            i = _lattice_index(ax, cx, p[0], finest)
+            j = _lattice_index(ay, cy, p[1], finest)
+            m = tack.u64(0)
+            if dimension == 3:
+                m = _lattice_index(az, cz, p[2], finest)
+            code = tack.u64(0)
+            for b in range(finest):
+                code = code | (((i >> tack.u64(b)) & tack.u64(1)) << tack.u64(dimension * b))
+                code = code | (((j >> tack.u64(b)) & tack.u64(1)) << tack.u64(dimension * b + 1))
+                if dimension == 3:
+                    code = code | (((m >> tack.u64(b)) & tack.u64(1))
+                                   << tack.u64(dimension * b + 2))
+            t = tack.i64(cx) + tack.i64(nx) * (tack.i64(cy) + tack.i64(ny) * tack.i64(cz))
+            lo = tack.i64(0)
+            hi = tack.i64(tree.shape[0])
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if tree[mid] < t or (tree[mid] == t and carried[mid] <= code):
+                    lo = mid + 1
+                else:
+                    hi = mid
+            n = lo - 1
+            if n >= 0 and tree[n] == t and (marks[n] & hidden) == 0:
+                # A point outside the roots (or off a 2D octree's plane) is held
+                # within the share of the leaf's diagonal a dataset's locator
+                # accepts outside a cell.
+                scale = 1.0 / tack.f64(tack.i64(1) << tack.i64(level[n]))
+                sx = (ax[cx + 1] - ax[cx]) * scale
+                sy = (ay[cy + 1] - ay[cy]) * scale
+                sz = 0.0
+                if dimension == 3:
+                    sz = (az[cz + 1] - az[cz]) * scale
+                ox = max(ax[0] - p[0], p[0] - ax[nx], 0.0)
+                oy = max(ay[0] - p[1], p[1] - ay[ny], 0.0)
+                oz = abs(p[2] - plane)
+                if dimension == 3:
+                    oz = max(az[0] - p[2], p[2] - az[nz], 0.0)
+                reach = tolerance * tolerance * (sx * sx + sy * sy + sz * sz)
+                if ox * ox + oy * oy + oz * oz <= reach:
+                    found[q] = n
+
+
+@tack.kernel
+def _take_found(found, values, out):
+    for q in range(found.shape[0]):
+        e = found[q]
+        if e >= 0:
+            out[q] = values[e]
+
+
+@tack.kernel
+def _found_valid(found, out):
+    for q in range(found.shape[0]):
+        out[q] = 1 if found[q] >= 0 else 0
 
 
 class OctreeDataSet:
@@ -128,6 +291,7 @@ class OctreeDataSet:
         for name, values in (fields or {}).items():
             self.fields[name] = _reordered(values, order, device, len(order), name)
         self._geometry = None
+        self._carried_keys = None
 
     # -- what it holds ---------------------------------------------------
 
@@ -148,21 +312,26 @@ class OctreeDataSet:
     def origin(self):
         return self.roots.origin
 
-    def leaves(self):
+    @property
+    def is_leaf(self):
         """Which nodes are leaves: a bool host array, in the nodes' order."""
         return (self.marks.numpy() & Ghosts.REFINEDCELL) == 0
 
+    @property
+    def finest(self):
+        """The deepest level of this rank's nodes (0 with none)."""
+        return int(self._level.max()) if len(self._level) else 0
+
     def __repr__(self):
         return (f"OctreeDataSet({self.num_trees} trees, {self.num_nodes} nodes, "
-                f"{int(self.leaves().sum())} leaves, {self.dimension}D)")
+                f"{int(self.is_leaf.sum())} leaves, {self.dimension}D)")
 
     def geometry(self):
         """Each node's lower corner and sides, relative to ``origin``: two arrays of
         3-vectors (f64 where the device has it, else the roots' type), from the
         keys, made once."""
         if self._geometry is None:
-            dtype = tack.f64 if tack.f64 in self.device._backend.supported_dtypes else \
-                self.roots.dtype
+            dtype = _compute_type(self.device, self.roots.dtype)
             lo, size = _root_cells(self.roots)
             with self.device:
                 root_lo = tack.array(lo.astype(dtype.numpy_dtype), tack.vec3(dtype))
@@ -185,6 +354,204 @@ class OctreeDataSet:
         _, sides = self.geometry()
         s = sides.numpy().reshape(-1, 3)
         return s[:, 0] * s[:, 1] * (s[:, 2] if self.dimension == 3 else 1.0)
+
+    # -- the leaves as cells --------------------------------------------
+
+    def leaves(self):
+        """This rank's leaves as a ``DataSet`` of voxels (pixels in 2D), relative to
+        ``origin``: cell ``c`` is the ``c``-th leaf in the nodes' order
+        (``np.flatnonzero(octree.is_leaf)[c]``), with every field's value there as
+        cell data, and hidden leaves ``HIDDENCELL``. Corners that coincide are one
+        point, found by sorting their indices on the finest level's lattice;
+        hanging corners stay hanging, as the tree has them. Every filter that
+        reads cell data works on it (``threshold``, ``cell_centers``, ``probe``).
+
+        Each rank gives its own trees' leaves; a corner on a face between two
+        ranks' trees is a point on both, unmarked."""
+        from tack.algorithms import argsort, gather, inclusive_scan
+        from tack.dataset import ids, shapes
+        from tack.dataset.dataset import DataSet, Field
+        from tack.dataset.spaces import Constant
+        from tack.dataset.topology import UnstructuredTopology, uniform_cells
+
+        d = self.dimension
+        is_leaf = self.is_leaf
+        count = int(is_leaf.sum())
+        corners = count << d
+        finest = self.finest
+        nx, ny, nz = ([n - 1 for n in self.roots.topology.point_dims] + [1])[:3]
+        idt = ids.choose(None, corners)
+        dtype = _compute_type(self.device, self.roots.dtype)
+        with self.device:
+            leaf = tack.array(np.flatnonzero(is_leaf).astype(np.int64), tack.i64)
+            columns = [tack.empty((corners,), tack.i64) for _ in range(3)]
+            if count:
+                _leaf_corners(leaf, self.tree, self.level, self.key, nx, ny, d, finest,
+                              *columns)
+            # Sorted by z, then y, then x (stable sorts from the fastest axis), so
+            # points come x fastest; the runs of equal corners are the points.
+            order = argsort(columns[0], index_dtype=tack.i64) if corners else \
+                tack.empty((0,), tack.i64)
+            for column in columns[1:d]:
+                if corners:
+                    order = gather(order, argsort(gather(column, order), index_dtype=tack.i64))
+            si, sj, sk = (gather(c, order) for c in columns)
+            flags = tack.empty((corners,), tack.i32)
+            numbers = tack.empty((corners,), tack.i64)
+            connectivity = tack.empty((corners,), idt)
+            points = 0
+            if corners:
+                _run_starts(si, sj, sk, flags)
+                points = int(inclusive_scan(flags, numbers, corners))
+                _numbered(order, numbers, connectivity)
+            axes, plane = self._axes(dtype)
+            positions = tack.empty((points,), tack.vec3(self.roots.dtype))
+            if points:
+                _lattice_points(si, sj, sk, flags, numbers, *axes, nx, ny, nz, finest, d,
+                                plane, positions)
+            types, offsets = uniform_cells(shapes.VOXEL if d == 3 else shapes.PIXEL, count,
+                                           idt)
+            topology = UnstructuredTopology(types, offsets, connectivity, num_points=points)
+            fields = {name: Field(Constant(topology), gather(values, leaf))
+                      for name, values in self.fields.items()}
+            marks = gather(self.marks, leaf)
+            ghosts = None
+            if count and (marks.numpy() & Ghosts.HIDDENCELL).any():
+                hidden = marks.numpy() & Ghosts.HIDDENCELL
+                ghosts = Ghosts(cells=tack.array(hidden.astype(np.uint8), tack.u8))
+        return DataSet(topology, positions, fields=fields, dtype=self.roots.dtype,
+                       ghosts=ghosts, origin=self.origin)
+
+    # -- probing ---------------------------------------------------------
+
+    def _probe(self, where, fields):
+        """``probe(octree, where)``: each point's leaf value (``probe``'s
+        docstring)."""
+        from tack.communication._kernels import gather
+        from tack.dataset.algorithms._extract import _vertices
+        from tack.dataset.dataset import DataSet, Field, relative_positions
+        from tack.dataset.ghosts import keep_marks
+        from tack.dataset.partitioned import PartitionedDataSet
+        from tack.dataset.spaces import H1, Values
+
+        names = list(self.fields) if fields is None else list(fields)
+        for name in names:
+            self._field_values(name)
+        many = isinstance(where, PartitionedDataSet)
+        targets = list(where) if many else [where]
+        for i, target in enumerate(targets):
+            if not isinstance(target, DataSet):
+                targets[i] = _vertices(relative_positions(target, self.origin), self.roots)
+            elif not isinstance(target.geometry.space, H1):
+                raise TypeError("probe needs the probed points: an H1 geometry")
+        points = [relative_positions(t, self.origin) for t in targets]
+        counts = [len(p) for p in points]
+        x = np.concatenate(points) if points else np.zeros((0, 3))
+        if self.world.size == 1:
+            values = self._probed(x, names)
+        else:
+            values = self._probed_over_ranks(x, names)
+        out = []
+        start = 0
+        for target, n in zip(targets, counts):
+            kept = dict(target.fields)
+            rows = tack.arange(start, start + n, dtype=tack.i64, device=self.device)
+            for name in [*names, "valid"]:
+                array = gather(values[name], rows).to_device(target.device)
+                kept[name] = Field(Values(target, "points") if name == "valid" else
+                                   H1(target), array)
+            start += n
+            out.append(keep_marks(target, DataSet(target.topology, target.geometry,
+                                                  fields=kept, sets=dict(target.sets))))
+        return PartitionedDataSet(out, world=where.world) if many else out[0]
+
+    def _found(self, x):
+        """The leaf holding each point of ``x`` (``(n, 3)`` f64 host, relative to
+        ``origin``), or -1: a device array."""
+        from tack.dataset.locator import _TOLERANCE
+
+        dtype = _compute_type(self.device, self.roots.dtype)
+        nx, ny, nz = ([n - 1 for n in self.roots.topology.point_dims] + [1])[:3]
+        with self.device:
+            points = tack.array(np.ascontiguousarray(x, dtype.numpy_dtype).reshape(-1, 3),
+                                tack.vec3(dtype))
+            found = tack.empty((len(x),), tack.i64)
+            if len(x):
+                axes, plane = self._axes(dtype)
+                _find_leaves(points, *axes, nx, ny, nz, self.dimension, plane, _TOLERANCE,
+                             self.tree, self.level, self._carried(), self.finest, self.marks,
+                             int(Ghosts.HIDDENCELL), found)
+        return found
+
+    def _probed(self, x, names):
+        """Each field's leaf value at the points of ``x``, 0 where none holds one,
+        and ``valid``: arrays on the octree's device."""
+        found = self._found(x)
+        out = {}
+        with self.device:
+            for name in names:
+                values = self._field_values(name)
+                width = arrays.width_of(values)
+                dtype = arrays.dtype_of(values)
+                taken = tack.empty((len(x),), tack.vec(width, dtype) if width else dtype)
+                if len(x):
+                    taken.fill(0)
+                    _take_found(found, values, taken)
+                out[name] = taken
+            valid = tack.empty((len(x),), tack.i32)
+            if len(x):
+                _found_valid(found, valid)
+            out["valid"] = valid
+        return out
+
+    def _probed_over_ranks(self, x, names):
+        """``_probed`` with every rank's trees: each point to the rank whose leaf
+        holds it (the lowest on a tie), probed there and the values sent back."""
+        from tack import communication as tc
+
+        blocks = tc.Blocks([self.device], self.world)
+        g = blocks.local.start
+
+        def holds(gid, y):
+            return (arrays.to_host(self._found(y)) >= 0).astype(np.int64)
+
+        routing = tc.Routing(blocks, {g: x}, {g: self._box()}, holds)
+        y, _ = routing.send()[g]
+        like = {n: v.dtype for n, v in self._probed(np.zeros((0, 3)), names).items()}
+        answers = {g: self._probed(np.asarray(y, np.float64), names)} if len(y) else {}
+        return routing.reply(answers, like)[g]
+
+    def _box(self):
+        """The box of this rank's trees, relative to ``origin``, grown by what the
+        search accepts outside (a share of a root cell, so of any leaf), or None.
+        A 2D octree's box is its plane's, grown the same way along z."""
+        from tack.dataset.locator import _TOLERANCE
+
+        if not len(self._tree):
+            return None
+        lo, size = _root_cells(self.roots)
+        held = np.unique(self._tree)
+        grow = _TOLERANCE * float(np.linalg.norm(size[held], axis=1).max())
+        return lo[held].min(axis=0) - grow, (lo[held] + size[held]).max(axis=0) + grow
+
+    def _axes(self, dtype):
+        """The root grid's lines along x, y and z as device arrays of ``dtype`` (a 2D
+        grid's z axis is its x, unread), and its plane's z."""
+        lines = _root_axes(self.roots)
+        plane = float(_root_cells(self.roots)[0][0, 2]) if self.dimension == 2 else 0.0
+        with self.device:
+            axes = [tack.array(np.asarray(a, dtype.numpy_dtype)) for a in lines]
+        if self.dimension == 2:
+            axes.append(axes[0])
+        return axes, plane
+
+    def _carried(self):
+        """Each node's key carried to the finest level, on the device, made once."""
+        if self._carried_keys is None:
+            shift = (self.dimension * (self.finest - self._level)).astype(np.uint64)
+            with self.device:
+                self._carried_keys = tack.array(self._key << shift, tack.u64)
+        return self._carried_keys
 
     # -- construction from cells ----------------------------------------
 
@@ -266,11 +633,14 @@ class OctreeDataSet:
             np.zeros(bins)
         return _bits(sum(self.world._allgather(counts)))
 
-    def _field(self, name):
+    def _field_values(self, name):
         if name not in self.fields:
             raise KeyError(f"the octree has no field {name!r}: it has "
                            f"{', '.join(map(repr, self.fields)) or 'none'}")
-        values = self.fields[name]
+        return self.fields[name]
+
+    def _field(self, name):
+        values = self._field_values(name)
         if getattr(values, "_vector_n", None):
             raise TypeError("statistics takes a scalar field")
         return values
@@ -388,6 +758,11 @@ def _reordered(values, order, device, n, name):
             return tack.array(np.ascontiguousarray(host),
                               tack.vec(host.shape[1], from_numpy_dtype(host.dtype)))
         return tack.array(np.ascontiguousarray(host))
+
+
+def _compute_type(device, fallback):
+    """The type positions are computed in: f64 where the device has it."""
+    return tack.f64 if tack.f64 in device._backend.supported_dtypes else fallback
 
 
 def _root_axes(roots):

@@ -1,6 +1,7 @@
 """``test_octrees``' check under MPI: ``mpiexec -n 2 python _octree_mpi.py``. Each
 rank holds a share of the trees; every rank's statistics and entropy of the
-octree must be the whole's, to rounding, and rank 0 prints ``ok``."""
+octree must be the whole's, to rounding, its points probed over every rank's
+trees must take the whole's values, and rank 0 prints ``ok``."""
 
 import os
 import sys
@@ -22,6 +23,11 @@ def main():
                                 entropy],
                                [whole.mean, whole.weight, whole.population_variance,
                                 whole_entropy], rtol=1e-6)
+    probed, want = case.probe_across(tc.World(comm))
+    for name in ("valid", "T", "v"):
+        np.testing.assert_array_equal(probed.fields[name].values.numpy(),
+                                      want.fields[name].values.numpy())
+    assert 0 < want.fields["valid"].values.numpy().sum() < probed.num_points
     done = comm.gather(True, root=0)
     if comm.rank == 0 and all(done):
         print(f"ok: {whole.n} leaves, {comm.size} ranks", flush=True)
