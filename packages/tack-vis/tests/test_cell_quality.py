@@ -23,6 +23,15 @@ needs_vtk = pytest.mark.skipif(vtkMeshQuality is None, reason="needs VTK, the re
 
 pytestmark = pytest.mark.quick
 
+
+@pytest.fixture(autouse=True)
+def on_each_f64_backend(f64_backend):
+    """Measured in f64 against VTK, so on every backend that has f64 -- the CPU, and
+    CUDA, HIP or Level Zero where present -- whatever the run's default device.
+    Metal has none; a device without f64 is checked by test_dataset_devices."""
+    yield f64_backend
+    tack.set_default_device("cpu")
+
 S2, S3 = np.sqrt(2.0), np.sqrt(3.0)
 #: Each linear shape: its VTK type, ideal cell and edges.
 SHAPES = {
