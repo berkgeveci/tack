@@ -18,6 +18,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   cells meeting there and their angle, as VTK's `vtkFeatureEdges` (matched
   edge for edge), as line cells on the same points with an `EdgeKind` cell
   field.
+- `clip` of polyhedral topologies: each cut cell becomes the polyhedron of its
+  kept part, its faces clipped once (so the output is conforming) and its
+  iso-polygons (López's, as `contour` traces them) as caps; volumes equal the
+  shape-based clip's for planes.
 - Time on datasets, for filters that stream steps (in situ): `DataSet(...,
   time=, time_unit=)`, kept by every filter as the origin is; pieces and AMR
   boxes at two times are refused; VTK's `DATA_TIME_STEP` both ways.

@@ -539,15 +539,17 @@ def _renumber_vertices(vertices, vertex_of_pair):
         vertices[i] = vertex_of_pair[vertices[i]]
 
 
-def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
-    """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
-    ``PolygonalTopology`` -- polygons, not triangles."""
-    from tack.dataset.polyhedra import PolygonalTopology, SizeBuckets
+def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
+    """A polyhedral topology's iso-polygons of point ``values`` at ``levels``, by López's
+    tracing: ``(poly_starts, vertices, poly_cells, poly_levels, polygons, ends,
+    weights, positions, count)`` -- each polygon's iso-vertices (CSR, in the
+    order traced), its cell and level, and per iso-vertex the points it lies
+    between (``ends``: ``(a, a)`` at a point whose value is the level, else the
+    edge's lower point id first), its weight from ``a`` and its position.
+    Polygons come in cell order."""
+    from tack.dataset.polyhedra import SizeBuckets
 
     t = data.topology
-    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
-        raise TypeError("a polyhedral topology contours point data")
-    values = arrays.materialize(field.values)
     entries = int(t.cell_faces.shape[0])
     idt = data.id_dtype
     # A face's crossings are at most its points; every face is in two cells at most.
@@ -608,7 +610,7 @@ def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
     offsets, count = run_offsets(names, order)
     positions = tack.empty((count,), tack.vec(3, data.dtype))
     ends = tack.empty((count,), tack.vec(2, idt))
-    weights = tack.empty((count,), arrays.dtype_of(field.values))
+    weights = tack.empty((count,), weight_dtype)
     vertex_of_pair = tack.empty((pairs,), odt)
     if count:
         _iso_vertices(names, order, offsets, values, levels, nlevels,
@@ -639,6 +641,20 @@ def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
             poly_starts, vertices, poly_cells, polygons = starts, out_vertices, out_cells, kept
             poly_levels = out_levels
             # Iso-vertices only dropped polygons used are left over, unused.
+    return (poly_starts, vertices, poly_cells, poly_levels, polygons, ends, weights,
+            positions, count)
+
+
+def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
+    """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
+    ``PolygonalTopology`` -- polygons, not triangles."""
+    from tack.dataset.polyhedra import PolygonalTopology
+
+    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
+        raise TypeError("a polyhedral topology contours point data")
+    values = arrays.materialize(field.values)
+    (poly_starts, vertices, poly_cells, poly_levels, polygons, ends, weights, positions,
+     count) = _lopez_polygons(data, values, levels, nlevels, arrays.dtype_of(field.values))
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
     return _with_levels(carry(data, surface, points=Interpolate(ends, weights),
                               cells=Pieces(poly_cells), geometry=Field(H1(surface), positions),

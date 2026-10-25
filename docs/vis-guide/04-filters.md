@@ -196,7 +196,7 @@ assert td.feature_edges(open_top).num_cells == 12           # its boundary
 | Select whole cells; measure cells | Yes | Yes | Yes |
 | Extract boundaries | Yes, subject to line-cell limitations | Yes | Chain ends |
 | Contour or slice | Yes, of order-1 and `L2` fields (an order-2 `H1` field is refused) | Yes | Currently unsupported |
-| Clip cells | H1 geometry required | Currently unsupported | Currently unsupported |
+| Clip cells | H1 geometry required | Polyhedra: yes, into polyhedra (faces clipped, iso-polygons as caps); polygons not yet | Currently unsupported |
 | Project between point and cell data | Yes | Yes | Yes |
 | Gradients and flow quantities | Yes | Yes: Green–Gauss over each polyhedron's faces (exact for linear fields); zero on polygons | Yes (zero) |
 | Locate cells and probe | Yes | Yes: in sub-tetrahedra or fanned triangles; cells must be star-shaped from their points' mean | Yes, on segments |

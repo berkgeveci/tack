@@ -116,6 +116,7 @@ CALLS = {
     "contour": lambda d: td.contour(d, "s", 3.0),
     "slice": lambda d: td.slice(d, td.Plane((0.5, 0, 0), (1, 0, 0))),
     "clip": lambda d: td.clip(d, "s", 3.0),
+    "clip_polyhedra": lambda d: td.clip(td.as_polyhedra(d), "s", 3.0),
     "threshold": lambda d: td.threshold(d, "s", 0.0, 3.0),
     "extract_geometry": lambda d: td.extract_geometry(d, td.Sphere((0, 0, 0), 1.5)),
     "extract_cells": lambda d: td.extract_cells(d, [0, 1]),
