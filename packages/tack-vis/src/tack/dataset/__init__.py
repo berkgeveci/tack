@@ -108,6 +108,7 @@ from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
 from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.dataset.locator import CellLocator, Locations
+from tack.dataset.octree import OctreeDataSet
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.point_locator import PointLocator
 from tack.dataset.polyhedra import (
@@ -138,6 +139,7 @@ __all__ = [
     "Ghosts",
     "GlobalIds",
     "Locations",
+    "OctreeDataSet",
     "ParticleStatus",
     "PartitionedDataSet",
     "Plane",

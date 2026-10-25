@@ -440,6 +440,10 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     shift = np.asarray(as_origin(origin))
     if isinstance(grid, vtkOverlappingAMR):
         return _amr_to_dataset(grid, options)
+    from vtkmodules.vtkCommonDataModel import vtkHyperTreeGrid
+
+    if isinstance(grid, vtkHyperTreeGrid):
+        return _htg_to_octree(grid, dtype)
     if isinstance(grid, vtkPartitionedDataSetCollection):
         return _collection_to_datasets(grid, options)
     if isinstance(grid, vtkPartitionedDataSet):
@@ -577,6 +581,145 @@ def _amr_to_dataset(amr, options):
         if level + 1 < amr.GetNumberOfLevels():
             ratios.append(int(amr.GetRefinementRatio(level)))
     return AMRDataSet(levels, ratios)
+
+
+def _bits(array):
+    """A ``vtkBitArray`` as a NumPy array of 0 and 1."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
+
+    out = vtkUnsignedCharArray()
+    out.DeepCopy(array)
+    return np.asarray(out).reshape(-1).astype(np.uint8)
+
+
+def _htg_to_octree(htg, dtype):
+    """A ``vtkHyperTreeGrid`` of branching factor 2 as an ``OctreeDataSet``: each
+    tree's breadth-first descriptor read in one call and turned into Morton
+    keys, level by level (a refined node's children are its key shifted by the
+    dimension, the child's index below: HyperTreeGrid numbers children x
+    fastest, as a Morton key's bits run)."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import vtkBitArray, vtkIdList, vtkTypeInt64Array
+
+    from tack.dataset import OctreeDataSet, rectilinear_grid
+
+    if htg.GetBranchFactor() != 2:
+        raise ValueError("an octree has a branching factor of 2; this HyperTreeGrid's is "
+                         f"{htg.GetBranchFactor()}")
+    dims = list(htg.GetDimensions())
+    d = htg.GetDimension()
+    if [n > 1 for n in dims] != [True] * d + [False] * (3 - d):
+        raise ValueError(f"an octree's root grid spans x and y (and z), not points {dims}")
+    axes = [np.asarray(c, np.float64) for c in (htg.GetXCoordinates(), htg.GetYCoordinates(),
+                                                htg.GetZCoordinates())][:d]
+    roots = rectilinear_grid(*axes, dtype=dtype)
+    cells = [n - 1 for n in dims[:d]] + [1] * (3 - d)
+    children = np.arange(2 ** d, dtype=np.uint64)
+    tree, level, key, order = [], [], [], []
+    for t in range(htg.GetMaxNumberOfTrees()):
+        ht = htg.GetTree(t)
+        if ht is None:
+            continue
+        descriptor, per_depth, ids = vtkBitArray(), vtkTypeInt64Array(), vtkIdList()
+        ht.ComputeBreadthFirstOrderDescriptor(htg.GetDepthLimiter(), None, per_depth,
+                                              descriptor, ids)
+        refined = _bits(descriptor)
+        counts = np.asarray(per_depth, np.int64).reshape(-1)
+        keys = [np.zeros(1, np.uint64)]
+        start = 0
+        for depth, count in enumerate(counts[:-1]):
+            split = refined[start:start + count].astype(bool)
+            start += count
+            keys.append(((keys[-1][split] << np.uint64(d))[:, None] | children).reshape(-1))
+        if htg.GetTransposedRootIndexing():     # tree index k fastest: ours is x fastest
+            k, rest = t % cells[2], t // cells[2]
+            j, i = rest % cells[1], rest // cells[1]
+            t = i + cells[0] * (j + cells[1] * k)
+        n = int(counts.sum())
+        tree.append(np.full(n, t, np.int64))
+        level.append(np.repeat(np.arange(len(counts)), counts))
+        key.append(np.concatenate(keys))
+        order.append(np.array([ids.GetId(i) for i in range(ids.GetNumberOfIds())], np.int64))
+    tree, level, key, order = (np.concatenate(a) if a else np.zeros(0, np.int64)
+                               for a in (tree, level, key, order))
+    data = htg.GetCellData()
+    fields = {}
+    for i in range(data.GetNumberOfArrays()):
+        array = data.GetArray(i)
+        if array is None or array.GetName() in (None, "", "vtkGhostType"):
+            continue
+        # A bit array reads as packed bytes: unpack it, one 0 or 1 per cell.
+        values = _bits(array) if isinstance(array, vtkBitArray) else np.asarray(array)
+        if values.ndim == 2 and values.shape[1] == 1:
+            values = values[:, 0]
+        if values.dtype.kind == "f":
+            values = values.astype(dtype.numpy_dtype)
+        fields[array.GetName()] = values[order]
+    mask = None
+    if htg.HasMask():
+        mask = _bits(htg.GetMask())[order]
+    return OctreeDataSet(roots, tree, level, key.astype(np.uint64), fields=fields, mask=mask)
+
+
+def _octree_to_htg(octree):
+    """An ``OctreeDataSet`` as a ``vtkHyperTreeGrid``: each tree built from its
+    breadth-first descriptor (its nodes by level, then key), its cell data in
+    that order, the trees one after another; ``HIDDENCELL`` as the mask."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import vtkDoubleArray
+    from vtkmodules.vtkCommonDataModel import (
+        vtkHyperTreeGrid,
+        vtkHyperTreeGridNonOrientedCursor,
+    )
+
+    from tack.dataset import Ghosts
+    from tack.dataset.octree import _root_axes
+
+    d = octree.dimension
+    axes = _root_axes(octree.roots)
+    origin = np.asarray(octree.origin, np.float64)
+    out = vtkHyperTreeGrid()
+    out.SetBranchFactor(2)
+    out.SetDimensions(*([len(a) for a in axes] + [1] * (3 - d)))
+    coordinates = [a + origin[i] for i, a in enumerate(axes)] + [np.zeros(1)] * (3 - d)
+    out.SetXCoordinates(vtkDoubleArray(coordinates[0]))
+    out.SetYCoordinates(vtkDoubleArray(coordinates[1]))
+    out.SetZCoordinates(vtkDoubleArray(coordinates[2]))
+    tree, level, key = octree._tree, octree._level, octree._key
+    marks = octree.marks.numpy()
+    # Breadth-first within each tree: by tree, level, then key.
+    order = np.lexsort((key, level, tree))
+    refined = (marks & Ghosts.REFINEDCELL) != 0
+    cursor = vtkHyperTreeGridNonOrientedCursor()
+    start = 0
+    for t in np.unique(tree):
+        rows = order[tree[order] == t]
+        last = level[rows].max()
+        bits = refined[rows][level[rows] < last]
+        descriptor = _to_bits(bits)
+        out.InitializeNonOrientedCursor(cursor, int(t), True)
+        ht = cursor.GetTree()
+        ht.SetGlobalIndexStart(start)
+        ht.BuildFromBreadthFirstOrderDescriptor(descriptor, len(bits), 0)
+        start += len(rows)
+    cell_data = out.GetCellData()
+    for name, values in octree.fields.items():
+        cell_data[name] = np.ascontiguousarray(np.asarray(values.numpy())[order])
+    hidden = (marks[order] & Ghosts.HIDDENCELL) != 0
+    if hidden.any():
+        out.SetMask(_to_bits(hidden))
+    return out
+
+
+def _to_bits(values):
+    """A ``vtkBitArray`` of ``values`` (0 and 1), copied in one call."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import vtkBitArray, vtkUnsignedCharArray
+
+    out = vtkBitArray()
+    out.DeepCopy(vtkUnsignedCharArray(np.ascontiguousarray(values, np.uint8)))
+    return out
 
 
 def _rehomed(field, topology):
@@ -757,6 +900,10 @@ def dataset_to_vtk(data):
 
     if isinstance(data, dict):
         return _datasets_to_collection(data)
+    from tack.dataset import OctreeDataSet
+
+    if isinstance(data, OctreeDataSet):
+        return _octree_to_htg(data)
     if isinstance(data, AMRDataSet):
         out = _amr_to_vtk(data)
         if out is not None:
