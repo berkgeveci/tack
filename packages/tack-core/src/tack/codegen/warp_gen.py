@@ -57,11 +57,18 @@ _MATH = {
 
 _INDEX = i64
 _FLOATS = frozenset((f32, f64))
+#: Integer operations that can overflow, done through `_wrapping_helper`.
+_WRAPPING = {"+": "add", "-": "sub", "*": "mul", "<<": "shl", "neg": "neg", "abs": "abs"}
 _SIGNED = frozenset((i8, i16, i32, i64))
 
 
 def warp_type(dtype: ScalarType) -> str:
     return _WARP_TYPES[dtype]
+
+
+def _carrier(dtype: ScalarType) -> str:
+    """The unsigned Warp type an integer of ``dtype`` computes in: 32 bits at least."""
+    return "wp.uint64" if dtype.bits == 64 else "wp.uint32"
 
 
 def _v(name: str) -> str:
@@ -211,16 +218,42 @@ class WarpCodeGen:
         self._body(node.body)
 
     def _sequential_for(self, node: ir.IRSequentialFor):
-        # Warp's range takes 32-bit bounds; the loop variable stays 64-bit.
-        it = self._fresh_name("it")
-        bounds = [self._typed(node.start, i32), self._typed(node.end, i32)]
-        if node.step is not None:
-            bounds.append(self._typed(node.step, i32))
-        self._emit(f"for {it} in range({', '.join(bounds)}):")
+        """Python's ``range`` over 64-bit bounds, captured at entry. Warp's own
+        ``range`` takes 32-bit bounds, and a wrapped 64-bit bound truncated to
+        32 bits ran nearly forever, so the loop counts its trips (in unsigned
+        arithmetic, which cannot overflow) and steps before the body, so a
+        ``continue`` steps too."""
+        k, n = self._fresh_name("k"), self._fresh_name("trips")
+        start = self._fresh_name("start")
+        step = self._typed(node.step, _INDEX) if node.step is not None else "wp.int64(1)"
+        self._emit(f"{start} = {self._typed(node.start, _INDEX)}")
+        stride = self._fresh_name("step")
+        self._emit(f"{stride} = {step}")
+        self._emit(f"{n} = {self._trip_count_helper()}({start}, "
+                   f"{self._typed(node.end, _INDEX)}, {stride})")
+        self._emit(f"{k} = wp.uint64(0)")
+        self._emit(f"while {k} < {n}:")
         self._indent += 1
-        self._emit(f"{_v(node.var)} = wp.int64({it})")
+        self._emit(f"{_v(node.var)} = wp.int64(wp.uint64({start}) + {k} * wp.uint64({stride}))")
+        self._emit(f"{k} = {k} + wp.uint64(1)")
         self._body(node.body)
         self._indent -= 1
+
+    def _trip_count_helper(self):
+        name = "tack_trip_count"
+        if name not in self._helpers:
+            self._helpers[name] = [
+                "@wp.func",
+                f"def {name}(start: wp.int64, end: wp.int64, step: wp.int64) -> wp.uint64:",
+                "    if step > wp.int64(0) and start < end:",
+                ("        return (wp.uint64(end) - wp.uint64(start) - wp.uint64(1)) // wp.uint64(step)"
+                 " + wp.uint64(1)"),
+                "    if step < wp.int64(0) and start > end:",
+                ("        return (wp.uint64(start) - wp.uint64(end) - wp.uint64(1)) // "
+                 "(wp.uint64(0) - wp.uint64(step)) + wp.uint64(1)"),
+                "    return wp.uint64(0)",
+            ]
+        return name
 
     # ── Expressions ──────────────────────────────────────────────────
 
@@ -241,7 +274,8 @@ class WarpCodeGen:
 
     def _typed(self, node, dtype):
         """``node`` as a value of ``dtype``: Warp converts nothing implicitly."""
-        if isinstance(node, (ir.IRCompare, ir.IRBoolOp)):
+        if isinstance(node, (ir.IRCompare, ir.IRBoolOp)) or (
+                isinstance(node, ir.IRUnaryOp) and node.op == "not"):
             return f"({warp_type(dtype)}(1) if {self._cond(node)} else {warp_type(dtype)}(0))"
         if isinstance(node, ir.IRConstant):
             return self._constant(node.value, dtype)
@@ -286,8 +320,14 @@ class WarpCodeGen:
                 return self._expr(node.operand)
             if node.op == "not":
                 return self._typed(node, node.dtype)
-            op = {"-": "-", "~": "~"}[node.op]
-            return f"({op}{self._typed(node.operand, node.dtype)})"
+            operand = self._typed(node.operand, node.dtype)
+            if node.op == "-" and node.dtype not in _FLOATS:
+                return f"{self._wrapping_helper('neg', node.dtype)}({operand})"
+            if node.op == "-":
+                # Warp's float negation gives +0.0 for 0.0 (as 0 - x would);
+                # a product with -1 flips the sign of every value exactly.
+                return f"({operand} * {self._constant(-1.0, node.dtype)})"
+            return f"({node.op}{operand})"
         if isinstance(node, (ir.IRCompare, ir.IRBoolOp)):
             return self._typed(node, node.dtype)
         if isinstance(node, ir.IRIfExp):
@@ -315,6 +355,8 @@ class WarpCodeGen:
             exponent = self._type_of(node.right)
             return (f"{self._power_helper(t, exponent)}({left}, "
                     f"{self._typed(node.right, exponent)})")
+        if node.op in _WRAPPING and t not in _FLOATS:
+            return f"{self._wrapping_helper(node.op, t)}({left}, {right})"
         return f"({left} {_BINOPS[node.op]} {right})"
 
     def _call(self, node: ir.IRCall) -> str:
@@ -322,14 +364,20 @@ class WarpCodeGen:
         args = [self._typed(a, t) for a in node.args]
         name = node.func_name
         if name in ("min", "max"):
+            pick = self._float_extremum_helper(name, t) if t in _FLOATS else f"wp.{name}"
             out = args[0]
             for arg in args[1:]:
-                out = f"wp.{name}({out}, {arg})"
+                out = f"{pick}({out}, {arg})"
             return out
         if name == "exp2":
             return f"wp.pow({self._constant(2, t)}, {args[0]})"
+        if name == "abs" and t not in _FLOATS:
+            return f"{self._wrapping_helper('abs', t)}({args[0]})"
         if name == "pow" and t not in _FLOATS:
-            return f"{self._power_helper(t, t)}({args[0]}, {args[1]})"
+            # The exponent keeps its own type, as for ``**``.
+            exponent = self._type_of(node.args[1])
+            return (f"{self._power_helper(t, exponent)}({args[0]}, "
+                    f"{self._typed(node.args[1], exponent)})")
         return f"{_MATH[name]}({', '.join(args)})"
 
     def _table_load(self, node: ir.IRTableLoad) -> str:
@@ -359,12 +407,25 @@ class WarpCodeGen:
         if name not in self._helpers:
             w = warp_type(t)
             if t in _FLOATS:
-                body = [
-                    "    r = wp.mod(a, b)",
-                    f"    if r != {w}(0.0) and ((r < {w}(0.0)) != (b < {w}(0.0))):",
-                    "        r = r + b",
-                ]
-                result = "r" if op == "%" else "wp.round((a - r) / b)"
+                # float_division.py's helpers: a truncating remainder corrected
+                # to the divisor's sign, the quotient rebuilt and snapped; a
+                # zero remainder takes the divisor's sign, a zero quotient the
+                # sign of true division.
+                zero, one = f"{w}(0.0)", f"{w}(1.0)"
+                body = ["    r = wp.mod(a, b)", "    q = (a - r) / b",
+                        f"    if r != {zero}:",
+                        f"        if (r < {zero}) != (b < {zero}):",
+                        "            r = r + b",
+                        f"            q = q - {one}",
+                        "    else:",
+                        f"        r = wp.copysign({zero}, b)"]
+                if op == "//":
+                    body += [f"    if q == {zero}:",
+                             f"        return wp.copysign({zero}, a / b)",
+                             "    result = wp.floor(q)",
+                             f"    if q - result > {w}(0.5):",
+                             f"        result = result + {one}"]
+                result = "r" if op == "%" else "result"
             elif t in _SIGNED:
                 body = [
                     "    q = a / b",       # C++ truncation in Warp for integer /
@@ -381,24 +442,57 @@ class WarpCodeGen:
                                    *body, f"    return {result}"]
         return name
 
+    def _float_extremum_helper(self, name, t):
+        """Scalar floating min/max preferring a number to NaN, as C's fmin/fmax."""
+        helper = f"tack_f{name}_{t.name}"
+        if helper not in self._helpers:
+            w, op = warp_type(t), "<" if name == "min" else ">"
+            self._helpers[helper] = [
+                "@wp.func", f"def {helper}(a: {w}, b: {w}) -> {w}:",
+                "    if wp.isnan(a):", "        return b",
+                "    if wp.isnan(b):", "        return a",
+                f"    return a if a {op} b else b"]
+        return helper
+
     def _power_helper(self, t, exponent_type):
-        """Integer power by squaring, wrapping at the base's width."""
+        """Integer power by squaring in the unsigned carrier, so every product
+        wraps at the base's width (the exponent is nonnegative, Tack's domain)."""
         name = f"tack_ipow_{t.name}_{exponent_type.name}"
         if name not in self._helpers:
-            w, e = warp_type(t), warp_type(exponent_type)
+            w, e, c = warp_type(t), warp_type(exponent_type), _carrier(t)
             self._helpers[name] = [
                 "@wp.func",
                 f"def {name}(base: {w}, exponent: {e}) -> {w}:",
-                f"    result = {w}(1)",
-                "    b = base",
-                "    n = exponent",
-                f"    while n > {e}(0):",
-                f"        if (n & {e}(1)) != {e}(0):",
-                "            result = result * b",
-                "        b = b * b",
-                f"        n = n >> {e}(1)",
-                "    return result",
+                f"    result = {c}(1)",
+                f"    factor = {c}(base)",
+                "    n = wp.uint64(exponent)",
+                "    while n != wp.uint64(0):",
+                "        if (n & wp.uint64(1)) != wp.uint64(0):",
+                "            result = result * factor",
+                "        factor = factor * factor",
+                "        n = n >> wp.uint64(1)",
+                f"    return {w}(result)",
             ]
+        return name
+
+    def _wrapping_helper(self, op, t):
+        """``+``, ``-``, ``*``, ``<<``, negation and ``abs`` wrapping at ``t``'s
+        width. Warp's C++ makes signed overflow undefined (clang folded
+        ``(x * y) // y`` to ``x``) and promotes 8- and 16-bit operands to a signed
+        int, so they run in an unsigned carrier of at least 32 bits and convert
+        back, which is modular (``integer_ops.py`` does the same in C)."""
+        name = f"tack_{_WRAPPING[op]}_{t.name}"
+        if name not in self._helpers:
+            w, c = warp_type(t), _carrier(t)
+            if op == "neg":
+                params, body = f"a: {w}", f"{w}({c}(0) - {c}(a))"
+            elif op == "abs":
+                params = f"a: {w}"
+                body = "a" if t not in _SIGNED else f"({w}({c}(0) - {c}(a)) if a < {w}(0) else a)"
+            else:
+                params, body = f"a: {w}, b: {w}", f"{w}({c}(a) {op} {c}(b))"
+            self._helpers[name] = ["@wp.func", f"def {name}({params}) -> {w}:",
+                                   f"    return {body}"]
         return name
 
 

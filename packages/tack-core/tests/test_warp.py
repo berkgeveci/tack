@@ -125,8 +125,8 @@ def test_ndindex(warp):
 
 
 @tack.kernel
-def _reverse_rows(x, out):
-    for i in range(x.shape[0]):
+def _reverse_rows(x, out, rows):
+    for i in range(rows):
         row = tack.local_array(tack.f32, 4)
         for c in range(4):
             row[c] = x[i * 4 + c]
@@ -137,7 +137,7 @@ def _reverse_rows(x, out):
 def test_local_arrays(warp):
     x = np.arange(32, dtype=np.float32)
     out = tack.empty(32, tack.f32, device=warp)
-    _reverse_rows(tack.array(x, device=warp), out)
+    _reverse_rows(tack.array(x, device=warp), out, 8)
     np.testing.assert_array_equal(out.numpy(), x.reshape(8, 4)[:, ::-1].reshape(-1))
 
 
@@ -220,3 +220,101 @@ def test_names_that_are_cpp_keywords(warp):
     out = tack.empty(4, tack.i32, device=warp)
     _keywords(tack.array(np.arange(4, dtype=np.int32), device=warp), 10, out)
     np.testing.assert_array_equal(out.numpy(), np.arange(4) + 10)
+
+
+@tack.kernel
+def _wrapping(a, b, out):
+    for i in range(a.shape[0]):
+        x, y = a[i], b[i]
+        out[i, 0] = (x * y) // y if y else x
+        out[i, 1] = -x
+        out[i, 2] = abs(x)
+        out[i, 3] = x << 1
+
+
+def test_signed_overflow_wraps(warp):
+    """Warp's C++ makes signed overflow undefined: clang folded ``(x * y) // y`` to x."""
+    lo, hi = np.iinfo(np.int32).min, np.iinfo(np.int32).max
+    a = np.array([lo, lo, hi, -3, 7], np.int32)
+    b = np.array([lo, -2, 2, 0, 3], np.int32)
+
+    def run(d):
+        out = tack.empty((5, 4), tack.i32, device=d)
+        _wrapping(tack.array(a, device=d), tack.array(b, device=d), out)
+        return out.numpy()
+    cpu, on_warp = _both(warp, run)
+    np.testing.assert_array_equal(on_warp, cpu)
+    assert on_warp[0, 0] == 0 and on_warp[0, 1] == lo and on_warp[0, 2] == lo
+
+
+@tack.kernel
+def _negated(a, out):
+    for i in range(a.shape[0]):
+        out[i] = -a[i]
+
+
+def test_negating_zero_gives_negative_zero(warp):
+    """Warp's own float negation gives +0.0 for 0.0."""
+    out = tack.empty(2, tack.f32, device=warp)
+    _negated(tack.array(np.array([0.0, -0.0], np.float32), device=warp), out)
+    assert list(np.signbit(out.numpy())) == [True, False]
+
+
+@tack.kernel
+def _wide_ranges(starts, ends, out):
+    for i in range(starts.shape[0]):
+        total = 0
+        for j in range(starts[i], ends[i], 3):
+            if j % 2 == 0:
+                continue
+            total = total + 1
+        out[i] = total
+
+
+def test_sequential_loops_take_64_bit_bounds(warp):
+    """Warp's ``range`` is 32-bit; the loop counts its trips in 64 bits, and
+    ``continue`` still steps."""
+    starts = np.array([2**40, -5, 10, 2**62], np.int64)
+    ends = np.array([2**40 + 30, 5, 10, 2**62 - 9], np.int64)
+
+    def run(d):
+        out = tack.empty(4, tack.i64, device=d)
+        _wide_ranges(tack.array(starts, device=d), tack.array(ends, device=d), out)
+        return out.numpy()
+    cpu, on_warp = _both(warp, run)
+    np.testing.assert_array_equal(on_warp, cpu)
+    expected = [sum(1 for j in range(s, e, 3) if j % 2) for s, e in zip(starts.tolist(), ends.tolist())]
+    np.testing.assert_array_equal(on_warp, expected)
+
+
+@tack.kernel
+def _powers(a, e, out):
+    for i in range(a.shape[0]):
+        out[i, 0] = a[i] ** e[i]
+        out[i, 1] = pow(a[i], e[i])
+
+
+def test_integer_power_keeps_the_exponents_type(warp):
+    """A u8 base with a u16 exponent of 300: narrowed to the base's type it was 44."""
+    def run(d):
+        out = tack.empty((3, 2), tack.u8, device=d)
+        _powers(tack.array(np.array([3, 2, 255], np.uint8), device=d),
+                tack.array(np.array([300, 9, 2], np.uint16), device=d), out)
+        return out.numpy()
+    cpu, on_warp = _both(warp, run)
+    np.testing.assert_array_equal(on_warp, cpu)
+    np.testing.assert_array_equal(on_warp[:, 0], [pow(3, 300, 256), pow(2, 9, 256), pow(255, 2, 256)])
+
+
+@tack.kernel
+def _extrema(a, b, out):
+    for i in range(a.shape[0]):
+        out[i, 0] = min(a[i], b[i])
+        out[i, 1] = max(a[i], b[i])
+
+
+def test_float_min_and_max_prefer_a_number_to_nan(warp):
+    out = tack.empty((2, 2), tack.f32, device=warp)
+    _extrema(tack.array(np.array([np.nan, 1.0], np.float32), device=warp),
+             tack.array(np.array([2.0, np.nan], np.float32), device=warp), out)
+    np.testing.assert_array_equal(out.numpy(), [[2.0, 2.0], [1.0, 1.0]])
