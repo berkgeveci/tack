@@ -29,6 +29,16 @@ needs_vtk = pytest.mark.skipif(vtkUnstructuredGrid is None, reason="needs VTK")
 pytestmark = pytest.mark.quick
 
 
+@pytest.fixture(autouse=True)
+def cpu():
+    """Units are the host's: datasets here are on the CPU, whatever the default
+    device of the run (a dataset and a point cloud on two devices would be
+    refused before their units are compared)."""
+    tack.set_default_device("cpu")
+    yield
+    tack.set_default_device("cpu")
+
+
 def _labelled(data, spatial="m"):
     """``data`` with a spatial unit, ``s`` in kelvin and ``v`` in metres per second."""
     fields = {"s": td.Field(data.fields["s"].space, data.fields["s"].values, "K"),
