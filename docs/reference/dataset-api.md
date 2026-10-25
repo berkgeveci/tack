@@ -399,7 +399,14 @@ given one.
 |---|---|
 | `locator.neighbors(radius, points=None)` | every point within `radius` (inclusive) of each query, CSR `(offsets, ids)`; the queries are the points themselves, each leaving itself out, unless `points` (a host array of world positions, or a Tack array relative to the origin) are given |
 | `locator.nearest(k, points=None)` | the `k` nearest (`k` up to `MAX_K`, 32), `(ids, squared_distances)`, each `(m, k)`, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched |
-| `locator.grid()` | the sorted points and the grid as a device class, for one's own kernels: `span(x, r)`, `cell(x)`, `bin(i, j, k)`, `first(b)`, `end(b)`, `point(s)` |
+| `locator.grid()` | the sorted points and the grid as a device class, for one's own kernels: `span(x, r)`, `cell(x)`, `bin(i, j, k)`, `first(b)`, `end(b)`, `point(s)`, `offset(p, x)` (point `p` less `x`, to its nearest image in a periodic box) |
+
+`PointLocator(..., periodic=box)` takes a periodic box in world coordinates (a
+side, the box from zero; three sides; or `(lower, upper)` corners), as a
+cosmology simulation's: the bins tile the box exactly, points outside it wrap
+in, and every distance is to a point's nearest image. A search radius must stay
+under half the box (`check_radius`). The point filters below take `periodic=`
+and pass it on; without one, nothing changes (it is compiled out).
 
 ### Point cloud filters
 
@@ -413,6 +420,19 @@ given one.
 | `deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=False)` | points onto an axis-aligned image: into the cell holding each (`"nearest"`, a field on the cells) or onto its corners by trilinear weights (`"cic"`, cloud in cell, on the points), as Viskores' particle density filters and yt. Counts without a field; with one, `"sum"`, `"mean"`, `"count"`, and for `"nearest"` `"min"` and `"max"` (a LiDAR surface model: the highest return per cell of a 2D image). Empty cells hold 0, or NaN for means and extrema; `per_volume` divides by the cell's volume. Points outside are left out. Each target reduced in point order, by a sort: the same bits everywhere |
 | `sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_length="h", mass="mass", density="density", normalize=False, dimension=3)` | SPH values at a target's points (a dataset, or world positions as vertex cells): `sum_j (m_j / rho_j) A_j W(r, h_j)`, each particle reaching to its kernel's support (the scatter form), with `shepard`, the sum of `(m / rho) W`; `normalize` divides by it. Kernels `"cubic"`, `"quartic"`, `"quintic"`, `"wendland"`, VTK's, normalized in 1 to 3 dimensions (the Wendland kernel from 2); within float rounding of `vtkSPHInterpolator`. Smoothing length, mass and density are point fields or numbers; integer fields are not interpolated |
 | `sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass")` | each particle's density by the SPH sum with its own smoothing length (the gather form, SPLASH's), itself included |
+
+### Cosmology halos
+
+Dark matter halos are friends-of-friends groups,
+`connected_components(particles, radius=linking_length, min_size=..., periodic=box)`,
+and `halo_catalog` describes them. Ported from Viskores' cosmotools and
+ParaView's LANL halo finder, with what they lacked: per-particle masses,
+softening, periodic boxes, an applied minimum size (Viskores stores it and never
+uses it), and the pruned most-bound-particle search on every large halo.
+
+| | |
+|---|---|
+| `halo_catalog(particles, region="point_region", mass=1.0, velocity=None, center="mbp", softening=0.0, G=1.0, periodic=None)` | one point per halo (labels of `region` >= 0), at its most bound particle or centre of mass, with `halo`, `count`, `mass` (per-particle masses or one number), `com`, `mbp` (the index of the particle of least potential `-G sum m / sqrt(r^2 + softening^2)`), `potential`, `radius` (the farthest particle from the point), and with `velocity` its mass-weighted mean and one-dimensional `dispersion`. Each halo is unwrapped about its first particle in a periodic box, and its points put back in. The MBP is exact: halos up to 2048 particles sum every pair; larger ones use Viskores' MxN pruning, tightened by bounding each particle against each far bin's box rather than bin against bin (on a concentrated halo of 40,000, 3% are summed exactly instead of 69%). The catalogue shares the particles' origin; every sum runs in particle order |
 
 ## Devices
 

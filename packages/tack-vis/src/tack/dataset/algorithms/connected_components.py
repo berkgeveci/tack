@@ -76,7 +76,7 @@ def _hook_near(grid, ncells, used, r, labels, changed):
                         for s in range(grid.first(b), grid.end(b)):
                             p = grid.point(s)
                             if p > q and used[p] == 1:
-                                d = grid.positions[p] - x
+                                d = grid.offset(p, x)
                                 if d.dot(d) <= r2:
                                     a = labels[ncells + q]
                                     c = labels[ncells + p]
@@ -156,7 +156,7 @@ def _cell_points(data):
     return cell_of, members
 
 
-def _labels(data, radius=None, locator=None):
+def _labels(data, radius=None, locator=None, periodic=None):
     """Each cell's and point's component on ``data``'s device: ``(cell regions,
     point regions, count)``, regions numbered from 0 in order of their lowest
     cell, -1 for hidden cells and points no visible cell uses. With ``radius``,
@@ -179,7 +179,9 @@ def _labels(data, radius=None, locator=None):
 
         used = tack.zeros((npoints,), tack.u8)
         _used_points(cell_of, members, hidden, used)
-        near = (_locator(data, locator).grid(), used)
+        found = _locator(data, locator, periodic)
+        found.check_radius(radius)
+        near = (found.grid(), used)
     while members.shape[0]:
         changed.fill(0)
         _hook(cell_of, members, ncells, hidden, labels, changed)
@@ -204,7 +206,7 @@ def _labels(data, radius=None, locator=None):
 
 
 @on_inputs_device
-def connected_components(data, radius=None, min_size=None, locator=None):
+def connected_components(data, radius=None, min_size=None, periodic=None, locator=None):
     """Which cells are connected, through shared points: ``data`` with ``region``, a
     field on its cells and one on its points, the regions numbered from 0 in
     order of their lowest cell id, as VTK's vtkConnectivityFilter (``RegionId``,
@@ -228,7 +230,9 @@ def connected_components(data, radius=None, min_size=None, locator=None):
     Euclidean clustering (VTK's vtkEuclideanClusterExtraction, PCL's) and,
     with the linking length, friends-of-friends halo finding (yt's FoF).
     ``min_size`` gives regions of fewer points -1, the rest numbered again in
-    the same order. ``locator`` reuses a ``PointLocator`` of ``data``."""
+    the same order. ``periodic`` (a box, as ``PointLocator`` takes it) joins
+    points across its faces, as a cosmology box needs. ``locator`` reuses a
+    ``PointLocator`` of ``data``."""
     if radius is not None and not radius >= 0:
         raise ValueError(f"radius must be at least zero, not {radius!r}")
     if isinstance(data, PartitionedDataSet):
@@ -236,7 +240,7 @@ def connected_components(data, radius=None, min_size=None, locator=None):
             raise NotImplementedError("connected_components of a PartitionedDataSet by radius "
                                       "or size needs ghost points, not built yet")
         return _components_pieces(data)
-    cell_region, point_region, count = _labels(data, radius, locator)
+    cell_region, point_region, count = _labels(data, radius, locator, periodic)
     if min_size is not None and count:
         _smallest_dropped(cell_region, point_region, count, int(min_size))
     return _with_regions(data, cell_region, point_region)

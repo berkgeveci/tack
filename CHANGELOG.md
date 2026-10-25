@@ -31,6 +31,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   per volume; LiDAR surface models), and `sph_interpolate`/`sph_density`
   (VTK's four SPH kernels in 1 to 3 dimensions, Shepard normalization; within
   float rounding of `vtkSPHInterpolator`). All deterministic.
+- Periodic boxes in the point locator (`PointLocator(..., periodic=box)`):
+  bins tile the box and wrap, distances to the nearest image; the point
+  filters take `periodic=`.
+- `halo_catalog`: cosmology halos from friends-of-friends groups, ported from
+  Viskores' cosmotools and ParaView's LANL halo finder: count, mass (per
+  particle), centre of mass, most bound particle and its potential (with
+  softening), mean velocity and dispersion, radius, in periodic boxes. The most
+  bound particle is exact, with Viskores' pruned search on every large halo,
+  tightened to bound each particle against each far bin. Viskores' two test
+  cases give the same halos and centres.
 - `td.point_cloud(positions, fields)`: a dataset of one implicit vertex cell
   per point (stored nowhere), float64 positions on an origin of their own,
   integer fields (a LAS classification, intensities) kept in their type. The
