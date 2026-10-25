@@ -4236,6 +4236,22 @@ given one.</p>
 <td><code>point_normals(data, k=None, radius=None, viewpoint=None, direction=(0, 0, 1))</code></td>
 <td>each point's unit normal from the covariance of its <code>k</code> nearest points (itself included) or those within <code>radius</code>: the eigenvector of the least eigenvalue, in closed form; signed toward <code>viewpoint</code> (a world position) or along <code>direction</code> (up). Zero with fewer than three neighbours, or on a line. VTK's <code>vtkPCANormalEstimation</code> agrees within 0.1°</td>
 </tr>
+<tr>
+<td><code>connected_components(data, radius=, min_size=None)</code></td>
+<td>with <code>radius</code>, points within it of each other connect too: on a point cloud, Euclidean clusters (VTK's <code>vtkEuclideanClusterExtraction</code>, one to one) and friends-of-friends halos with the linking length. The radius hook walks the locator's bins (nothing stored per pair, each pair once). <code>min_size</code> makes regions of fewer points -1 and numbers the rest again</td>
+</tr>
+<tr>
+<td><code>deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=False)</code></td>
+<td>points onto an axis-aligned image: into the cell holding each (<code>"nearest"</code>, a field on the cells) or onto its corners by trilinear weights (<code>"cic"</code>, cloud in cell, on the points), as Viskores' particle density filters and yt. Counts without a field; with one, <code>"sum"</code>, <code>"mean"</code>, <code>"count"</code>, and for <code>"nearest"</code> <code>"min"</code> and <code>"max"</code> (a LiDAR surface model: the highest return per cell of a 2D image). Empty cells hold 0, or NaN for means and extrema; <code>per_volume</code> divides by the cell's volume. Points outside are left out. Each target reduced in point order, by a sort: the same bits everywhere</td>
+</tr>
+<tr>
+<td><code>sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_length="h", mass="mass", density="density", normalize=False, dimension=3)</code></td>
+<td>SPH values at a target's points (a dataset, or world positions as vertex cells): <code>sum_j (m_j / rho_j) A_j W(r, h_j)</code>, each particle reaching to its kernel's support (the scatter form), with <code>shepard</code>, the sum of <code>(m / rho) W</code>; <code>normalize</code> divides by it. Kernels <code>"cubic"</code>, <code>"quartic"</code>, <code>"quintic"</code>, <code>"wendland"</code>, VTK's, normalized in 1 to 3 dimensions (the Wendland kernel from 2); within float rounding of <code>vtkSPHInterpolator</code>. Smoothing length, mass and density are point fields or numbers; integer fields are not interpolated</td>
+</tr>
+<tr>
+<td><code>sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass")</code></td>
+<td>each particle's density by the SPH sum with its own smoothing length (the gather form, SPLASH's), itself included</td>
+</tr>
 </tbody>
 </table>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
