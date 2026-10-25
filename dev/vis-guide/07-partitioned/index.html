@@ -1831,6 +1831,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../04-filters/" class="md-nav__link">
         
   
@@ -3657,9 +3685,14 @@ pieces. It holds one <code>u8</code> per cell (<code>ghosts.cells</code>) and on
 <td>a copy of a cell another piece owns</td>
 </tr>
 <tr>
+<td><code>Ghosts.REFINEDCELL</code></td>
+<td>8</td>
+<td>a cell a finer AMR level covers: valid data, superseded (<a href="../10-amr/">AMR Hierarchies</a>)</td>
+</tr>
+<tr>
 <td><code>Ghosts.HIDDENCELL</code></td>
 <td>32</td>
-<td>a cell whose data is not valid here: an AMR cell a finer level covers, a blanked cell</td>
+<td>a cell whose data is not valid here: a blanked cell</td>
 </tr>
 <tr>
 <td><code>Ghosts.DUPLICATEPOINT</code></td>
@@ -3671,10 +3704,16 @@ pieces. It holds one <code>u8</code> per cell (<code>ghosts.cells</code>) and on
 <td>2</td>
 <td>a point whose data is not valid here</td>
 </tr>
+<tr>
+<td><code>Ghosts.REFINEDPOINT</code></td>
+<td>8</td>
+<td>a point at whose location a finer AMR level has one (Tack's; VTK has no such bit)</td>
+</tr>
 </tbody>
 </table>
 <p>The other cell bits (<code>HIGHCONNECTIVITYCELL</code>, <code>LOWCONNECTIVITYCELL</code>,
-<code>REFINEDCELL</code>, <code>EXTERIORCELL</code>) are carried along unread.
+<code>EXTERIORCELL</code>) are carried along unread. Filters that make cells leave
+<code>Ghosts.MASKED_CELLS</code> (hidden and refined) out.
 <code>Ghosts.SKIPPED_CELLS</code> and <code>Ghosts.SKIPPED_POINTS</code> are the bits a reduction
 leaves out. The marks are kept apart from the fields, as the geometry is,
 so no algorithm mistakes them for data. <code>to_device</code> moves them;

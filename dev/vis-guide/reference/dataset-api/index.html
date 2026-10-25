@@ -1831,6 +1831,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../04-filters/" class="md-nav__link">
         
   
@@ -2366,6 +2394,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adaptive-mesh-refinement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adaptive mesh refinement
+      
+    </span>
+  </a>
   
 </li>
       
@@ -3908,6 +3947,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adaptive-mesh-refinement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adaptive mesh refinement
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4796,6 +4846,66 @@ where the answer is reduced in point order (clusters' numbers, centroids,
 halo catalogues, including each MBP); in a periodic box, values measured
 through an image agree to a rounding, since an image's position is rounded
 once more than the whole's minimum-image offset.</p>
+<h2 id="adaptive-mesh-refinement">Adaptive mesh refinement<a class="headerlink" href="#adaptive-mesh-refinement" title="Permanent link">&para;</a></h2>
+<p>An <code>AMRDataSet(levels, ratios=(), domain=None, world=None)</code> is a
+block-structured AMR hierarchy, as VTK's <code>vtkOverlappingAMR</code> and AMReX's:
+<code>levels</code>, each this rank's boxes of a level (a <code>PartitionedDataSet</code> or a list
+of datasets), and <code>ratios[l]</code>, the refinement from level <code>l</code> to <code>l + 1</code>, a
+whole number or one per axis. The hierarchy is in index space alone, as
+AMReX's: a box is a dataset of a <code>StructuredTopology</code> whose <code>offset</code> is its
+first cell's index in its level, and its geometry is anything structured --
+an image, a rectilinear grid, a curvilinear grid -- since which cells a finer
+level covers is a matter of integer boxes. VTK's AMR holds images and (since
+9.6) rectilinear grids; curvilinear boxes are Tack's.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>amr.levels</code>, <code>amr.ratios</code>, <code>amr.domain</code>, <code>amr.dimension</code>, <code>amr.num_levels</code></td>
+<td>the levels (<code>PartitionedDataSet</code>s), the ratios (three per level), level 0's cell-index box</td>
+</tr>
+<tr>
+<td><code>amr.boxes(level)</code></td>
+<td>every rank's boxes of a level, <code>(n, 2, 3)</code> cell-index boxes <code>[lo, hi)</code>, gathered over the world when the hierarchy is made, as VTK's metadata and AMReX's <code>BoxArray</code> are replicated</td>
+</tr>
+<tr>
+<td><code>for level, box in amr</code></td>
+<td>this rank's boxes, coarsest level first</td>
+</tr>
+<tr>
+<td>marks</td>
+<td>made with the hierarchy: <code>REFINEDCELL</code> on cells a finer box covers; <code>REFINEDPOINT</code> on points at whose location a finer level has a point, so a coarse point on the edge of a refined region is one; <code>DUPLICATEPOINT</code> on points a lower-numbered sibling also holds. Every location and region is then owned once, at the finest level holding it. Marks given are recomputed; other bits are kept</td>
+</tr>
+<tr>
+<td>refused</td>
+<td>overlapping boxes in a level; a fine box that, coarsened, is not within its coarser level's boxes (proper nesting); a level's images off one lattice (one spacing and origin, axis-aligned: VTK's model); boxes with ghost cells; boxes of mixed dimension</td>
+</tr>
+<tr>
+<td><code>statistics(amr, name)</code>, <code>entropy(amr, name, bins)</code></td>
+<td>over every box of every level, each region and location once</td>
+</tr>
+<tr>
+<td>per box</td>
+<td>every filter: contours, slices, clips and thresholds leave refined cells out (cracks at level boundaries remain); algorithms whose output is on the same cells (gradients, projections) compute there, refined data being valid</td>
+</tr>
+<tr>
+<td><code>amr_gaussian_pulse(dimension=3, ...)</code></td>
+<td>VTK's <code>vtkAMRGaussianPulseSource</code>: two levels, <code>Gaussian-Pulse</code> and <code>Centroid</code> on the cells</td>
+</tr>
+<tr>
+<td>interop</td>
+<td><code>vtk_to_dataset(vtkOverlappingAMR)</code> gives an <code>AMRDataSet</code> (blocks placed by their <code>vtkAMRBox</code>); <code>dataset_to_vtk(amr)</code> a <code>vtkOverlappingAMR</code> when every box is an image or a rectilinear grid and each ratio is the same along every axis, else a <code>vtkPartitionedDataSetCollection</code> of a partitioned dataset per level. VTK's <code>BlankCells</code> marks the export as Tack does</td>
+</tr>
+</tbody>
+</table>
+<p>Ghost cells (from siblings and from the coarser level), <code>average_down</code>,
+<code>probe</code> at the finest level and resampling onto one image are the next phases
+(the vault's AMR proposal).</p>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>A dataset is on the device its arrays are on, and it computes there: every
 algorithm, every derived entity (faces, edges, point links, groups, layouts),
@@ -4982,9 +5092,13 @@ owner; every other copy is a ghost. <code>data.ghosts</code> is a
 <code>tack.dataset.Ghosts</code> (or <code>None</code>), kept apart from the fields as the
 geometry is: a <code>u8</code> per cell (<code>cells</code>) and per point (<code>points</code>), either of
 which may be <code>None</code>, holding VTK's <code>vtkGhostType</code> bits (<code>Ghosts.DUPLICATECELL</code>
-1, <code>HIDDENCELL</code> 32, <code>DUPLICATEPOINT</code> 1, <code>HIDDENPOINT</code> 2, and the rest, carried
-unread). A duplicate is a copy of what another piece owns; hidden is data not
-valid there (an AMR cell a finer level covers, a blanked cell).</p>
+1, <code>REFINEDCELL</code> 8, <code>HIDDENCELL</code> 32, <code>DUPLICATEPOINT</code> 1, <code>HIDDENPOINT</code> 2, and
+the rest, carried unread) and Tack's <code>REFINEDPOINT</code> 8, which VTK lacks. A
+duplicate is a copy of what another piece owns; hidden is data not valid
+there (a blanked cell); refined is data a finer AMR level supersedes (see
+"Adaptive mesh refinement"). Filters that make cells leave hidden and refined
+cells out (<code>Ghosts.MASKED_CELLS</code>); reductions leave out every skipped bit
+(<code>SKIPPED_CELLS</code>, <code>SKIPPED_POINTS</code>).</p>
 <ul>
 <li><code>vtk_to_dataset</code> takes a <code>vtkGhostType</code> array as the marks, not as a field,
   and <code>dataset_to_vtk</code> writes them back; <code>split</code> makes them;
