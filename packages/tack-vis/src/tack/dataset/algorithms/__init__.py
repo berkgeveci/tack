@@ -39,9 +39,11 @@ from tack.dataset.algorithms.mask import mask
 from tack.dataset.algorithms.mask_points import mask_points
 from tack.dataset.algorithms.merge_pieces import merge_pieces
 from tack.dataset.algorithms.net_flux import net_flux
+from tack.dataset.algorithms.outliers import outliers
 from tack.dataset.algorithms.perot import perot
 from tack.dataset.algorithms.point_elevation import point_elevation
 from tack.dataset.algorithms.point_ids import point_ids
+from tack.dataset.algorithms.point_normals import point_normals
 from tack.dataset.algorithms.probe import probe
 from tack.dataset.algorithms.project import project
 from tack.dataset.algorithms.remove_ghosts import remove_ghosts
@@ -58,6 +60,7 @@ from tack.dataset.algorithms.transform import transform
 from tack.dataset.algorithms.triangulate import triangulate
 from tack.dataset.algorithms.upwind_flux import upwind_flux
 from tack.dataset.algorithms.values_at_centers import values_at_centers
+from tack.dataset.algorithms.voxel_downsample import voxel_downsample
 from tack.dataset.algorithms.warp import warp
 
 __all__ = [
@@ -104,9 +107,11 @@ __all__ = [
     "mask_points",
     "merge_pieces",
     "net_flux",
+    "outliers",
     "perot",
     "point_elevation",
     "point_ids",
+    "point_normals",
     "probe",
     "project",
     "remove_ghosts",
@@ -125,5 +130,6 @@ __all__ = [
     "update_ghosts",
     "upwind_flux",
     "values_at_centers",
+    "voxel_downsample",
     "warp",
 ]

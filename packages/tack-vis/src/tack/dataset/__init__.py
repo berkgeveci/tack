@@ -63,9 +63,11 @@ from tack.dataset.algorithms import (
     mask_points,
     merge_pieces,
     net_flux,
+    outliers,
     perot,
     point_elevation,
     point_ids,
+    point_normals,
     probe,
     project,
     remove_ghosts,
@@ -84,6 +86,7 @@ from tack.dataset.algorithms import (
     update_ghosts,
     upwind_flux,
     values_at_centers,
+    voxel_downsample,
     warp,
 )
 from tack.dataset.dataset import (
@@ -99,6 +102,7 @@ from tack.dataset.global_ids import GlobalIds
 from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.dataset.locator import CellLocator, Locations
 from tack.dataset.partitioned import PartitionedDataSet
+from tack.dataset.point_locator import PointLocator
 from tack.dataset.polyhedra import (
     PolygonalTopology,
     PolyhedralTopology,
@@ -130,6 +134,7 @@ __all__ = [
     "PartitionedDataSet",
     "Plane",
     "Planes",
+    "PointLocator",
     "PolygonalTopology",
     "PolyhedralTopology",
     "PolylineTopology",
@@ -184,10 +189,12 @@ __all__ = [
     "merge_pieces",
     "net_flux",
     "orient",
+    "outliers",
     "perot",
     "point_cloud",
     "point_elevation",
     "point_ids",
+    "point_normals",
     "polyhedra",
     "probe",
     "project",
@@ -213,6 +220,7 @@ __all__ = [
     "update_ghosts",
     "upwind_flux",
     "values_at_centers",
+    "voxel_downsample",
     "warp",
     "wavelet",
 ]
