@@ -1859,6 +1859,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../04-filters/" class="md-nav__link">
         
   
@@ -2402,6 +2430,17 @@
     <span class="md-ellipsis">
       
         Adaptive mesh refinement
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#octrees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Octrees
       
     </span>
   </a>
@@ -3958,6 +3997,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#octrees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Octrees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#devices" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4921,6 +4971,58 @@ level covers is a matter of integer boxes. VTK's AMR holds images and (since
 </table>
 <p>Not here: crack-free contouring across levels, periodic domains, tagging and
 regridding, conservative interpolation (the vault's AMR proposal).</p>
+<h2 id="octrees">Octrees<a class="headerlink" href="#octrees" title="Permanent link">&para;</a></h2>
+<p>An <code>OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None)</code>
+is a grid of octrees, VTK's <code>vtkHyperTreeGrid</code> with branching factor 2, stored
+as a linear octree for GPUs: <code>roots</code> the grid of root cells (an image or a
+rectilinear grid, 2D or 3D; root cell <code>t</code>, x fastest, is tree <code>t</code>), and every
+node of every tree, refined ones included, as its tree, its level (0 at the
+root) and its Morton key at that level (integer coordinates in the tree
+interleaved, x lowest, so a child's key is its parent's shifted by the
+dimension with its index, x fastest, below). Nodes are sorted in pre-order --
+tree, key carried to the finest level, level -- so a subtree is one run. Each
+node's ancestors must be given, and a refined node all its children.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>octree.tree</code>, <code>.level</code>, <code>.key</code>, <code>.marks</code></td>
+<td>the nodes, device arrays; marks <code>REFINEDCELL</code> on non-leaves, <code>HIDDENCELL</code> where masked</td>
+</tr>
+<tr>
+<td><code>octree.fields</code></td>
+<td>cell data: one value per node (<code>dict</code> of arrays)</td>
+</tr>
+<tr>
+<td><code>octree.leaves()</code>, <code>.centers()</code>, <code>.measures()</code>, <code>.geometry()</code></td>
+<td>from the keys, in a kernel: which nodes are leaves, centres, volumes (areas), lower corners and sides</td>
+</tr>
+<tr>
+<td><code>OctreeDataSet.from_cells(roots, level, position, fields)</code></td>
+<td>from cells' levels and positions (whole octs, as RAMSES writes them), ancestors added with NaN values</td>
+</tr>
+<tr>
+<td><code>statistics(octree, name, weights=None, level=None)</code>, <code>entropy(...)</code></td>
+<td>over the leaves (or one level's nodes), every rank's trees</td>
+</tr>
+<tr>
+<td>interop</td>
+<td><code>vtk_to_dataset(vtkHyperTreeGrid)</code> (each tree's breadth-first descriptor read in one call, turned into keys) and <code>dataset_to_vtk(octree)</code>; the mask as <code>HIDDENCELL</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Weighted statistics</strong>, for every kind of data: <code>statistics(data, name,
+weights=...)</code> with <code>"volume"</code> (cell measures, cell fields only) or a scalar
+field's name on the same entities. <code>mean</code> is <code>sum(w x) / W</code>, <code>sum</code> is <code>sum(w
+x)</code>, the moments are <code>sum(w (x - mean)^k)</code>, <code>weight</code> is <code>W</code>, the population
+variance <code>m2 / W</code>, the sample variance <code>m2 / (W - sum(w^2) / W)</code> (reliability
+weights, NumPy's <code>aweights</code>), and skewness and kurtosis take <code>W</code> for <code>n</code>.
+<code>entropy(..., weights=...)</code> shares each bin by the weights in it.</p>
 <h2 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>A dataset is on the device its arrays are on, and it computes there: every
 algorithm, every derived entity (faces, edges, point links, groups, layouts),
