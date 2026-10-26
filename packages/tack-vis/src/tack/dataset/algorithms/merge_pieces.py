@@ -198,7 +198,7 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
             # cells out, so the marks go aside and come back (every cell and
             # point is kept, in order).
             bare = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
-                           dtype=piece.dtype, global_ids=piece.global_ids, origin=piece.origin)
+                           dtype=piece.dtype, global_ids=piece.global_ids, **piece._frame())
             with piece.device:
                 converted_piece = extract_cells(bare, np.arange(piece.num_cells))
             converted_piece.ghosts = piece.ghosts
@@ -316,16 +316,17 @@ def _assembled(topology, geometry, like, names, kind_of, parts):
     if marks_cells.any() or marks_points.any():
         ghosts = Ghosts(cells=marks_cells if marks_cells.any() else None,
                         points=marks_points if marks_points.any() else None)
-    out = DataSet(topology, geometry, dtype=like.dtype, ghosts=ghosts, origin=like.origin)
+    out = DataSet(topology, geometry, dtype=like.dtype, ghosts=ghosts, **like._frame())
     for name in names:
         field = like.fields[name]
         space = field.space
         if kind_of(field) == "points":
             out.fields[name] = Field(H1(out) if isinstance(space, H1) else Values(out, "points"),
-                                     parts["points"][name])
+                                     parts["points"][name], field.unit)
         else:
             out.fields[name] = Field(Constant(out) if isinstance(space, Constant)
-                                     else Values(out, "cells"), parts["cells"][name])
+                                     else Values(out, "cells"), parts["cells"][name],
+                                     field.unit)
     point_ids, cell_ids = parts["points"].get("\0ids"), parts["cells"].get("\0ids")
     if point_ids is not None or cell_ids is not None:
         out.global_ids = GlobalIds(cells=cell_ids, points=point_ids)

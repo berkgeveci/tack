@@ -39,4 +39,4 @@ def net_flux(data, flux):
     data.topology.faces()                          # the incidence the cell views need
     out = _like(flux.values, data.num_cells)
     for_each(_outward_sums, data, "cells", materialize(flux.values), out)
-    return Field(Values(data, "cells"), out)
+    return Field(Values(data, "cells"), out, flux.unit)

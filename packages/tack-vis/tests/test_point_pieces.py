@@ -355,6 +355,37 @@ def test_point_pieces_on_two_devices():
                                   td.deposit(cloud(x, fields), grid).values.numpy())
 
 
+class _NoF64CPU(CPUBackend):
+    """A CPU backend posing as a device without f64, as Metal is."""
+
+    display_name = "device without f64"
+
+    def __init__(self):
+        super().__init__()
+        self.supported_dtypes = frozenset(d for d in self.supported_dtypes
+                                          if d is not tack.f64)
+
+    @property
+    def memory_domain(self):
+        return ("cpu", 2)
+
+
+def test_point_pieces_on_a_device_without_f64():
+    """Metal's round found ghost_points(k=) sending its distances as an f64 device
+    array, which Metal cannot hold: they travel as f64 bits in u64."""
+    x, fields = clumps(seed=2, count=12)
+    device = dispatch.as_device(_NoF64CPU())
+    pieces, _ = _split(x, fields)
+    there = td.PartitionedDataSet([p.to_device(device) for p in pieces])
+    for how in ({"k": 6}, {"radius": 0.4}):
+        got, want = td.ghost_points(there, **how), td.ghost_points(pieces, **how)
+        assert [p.num_points for p in got] == [p.num_points for p in want]
+        assert all(p.device == device for p in got)
+    np.testing.assert_array_equal(
+        np.concatenate([p.fields["outlier"].values.numpy() for p in td.outliers(there, k=6)]),
+        np.concatenate([p.fields["outlier"].values.numpy() for p in td.outliers(pieces, k=6)]))
+
+
 def test_point_pieces_across_mpi_ranks(mpiexec):
     script = os.path.join(os.path.dirname(__file__), "_point_pieces_mpi.py")
     for ranks in (2, 3):

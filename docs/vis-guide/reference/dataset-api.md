@@ -331,6 +331,53 @@ field. It is kept apart from `fields`: `data.geometry` returns it, assigning
 the cells; it is never among the fields they carry or select. An `L2` geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.
 
+## Units
+
+`Field(space, values, unit=None)`: `unit` is the values' physical unit, a
+string kept in unyt's canonical spelling (`"m/s"`, `"m*s**-1"` and `"m/s^1"`
+are one unit; `"1"` is `"dimensionless"`), or `None` for unknown. The spatial
+unit is the geometry's, `data.unit`, and `origin` is in it. Kernels never see
+a unit. See [Physical Units](../12-units.md).
+
+| | |
+|---|---|
+| `Field(..., unit=)`, `field.unit` | the values' unit, or `None` |
+| `DataSet(..., unit=)`, `data.unit` | the spatial unit, the geometry field's; `uniform_grid`, `rectilinear_grid` and `point_cloud` take `unit=`, `point_cloud` also `units={name: unit}` |
+| `OctreeDataSet(..., units={name: unit})`, `octree.unit`, `octree.units` | the fields' units, and the roots' spatial unit |
+| `convert(data, unit, field=None)` | the geometry (origin scaled in double precision; images stay images) or a field in `unit`, scaled and offset on the device |
+| `Statistics.unit`, `.weight_unit`, `.unit_of(name)` | the field's and the weights' units, and each statistic's (variances in the square, `sum` times the weights') |
+| `interpolate(..., unit=)` | the function's values' unit, which its code does not say |
+| quantities as parameters | lengths (`"10 cm"`, `(0.1, "m")`, a unyt or pint quantity) converted to the spatial unit, isovalues and thresholds to the field's, step sizes to the particles' time unit; a mass, density or velocity given as one quantity brings its unit (see [Physical Units](../12-units.md#quantities-as-parameters)) |
+| `tack.dataset.units` | `canonical`, `conversion` (factor and offset), `same`, `compatible`, `common`, `derived` (products of powers), `delta` (degrees Celsius to kelvin for differences), `named` (`Pa*m**3` as `J`); the registry is unyt's plus `ftUS`, the US survey foot |
+
+Filters that keep a quantity keep its unit (everything `carry` takes along,
+`project`, `values_at_centers`, traces, `magnitude`, means, centres in the
+spatial unit); those that compute one derive it (gradients, products,
+measures, fluxes, statistics, deposits, SPH, particle times: the table in
+[Physical Units](../12-units.md#derived-units)). Positions in two known spatial units do not meet:
+probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
+interop maps each array's `UNITS_LABEL`.
+
+## Time
+
+Tack holds no series of steps: a simulation in situ, or a reader's loop,
+hands filters one step at a time, and each step is a dataset at its time.
+
+| | |
+|---|---|
+| `DataSet(..., time=, time_unit=)`, `data.time`, `data.time_unit` | the step's time, a double on the host or `None`, in a unit of time or `None` |
+| kept by | every filter, as the origin and spatial unit are (`carry`, `keep_marks`, `drop_marks`, `to_device`); `probe` gives back its target's |
+| refused | pieces of a `PartitionedDataSet` and boxes of an `AMRDataSet` at two times (compared in one unit); an octree's time is its roots' |
+| VTK | `vtkDataObject::DATA_TIME_STEP` both ways; VTK has no time unit |
+| `tack.dataset.temporal` | filters fed one step at a time (`update(data)`, which returns the step's output), keeping copies of what they need of earlier steps (`copy=False` keeps references); a `PartitionedDataSet` streams piece by piece |
+| `RunningStatistics(fields)` | per point or cell over the steps so far: `<name>_mean`, `_variance` (population), `_min`, `_max` (Welford, f64 where the device has it); `count`; one mesh over the steps (remesh first) |
+| `TimeDerivative(fields, copy=True)` | `<name>_dt`, the backward difference since the previous step, in the field's unit over the time unit; `None` on the first step; one mesh, increasing time |
+| `Advection(field, seeds=None, integrator="rk4", step_size=None, copy=True)` | particles through the steps, the velocity linear in time between the kept previous step and this one (each probed in its own mesh, over ranks where pieces are); `update` returns them (`seed`, `source`, `release`, `time`, `status`); `inject(points, time=None)` releases more at any time |
+| `extend_paths(paths, particles)` | joins a step's particles onto the paths so far, by `seed`: polylines through each particle's points in time |
+| `Pathlines(field, seeds, ...)`, `Streaklines(field, seeds, releases=1, ...)` | the current pathlines every step; the line of each seed's released particles, newest first |
+
+See [Streaming Steps](../13-streaming.md).
+
 ## Origins and point clouds
 
 A position is `data.origin + value`: the origin is three floats kept in double
@@ -494,7 +541,8 @@ regridding, conservative interpolation (the vault's AMR proposal).
 
 ## Octrees
 
-An `OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None)`
+An `OctreeDataSet(roots, tree, level, key, fields=None, mask=None, world=None,
+units=None)`
 is a grid of octrees, VTK's `vtkHyperTreeGrid` with branching factor 2, stored
 as a linear octree for GPUs: `roots` the grid of root cells (an image or a
 rectilinear grid, 2D or 3D; root cell `t`, x fastest, is tree `t`), and every
@@ -969,12 +1017,14 @@ and "polyline" `PolylineTopology`.
 | | Shape-based | Polyhedral | Polygonal | Polyline |
 |---|---|---|---|---|
 | `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume, area or length; centroid) | yes | yes | yes | yes |
+| `cell_quality` (scaled Jacobian, Jacobian ratio, condition, edge ratio, shortest and longest edge) | yes (order 2 along its curved edges; a pyramid by its four tetrahedra) | yes (by its fan tetrahedra) | yes (by its fan triangles) | edges only |
+| `feature_edges` (boundary, feature, non-manifold, manifold edges of a surface) | yes (2D cells) | no (a volume: `extract_surface` first) | yes | no |
 | `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
 | `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
 | `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | no (would give points) |
-| `clip` | yes (with an `H1` geometry) | not yet | not yet | not yet |
+| `clip` | yes (with an `H1` geometry) | yes (into polyhedra: faces clipped once, iso-polygons as caps) | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
 | `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point; star-shaped too) | yes (on segments) |
@@ -1112,6 +1162,7 @@ In `tack.dataset.algorithms` (and `tack.dataset`), in Viskores' conventions:
 | Function | Result |
 |---|---|
 | `magnitude(data, f)`, `dot(data, a, b)`, `cross(data, a, b)` | a field in the same space |
+| `convert(data, unit, field=None)` | the geometry, or a field, in another unit ([Units](#units)) |
 | `composite(data, f, g, ...)` | scalar fields of one space as one vector field |
 | `log_values(data, f, base, min_value)` | the logarithm, values below `min_value` (default the smallest normal float) taken as it |
 | `point_elevation(data, low, high, range)` | position along a line, clamped and mapped to `range` (VTK's elevation filter) |
@@ -1146,6 +1197,13 @@ Tetrahedra and triangles are pieces of their cells (`carry`'s `Pieces`): cell
 data goes to each, the points stay the same.
 
 ## Locating points, probing and advection
+
+`voxelize(data, grid, fields=None, samples=4)` puts ``data`` on the voxels
+(cells) of an image: `fraction`, the share of each voxel the data covers, and
+each field's mean over it, as cell data, by `samples` probes a side per voxel
+(the same bits every run; batched); voxels the data does not reach are
+`HIDDENCELL`. It takes what `probe` takes (datasets, pieces, AMR hierarchies,
+octrees); with one sample it is the probe at the voxel centres.
 
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
 uniform grid over the dataset, about `density` bins per cell. It records

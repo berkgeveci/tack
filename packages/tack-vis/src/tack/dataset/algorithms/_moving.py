@@ -83,7 +83,8 @@ def _from_spherical(positions, out):
 
 def _recoordinate(data, kernel, fields=None):
     """New coordinates of each world position (``origin`` plus the value, added in
-    the geometry's type): the output's origin is zero."""
+    the geometry's type): the output's origin is zero, and its spatial unit
+    unknown, since an angle and lengths are no one unit."""
     values = data.geometry.values
     if any(data.origin):
         values = _shifted(data, data.origin)
@@ -93,4 +94,5 @@ def _recoordinate(data, kernel, fields=None):
         kernel(materialize(values), out)
     out = _moved(data, out, fields)
     out.origin = None
+    out._geometry = Field(out.geometry.space, out.geometry.values)
     return out

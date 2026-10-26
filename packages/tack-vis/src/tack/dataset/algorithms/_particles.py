@@ -36,6 +36,7 @@ from tack.dataset.algorithms._advection import (
     ZERO_VELOCITY,
     _run,
 )
+from tack.dataset.algorithms._common import _time_unit
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts, visible
@@ -127,7 +128,8 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
             points = Values(vertices, "points")
             vertices.fields["steps"] = Field(points, tack.array(done.steps, tack.i32))
             vertices.fields["time"] = Field(points, tack.array(
-                done.time.astype(piece.dtype.numpy_dtype), piece.dtype))
+                done.time.astype(piece.dtype.numpy_dtype), piece.dtype),
+                _time_unit(piece, field))
             vertices.fields["status"] = Field(points, tack.array(done.status, tack.i32))
             vertices.fields["seed"] = Field(points, tack.array(done.seed, tack.i64))
         out.append(vertices)
@@ -172,7 +174,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
                                         np.asarray(members, np.int64), num_points=count)
             lines = DataSet(topology, points, dtype=piece.dtype,
                             ghosts=Ghosts(points=np.concatenate(marks) if marks
-                                          else np.zeros(0, np.uint8)), origin=piece.origin)
+                                          else np.zeros(0, np.uint8)), **piece._frame())
             lines.fields["seed"] = Field(Values(lines, "cells"),
                                          tack.array(np.asarray(seed, np.int64), tack.i64))
             lines.fields["segment"] = Field(Values(lines, "cells"),
@@ -180,7 +182,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
                                                        tack.i32))
             lines.fields["time"] = Field(Values(lines, "points"), tack.array(
                 (np.concatenate(times) if times else np.zeros(0)).astype(dtype),
-                piece.dtype))
+                piece.dtype), _time_unit(piece, field))
         out.append(lines)
     return PartitionedDataSet(out, world=blocks.world)
 

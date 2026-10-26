@@ -108,8 +108,15 @@ def test_clip_of_a_mixed_mesh_keeps_its_volume(backend):
 
 def test_clip_refuses_what_it_cannot_cut(backend):
     data = _two_hexes_and_a_pyramid()
-    with pytest.raises(NotImplementedError):
-        td.clip(td.as_polyhedra(data), td.Plane((1, 0, 0), (1, 0, 0)))
+    # Polyhedra are clipped, into polyhedra (test_clip_polyhedra.py); polygons not yet.
+    plane = td.Plane((1, 0, 0), (1, 0, 0))
+    cut = td.clip(td.as_polyhedra(data), plane)
+    assert isinstance(cut.topology, td.PolyhedralTopology)
+    np.testing.assert_allclose(td.cell_geometry(cut).measure.values.numpy().sum(),
+                               td.cell_geometry(td.clip(data, plane)).measure.values.numpy()
+                               .sum(), rtol=1e-5)
+    with pytest.raises(NotImplementedError, match="not polygons"):
+        td.clip(td.as_polygons(td.uniform_grid((3, 3))), td.Plane((1, 0, 0), (1, 0, 0)))
     data.fields["c"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 3.0]))
     with pytest.raises(TypeError, match="point data"):
         td.clip(data, "c", 1.5)

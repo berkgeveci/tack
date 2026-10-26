@@ -2,9 +2,9 @@
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import ids
+from tack.dataset import ids, units
 from tack.dataset.algorithms._advection import _run
-from tack.dataset.algorithms._common import _close
+from tack.dataset.algorithms._common import _close, _has_quantity, _time_unit
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -57,6 +57,9 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
     piece, each piece holding the stretches it traced
     (``_particles.streamlines_pieces``)."""
+    # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
+    if _has_quantity(step_size):
+        step_size = units.magnitude(step_size, _time_unit(data, field), "streamlines's step size")
     from tack.dataset.partitioned import PartitionedDataSet
 
     if isinstance(data, PartitionedDataSet):
@@ -99,7 +102,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     if lines:
         _chains(kept, starts, lengths, line_offsets, line_points)
     topology = PolylineTopology(line_offsets, line_points, num_points=total, id_dtype=idt)
-    out = DataSet(topology, points, origin=data.origin)
+    out = DataSet(topology, points, **data._frame())
     out.fields["seed"] = Field(Values(out, "cells"), seed_of)
-    out.fields["time"] = Field(Values(out, "points"), point_times)
+    out.fields["time"] = Field(Values(out, "points"), point_times, _time_unit(data, field))
     return out

@@ -4,7 +4,7 @@ from typing import NamedTuple
 
 import tack
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _vectors
+from tack.dataset.algorithms._common import _measure_unit, _vectors
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -138,4 +138,5 @@ def cell_geometry(data):
             _line_geometry(data.domain_view("cells", group), volumes, centroids)
         elif group.count:
             _corner_geometry(data.domain_view("cells", group), volumes, centroids)
-    return CellGeometry(Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids))
+    return CellGeometry(Field(Values(data, "cells"), volumes, _measure_unit(data)),
+                        Field(Values(data, "cells"), centroids, data.unit))

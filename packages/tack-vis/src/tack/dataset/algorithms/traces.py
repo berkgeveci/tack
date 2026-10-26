@@ -44,4 +44,4 @@ def traces(data, field):
     for group in data.launch_groups("cells", [field]):
         if group.count and group.root in starts:
             _traces(data.domain_view("cells", group), field.view(group), out)
-    return Field(out_space, out)
+    return Field(out_space, out, field.unit)

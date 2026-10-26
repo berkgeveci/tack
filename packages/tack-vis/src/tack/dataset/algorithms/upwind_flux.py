@@ -2,6 +2,7 @@
 
 import tack
 from tack.arrays import materialize
+from tack.dataset import units
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._faces import _on_cells
 from tack.dataset.algorithms.face_geometry import face_geometry
@@ -47,6 +48,7 @@ def upwind_flux(data, field, velocity):
     field = _field(data, field)
     normals, areas = face_geometry(data)
     out = _like(field.values, data.topology.faces().num_faces)
+    velocity, speed = units.number_and_unit(velocity)
     vx, vy, vz = (float(v) for v in velocity)
     if _on_cells(data, field):
         for_each(_cell_upwind, data, "faces", materialize(field.values), normals.values,
@@ -54,4 +56,7 @@ def upwind_flux(data, field, velocity):
     else:
         for_each(_upwind, data, "faces", traces(data, field), normals.values, areas.values,
                  vx, vy, vz, out)
-    return Field(Values(data, "faces", oriented=True), out)
+    # (v . n) area u: a velocity given as a bare number leaves it unknown.
+    area = units.derived((data.unit, data.topology.dimension - 1))
+    return Field(Values(data, "faces", oriented=True), out,
+                 units.named(units.derived(field.unit, speed, area)))

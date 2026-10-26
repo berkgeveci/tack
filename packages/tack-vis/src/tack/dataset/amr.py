@@ -32,7 +32,7 @@ import numpy as np
 
 from tack.dataset.dataset import DataSet
 from tack.dataset.ghosts import Ghosts
-from tack.dataset.partitioned import PartitionedDataSet
+from tack.dataset.partitioned import PartitionedDataSet, _one_time
 from tack.dataset.topology import StructuredTopology
 
 __all__ = ["AMRDataSet"]
@@ -215,6 +215,15 @@ class AMRDataSet:
         return tuple(int(v) for v in lo), tuple(int(v) for v in hi)
 
     def _check(self, given):
+        from tack.dataset import units
+
+        spatial = self.world._allgather(sorted({piece.unit or "" for pieces in given
+                                                for piece in pieces}))
+        units.common("an AMRDataSet's boxes' geometry",
+                     [unit or None for part in spatial for unit in part])
+        _one_time("an AMRDataSet's boxes", [t for part in self.world._allgather(
+            sorted({(piece.time, piece.time_unit) for pieces in given for piece in pieces},
+                   key=repr)) for t in part])
         for level, pieces in enumerate(given):
             for k, piece in enumerate(pieces):
                 marks = piece.ghosts
@@ -283,7 +292,7 @@ class AMRDataSet:
             ghosts = Ghosts(cells=cells.reshape(-1), points=points.reshape(-1))
         return DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
                        sets=dict(piece.sets), dtype=piece.dtype, ghosts=ghosts,
-                       global_ids=piece.global_ids, origin=piece.origin)
+                       global_ids=piece.global_ids, **piece._frame())
 
 
 def _box(piece, dimension):

@@ -133,6 +133,7 @@ nav:
           - Function Space Fundamentals: vis-guide/00-function-spaces.md
           - Understand a Dataset: vis-guide/01-datasets.md
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
+          - Physical Units: vis-guide/12-units.md
       - Work with Data:
           - Build Meshes: vis-guide/02-meshes.md
           - Point Clouds and Particles: vis-guide/08-point-clouds.md
@@ -141,6 +142,7 @@ nav:
           - Filter and Analyze: vis-guide/04-filters.md
           - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
           - Sample and Connect Simulations: vis-guide/06-pipelines.md
+          - Stream Steps: vis-guide/13-streaming.md
       - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md

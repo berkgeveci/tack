@@ -24,6 +24,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.arrays import CartesianProduct, UniformCoordinates
+from tack.dataset import units as _units
 from tack.dataset.ghosts import Ghosts
 
 __all__ = ["OctreeDataSet"]
@@ -48,21 +49,23 @@ def _unkey(k, depth, dimension):
 
 
 @tack.kernel
-def _node_geometry(tree, level, key, root_lo, root_size, dimension, lo, size):
+def _node_geometry(tree, level, key, root_lo, root_size, dimension, one, lo, size):
     # Each node's lower corner and sides: its tree's root cell, divided by 2 per
-    # level, at the integer coordinates its key interleaves.
+    # level, at the integer coordinates its key interleaves. Integers become
+    # floats by ``one`` (1.0), a scalar in the arrays' type: f64 where the
+    # device has it, f32 on one that has not (Metal).
     for n in range(lo.shape[0]):
         t = tree[n]
         depth = level[n]
         i, j, m = _unkey(key[n], depth, dimension)
-        scale = 1.0 / tack.f64(tack.u64(1) << tack.u64(depth))
+        scale = 1.0 / ((tack.u64(1) << tack.u64(depth)) * one)
         r = root_size[t]
         s = [r[0] * scale, r[1] * scale, r[2] * scale]
         if dimension == 2:
             s = [s[0], s[1], r[2]]
         base = root_lo[t]
-        lo[n] = [base[0] + tack.f64(i) * s[0], base[1] + tack.f64(j) * s[1],
-                 base[2] + tack.f64(m) * s[2]]
+        lo[n] = [base[0] + (i * one) * s[0], base[1] + (j * one) * s[1],
+                 base[2] + (m * one) * s[2]]
         size[n] = s
 
 
@@ -102,24 +105,25 @@ def _numbered(order, ids, connectivity):
 
 
 @tack.func
-def _along(axis, n, index, finest):
+def _along(axis, n, index, finest, one):
     # The position of lattice line ``index`` along a root axis of ``n`` cells.
     c = min(index >> tack.i64(finest), tack.i64(n - 1))
-    f = tack.f64(index - (c << tack.i64(finest))) / tack.f64(tack.i64(1) << tack.i64(finest))
+    f = ((index - (c << tack.i64(finest))) * one) / ((tack.i64(1) << tack.i64(finest)) * one)
     return axis[c] + f * (axis[c + 1] - axis[c])
 
 
 @tack.kernel
 def _lattice_points(si, sj, sk, flags, ids, ax, ay, az, nx, ny, nz, finest, dimension,
-                    plane, out):
+                    plane, one, out):
     # Each distinct corner's position, from its lattice index alone, so every
     # cell that shares it shares the same bits.
     for s in range(flags.shape[0]):
         if flags[s] == 1:
             z = plane
             if dimension == 3:
-                z = _along(az, nz, sk[s], finest)
-            out[ids[s] - 1] = [_along(ax, nx, si[s], finest), _along(ay, ny, sj[s], finest), z]
+                z = _along(az, nz, sk[s], finest, one)
+            out[ids[s] - 1] = [_along(ax, nx, si[s], finest, one),
+                               _along(ay, ny, sj[s], finest, one), z]
 
 
 @tack.func
@@ -142,17 +146,17 @@ def _root_cell(axis, n, x, tolerance):
 
 
 @tack.func
-def _lattice_index(axis, c, x, finest):
+def _lattice_index(axis, c, x, finest, one):
     # x's integer coordinate in root cell c at the finest level, clamped inside.
     cells = tack.i64(1) << tack.i64(finest)
     f = (x - axis[c]) / (axis[c + 1] - axis[c])
-    index = tack.i64(floor(max(f, 0.0) * tack.f64(cells)))
+    index = tack.i64(floor(max(f, 0.0) * (cells * one)))
     return tack.u64(min(index, cells - 1))
 
 
 @tack.kernel
 def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tree, level,
-                 carried, finest, marks, hidden, found):
+                 carried, finest, marks, hidden, one, found):
     # The leaf holding each point: its root cell by binary searches of the axes,
     # its code at the finest level, then the last node whose (tree, key carried
     # to the finest level) is at most the point's -- in pre-order, the leaf whose
@@ -166,11 +170,11 @@ def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tr
         if dimension == 3:
             cz = _root_cell(az, nz, p[2], tolerance)
         if cx >= 0 and cy >= 0 and cz >= 0:
-            i = _lattice_index(ax, cx, p[0], finest)
-            j = _lattice_index(ay, cy, p[1], finest)
+            i = _lattice_index(ax, cx, p[0], finest, one)
+            j = _lattice_index(ay, cy, p[1], finest, one)
             m = tack.u64(0)
             if dimension == 3:
-                m = _lattice_index(az, cz, p[2], finest)
+                m = _lattice_index(az, cz, p[2], finest, one)
             code = tack.u64(0)
             for b in range(finest):
                 code = code | (((i >> tack.u64(b)) & tack.u64(1)) << tack.u64(dimension * b))
@@ -192,7 +196,7 @@ def _find_leaves(points, ax, ay, az, nx, ny, nz, dimension, plane, tolerance, tr
                 # A point outside the roots (or off a 2D octree's plane) is held
                 # within the share of the leaf's diagonal a dataset's locator
                 # accepts outside a cell.
-                scale = 1.0 / tack.f64(tack.i64(1) << tack.i64(level[n]))
+                scale = 1.0 / ((tack.i64(1) << tack.i64(level[n])) * one)
                 sx = (ax[cx + 1] - ax[cx]) * scale
                 sy = (ay[cy + 1] - ay[cy]) * scale
                 sz = 0.0
@@ -236,13 +240,15 @@ class OctreeDataSet:
     order the nodes are given; ``mask`` (one per node, nonzero hides) becomes
     ``HIDDENCELL``. The nodes are sorted in pre-order and the fields with them.
     ``world`` is where other ranks' trees are, for reductions: each rank holds
-    whole trees.
+    whole trees. ``units`` maps field names to their units
+    (``tack.dataset.units``); the spatial unit is the roots' (``unit``).
 
     ``OctreeDataSet.from_cells`` makes one from cells' levels and positions, as
     a RAMSES reader gives them; ``tack.interop.vtk`` converts
     ``vtkHyperTreeGrid``s."""
 
-    def __init__(self, roots, tree, level, key, fields=None, mask=None, world=None):
+    def __init__(self, roots, tree, level, key, fields=None, mask=None, world=None,
+                 units=None):
         from tack.dataset.topology import StructuredTopology
 
         if not isinstance(roots.topology, StructuredTopology) or \
@@ -290,6 +296,10 @@ class OctreeDataSet:
         self.fields = {}
         for name, values in (fields or {}).items():
             self.fields[name] = _reordered(values, order, device, len(order), name)
+        unknown = set(units or {}) - set(self.fields)
+        if unknown:
+            raise KeyError(f"units for fields not given: {', '.join(map(repr, sorted(unknown)))}")
+        self.units = {name: _units.canonical(unit) for name, unit in (units or {}).items()}
         self._geometry = None
         self._carried_keys = None
 
@@ -311,6 +321,24 @@ class OctreeDataSet:
     @property
     def origin(self):
         return self.roots.origin
+
+    @property
+    def unit(self):
+        """The spatial unit, the roots' (``DataSet.unit``)."""
+        return self.roots.unit
+
+    @property
+    def time(self):
+        """The step's time, the roots' (``DataSet.time``)."""
+        return self.roots.time
+
+    @property
+    def time_unit(self):
+        """The unit of ``time``, the roots'."""
+        return self.roots.time_unit
+
+    def _frame(self):
+        return self.roots._frame()
 
     @property
     def is_leaf(self):
@@ -340,7 +368,7 @@ class OctreeDataSet:
                 sides = tack.empty((self.num_nodes,), tack.vec3(dtype))
                 if self.num_nodes:
                     _node_geometry(self.tree, self.level, self.key, root_lo, root_size,
-                                   self.dimension, corner, sides)
+                                   self.dimension, 1.0, corner, sides)
             self._geometry = (corner, sides)
         return self._geometry
 
@@ -408,11 +436,12 @@ class OctreeDataSet:
             positions = tack.empty((points,), tack.vec3(self.roots.dtype))
             if points:
                 _lattice_points(si, sj, sk, flags, numbers, *axes, nx, ny, nz, finest, d,
-                                plane, positions)
+                                plane, 1.0, positions)
             types, offsets = uniform_cells(shapes.VOXEL if d == 3 else shapes.PIXEL, count,
                                            idt)
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=points)
-            fields = {name: Field(Constant(topology), gather(values, leaf))
+            fields = {name: Field(Constant(topology), gather(values, leaf),
+                                  self.units.get(name))
                       for name, values in self.fields.items()}
             marks = gather(self.marks, leaf)
             ghosts = None
@@ -420,7 +449,7 @@ class OctreeDataSet:
                 hidden = marks.numpy() & Ghosts.HIDDENCELL
                 ghosts = Ghosts(cells=tack.array(hidden.astype(np.uint8), tack.u8))
         return DataSet(topology, positions, fields=fields, dtype=self.roots.dtype,
-                       ghosts=ghosts, origin=self.origin)
+                       ghosts=ghosts, **self._frame())
 
     # -- probing ---------------------------------------------------------
 
@@ -441,10 +470,10 @@ class OctreeDataSet:
         targets = list(where) if many else [where]
         for i, target in enumerate(targets):
             if not isinstance(target, DataSet):
-                targets[i] = _vertices(relative_positions(target, self.origin), self.roots)
+                targets[i] = _vertices(relative_positions(target, self.origin, self.unit), self.roots)
             elif not isinstance(target.geometry.space, H1):
                 raise TypeError("probe needs the probed points: an H1 geometry")
-        points = [relative_positions(t, self.origin) for t in targets]
+        points = [relative_positions(t, self.origin, self.unit) for t in targets]
         counts = [len(p) for p in points]
         x = np.concatenate(points) if points else np.zeros((0, 3))
         if self.world.size == 1:
@@ -459,7 +488,7 @@ class OctreeDataSet:
             for name in [*names, "valid"]:
                 array = gather(values[name], rows).to_device(target.device)
                 kept[name] = Field(Values(target, "points") if name == "valid" else
-                                   H1(target), array)
+                                   H1(target), array, self.units.get(name))
             start += n
             out.append(keep_marks(target, DataSet(target.topology, target.geometry,
                                                   fields=kept, sets=dict(target.sets))))
@@ -480,7 +509,7 @@ class OctreeDataSet:
                 axes, plane = self._axes(dtype)
                 _find_leaves(points, *axes, nx, ny, nz, self.dimension, plane, _TOLERANCE,
                              self.tree, self.level, self._carried(), self.finest, self.marks,
-                             int(Ghosts.HIDDENCELL), found)
+                             int(Ghosts.HIDDENCELL), 1.0, found)
         return found
 
     def _probed(self, x, names):
@@ -556,7 +585,7 @@ class OctreeDataSet:
     # -- construction from cells ----------------------------------------
 
     @classmethod
-    def from_cells(cls, roots, level, position, fields=None, world=None):
+    def from_cells(cls, roots, level, position, fields=None, world=None, units=None):
         """An octree of cells given by their ``level`` and ``position`` (an ``(n, 3)``
         world position inside each cell, its centre say), as a RAMSES reader or
         yt gives them -- whole octs: every refined cell's children. Each cell's
@@ -582,7 +611,7 @@ class OctreeDataSet:
                                   (1 << level) - 1).astype(np.int64)
         key = _interleave(index, d)
         tree, level, key, fields = _with_ancestors(tree, level, key, fields or {}, d)
-        return cls(roots, tree, level, key, fields=fields, world=world)
+        return cls(roots, tree, level, key, fields=fields, world=world, units=units)
 
     # -- reductions ------------------------------------------------------
 
@@ -614,7 +643,13 @@ class OctreeDataSet:
                 moments = part if moments is None else _merged(moments, part)
         if moments is None:
             raise ValueError("statistics of no values")
-        return _summary(*moments)
+        if weights is None:
+            weight_unit = "dimensionless"
+        elif isinstance(weights, str) and weights == "volume":
+            weight_unit = _units.derived((self.unit, self.dimension))
+        else:
+            weight_unit = self.units.get(weights)
+        return _summary(*moments)._replace(unit=self.units.get(name), weight_unit=weight_unit)
 
     def _entropy(self, name, bins, weights, level):
         from tack.dataset.algorithms.entropy import _bits, _weighted_counts
@@ -648,7 +683,7 @@ class OctreeDataSet:
     def _weights(self, weights):
         if isinstance(weights, str) and weights == "volume":
             with self.device:
-                return tack.array(self.measures())
+                return tack.array(_device_floats(self.measures(), self.device))
         return self._field(weights)
 
 
@@ -678,32 +713,56 @@ def _leaves(tree, level, key, d):
 
 
 def _check_ancestors(tree, level, key, d):
-    """Refuse a node whose parent is not among the nodes."""
-    codes = _code(tree, level, key, d)
-    if len(np.unique(codes)) != len(codes):
+    """Refuse a node given twice, a node whose parent is not among the nodes, and a
+    refined node without all its children. The nodes are in pre-order, so this
+    takes native arrays and no search over codes: a node twice is two neighbours,
+    and a node's parent, if given, is the last node before it one level up (any
+    node of that level in between would sit inside the parent's run)."""
+    n = len(key)
+    if n > 1 and ((tree[1:] == tree[:-1]) & (level[1:] == level[:-1]) &
+                  (key[1:] == key[:-1])).any():
         raise ValueError("a node is given twice")
-    deep = np.flatnonzero(level > 0)
-    if not len(deep):
-        return
-    sorted_codes = np.sort(codes)
-    parents = _code(tree[deep], level[deep] - 1, key[deep] >> np.uint64(d), d)
-    at = np.minimum(np.searchsorted(sorted_codes, parents), len(sorted_codes) - 1)
-    missing = sorted_codes[at] != parents
-    if missing.any():
-        raise ValueError(f"{int(missing.sum())} nodes have no parent among the nodes: give "
-                         "every node's ancestors (from_cells adds them)")
+    parent = np.full(n, -1, np.int64)
+    missing = 0
+    by_level = [np.flatnonzero(level == lv) for lv in range(int(level.max()) + 1)] if n else []
+    for lv in range(1, len(by_level)):
+        here, above = by_level[lv], by_level[lv - 1]
+        if not len(here):
+            continue
+        if not len(above):
+            missing += len(here)
+            continue
+        k = np.searchsorted(above, here) - 1
+        p = above[np.maximum(k, 0)]
+        found = (k >= 0) & (tree[p] == tree[here]) & ((key[here] >> np.uint64(d)) == key[p])
+        missing += int((~found).sum())
+        parent[here[found]] = p[found]
+    if missing:
+        raise ValueError(f"{missing} nodes have no parent among the nodes: give every "
+                         "node's ancestors (from_cells adds them)")
     # A refined node has all 2^d children, as an oct and a HyperTreeGrid's
     # trees do: a missing one would be a hole no leaf covers.
-    _, counts = np.unique(parents, return_counts=True)
-    if (counts != 2 ** d).any():
-        raise ValueError(f"{int((counts != 2 ** d).sum())} refined nodes have fewer than "
-                         f"{2 ** d} children: give each refined node all its children")
+    counts = np.bincount(parent[parent >= 0], minlength=n)
+    short = int(((counts != 0) & (counts != 2 ** d)).sum())
+    if short:
+        raise ValueError(f"{short} refined nodes have fewer than {2 ** d} children: give each "
+                         "refined node all its children")
 
 
-def _code(tree, level, key, d):
-    """One sortable code per node, (tree, level, key) as one Python integer: a
-    host check, made once."""
-    return (tree.astype(object) << 70) | (level.astype(object) << 64) | key.astype(object)
+def _rows_absent(rows, present):
+    """The rows of ``rows`` (unique, ``(m, 2)`` int64) not among ``present`` (``(k, 2)``)."""
+    if not len(present) or not len(rows):
+        return rows
+    both = np.concatenate([present, rows])
+    order = np.lexsort((both[:, 1], both[:, 0]))
+    ranked = both[order]
+    origin = order >= len(present)                # True where the row is from ``rows``
+    same_as_previous = np.zeros(len(ranked), bool)
+    same_as_previous[1:] = (ranked[1:] == ranked[:-1]).all(axis=1)
+    # A row of ``rows`` is present when an equal row of ``present`` sorts before it
+    # (lexsort is stable, and ``present`` comes first).
+    taken = origin & ~same_as_previous
+    return ranked[taken]
 
 
 def _interleave(index, d):
@@ -721,43 +780,55 @@ def _interleave(index, d):
 
 def _with_ancestors(tree, level, key, fields, d):
     """The nodes and every ancestor none of them is, fields filled with NaN (0 for
-    integers) on the added ones."""
-    have = set(zip(tree.tolist(), level.tolist(), key.tolist()))
-    added = []
-    for t, lv, k in zip(tree.tolist(), level.tolist(), key.tolist()):
-        while lv > 0:
-            lv, k = lv - 1, k >> d
-            if (t, lv, k) in have:
-                break
-            have.add((t, lv, k))
-            added.append((t, lv, k))
+    integers) on the added ones: level by level from the finest, each level's
+    parents less the nodes already there."""
+    trees, levels, keys = [tree], [level], [key]
+    top = int(level.max()) if len(level) else 0
+    for lv in range(top, 0, -1):
+        here = np.concatenate([lv_level == lv for lv_level in levels])
+        all_tree, all_key = np.concatenate(trees), np.concatenate(keys)
+        parents = np.unique(np.stack([all_tree[here], (all_key[here] >> np.uint64(d))
+                                      .astype(np.int64)], axis=1), axis=0)
+        above = np.concatenate(levels) == lv - 1
+        present = np.stack([all_tree[above], all_key[above].astype(np.int64)], axis=1)
+        new = _rows_absent(parents, present)
+        if len(new):
+            trees.append(new[:, 0].astype(np.int64))
+            levels.append(np.full(len(new), lv - 1, np.int64))
+            keys.append(new[:, 1].astype(np.uint64))
+    added = sum(len(t) for t in trees[1:])
     if not added:
         return tree, level, key, fields
-    extra = np.array(added, dtype=object)
-    tree = np.concatenate([tree, extra[:, 0].astype(np.int64)])
-    level = np.concatenate([level, extra[:, 1].astype(np.int64)])
-    key = np.concatenate([key, extra[:, 2].astype(np.uint64)])
+    tree, level, key = (np.concatenate(a) for a in (trees, levels, keys))
     filled = {}
     for name, values in fields.items():
         host = np.asarray(arrays.to_host(values) if isinstance(values, tack.Array) else values)
-        pad = np.full((len(added), *host.shape[1:]), np.nan if host.dtype.kind == "f" else 0,
+        pad = np.full((added, *host.shape[1:]), np.nan if host.dtype.kind == "f" else 0,
                       host.dtype)
         filled[name] = np.concatenate([host, pad])
     return tree, level, key, filled
 
 
 def _reordered(values, order, device, n, name):
-    """A field's values in the nodes' order, on ``device``."""
+    """A field's values in the nodes' order, on ``device``; f64 values become f32 on
+    a device without f64 (Metal), as a point cloud's fields do."""
     host = np.asarray(arrays.to_host(values) if isinstance(values, tack.Array) else values)
     if host.shape[:1] != (n,):
         raise ValueError(f"field {name!r} has {host.shape[:1]} values for {n} nodes")
-    host = host[order]
+    host = _device_floats(host[order], device)
     with device:
         if host.ndim == 2:
             from tack.lang.types import from_numpy_dtype
             return tack.array(np.ascontiguousarray(host),
                               tack.vec(host.shape[1], from_numpy_dtype(host.dtype)))
         return tack.array(np.ascontiguousarray(host))
+
+
+def _device_floats(host, device):
+    """``host`` as the device can hold it: f64 as f32 where it has no f64."""
+    if host.dtype == np.float64 and tack.f64 not in device._backend.supported_dtypes:
+        return host.astype(np.float32)
+    return host
 
 
 def _compute_type(device, fallback):

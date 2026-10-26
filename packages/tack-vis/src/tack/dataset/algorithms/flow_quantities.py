@@ -5,6 +5,7 @@ from typing import NamedTuple
 import tack
 from tack import arrays
 from tack.arrays import materialize, size_of, width_of
+from tack.dataset import units
 from tack.dataset.algorithms._common import _field
 from tack.dataset.dataset import Field
 from tack.runtime.dispatch import on_inputs_device
@@ -47,5 +48,7 @@ def flow_quantities(data, gradient):
     q = tack.empty((n,), dtype)
     if n:
         _flow_quantities(materialize(gradient.values), divergence, vorticity, q)
-    return FlowQuantities(Field(gradient.space, divergence), Field(gradient.space, vorticity),
-                          Field(gradient.space, q))
+    unit = gradient.unit
+    return FlowQuantities(Field(gradient.space, divergence, unit),
+                          Field(gradient.space, vorticity, unit),
+                          Field(gradient.space, q, units.derived((unit, 2))))

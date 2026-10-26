@@ -178,7 +178,7 @@ def project(data, field, space):
         raise ValueError("project moves a field between spaces of one topology")
     if isinstance(space, Values) and space.on in ("points", "cells"):
         projected = project(data, field, H1(data) if space.on == "points" else Constant(data))
-        return Field(space, projected.values)
+        return Field(space, projected.values, field.unit)
     for which, s in (("from", source), ("into", space)):
         if not s.interpolated:
             raise TypeError(f"project works {which} a space with a basis, or values on the "
@@ -188,7 +188,8 @@ def project(data, field, space):
                         "they were taken from")
     values = field.values
     if space is source:
-        return Field(space, _take(values, tack.arange(space.size, dtype=data.id_dtype)))
+        return Field(space, _take(values, tack.arange(space.size, dtype=data.id_dtype)),
+                     field.unit)
     if dtype_of(values) not in (tack.f32, tack.f64):
         raise TypeError(f"project averages and interpolates floating-point values, not "
                         f"{dtype_of(values).name}")
@@ -196,26 +197,26 @@ def project(data, field, space):
         return traces(data, field)
     if not getattr(data.topology, "reference_cells", True):
         if isinstance(space, H1) and space.order == 1 and isinstance(source, Constant):
-            return Field(space, _onto_points(data, field, values))
+            return Field(space, _onto_points(data, field, values), field.unit)
         if isinstance(space, Constant) and isinstance(source, H1) and source.order == 1:
             out = _like(values, data.num_cells)
             for_each(_distinct_point_means, data, "cells", materialize(values), out)
-            return Field(space, out)
+            return Field(space, out, field.unit)
         reference_cells(data.topology, f"project from {source!r} to {space!r}")
     if isinstance(space, H1):
         if space.order == 1:
-            return Field(space, _onto_points(data, field, values))
-        return Field(space, _onto_nodes(data, field, space, values))
+            return Field(space, _onto_points(data, field, values), field.unit)
+        return Field(space, _onto_nodes(data, field, space, values), field.unit)
     out = _like(values, space.size)
     if isinstance(space, Constant) or (isinstance(space, L2) and not space.varies
                                        and space.order == 0):
         for group in data.launch_groups("cells", [field]):
             if group.count:
                 _cell_means(data.domain_view("cells", group), field.view(group), out)
-        return Field(space, out)
+        return Field(space, out, field.unit)
     target = Field(space, out)
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
             _cell_nodes(data.domain_view("cells", group), field.view(group), target.view(group),
                         space.offsets, out)
-    return Field(space, out)
+    return Field(space, out, field.unit)

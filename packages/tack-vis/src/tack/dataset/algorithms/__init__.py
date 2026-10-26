@@ -9,11 +9,13 @@ from tack.dataset.algorithms.boundary_faces import boundary_faces
 from tack.dataset.algorithms.cell_centers import cell_centers
 from tack.dataset.algorithms.cell_geometry import CellGeometry, cell_geometry
 from tack.dataset.algorithms.cell_ids import cell_ids
+from tack.dataset.algorithms.cell_quality import cell_quality
 from tack.dataset.algorithms.check_winding import check_winding
 from tack.dataset.algorithms.clip import clip
 from tack.dataset.algorithms.composite import composite
 from tack.dataset.algorithms.connected_components import connected_components
 from tack.dataset.algorithms.contour import contour
+from tack.dataset.algorithms.convert import convert
 from tack.dataset.algorithms.cross import cross
 from tack.dataset.algorithms.cylindrical import cylindrical
 from tack.dataset.algorithms.deposit import deposit
@@ -28,6 +30,7 @@ from tack.dataset.algorithms.extract_points import extract_points
 from tack.dataset.algorithms.extract_surface import extract_surface
 from tack.dataset.algorithms.face_centers import face_centers
 from tack.dataset.algorithms.face_geometry import FaceGeometry, face_geometry
+from tack.dataset.algorithms.feature_edges import EdgeKind, feature_edges
 from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantities
 from tack.dataset.algorithms.generate_global_ids import generate_global_ids
 from tack.dataset.algorithms.ghost_cells import ghost_cells, update_ghosts
@@ -66,10 +69,12 @@ from tack.dataset.algorithms.triangulate import triangulate
 from tack.dataset.algorithms.upwind_flux import upwind_flux
 from tack.dataset.algorithms.values_at_centers import values_at_centers
 from tack.dataset.algorithms.voxel_downsample import voxel_downsample
+from tack.dataset.algorithms.voxelize import voxelize
 from tack.dataset.algorithms.warp import warp
 
 __all__ = [
     "CellGeometry",
+    "EdgeKind",
     "FaceGeometry",
     "FlowQuantities",
     "ParticleStatus",
@@ -82,11 +87,13 @@ __all__ = [
     "cell_centers",
     "cell_geometry",
     "cell_ids",
+    "cell_quality",
     "check_winding",
     "clip",
     "composite",
     "connected_components",
     "contour",
+    "convert",
     "cross",
     "cylindrical",
     "deposit",
@@ -101,6 +108,7 @@ __all__ = [
     "extract_surface",
     "face_centers",
     "face_geometry",
+    "feature_edges",
     "flow_quantities",
     "generate_global_ids",
     "ghost_cells",
@@ -142,5 +150,6 @@ __all__ = [
     "upwind_flux",
     "values_at_centers",
     "voxel_downsample",
+    "voxelize",
     "warp",
 ]

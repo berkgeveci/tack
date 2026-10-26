@@ -33,7 +33,7 @@ import tack
 from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.arrays import CartesianProduct, UniformCoordinates
-from tack.dataset import shapes, views
+from tack.dataset import shapes, units, views
 from tack.dataset.sets import Sets
 from tack.dataset.spaces import H1, L2, Space
 from tack.runtime.dispatch import as_device, backend_of, get_backend, on_inputs_device, same_device
@@ -44,9 +44,14 @@ __all__ = ["DataSet", "Field", "for_each", "rectilinear_grid"]
 class Field:
     """A space and its values: any array, explicit or implicit, of scalars or vectors,
     with one value per degree of freedom of the space. Everything else a kernel needs
-    to find them belongs to the space."""
+    to find them belongs to the space.
 
-    def __init__(self, space, values):
+    ``unit`` is the values' physical unit, a string such as ``"m/s"`` kept in
+    unyt's canonical spelling (``tack.dataset.units``), or ``None`` for unknown:
+    meaning, which kernels never see. Filters that keep a quantity keep its
+    unit; anything else gives ``None`` rather than a guess."""
+
+    def __init__(self, space, values, unit=None):
         if not isinstance(space, Space):
             raise TypeError(f"a field's space is a Space on a topology, not {space!r}")
         views.storage(values)                       # refuses what is not an array
@@ -55,7 +60,13 @@ class Field:
                              f"{arrays.size_of(values)}")
         self.space = space
         self.values = values
+        self._unit = units.canonical(unit)
         _ = self._device                    # refuses values on another device
+
+    @property
+    def unit(self):
+        """The values' unit, a string, or ``None`` if unknown."""
+        return self._unit
 
     @property
     def _device(self):
@@ -79,7 +90,8 @@ class Field:
     def __repr__(self):
         values = self.values
         stored = repr(values) if isinstance(values, arrays._Implicit) else "stored"
-        return f"Field({self.space!r}, {arrays.size_of(values)} values, {stored})"
+        unit = "" if self._unit is None else f", in {self._unit}"
+        return f"Field({self.space!r}, {arrays.size_of(values)} values, {stored}{unit})"
 
 
 def _is_cells(group):
@@ -140,6 +152,8 @@ def same_origin(what, datasets):
     """The origin every one of ``datasets`` has, or ``ValueError`` naming ``what``
     if two differ: positions compared or moved between datasets must be relative
     to one origin."""
+    datasets = list(datasets)
+    units.common(f"{what}'s geometry", [d.unit for d in datasets])
     origins = {d.origin for d in datasets}
     if len(origins) > 1:
         raise ValueError(f"{what} needs its datasets on one origin, not "
@@ -147,21 +161,30 @@ def same_origin(what, datasets):
     return origins.pop() if origins else (0.0, 0.0, 0.0)
 
 
-def relative_positions(where, origin):
+def relative_positions(where, origin, unit=None):
     """``where``'s points relative to ``origin``, as a float64 host array ``(n, 3)``:
     a dataset's positions plus the difference of the two origins (none when they
-    are equal), or an array of world positions less ``origin``."""
+    are equal), or an array of world positions less ``origin``. A dataset in a
+    spatial unit other than ``unit`` is refused (positions are not converted)."""
     origin = np.asarray(as_origin(origin))
     if isinstance(where, DataSet):
+        units.check("the points' spatial unit and the dataset's", where.unit, unit)
         x = where.positions().astype(np.float64)
         return x if where.origin == tuple(origin) else x + (np.asarray(where.origin) - origin)
     return np.asarray(where, np.float64).reshape(-1, 3) - origin
 
 
-def _as_geometry(geometry, topology, dtype):
+def _as_geometry(geometry, topology, dtype, unit=None):
     """``geometry`` as a ``Field``: positions per point (a host array, or any array of
-    3-vectors, such as a ``CartesianProduct``) become an ``H1`` field on ``topology``;
-    a ``Field`` is checked."""
+    3-vectors, such as a ``CartesianProduct``) become an ``H1`` field on ``topology``
+    in ``unit``; a ``Field`` is checked, and given ``unit`` if it has none (two
+    units are refused)."""
+    if isinstance(geometry, Field) and unit is not None:
+        unit = units.canonical(unit)
+        if geometry.unit is None:
+            geometry = Field(geometry.space, geometry.values, unit)
+        elif not units.same(geometry.unit, unit):
+            raise ValueError(f"the geometry is in {geometry.unit!r}, not {unit!r}")
     if not isinstance(geometry, Field):
         try:
             views.storage(geometry)
@@ -169,7 +192,7 @@ def _as_geometry(geometry, topology, dtype):
             positions = np.ascontiguousarray(geometry)
             geometry = tack.empty((positions.shape[0],), tack.vec(3, dtype))
             tack.copyto(geometry, positions.astype(dtype.numpy_dtype))
-        geometry = Field(H1(topology), geometry)
+        geometry = Field(H1(topology), geometry, unit)
     if geometry.space.topology is not topology:
         raise ValueError("the geometry's space is on another topology")
     if not isinstance(geometry.space, (H1, L2)):
@@ -227,14 +250,26 @@ class DataSet:
     survey's eastings and northings -- keep their precision in single
     precision. Filters keep it; what takes or gives absolute positions
     (implicit functions, probe points, seeds, ``world_positions``, the VTK
-    interop) converts on the host in double precision."""
+    interop) converts on the host in double precision.
+
+    ``unit`` is the spatial unit, the geometry field's (``DataSet.unit``), in
+    which ``origin`` is too; a geometry ``Field`` brings its own.
+
+    ``time`` is when the data are, a double on the host or ``None``, in
+    ``time_unit`` (a unit of time, or ``None`` for unknown): one step of a
+    simulation as it streams through filters, which keep both, as they keep
+    the origin. Tack holds no series of steps; filters that need earlier steps
+    keep what they need (``tack.dataset.temporal``)."""
 
     @on_inputs_device
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32,
-                 ghosts=None, global_ids=None, origin=None):
+                 ghosts=None, global_ids=None, origin=None, unit=None, time=None,
+                 time_unit=None):
         self.topology = topology
-        self._geometry = _as_geometry(geometry, topology, dtype)
+        self._geometry = _as_geometry(geometry, topology, dtype, unit)
         self.origin = origin
+        self.time = time
+        self.time_unit = time_unit
         self.fields = dict(fields or {})
         for name, field in self.fields.items():
             if field.space.topology is not topology:
@@ -280,7 +315,8 @@ class DataSet:
         topology = self.topology.to_device(target)
 
         def moved(field):
-            return Field(field.space._rebuilt_on(topology), field.values.to_device(target))
+            return Field(field.space._rebuilt_on(topology), field.values.to_device(target),
+                         field.unit)
 
         sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
                 for name, s in self.sets.items()}
@@ -289,7 +325,7 @@ class DataSet:
         out = DataSet(topology, moved(self.geometry),
                       {name: moved(field) for name, field in self.fields.items()},
                       sets, dtype=self.dtype, ghosts=ghosts, global_ids=global_ids,
-                      origin=self.origin)
+                      **self._frame())
         out._ghosts_lost = self._ghosts_lost
         return out
 
@@ -374,6 +410,36 @@ class DataSet:
         self._origin = as_origin(origin)
 
     @property
+    def time(self):
+        """When the data are, a float, or ``None``: one step's time, in
+        ``time_unit``."""
+        return self._time
+
+    @time.setter
+    def time(self, time):
+        if time is not None:
+            value = float(time)
+            if not np.isfinite(value):
+                raise ValueError(f"a time is a finite number or None, not {time!r}")
+            time = value
+        self._time = time
+
+    @property
+    def time_unit(self):
+        """The unit of ``time``, a unit of time, or ``None`` if unknown."""
+        return self._time_unit
+
+    @time_unit.setter
+    def time_unit(self, unit):
+        self._time_unit = units.time_unit(unit)
+
+    def _frame(self):
+        """Where and when its positions are, as keywords for a ``DataSet`` made from
+        it: ``origin``, ``unit``, ``time``, ``time_unit``."""
+        return {"origin": self.origin, "unit": self.unit, "time": self.time,
+                "time_unit": self.time_unit}
+
+    @property
     def geometry(self):
         """The geometry, a field of positions in ``H1`` or ``L2``, relative to
         ``origin``."""
@@ -381,7 +447,15 @@ class DataSet:
 
     @geometry.setter
     def geometry(self, geometry):
-        self._geometry = _as_geometry(geometry, self.topology, self.dtype)
+        # Positions given as values stay in the spatial unit; a Field brings its own.
+        unit = None if isinstance(geometry, Field) else self.unit
+        self._geometry = _as_geometry(geometry, self.topology, self.dtype, unit)
+
+    @property
+    def unit(self):
+        """The spatial unit, the geometry's (``origin`` is in it too), a string, or
+        ``None`` if unknown."""
+        return self._geometry.unit
 
     @property
     def dtype(self):
@@ -792,16 +866,18 @@ def grid_topology(dims, id_dtype=None, device=None, offset=None):
     return StructuredTopology(axes, id_dtype=id_dtype, device=device, offset=offset)
 
 
-def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None):
+def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None, unit=None):
     """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``; see
     ``grid_topology`` for axes of one point or none. It is on ``device``, by
-    default that of axes given as device arrays, else the default device."""
+    default that of axes given as device arrays, else the default device.
+    ``unit`` is the spatial unit (``DataSet.unit``)."""
     coordinates = CartesianProduct(x, y, z, dtype=dtype, device=device)
-    return DataSet(grid_topology(coordinates.dims, device=coordinates.device), coordinates)
+    return DataSet(grid_topology(coordinates.dims, device=coordinates.device), coordinates,
+                   unit=unit)
 
 
 def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
-                 dtype=tack.f32, device=None):
+                 dtype=tack.f32, device=None, unit=None):
     """A dataset of ``dims`` points (one to three sizes) at ``origin + direction @
     (ijk * spacing)``: VTK's image data, Viskores' uniform data set. Nothing per
     point is stored (``UniformCoordinates``). A size of 1 adds no cells, in any
@@ -814,13 +890,15 @@ def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), directio
     -- a raster at survey coordinates -- loses digits in single precision:
     ``rebased(origin)`` keeps it an image with its corner relative to a nearby
     dataset origin, moved in double precision, as a point cloud's origin
-    keeps its points."""
+    keeps its points. ``unit`` is the spatial unit (``DataSet.unit``), which
+    ``origin`` and ``spacing`` are in."""
     topology = grid_topology(dims, device=device)   # the sizes as given, before padding
     return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype,
-                                                device=device))
+                                                device=device), unit=unit)
 
 
-def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None):
+def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None, unit=None,
+                units=None):
     """A point cloud: a dataset of ``positions``, one vertex cell per point (types,
     offsets and connectivity implicit, stored nowhere), with ``fields`` (a dict of
     names to one value per point, scalars or rows of components) as point data.
@@ -833,7 +911,8 @@ def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None
     precision in single precision, and other positions get zero. ``dtype`` is
     ``tack.f32``, or ``tack.f64`` on a device that has it. Floating-point fields
     become ``dtype`` too; integer fields (a LAS classification, intensities) keep
-    their type."""
+    their type. ``unit`` is the spatial unit (``DataSet.unit``), which ``origin``
+    is in, and ``units`` maps field names to their units."""
     from tack.dataset import ids
     from tack.dataset.algorithms._extract import _vertex_cells
     from tack.dataset.topology import UnstructuredTopology
@@ -854,7 +933,11 @@ def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None
         local = world.astype(np.float64) - np.asarray(as_origin(origin))
     with target:
         topology = UnstructuredTopology(*_vertex_cells(n, ids.choose(None, n)), num_points=n)
-        data = DataSet(topology, local, dtype=dtype, origin=origin)
+        data = DataSet(topology, local, dtype=dtype, origin=origin, unit=unit)
+        units = dict(units or {})
+        unknown = set(units) - set(fields or {})
+        if unknown:
+            raise KeyError(f"units for fields not given: {', '.join(map(repr, sorted(unknown)))}")
         for name, values in (fields or {}).items():
             if not isinstance(values, tack.Array):
                 host = np.asarray(values)
@@ -871,5 +954,5 @@ def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None
                                         tack.vec(width, from_numpy_dtype(host.dtype)))
                 else:
                     values = tack.array(np.ascontiguousarray(host))
-            data.fields[name] = Field(H1(data), values)
+            data.fields[name] = Field(H1(data), values, units.get(name))
     return data

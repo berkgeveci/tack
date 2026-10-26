@@ -121,6 +121,74 @@ a stretched mesh. Choose cell measures and a suitable quadrature when the
 quantity you need is a physical integral. The function returns Python values
 and therefore waits for the device work it reads.
 
+## Cell quality
+
+`cell_quality(data, measures)` measures how well shaped each cell is, a cell
+field per measure, each 1 on the ideal cell of its shape (equilateral; a cube,
+a regular tetrahedron):
+
+| Measure | What it says |
+|---|---|
+| `scaled_jacobian` | the worst corner's edges' determinant, edges scaled to unit length, relative to the ideal cell's: 1 ideal, 0 flat, negative inverted |
+| `jacobian_ratio` | the least corner determinant over the greatest: 1 for every simplex, below 1 as a cell tapers |
+| `condition` | the worst corner's condition number against the ideal cell's: 1 ideal, growing as it distorts, the largest float when inverted |
+| `edge_ratio`, `min_edge`, `max_edge` | the longest edge over the shortest; the shortest and longest, in the spatial unit |
+
+They are Verdict's definitions (VTK's `vtkMeshQuality`), matched to VTK where
+it defines them, and extended to every shape Tack has: the corners' edges are
+the geometry's Jacobian applied to the reference cell's edge directions, so
+order-2 cells are measured along their curved edges, and wedges and pyramids
+get every measure. Polyhedra and polygons, which have no reference cell, are
+measured by the fan tetrahedra and triangles Tack evaluates them in.
+
+<!-- tack-check: cell-quality -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+mesh = td.tetrahedralize(td.uniform_grid((4, 4, 4)))
+quality = td.cell_quality(mesh, ["scaled_jacobian", "condition", "edge_ratio"])
+sj = quality["scaled_jacobian"].values.numpy()
+print(f"scaled Jacobian {sj.min():.3f} to {sj.max():.3f}")
+mesh.fields["sj"] = quality["scaled_jacobian"]
+worst = td.threshold(mesh, "sj", -1.0, 0.75)          # the right-corner tetrahedra
+assert np.isclose(sj.max(), 1.0) and np.isclose(sj.min(), 1 / np.sqrt(2))
+assert worst.num_cells == np.count_nonzero(sj < 0.75)
+```
+
+## Feature edges
+
+`feature_edges(data, angle=30.0)` finds a surface's edges by how many cells
+meet there and at what angle, as VTK's `vtkFeatureEdges`: **boundary** edges
+(one cell), **feature** edges (two cells whose normals are at least `angle`
+degrees apart), **non-manifold** edges (three or more cells) and, if asked,
+**manifold** edges (the rest of the two-cell edges). The result is line cells
+on the same points with a `kind` cell field (`EdgeKind`), point fields
+carried. A volume mesh's surface comes from `extract_surface` first.
+
+<!-- tack-check: feature-edges -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+box = td.uniform_grid((4, 3, 3))
+surface = td.extract_surface(box, td.boundary_faces(box))
+edges = td.feature_edges(surface)                 # the box's 12 edges, in segments
+kinds = edges.fields["kind"].values.numpy()
+print(edges.num_cells, "feature edges")
+assert (kinds == td.EdgeKind.FEATURE).all() and edges.num_cells == 4 * 3 + 4 * 2 + 4 * 2
+open_top = td.uniform_grid((4, 4))
+assert td.feature_edges(open_top).num_cells == 12           # its boundary
+```
+
 ## Check algorithm support before building a pipeline
 
 | Task | Shape-based | Polyhedral / polygonal | Polyline |
@@ -128,7 +196,7 @@ and therefore waits for the device work it reads.
 | Select whole cells; measure cells | Yes | Yes | Yes |
 | Extract boundaries | Yes, subject to line-cell limitations | Yes | Chain ends |
 | Contour or slice | Yes, of order-1 and `L2` fields (an order-2 `H1` field is refused) | Yes | Currently unsupported |
-| Clip cells | H1 geometry required | Currently unsupported | Currently unsupported |
+| Clip cells | H1 geometry required | Polyhedra: yes, into polyhedra (faces clipped, iso-polygons as caps); polygons not yet | Currently unsupported |
 | Project between point and cell data | Yes | Yes | Yes |
 | Gradients and flow quantities | Yes | Yes: Green–Gauss over each polyhedron's faces (exact for linear fields); zero on polygons | Yes (zero) |
 | Locate cells and probe | Yes | Yes: in sub-tetrahedra or fanned triangles; cells must be star-shaped from their points' mean | Yes, on segments |

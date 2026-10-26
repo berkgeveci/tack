@@ -13,6 +13,7 @@ from tack.dataset.algorithms._common import (
     _crossing,
     _field,
     _floating_dtype,
+    _in_unit_of,
 )
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.buckets import bucket_order, run_offsets
@@ -233,13 +234,23 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     shape; cut cells become the pieces their case lists. Points are the kept
     corners, the crossings on cut edges (merged across cells) and centroid
     points; point data is interpolated onto them, cell data goes to each piece.
-    """
+
+    A polyhedral topology is clipped cell by cell into polyhedra: each cut cell
+    becomes the polyhedron of its kept part, its faces clipped (each face once,
+    so faces two cells share stay one face) and its iso-polygons -- as
+    ``contour`` traces them, by López's method -- as caps wound out of it; the
+    output is a ``PolyhedralTopology``. A point at exactly ``value`` is kept on
+    either side (``inside`` keeps at or below). Polygons and polylines are not
+    clipped yet."""
     from tack.dataset.ghosts import visible
 
     data, by = visible(data, by)
+    from tack.dataset.polyhedra import PolygonalTopology, PolyhedralTopology
 
-    if not getattr(data.topology, "reference_cells", True):
-        raise NotImplementedError("clip takes cells of the linear shapes, not polyhedra, "
+    polyhedral = isinstance(data.topology, PolyhedralTopology) and \
+        not isinstance(data.topology, PolygonalTopology)
+    if not polyhedral and not getattr(data.topology, "reference_cells", True):
+        raise NotImplementedError("clip takes cells of the linear shapes or polyhedra, not "
                                   "polygons or polylines")
     if not isinstance(data.geometry.space, H1):
         # Clip's points are merged across cells, so each needs one position.
@@ -251,10 +262,16 @@ def clip(data, by, value=0.0, inside=False, fields=None):
         space = field.space
         if not (isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")):
             raise TypeError(f"clip takes point data or an implicit function, not {space!r}")
+    # In the field's unit; an implicit function's values have none.
+    value = _in_unit_of(field, value, "clip's value")
     if arrays.width_of(field.values):
         raise TypeError("clip needs a scalar field")
     precision = _floating_dtype(field.values)
     values = _converted(_point_values(field.values, data.num_points), precision)
+    if polyhedral:
+        from tack.dataset.algorithms._clip_polyhedra import clip_polyhedra
+
+        return clip_polyhedra(data, arrays.materialize(values), float(value), inside, fields)
     invert = 1 if inside else 0           # the tables' name: keep what is below
     n = data.num_cells
 

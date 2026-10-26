@@ -7,6 +7,68 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Voxelization: `td.voxelize(data, grid, fields=None, samples=4)`, each voxel
+  of an image the fraction of its volume the data covers and each field's
+  mean over it, by sampling through `probe`, so for datasets, pieces, AMR
+  hierarchies and octrees alike.
+- Cell quality: `td.cell_quality(data, measures)`, the scaled Jacobian,
+  Jacobian ratio, condition number, edge ratio and shortest and longest edge
+  of every cell, each 1 on its shape's ideal cell. Verdict's definitions
+  (matched to VTK's `vtkMeshQuality` where it defines them), extended to every
+  shape: order-2 cells along their curved edges, wedges and pyramids, and
+  polyhedra and polygons by their fan tetrahedra and triangles.
+- Feature edges: `td.feature_edges(data, angle=30.0, boundary=True,
+  feature=True, non_manifold=True, manifold=False)`, a surface's edges by the
+  cells meeting there and their angle, as VTK's `vtkFeatureEdges` (matched
+  edge for edge), as line cells on the same points with an `EdgeKind` cell
+  field.
+- `clip` of polyhedral topologies: each cut cell becomes the polyhedron of its
+  kept part, its faces clipped once (so the output is conforming) and its
+  iso-polygons (López's, as `contour` traces them) as caps; volumes equal the
+  shape-based clip's for planes.
+- Time on datasets, for filters that stream steps (in situ): `DataSet(...,
+  time=, time_unit=)`, kept by every filter as the origin is; pieces and AMR
+  boxes at two times are refused; VTK's `DATA_TIME_STEP` both ways.
+  `tack.dataset.temporal` holds what the temporal filters share: a step cache
+  that copies what it keeps (`copy=False` keeps references) and the time
+  between steps, converted between units.
+- Running statistics and time derivatives over streamed steps:
+  `td.RunningStatistics(fields)` (per point or cell mean, variance, minimum and
+  maximum over the steps so far, by Welford's method on the device) and
+  `td.TimeDerivative(fields)` (the backward difference since the previous
+  step, in the field's unit over the time unit), each fed `update(data)` a
+  step at a time, piece by piece for a `PartitionedDataSet`; one mesh over the
+  steps (a new topology object over the same mesh is the same mesh).
+- Advection through streamed steps: `td.Advection(field, seeds)` carries
+  particles from step to step, the velocity linear in time between the kept
+  previous step and the current one (each probed in its own mesh, so meshes
+  may change; over ranks for pieces), with `inject(points, time=)` releasing
+  particles at any time; `td.extend_paths` joins each step's particles into
+  paths; `td.Pathlines` and `td.Streaklines` return the current lines every
+  step.
+- Physical units, a first pass: `Field(..., unit=)` holds the values' unit, a
+  string in unyt's canonical spelling (`None` is unknown), and the spatial
+  unit is the geometry's (`data.unit`; `uniform_grid`, `rectilinear_grid`,
+  `point_cloud` and `DataSet` take `unit=`). Filters that keep a quantity keep
+  its unit; the rest give `None`. Two known spatial units do not meet (probe,
+  pieces, AMR boxes). `convert(data, unit, field=None)` converts the geometry,
+  the origin in double precision, or a field, offsets included. The VTK
+  interop maps `UNITS_LABEL`. Tack knows the US survey foot (`ftUS`).
+  tack-vis now depends on unyt (pure Python), imported on first use.
+- Derived units: gradients (per spatial unit), jumps, `dot` and `cross` (by SI
+  name where one fits: N m is J), `composite`, cell and face measures, edge
+  lengths, fluxes and their divergence, `perot`, statistics
+  (`Statistics.unit`, `weight_unit` and `unit_of(name)`), deposits (counts,
+  `per_volume`), SPH density and sums, halo masses and radii, outlier
+  distances, normals, particle times. A difference of degrees Celsius is in
+  kelvin; such values are not multiplied. `log_values` refuses a dimensioned
+  field. `interpolate(..., unit=)` states a function's unit.
+- Quantities as parameters: lengths (`voxel_downsample(cloud, "10 cm")`,
+  radii, periodic boxes, smoothing lengths, softening, `slice_plane`'s
+  origin), thresholds and isovalues (`threshold(data, "T", "20 degC", ...)`)
+  and step sizes take a string, a `(value, unit)` pair or a unyt or pint
+  quantity, converted on the host; a plain number is as before. A mass,
+  density or velocity given as one quantity brings its unit to the result.
 - Octrees, a first pass: `td.OctreeDataSet`, a grid of octrees (VTK's
   HyperTreeGrid with branching factor 2) stored as a linear octree for GPUs,
   each node its tree, level and Morton key, sorted in pre-order; leaves,

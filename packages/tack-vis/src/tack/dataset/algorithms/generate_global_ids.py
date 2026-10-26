@@ -78,7 +78,7 @@ def generate_global_ids(data, world=None):
             copy = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
                            sets=dict(piece.sets), dtype=piece.dtype, ghosts=ghosts,
                            global_ids=GlobalIds(cells=cell_ids[g], points=point_ids[g]),
-                           origin=piece.origin)
+                           **piece._frame())
         copy._ghosts_lost = piece._ghosts_lost
         out.append(copy)
     result = PartitionedDataSet(out, world=world)

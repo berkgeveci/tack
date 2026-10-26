@@ -1053,6 +1053,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mpmath"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/47/dd32fa426cc72114383ac549964eecb20ecfd886d1e5ccf5340b55b02f57/mpmath-1.3.0.tar.gz", hash = "sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f", size = 508106, upload-time = "2023-03-07T16:47:11.061Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl", hash = "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c", size = 536198, upload-time = "2023-03-07T16:47:09.197Z" },
+]
+
+[[package]]
 name = "numba"
 version = "0.64.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1686,6 +1695,18 @@ wheels = [
 ]
 
 [[package]]
+name = "sympy"
+version = "1.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mpmath" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5", size = 6299353, upload-time = "2025-04-27T18:04:59.103Z" },
+]
+
+[[package]]
 name = "tack-core"
 version = "0.5.0"
 source = { editable = "packages/tack-core" }
@@ -1741,10 +1762,14 @@ version = "0.5.0"
 source = { editable = "packages/tack-vis" }
 dependencies = [
     { name = "tack-core" },
+    { name = "unyt" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "tack-core", editable = "packages/tack-core" }]
+requires-dist = [
+    { name = "tack-core", editable = "packages/tack-core" },
+    { name = "unyt", specifier = ">=3.0" },
+]
 
 [[package]]
 name = "tack-workspace"
@@ -1816,6 +1841,20 @@ requires-dist = [
     { name = "vtk", marker = "extra == 'interop'", specifier = ">=9.7.1" },
 ]
 provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "mpi", "dev", "interop", "docs"]
+
+[[package]]
+name = "unyt"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "sympy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/3b/4a7928146114819272c77e1541ed35744103d29961a41bb9f7bf1521ff67/unyt-3.2.0.tar.gz", hash = "sha256:066c7c39219f63cb3024548f3977cf080edf2c4a6991f0508bfb6247e3fbc842", size = 143556, upload-time = "2026-10-19T16:37:14.308Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/65/20f4c887f7d160ab5aab22a2c7e6201953c6b0f1509f0b58bbcfc5e32b66/unyt-3.2.0-py3-none-any.whl", hash = "sha256:bf691dd4f57d550f259661d2c8d5dad9bc41170ab611dbf22817b50dc2a42a97", size = 153005, upload-time = "2026-10-19T16:37:12.781Z" },
+]
 
 [[package]]
 name = "urllib3"

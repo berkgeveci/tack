@@ -2,7 +2,9 @@
 
 import numpy as np
 
+from tack.dataset import units
 from tack.dataset.algorithms._advection import ParticleStatus, _run
+from tack.dataset.algorithms._common import _has_quantity, _time_unit
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.partitioned import PartitionedDataSet
@@ -31,6 +33,9 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
 
     Over a ``PartitionedDataSet`` (``field`` by name), particles cross from
     piece to piece (``_particles.advect_pieces``)."""
+    # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
+    if _has_quantity(step_size):
+        step_size = units.magnitude(step_size, _time_unit(data, field), "advect's step size")
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import advect_pieces
         return advect_pieces(data, field, seeds, step_size, steps, integrator)
@@ -46,8 +51,9 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
                                              resume=resume)
     out = _vertices(xs, data)                  # the particles stay on the device
     points = Values(out, "points")
-    for name, values in (("steps", taken), ("time", times), ("status", status)):
-        out.fields[name] = Field(points, values)
+    for name, values, unit in (("steps", taken, None), ("time", times, _time_unit(data, field)),
+                               ("status", status, None)):
+        out.fields[name] = Field(points, values, unit)
     if seed_ids is not None:
         out.fields["seed"] = Field(points, seed_ids.to_device(out.device))
     return out

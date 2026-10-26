@@ -19,4 +19,4 @@ def edge_lengths(data):
     """Each edge's length: a field on edges."""
     out = tack.empty((data.topology.edges().num_edges,), data.dtype)
     for_each(_edge_lengths, data, "edges", out)
-    return Field(Values(data, "edges"), out)
+    return Field(Values(data, "edges"), out, data.unit)

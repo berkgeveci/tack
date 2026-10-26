@@ -30,6 +30,7 @@ from tack import arrays
 from tack import communication as tc
 from tack.dataset import _matching, shapes
 from tack.dataset._matching import INDEX_BITS
+from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.algorithms.ghost_cells import _carried, _joined, _kind
 from tack.dataset.carry import _point_values, _take
@@ -78,6 +79,8 @@ def ghost_points(data, radius=None, k=None, periodic=None, around=None, fields=N
     an image, moved by the box's side: run filters on the result without
     ``periodic``. ``data`` holds this rank's pieces, on any devices, in
     ``world`` (``data.world`` by default), on one origin, without ghosts."""
+    radius = _length(data, radius, "ghost_points' radius")
+    periodic = _length(data, periodic, "ghost_points' periodic box")
     ghosted = _ghosted(data, radius, k, periodic, around, fields, world)
     result = PartitionedDataSet(ghosted.pieces, world=ghosted.blocks.world)
     result._ghost_plans = {"points": ghosted.plan, "cells": ghosted.plan}
@@ -274,8 +277,12 @@ def _nearest(blocks, pieces, hosts, k, slack, sides, codes, box):
                 if x.dtype != tack.vec3(piece.dtype):
                     x = x.astype(tack.vec3(piece.dtype))
                 ids, d2s = locators[g].nearest(k, x)
+            # Distances travel as f64 bits in u64, which every device holds (a
+            # device without f64, as Metal, cannot hold them as f64).
+            bits = np.ascontiguousarray(d2s.numpy().reshape(-1).astype(np.float64)
+                                        .view(np.uint64))
             answers[g][source] = {"ids": ids.reshape((ids.size,)).astype(tack.i64),
-                                  "d2": d2s.reshape((d2s.size,)).astype(tack.f64)}
+                                  "d2": tack.array(bits, tack.u64, device=blocks.device(g))}
     replies = blocks.exchange(answers)
 
     # The k best of each owned point's candidates, by distance, then piece, image
@@ -293,7 +300,7 @@ def _nearest(blocks, pieces, hosts, k, slack, sides, codes, box):
             piece_of.append(np.full(len(rows) * k, b, np.int64))
             code_of.append(np.repeat(shifts, k))
             index.append(message["ids"].numpy())
-            distance.append(message["d2"].numpy())
+            distance.append(message["d2"].numpy().view(np.float64))
         point, piece_of, code_of = map(np.concatenate, (point, piece_of, code_of))
         index, distance = np.concatenate(index), np.concatenate(distance)
         real = index >= 0
@@ -401,7 +408,7 @@ def _appended(g, piece, received, names, numbered, blocks):
                 space = H1(out) if isinstance(space, H1) else Values(out, "points")
             else:
                 space = Constant(out) if isinstance(space, Constant) else Values(out, "cells")
-            out.fields[name] = Field(space, values)
+            out.fields[name] = Field(space, values, field.unit)
         for name, members in piece.sets.items():
             if members.on in ("points", "cells"):
                 out.sets[name] = Set(out, members.on, members.ids)

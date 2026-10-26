@@ -36,6 +36,29 @@ def second():
     tack.set_default_device("cpu")
 
 
+class _NoF64CPU(CPUBackend):
+    """A CPU backend posing as a device without f64, as Metal is: an f64 array
+    reaching a kernel is refused, as it is there."""
+
+    display_name = "device without f64"
+
+    def __init__(self):
+        super().__init__()
+        self.supported_dtypes = frozenset(d for d in self.supported_dtypes
+                                          if d is not tack.f64)
+
+    @property
+    def memory_domain(self):
+        return ("cpu", 3)
+
+
+@pytest.fixture
+def no_f64():
+    tack.set_default_device("cpu")
+    yield dispatch.as_device(_NoF64CPU())
+    tack.set_default_device("cpu")
+
+
 def _on(device, values):
     """Whether ``values`` (an array, a dataset, a field or a set) is on ``device``."""
     dev = values._device
@@ -93,6 +116,7 @@ CALLS = {
     "contour": lambda d: td.contour(d, "s", 3.0),
     "slice": lambda d: td.slice(d, td.Plane((0.5, 0, 0), (1, 0, 0))),
     "clip": lambda d: td.clip(d, "s", 3.0),
+    "clip_polyhedra": lambda d: td.clip(td.as_polyhedra(d), "s", 3.0),
     "threshold": lambda d: td.threshold(d, "s", 0.0, 3.0),
     "extract_geometry": lambda d: td.extract_geometry(d, td.Sphere((0, 0, 0), 1.5)),
     "extract_cells": lambda d: td.extract_cells(d, [0, 1]),
@@ -104,6 +128,7 @@ CALLS = {
     "external_faces": td.extract_surface,
     "boundary_faces": td.boundary_faces,
     "extract_edges": td.extract_edges,
+    "feature_edges": lambda d: td.feature_edges(td.extract_surface(d, td.boundary_faces(d))),
     "tetrahedralize": td.tetrahedralize,
     "shrink": td.shrink,
     "warp": lambda d: td.warp(d, (0, 0, 1), scale=0.5),
@@ -134,6 +159,7 @@ CALLS = {
     "implicit_values": lambda d: td.implicit_values(d, td.Sphere((0, 0, 0), 1.0)),
     "point_elevation": td.point_elevation,
     "cell_geometry": lambda d: td.cell_geometry(d).measure,
+    "cell_quality": lambda d: td.cell_quality(d)["scaled_jacobian"],
     "face_geometry": lambda d: td.face_geometry(d).area,
     "flow_quantities": lambda d: td.flow_quantities(d, td.gradients(d, "v")).divergence,
     "upwind_flux": lambda d: td.upwind_flux(d, "s", (1.0, 0.5, 0.0)),
@@ -155,6 +181,7 @@ CALLS = {
     "point_normals_radius": lambda d: td.point_normals(d, radius=1.0),
     "connected_components_radius": lambda d: td.connected_components(d, radius=0.5, min_size=2),
     "deposit": lambda d: td.deposit(d, _image(d)),
+    "voxelize": lambda d: td.voxelize(d, _image(d), samples=2),
     "deposit_cic": lambda d: td.deposit(d, _image(d), "s", "mean", method="cic"),
     "sph_interpolate": lambda d: td.sph_interpolate(d, d, ["s", "v"], smoothing_length=0.6,
                                                     mass=1.0, density=1.0),
@@ -202,6 +229,17 @@ def test_every_algorithm_runs_on_the_datasets_device(second, name, make):
     for part in _results(result):
         assert _on(second, part), f"{name} left {part!r} on another device"
     assert _on(second, data)          # nothing derived it elsewhere
+
+
+@pytest.mark.parametrize("name", CALLS)
+@pytest.mark.parametrize("make", ["hexes", "grid"])
+def test_every_algorithm_runs_on_a_device_without_f64(no_f64, name, make):
+    """As on Metal, everywhere: an algorithm must not make an f64 array for its
+    kernels on a device that has none (Metal's round found one in ghost_points,
+    and octrees' fields)."""
+    data = (_hexes if make == "hexes" else _grid)(no_f64)
+    for part in _results(CALLS[name](data)):
+        assert _on(no_f64, part), f"{name} left {part!r} on another device"
 
 
 @pytest.mark.parametrize("make", ["hexes", "grid"])

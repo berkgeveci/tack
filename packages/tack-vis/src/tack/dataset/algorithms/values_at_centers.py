@@ -40,4 +40,4 @@ def values_at_centers(data, field):
         raise NotImplementedError(f"values_at_centers of {field.space!r} on polyhedra, "
                                   "polygons or polylines: only point data (H1, order 1) and "
                                   "cell data (Constant) have values there")
-    return Field(Values(data, "cells"), out)
+    return Field(Values(data, "cells"), out, field.unit)

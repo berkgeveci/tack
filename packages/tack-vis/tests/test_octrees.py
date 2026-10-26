@@ -163,6 +163,9 @@ def test_trees_that_are_not_whole_are_refused():
         td.OctreeDataSet.from_cells(roots, [1, 0], [[0.2, 0.2, 0.0], [1.5, 0.5, 0.0]])
     with pytest.raises(ValueError, match="no parent"):
         td.OctreeDataSet(roots, [0], [1], [0])
+    # Tree 1's children, whose parent is only in tree 0: found in pre-order, not by key.
+    with pytest.raises(ValueError, match="4 nodes have no parent"):
+        td.OctreeDataSet(roots, [0, 1, 1, 1, 1], [0, 1, 1, 1, 1], [0, 0, 1, 2, 3])
     with pytest.raises(ValueError, match="given twice"):
         td.OctreeDataSet(roots, [0, 0], [0, 0], [0, 0])
     with pytest.raises(ValueError, match="too large for its level"):
@@ -444,6 +447,64 @@ def test_an_octree_on_a_second_device():
     assert probed.fields["T"].values.device == tack.device("cpu")   # where x's points are
     np.testing.assert_array_equal(probed.fields["T"].values.numpy(),
                                   td.probe(here, x).fields["T"].values.numpy())
+
+
+class _NoF64CPU(CPUBackend):
+    """A CPU backend posing as a device without f64, as Metal is: an f64 array
+    reaching a kernel is refused, as it is there."""
+
+    display_name = "device without f64"
+
+    def __init__(self):
+        super().__init__()
+        self.supported_dtypes = frozenset(d for d in self.supported_dtypes
+                                          if d is not tack.f64)
+
+    @property
+    def memory_domain(self):
+        return ("cpu", 2)
+
+
+@pytest.mark.parametrize("d", [2, 3])
+def test_an_octree_on_each_backend(backend, d):
+    """Every backend measures an octree, makes its leaves and probes it as the CPU
+    does: in f64 where the device has it, in f32 on one that has not (Metal),
+    whose kernels must ask for no f64. Probed at the leaves' centres, each point
+    takes its own leaf on any backend."""
+    _on_device(tack.device(backend), d)
+
+
+@pytest.mark.parametrize("d", [2, 3])
+def test_an_octree_on_a_device_without_f64(d):
+    """As on Metal, everywhere: Metal's CI job found f64 fields from NumPy reaching
+    its kernels."""
+    device = dispatch.as_device(_NoF64CPU())
+    assert not device._backend.supports_f64
+    _on_device(device, d)
+
+
+def _on_device(device, d):
+    roots, level, centre, rho, temperature = ramses_like(d)
+    here = td.OctreeDataSet.from_cells(roots, level, centre, fields={"T": temperature})
+    there = td.OctreeDataSet.from_cells(roots.to_device(device), level, centre,
+                                        fields={"T": temperature})
+    atol = 1e-12 if device._backend.supports_f64 else 1e-5
+    np.testing.assert_allclose(there.centers(), here.centers(), rtol=0, atol=atol)
+    np.testing.assert_allclose(there.measures(), here.measures(), rtol=1e-6)
+    leaves, expected = there.leaves(), here.leaves()
+    assert leaves.device == device
+    np.testing.assert_array_equal(arrays.materialize(leaves.topology.connectivity).numpy(),
+                                  arrays.materialize(expected.topology.connectivity).numpy())
+    np.testing.assert_allclose(leaves.positions(), expected.positions(), rtol=0, atol=atol)
+    leaf = np.flatnonzero(here.is_leaf)
+    x = here.centers()[leaf]
+    probed = td.probe(there, x)
+    np.testing.assert_array_equal(probed.fields["valid"].values.numpy(), 1)
+    # A device without f64 holds the field in f32.
+    np.testing.assert_array_equal(probed.fields["T"].values.numpy(),
+                                  there.fields["T"].numpy()[leaf])
+    weighted, expected = (td.statistics(o, "T", weights="volume") for o in (there, here))
+    np.testing.assert_allclose(weighted.mean, expected.mean, rtol=1e-5)
 
 
 def test_octrees_across_mpi_ranks(mpiexec):

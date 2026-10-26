@@ -41,4 +41,4 @@ def face_centers(data):
     2D mesh's face, an edge, has its midpoint, and a polyline's end its point."""
     out = _vectors(data.topology.faces().num_faces, data.dtype)
     for_each(_face_centers, data, "faces", out)
-    return Field(Values(data, "faces"), out)
+    return Field(Values(data, "faces"), out, data.unit)

@@ -4,6 +4,7 @@ import numpy as np
 
 import tack
 from tack.arrays import CountingArray
+from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms.outliers import _locator
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.point_locator import MAX_K
@@ -120,6 +121,8 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
     when one is given, else along ``direction`` (up, by default: the outside
     of terrain). ``periodic`` (a box) takes neighbours across its faces.
     ``locator`` reuses a ``PointLocator`` of ``data``."""
+    radius = _length(data, radius, "point_normals's radius")
+    periodic = _length(data, periodic, "point_normals's periodic box")
     if (k is None) == (radius is None):
         raise ValueError("point_normals takes k or radius")
     if not isinstance(data.geometry.space, H1):
@@ -148,8 +151,8 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
     if n:
         _normals(locator.grid(), offsets, ids, *map(float, toward), toward_point, normals)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
-                  sets=dict(data.sets), dtype=data.dtype, origin=data.origin)
-    out.fields["normals"] = Field(H1(out), normals)
+                  sets=dict(data.sets), dtype=data.dtype, **data._frame())
+    out.fields["normals"] = Field(H1(out), normals, "dimensionless")
     from tack.dataset.ghosts import keep_marks
 
     return keep_marks(data, out)

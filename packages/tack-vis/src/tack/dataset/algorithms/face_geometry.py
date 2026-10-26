@@ -3,6 +3,7 @@
 from typing import NamedTuple
 
 import tack
+from tack.dataset import units
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values
@@ -89,4 +90,8 @@ def face_geometry(data):
         for_each(_end_geometry, data, "cells", normals, areas)
     else:
         for_each(_face_geometry, data, "faces", normals, areas)
-    return FaceGeometry(Field(Values(data, "faces"), normals), Field(Values(data, "faces"), areas))
+    # A face of a k-dimensional mesh measures k - 1 dimensions; a polyline end's
+    # "area" is 1.
+    area = units.derived((data.unit, data.topology.dimension - 1))
+    return FaceGeometry(Field(Values(data, "faces"), normals, "dimensionless"),
+                        Field(Values(data, "faces"), areas, area))

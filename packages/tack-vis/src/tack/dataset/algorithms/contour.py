@@ -13,6 +13,7 @@ from tack.dataset.algorithms._common import (
     _compact,
     _crossing,
     _field,
+    _in_unit_of,
     _scalar_floating,
     _with_basis,
 )
@@ -43,15 +44,16 @@ def _level_values(levels, which, out):
         out[i] = levels[which[i]]
 
 
-def _with_levels(out, levels, which, several):
-    """``out`` with each cell's isovalue (``contour_value``) when several were given."""
+def _with_levels(out, levels, which, several, unit=None):
+    """``out`` with each cell's isovalue (``contour_value``, in the contoured
+    field's ``unit``) when several were given."""
     if several:
         from tack.dataset.spaces import Constant
 
         values = _like(levels, out.num_cells)
         if out.num_cells:
             _level_values(levels, which, values)
-        out.fields["contour_value"] = Field(Constant(out), values)
+        out.fields["contour_value"] = Field(Constant(out), values, unit)
     return out
 
 
@@ -225,6 +227,7 @@ def contour(data, field, value, merge_points=True, fields=None):
     fields (``Constant``, values on cells) onto its triangles, from the cell
     each came from.
     """
+    value = _in_unit_of(_field(data, field), value, "contour's value")
     from tack.dataset.ghosts import visible
 
     data, field = visible(data, field)
@@ -314,7 +317,8 @@ def contour(data, field, value, merge_points=True, fields=None):
     surface = UnstructuredTopology(types, tri_offsets, rows, num_points=count)
     return _with_levels(carry(data, surface, points=Interpolate(edges, weights),
                               cells=Pieces(triangle_cells), geometry=Field(H1(surface), points),
-                              fields=fields), levels, triangle_levels, several)
+                              fields=fields), levels, triangle_levels, several,
+                        field.unit)
 
 
 @tack.func
@@ -535,15 +539,17 @@ def _renumber_vertices(vertices, vertex_of_pair):
         vertices[i] = vertex_of_pair[vertices[i]]
 
 
-def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
-    """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
-    ``PolygonalTopology`` -- polygons, not triangles."""
-    from tack.dataset.polyhedra import PolygonalTopology, SizeBuckets
+def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
+    """A polyhedral topology's iso-polygons of point ``values`` at ``levels``, by López's
+    tracing: ``(poly_starts, vertices, poly_cells, poly_levels, polygons, ends,
+    weights, positions, count)`` -- each polygon's iso-vertices (CSR, in the
+    order traced), its cell and level, and per iso-vertex the points it lies
+    between (``ends``: ``(a, a)`` at a point whose value is the level, else the
+    edge's lower point id first), its weight from ``a`` and its position.
+    Polygons come in cell order."""
+    from tack.dataset.polyhedra import SizeBuckets
 
     t = data.topology
-    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
-        raise TypeError("a polyhedral topology contours point data")
-    values = arrays.materialize(field.values)
     entries = int(t.cell_faces.shape[0])
     idt = data.id_dtype
     # A face's crossings are at most its points; every face is in two cells at most.
@@ -604,7 +610,7 @@ def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
     offsets, count = run_offsets(names, order)
     positions = tack.empty((count,), tack.vec(3, data.dtype))
     ends = tack.empty((count,), tack.vec(2, idt))
-    weights = tack.empty((count,), arrays.dtype_of(field.values))
+    weights = tack.empty((count,), weight_dtype)
     vertex_of_pair = tack.empty((pairs,), odt)
     if count:
         _iso_vertices(names, order, offsets, values, levels, nlevels,
@@ -635,10 +641,25 @@ def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
             poly_starts, vertices, poly_cells, polygons = starts, out_vertices, out_cells, kept
             poly_levels = out_levels
             # Iso-vertices only dropped polygons used are left over, unused.
+    return (poly_starts, vertices, poly_cells, poly_levels, polygons, ends, weights,
+            positions, count)
+
+
+def _polyhedral_contour(data, field, levels, nlevels, several, fields=None):
+    """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
+    ``PolygonalTopology`` -- polygons, not triangles."""
+    from tack.dataset.polyhedra import PolygonalTopology
+
+    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
+        raise TypeError("a polyhedral topology contours point data")
+    values = arrays.materialize(field.values)
+    (poly_starts, vertices, poly_cells, poly_levels, polygons, ends, weights, positions,
+     count) = _lopez_polygons(data, values, levels, nlevels, arrays.dtype_of(field.values))
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
     return _with_levels(carry(data, surface, points=Interpolate(ends, weights),
                               cells=Pieces(poly_cells), geometry=Field(H1(surface), positions),
-                              fields=fields), levels, poly_levels, several)
+                              fields=fields), levels, poly_levels, several,
+                        field.unit)
 
 
 # ── Lines of 2D meshes ──────────────────────────────────────────────
@@ -925,7 +946,8 @@ def _contour_cell_lines(data, field, levels, nlevels, several, fields=None):
                                num_points=2 * lines)
     return _with_levels(carry(data, out, points=Interpolate(ends, weights),
                               cells=Pieces(line_cells), geometry=Field(H1(out), positions),
-                              fields=fields), levels, line_levels, several)
+                              fields=fields), levels, line_levels, several,
+                        field.unit)
 
 
 def _contour_lines(data, field, levels, nlevels, several, fields=None):
@@ -940,7 +962,8 @@ def _contour_lines(data, field, levels, nlevels, several, fields=None):
                 raise TypeError("contour needs a field with a basis on the cells")
             from tack.dataset.spaces import Constant
 
-            field = Field((H1 if field.space.on == "points" else Constant)(data), field.values)
+            field = Field((H1 if field.space.on == "points" else Constant)(data), field.values,
+                          field.unit)
         if not getattr(data.topology, "reference_cells", True):
             raise TypeError("contour of polygons takes point data")
         return _contour_cell_lines(data, field, levels, nlevels, several, fields)
@@ -1005,4 +1028,5 @@ def _contour_lines(data, field, levels, nlevels, several, fields=None):
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
     return _with_levels(carry(data, out, points=Interpolate(out_ends, out_weights),
                               cells=Pieces(line_cells), geometry=Field(H1(out), out_positions),
-                              fields=fields), levels, line_levels, several)
+                              fields=fields), levels, line_levels, several,
+                        field.unit)

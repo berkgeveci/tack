@@ -4,6 +4,7 @@ import numpy as np
 
 import tack
 from tack import arrays
+from tack.dataset.algorithms._common import _length
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.point_locator import MAX_K, _count_within, cached_point_locator
@@ -63,6 +64,8 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
     ``radius``, or its points' ``k`` nearest), and the statistical test's mean
     and deviation are over every piece's points: each point gets the whole's
     answer. The pieces come back without the copies."""
+    radius = _length(data, radius, "outliers's radius")
+    periodic = _length(data, periodic, "outliers's periodic box")
     radial = radius is not None or min_neighbors is not None
     if radial == (k is not None):
         raise ValueError("outliers takes radius and min_neighbors, or k (and deviations)")
@@ -81,7 +84,7 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
     n = data.num_points
     marks = tack.zeros((n,), tack.u8)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
-                  sets=dict(data.sets), dtype=data.dtype, origin=data.origin)
+                  sets=dict(data.sets), dtype=data.dtype, **data._frame())
     points = Values(out, "points")
     if radial:
         locator.check_radius(radius)
@@ -96,7 +99,7 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
             host = arrays.to_host(means).astype(np.float64)
             limit = host.mean() + float(deviations) * host.std()
             _above(means, float(limit), marks)
-        out.fields["mean_distance"] = Field(points, means)
+        out.fields["mean_distance"] = Field(points, means, data.unit)
     out.fields["outlier"] = Field(points, marks)
     from tack.dataset.ghosts import keep_marks
 
@@ -152,9 +155,10 @@ def _outliers_pieces(data, radius, min_neighbors, k, deviations, periodic):
     for g, piece in zip(blocks.local, data):
         with piece.device:
             result = DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
-                             sets=dict(piece.sets), dtype=piece.dtype, origin=piece.origin)
+                             sets=dict(piece.sets), dtype=piece.dtype, **piece._frame())
             for name, values in found[g].items():
-                result.fields[name] = Field(Values(result, "points"), values)
+                result.fields[name] = Field(Values(result, "points"), values,
+                                            piece.unit if name == "mean_distance" else None)
             out.append(keep_marks(piece, result))
     return PartitionedDataSet(out, world=data.world)
 

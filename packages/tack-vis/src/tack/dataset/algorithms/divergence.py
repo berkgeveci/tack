@@ -1,6 +1,7 @@
 """``divergence``: each cell's finite-volume divergence, its net outflow (``net_flux``) over its measure."""
 
 import tack
+from tack.dataset import units
 from tack.dataset.algorithms.cell_geometry import cell_geometry
 from tack.dataset.algorithms.net_flux import net_flux
 from tack.dataset.carry import _like
@@ -30,4 +31,4 @@ def divergence(data, flux):
     out = _like(net.values, data.num_cells)
     if data.num_cells:
         _per_measure(net.values, measure.values, out)
-    return Field(Values(data, "cells"), out)
+    return Field(Values(data, "cells"), out, units.derived(net.unit, (measure.unit, -1)))
