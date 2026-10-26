@@ -480,7 +480,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
     sorts keys that are far fewer than their buckets. The per-cell counts are
     scanned in place.
   - `extract_surface` of a fresh mesh peaks at 2.1 GB, down from 4.0 (VTK
-    1.5); `faces()` holds less while it works too. A face record no longer
+    1.5); `faces()` holds less while it works too. Past 20M hexahedra the
+    fresh boundary takes the points in ranges, holding at most 2 GiB of face
+    records at once, for the same surface. At 100M hexahedra it takes 1.46 s
+    and peaks at 4.7 GB, against VTK's 1.47 s and 7.6 GB; in one pass it
+    took 3.9 s. A face record no longer
     stores its lowest point, which its bucket already gives. Each bucket
     counts its faces and numbers them in place of per-record flags, run ids
     and slots, and the surface's rows come from each boundary face's cell
