@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `td.streamlines(..., step_unit="length")`: steps of a fixed arc length
+  along the velocity's direction, as VTK's `vtkStreamTracer` steps by
+  default, with `steps * step_size` the longest path and `time` still the
+  time the particle takes (1 / |v| integrated beside the path by the same
+  weights). The default, `"time"`, is unchanged. A time step sized for the
+  fastest speed made tiny steps where the flow is slow: the carotid port's
+  median step was 0.0005 long against VTK's 0.1, and GPU streamlines from
+  a few dozen seeds were 4-100x VTK's time. With length steps the four
+  streamline ports take VTK's steps, match its paths to 2e-7 (carotid
+  2e-4), and run in 0.16-0.57x its time on 8 CPU threads.
 - Implicit booleans: `td.Union(f, g, ...)`, `td.Intersection(...)` and
   `td.Difference(...)` combine implicit functions as VTK's
   `vtkImplicitBoolean` does (the smallest value, the largest, the first's or

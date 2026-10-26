@@ -136,7 +136,7 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
     return PartitionedDataSet(out, world=blocks.world)
 
 
-def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
+def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", unit="time"):
     """``streamlines`` over the pieces of ``data``: each piece's share of the
     paths, a ``PartitionedDataSet`` of polyline datasets. A particle's path is
     cut where it crosses from piece to piece: each piece holds the stretches it
@@ -147,7 +147,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
     from tack.dataset.polyhedra import PolylineTopology
 
     blocks, pieces, _, traced = _rounds(data, field, seeds, step_size, steps, integrator,
-                                        record=True)
+                                        record=True, unit=unit)
     out = []
     for g, piece in zip(blocks.local, pieces):
         stretches = sorted(traced[g], key=lambda s: (s[0], s[1]))
@@ -187,7 +187,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
     return PartitionedDataSet(out, world=blocks.world)
 
 
-def _rounds(data, field, seeds, step_size, steps, integrator, record):
+def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time"):
     """The rounds: ``(blocks, pieces, finished, traced)``, the particles each piece
     finished with, and with ``record`` each piece's stretches ``(seed, segment,
     positions, times)``."""
@@ -215,7 +215,7 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record):
             finished[g].append(outside[g])
             pending[g], done = _advance(pieces[g - blocks.local.start], field,
                                         arrived[g], step_size, steps, integrator, record,
-                                        traced[g])
+                                        traced[g], unit)
             finished[g].append(done)
     else:
         raise RuntimeError("particles were still in flight after a round per step")
@@ -290,7 +290,8 @@ def _route(blocks, pieces, locators, boxes, pending):
     return arrived, outside
 
 
-def _advance(piece, field, particles, step_size, steps, integrator, record, traced):
+def _advance(piece, field, particles, step_size, steps, integrator, record, traced,
+             unit="time"):
     """Advect a piece's particles: ``(in flight, finished)``. With ``record``, each
     particle's stretch here goes into ``traced``."""
     if not len(particles):
@@ -300,7 +301,7 @@ def _advance(piece, field, particles, step_size, steps, integrator, record, trac
     with piece.device:
         xs, times, taken, status, (trace, trace_times), lengths, capacity = _run(
             piece, field, np.asarray(particles.x, dtype), step_size, steps, integrator,
-            None, record, resume=resume, handoff=True)
+            None, record, resume=resume, handoff=True, unit=unit)
     out = _Particles(xs.numpy().reshape(-1, 3), time=times.numpy(), steps=taken.numpy(),
                      status=status.numpy(), seed=particles.seed,
                      segments=particles.segments + 1)

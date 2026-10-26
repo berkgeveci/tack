@@ -4,7 +4,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, units
 from tack.dataset.algorithms._advection import _run
-from tack.dataset.algorithms._common import _has_quantity, _time_unit
+from tack.dataset.algorithms._common import _has_quantity, _length, _time_unit
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -48,23 +48,34 @@ def _chains(kept, starts, lengths, line_offsets, line_points):
 
 
 @on_inputs_device
-def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
+def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
+                step_unit="time"):
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
     ``time`` on the points. A seed that takes no step has a point and no line.
 
+    ``step_unit`` is what ``step_size`` measures: ``"time"`` (the default, as
+    ``advect`` and Viskores step), or ``"length"``, an arc length along the
+    path: the particle follows the velocity's direction, as VTK's
+    ``vtkStreamTracer`` does by default, so slow flow takes as long steps as
+    fast, and ``steps * step_size`` is the longest path. ``time`` is the time
+    the particle takes either way.
+
     Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
     piece, each piece holding the stretches it traced
     (``_particles.streamlines_pieces``)."""
-    # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
-    if _has_quantity(step_size):
+    # A step as a time ("0.5 s") is in the spatial unit over the velocity's; as
+    # a length ("1 mm"), in the spatial unit.
+    if step_unit == "length":
+        step_size = _length(data, step_size, "streamlines's step size")
+    elif _has_quantity(step_size):
         step_size = units.magnitude(step_size, _time_unit(data, field), "streamlines's step size")
     from tack.dataset.partitioned import PartitionedDataSet
 
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import streamlines_pieces
-        return streamlines_pieces(data, field, seeds, step_size, steps, integrator)
+        return streamlines_pieces(data, field, seeds, step_size, steps, integrator, step_unit)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
@@ -74,7 +85,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     from tack.dataset.polyhedra import PolylineTopology
 
     _, _, _, _, (trace, trace_times), lengths, capacity = _run(
-        data, field, seeds, step_size, steps, integrator, locator, record=True)
+        data, field, seeds, step_size, steps, integrator, locator, record=True, unit=step_unit)
     # Everything is chosen and numbered on the device; only counts come back.
     m = int(lengths.shape[0])
     idt = ids.for_output(data, m * capacity)
