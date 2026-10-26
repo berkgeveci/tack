@@ -344,3 +344,162 @@ def test_structure_of_arrays_fields_and_positions(device, wp_device):
     assert [c.ptr for c in components] == [x._buffer.address for x in xyz]
     back = from_simdata(grid)
     np.testing.assert_array_equal(back.fields["v"].values.numpy(), p)
+
+
+# ── Models Tack takes as they are (no to_vtk_data_model) ────────────
+
+@pytest.fixture
+def no_vtk_conversion(monkeypatch):
+    """The direct imports never go through warp-simdata's VTK conversion."""
+    from warp_simdata.data_models.vtk import conversion
+
+    def refused(ds):
+        raise AssertionError("to_vtk_data_model was called")
+    monkeypatch.setattr(conversion, "to_vtk_data_model", refused)
+
+
+def _stored_twin(data):
+    """``data`` with its topology's arrays stored (materialized), to compute against."""
+    t = data.topology
+    with data.device:
+        twin = td.DataSet(td.UnstructuredTopology(
+            np.asarray(tack.arrays.to_host(t.types)), np.asarray(tack.arrays.to_host(t.offsets)),
+            np.asarray(tack.arrays.to_host(t.connectivity)), num_points=t.num_points),
+            data.positions())
+    for name, field in data.fields.items():
+        twin.fields[name] = td.Field(type(field.space)(twin), field.values)
+    return twin
+
+
+def _ints(values, device):
+    return wp.array(np.asarray(values, np.int32), dtype=wp.int32, device=device)
+
+
+def test_a_surface_mesh_shares_its_faces(device, wp_device, no_vtk_conversion):
+    from warp_simdata.data_models.custom import surface_mesh
+
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 0, 0]], np.float32)
+    mesh = surface_mesh.create_dataset(wp.array(points, dtype=wp.vec3f, device=wp_device),
+                                       _ints([0, 1, 2, 3, 1, 4, 2], wp_device),
+                                       face_vertex_counts=_ints([4, 3], wp_device))
+    mesh.add_field("c", sd.Field.from_array(wp.array(np.array([1.0, 2.0], np.float32),
+                                                     device=wp_device),
+                                            sd.AssociationType.ELEMENT))
+    data = from_simdata(mesh)
+    t = data.topology
+    assert isinstance(t, td.PolygonalTopology)
+    offsets, loops = t.loops()
+    assert loops._buffer.address == mesh.handle.face_vertex_indices.ptr      # shared
+    np.testing.assert_array_equal(offsets.numpy(), [0, 4, 7])
+    np.testing.assert_array_equal(data.fields["c"].values.numpy(), [1, 2])
+
+
+def _openfoam(poly, device):
+    """Tack's polyhedra as an OpenFOAM polyMesh: internal faces first, owner below
+    neighbour, each face wound out of its owner."""
+    from warp_simdata.data_models.openfoam import polymesh
+
+    t = poly.topology
+    face_offsets, face_points = t.arrays()[:2]
+    sides = t.faces().sides.numpy()
+    internal, boundary = [], []
+    for f in range(t.num_faces):
+        ring = face_points[face_offsets[f]:face_offsets[f + 1]]
+        a, b = int(sides[f][0]), int(sides[f][2])
+        if b < 0:
+            boundary.append((a, -1, ring))
+        elif a < b:
+            internal.append((a, b, ring))
+        else:
+            internal.append((b, a, np.roll(ring[::-1], 1)))
+    faces = sorted(internal, key=lambda e: (e[0], e[1])) + sorted(boundary, key=lambda e: e[0])
+    counts = [len(ring) for _, _, ring in faces]
+    return polymesh.create_dataset(
+        wp.array(poly.positions().astype(np.float32), dtype=wp.vec3f, device=device),
+        _ints(np.concatenate([ring for _, _, ring in faces]), device),
+        _ints([o for o, _, _ in faces], device), _ints([n for _, n, _ in internal], device),
+        _ints(np.concatenate([[0], np.cumsum(counts)]), device))
+
+
+def test_an_openfoam_mesh_is_tacks_polyhedra(device, wp_device, no_vtk_conversion):
+    """polyMesh's arrays are a PolyhedralTopology's: shared, the sides from owner."""
+    with device:
+        poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    mesh = _openfoam(poly, wp_device)
+    data = from_simdata(mesh)
+    t = data.topology
+    assert isinstance(t, td.PolyhedralTopology)
+    assert t.face_points._buffer.address == mesh.handle.faces.ptr
+    assert t.cell_faces._buffer.address == mesh.handle.cell_faces.ptr
+    assert t.num_faces == poly.topology.num_faces and len(td.check_winding(data)) == 0
+    assert _boundary(t) == _boundary(poly.topology)
+    np.testing.assert_allclose(td.algorithms.cell_geometry(data)[0].values.numpy(),
+                               td.algorithms.cell_geometry(poly)[0].values.numpy(), rtol=1e-6)
+
+
+def _cgns(points, element_type, connectivity, count, device, start=None):
+    from warp_simdata.data_models.sids import unstructured as sids
+
+    return sids.create_dataset(
+        wp.array(points.astype(np.float32), dtype=wp.vec3f, device=device), element_type,
+        wp.vec2i(1, count), _ints(connectivity, device),
+        None if start is None else _ints(start, device))
+
+
+def test_a_cgns_section_of_one_shape(device, wp_device, no_vtk_conversion):
+    """Constant types, counting offsets, and the 1-based connectivity read 0-based by
+    a Transform: nothing copied, and filters compute as on stored arrays."""
+    base = _two_hexes_and_a_pyramid()
+    conn = base.topology.connectivity.numpy()[:16]
+    section = _cgns(base.positions(), 17, conn + 1, 2, wp_device)        # HEXA_8
+    section.add_field("h", sd.Field.from_array(
+        wp.array(base.positions()[:, 2].copy(), device=wp_device), sd.AssociationType.NODE))
+    data = from_simdata(section)
+    t = data.topology
+    assert isinstance(t.types, tack.arrays.ConstantArray)
+    assert isinstance(t.offsets, tack.arrays.CountingArray)
+    assert isinstance(t.connectivity, tack.arrays.Transform)
+    np.testing.assert_array_equal(tack.arrays.to_host(t.connectivity), conn)
+    assert data.geometry.values._buffer.address == section.handle.grid_coords.ptr
+    twin = _stored_twin(data)
+    for call in (lambda d: td.algorithms.cell_geometry(d)[0].values.numpy(),
+                 lambda d: td.contour(d, "h", 0.5).positions()):
+        np.testing.assert_array_equal(call(data), call(twin))
+
+
+def test_a_cgns_mixed_section_is_read_lazily(device, wp_device, no_vtk_conversion):
+    """MIXED: the type codes inline in the connectivity. Types through two
+    permutations (the codes, then CGNS to VTK), offsets less one code per earlier
+    element, point ids by a binary search; computes as stored arrays do."""
+    base = _two_hexes_and_a_pyramid()
+    t0 = base.topology
+    offsets, conn = t0.offsets.numpy(), t0.connectivity.numpy()
+    codes = {12: 17, 14: 12}
+    mixed, start = [], [0]
+    for c, vtk in enumerate(t0.types.numpy()):
+        mixed += [codes[int(vtk)], *(conn[offsets[c]:offsets[c + 1]] + 1)]
+        start.append(len(mixed))
+    section = _cgns(base.positions(), 20, mixed, 3, wp_device, start)          # MIXED
+    section.add_field("h", sd.Field.from_array(
+        wp.array(base.positions()[:, 2].copy(), device=wp_device), sd.AssociationType.NODE))
+    data = from_simdata(section)
+    t = data.topology
+    np.testing.assert_array_equal(tack.arrays.to_host(t.types), [12, 12, 14])
+    np.testing.assert_array_equal(tack.arrays.to_host(t.offsets), offsets)
+    np.testing.assert_array_equal(tack.arrays.to_host(t.connectivity), conn)
+    twin = _stored_twin(data)
+    for call in (lambda d: td.algorithms.cell_geometry(d)[0].values.numpy(),
+                 lambda d: td.contour(d, "h", 0.5).positions()):
+        np.testing.assert_array_equal(call(data), call(twin))
+
+
+def test_point_clouds_are_implicit_vertex_cells(device, wp_device, no_vtk_conversion):
+    from warp_simdata.data_models.custom import point_cloud
+
+    xyz = np.random.default_rng(1).random((20, 3)).astype(np.float32)
+    data = from_simdata(point_cloud.create_dataset(wp.array(xyz, dtype=wp.vec3f,
+                                                            device=wp_device)))
+    t = data.topology
+    assert all(isinstance(a, (tack.arrays.ConstantArray, tack.arrays.CountingArray))
+               for a in (t.types, t.offsets, t.connectivity))
+    np.testing.assert_array_equal(data.positions(), xyz)

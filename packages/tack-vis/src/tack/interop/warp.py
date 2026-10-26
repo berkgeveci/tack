@@ -34,7 +34,19 @@ import math
 import numpy as np
 
 import tack
-from tack.arrays import _Implicit, materialize
+from tack.arrays import (
+    ConstantArray,
+    CountingArray,
+    Permutation,
+    Transform,
+    View,
+    _Implicit,
+    _metadata,
+    _operand,
+    _operands,
+    materialize,
+    size_of,
+)
 from tack.lang.array import Array, SoaArray, _array_view
 from tack.lang.types import ElementType, mat, vec
 
@@ -350,8 +362,11 @@ def from_simdata(ds):
     """A warp-simdata dataset (or ``DatasetCollection``) as a Tack ``DataSet`` (or
     ``PartitionedDataSet``) on the Warp device, sharing its arrays.
 
-    Any of warp-simdata's models goes through its ``to_vtk_data_model`` first.
-    Image data becomes a uniform grid (``offset`` from its extent), a structured
+    Point clouds, surface meshes, OpenFOAM polyMesh and CGNS sections of linear
+    elements (one shape or MIXED) are taken as they are: their arrays become
+    Tack's, CGNS's 1-based and MIXED connectivities read lazily (see "models
+    imported as they are"). Every other model goes through warp-simdata's
+    ``to_vtk_data_model`` first. Image data becomes a uniform grid (``offset`` from its extent), a structured
     grid a structured topology over its points, polydata of polygons or
     polylines a polygonal or polyline topology (vertices alone become vertex
     cells; a mix of kinds is refused: split it first), and an unstructured grid
@@ -370,10 +385,6 @@ def from_simdata(ds):
 
     from tack.arrays import ConstantArray, UniformCoordinates
     from tack.dataset import (
-        H1,
-        Constant,
-        DataSet,
-        Field,
         PartitionedDataSet,
         PolygonalTopology,
         PolyhedralTopology,
@@ -382,10 +393,18 @@ def from_simdata(ds):
     )
     from tack.dataset.dataset import grid_topology
 
-    ds = to_vtk_data_model(ds)
     if isinstance(ds, sd.DatasetCollection):
-        return PartitionedDataSet(from_simdata(piece) for piece in ds.datasets)
+        pieces = ds.datasets
+        if any(not piece.has_field(name) for name in ds.get_field_names() for piece in pieces):
+            # Fields of the collection itself: its VTK conversion hands them out.
+            pieces = to_vtk_data_model(ds).datasets
+        return PartitionedDataSet(from_simdata(piece) for piece in pieces)
     device = tack.device("warp")
+    with device:
+        direct = _direct_topology(ds, device)
+    if direct is not None:
+        return _with_fields(ds, *direct, device)
+    ds = to_vtk_data_model(ds)
     handle, kind = ds.handle, ds.data_model.DatasetHandle
     if kind is image_data.DatasetHandle:
         lo = np.asarray(handle.extent_min, np.int64)
@@ -433,7 +452,7 @@ def from_simdata(ds):
     elif kind is unstructured_grid.DatasetHandle:
         n = ds.get_num_nodes()
         types = from_warp(handle.cell_types)
-        present = {int(t) for t in np.unique(types.numpy())}
+        present = _present_types(types)
         if 42 in present:
             with device:                    # its new arrays on the Warp device
                 topology = _polyhedra_from_simdata(handle, PolyhedralTopology, n)
@@ -443,6 +462,15 @@ def from_simdata(ds):
         geometry = from_warp(handle.points)
     else:
         raise TypeError(f"no Tack topology for warp-simdata's {kind.__name__}")
+    return _with_fields(ds, topology, geometry, device)
+
+
+def _with_fields(ds, topology, geometry, device):
+    """The dataset of ``topology`` and ``geometry`` with ``ds``'s fields: NODE as H1,
+    ELEMENT as Constant, each sharing its storage."""
+    sd = _simdata()
+    from tack.dataset import H1, Constant, DataSet, Field
+
     with device:
         data = DataSet(topology, geometry)
         for name in ds.get_field_names():
@@ -559,3 +587,151 @@ def _polyhedra_on_host(handle, PolyhedralTopology, num_points):
             loops.append(ring if orientation[slot] >= 0 else np.roll(ring[::-1], 1))
         cells.append(loops)
     return PolyhedralTopology.from_cell_faces(cells, num_points)
+
+
+# ── warp-simdata models imported as they are ────────────────────────────
+#
+# Some of warp-simdata's models are already arrays Tack's topologies take, so
+# they come across without its to_vtk_data_model (which copies them, element
+# by element for most): point clouds, surface meshes, OpenFOAM polyMesh, and
+# CGNS sections of linear elements, one shape or MIXED. CGNS ids are 1-based,
+# and a MIXED section's type codes are inline in its connectivity; implicit
+# arrays (Transform, Permutation and two below) read them as Tack's, lazily.
+
+#: VTK's cell type for each linear CGNS element type (index: the CGNS type), 0
+#: for the rest (higher-order types, which Tack's shapes do not have).
+_VTK_BY_CGNS = np.zeros(32, np.uint8)
+_VTK_BY_CGNS[[2, 3, 5, 7, 10, 12, 14, 17]] = [1, 3, 5, 9, 10, 14, 13, 12]
+#: Corners of each of those CGNS types.
+_CORNERS_BY_CGNS = {2: 1, 3: 2, 5: 3, 7: 4, 10: 4, 12: 5, 14: 6, 17: 8}
+_CGNS_MIXED = 20
+
+
+@tack.func
+def _zero_based(i):
+    return tack.i32(i - 1)
+
+
+@tack.device_class
+class _LessIndex(_Implicit):
+    """``base[k] - k``: a CGNS MIXED section's element start offsets as offsets into
+    its connectivity without the type codes (one inline code per earlier element)."""
+
+    def __init__(self, base):
+        self.base = _operand(base)
+        _metadata(self, size_of(self.base), None, tack.i32)
+
+    @tack.func
+    def get(self, k):
+        return tack.i32(self.base.get(k) - k)
+
+
+@tack.device_class
+class _MixedPoints(_Implicit):
+    """A CGNS MIXED section's point ids, 0-based and without its inline type codes:
+    entry ``j`` is element ``c``'s, the last whose ``start[c] - c`` is at most
+    ``j``, found by a binary search (readers of a connectivity go by entry, not by
+    element), at ``connectivity[j + c + 1]``."""
+
+    def __init__(self, connectivity, start, elements):
+        self.connectivity, self.start = _operands(connectivity, start)
+        self.elements = int(elements)
+        _metadata(self, size_of(self.connectivity) - int(elements), None, tack.i32)
+
+    @tack.func
+    def get(self, j):
+        lo = 0
+        hi = self.elements
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if self.start.get(mid) - mid <= j:
+                lo = mid
+            else:
+                hi = mid
+        return tack.i32(self.connectivity.get(j + lo + 1) - 1)
+
+
+@tack.kernel
+def _owner_sides(cell_face_offsets, cell_faces, owner, sides):
+    # OpenFOAM winds each face out of its owner: side 0 there, 1 in its neighbour.
+    for c in range(cell_face_offsets.shape[0] - 1):
+        for s in range(cell_face_offsets[c], cell_face_offsets[c + 1]):
+            if owner[cell_faces[s]] == c:
+                sides[s] = 0
+            else:
+                sides[s] = 1
+
+
+@tack.kernel
+def _types_present(types, present):
+    for c in range(types.shape[0]):
+        tack.atomic_max(present, tack.i32(types[c]), 1)
+
+
+def _present_types(types):
+    """The cell types present, from flags a kernel sets on the device: a kilobyte
+    comes to the host, not every cell's type."""
+    present = tack.zeros((256,), tack.i32, device=types.device)
+    if types.shape[0]:
+        _types_present(types, present)
+    return {int(t) for t in np.flatnonzero(present.numpy())}
+
+
+def _direct_topology(ds, device):
+    """``(topology, geometry)`` of a model Tack takes as it is, or None."""
+    from warp_simdata.data_models.custom import (
+        gaussian_point_cloud,
+        point_cloud,
+        surface_mesh,
+        voronoi_point_cloud,
+    )
+    from warp_simdata.data_models.openfoam import polymesh
+    from warp_simdata.data_models.sids import unstructured as sids
+
+    from tack.dataset import PolygonalTopology, PolyhedralTopology, UnstructuredTopology
+
+    model, handle = ds.data_model, ds.handle
+    if model in (point_cloud.DataModel, gaussian_point_cloud.DataModel,
+                 voronoi_point_cloud.DataModel):
+        n = ds.get_num_nodes()
+        topology = UnstructuredTopology(ConstantArray(1, n, dtype=tack.u8, device=device),
+                                        CountingArray(n + 1, dtype=tack.i32),
+                                        CountingArray(n, dtype=tack.i32), num_points=n)
+        return topology, from_warp(handle.points)
+    if model is surface_mesh.DataModel:
+        topology = PolygonalTopology(from_warp(handle.face_offsets),
+                                     from_warp(handle.face_vertex_indices),
+                                     num_points=ds.get_num_nodes())
+        return topology, from_warp(handle.points)
+    if model is polymesh.DataModel:
+        cell_face_offsets = from_warp(handle.cell_face_offsets)
+        cell_faces = from_warp(handle.cell_faces)
+        sides = tack.empty((cell_faces.shape[0],), tack.u8)
+        if cell_faces.shape[0]:
+            _owner_sides(cell_face_offsets, cell_faces, from_warp(handle.owner), sides)
+        topology = PolyhedralTopology(from_warp(handle.face_offsets), from_warp(handle.faces),
+                                      cell_face_offsets, cell_faces, sides,
+                                      num_points=ds.get_num_nodes())
+        return topology, from_warp(handle.points)
+    if getattr(model, "DatasetHandle", None) is sids.DatasetHandle:
+        kind = int(handle.element_type)
+        n = int(handle.element_range[1]) - int(handle.element_range[0]) + 1
+        connectivity = from_warp(handle.element_connectivity)
+        if kind in _CORNERS_BY_CGNS:
+            k = _CORNERS_BY_CGNS[kind]
+            topology = UnstructuredTopology(
+                ConstantArray(int(_VTK_BY_CGNS[kind]), n, dtype=tack.u8, device=device),
+                CountingArray(n + 1, step=k, dtype=tack.i32),
+                Transform(_zero_based, connectivity, dtype=tack.i32),
+                num_points=ds.get_num_nodes())
+        elif kind == _CGNS_MIXED:
+            start = from_warp(handle.element_start_offset)
+            codes = Permutation(View(start, 0, n), connectivity)
+            table = tack.array(_VTK_BY_CGNS, device=device)
+            topology = UnstructuredTopology(Permutation(codes, table), _LessIndex(start),
+                                            _MixedPoints(connectivity, start, n),
+                                            num_points=ds.get_num_nodes())
+        else:
+            return None             # NGON_n, NFACE_n, higher-order: through VTK's models
+        return topology, from_warp(handle.grid_coords)
+    return None
