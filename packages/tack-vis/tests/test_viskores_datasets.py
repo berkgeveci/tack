@@ -15,6 +15,15 @@ import test_dataset_devices
 import tack
 import tack.dataset as td
 
+try:
+    import vtkmodules.vtkCommonDataModel  # noqa: F401
+except ImportError:
+    have_vtk = False
+else:
+    have_vtk = True
+
+needs_vtk = pytest.mark.skipif(not have_vtk, reason="needs VTK, the reference")
+
 
 @pytest.fixture(autouse=True)
 def on_each_f64_backend(f64_backend):
@@ -23,15 +32,22 @@ def on_each_f64_backend(f64_backend):
     tack.set_default_device("cpu")
 
 
-def _with_fields(m):
-    """``m`` as a Tack dataset and a VTK one, each with ``s`` (the squared distance
-    from the origin) on points and ``c`` (the cell's index) on cells."""
-    data, vtk_data = vd.to_tack(m), vd.to_vtk(m)
+def _fields(m):
+    """``m`` as a Tack dataset with ``s`` (the squared distance from the origin) on
+    points and ``c`` (the cell's index) on cells; and ``s`` and ``c``."""
+    data = vd.to_tack(m)
     x = data.positions().astype(np.float64)
     s = (x ** 2).sum(1)
     c = np.arange(data.num_cells, dtype=np.float64)
     data.fields["s"] = td.Field(td.H1(data), tack.array(s))
     data.fields["c"] = td.Field(td.Constant(data), tack.array(c))
+    return data, s, c
+
+
+def _with_fields(m):
+    """``_fields(m)``, and ``m`` as a VTK dataset with the same fields."""
+    data, s, c = _fields(m)
+    vtk_data = vd.to_vtk(m)
     vtk_data.point_data["s"] = s.copy()
     vtk_data.cell_data["c"] = c.copy()
     return data, vtk_data, s
@@ -94,7 +110,7 @@ def test_as_polyhedra_refuses_inside_out_neighbours():
     that do not close. Cells all inside out are consistent and convert."""
     with pytest.raises(ValueError, match="wound the same way by both their cells"):
         td.as_polyhedra(vd.to_tack(vd.make_3d_explicit_5()))
-    data, _, s = _with_fields(vd.make_3d_explicit_4())
+    data, s, _ = _fields(vd.make_3d_explicit_4())
     polyhedra = td.as_polyhedra(data)
     np.testing.assert_allclose(td.cell_geometry(polyhedra).measure.values.numpy(), [-1, -1])
     level = float(np.median(s))
@@ -112,6 +128,7 @@ def _read(name):
 
 
 @pytest.mark.quick
+@needs_vtk
 def test_contours_of_viskores_files():
     """``UnitTestContourFilter``'s files. Seven values over the 3D cells of one of
     every shape (Viskores contours a mesh's highest dimension, as Tack does): 10
@@ -141,6 +158,7 @@ def test_contours_of_viskores_files():
 
 
 @pytest.mark.quick
+@needs_vtk
 def test_contours_by_cell_dimension():
     """``TestMixedShapes``' input cell dimensions, on the shapes of
     ``mixed-cell-shapes.vtk`` Tack holds in one topology (its polygon, strip and
@@ -183,6 +201,7 @@ def test_contours_by_cell_dimension():
 
 
 @pytest.mark.quick
+@needs_vtk
 def test_a_point_and_a_cell_array_of_one_name_both_arrive():
     """VTK keeps point and cell arrays apart; a dataset's fields share one name
     space. The cell array of ``mixed-cell-shapes.vtk``'s ``scalars`` once
@@ -210,6 +229,7 @@ _DESIGN = {
 
 
 @pytest.mark.quick
+@needs_vtk
 @pytest.mark.parametrize("name", vd.ALL)
 def test_filters_are_vtks(name):
     """Contour and clip measures, threshold counts, cell centers and averages to and
@@ -279,7 +299,7 @@ def test_every_algorithm_answers_or_refuses(name):
     """Every algorithm of the device tests on each dataset: an answer, or one of the
     stated refusals. Mixed dimensions once failed inside cell_geometry, net_flux
     and perot ("no @tack.func method 'side_position'")."""
-    data, _, _ = _with_fields(vd.ALL[name]())
+    data, _, _ = _fields(vd.ALL[name]())
     x = data.positions().astype(np.float64)
     data.fields["v"] = td.Field(td.H1(data), tack.array(x, tack.vec3(tack.f64)))
     data.sets["corner"] = td.Set(data, "cells", [0])
