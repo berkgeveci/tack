@@ -194,7 +194,8 @@ def _shared_or_copied(values, dtype, device):
     ``device``: Tack's own memory when it is that already, else a copy."""
     wp = _warp()
     values = materialize(values)
-    if (values._device.name == "warp" and values.dtype == _tack_dtype(dtype)
+    if (not isinstance(values, SoaArray) and values._device.name == "warp"
+            and values.dtype == _tack_dtype(dtype)
             and str(values._device.wp_device) == str(device)):
         return to_warp(values)
     host = np.ascontiguousarray(values.numpy(), dtype=_tack_dtype(dtype).numpy_dtype
@@ -235,6 +236,12 @@ def _add_fields(data, out, device):
         else:
             continue
         values = materialize(values)
+        if isinstance(values, SoaArray):
+            # warp-simdata has structure-of-arrays fields too: each component shared.
+            scalar = _warp_dtype(values.components[0].dtype)
+            out.add_field(name, sd.Field.from_arrays(
+                [_shared_or_copied(c, scalar, device) for c in values.components], association))
+            continue
         target = _warp_dtype(values.dtype)
         out.add_field(name, sd.Field.from_array(_shared_or_copied(values, target, device),
                                                 association))

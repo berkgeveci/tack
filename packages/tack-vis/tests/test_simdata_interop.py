@@ -242,3 +242,20 @@ def test_a_model_that_is_not_vtk_shaped(device, wp_device):
     assert set(np.unique(data.topology.types.numpy())) == {1}             # VTK_VERTEX
     np.testing.assert_array_equal(data.positions(), xyz)
     np.testing.assert_array_equal(data.fields["m"].values.numpy(), xyz[:, 0])
+
+
+def test_structure_of_arrays_fields_and_positions(device, wp_device):
+    """An SOA field goes across as warp-simdata's SoA field, each component shared;
+    SOA positions are copied (warp-simdata's points are wp.vec3f)."""
+    with device:
+        base = _two_hexes_and_a_pyramid()
+        p = base.positions()
+        xyz = [tack.array(np.ascontiguousarray(p[:, i])) for i in range(3)]
+        data = td.DataSet(base.topology, tack.soa(*xyz))
+        data.fields["v"] = td.Field(td.H1(data), tack.soa(*xyz))
+    grid = to_simdata(data)
+    np.testing.assert_array_equal(grid.handle.points.numpy(), p)
+    components = grid.get_field("v").get_data()
+    assert [c.ptr for c in components] == [x._buffer.address for x in xyz]
+    back = from_simdata(grid)
+    np.testing.assert_array_equal(back.fields["v"].values.numpy(), p)
