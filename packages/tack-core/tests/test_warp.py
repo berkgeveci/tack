@@ -320,6 +320,16 @@ def test_float_min_and_max_prefer_a_number_to_nan(warp):
     np.testing.assert_array_equal(out.numpy(), [[2.0, 2.0], [1.0, 1.0]])
 
 
+def test_empty_arrays_read_back(warp):
+    """An empty array reads as an empty NumPy array: Warp refuses an empty slice,
+    which the CPU device's reads took (filters with empty outputs raised)."""
+    for shape in ((0,), (0, 3)):
+        a = tack.empty(shape, tack.f32, device=warp)
+        assert a.numpy().shape == shape
+    v = tack.empty(0, tack.vec(3, tack.f32), device=warp)
+    assert v.numpy().shape == (0, 3)
+
+
 def test_wrap_ptr_shares_memory_both_ways(warp):
     """`array_from_ptr` on Warp wraps memory it does not own: a Warp array's, and
     on Warp's CPU a NumPy array's; writes through either side are seen by both."""

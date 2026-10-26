@@ -89,6 +89,8 @@ class WarpBuffer(DeviceBuffer):
         and waited for the whole device, 110 us for one element where Tack's
         CUDA backend takes 38 (RTX 4060 Ti)."""
         device = self._backend.wp_device
+        if not count:
+            return np.empty(0, self._dtype.numpy_dtype)  # Warp refuses an empty slice
         if not device.is_cuda:
             return self.array[start:start + count].numpy().copy()
         out = np.empty(count, self._dtype.numpy_dtype)
