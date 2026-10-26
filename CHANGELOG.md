@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `td.surface_normals(data, consistent=True)`: a surface's polygons wound
+  alike -- each connected region as its first cell, by union-find with
+  parities over the edges on the device -- and its unit normals on cells and,
+  summed and made unit, on points, as VTK's `vtkPolyDataNormals` without
+  splitting (matched to it on spheres, scrambled windings, curved quads and
+  polygons). A surface no winding makes consistent is refused.
 - `td.extract_extent(data, extent, rate=1)`: a box of a structured grid's
   points (VTK's VOI, in the whole grid's indices), every `rate`-th, as a
   structured grid of the same kind -- an image stays uniform, a rectilinear
