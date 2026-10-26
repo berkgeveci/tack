@@ -24,12 +24,12 @@ Each nested class is part of the cache key, as the outer one is.
 
 import ast
 import contextlib
-import copy
 import re
 import threading
 import weakref
 
 from tack.lang.array import Array
+from tack.lang.ast_copy import copy_ast
 from tack.lang.func import Func
 from tack.lang.ir_names import fresh_name
 
@@ -360,7 +360,7 @@ def rewrite_templates(kernel_ast, template_args, python_func=None):
         of synthetic call names to resolved device functions. The mapping
         belongs to this transformation and never enters global state.
     """
-    rewritten = copy.deepcopy(kernel_ast)
+    rewritten = copy_ast(kernel_ast)
     funcdef = rewritten.body[0]
     resolved_funcs = {}
     # Reserve source names in both the caller and template methods before
@@ -746,7 +746,7 @@ def _resolve_method(func_obj, resolved_name, node, extra, specializer=None):
     - self.method(args) calls replaced with resolved function calls
     - and the same through templates held as attributes (self.base.get(k))
     """
-    funcdef = copy.deepcopy(func_obj._funcdef)
+    funcdef = copy_ast(func_obj._funcdef)
 
     # Remove 'self' parameter
     funcdef.args.args = [a for a in funcdef.args.args if a.arg != 'self']
@@ -877,7 +877,7 @@ class _Specializer:
     def _copy(self, key, callee_def, callee_func, bound, params, inherited=None):
         """Make the copy, recorded under ``key`` as ``(name, added)``: its synthetic
         name and the parameters it gained."""
-        copied = copy.deepcopy(callee_def)
+        copied = copy_ast(callee_def)
         bound_names = {params[k]: node for k, node in sorted(bound.items())}
         copied.args.args = [a for k, a in enumerate(copied.args.args) if k not in bound]
         present = {a.arg for a in copied.args.args}

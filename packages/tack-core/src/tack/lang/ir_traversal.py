@@ -113,29 +113,45 @@ def child_fields(node):
 
 
 def walk_ir(root):
-    """Yield nodes in preorder, accepting a node or a list/tuple of nodes."""
+    """Yield nodes in preorder, accepting a node or a list/tuple of nodes.
+
+    An explicit stack, not nested generators: a recursive generator hands each
+    node up through one ``yield from`` per level, so a deep tree (inlined
+    device functions nest deeply) cost time in proportion to its depth per
+    node. A node's children are read when the walk reaches it, as before."""
     active = set()
-
-    def visit(node):
-        if id(node) in active:
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if type(node) is _Leave:
+            active.discard(node.identity)
+            continue
+        identity = id(node)
+        if identity in active:
             raise ValueError('Cycle in IR tree')
-        active.add(id(node))
-        try:
-            if isinstance(node, (list, tuple)):
-                for item in node:
-                    yield from visit(item)
-                return
-            fields = child_fields(node)
-            yield node
-            for name, role in fields:
-                value = getattr(node, name)
-                if role == 'optional_expr' and value is None:
-                    continue
-                yield from visit(value)
-        finally:
-            active.remove(id(node))
+        if isinstance(node, (list, tuple)):
+            active.add(identity)
+            stack.append(_Leave(identity))
+            stack.extend(reversed(node))
+            continue
+        fields = child_fields(node)
+        yield node
+        active.add(identity)
+        stack.append(_Leave(identity))
+        for name, role in reversed(fields):
+            value = getattr(node, name)
+            if role == 'optional_expr' and value is None:
+                continue
+            stack.append(value)
 
-    yield from visit(root)
+
+class _Leave:
+    """``walk_ir``'s mark that a node's subtree is done: it leaves the ancestors."""
+
+    __slots__ = ('identity',)
+
+    def __init__(self, identity):
+        self.identity = identity
 
 
 def transform_ir(root, rewrite, *, copy_nodes=False):

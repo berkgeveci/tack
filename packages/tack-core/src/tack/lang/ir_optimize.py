@@ -68,21 +68,43 @@ def _inline_weak_literal_locals(ir_func: ir.IRFunction):
     """Replace each single-assignment local holding a weak literal expression by it.
 
     Each read gets its own copy, so each meets its own context; the
-    assignment goes. Repeated until none is left, because a local copied
-    from such a local (a device function's result, bound in turn by the
-    caller) becomes one once its source is replaced.
+    assignment goes. A local copied from such a local (a device function's
+    result, bound in turn by the caller) becomes one once its source is
+    replaced: the candidates are judged with the locals found so far put in,
+    until no more are found, and the body is rewritten once (rewriting it
+    once per link of such chains cost a second on a large kernel).
     """
-    while True:
-        counts = _count_assignments(ir_func.body)
-        values = {}
-        for node in walk_ir(ir_func.body):
-            if isinstance(node, ir.IRAssign) and counts.get(node.target) == 1:
-                literal, weak = _literal(node.value)
-                if literal and weak:
-                    values[node.target] = node.value
-        if not values:
-            return
+    counts = _count_assignments(ir_func.body)
+    candidates = [node for node in walk_ir(ir_func.body)
+                  if isinstance(node, ir.IRAssign) and counts.get(node.target) == 1]
+    values = {}
+    found = True
+    while found:
+        found = False
+        for node in candidates:
+            if node.target in values:
+                continue
+            value = _with_locals(node.value, values)
+            literal, weak = _literal(value)
+            if literal and weak:
+                values[node.target] = value
+                found = True
+    if values:
         ir_func.body = _replace_locals(ir_func.body, values)
+
+
+def _with_locals(node, values: dict):
+    """``node``, or a copy with each read of a name in ``values`` replaced by its own
+    copy of the value (which has its own locals put in already)."""
+    if not values or not any(isinstance(n, ir.IRName) and n.name in values
+                             for n in walk_ir(node)):
+        return node
+
+    def substitute(n):
+        if isinstance(n, ir.IRName) and n.name in values:
+            return clone_ir(values[n.name])
+        return n
+    return transform_ir(clone_ir(node), substitute)
 
 
 def _replace_locals(body: list, values: dict) -> list:
@@ -181,7 +203,10 @@ def _copy_prop_recurse(body: list, assign_counts: dict[str, int]) -> list:
 
 def _replace_names(node, mapping: dict):
     """Replace name uses while preserving node annotations and metadata."""
-    if not mapping:
+    if not mapping or not any(isinstance(n, ir.IRName) and n.name in mapping
+                              for n in walk_ir(node)):
+        # Nothing to replace: copying the statement anyway made a node nested
+        # in d blocks d copies, one at each block's propagation.
         return node
 
     def replace_name(node):
