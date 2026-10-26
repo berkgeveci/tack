@@ -19,6 +19,12 @@ DOMAINS = ("points", "cells", "faces", "edges")
 
 
 @tack.kernel
+def _as_flags(values, flags):
+    for i in range(flags.shape[0]):
+        flags[i] = 1 if values[i] != 0 else 0
+
+
+@tack.kernel
 def _mark(ids, flags, bad, n):
     for i in range(ids.shape[0]):
         k = ids[i]
@@ -128,6 +134,35 @@ class Set:
         if count:
             _members(flags, slots, self.ids)
         self._flags = flags
+
+    @classmethod
+    @on_inputs_device
+    def from_flags(cls, data, on, flags):
+        """The ``on`` entities whose flag is not zero: ``flags`` holds one value per
+        entity -- a Tack array of any integer or floating type, a field (its
+        values), a NumPy array or a list -- as a kernel that tests each entity
+        writes them. ``extract_cells`` of a cell set keeps those cells, so a
+        filter that selects cells needs no compaction of its own."""
+        from tack.arrays import materialize, size_of
+        from tack.dataset.dataset import Field
+
+        topology = getattr(data, "topology", data)
+        if on not in ("points", "cells", "faces", "edges"):
+            raise ValueError(f"a set selects points, cells, faces or edges, not {on!r}")
+        n = _count(topology, on)
+        if isinstance(flags, Field):
+            flags = flags.values
+        if isinstance(flags, (list, tuple, np.ndarray)):
+            host = np.asarray(flags)
+            flags = tack.array(host.astype(np.int32) if host.dtype == bool else host)
+        values = materialize(flags)
+        if size_of(values) != n:
+            raise ValueError(f"from_flags() needs a flag for each of the topology's {n} "
+                             f"{on}, not {size_of(values)}")
+        out = tack.empty((n,), tack.i32)
+        if n:
+            _as_flags(values, out)
+        return cls._from_flags(topology, on, out)
 
     @classmethod
     @on_inputs_device

@@ -35,6 +35,9 @@ from functools import lru_cache
 
 import numpy as np
 
+__all__ = ["canonical", "check", "compatible", "conversion", "delta", "derived",
+           "magnitude", "named", "quantity", "same"]
+
 _registry = None
 
 

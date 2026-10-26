@@ -18,6 +18,7 @@ from tack.dataset import (
     shapes,
     sources,
     spaces,
+    units,
 )
 from tack.dataset.algorithms import (
     CellGeometry,
@@ -103,6 +104,7 @@ from tack.dataset.algorithms import (
     warp,
 )
 from tack.dataset.amr import AMRDataSet
+from tack.dataset.carry import Interpolate, Pieces, Same, Take, carry
 from tack.dataset.dataset import (
     DataSet,
     Field,
@@ -111,7 +113,7 @@ from tack.dataset.dataset import (
     rectilinear_grid,
     uniform_grid,
 )
-from tack.dataset.ghosts import Ghosts
+from tack.dataset.ghosts import Ghosts, drop_marks, keep_marks, owned_values, visible
 from tack.dataset.global_ids import GlobalIds
 from tack.dataset.implicit import (
     Box,
@@ -165,12 +167,14 @@ __all__ = [
     "FlowQuantities",
     "Ghosts",
     "GlobalIds",
+    "Interpolate",
     "Intersection",
     "Locations",
     "OctreeDataSet",
     "ParticleStatus",
     "PartitionedDataSet",
     "Pathlines",
+    "Pieces",
     "Plane",
     "Planes",
     "PointLocator",
@@ -178,6 +182,7 @@ __all__ = [
     "PolyhedralTopology",
     "PolylineTopology",
     "RunningStatistics",
+    "Same",
     "Set",
     "SideTraces",
     "SizeBuckets",
@@ -186,6 +191,7 @@ __all__ = [
     "Statistics",
     "Streaklines",
     "StructuredTopology",
+    "Take",
     "TimeDerivative",
     "Union",
     "UnstructuredTopology",
@@ -197,6 +203,7 @@ __all__ = [
     "as_polyhedra",
     "average_down",
     "boundary_faces",
+    "carry",
     "cell_centers",
     "cell_geometry",
     "cell_ids",
@@ -212,6 +219,7 @@ __all__ = [
     "deposit",
     "divergence",
     "dot",
+    "drop_marks",
     "edge_lengths",
     "entropy",
     "extend_paths",
@@ -235,6 +243,7 @@ __all__ = [
     "implicit_values",
     "interpolate",
     "jump",
+    "keep_marks",
     "log_values",
     "magnitude",
     "mask",
@@ -243,6 +252,7 @@ __all__ = [
     "net_flux",
     "orient",
     "outliers",
+    "owned_values",
     "perot",
     "point_cloud",
     "point_elevation",
@@ -273,9 +283,11 @@ __all__ = [
     "transform",
     "triangulate",
     "uniform_grid",
+    "units",
     "update_ghosts",
     "upwind_flux",
     "values_at_centers",
+    "visible",
     "voxel_downsample",
     "voxelize",
     "warp",
