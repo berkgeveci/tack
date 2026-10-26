@@ -28,7 +28,7 @@ from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import argsort
 from tack.arrays import Cast, ConstantArray, CountingArray, _Implicit, size_of
 from tack.dataset import ids, shapes
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import _CHUNK, _LARGEST, _largest_counts, bucket_order, run_offsets
 from tack.dataset.views import (
     DomainGroup,
     _Cells,
@@ -313,9 +313,16 @@ class _Topology:
         as VTK builds its cell links, rather than sorted."""
         if self._point_links is None:
             start_of, total = corner_layout(self)
-            keys = tack.empty((total,), self.id_dtype)
-            for group in self.groups():
-                if group.count:
+            groups = [g for g in self.groups() if g.count]
+            connectivity = getattr(self, "connectivity", None)
+            if (len(groups) == 1 and isinstance(connectivity, Array)
+                    and connectivity.dtype is self.id_dtype and size_of(connectivity) == total):
+                # One shape, its points in cell order: the layout is the
+                # connectivity, and its point ids are the keys as they stand.
+                keys = connectivity
+            else:
+                keys = tack.empty((total,), self.id_dtype)
+                for group in groups:
                     _corner_keys(group.view(), start_of[group], keys)
             order, offsets = bucket_order(keys, self.num_points, self.id_dtype)
             self._point_links = (offsets, order)
@@ -533,6 +540,204 @@ def _emit_faces(cells, start, rows, kinds, owners):
             rows[first + f] = [p0, p1, p2, p3]
             kinds[first + f] = cells.face_shape(f)
             owners[first + f] = [cells.entity_id(c), f]
+
+
+@tack.func
+def _face_row(cells, c, f):
+    # Face f of cell c as the cell walks it, padded with _NO_POINT.
+    n = cells.face_num_points(f)
+    p0 = cells.point_id(c, cells.face_corner(f, 0))
+    p1 = cells.point_id(c, cells.face_corner(f, 1))
+    p2 = cells.point_id(c, cells.face_corner(f, 2)) if n >= 3 else _NO_POINT
+    p3 = cells.point_id(c, cells.face_corner(f, 3)) if n == 4 else _NO_POINT
+    return [p0, p1, p2, p3]
+
+
+@tack.func
+def _key_of(row):
+    # The row's points in increasing order, a triangle's or a line's pads last
+    # (as _face_keys orders them).
+    a, b = _order(row[0], row[1])
+    key = [a, b, row[2], row[3]]
+    if row[2] != _NO_POINT and row[3] == _NO_POINT:
+        b, c = _order(b, row[2])
+        a, b = _order(a, b)
+        key = [a, b, c, row[3]]
+    elif row[3] != _NO_POINT:
+        c, d = _order(row[2], row[3])
+        a, c = _order(a, c)
+        b, d = _order(b, d)
+        b, c = _order(b, c)
+        key = [a, b, c, d]
+    return key
+
+
+@tack.kernel
+def _face_bucket_counts(cells, counts):
+    # How many faces each point is the lowest point of: its bucket's size.
+    for c in cells:
+        for f in range(cells.NUM_FACES):
+            low = cells.point_id(c, cells.face_corner(f, 0))
+            for k in range(1, cells.face_num_points(f)):
+                low = min(low, cells.point_id(c, cells.face_corner(f, k)))
+            tack.atomic_add(counts, low, 1)
+
+
+@tack.kernel
+def _place_faces(cells, start, starts, fill, records):
+    # Each (cell, face) straight into its bucket, by its lowest point, as one
+    # record: its key and its entry (one write to one place).
+    for c in cells:
+        first = start + cells.index(c) * cells.NUM_FACES
+        for f in range(cells.NUM_FACES):
+            key = _key_of(_face_row(cells, c, f))
+            slot = starts[key[0]] + tack.atomic_add(fill, key[0], 1)
+            records[slot] = [key[0], key[1], key[2], key[3], first + f]
+
+
+@tack.func
+def _before_record(a, b):
+    # Record a before record b: by key, component by component, then by entry,
+    # so the order is the stable sort's.
+    less = 0
+    if a[0] != b[0]:
+        less = 1 if a[0] < b[0] else 0
+    elif a[1] != b[1]:
+        less = 1 if a[1] < b[1] else 0
+    elif a[2] != b[2]:
+        less = 1 if a[2] < b[2] else 0
+    elif a[3] != b[3]:
+        less = 1 if a[3] < b[3] else 0
+    else:
+        less = 1 if a[4] < b[4] else 0
+    return less
+
+
+#: Buckets of at most this many records are sorted in the thread's own arrays.
+_SMALL_BUCKET = tack.constant(32)
+
+
+@tack.kernel
+def _sort_face_buckets(starts, records, nbuckets):
+    # Each bucket's records in order (insertion): a bucket's records lie
+    # together, so this reads and writes memory a thread has to itself. A
+    # small bucket is read once into local arrays, its order found there by
+    # insertion on one-byte indices, and its records written back in that
+    # order. Sorted in place in global memory, each step of the insertion
+    # waited for a load and a store of a whole record: on CUDA (RTX 4060 Ti)
+    # the sort took 41 of a 5M-tetrahedron derivation's 70 ms (buckets of
+    # about 23 records) and 22 of a 5M-hexahedron's 69. A larger bucket is
+    # sorted in place.
+    for b in range(nbuckets):
+        k0 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k1 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k2 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k3 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k4 = tack.local_array_like(starts, _SMALL_BUCKET)
+        order = tack.local_array(tack.u8, _SMALL_BUCKET)
+        begin = starts[b]
+        end = starts[b + 1]
+        n = end - begin
+        if n <= _SMALL_BUCKET:
+            for i in range(n):
+                r = records[begin + i]
+                k0[i] = r[0]
+                k1[i] = r[1]
+                k2[i] = r[2]
+                k3[i] = r[3]
+                k4[i] = r[4]
+                j = i - 1
+                while j >= 0:
+                    o = order[j]
+                    if _before_record(r, [k0[o], k1[o], k2[o], k3[o], k4[o]]) == 0:
+                        break
+                    order[j + 1] = o
+                    j -= 1
+                order[j + 1] = tack.u8(i)
+            for i in range(n):
+                o = order[i]
+                records[begin + i] = [k0[o], k1[o], k2[o], k3[o], k4[o]]
+        else:
+            for i in range(begin + 1, end):
+                r = records[i]
+                j = i - 1
+                while j >= begin and _before_record(r, records[j]) == 1:
+                    records[j + 1] = records[j]
+                    j -= 1
+                records[j + 1] = r
+
+
+@tack.kernel
+def _record_runs(records, flags):
+    for i in range(flags.shape[0]):
+        same = 0
+        if i > 0:
+            a = records[i]
+            b = records[i - 1]
+            same = 1 if a[0] == b[0] and a[1] == b[1] and a[2] == b[2] and a[3] == b[3] else 0
+        flags[i] = 1 - same
+
+
+@tack.kernel
+def _record_run_starts(flags, run_ids, offsets, n, nruns):
+    for i in range(n):
+        if flags[i] == 1:
+            offsets[run_ids[i]] = i
+        if i == 0:
+            offsets[nruns] = n
+
+
+@tack.kernel
+def _assign_faces(offsets, records, side_face, side_slot, too_many, count):
+    # Each run of equal keys is a face: each of its entries learns which, and
+    # its slot (the first entry, the lowest, is side 0).
+    for r in range(count):
+        begin = offsets[r]
+        end = offsets[r + 1]
+        if end - begin > 2:
+            tack.atomic_add(too_many, 0, 1)
+        for i in range(begin, end):
+            e = records[i][4]
+            side_face[e] = r
+            side_slot[e] = i - begin
+
+
+@tack.kernel
+def _side_zero_rows(cells, start, side_face, side_slot, face_rows, face_kinds, face_sides,
+                    orientation):
+    # The faces' rows, kinds and side 0 from the cells that are their side 0,
+    # in the cells' order; a side 0 walks its face's row, orientation 0.
+    for c in cells:
+        first = start + cells.index(c) * cells.NUM_FACES
+        for f in range(cells.NUM_FACES):
+            e = first + f
+            if side_slot[e] == 0:
+                face = side_face[e]
+                row = _face_row(cells, c, f)
+                face_rows[face] = row
+                face_kinds[face] = (shapes.LINE if row[2] == _NO_POINT else
+                                    (shapes.TRIANGLE if row[3] == _NO_POINT else shapes.QUAD))
+                face_sides[face] = [cells.entity_id(c), f, -1, -1]
+                orientation[e] = 0
+
+
+@tack.kernel
+def _side_one_rows(cells, start, side_face, side_slot, face_rows, face_sides, orientation, bad):
+    # Side 1 of each face, and its orientation against the face's row.
+    for c in cells:
+        first = start + cells.index(c) * cells.NUM_FACES
+        for f in range(cells.NUM_FACES):
+            e = first + f
+            if side_slot[e] == 1:
+                face = side_face[e]
+                face_sides[face][2] = cells.entity_id(c)
+                face_sides[face][3] = f
+                o = _orientation(_face_row(cells, c, f), face_rows[face])
+                if o < 0:
+                    orientation[e] = 0
+                    tack.atomic_add(bad, 0, 1)
+                else:
+                    orientation[e] = o
 
 
 @tack.kernel
@@ -765,7 +970,83 @@ class Faces(_OnItsArrays):
     def _derive(cls, topology):
         if isinstance(topology, StructuredTopology) and topology.dimension >= 2:
             return cls._derive_structured(topology)
-        return cls._derive_sorted(topology)
+        derived = cls._derive_bucketed(topology)
+        return derived if derived is not None else cls._derive_sorted(topology)
+
+    @classmethod
+    def _derive_bucketed(cls, topology):
+        """Any topology's faces as ``_derive_sorted`` derives them -- the same ids,
+        rows, sides and orientations -- by a counting sort of the records
+        themselves: each (cell, face) counted under its lowest point, placed in
+        its bucket once, each bucket sorted in place by key and entry, then the
+        runs read along the records. ``None`` where a bucket would hold more
+        than ``_LARGEST`` (a point of thousands of faces): the sorted path
+        takes those. At 20M hexahedra a third of the sorted path's time."""
+        self = cls()
+        top = topology.dimension
+        cell_groups = [g for g in topology.groups()
+                       if g.shape.NUM_FACES and g.shape.DIMENSION == top]
+        starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_FACES
+                                                 for g in cell_groups])]).astype(int)
+        total = int(starts[-1])
+        if not total:
+            return None
+        np_ = topology.num_points
+        idt = topology.id_dtype
+        counts = tack.zeros((np_,), tack.i32)
+        for group in cell_groups:
+            if group.count:
+                _face_bucket_counts(group.view(), counts)
+        nchunks = (np_ + _CHUNK - 1) // _CHUNK
+        largest = tack.empty((nchunks,), tack.i32)
+        _largest_counts(counts, largest, _CHUNK, nchunks, np_)
+        if int(largest.numpy().max()) > _LARGEST:
+            return None
+        bucket_starts = tack.empty((np_ + 1,), idt)
+        exclusive_scan(counts, bucket_starts, np_, total=False, close=True)
+        counts.fill(0)                                     # each bucket's fill now
+        records = tack.empty((total,), tack.vec(5, idt))
+        for group, start in zip(cell_groups, starts[:-1]):
+            if group.count:
+                _place_faces(group.view(), int(start), bucket_starts, counts, records)
+        _sort_face_buckets(bucket_starts, records, np_)
+        flags = tack.empty((total,), tack.i32)
+        _record_runs(records, flags)
+        run_ids = tack.empty((total,), idt)
+        count = exclusive_scan(flags, run_ids, total)
+        offsets = tack.empty((count + 1,), idt)
+        _record_run_starts(flags, run_ids, offsets, total, count)
+        self.group_starts = {g: int(s) for g, s in zip(cell_groups, starts[:-1])}
+        self.id_dtype = idt
+        self.num_faces = count
+        self.rows = tack.empty((count,), tack.vec(4, idt))
+        self.kinds = tack.empty((count,), tack.i32)
+        self.sides = tack.empty((count,), tack.vec(4, idt))
+        self.side_face = tack.empty((total,), idt)
+        self.side_slot = tack.empty((total,), tack.i32)
+        self.side_orientation = tack.empty((total,), tack.i32)
+        too_many = tack.zeros((1,), tack.i32)
+        _assign_faces(offsets, records, self.side_face, self.side_slot, too_many, count)
+        if too_many[0]:
+            raise ValueError(f"{too_many[0]} faces are shared by more than two cells")
+        del records, flags, run_ids, offsets
+        # Rows and sides from the cells, in their order: side 0's first, since
+        # side 1's orientation reads its face's row.
+        for group, start in zip(cell_groups, starts[:-1]):
+            if group.count:
+                _side_zero_rows(group.view(), int(start), self.side_face, self.side_slot,
+                                self.rows, self.kinds, self.sides, self.side_orientation)
+        bad = tack.zeros((1,), tack.i32)
+        for group, start in zip(cell_groups, starts[:-1]):
+            if group.count:
+                _side_one_rows(group.view(), int(start), self.side_face, self.side_slot,
+                               self.rows, self.sides, self.side_orientation, bad)
+        if bad[0]:
+            raise ValueError(f"{bad[0]} cell faces do not go round their face's points "
+                             "in either direction")
+        self._groups = None
+        self._boundary = None
+        return self
 
     @classmethod
     def _derive_sorted(cls, topology):

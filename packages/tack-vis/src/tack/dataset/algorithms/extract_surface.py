@@ -1,5 +1,7 @@
 """``extract_surface``: the faces of set ``name`` as a surface dataset: triangles and quads on the same points, each in its side 0's outward order. Fields on faces become the surface's cell fields, and so do cell fields (``Constant``, values on cells), each face taking its side 0 cell's value; point fields (``H1``, values on points) stay on the same points. A solid's order-2 field or geometry stays order 2 on its surface, gathered by entity: the faces' points, edges and quad centers are the surface's. The geometry must be ``H1``: an ``L2`` one has no shared points for the faces to stand on."""
 
+import numpy as np
+
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids as id_types
@@ -8,7 +10,7 @@ from tack.dataset.carry import Pieces, Same, Take, _take, carry, selected
 from tack.dataset.dataset import Field
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1
-from tack.dataset.topology import UnstructuredTopology
+from tack.dataset.topology import UnstructuredTopology, _face_row
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_surface']
@@ -39,6 +41,123 @@ def _surface_cells(ids, kinds, rows, starts, types, offsets, connectivity, lengt
 def _face_cells(ids, sides, out):
     for i in range(ids.shape[0]):
         out[i] = sides[ids[i]][0]
+
+
+@tack.kernel
+def _singletons(records, flags):
+    # 1 for a record whose key no neighbour shares: a face of one cell.
+    n = flags.shape[0]
+    for i in range(n):
+        r = records[i]
+        alone = 1
+        if i > 0:
+            p = records[i - 1]
+            if p[0] == r[0] and p[1] == r[1] and p[2] == r[2] and p[3] == r[3]:
+                alone = 0
+        if i + 1 < n:
+            q = records[i + 1]
+            if q[0] == r[0] and q[1] == r[1] and q[2] == r[2] and q[3] == r[3]:
+                alone = 0
+        flags[i] = alone
+
+
+@tack.kernel
+def _boundary_slots(records, flags, slots, entry_slot, sizes):
+    # Each boundary face's place in the surface (the faces' order, by key), by its
+    # (cell, face) entry; its size from its key's pads.
+    for i in range(flags.shape[0]):
+        if flags[i] == 1:
+            r = records[i]
+            entry_slot[r[4]] = slots[i]
+            sizes[slots[i]] = 2 if r[2] == -1 else (3 if r[3] == -1 else 4)
+
+
+@tack.kernel
+def _boundary_cells(cells, start, entry_slot, starts, types, offsets, connectivity, sources):
+    # Each boundary face from its one cell, in the cell's walk (its side 0's).
+    for c in cells:
+        first = start + cells.index(c) * cells.NUM_FACES
+        for f in range(cells.NUM_FACES):
+            at_slot = entry_slot[first + f]
+            if at_slot >= 0:
+                row = _face_row(cells, c, f)
+                n = cells.face_num_points(f)
+                at = starts[at_slot]
+                for j in range(n):
+                    connectivity[at + j] = row[j]
+                offsets[at_slot] = at
+                types[at_slot] = tack.u8(3 if n == 2 else (5 if n == 3 else 9))
+                sources[at_slot] = cells.entity_id(c)
+
+
+def _fresh_boundary(data, fields):
+    """``extract_surface``'s default on a mesh whose faces have not been derived:
+    the same surface, from a counting sort of the (cell, face) records keeping
+    the faces of one cell, without the whole face incidence (rows, sides and
+    orientations of every face) nobody asked for -- VTK's external faces
+    hashes faces the same way. ``None`` where the full path is needed: faces
+    derived already (then they are free), ghost marks (placed through the
+    faces), order-2 fields, or a point of more than ``_LARGEST`` faces."""
+    from tack.dataset.buckets import _CHUNK, _LARGEST, _largest_counts
+    from tack.dataset.topology import (
+        _face_bucket_counts,
+        _place_faces,
+        _sort_face_buckets,
+    )
+
+    topology = data.topology
+    if (not isinstance(topology, UnstructuredTopology) or topology._faces is not None
+            or topology.dimension != 3 or data.ghosts is not None
+            or any(isinstance(f.space, H1) and f.space.order != 1
+                   for f in data.fields.values())):
+        return None
+    groups = [g for g in topology.groups() if g.shape.NUM_FACES and g.shape.DIMENSION == 3]
+    starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_FACES
+                                             for g in groups])]).astype(int)
+    total, np_, idt = int(starts[-1]), topology.num_points, topology.id_dtype
+    if not total:
+        return None
+    counts = tack.zeros((np_,), tack.i32)
+    for group in groups:
+        if group.count:
+            _face_bucket_counts(group.view(), counts)
+    nchunks = (np_ + _CHUNK - 1) // _CHUNK
+    largest = tack.empty((nchunks,), tack.i32)
+    _largest_counts(counts, largest, _CHUNK, nchunks, np_)
+    if int(largest.numpy().max()) > _LARGEST:
+        return None
+    bucket_starts = tack.empty((np_ + 1,), idt)
+    exclusive_scan(counts, bucket_starts, np_, total=False, close=True)
+    counts.fill(0)
+    records = tack.empty((total,), tack.vec(5, idt))
+    for group, start in zip(groups, starts[:-1]):
+        if group.count:
+            _place_faces(group.view(), int(start), bucket_starts, counts, records)
+    del counts
+    _sort_face_buckets(bucket_starts, records, np_)
+    flags = tack.empty((total,), tack.i32)
+    _singletons(records, flags)
+    slots = tack.empty((total,), idt)
+    n = exclusive_scan(flags, slots, total)
+    entry_slot = tack.empty((total,), idt)
+    entry_slot.fill(-1)
+    sizes = tack.empty((n,), tack.i32)
+    if n:
+        _boundary_slots(records, flags, slots, entry_slot, sizes)
+    del records, flags, slots
+    odt = id_types.for_output(data, 4 * n)
+    offsets = tack.empty((n + 1,), odt)
+    length = exclusive_scan(sizes, offsets, n, close=True)
+    types = tack.empty((n,), tack.u8)
+    connectivity = tack.empty((length,), odt)
+    cells = tack.empty((n,), idt)
+    if n:
+        for group, start in zip(groups, starts[:-1]):
+            if group.count:
+                _boundary_cells(group.view(), int(start), entry_slot, offsets, types, offsets,
+                                connectivity, cells)
+    surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
+    return carry(data, surface, points=Same(), cells=Pieces(cells), fields=fields)
 
 
 @on_inputs_device
@@ -72,6 +191,9 @@ def extract_surface(data, faces=None, fields=None):
         # geometry filter passes them.
         return carry(data, data.topology, points=Same(), cells=Same(), fields=fields)
     if faces is None:
+        fresh = _fresh_boundary(data, fields)
+        if fresh is not None:
+            return fresh
         from tack.dataset.algorithms.boundary_faces import boundary_faces
         faces = boundary_faces(data)
     ids = _face_ids(data, faces)
