@@ -32,6 +32,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import _Implicit, size_of, to_host
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.topology import (
@@ -39,11 +40,28 @@ from tack.dataset.topology import (
     _checks_ids,
     _csr_problems,
     _id_problems,
+    _ids_of,
     _OnItsArrays,
     _refuse,
     _Topology,
     edge_groups,
 )
+
+
+def _given(values):
+    """A topology's input as it keeps it: an implicit array (``ConstantArray``,
+    ``CountingArray``, ``Transform``, ...) as it is, as ``UnstructuredTopology``
+    keeps one; a field as it is; anything else (a list, a host array) on the host."""
+    return values if isinstance(values, _Implicit) else ids.host_or_field(values)
+
+
+def _points_used(points):
+    """One past the highest point id in ``points`` (0 for none)."""
+    if not size_of(points):
+        return 0
+    host = to_host(points) if isinstance(points, _Implicit) else (
+        points.numpy() if isinstance(points, Array) else points)
+    return int(np.max(host)) + 1
 from tack.dataset.views import DomainGroup, _PolygonFaces, _PolyhedralCells, _PolylineCells
 from tack.lang.array import Array
 from tack.runtime.dispatch import on_inputs_device
@@ -287,7 +305,7 @@ class PolygonEdges(_OnItsArrays):
     def __init__(self, topology):
         t = topology
         self.id_dtype = idt = t.id_dtype
-        total = int(t.face_points.shape[0])
+        total = size_of(t.face_points)
         keys = tack.empty((total,), tack.vec(2, idt))
         self.face_edge_sign = tack.empty((total,), tack.i32)
         self.face_edge = tack.empty((total,), idt)
@@ -342,25 +360,24 @@ class PolyhedralTopology(_Topology):
     def __init__(self, face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides,
                  num_points=None, id_dtype=None):
         face_offsets, face_points, cell_offsets, cell_faces = (
-            ids.host_or_field(a) for a in (face_offsets, face_points, cell_offsets, cell_faces))
+            _given(a) for a in (face_offsets, face_points, cell_offsets, cell_faces))
         if num_points is None:
-            used = face_points.numpy() if isinstance(face_points, Array) else face_points
-            num_points = int(used.max()) + 1 if used.size else 0
+            num_points = _points_used(face_points)
         # Cell points and directed edges hold each face's points once per side.
-        extent = max(int(num_points), 2 * int(face_points.shape[0]),
-                     2 * int(face_offsets.shape[0]), int(cell_faces.shape[0]))
+        extent = max(int(num_points), 2 * size_of(face_points),
+                     2 * size_of(face_offsets), size_of(cell_faces))
         given = (face_offsets, face_points, cell_offsets, cell_faces)
         self.id_dtype = idt = ids.choose(id_dtype, extent, given)
-        self.face_offsets = ids.as_ids(face_offsets, idt, check=False)
-        self.face_points = ids.as_ids(face_points, idt, check=False)
-        self.cell_offsets = ids.as_ids(cell_offsets, idt, check=False)
-        self.cell_faces = ids.as_ids(cell_faces, idt, check=False)
+        self.face_offsets = _ids_of(face_offsets, idt)
+        self.face_points = _ids_of(face_points, idt)
+        self.cell_offsets = _ids_of(cell_offsets, idt)
+        self.cell_faces = _ids_of(cell_faces, idt)
         self.cell_face_sides = _as_field(cell_face_sides, tack.u8)
-        self.num_faces = self.face_offsets.shape[0] - 1
-        self.num_cells = self.cell_offsets.shape[0] - 1
+        self.num_faces = size_of(self.face_offsets) - 1
+        self.num_cells = size_of(self.cell_offsets) - 1
         if self.num_faces < 0 or self.num_cells < 0:
             raise ValueError("offsets have one entry more than there are faces or cells")
-        if self.cell_face_sides.shape != self.cell_faces.shape:
+        if size_of(self.cell_face_sides) != size_of(self.cell_faces):
             raise ValueError("cell_face_sides needs one entry per cell_faces entry")
         self.num_points = int(num_points)
         self._cell_points = None
@@ -373,7 +390,7 @@ class PolyhedralTopology(_Topology):
                               "face_offsets", "face_points", "num_points")
         found += _csr_problems(self.cell_offsets, self.cell_faces, self.num_faces,
                                "cell_offsets", "cell_faces", "the number of faces")
-        n = self.cell_face_sides.shape[0]
+        n = size_of(self.cell_face_sides)
         if n:
             problems = tack.zeros((3,), tack.i32)
             _id_problems(self.cell_face_sides, 2, problems, n)
@@ -628,22 +645,21 @@ class PolygonalTopology(PolyhedralTopology):
 
     @on_inputs_device
     def __init__(self, loop_offsets, loop_points, num_points=None, id_dtype=None):
-        loop_offsets, loop_points = ids.host_or_field(loop_offsets), ids.host_or_field(loop_points)
-        total = int(loop_points.shape[0])
+        loop_offsets, loop_points = _given(loop_offsets), _given(loop_points)
+        total = size_of(loop_points)
         if num_points is None:
-            used = loop_points.numpy() if isinstance(loop_points, Array) else loop_points
-            num_points = int(used.max()) + 1 if total else 0
+            num_points = _points_used(loop_points)
         # Its facets' points are two per edge, and there are as many edges as loop points.
         idt = ids.choose(id_dtype, max(int(num_points), 4 * total + 2),
                          given=(loop_offsets, loop_points))
-        loop_offsets = ids.as_ids(loop_offsets, idt, check=False)
-        loop_points = ids.as_ids(loop_points, idt, check=False)
+        loop_offsets = _ids_of(loop_offsets, idt)
+        loop_points = _ids_of(loop_points, idt)
         if _checks_ids():
             # Before the facets are derived from the loops, which index by point.
             _refuse("polygonal topology", _csr_problems(
                 loop_offsets, loop_points, int(num_points), "loop_offsets", "loop_points",
                 "num_points"))
-        n = loop_offsets.shape[0] - 1
+        n = size_of(loop_offsets) - 1
         keys = tack.empty((total,), tack.vec(2, idt))
         directions = tack.empty((total,), tack.i32)
         cell_faces = tack.empty((total,), idt)
@@ -750,18 +766,17 @@ class PolylineTopology(_Topology):
 
     @on_inputs_device
     def __init__(self, line_offsets, line_points, num_points=None, id_dtype=None):
-        line_offsets, line_points = ids.host_or_field(line_offsets), ids.host_or_field(line_points)
-        total = int(line_points.shape[0])
+        line_offsets, line_points = _given(line_offsets), _given(line_points)
+        total = size_of(line_points)
         if num_points is None:
-            used = line_points.numpy() if isinstance(line_points, Array) else line_points
-            num_points = int(used.max()) + 1 if total else 0
-        n = int(line_offsets.shape[0]) - 1
+            num_points = _points_used(line_points)
+        n = size_of(line_offsets) - 1
         if n < 0:
             raise ValueError("line_offsets has one entry more than there are polylines")
         self.id_dtype = idt = ids.choose(id_dtype, max(int(num_points), total, 2 * n + 1),
                                          given=(line_offsets, line_points))
-        self.line_offsets = ids.as_ids(line_offsets, idt, check=False)
-        self.line_points = ids.as_ids(line_points, idt, check=False)
+        self.line_offsets = _ids_of(line_offsets, idt)
+        self.line_points = _ids_of(line_points, idt)
         self.num_cells = n
         self.num_points = int(num_points)
         if _checks_ids():

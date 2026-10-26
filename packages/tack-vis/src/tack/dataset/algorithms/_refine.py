@@ -146,7 +146,7 @@ def _fan_counts(loop_offsets, counts):
 
 @tack.kernel
 def _fans(loop_offsets, loop_points, starts, connectivity, sources):
-    for c in range(loop_offsets.shape[0] - 1):
+    for c in range(len(loop_offsets) - 1):
         first = loop_offsets[c]
         at = starts[c]
         for k in range(loop_offsets[c + 1] - first - 2):

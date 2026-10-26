@@ -2,6 +2,7 @@
 
 import tack
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import size_of
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._refine import _fan_counts, _fans, _pieces_topology, _split
 from tack.runtime.dispatch import on_inputs_device
@@ -24,7 +25,7 @@ def triangulate(data, fields=None):
         raise NotImplementedError(f"triangulate takes 2D cells, not {t.dimension}D ones")
     loop_offsets, loop_points = t.loops()
     n = data.num_cells
-    odt = ids.for_output(data, 3 * int(loop_points.shape[0]))
+    odt = ids.for_output(data, 3 * size_of(loop_points))
     counts = tack.empty((n,), tack.i32)
     starts = tack.empty((n,), odt)
     if n:
