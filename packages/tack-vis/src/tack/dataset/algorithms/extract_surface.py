@@ -1,5 +1,7 @@
 """``extract_surface``: the faces of set ``name`` as a surface dataset: triangles and quads on the same points, each in its side 0's outward order. Fields on faces become the surface's cell fields, and so do cell fields (``Constant``, values on cells), each face taking its side 0 cell's value; point fields (``H1``, values on points) stay on the same points. A solid's order-2 field or geometry stays order 2 on its surface, gathered by entity: the faces' points, edges and quad centers are the surface's. The geometry must be ``H1``: an ``L2`` one has no shared points for the faces to stand on."""
 
+import itertools
+
 import numpy as np
 
 import tack
@@ -10,7 +12,7 @@ from tack.dataset.carry import Pieces, Same, Take, _take, carry, selected
 from tack.dataset.dataset import Field
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1
-from tack.dataset.topology import UnstructuredTopology, _face_row
+from tack.dataset.topology import UnstructuredTopology, _face_row, _same_key
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['extract_surface']
@@ -43,51 +45,71 @@ def _face_cells(ids, sides, out):
         out[i] = sides[ids[i]][0]
 
 
-@tack.kernel
-def _singletons(records, flags):
-    # 1 for a record whose key no neighbour shares: a face of one cell.
-    n = flags.shape[0]
-    for i in range(n):
-        r = records[i]
-        alone = 1
-        if i > 0:
-            p = records[i - 1]
-            if p[0] == r[0] and p[1] == r[1] and p[2] == r[2] and p[3] == r[3]:
-                alone = 0
-        if i + 1 < n:
-            q = records[i + 1]
-            if q[0] == r[0] and q[1] == r[1] and q[2] == r[2] and q[3] == r[3]:
-                alone = 0
-        flags[i] = alone
+@tack.func
+def _alone(records, i, begin, end):
+    # 1 for a record whose key no neighbour in its bucket shares: a face of one
+    # cell. Records of another bucket have another lowest point, so another key.
+    alone = 1
+    if i > begin and _same_key(records[i], records[i - 1]) == 1:
+        alone = 0
+    if i + 1 < end and _same_key(records[i], records[i + 1]) == 1:
+        alone = 0
+    return alone
 
 
 @tack.kernel
-def _boundary_slots(records, flags, slots, entry_slot, sizes):
-    # Each boundary face's place in the surface (the faces' order, by key), by its
-    # (cell, face) entry; its size from its key's pads.
-    for i in range(flags.shape[0]):
-        if flags[i] == 1:
-            r = records[i]
-            entry_slot[r[4]] = slots[i]
-            sizes[slots[i]] = 2 if r[2] == -1 else (3 if r[3] == -1 else 4)
+def _bucket_boundary_counts(starts, records, counts, lo, hi, base):
+    # Each bucket's faces of one cell, for the buckets [lo, hi) whose records
+    # start at base, into counts from lo.
+    for b in range(lo, hi):
+        k = 0
+        begin = starts[b] - base
+        end = starts[b + 1] - base
+        for i in range(begin, end):
+            k += _alone(records, i, begin, end)
+        counts[b - lo] = k
 
 
 @tack.kernel
-def _boundary_cells(cells, start, entry_slot, starts, types, offsets, connectivity, sources):
-    # Each boundary face from its one cell, in the cell's walk (its side 0's).
-    for c in cells:
-        first = start + cells.index(c) * cells.NUM_FACES
-        for f in range(cells.NUM_FACES):
-            at_slot = entry_slot[first + f]
-            if at_slot >= 0:
-                row = _face_row(cells, c, f)
-                n = cells.face_num_points(f)
-                at = starts[at_slot]
-                for j in range(n):
-                    connectivity[at + j] = row[j]
-                offsets[at_slot] = at
-                types[at_slot] = tack.u8(3 if n == 2 else (5 if n == 3 else 9))
-                sources[at_slot] = cells.entity_id(c)
+def _boundary_slots(starts, records, first, slot_entry, sizes, lo, hi, base):
+    # Each boundary face's place in the surface (the records' order: by bucket,
+    # then by key): its (cell, face) entry, and its size from its key's pads.
+    for b in range(lo, hi):
+        slot = first[b - lo]
+        begin = starts[b] - base
+        end = starts[b + 1] - base
+        for i in range(begin, end):
+            if _alone(records, i, begin, end) == 1:
+                r = records[i]
+                slot_entry[slot] = r[3]
+                sizes[slot] = 2 if r[1] == -1 else (3 if r[2] == -1 else 4)
+                slot += 1
+
+
+@tack.kernel
+def _boundary_rows(cells, start, slot_entry, starts, types, connectivity, sources):
+    # Each boundary face of this group's cells from its one cell, in the cell's
+    # walk (its side 0's): the entry is the cell's index times its faces, plus
+    # the face, from the group's start.
+    for s in range(slot_entry.shape[0]):
+        e = slot_entry[s] - start
+        if e >= 0 and e < cells.num_cells * cells.NUM_FACES:
+            c = e // cells.NUM_FACES
+            f = e % cells.NUM_FACES
+            row = _face_row(cells, c, f)
+            n = cells.face_num_points(f)
+            at = starts[s]
+            for j in range(n):
+                connectivity[at + j] = row[j]
+            types[s] = tack.u8(3 if n == 2 else (5 if n == 3 else 9))
+            sources[s] = cells.entity_id(c)
+
+
+#: The most bytes of face records the fresh boundary holds at once: 20M
+#: hexahedra in one pass. Larger meshes ran faster in more, smaller passes
+#: (100M hexahedra on a 64 GB M1 Max with other work: one pass 3.9 s, 4 GB
+#: passes 2.8 s, 2 GB passes 1.4 s, VTK 1.3), each of a fresh allocation.
+_RECORDS_BYTES = 2 << 30
 
 
 def _fresh_boundary(data, fields):
@@ -128,23 +150,39 @@ def _fresh_boundary(data, fields):
         return None
     bucket_starts = tack.empty((np_ + 1,), idt)
     exclusive_scan(counts, bucket_starts, np_, total=False, close=True)
-    counts.fill(0)
-    records = tack.empty((total,), tack.vec(5, idt))
-    for group, start in zip(groups, starts[:-1]):
-        if group.count:
-            _place_faces(group.view(), int(start), bucket_starts, counts, records)
-    del counts
-    _sort_face_buckets(bucket_starts, records, np_)
-    flags = tack.empty((total,), tack.i32)
-    _singletons(records, flags)
-    slots = tack.empty((total,), idt)
-    n = exclusive_scan(flags, slots, total)
-    entry_slot = tack.empty((total,), idt)
-    entry_slot.fill(-1)
-    sizes = tack.empty((n,), tack.i32)
-    if n:
-        _boundary_slots(records, flags, slots, entry_slot, sizes)
-    del records, flags, slots
+    # The records of at most _RECORDS_BYTES at a time: the points in ranges,
+    # each range's faces placed, sorted and numbered on from the last range's.
+    # The surface's order is the buckets', so it is the same in any number of
+    # passes. At 100M hexahedra the records were 9.6 GB at once.
+    itemsize = 4 * np.dtype(idt.numpy_dtype).itemsize
+    passes = max(1, -(-total * itemsize // _RECORDS_BYTES))
+    bounds = [np_ * k // passes for k in range(passes + 1)]
+    entries, sizes = [], []
+    for lo, hi in itertools.pairwise(bounds):
+        base, end = (int(bucket_starts[b]) for b in (lo, hi))
+        counts.fill(0)
+        records = tack.empty((end - base,), tack.vec(4, idt))
+        for group, start in zip(groups, starts[:-1]):
+            if group.count:
+                _place_faces(group.view(), int(start), bucket_starts, counts, records, lo, hi,
+                             base)
+        _sort_face_buckets(bucket_starts, records, lo, hi, base)
+        # Each bucket's boundary faces counted, then numbered in their order: two
+        # walks of the buckets in place of per-record flags and slots.
+        first = (counts if idt == tack.i32 and passes == 1
+                 else tack.empty((hi - lo,), idt))
+        _bucket_boundary_counts(bucket_starts, records, first, lo, hi, base)
+        m = exclusive_scan(first, first, hi - lo) if hi > lo else 0
+        entries.append(tack.empty((m,), idt))
+        sizes.append(tack.empty((m,), tack.i32))
+        if m:
+            _boundary_slots(bucket_starts, records, first, entries[-1], sizes[-1], lo, hi,
+                            base)
+        del records, first
+    del counts, bucket_starts
+    slot_entry, sizes = (parts[0] if len(parts) == 1 else tack.concat(parts)
+                         for parts in (entries, sizes))
+    n = int(slot_entry.shape[0])
     odt = id_types.for_output(data, 4 * n)
     offsets = tack.empty((n + 1,), odt)
     length = exclusive_scan(sizes, offsets, n, close=True)
@@ -154,8 +192,8 @@ def _fresh_boundary(data, fields):
     if n:
         for group, start in zip(groups, starts[:-1]):
             if group.count:
-                _boundary_cells(group.view(), int(start), entry_slot, offsets, types, offsets,
-                                connectivity, cells)
+                _boundary_rows(group.view(), int(start), slot_entry, offsets, types,
+                               connectivity, cells)
     surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
     return carry(data, surface, points=Same(), cells=Pieces(cells), fields=fields)
 

@@ -33,8 +33,9 @@ _CHUNK = 1024           # buckets one thread looks through for the largest
 # ── Keys ────────────────────────────────────────────────────────────
 #
 # Template wrappers, so one kernel serves every key width: each gives entry
-# i's bucket, whether entry i's key comes before entry j's (by key, then by
-# index, which makes the order stable), and whether two keys are equal.
+# i's bucket, whether entry i's key comes before entry j's in one bucket (by
+# key, then by index, which makes the order stable), and whether two keys are
+# equal.
 
 @tack.device_class
 class _Keys1:
@@ -47,9 +48,10 @@ class _Keys1:
 
     @tack.func
     def before(self, i, j):
-        a = self.values[i]
-        b = self.values[j]
-        return a < b or (a == b and i < j)
+        # Asked only of entries of one bucket, whose keys are their bucket: the
+        # index alone orders them, without reading two keys at random (a third
+        # of point_links' time at 20M hexahedra).
+        return i < j
 
     @tack.func
     def same(self, i, j):
@@ -254,6 +256,24 @@ def bucket_order(values, nbuckets, index_dtype=None):
     _bucket_scatter(keys, starts, fill, order, n)
     _sort_buckets(keys, starts, order, nbuckets)
     return order, starts
+
+
+#: Keys at least this many times fewer than the buckets are radix sorted by
+#: ``key_order``: a bucket sort's counts and offsets would be mostly empty.
+_SPARSE = 8
+
+
+@on_inputs_device
+def key_order(values, nbuckets, index_dtype=None):
+    """The stable permutation sorting ``values`` as ``bucket_order``'s does, without
+    the buckets' offsets. Keys much fewer than the buckets (a contour's crossings
+    among a mesh's points) are radix sorted, in memory and time proportional to
+    the keys; ``bucket_order``'s counts and offsets are proportional to the
+    buckets, which at 20M points was 230 MB to sort a few million keys."""
+    n = _count(values)
+    if n and nbuckets > _SPARSE * n:
+        return _radix_order(values, n, _index_dtype(max(n, nbuckets), index_dtype))
+    return bucket_order(values, nbuckets, index_dtype)[0]
 
 
 @tack.kernel

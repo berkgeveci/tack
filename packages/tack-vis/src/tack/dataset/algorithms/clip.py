@@ -16,7 +16,7 @@ from tack.dataset.algorithms._common import (
     _table,
 )
 from tack.dataset.algorithms.implicit_values import implicit_values
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import key_order, run_offsets
 from tack.dataset.carry import Interpolate, Pieces, _point_values, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
@@ -338,7 +338,7 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     _close(offsets, n_cells, n_conn)
     _close(centroid_offsets, n_centroids, n_members)
 
-    order, _ = bucket_order(keys, data.num_points, odt)
+    order = key_order(keys, data.num_points, odt)
     point_runs, count = run_offsets(keys, order)
     members = tack.empty((n_members,), odt)
     ends = tack.empty((count,), tack.vec(2, idt))
