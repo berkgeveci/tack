@@ -16,6 +16,9 @@ edit_uri: edit/main/docs/
 # rather than Args:/Returns: blocks, so autodoc's structured-parameter
 # handling -- the main thing Sphinx would buy -- has almost nothing to act on.
 docs_dir: docs
+# The Griffe extension the API pages load (mkdocstrings, below), not a page.
+exclude_docs: |
+  _ext/
 
 theme:
   name: material
@@ -79,7 +82,15 @@ plugins:
             - packages/tack-core/src
             - packages/tack-vis/src
           options:
+            # tack-vis's tack.dataset and tack.interop, under tack-core's tack.
+            extensions:
+              - docs/_ext/tack_namespace.py:TackNamespace
             docstring_style: google
+            docstring_options:
+              # Args sections without types (Tack has no annotations), and a
+              # Returns paragraph is one value, not one per line.
+              warn_missing_types: false
+              returns_multiple_items: false
             show_source: true
             show_root_heading: true
             heading_level: 3
@@ -146,9 +157,12 @@ nav:
       - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md
+          - Communicate Between Blocks: vis-guide/14-communication.md
       - Worked Examples: vis-guide/examples.md
       - Reference:
           - Dataset API: vis-guide/reference/dataset-api.md
+          - Algorithms: vis-guide/reference/algorithms.md
+          - Data Model: vis-guide/reference/data-model.md
       - Design:
           - Dataset API: vis-guide/design/dataset-api.md
           - Polyhedra: vis-guide/design/polyhedra.md

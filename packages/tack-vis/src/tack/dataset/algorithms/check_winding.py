@@ -4,7 +4,7 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import size_of
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import key_order, run_offsets
 from tack.dataset.polyhedra import _cell_sizes
 from tack.dataset.sets import Set
 from tack.runtime.dispatch import on_inputs_device
@@ -65,7 +65,7 @@ def _check_loops(t):
         ends = tack.empty((2 * total,), tack.i32)
         _loop_ends(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_points, keys, ends,
                    t.num_cells)
-        order, _ = bucket_order(keys, t.num_cells, t.id_dtype)
+        order = key_order(keys, t.num_cells, t.id_dtype)
         offsets, runs = run_offsets(keys, order)
         _unbalanced(keys, ends, order, offsets, bad, runs)
     return Set._from_flags(t, "cells", bad)
@@ -103,7 +103,7 @@ def check_winding(data):
         directions = tack.empty((total,), tack.i32)
         _directed_edges(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_offsets,
                         edges.face_edge, edges.face_edge_sign, starts, keys, directions, n)
-        order, _ = bucket_order(keys, n, t.id_dtype)
+        order = key_order(keys, n, t.id_dtype)
         offsets, runs = run_offsets(keys, order)
         _unbalanced(keys, directions, order, offsets, bad, runs)
     return Set._from_flags(t, "cells", bad)

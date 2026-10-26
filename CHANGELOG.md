@@ -17,6 +17,22 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   a few dozen seeds were 4-100x VTK's time. With length steps the four
   streamline ports take VTK's steps, match its paths to 2e-7 (carotid
   2e-4), and run in 0.16-0.57x its time on 8 CPU threads.
+- A Visualization Guide chapter, **Communicate Between Blocks**, on writing
+  an algorithm over pieces with `tack.communication`: collectives,
+  exchanges, a ghost `Plan` that makes a diffusion over blocks give the
+  whole line's bits, `Routing` points to the block that holds them, and
+  `sort_by_key`. Its examples run in `validate.py` and, unchanged but for
+  the world, under `mpiexec`. The Runtime API contract gains a
+  Communication section: what is collective, what does not depend on how
+  blocks are assigned, and the errors.
+- Two reference pages in the Visualization Guide, generated from the
+  docstrings: **Algorithms**, every `tack.dataset` algorithm by what it does,
+  each group with a table of what it gives, what it takes (pieces, AMR,
+  octrees) and its VTK and Viskores counterparts; and **Data Model**, the
+  classes, constructors and sources, and the VTK, MFEM and Warp interop.
+  A test fails when an exported name has no entry. The site's API pages now
+  see tack-vis (a Griffe extension, `docs/_ext/tack_namespace.py`): before,
+  nothing under `tack.dataset` or `tack.interop` could be rendered.
 - A prototype NVIDIA Warp backend (`tack.device("warp")`, the `warp`
   extra): kernels lower to generated `@wp.kernel` source from Tack's typed
   IR and run on Warp's CPU or CUDA device, on its current stream, with
@@ -500,6 +516,50 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Cold compiles cost less. Walking the IR uses an explicit stack, not
+  nested generators, which handed each node up once per level of depth.
+  Lowering copies syntax trees directly rather than through `copy.deepcopy`.
+  Weak literal locals are found in one rewrite of the body, and copy
+  propagation leaves alone the statements it has nothing to replace in.
+  A cold probe of a mesh of five shapes went from 2.5 s to 2.1, with the
+  generated code identical (LLVM IR hashed for 470 variants). Point links
+  sort each bucket by entry alone, without reading keys every entry of a
+  bucket shares.
+- Filters hold less memory at scale, measured beside VTK's by the new
+  `benchmarks/vtk_compare/memory.py`, which samples the allocator's bytes in
+  use through one call in a process of its own. At 20M hexahedra on the CPU:
+  - `contour`'s peak is 183 MB, down from 671 (VTK 74); `slice_plane`'s is
+    294, down from 725 (VTK 319). Merging a few million crossings no longer
+    allocates bucket counts and offsets over every point: `key_order` radix
+    sorts keys that are far fewer than their buckets. The per-cell counts are
+    scanned in place.
+  - `extract_surface` of a fresh mesh peaks at 2.1 GB, down from 4.0 (VTK
+    1.5); `faces()` holds less while it works too. Past 20M hexahedra the
+    fresh boundary takes the points in ranges, holding at most 2 GiB of face
+    records at once, for the same surface. At 100M hexahedra it takes 1.46 s
+    and peaks at 4.7 GB, against VTK's 1.47 s and 7.6 GB; in one pass it
+    took 3.9 s. A face record no longer
+    stores its lowest point, which its bucket already gives. Each bucket
+    counts its faces and numbers them in place of per-record flags, run ids
+    and slots, and the surface's rows come from each boundary face's cell
+    rather than a slot for every (cell, face).
+  - Cell to point of a cell field on cells of one shape reads the cells'
+    values through the point links, rather than a contribution for every
+    corner (640 MB at 20M). At 20M hexahedra its peak went from 1.7 GB to
+    1.07 (VTK 0.99), and its warm time from 25 ms to 12 (VTK 96); at 100M
+    tetrahedra it peaks at 1.9 GB against VTK's 3.4.
+
+  Every filter runs at 50M and 100M hexahedra and tetrahedra.
+- A fresh mesh's first filters cost less at scale. Faces are derived by a
+  counting sort of the (cell, face) records into buckets of their lowest
+  point, each record placed once and each bucket sorted in place, with
+  rows and sides from the cells in their order (the same faces, id for id);
+  `extract_surface` of a mesh whose faces are not derived keeps the faces
+  of one cell from those records without deriving the whole incidence; and
+  point links of a one-shape mesh bucket its connectivity as it stands. At
+  20M hexahedra on 8 threads, a fresh `extract_surface` went from about
+  430 ms to 193 (VTK 249), at 20M tetrahedra from about 300 to 166 (VTK
+  216).
 - Metal reuses the buffers of arrays that have died (1 MiB or more, by
   capacity): a new buffer's pages are mapped and cleared on first touch at
   about 13 GB/s, so a filter's large temporaries cost more than its kernels

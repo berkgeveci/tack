@@ -9,9 +9,9 @@ arrays and textures are aliased rather than bound.
 """
 
 import ast
-import copy
 
 from tack.lang import ir
+from tack.lang.ast_copy import copy_ast
 from tack.lang.lowering.values import TupleValue
 from tack.lang.source_validation import validate_source
 
@@ -39,7 +39,7 @@ def _structure_returns(stmts: list, func_name: str) -> list:
         if isinstance(stmt, ast.If) and _has_return([stmt]):
             rest = stmts[idx + 1:]
             stmt.body = _structure_returns(
-                stmt.body + copy.deepcopy(rest), func_name)
+                stmt.body + copy_ast(rest), func_name)
             stmt.orelse = _structure_returns(stmt.orelse + rest, func_name)
             return [*stmts[:idx], stmt]
     return stmts
@@ -199,7 +199,7 @@ class Inlining:
                     rename_map[param_name] = arg_name
 
         # Rename the callee AST (deep copy first)
-        renamed_body = _structure_returns(copy.deepcopy(funcdef.body), func_name)
+        renamed_body = _structure_returns(copy_ast(funcdef.body), func_name)
         renamer = _NameRenamer(rename_map, result_var)
         # Flatten in case visit_Return returns a list (multi-return)
         flat_body = []

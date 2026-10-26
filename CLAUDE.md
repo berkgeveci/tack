@@ -19,6 +19,8 @@ Both share the `tack` namespace via `pkgutil.extend_path` in tack-core's `tack/_
 
 **One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. So only one package may ship a given `tack/<name>/` subpackage: `tack/algorithms/` is tack-core's alone (scan, sort, stats, copy). tack-vis's visualization algorithms are `tack.dataset.algorithms`. `packages/tack-vis/tests/test_namespace.py` checks tack-vis ships no `tack/algorithms/` and that the retired `tack.data`, `tack.deprecated` and `tack.fe` stay gone.
 
+The docs site has the same catch: Griffe (mkdocstrings) loads tack-core's `tack` alone, so `docs/_ext/tack_namespace.py`, a Griffe extension named in `mkdocs.yml`, loads tack-vis's subpackages into it. The Visualization Guide's reference pages render the docstrings: `docs/vis-guide/reference/algorithms.md` (every algorithm in a group, with a row in the group's table: what it gives, takes, and its VTK and Viskores counterparts) and `data-model.md` (everything else `tack.dataset` exports, and the interop). A new algorithm or export needs its entry; `test_reference_pages.py` checks.
+
 ## Build & Test Commands
 
 ```bash

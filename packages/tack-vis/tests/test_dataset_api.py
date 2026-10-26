@@ -9,6 +9,7 @@ DG layout and back is unchanged -- and against vtkCellCenters,
 vtkCellDataToPointData and vtkGeometryFilter.
 """
 
+import importlib
 import types
 
 import numpy as np
@@ -1117,6 +1118,102 @@ def test_structured_faces_and_edges_are_the_general_derivations(backend, dims):
     for name in ("rows", "side_edge", "side_sign"):
         np.testing.assert_array_equal(getattr(ours, name).numpy(), getattr(theirs, name).numpy(),
                                       err_msg=f"edges.{name}")
+
+
+def _star_of_tetrahedra(n=120):
+    """Tetrahedra round point 0, every face of theirs through it: its bucket holds
+    more faces than ``_LARGEST``, which sends the derivation to the sort."""
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    ring = np.c_[np.cos(angles), np.sin(angles), np.zeros(n)]
+    points = np.vstack([[0, 0, 0], [0, 0, 1], [0, 0, -1], ring + 3]).astype(np.float32)
+    cells = []
+    for i in range(n):
+        a, b = 3 + i, 3 + (i + 1) % n
+        cells += [[0, a, b, 1], [0, b, a, 2]]
+    m = len(cells)
+    return td.DataSet(td.UnstructuredTopology(np.full(m, 10, np.uint8), np.arange(m + 1) * 4,
+                                              np.ravel(cells)), points)
+
+
+def test_faces_by_buckets_are_the_sorted_derivation(backend):
+    """Faces are derived by a counting sort of the (cell, face) records into buckets
+    of their lowest point (``_derive_bucketed``), which must give what the
+    sorted derivation gives, array for array: on mixed shapes, inside-out
+    cells, and a point of more faces than a bucket takes (the sort then)."""
+    import _viskores_datasets as vd
+
+    from tack.dataset.topology import Faces
+
+    meshes = [vd.to_tack(vd.ALL[name]()) for name in ("3d_explicit_5", "3d_explicit_zoo",
+                                                         "3d_explicit_4")]
+    meshes += [td.tetrahedralize(td.uniform_grid((5, 4, 3))), _star_of_tetrahedra()]
+    for data in meshes:
+        t = data.topology
+        fresh = td.UnstructuredTopology(t.types, t.offsets, t.connectivity,
+                                        num_points=t.num_points)
+        theirs, ours = Faces._derive_sorted(t), fresh.faces()
+        assert ours.num_faces == theirs.num_faces
+        for name in ("rows", "kinds", "sides", "side_face", "side_slot", "side_orientation"):
+            np.testing.assert_array_equal(getattr(ours, name).numpy(),
+                                          getattr(theirs, name).numpy(), err_msg=name)
+    assert Faces._derive_bucketed(_star_of_tetrahedra().topology) is None
+
+
+def test_a_fresh_surface_in_passes_is_the_same_surface(backend, monkeypatch):
+    """The fresh boundary holds at most ``_RECORDS_BYTES`` of face records at once,
+    taking the points in ranges; its surface is the same in any number of
+    passes, since its order is the buckets'."""
+    module = importlib.import_module("tack.dataset.algorithms.extract_surface")
+    data = td.tetrahedralize(td.uniform_grid((7, 6, 5)))
+    data.fields["c"] = td.Field(td.Constant(data),
+                                tack.array(np.arange(data.num_cells, dtype=np.float32)))
+    whole = module._fresh_boundary(data, None)
+    records = 16 * 4 * data.num_cells                      # four faces a tetrahedron
+    for passes in (2, 3, 7):
+        monkeypatch.setattr(module, "_RECORDS_BYTES", records // passes)
+        fresh = td.DataSet(td.UnstructuredTopology(data.topology.types, data.topology.offsets,
+                                                   data.topology.connectivity,
+                                                   num_points=data.num_points),
+                           data.geometry.values)
+        fresh.fields["c"] = data.fields["c"]
+        parts = module._fresh_boundary(fresh, None)
+        for name in ("types", "offsets", "connectivity"):
+            np.testing.assert_array_equal(getattr(parts.topology, name).numpy(),
+                                          getattr(whole.topology, name).numpy())
+        np.testing.assert_array_equal(parts.fields["c"].values.numpy(),
+                                      whole.fields["c"].values.numpy())
+
+
+def test_a_fresh_meshs_surface_is_the_derived_faces_boundary(backend):
+    """On a mesh whose faces are not derived, extract_surface keeps only the faces
+    of one cell from the bucketed records (``_fresh_boundary``), without the
+    whole face incidence; it must be the surface the derived faces give."""
+    import _viskores_datasets as vd
+
+    from tack.dataset.algorithms.extract_surface import _fresh_boundary
+
+    for make in (lambda: td.tetrahedralize(td.uniform_grid((6, 5, 4))),
+                 lambda: vd.to_tack(vd.make_3d_explicit_zoo(), dtype=tack.f32), _star_of_tetrahedra):
+        data = make()
+        data.fields["x"] = td.Field(td.H1(data), tack.array(data.positions()[:, 0].astype(np.float32)))
+        data.fields["c"] = td.Field(td.Constant(data),
+                                    tack.array(np.arange(data.num_cells, dtype=np.float32)))
+        fresh = _fresh_boundary(data, None)
+        derived = make()
+        derived.fields.update(x=td.Field(td.H1(derived), data.fields["x"].values),
+                              c=td.Field(td.Constant(derived), data.fields["c"].values))
+        derived.topology.faces()
+        theirs = td.extract_surface(derived)
+        if fresh is None:                                   # the star: too many faces
+            assert make is _star_of_tetrahedra
+            continue
+        for name in ("types", "offsets", "connectivity"):
+            np.testing.assert_array_equal(
+                np.asarray(tack.arrays.to_host(getattr(fresh.topology, name))),
+                np.asarray(tack.arrays.to_host(getattr(theirs.topology, name))), err_msg=name)
+        for name in ("x", "c"):
+            np.testing.assert_array_equal(fresh.fields[name].values.numpy(),
+                                          theirs.fields[name].values.numpy())
 
 
 # ── A space's nodes as a for_each domain ────────────────────────────

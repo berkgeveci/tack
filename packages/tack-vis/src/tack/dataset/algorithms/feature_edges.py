@@ -11,7 +11,7 @@ from tack.algorithms.scan import exclusive_scan
 from tack.arrays import materialize
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import _table, _vectors
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import key_order, run_offsets
 from tack.dataset.carry import Same, _point_values, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
@@ -160,7 +160,7 @@ def feature_edges(data, angle=30.0, boundary=True, feature=True, non_manifold=Tr
         _sides(loops, offsets, positions, n_cells, keys, owners, normals)
     count = 0
     if total:
-        order, _ = bucket_order(keys, data.num_points, idt)
+        order = key_order(keys, data.num_points, idt)
         runs, count = run_offsets(keys, order)
     wanted = tack.array(np.array([0, boundary, feature, non_manifold, manifold], np.int32))
     kinds = tack.empty((count,), tack.i32)

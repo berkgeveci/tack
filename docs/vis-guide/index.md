@@ -16,7 +16,9 @@ uv sync --extra cpu      # in a clone; both packages are installed
 
 This overview is a tour; the chapters below develop the data model and complete
 workflows. The [Dataset API reference](reference/dataset-api.md) has the
-signatures and full support tables.
+model and full support tables, [Algorithms](reference/algorithms.md) every
+algorithm's parameters, and [Data Model](reference/data-model.md) every
+class's.
 
 ## Quick start
 
@@ -64,10 +66,13 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Streaming Steps](13-streaming.md) | Analyze a simulation step by step, in situ: running statistics, time derivatives, pathlines |
 | [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells |
 | [Algorithms Across Pieces](09-pieces-across.md) | Pieces from VTK, on several devices or MPI ranks; probes, particles, regions and point clouds across them |
+| [Communicate Between Blocks](14-communication.md) | Write an algorithm over pieces: exchanges, ghost plans, routing and sorting with `tack.communication` |
 | [Worked Examples](examples.md) | Run complete programs with analytic checks |
 
-The [Dataset API reference](reference/dataset-api.md) lists every class and
-algorithm. The design records, [Dataset API](design/dataset-api.md) and
+The [Dataset API reference](reference/dataset-api.md) describes every class
+and algorithm; [Algorithms](reference/algorithms.md) and
+[Data Model](reference/data-model.md) give each one's signature, parameters
+and methods, from its docstring. The design records, [Dataset API](design/dataset-api.md) and
 [Polyhedra](design/polyhedra.md), say how the model came to be. Kernels
 themselves -- the language, arrays, backends -- are in the core
 [User's Guide](../users-guide/index.md).

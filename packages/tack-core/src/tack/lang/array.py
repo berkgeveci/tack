@@ -1115,13 +1115,15 @@ def memory_space(ptr, *, device=None) -> str:
     pointer resides.
 
     Returns:
-        'cpu'          — unregistered host memory (regular malloc/new)
-        'cuda'         — CUDA device memory (cudaMalloc)
-        'cuda_pinned'  — CUDA pinned host memory (cudaMallocHost)
-        'cuda_managed' — CUDA unified memory (cudaMallocManaged)
-        'hip'          — HIP device memory (hipMalloc)
-        'hip_pinned'   — HIP pinned host memory (hipHostMalloc)
-        'hip_managed'  — HIP unified memory (hipMallocManaged)
+        The memory space's name, one of:
+
+        - ``'cpu'``: unregistered host memory (regular malloc/new)
+        - ``'cuda'``: CUDA device memory (cudaMalloc)
+        - ``'cuda_pinned'``: CUDA pinned host memory (cudaMallocHost)
+        - ``'cuda_managed'``: CUDA unified memory (cudaMallocManaged)
+        - ``'hip'``: HIP device memory (hipMalloc)
+        - ``'hip_pinned'``: HIP pinned host memory (hipHostMalloc)
+        - ``'hip_managed'``: HIP unified memory (hipMallocManaged)
     """
     return _target(device).memory_space(ptr)
 

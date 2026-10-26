@@ -54,6 +54,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
     ``time`` on the points. A seed that takes no step has a point and no line.
+    The arguments are ``advect``'s.
 
     ``step_unit`` is what ``step_size`` measures: ``"time"`` (the default, as
     ``advect`` and Viskores step), or ``"length"``, an arc length along the
@@ -63,8 +64,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     the particle takes either way.
 
     Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
-    piece, each piece holding the stretches it traced
-    (``_particles.streamlines_pieces``)."""
+    piece, each piece holding the stretches it traced."""
     # A step as a time ("0.5 s") is in the spatial unit over the velocity's; as
     # a length ("1 mm"), in the spatial unit.
     if step_unit == "length":

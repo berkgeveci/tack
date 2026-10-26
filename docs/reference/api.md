@@ -333,7 +333,11 @@ Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
 `tack.communication` moves data between blocks -- units of work with global
 ids, each on a device, such as the pieces of a partitioned dataset -- and
 combines values over them. `World()` is this process; its blocks may be on any
-of its devices.
+of its devices. The Visualization Guide's
+[Communicate Between Blocks](../vis-guide/14-communication.md) builds an
+algorithm on it step by step, and the
+[Runtime API contract](../contracts/runtime-api.md#communication-between-blocks)
+says what it guarantees.
 
 ::: tack.communication.World
 
@@ -348,9 +352,12 @@ of its devices.
 ## VTK interop
 
 `tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_array`,
-`array_to_vtk` and `init_level_zero`. Their contracts are in
-[Runtime API: VTK](../contracts/runtime-api.md#vtk), and their docstrings
-are in `packages/tack-vis/src/tack/interop/vtk.py`.
+`array_to_vtk` and `init_level_zero`, and `vtk_to_dataset`/`dataset_to_vtk`.
+Their contracts are in [Runtime API: VTK](../contracts/runtime-api.md#vtk),
+and their entries, with MFEM's and Warp's, in the Visualization Guide's
+[Data Model](../vis-guide/reference/data-model.md#interoperability). The
+`tack.dataset` algorithms are in
+[Algorithms](../vis-guide/reference/algorithms.md).
 
 ## The backend contract
 
