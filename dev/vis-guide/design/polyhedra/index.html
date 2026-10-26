@@ -4556,8 +4556,11 @@ gradient at the center. Each face is walked once.
   <em>F</em>: <code>S = Σ (p_j × p_j+1)(u_j + u_j+1)</code>, <code>W = Σ (p_j+1 − p_j)(u_j + u_j+1)</code>,
   and <code>N = Σ p_j × p_j+1</code>, the Newell vector.
 - The face's share of 6V is <code>F · N</code>.</p>
-<p>At points, the cells' gradients are averaged, as on shapes. Polygons and
-polylines get zero, as lower-dimensional cells do on shapes.</p>
+<p>At points, the cells' gradients are averaged, as on shapes. A polygon's
+gradient lies in its plane, as a 2D shape's does: in-plane Green–Gauss over
+its edges, <code>Σ (u_k + u_k+1)((p_k+1 − p_k) × N) / |N|²</code> with <code>N</code> the Newell
+vector, exact for a linear field on a planar polygon. Polylines get zero, as
+lines do on shapes.</p>
 <p><strong>Locating, and the view.</strong> The proposal (in the vault) had field views
 evaluate at world positions, <code>value_at(c, x)</code>. That cannot work: a field
 view holds values, not positions, and a device function can call methods

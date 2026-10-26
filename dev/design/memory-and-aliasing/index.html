@@ -4037,8 +4037,8 @@ Tack did not allocate with the same <code>Array</code> class.</p>
 <tr>
 <td>Metal</td>
 <td><code>MetalBuffer</code></td>
-<td><code>newBufferWithLength_options_</code>, shared storage mode</td>
-<td>zeros: Metal clears a new buffer (<code>starts_zeroed</code>)</td>
+<td><code>newBufferWithLength_options_</code>, shared storage mode; 1 MiB or more reused from a pool of freed buffers (<code>_BufferPool</code>)</td>
+<td>zeros for a new buffer (<code>starts_zeroed</code>); a reused one holds what it held</td>
 <td><code>np.copyto</code> into the shared view / <code>.copy()</code>, after waiting for queued launches</td>
 </tr>
 <tr>
@@ -4068,7 +4068,11 @@ Tack did not allocate with the same <code>Array</code> class.</p>
 <code>tack.copyto</code> or <code>fill</code> writes them; <code>tack.zeros</code>, <code>ones</code> and <code>full</code> are the
 calls that fill. The GPU backends happen to zero new buffers, and only
 Metal declares it (<code>starts_zeroed</code>), so <code>tack.zeros</code> fills on the others
-again. The CPU leaves a new array untouched.</p>
+again -- and on Metal's reused buffers: a freed buffer of 1 MiB or more goes
+back to a pool, since a new one's pages are mapped and cleared on first
+touch at about 13 GB/s on an M1 Max (50 ms for a 640 MB temporary, more than
+the filter's kernels), and the next array of its capacity takes it as it
+is. The CPU leaves a new array untouched.</p>
 <p><strong>CPU.</strong> <code>NumpyBuffer._data</code> <em>is</em> the storage. <code>CPUBackend.allocate_array</code>
 (<code>runtime/cpu.py</code>) does not fill it: its pages are first touched by the
 kernel that writes the array, in parallel when the threading policy fans

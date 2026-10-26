@@ -3805,6 +3805,16 @@ or the <code>td.Field</code> itself; a raw value buffer needs a space wrapper fi
 <td>Whole cells in input order</td>
 </tr>
 <tr>
+<td>Keep a box of a structured grid, every n-th point</td>
+<td><code>extract_extent</code></td>
+<td>A structured grid of the same kind (VTK's <code>vtkExtractGrid</code>/<code>vtkExtractVOI</code>); a one-point-thick box is a grid of one dimension less</td>
+</tr>
+<tr>
+<td>Normals of a surface, its polygons wound alike</td>
+<td><code>surface_normals</code></td>
+<td>The surface with <code>normals</code> on points and <code>cell_normals</code> on cells (VTK's <code>vtkPolyDataNormals</code> without splitting)</td>
+</tr>
+<tr>
 <td>Keep the part on one side of a level</td>
 <td><code>clip</code></td>
 <td>Whole cells and pieces of cut cells</td>
@@ -3812,7 +3822,7 @@ or the <code>td.Field</code> itself; a raw value buffer needs a space wrapper fi
 <tr>
 <td>Extract a scalar level set, or several</td>
 <td><code>contour</code></td>
-<td>Triangles in 3D; line cells in 2D; with several values, all of them, each cell's in <code>contour_value</code></td>
+<td>Triangles in 3D; line cells in 2D; vertices on lines; <code>dimension=</code> picks which cells of a mixed mesh (the highest by default, never mixed); with several values, all of them, each cell's in <code>contour_value</code></td>
 </tr>
 <tr>
 <td>Intersect with a plane or another implicit function, or several parallel ones</td>
@@ -3845,7 +3855,9 @@ threshold. These different measures are intentional.</p>
 <h2 id="understand-the-sign-of-an-implicit-function">Understand the sign of an implicit function<a class="headerlink" href="#understand-the-sign-of-an-implicit-function" title="Permanent link">&para;</a></h2>
 <p><code>Plane</code>, <code>Sphere</code>, <code>Cylinder</code>, <code>Box</code> and <code>Planes</code> expose a <code>value(position)</code>
 that is negative inside, zero on the boundary and positive outside. For the
-plane in the example it is <code>x - 0.125</code>.</p>
+plane in the example it is <code>x - 0.125</code>. <code>Union</code>, <code>Intersection</code> and
+<code>Difference</code> combine them (<code>Difference(box, sphere)</code> is the box with a ball
+taken out), as VTK's <code>vtkImplicitBoolean</code> does, on the device.</p>
 <p><code>clip(data, plane)</code> keeps values <strong>at or above zero</strong>, here the positive-x
 side. Pass <code>inside=True</code> to keep the other side, inside the function's
 region. <code>extract_geometry</code> instead defaults to <code>inside=True</code>, the negative
@@ -4031,7 +4043,7 @@ carried. A volume mesh's surface comes from <code>extract_surface</code> first.<
 <td>Contour or slice</td>
 <td>Yes, of order-1 and <code>L2</code> fields (an order-2 <code>H1</code> field is refused)</td>
 <td>Yes</td>
-<td>Currently unsupported</td>
+<td>Contour: vertices, of point data</td>
 </tr>
 <tr>
 <td>Clip cells</td>
@@ -4047,8 +4059,8 @@ carried. A volume mesh's surface comes from <code>extract_surface</code> first.<
 </tr>
 <tr>
 <td>Gradients and flow quantities</td>
-<td>Yes</td>
-<td>Yes: Green–Gauss over each polyhedron's faces (exact for linear fields); zero on polygons</td>
+<td>Yes (2D cells in their plane)</td>
+<td>Yes: Green–Gauss over each polyhedron's faces, and over each polygon's edges in its plane (exact for linear fields)</td>
 <td>Yes (zero)</td>
 </tr>
 <tr>

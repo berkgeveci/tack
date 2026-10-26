@@ -5015,6 +5015,10 @@ and pass it on; without one, nothing changes (it is compiled out).</p>
 <td>marks points whose mean distance to their <code>k</code> nearest is more than <code>deviations</code> standard deviations above the mean of those means, with each one (<code>mean_distance</code>): VTK's <code>vtkStatisticalOutlierRemoval</code> and PCL, the same points, mean and deviation. Marked, not removed, as PDAL marks (class 7): <code>threshold_points(out, "outlier", 0, 0)</code> keeps the rest</td>
 </tr>
 <tr>
+<td><code>surface_normals(data, consistent=True)</code></td>
+<td>a surface's polygons wound alike (each region as its first cell) and its unit normals: <code>cell_normals</code> (Newell's) and <code>normals</code> at the points (the cells' summed, made unit), as VTK's <code>vtkPolyDataNormals</code> without splitting; a non-orientable surface is refused</td>
+</tr>
+<tr>
 <td><code>point_normals(data, k=None, radius=None, viewpoint=None, direction=(0, 0, 1))</code></td>
 <td>each point's unit normal from the covariance of its <code>k</code> nearest points (itself included) or those within <code>radius</code>: the eigenvector of the least eigenvalue, in closed form; signed toward <code>viewpoint</code> (a world position) or along <code>direction</code> (up). Zero with fewer than three neighbours, or on a line. VTK's <code>vtkPCANormalEstimation</code> agrees within 0.1°</td>
 </tr>
@@ -5685,7 +5689,7 @@ f64 (2^53); use f64 input for greater precision on a backend that supports it.
 Integer <code>magnitude</code> and <code>log_values</code> therefore return floating point fields.</p>
 <p>Empty supported filters return valid empty topologies and carry selected fields
 and sets by the same maps as nonempty filters; missing <code>fields=</code> names still
-raise <code>KeyError</code>. Empty polyline contouring retains the documented refusal.</p>
+raise <code>KeyError</code>.</p>
 <p>In the table,
 "polyhedral" means <code>PolyhedralTopology</code>, "polygonal" <code>PolygonalTopology</code>
 and "polyline" <code>PolylineTopology</code>.</p>
@@ -5730,9 +5734,9 @@ and "polyline" <code>PolylineTopology</code>.</p>
 </tr>
 <tr>
 <td><code>boundary_faces</code>, <code>extract_surface</code></td>
-<td>yes (a 2D mesh's: line cells)</td>
+<td>yes (a 2D mesh's boundary: line cells; by default <code>extract_surface</code> passes a 2D mesh's cells through)</td>
 <td>yes (the surface is polygonal)</td>
-<td>yes (line cells)</td>
+<td>yes (boundary: line cells; by default the polygons pass through)</td>
 <td>yes (vertex cells)</td>
 </tr>
 <tr>
@@ -5751,10 +5755,10 @@ and "polyline" <code>PolylineTopology</code>.</p>
 </tr>
 <tr>
 <td><code>contour</code>, <code>slice</code>, <code>slice_plane</code></td>
-<td>yes (a 2D mesh's: line cells; an <code>L2</code> field or geometry gives each cell its own points; an order-2 <code>H1</code> field is refused, since its corners alone would be contoured)</td>
+<td>yes (<code>dimension=</code> 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an <code>L2</code> field or geometry gives each cell its own points; an order-2 <code>H1</code> field is refused, since its corners alone would be contoured)</td>
 <td>yes (López, face-based)</td>
 <td>yes (line cells)</td>
-<td>no (would give points)</td>
+<td>yes (<code>contour</code>: vertex cells, of point data)</td>
 </tr>
 <tr>
 <td><code>clip</code></td>
@@ -5802,7 +5806,7 @@ and "polyline" <code>PolylineTopology</code>.</p>
 <td><code>gradients(at="cells" | "points")</code> of scalars or vectors, <code>flow_quantities</code></td>
 <td>yes</td>
 <td>yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields)</td>
-<td>yes (zero, as for 2D cells on shapes)</td>
+<td>yes (in the polygon's plane, Green–Gauss over its edges; 2D cells on shapes in their plane too)</td>
 <td>yes (zero)</td>
 </tr>
 <tr>
@@ -5968,6 +5972,12 @@ precision, as the others' numbers are). <code>value(p)</code> is negative inside
 the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.</p>
+<p><code>Union(f, g, ...)</code>, <code>Intersection(f, g, ...)</code> and <code>Difference(f, g, ...)</code>
+combine functions as VTK's <code>vtkImplicitBoolean</code> does: the smallest value, the
+largest, and the first's or the rest's union's negated, whichever is larger.
+They hold their operands as nested device classes, so a kernel inlines the
+whole tree, and move them by an origin and match a <code>Planes</code> to the data as
+each operand would be.</p>
 <p>Each is a <code>@tack.device_class</code> object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
 template and calls <code>f.value(p)</code>. Their parameters are world positions: on a
@@ -6031,6 +6041,8 @@ keeps its distinct points if three are left), as warp-simdata drops it. VTK
 and Viskores keep such cells and points, so their counts are higher where a
 level runs through mesh points (a plane through grid points, an isovalue
 some points have exactly); the areas agree.</p>
+<p><code>extract_extent(data, extent, rate=1)</code> keeps a box of a structured grid's points, every
+<code>rate</code>-th, as a structured grid of the same kind (VTK's <code>vtkExtractGrid</code>).</p>
 <p>Without a function: <code>extract_cells(data, cells)</code>, where <code>cells</code> is ids (a
 host array or an integer field), a cell <code>Set</code> of <code>data</code>, or the name of one
 in <code>data.sets</code> (cells keep their order, not the order given),
@@ -6292,7 +6304,7 @@ for VTK's <code>vtkStreamTracer</code> on 8 threads.</p>
 <tbody>
 <tr>
 <td><code>tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)</code></td>
-<td>a <code>vtkUnstructuredGrid</code>, rectilinear grid or image (<code>vtkImageData</code>, as <code>UniformCoordinates</code>). Point data becomes <code>H1</code>, cell data <code>Constant</code>. A grid with polyhedra becomes polyhedral (<code>polyhedral=True</code> forces it); <code>orient</code> repairs inconsistent winding</td>
+<td>a <code>vtkUnstructuredGrid</code>, <code>vtkPolyData</code> (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (<code>vtkImageData</code>, as <code>UniformCoordinates</code>). Point data becomes <code>H1</code>, cell data <code>Constant</code>. A grid with polyhedra becomes polyhedral (<code>polyhedral=True</code> forces it); <code>orient</code> repairs inconsistent winding</td>
 </tr>
 <tr>
 <td><code>tack.interop.vtk.dataset_to_vtk(data)</code></td>

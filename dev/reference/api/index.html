@@ -16574,7 +16574,9 @@ the first n elements, and n must then be at least 1.</p>
 
 
 <a href="#tack.algorithms.scan.exclusive_scan" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">exclusive_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">exclusive_scan</span><span class="p">(</span>
+    <span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">close</span><span class="o">=</span><span class="kc">False</span>
+<span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -16660,6 +16662,25 @@ that needs only the offsets passes <code>total=False</code> and gets
                   <code>True</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>close</code>
+            </td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>also write the total at <code>output[n]</code>, so <code>output</code> is the
+<code>n + 1</code> offsets of CSR rows (<code>output[0]</code> is 0 when <code>n</code> is
+0). In the scan's own launch where it is one, as for any array
+of at most a tile or 4096 elements; <code>output</code> needs <code>n + 1</code>
+elements.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -16697,25 +16718,7 @@ that needs only the offsets passes <code>total=False</code> and gets
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/algorithms/scan.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">206</span>
-<span class="normal">207</span>
-<span class="normal">208</span>
-<span class="normal">209</span>
-<span class="normal">210</span>
-<span class="normal">211</span>
-<span class="normal">212</span>
-<span class="normal">213</span>
-<span class="normal">214</span>
-<span class="normal">215</span>
-<span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
-<span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">224</span>
 <span class="normal">225</span>
 <span class="normal">226</span>
 <span class="normal">227</span>
@@ -16726,8 +16729,36 @@ that needs only the offsets passes <code>total=False</code> and gets
 <span class="normal">232</span>
 <span class="normal">233</span>
 <span class="normal">234</span>
-<span class="normal">235</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">exclusive_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">exclusive_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">close</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute exclusive prefix sum on the inputs&#39; device.</span>
 
 <span class="sd">    output[i] = sum(input[0..i-1]), output[0] = 0.</span>
@@ -16744,18 +16775,28 @@ that needs only the offsets passes <code>total=False</code> and gets
 <span class="sd">            device (on Metal, for every launch queued so far); a caller</span>
 <span class="sd">            that needs only the offsets passes ``total=False`` and gets</span>
 <span class="sd">            ``None``, and the scan stays queued.</span>
+<span class="sd">        close: also write the total at ``output[n]``, so ``output`` is the</span>
+<span class="sd">            ``n + 1`` offsets of CSR rows (``output[0]`` is 0 when ``n`` is</span>
+<span class="sd">            0). In the scan&#39;s own launch where it is one, as for any array</span>
+<span class="sd">            of at most a tile or 4096 elements; ``output`` needs ``n + 1``</span>
+<span class="sd">            elements.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        The total of all input elements in the output&#39;s dtype, as a Python</span>
 <span class="sd">        int or float; ``None`` with ``total=False``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">_count</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">close</span> <span class="ow">and</span> <span class="n">output_array</span><span class="o">.</span><span class="n">size</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;exclusive_scan with close writes output[</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">]: the output has &quot;</span>
+                         <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">output_array</span><span class="o">.</span><span class="n">size</span><span class="si">}</span><span class="s2"> elements&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="c1"># Nothing to scan; the empty sum is 0, as for Array.sum().</span>
+        <span class="k">if</span> <span class="n">close</span><span class="p">:</span>
+            <span class="n">_close_empty</span><span class="p">(</span><span class="n">output_array</span><span class="p">)</span>
         <span class="k">return</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">total</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="c1"># Scan in the output&#39;s dtype, as the inclusive scan does: an i32 work</span>
     <span class="c1"># buffer truncated float inputs and wrapped wider integers.</span>
-    <span class="k">return</span> <span class="n">_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">inclusive</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">want_total</span><span class="o">=</span><span class="n">total</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">inclusive</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">want_total</span><span class="o">=</span><span class="n">total</span><span class="p">,</span> <span class="n">close</span><span class="o">=</span><span class="n">close</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -16890,30 +16931,30 @@ nothing and returns 0.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/algorithms/scan.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">238</span>
-<span class="normal">239</span>
-<span class="normal">240</span>
-<span class="normal">241</span>
-<span class="normal">242</span>
-<span class="normal">243</span>
-<span class="normal">244</span>
-<span class="normal">245</span>
-<span class="normal">246</span>
-<span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span>
-<span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">inclusive_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute inclusive prefix sum on the inputs&#39; device.</span>
 

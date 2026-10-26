@@ -3825,8 +3825,8 @@ or output boundaries. A named field holding simulation storage can share its
 allocation: follow the same ownership and synchronization rules as any other
 shared buffer.</p>
 <h2 id="exchange-whole-datasets-with-vtk">Exchange whole datasets with VTK<a class="headerlink" href="#exchange-whole-datasets-with-vtk" title="Permanent link">&para;</a></h2>
-<p>With <code>tack-vis</code> and VTK installed, <code>vtk_to_dataset</code> reads VTK image, rectilinear
-or unstructured data. Point fields become H1, cell fields Constant; geometry
+<p>With <code>tack-vis</code> and VTK installed, <code>vtk_to_dataset</code> reads VTK image, rectilinear,
+structured, unstructured or polygonal (<code>vtkPolyData</code>) data. Point fields become H1, cell fields Constant; geometry
 and connectivity are converted into the dataset model. <code>dataset_to_vtk</code> creates
 the matching VTK dataset for visualization or writing to a file.</p>
 <p>For a contour, the VTK result is an unstructured triangle mesh. The following

@@ -4483,7 +4483,7 @@ The buffer belongs to the array's device (<code>a.device</code>; see
 </tr>
 <tr>
 <td><code>tack.zeros(shape, dtype=f32, *, device=None)</code>, <code>tack.ones(...)</code>, <code>tack.full(shape, fill_value, dtype=None, *, device=None)</code></td>
-<td><code>empty()</code> followed by <code>fill()</code>. <code>zeros</code> skips the fill where the buffer starts zeroed (<code>starts_zeroed</code>: Metal, which clears new buffers). <code>full</code> without a dtype makes f32 from a Python float and i32 from an int (i64 if the value needs it); a sequence <code>fill_value</code> needs an element dtype</td>
+<td><code>empty()</code> followed by <code>fill()</code>. <code>zeros</code> skips the fill where the buffer starts zeroed (<code>starts_zeroed</code>: a new Metal buffer, which Metal clears; not one reused from its pool). <code>full</code> without a dtype makes f32 from a Python float and i32 from an int (i64 if the value needs it); a sequence <code>fill_value</code> needs an element dtype</td>
 </tr>
 <tr>
 <td><code>tack.arange([start,] stop[, step], dtype=None, *, device=None)</code></td>
