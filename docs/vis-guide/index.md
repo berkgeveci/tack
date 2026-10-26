@@ -66,6 +66,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Streaming Steps](13-streaming.md) | Analyze a simulation step by step, in situ: running statistics, time derivatives, pathlines |
 | [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells |
 | [Algorithms Across Pieces](09-pieces-across.md) | Pieces from VTK, on several devices or MPI ranks; probes, particles, regions and point clouds across them |
+| [Communicate Between Blocks](14-communication.md) | Write an algorithm over pieces: exchanges, ghost plans, routing and sorting with `tack.communication` |
 | [Worked Examples](examples.md) | Run complete programs with analytic checks |
 
 The [Dataset API reference](reference/dataset-api.md) describes every class

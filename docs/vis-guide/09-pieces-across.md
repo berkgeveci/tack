@@ -124,6 +124,9 @@ pieces are shared out. With an MPI that reads device memory,
 through the host; make the rank's device (`tack.device("cuda:N")`) before
 importing `mpi4py.MPI`, which starts MPI.
 
+Every algorithm here is written on `tack.communication`, and so can one of
+your own: [Communicate Between Blocks](14-communication.md).
+
 ## Particles across pieces
 
 `advect` and `streamlines` take a partitioned dataset too, and particles

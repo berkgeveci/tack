@@ -157,6 +157,7 @@ nav:
       - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md
+          - Communicate Between Blocks: vis-guide/14-communication.md
       - Worked Examples: vis-guide/examples.md
       - Reference:
           - Dataset API: vis-guide/reference/dataset-api.md

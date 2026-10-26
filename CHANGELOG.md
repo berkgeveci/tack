@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A Visualization Guide chapter, **Communicate Between Blocks**, on writing
+  an algorithm over pieces with `tack.communication`: collectives,
+  exchanges, a ghost `Plan` that makes a diffusion over blocks give the
+  whole line's bits, `Routing` points to the block that holds them, and
+  `sort_by_key`. Its examples run in `validate.py` and, unchanged but for
+  the world, under `mpiexec`. The Runtime API contract gains a
+  Communication section: what is collective, what does not depend on how
+  blocks are assigned, and the errors.
 - Two reference pages in the Visualization Guide, generated from the
   docstrings: **Algorithms**, every `tack.dataset` algorithm by what it does,
   each group with a table of what it gives, what it takes (pieces, AMR,
