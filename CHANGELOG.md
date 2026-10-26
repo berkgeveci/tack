@@ -491,8 +491,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
     rather than a slot for every (cell, face).
   - Cell to point of a cell field on cells of one shape reads the cells'
     values through the point links, rather than a contribution for every
-    corner (640 MB at 20M). Its peak went from 1.7 GB to under VTK's, and
-    its warm time from 25 ms to 12 (VTK 96).
+    corner (640 MB at 20M). At 20M hexahedra its peak went from 1.7 GB to
+    1.07 (VTK 0.99), and its warm time from 25 ms to 12 (VTK 96); at 100M
+    tetrahedra it peaks at 1.9 GB against VTK's 3.4.
 
   Every filter runs at 50M and 100M hexahedra and tetrahedra.
 - A fresh mesh's first filters cost less at scale. Faces are derived by a
