@@ -462,6 +462,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Cold compiles cost less. Walking the IR uses an explicit stack, not
+  nested generators, which handed each node up once per level of depth.
+  Lowering copies syntax trees directly rather than through `copy.deepcopy`.
+  Weak literal locals are found in one rewrite of the body, and copy
+  propagation leaves alone the statements it has nothing to replace in.
+  A cold probe of a mesh of five shapes went from 2.5 s to 2.1, with the
+  generated code identical (LLVM IR hashed for 470 variants). Point links
+  sort each bucket by entry alone, without reading keys every entry of a
+  bucket shares.
 - Filters hold less memory at scale, measured beside VTK's by the new
   `benchmarks/vtk_compare/memory.py`, which samples the allocator's bytes in
   use through one call in a process of its own. At 20M hexahedra on the CPU:
