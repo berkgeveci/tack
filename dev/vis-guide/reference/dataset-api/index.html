@@ -6039,8 +6039,13 @@ the same for kept points. No filter needs an option for it.</p>
 </table>
 <p>Every one of them takes <code>fields=</code>: all fields by default, a name or a list
 of names, or <code>[]</code> for none; a name the input lacks raises <code>KeyError</code>. A new
-filter states its maps and calls <code>carry(data, out, points=..., cells=...,
-fields=fields)</code>.</p>
+filter states its maps and calls <code>td.carry(data, out, points=..., cells=...,
+fields=fields)</code>. The maps, <code>carry</code>, <code>keep_marks</code>/<code>drop_marks</code>, <code>visible</code>,
+<code>owned_values</code>, <code>Set.from_flags</code> and <code>td.units</code> are public, so a filter of
+your own is written as the built-ins are
+(<a href="../data-model/#filters-of-your-own">Filters of your own</a>);
+<code>test_public_filters.py</code> rewrites built-ins with public names only and holds
+them to the originals.</p>
 <p><strong>Gradients.</strong> <code>algorithms.gradients(data, field, at="cells")</code> gives each
 cell's gradient at its parametric center; <code>at="points"</code> evaluates each cell's
 gradient at the point and averages over the cells around it, as VTK's
