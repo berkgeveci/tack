@@ -17,9 +17,11 @@ def _implicit_values(positions, function, out):
 
 @on_inputs_device
 def implicit_values(data, function):
-    """An implicit function (``tack.dataset.implicit``) at the geometry's values: a field
-    in the geometry's space, negative inside the function's region. On an ``H1``
-    geometry that is one value per point."""
+    """``function``, an implicit function (``tack.dataset.implicit``: ``Plane``,
+    ``Sphere``, ``Box``, ...), at the geometry's values: a field in the
+    geometry's space and type, negative inside the function's region. On an
+    ``H1`` geometry that is one value per point. The function is in world
+    positions, taken relative to the dataset's origin in double precision."""
     positions = materialize(data.geometry.values)
     n = size_of(data.geometry.values)
     dtype = arrays.dtype_of(data.geometry.values)

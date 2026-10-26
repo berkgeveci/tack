@@ -221,7 +221,7 @@ def connected_components(data, radius=None, min_size=None, periodic=None, locato
 
     Over a ``PartitionedDataSet``, regions are numbered across every piece of
     every rank: each piece labels its own, and pieces join the regions that
-    meet at the points they share (``_components_pieces``). With global ids on
+    meet at the points they share. With global ids on
     every piece, regions are numbered in order of their lowest global cell id
     -- the whole's numbering, for pieces carrying the whole's ids -- else of
     their lowest (piece, cell). With ``radius``, the pieces are point clouds:

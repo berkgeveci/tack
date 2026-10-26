@@ -7,7 +7,9 @@ complete pipelines with checked examples. For why it is shaped this way and how 
 design records: [Dataset API](../design/dataset-api.md) and
 [Polyhedra](../design/polyhedra.md). They are history; this page is the
 current state. What is missing is listed with each part, and under
-[Settled, and open](#settled-and-open).
+[Settled, and open](#settled-and-open). Each algorithm's and class's
+signature and parameters are in [Algorithms](algorithms.md) and
+[Data Model](data-model.md).
 
 ```python
 import tack.dataset as td
@@ -967,7 +969,8 @@ side `s` and its local face number.
 ## Algorithms and filters
 
 Every algorithm is in `tack.dataset.algorithms`, one module each, and
-`tack.dataset` re-exports them all. They share one set of conventions:
+`tack.dataset` re-exports them all; [Algorithms](algorithms.md) lists them by
+what they do, with their parameters. They share one set of conventions:
 
 - the dataset comes first: `f(data, ...)`;
 - a field argument is a `Field` or the name of one of `data`'s fields;

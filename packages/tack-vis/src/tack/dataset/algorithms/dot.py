@@ -19,7 +19,10 @@ def _dots(a, b, out):
 
 @on_inputs_device
 def dot(data, a, b):
-    """``a . b`` at every value of two vector fields of one width, dtype and space."""
+    """``a . b`` at every value of two vector fields ``a`` and ``b`` (fields or
+    names) of one width, dtype and space: a scalar field in that space and
+    dtype (``tack.arrays.Cast`` converts one first). Its unit is the product of
+    theirs, by its SI name where it has one (``"N"`` times ``"m"`` is ``"J"``)."""
     a, b = _field(data, a), _field(data, b)
     space, n = _same_space(a, b)
     if not width_of(a.values) or width_of(a.values) != width_of(b.values):

@@ -9,7 +9,9 @@ __all__ = ['mask']
 
 @on_inputs_device
 def mask(data, stride, fields=None):
-    """Every ``stride``-th cell (0, stride, 2 * stride, ...), as Viskores' ``Mask``."""
+    """Every ``stride``-th cell (0, stride, 2 * stride, ...), as Viskores' ``Mask``,
+    with only the points they use: fields carry as ``threshold`` carries them.
+    ``mask_points`` is its point twin."""
     if int(stride) < 1:
         raise ValueError(f"stride must be at least 1, not {stride!r}")
     keep = tack.empty((data.num_cells,), tack.i32)
