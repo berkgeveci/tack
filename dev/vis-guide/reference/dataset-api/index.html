@@ -16,7 +16,7 @@
         <link rel="prev" href="../../examples/">
       
       
-        <link rel="next" href="../../design/dataset-api/">
+        <link rel="next" href="../algorithms/">
       
       
         
@@ -2672,6 +2672,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -4273,7 +4329,9 @@ complete pipelines with checked examples. For why it is shaped this way and how 
 design records: <a href="../../design/dataset-api/">Dataset API</a> and
 <a href="../../design/polyhedra/">Polyhedra</a>. They are history; this page is the
 current state. What is missing is listed with each part, and under
-<a href="#settled-and-open">Settled, and open</a>.</p>
+<a href="#settled-and-open">Settled, and open</a>. Each algorithm's and class's
+signature and parameters are in <a href="../algorithms/">Algorithms</a> and
+<a href="../data-model/">Data Model</a>.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">algorithms</span> <span class="k">as</span> <span class="n">alg</span>
 </code></pre></div>
@@ -5649,7 +5707,8 @@ side <code>s</code> and its local face number.</p>
 </table>
 <h2 id="algorithms-and-filters">Algorithms and filters<a class="headerlink" href="#algorithms-and-filters" title="Permanent link">&para;</a></h2>
 <p>Every algorithm is in <code>tack.dataset.algorithms</code>, one module each, and
-<code>tack.dataset</code> re-exports them all. They share one set of conventions:</p>
+<code>tack.dataset</code> re-exports them all; <a href="../algorithms/">Algorithms</a> lists them by
+what they do, with their parameters. They share one set of conventions:</p>
 <ul>
 <li>the dataset comes first: <code>f(data, ...)</code>;</li>
 <li>a field argument is a <code>Field</code> or the name of one of <code>data</code>'s fields;</li>

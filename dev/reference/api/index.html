@@ -2241,6 +2241,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/reference/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/reference/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -13361,9 +13417,7 @@ texture and no other texture can be handed it.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1205</span>
-<span class="normal">1206</span>
-<span class="normal">1207</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1207</span>
 <span class="normal">1208</span>
 <span class="normal">1209</span>
 <span class="normal">1210</span>
@@ -13392,7 +13446,9 @@ texture and no other texture can be handed it.</p>
 <span class="normal">1233</span>
 <span class="normal">1234</span>
 <span class="normal">1235</span>
-<span class="normal">1236</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_array</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">interp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;linear&#39;</span><span class="p">):</span>
+<span class="normal">1236</span>
+<span class="normal">1237</span>
+<span class="normal">1238</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_array</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">interp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;linear&#39;</span><span class="p">):</span>
     <span class="c1"># Every hardware path builds a single-channel 32-bit float image,</span>
     <span class="c1"># so f64 data would be reinterpreted rather than converted.</span>
     <span class="k">if</span> <span class="n">source_array</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">f32</span><span class="p">:</span>
@@ -13459,9 +13515,7 @@ texture and no other texture can be handed it.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1238</span>
-<span class="normal">1239</span>
-<span class="normal">1240</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1240</span>
 <span class="normal">1241</span>
 <span class="normal">1242</span>
 <span class="normal">1243</span>
@@ -13469,7 +13523,9 @@ texture and no other texture can be handed it.</p>
 <span class="normal">1245</span>
 <span class="normal">1246</span>
 <span class="normal">1247</span>
-<span class="normal">1248</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">1248</span>
+<span class="normal">1249</span>
+<span class="normal">1250</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy the array&#39;s current data into the texture.</span>
 
 <span class="sd">    Sampling after this sees the array as it is now, on every backend.</span>
@@ -13504,9 +13560,9 @@ texture and no other texture can be handed it.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1254</span>
-<span class="normal">1255</span>
-<span class="normal">1256</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">w</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1256</span>
+<span class="normal">1257</span>
+<span class="normal">1258</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">w</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Sample at normalized coordinates. Only usable inside @tack.kernel.&quot;&quot;&quot;</span>
     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Texture3D.sample() can only be used inside a @tack.kernel&quot;</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -13674,9 +13730,7 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1129</span>
-<span class="normal">1130</span>
-<span class="normal">1131</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1131</span>
 <span class="normal">1132</span>
 <span class="normal">1133</span>
 <span class="normal">1134</span>
@@ -13731,7 +13785,9 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
 <span class="normal">1183</span>
 <span class="normal">1184</span>
 <span class="normal">1185</span>
-<span class="normal">1186</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array_from_ptr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">writable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1186</span>
+<span class="normal">1187</span>
+<span class="normal">1188</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array_from_ptr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">writable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap existing device memory as a Tack array without copying.</span>
 
 <span class="sd">    Use this for interop with external libraries (pycuda, cupy, Catalyst)</span>
@@ -13828,67 +13884,16 @@ pointer resides.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>'cpu'          — unregistered host memory (regular malloc/new)</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>'cuda'         — CUDA device memory (cudaMalloc)</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>'cuda_pinned'  — CUDA pinned host memory (cudaMallocHost)</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>'cuda_managed' — CUDA unified memory (cudaMallocManaged)</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>'hip'          — HIP device memory (hipMalloc)</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>'hip_pinned'   — HIP pinned host memory (hipHostMalloc)</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>'hip_managed'  — HIP unified memory (hipMallocManaged)</p>
+                <p>The memory space's name, one of:</p>
+<ul>
+<li><code>'cpu'</code>: unregistered host memory (regular malloc/new)</li>
+<li><code>'cuda'</code>: CUDA device memory (cudaMalloc)</li>
+<li><code>'cuda_pinned'</code>: CUDA pinned host memory (cudaMallocHost)</li>
+<li><code>'cuda_managed'</code>: CUDA unified memory (cudaMallocManaged)</li>
+<li><code>'hip'</code>: HIP device memory (hipMalloc)</li>
+<li><code>'hip_pinned'</code>: HIP pinned host memory (hipHostMalloc)</li>
+<li><code>'hip_managed'</code>: HIP unified memory (hipMallocManaged)</li>
+</ul>
               </div>
             </td>
           </tr>
@@ -13913,20 +13918,24 @@ pointer resides.</p>
 <span class="normal">1123</span>
 <span class="normal">1124</span>
 <span class="normal">1125</span>
-<span class="normal">1126</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">memory_space</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">1126</span>
+<span class="normal">1127</span>
+<span class="normal">1128</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">memory_space</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Query the memory space of a pointer.</span>
 
 <span class="sd">    Uses ``device`` (by default the default device) to determine where the</span>
 <span class="sd">    pointer resides.</span>
 
 <span class="sd">    Returns:</span>
-<span class="sd">        &#39;cpu&#39;          — unregistered host memory (regular malloc/new)</span>
-<span class="sd">        &#39;cuda&#39;         — CUDA device memory (cudaMalloc)</span>
-<span class="sd">        &#39;cuda_pinned&#39;  — CUDA pinned host memory (cudaMallocHost)</span>
-<span class="sd">        &#39;cuda_managed&#39; — CUDA unified memory (cudaMallocManaged)</span>
-<span class="sd">        &#39;hip&#39;          — HIP device memory (hipMalloc)</span>
-<span class="sd">        &#39;hip_pinned&#39;   — HIP pinned host memory (hipHostMalloc)</span>
-<span class="sd">        &#39;hip_managed&#39;  — HIP unified memory (hipMallocManaged)</span>
+<span class="sd">        The memory space&#39;s name, one of:</span>
+
+<span class="sd">        - ``&#39;cpu&#39;``: unregistered host memory (regular malloc/new)</span>
+<span class="sd">        - ``&#39;cuda&#39;``: CUDA device memory (cudaMalloc)</span>
+<span class="sd">        - ``&#39;cuda_pinned&#39;``: CUDA pinned host memory (cudaMallocHost)</span>
+<span class="sd">        - ``&#39;cuda_managed&#39;``: CUDA unified memory (cudaMallocManaged)</span>
+<span class="sd">        - ``&#39;hip&#39;``: HIP device memory (hipMalloc)</span>
+<span class="sd">        - ``&#39;hip_pinned&#39;``: HIP pinned host memory (hipHostMalloc)</span>
+<span class="sd">        - ``&#39;hip_managed&#39;``: HIP unified memory (hipMallocManaged)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">_target</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">memory_space</span><span class="p">(</span><span class="n">ptr</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -18966,9 +18975,12 @@ sorts what arrives.</p>
 
 </div><h2 id="vtk-interop">VTK interop<a class="headerlink" href="#vtk-interop" title="Permanent link">&para;</a></h2>
 <p><code>tack.interop.vtk</code> (in the <code>tack-vis</code> package) provides <code>vtk_to_array</code>,
-<code>array_to_vtk</code> and <code>init_level_zero</code>. Their contracts are in
-<a href="../../contracts/runtime-api/#vtk">Runtime API: VTK</a>, and their docstrings
-are in <code>packages/tack-vis/src/tack/interop/vtk.py</code>.</p>
+<code>array_to_vtk</code> and <code>init_level_zero</code>, and <code>vtk_to_dataset</code>/<code>dataset_to_vtk</code>.
+Their contracts are in <a href="../../contracts/runtime-api/#vtk">Runtime API: VTK</a>,
+and their entries, with MFEM's and Warp's, in the Visualization Guide's
+<a href="../../vis-guide/reference/data-model/#interoperability">Data Model</a>. The
+<code>tack.dataset</code> algorithms are in
+<a href="../../vis-guide/reference/algorithms/">Algorithms</a>.</p>
 <h2 id="the-backend-contract">The backend contract<a class="headerlink" href="#the-backend-contract" title="Permanent link">&para;</a></h2>
 <p>Every backend subclasses this. It exists so callers can <em>ask</em> what a backend
 supports instead of probing for methods — the distinction that
