@@ -303,8 +303,9 @@ def test_one_shape_cells_share_their_connectivity_as_rows():
     and the filters compute as with stored offsets, which gather."""
     points, conn = _hexes()
     n = len(conn) // 8
-    types, offsets = uniform_cells(12, n, tack.i32)
-    connectivity = tack.array(conn)
+    ids = td.ids.choose()                        # i64 under --ids=i64, which would convert i32
+    types, offsets = uniform_cells(12, n, ids)
+    connectivity = tack.array(conn).astype(ids)
     shared = td.DataSet(td.UnstructuredTopology(types, offsets, connectivity), points)
     stored = td.DataSet(td.UnstructuredTopology(np.full(n, 12, np.uint8),
                                                 np.arange(0, 8 * n + 1, 8, dtype=np.int32),

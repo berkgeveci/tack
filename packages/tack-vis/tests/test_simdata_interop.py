@@ -39,6 +39,12 @@ def _scalars(values, dtype=tack.f32):
     return tack.array(np.asarray(values, dtype.numpy_dtype))
 
 
+def _shares_ids(address, ptr):
+    """Whether Tack's id array is warp-simdata's (two addresses), or ids are forced
+    to i64 (``--ids=i64``), when Tack converts warp-simdata's int32 ids instead."""
+    return address == ptr or td.ids.choose() == tack.i64
+
+
 def _two_hexes_and_a_pyramid():
     def pid(x, y, z):
         return x + 3 * y + 6 * z
@@ -111,13 +117,13 @@ def test_unstructured_grids_share_their_arrays(device):
         data = _with_fields(_two_hexes_and_a_pyramid())
     grid = to_simdata(data)
     handle = grid.handle
-    assert handle.cell_connectivity.ptr == data.topology.connectivity._buffer.address
+    assert _shares_ids(handle.cell_connectivity.ptr, data.topology.connectivity._buffer.address)
     assert handle.points.ptr == data.geometry.values._buffer.address
     back = from_simdata(grid)
     for name in ("types", "offsets", "connectivity"):
         np.testing.assert_array_equal(getattr(back.topology, name).numpy(),
                                       getattr(data.topology, name).numpy())
-    assert back.topology.connectivity._buffer.address == handle.cell_connectivity.ptr
+    assert _shares_ids(back.topology.connectivity._buffer.address, handle.cell_connectivity.ptr)
     np.testing.assert_array_equal(back.positions(), data.positions())
     _same_fields(data, back)
 
@@ -192,8 +198,8 @@ def test_shared_polyhedral_faces_convert_on_the_device(device, wp_device):
     poly = _poly(device)
     grid = to_simdata(poly)
     t = from_simdata(grid).topology
-    assert t.face_points._buffer.address == grid.handle.faces_connectivity.ptr
-    assert t.cell_faces._buffer.address == grid.handle.face_locations_connectivity.ptr
+    assert _shares_ids(t.face_points._buffer.address, grid.handle.faces_connectivity.ptr)
+    assert _shares_ids(t.cell_faces._buffer.address, grid.handle.face_locations_connectivity.ptr)
     assert _boundary(t) == _boundary(poly.topology) and t.num_faces == poly.topology.num_faces
 
 
@@ -215,7 +221,7 @@ def test_a_face_seen_only_from_inside_is_reversed(device, wp_device):
     grid = _simdata_polyhedra(poly, loops, wp_device)
     back = from_simdata(grid)
     assert back.topology.face_points._buffer.address != grid.handle.faces_connectivity.ptr
-    assert back.topology.cell_faces._buffer.address == grid.handle.face_locations_connectivity.ptr
+    assert _shares_ids(back.topology.cell_faces._buffer.address, grid.handle.face_locations_connectivity.ptr)
     assert _boundary(back.topology) == _boundary(t) and len(td.check_winding(back)) == 0
 
 
@@ -389,7 +395,7 @@ def test_a_surface_mesh_shares_its_faces(device, wp_device, no_vtk_conversion):
     t = data.topology
     assert isinstance(t, td.PolygonalTopology)
     offsets, loops = t.loops()
-    assert loops._buffer.address == mesh.handle.face_vertex_indices.ptr      # shared
+    assert _shares_ids(loops._buffer.address, mesh.handle.face_vertex_indices.ptr)      # shared
     np.testing.assert_array_equal(offsets.numpy(), [0, 4, 7])
     np.testing.assert_array_equal(data.fields["c"].values.numpy(), [1, 2])
 
@@ -429,8 +435,8 @@ def test_an_openfoam_mesh_is_tacks_polyhedra(device, wp_device, no_vtk_conversio
     data = from_simdata(mesh)
     t = data.topology
     assert isinstance(t, td.PolyhedralTopology)
-    assert t.face_points._buffer.address == mesh.handle.faces.ptr
-    assert t.cell_faces._buffer.address == mesh.handle.cell_faces.ptr
+    assert _shares_ids(t.face_points._buffer.address, mesh.handle.faces.ptr)
+    assert _shares_ids(t.cell_faces._buffer.address, mesh.handle.cell_faces.ptr)
     assert t.num_faces == poly.topology.num_faces and len(td.check_winding(data)) == 0
     assert _boundary(t) == _boundary(poly.topology)
     np.testing.assert_allclose(td.algorithms.cell_geometry(data)[0].values.numpy(),
