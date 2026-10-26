@@ -7,12 +7,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
-- A prototype NVIDIA Warp backend (`tack.device("warp")`, `pip install
-  warp-lang`): kernels lower to generated `@wp.kernel` source from Tack's
-  typed IR and run on Warp's CPU or CUDA device, on its current stream, with
+- A prototype NVIDIA Warp backend (`tack.device("warp")`, the `warp`
+  extra): kernels lower to generated `@wp.kernel` source from Tack's typed
+  IR and run on Warp's CPU or CUDA device, on its current stream, with
   Tack's integer and floating-point semantics, `wrap_ptr`, DLPack and debug
   bounds checks; workgroups on CUDA only, no `tack.inspect`
-  (`Backend.supports_inspect`). Its arrays are `wp.array`s.
+  (`Backend.supports_inspect`). Its arrays are `wp.array`s. CI's `warp`
+  job runs it and the interop on Warp's CPU device.
 - `tack.interop.warp`: `from_warp`/`to_warp` share arrays both ways (Warp's
   vector and matrix types as Tack's), and `from_simdata`/`to_simdata`
   exchange datasets with warp-simdata. Point clouds, curves, surface meshes,

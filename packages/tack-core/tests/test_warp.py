@@ -11,8 +11,14 @@ import numpy as np
 import pytest
 
 import tack
+from tack.runtime.dispatch import env_flag
 
-wp = pytest.importorskip("warp")
+try:
+    import warp as wp
+except ImportError:
+    if env_flag("TACK_REQUIRE_WARP"):
+        raise
+    pytest.skip("needs NVIDIA Warp (the warp extra)", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")

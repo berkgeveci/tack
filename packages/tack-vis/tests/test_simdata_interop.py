@@ -13,9 +13,15 @@ import pytest
 import tack
 import tack.dataset as td
 from tack.arrays import UniformCoordinates
+from tack.runtime.dispatch import env_flag
 
-wp = pytest.importorskip("warp")
-sd = pytest.importorskip("warp_simdata")
+try:
+    import warp as wp
+    import warp_simdata as sd
+except ImportError:
+    if env_flag("TACK_REQUIRE_WARP"):
+        raise
+    pytest.skip("needs NVIDIA Warp and warp-simdata (the warp extra)", allow_module_level=True)
 from warp_simdata.data_models.vtk import image_data, structured_grid
 from warp_simdata.operators import iso_surface
 from warp_simdata.operators import slice as simdata_slice

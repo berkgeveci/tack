@@ -250,6 +250,45 @@ jobs:
       - name: Run the dataset tests with i64 ids
         run: uv run pytest -q --ids=i64 packages/tack-vis/tests
 
+  # ── Warp ───────────────────────────────────────────────────────────
+  # The prototype Warp backend (tack.device("warp")) and tack.interop.warp,
+  # with warp-simdata, on Warp's CPU device: no runner here has a GPU. Those
+  # tests skip without the `warp` extra, so the main gate never runs them;
+  # TACK_REQUIRE_WARP makes a missing or broken install fail this job
+  # instead. The interop tests run again with i64 ids, which convert
+  # warp-simdata's int32 ids rather than sharing them.
+  warp:
+    name: Warp backend and interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
+
+      - name: Sync the workspace, with Warp and warp-simdata
+        run: uv sync --extra cpu --extra dev --extra warp
+
+      - name: Require Warp and warp-simdata
+        run: echo "TACK_REQUIRE_WARP=1" >> "$GITHUB_ENV"
+
+      - name: Run the Warp tests
+        run: >-
+          uv run pytest -q packages/tack-core/tests/test_warp.py
+          packages/tack-vis/tests/test_warp_interop.py
+          packages/tack-vis/tests/test_simdata_interop.py
+
+      - name: Run the interop tests with i64 ids
+        run: >-
+          uv run pytest -q --ids=i64 packages/tack-vis/tests/test_warp_interop.py
+          packages/tack-vis/tests/test_simdata_interop.py
+
   # ── MPI ────────────────────────────────────────────────────────────
   # tack.communication across ranks: its cases under `mpiexec -n 3`,
   # host-staged and GPU-aware (CPU arrays handed to MPI through DLPack), a

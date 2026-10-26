@@ -14,8 +14,14 @@ import tack
 import tack.dataset as td
 from tack import arrays
 from tack.dataset import algorithms as alg
+from tack.runtime.dispatch import env_flag
 
-wp = pytest.importorskip("warp")
+try:
+    import warp as wp
+except ImportError:
+    if env_flag("TACK_REQUIRE_WARP"):
+        raise
+    pytest.skip("needs NVIDIA Warp (the warp extra)", allow_module_level=True)
 from tack.interop.warp import from_warp, to_warp
 
 pytestmark = pytest.mark.quick

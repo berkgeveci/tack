@@ -52,7 +52,7 @@ _BACKEND_HELP = {
         "  (intel-opencl-icd)."
     ),
     "warp": ("Requires NVIDIA Warp (a prototype backend); in a clone:\n"
-             "    pip install warp-lang   (or: uv pip install warp-lang)"),
+             "    pip install -e 'packages/tack-core[warp]'   (or: uv sync --extra warp)"),
 }
 
 

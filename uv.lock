@@ -1741,6 +1741,9 @@ metal = [
 mpi = [
     { name = "mpi4py" },
 ]
+warp = [
+    { name = "warp-lang", marker = "platform_machine == 'arm64' or sys_platform != 'darwin'" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1753,8 +1756,9 @@ requires-dist = [
     { name = "pyobjc-framework-metalkit", marker = "extra == 'metal'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "tack-core", extras = ["cpu", "cuda", "metal", "hip", "level-zero"], marker = "extra == 'all'", editable = "packages/tack-core" },
+    { name = "warp-lang", marker = "(platform_machine == 'arm64' and extra == 'warp') or (sys_platform != 'darwin' and extra == 'warp')", specifier = ">=1.18" },
 ]
-provides-extras = ["cpu", "cuda", "metal", "mpi", "hip", "level-zero", "dev", "all"]
+provides-extras = ["cpu", "cuda", "metal", "mpi", "hip", "level-zero", "warp", "dev", "all"]
 
 [[package]]
 name = "tack-vis"
@@ -1765,11 +1769,20 @@ dependencies = [
     { name = "unyt" },
 ]
 
+[package.optional-dependencies]
+warp = [
+    { name = "tack-core", extra = ["warp"] },
+    { name = "warp-simdata", marker = "platform_machine == 'arm64' or sys_platform != 'darwin'" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "tack-core", editable = "packages/tack-core" },
+    { name = "tack-core", extras = ["warp"], marker = "extra == 'warp'", editable = "packages/tack-core" },
     { name = "unyt", specifier = ">=3.0" },
+    { name = "warp-simdata", marker = "(platform_machine == 'arm64' and extra == 'warp') or (sys_platform != 'darwin' and extra == 'warp')", specifier = ">=0.2" },
 ]
+provides-extras = ["warp"]
 
 [[package]]
 name = "tack-workspace"
@@ -1817,6 +1830,9 @@ metal = [
 mpi = [
     { name = "tack-core", extra = ["mpi"] },
 ]
+warp = [
+    { name = "tack-vis", extra = ["warp"] },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1838,9 +1854,10 @@ requires-dist = [
     { name = "tack-core", extras = ["metal"], marker = "extra == 'metal'", editable = "packages/tack-core" },
     { name = "tack-core", extras = ["mpi"], marker = "extra == 'mpi'", editable = "packages/tack-core" },
     { name = "tack-vis", editable = "packages/tack-vis" },
+    { name = "tack-vis", extras = ["warp"], marker = "extra == 'warp'", editable = "packages/tack-vis" },
     { name = "vtk", marker = "extra == 'interop'", specifier = ">=9.7.1" },
 ]
-provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "mpi", "dev", "interop", "docs"]
+provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "mpi", "warp", "dev", "interop", "docs"]
 
 [[package]]
 name = "unyt"
@@ -1907,6 +1924,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/66/4f/736843a363251d2d4d471a79f731075b76a4dfd6b77f453b420f9233d83a/vtk-9.7.1-cp314-cp314-win_amd64.whl", hash = "sha256:9e62a104551929676e40e21dcb4b1dca1f5e9bf882913b8864aabcb4834f535c", size = 82363569, upload-time = "2026-09-28T09:54:31.564Z" },
     { url = "https://files.pythonhosted.org/packages/00/8a/c99feb99af366306406d33b1ab791902a1ac719a3f68e3f12fd65deb528d/vtk-9.7.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:54858d15dc5d42a85285e3e79993c93439f414c694f8466f9c3522af083ef1e9", size = 139378526, upload-time = "2026-09-28T09:54:52.543Z" },
     { url = "https://files.pythonhosted.org/packages/be/f0/de7dc58728e96d2bb25262ea47893c2b318edffc8464c1e8fc5dfbc46b6d/vtk-9.7.1-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:06511e9b82056babea5277e6c7af5f61fe5105fd2957b8321b1ef6b264977ceb", size = 129371581, upload-time = "2026-09-28T09:55:04.525Z" },
+]
+
+[[package]]
+name = "warp-lang"
+version = "1.18.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/ca/0f88f27e9367b55df2c87fd6dbb96f15871ab7fcca14dd9ec92ec4688a30/warp_lang-1.18.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:3d0a12f411555c08015f84060187a0466800d2c837eb8800977b9604be438c21", size = 27819487, upload-time = "2026-10-05T00:22:32.346Z" },
+    { url = "https://files.pythonhosted.org/packages/13/69/5fc4388c6af4c78cd247776bb6928cabe83d893896444dd2127ccbe8b2ca/warp_lang-1.18.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:090962bfae7dd22ade0d8e0258f41635e0e58980f15bcc9e7a7d312819dfe440", size = 148811186, upload-time = "2026-10-05T00:23:01.197Z" },
+    { url = "https://files.pythonhosted.org/packages/be/41/6e255904a10cd1b3b1a61cc9ac21551812ffc55b1c68324de4c0c24a6660/warp_lang-1.18.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:d76ab8c7d4f4897405fa0a744d38812fc44cfc8162c40e658dc9ca7790b6a645", size = 147348850, upload-time = "2026-10-05T00:23:31.015Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/75/888dfe20326fea1a3b46b68a239ccd5db717bb039d511ab6fca7c77e6fea/warp_lang-1.18.0-py3-none-win_amd64.whl", hash = "sha256:1769e55746739f2e244a2b412123003c462ec3d977dfb5f420f924a8553d30aa", size = 134607061, upload-time = "2026-10-05T00:23:56.792Z" },
+]
+
+[[package]]
+name = "warp-simdata"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "warp-lang" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/98/80c6ef553438a77ae379775e533001e9ef3dd7e8a626684b3291c21dbe17/warp_simdata-0.2.0-py3-none-any.whl", hash = "sha256:0fb7add634e1ec4259bb9c94e0754aea249d692ae9f16069a98494c0b9ed8ae6", size = 381368, upload-time = "2026-10-06T17:29:11.716Z" },
 ]
 
 [[package]]

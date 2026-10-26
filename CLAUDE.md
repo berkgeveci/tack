@@ -780,8 +780,8 @@ backend reports `device_memory_spaces = {"level_zero"}` via
 
 ## Warp backend notes
 
-A prototype sixth backend, `tack.device("warp")` (`pip install warp-lang`; not
-an extra), on Warp's default device (its first CUDA device, else its CPU),
+A prototype sixth backend, `tack.device("warp")` (the `warp` extra, with
+warp-simdata), on Warp's default device (its first CUDA device, else its CPU),
 so that tack-vis and `tack.communication` can run on NVIDIA Warp unchanged.
 `warp_gen.py` writes a `@wp.kernel` from the typed IR: every operand
 converted to its annotated type, locals declared once, arrays passed by
@@ -798,7 +798,8 @@ false), textures, device reductions or disk-cached variants.
 `tack.interop.warp` (tack-vis) shares arrays (`from_warp`/`to_warp`) and
 exchanges datasets with warp-simdata (`from_simdata`/`to_simdata`), most
 models without copies. `test_warp.py`, `test_warp_interop.py` and
-`test_simdata_interop.py` skip without Warp; the suite runs on the backend
+`test_simdata_interop.py` skip without Warp, or fail with `TACK_REQUIRE_WARP`
+set, as CI's `warp` job sets it; the suite runs on the backend
 with `PYTHONPATH=packages/tack-core/tests uv run pytest -p _warp_default`.
 Status and history: the vault's Warp backend proposal.
 
