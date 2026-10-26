@@ -67,6 +67,15 @@ def test_cell_measures_are_viskores(name, expected):
 
 
 @pytest.mark.quick
+def test_gradients_of_2d_cells_are_in_their_plane():
+    """``UnitTestGradientExplicit``: a triangle and a quad's gradient of
+    ``pointvar``, in their plane."""
+    data = vd.to_tack(vd.make_3d_explicit_0())
+    np.testing.assert_allclose(td.gradients(data, "pointvar").values.numpy(),
+                               [[10.0, 10.1, 0.0]] * 2, rtol=1e-12)
+
+
+@pytest.mark.quick
 def test_fluxes_skip_cells_of_a_lower_dimension():
     """A surface's triangle among tetrahedra has none of the mesh's faces: no net
     flux and no reconstruction, zero, as gradients give it."""

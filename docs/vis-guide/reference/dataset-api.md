@@ -1030,7 +1030,7 @@ and "polyline" `PolylineTopology`.
 | `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point; star-shaped too) | yes (on segments) |
 | `advect`, `streamlines` | yes (2D and 3D cells) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point) | no |
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
-| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (in the polygon's plane, Green–Gauss over its edges; 2D cells on shapes in their plane too) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
 | `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
 | side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |

@@ -427,6 +427,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `gradients` of 2D cells -- triangles, quads, pixels and polygons, in a 2D
+  mesh or among 3D cells -- lie in the cell's plane, as VTK's and Viskores'
+  do (matched to `vtkGradientFilter` and `vtkCellDerivatives` on a curved
+  surface, and to Viskores' `UnitTestGradientExplicit`); they were zero. A
+  polygon's is Green-Gauss over its edges, exact for a linear field. Lines
+  and vertices still give zero.
 - `cell_geometry` and `cell_quality` of shape cells no longer derive the
   mesh's faces: a shape's faces walk from its tables (`_FaceWalk` is in every
   shape cell's domain view), so on a fresh mesh of 1M tetrahedra volumes take

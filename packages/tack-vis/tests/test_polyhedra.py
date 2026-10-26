@@ -1099,16 +1099,21 @@ def test_polyhedral_gradients_of_hexahedra_are_the_trilinear_center_gradient(bac
                                td.gradients(data, "q").values.numpy(), atol=1e-5)
 
 
-def test_polyhedral_gradients_of_cell_data_and_polygons_are_zero(backend):
-    """As on shapes: cell data is constant in each cell, and cells below three
-    dimensions get zero."""
+def test_polyhedral_gradients_of_cell_data_are_zero_and_polygons_in_plane(backend):
+    """As on shapes: cell data is constant in each cell, and a 2D cell's gradient
+    lies in its plane -- a linear field's exactly, the shapes' gradient too."""
     poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
     cells = td.Field(td.Constant(poly), _scalars(np.arange(poly.num_cells, dtype=float)))
     np.testing.assert_array_equal(td.gradients(poly, cells).values.numpy(), 0.0)
-    polygons = td.as_polygons(_plane_mesh())
+    plane = _plane_mesh()
+    polygons = td.as_polygons(plane)
     x = polygons.positions()
-    linear = td.Field(td.H1(polygons), _scalars(x[:, 0] + x[:, 1]))
-    np.testing.assert_array_equal(td.gradients(polygons, linear).values.numpy(), 0.0)
+    for data in (polygons, plane):
+        linear = td.Field(td.H1(data), _scalars(x[:, 0] + x[:, 1]))
+        for at in ("cells", "points"):
+            got = td.gradients(data, linear, at=at).values.numpy()
+            np.testing.assert_allclose(got, np.broadcast_to([1.0, 1.0, 0.0], got.shape),
+                                       atol=1e-5)
 
 
 def test_a_flat_polyhedron_has_a_nan_gradient(backend):
