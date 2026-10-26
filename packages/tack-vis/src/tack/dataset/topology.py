@@ -465,8 +465,18 @@ class UnstructuredTopology(_Topology):
         """The group of the ``count`` cells of type ``t``, ``order[start:start +
         count]``: their ids, and their point ids gathered into rows."""
         shape = shapes.shape_class(t)
+        k = shape.NUM_POINTS
+        if (isinstance(order, CountingArray) and start == 0 and count == self.num_cells
+                and isinstance(self.offsets, CountingArray) and self.offsets.start == 0
+                and self.offsets.step == k and type(self.connectivity) is Array):
+            # One shape, the cells in order, each k points from k * c: the stored
+            # connectivity is the rows, shared rather than gathered (an imported
+            # mesh's -- VTK's, warp-simdata's -- stays one copy through the filters).
+            rows = self.connectivity.reshape((count, k))
+            cell_ids = tack.arange(count, dtype=self.id_dtype)
+            return DomainGroup(_Cells, shape, (rows, cell_ids, count), count, start)
         cell_ids = tack.empty((count,), self.id_dtype)
-        rows = tack.empty((count, shape.NUM_POINTS), self.id_dtype)
+        rows = tack.empty((count, k), self.id_dtype)
         _gather_shape(order, start, self.offsets, self.connectivity, cell_ids, rows, bad)
         return DomainGroup(_Cells, shape, (rows, cell_ids, count), count, start)
 

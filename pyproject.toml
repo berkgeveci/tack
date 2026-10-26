@@ -16,6 +16,8 @@ metal = ["tack-core[metal]"]
 hip = ["tack-core[hip]"]
 level_zero = ["tack-core[level_zero]"]
 mpi = ["tack-core[mpi]"]
+# The prototype Warp backend and tack.interop.warp, with warp-simdata.
+warp = ["tack-vis[warp]"]
 dev = [
     "pytest",
     # `pytest -n auto` runs the suite across processes; see CLAUDE.md, Tests.

@@ -348,9 +348,12 @@ of its devices.
 ## VTK interop
 
 `tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_array`,
-`array_to_vtk` and `init_level_zero`. Their contracts are in
-[Runtime API: VTK](../contracts/runtime-api.md#vtk), and their docstrings
-are in `packages/tack-vis/src/tack/interop/vtk.py`.
+`array_to_vtk` and `init_level_zero`, and `vtk_to_dataset`/`dataset_to_vtk`.
+Their contracts are in [Runtime API: VTK](../contracts/runtime-api.md#vtk),
+and their entries, with MFEM's and Warp's, in the Visualization Guide's
+[Data Model](../vis-guide/reference/data-model.md#interoperability). The
+`tack.dataset` algorithms are in
+[Algorithms](../vis-guide/reference/algorithms.md).
 
 ## The backend contract
 

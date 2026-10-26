@@ -10,6 +10,7 @@ ATOMIC_DTYPES = {
     'hip': frozenset((i32, u32, i64, u64, f32, f64)),
     'metal': frozenset((i32, u32, f32)),
     'level_zero': frozenset((i32, u32, f32)),
+    'warp': frozenset((i32, u32, i64, u64, f32, f64)),
 }
 
 

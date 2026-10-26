@@ -17,7 +17,9 @@ def _magnitudes(values, out):
 
 @on_inputs_device
 def magnitude(data, field):
-    """Each vector's length (Viskores' VectorMagnitude)."""
+    """Each vector's length (Viskores' VectorMagnitude): a scalar field in the
+    space and unit of ``field``, a vector field or its name. The values convert
+    to f32 first, or stay f64, so integer vectors give floating-point lengths."""
     field = _field(data, field)
     if not width_of(field.values):
         raise TypeError("magnitude takes a vector field")

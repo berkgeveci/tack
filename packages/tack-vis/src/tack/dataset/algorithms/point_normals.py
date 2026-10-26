@@ -15,11 +15,18 @@ __all__ = ['point_normals']
 
 
 @tack.func
-def _smallest_axis(a00, a01, a02, a11, a12, a22):
+def _smallest_axis(a00, a01, a02, a11, a12, a22, tolerance):
     """The unit eigenvector of the least eigenvalue of a symmetric 3x3 matrix: the
     eigenvalues in closed form, then the largest cross product of two rows of
     ``A - lambda I``. Zero where the least eigenvalue repeats (points on a
-    line, or all at one place): no one direction is least."""
+    line, or all at one place): no one direction is least.
+
+    It repeats where the two least eigenvalues are within ``tolerance`` of the
+    spread between the largest and least. The closed form resolves them only
+    so far: ``acos`` near 1 turns the rounding of ``r`` into a gap of up to
+    1.22 sqrt(eps) of that spread for points exactly on a line (100,000
+    random lines, f32 and f64, CPU and CUDA). Compared with zero, a line got
+    an arbitrary normal, ``[0, 0, 1]`` for the x axis on CUDA."""
     q = (a00 + a11 + a22) / 3.0
     b00 = a00 - q
     b11 = a11 - q
@@ -28,6 +35,7 @@ def _smallest_axis(a00, a01, a02, a11, a12, a22):
     p2 = b00 * b00 + b11 * b11 + b22 * b22 + 2.0 * off
     p = sqrt(p2 / 6.0)
     least = q
+    repeated = 0
     if p > 0.0:
         c00 = b00 / p
         c11 = b11 / p
@@ -39,7 +47,10 @@ def _smallest_axis(a00, a01, a02, a11, a12, a22):
                + c02 * (c01 * c12 - c11 * c02))
         r = min(max(det / 2.0, -1.0), 1.0)
         phi = acos(r) / 3.0
+        top = q + 2.0 * p * cos(phi)
         least = q + 2.0 * p * cos(phi + 2.0943951023931953)
+        if (3.0 * q - top - least) - least <= tolerance * (top - least):
+            repeated = 1
     r0 = tack.vec3(a00 - least, a01, a02)
     r1 = tack.vec3(a01, a11 - least, a12)
     r2 = tack.vec3(a02, a12, a22 - least)
@@ -58,13 +69,13 @@ def _smallest_axis(a00, a01, a02, a11, a12, a22):
         best = x12
         most = d12
     axis = best * 0.0
-    if most > 0.0:
+    if most > 0.0 and repeated == 0:
         axis = best / sqrt(most)
     return axis
 
 
 @tack.kernel
-def _normals(grid, offsets, ids, vx, vy, vz, toward_point, normals):
+def _normals(grid, offsets, ids, vx, vy, vz, toward_point, tolerance, normals):
     for q in range(normals.shape[0]):
         x = grid.positions[q]
         first = offsets[q]
@@ -98,7 +109,7 @@ def _normals(grid, offsets, ids, vx, vy, vz, toward_point, normals):
                                                               max(abs(a02), abs(a12)))))
             if big > 0.0:
                 normal = _smallest_axis(a00 / big, a01 / big, a02 / big, a11 / big,
-                                        a12 / big, a22 / big)
+                                        a12 / big, a22 / big, tolerance)
             toward = tack.vec3(vx, vy, vz)
             if toward_point == 1:
                 toward = toward - x
@@ -115,7 +126,10 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
     them, or the points within ``radius`` -- spreads least, from the
     eigenvectors of their covariance, as VTK's vtkPCANormalEstimation and
     PDAL's ``filters.normal``. A point with fewer than three neighbours, or
-    whose neighbours lie on a line, gets a zero normal.
+    whose neighbours lie on a line, gets a zero normal: so does one whose
+    neighbourhood's two least spreads (variances) differ by less than
+    4 sqrt(eps) of the greatest, which the closed-form eigenvalues cannot tell
+    from a line (in f32, a strip about 4% as wide as it is long).
 
     A normal's sign is chosen to point toward ``viewpoint`` (a world position)
     when one is given, else along ``direction`` (up, by default: the outside
@@ -149,7 +163,10 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
         toward_point = 0
     normals = tack.empty((n,), tack.vec(3, data.dtype))
     if n:
-        _normals(locator.grid(), offsets, ids, *map(float, toward), toward_point, normals)
+        # Lines' gaps reach 1.22 sqrt(eps); see _smallest_axis.
+        tolerance = 4.0 * float(np.sqrt(np.finfo(data.dtype.numpy_dtype).eps))
+        _normals(locator.grid(), offsets, ids, *map(float, toward), toward_point, tolerance,
+                 normals)
     out = DataSet(data.topology, data.geometry, fields=dict(data.fields),
                   sets=dict(data.sets), dtype=data.dtype, **data._frame())
     out.fields["normals"] = Field(H1(out), normals, "dimensionless")

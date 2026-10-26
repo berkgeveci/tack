@@ -15,7 +15,8 @@ __all__ = ['slice', 'slice_plane']
 def slice(data, function, merge_points=True, fields=None, value=0.0):
     """Where ``function`` (``tack.dataset.implicit``) is ``value`` (zero by default):
     a contour of its values on the geometry, carrying fields as ``contour``
-    does. ``value`` may be a sequence, as ``contour``'s: every level in one
+    does (``merge_points`` and ``fields`` are ``contour``'s). ``value`` may be
+    a sequence, as ``contour``'s: every level in one
     pass, each output cell's in ``contour_value``. ``slice_plane`` is this
     with a ``Plane``. On a curved geometry (``H1`` above order 1) the cells are cut
     linearized at their corners, as ``contour`` would need its cells subdivided
@@ -37,7 +38,7 @@ def slice_plane(data, origin, normal, merge_points=True, fields=None, value=0.0)
     space -- per point, or per cell corner for an ``L2`` geometry -- so the cut is
     the cells' own. ``value``, a signed distance along the unit normal, or a
     sequence of them, gives parallel planes, all in one pass. ``slice`` with a
-    ``Plane``."""
+    ``Plane``; ``merge_points`` and ``fields`` are ``contour``'s."""
     origin = _length(data, origin, "slice_plane's origin")
     value = _length(data, value, "slice_plane's distance")
     return slice(data, Plane(origin, normal), merge_points=merge_points, fields=fields,

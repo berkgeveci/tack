@@ -10,5 +10,7 @@ __all__ = ['cylindrical']
 def cylindrical(data, inverse=False, fields=None):
     """The geometry's Cartesian positions as cylindrical ``(r, theta, z)``, or back
     with ``inverse`` -- Viskores' CylindricalCoordinateTransform: ``theta`` from
-    ``asin(y / r)``, in ``[-pi/2, 3pi/2)``."""
+    ``asin(y / r)``, in ``[-pi/2, 3pi/2)``. The positions are the world's
+    (the origin added), and the result's origin is zero and its spatial unit
+    unknown, an angle and lengths being no one unit. Fields come along."""
     return _recoordinate(data, _from_cylindrical if inverse else _to_cylindrical, fields)

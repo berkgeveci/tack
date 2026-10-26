@@ -10,5 +10,7 @@ __all__ = ['spherical']
 def spherical(data, inverse=False, fields=None):
     """The geometry's Cartesian positions as spherical ``(r, theta, phi)`` -- ``theta``
     from the z axis, ``phi`` in ``[0, 2pi)`` -- or back with ``inverse``, as
-    Viskores' SphericalCoordinateTransform."""
+    Viskores' SphericalCoordinateTransform. The positions are the world's (the
+    origin added), and the result's origin is zero and its spatial unit
+    unknown, an angle and lengths being no one unit. Fields come along."""
     return _recoordinate(data, _from_spherical if inverse else _to_spherical, fields)
