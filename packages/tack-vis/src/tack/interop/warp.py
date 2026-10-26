@@ -44,8 +44,11 @@ from tack.arrays import (
     _metadata,
     _operand,
     _operands,
+    _store,
+    dtype_of,
     materialize,
     size_of,
+    width_of,
 )
 from tack.lang.array import Array, SoaArray, _array_view
 from tack.lang.types import ElementType, mat, vec
@@ -400,6 +403,9 @@ def from_simdata(ds):
             pieces = to_vtk_data_model(ds).datasets
         return PartitionedDataSet(from_simdata(piece) for piece in pieces)
     device = tack.device("warp")
+    from warp_simdata.data_models.flash import axisymmetric as flash_model
+    if ds.data_model is flash_model.DataModel:
+        return _flash_amr(ds, device)
     with device:
         direct = _direct_topology(ds, device)
     if direct is not None:
@@ -735,3 +741,114 @@ def _direct_topology(ds, device):
             return None             # NGON_n, NFACE_n, higher-order: through VTK's models
         return topology, from_warp(handle.grid_coords)
     return None
+
+
+# ── FLASH: block-structured AMR in (r, z), revolved ─────────────────────
+#
+# warp-simdata's axisymmetric FLASH model is a 2D block hierarchy in meridional
+# coordinates (radius, axial) revolved about the Y axis, nothing revolved stored.
+# Tack takes it as an AMRDataSet of 3D structured boxes, one per block, axes (r,
+# z, angle): the points revolved where read (_Revolved), each cell's value its
+# meridional cell's for every angular sector (_Repeated), the levels refining r
+# and z by 2 and keeping the sectors (ratios (2, 2, 1)). Unlike its revolved
+# model, whose blocks share no points, the hierarchy knows its siblings and
+# levels. A box touching the axis has degenerate hexahedra there (an edge on the
+# axis), where its model has wedges; a full revolution repeats its seam's points.
+
+
+@tack.device_class
+class _Revolved(_Implicit):
+    """The points of a meridional block revolved about the Y axis: point (i, j, l)
+    of a ``(nr + 1, nz + 1, sectors + 1)`` box at ``(r cos a, z, r sin a)``, ``r =
+    r0 + i * width / nr``, ``z`` likewise, ``a = a0 + l * step`` (warp-simdata's
+    arithmetic): computed where read, stored nowhere."""
+
+    def __init__(self, dims, radial, axial, angular, device):
+        self.dims = tuple(int(d) for d in dims)
+        self.px, self.py = self.dims[0], self.dims[1]
+        # (r0, r width, z0, z width, a0, a step) on the device: the box's device
+        # and its scalars' type (f32, as warp-simdata's points).
+        self.frame = _store(np.array([*radial, *axial, *angular], np.float64), tack.f32,
+                            device)
+        _metadata(self, math.prod(self.dims), 3, tack.f32)
+
+    @tack.func
+    def get(self, p):
+        rest = p // self.px
+        i = p - rest * self.px
+        j = rest % self.py
+        f = self.frame
+        r = f[0] + tack.f32(i) * f[1] / tack.f32(self.px - 1)
+        z = f[2] + tack.f32(j) * f[3] / tack.f32(self.py - 1)
+        a = f[4] + tack.f32(rest // self.py) * f[5]
+        return [r * cos(a), z, r * sin(a)]
+
+
+@tack.device_class
+class _Repeated(_Implicit):
+    """``base[k % period]`` for ``k < size``: a meridional block's cell values for
+    every angular sector (a box's cells run r fastest, the angle slowest)."""
+
+    def __init__(self, base, period, size):
+        self.base = _operand(base)
+        self.period = int(period)
+        _metadata(self, size, width_of(self.base), dtype_of(self.base))
+
+    @tack.func
+    def get(self, k):
+        return self.base.get(k % self.period)
+
+
+def _flash_levels(gid):
+    """Each block's refinement level, from the GID table's parents (entry 4,
+    one-based; none below 1)."""
+    parents = gid[:, 4]
+    levels = np.zeros(len(gid), np.int64)
+    for b in range(len(gid)):
+        p = parents[b]
+        while p > 0:
+            levels[b] += 1
+            p = parents[p - 1]
+    return levels
+
+
+def _flash_amr(ds, device):
+    """warp-simdata's axisymmetric FLASH dataset as an ``AMRDataSet`` (see above).
+    Its element fields (``create_element_field``'s, over the packed source
+    blocks) become every box's cell fields, a ``View`` of its block's values
+    repeated per sector: nothing copied."""
+    sd = _simdata()
+    from tack.dataset import AMRDataSet, Constant, DataSet, Field, StructuredTopology
+
+    flash = ds.handle.flash
+    nr, nz = int(flash.cell_dims[0]), int(flash.cell_dims[1])
+    sectors = int(flash.angular_cells)
+    angular = (float(flash.angle_min), float(flash.angle_step))
+    bounds = flash.block_bounds.numpy()
+    levels = _flash_levels(flash.gid.numpy())
+    roots = levels == 0
+    r_lo, z_lo = bounds[roots, 0].min(), bounds[roots, 2].min()
+    dr0 = (bounds[roots][0, 1] - bounds[roots][0, 0]) / nr
+    dz0 = (bounds[roots][0, 3] - bounds[roots][0, 2]) / nz
+    packed = {}
+    for name in ds.get_field_names():
+        data = ds.get_field(name).get_data()
+        source = data[0] if isinstance(data, tuple) and data and isinstance(data[0], sd.Field) \
+            else None
+        if source is None or source.association != sd.AssociationType.ELEMENT:
+            continue                    # only the packed source-block element fields
+        packed[name] = _field_values(source)
+    cells, dims = nr * nz, (nr + 1, nz + 1, sectors + 1)
+    boxes = [[] for _ in range(int(levels.max()) + 1)]
+    with device:
+        for b, (r0, r1, z0, z1) in enumerate(bounds):
+            scale = 2.0 ** levels[b]
+            offset = (int(np.rint((r0 - r_lo) / dr0 * scale)),
+                      int(np.rint((z0 - z_lo) / dz0 * scale)), 0)
+            box = DataSet(StructuredTopology(dims, offset=offset),
+                          _Revolved(dims, (r0, r1 - r0), (z0, z1 - z0), angular, device))
+            for name, values in packed.items():
+                box.fields[name] = Field(Constant(box), _Repeated(View(values, b * cells, cells),
+                                                                  cells, cells * sectors))
+            boxes[levels[b]].append(box)
+        return AMRDataSet(boxes, ratios=[(2, 2, 1)] * (len(boxes) - 1))

@@ -503,3 +503,92 @@ def test_point_clouds_are_implicit_vertex_cells(device, wp_device, no_vtk_conver
     assert all(isinstance(a, (tack.arrays.ConstantArray, tack.arrays.CountingArray))
                for a in (t.types, t.offsets, t.connectivity))
     np.testing.assert_array_equal(data.positions(), xyz)
+
+
+# ── FLASH: an AMR hierarchy of revolved boxes ───────────────────────
+
+def _flash(device, angle_range=(0.0, np.pi)):
+    """Two root blocks stacked in z, the lower refined into four: 4 x 4 cells each,
+    eight sectors over half a turn. Cell values are block * 100 + cell."""
+    from warp_simdata.data_models.flash import axisymmetric
+
+    bounds = np.array([[0, 1, 0, 1], [0, 1, 1, 2],
+                       [0, .5, 0, .5], [.5, 1, 0, .5], [0, .5, .5, 1], [.5, 1, .5, 1]],
+                      np.float32)
+    none = -1
+    gid = np.array([[none, none, none, 2, none, 3, 4, 5, 6],
+                    [none, none, 1, none, none, none, none, none, none],
+                    [none, 4, none, 5, 1, none, none, none, none],
+                    [3, none, none, 6, 1, none, none, none, none],
+                    [none, 6, 3, 2, 1, none, none, none, none],
+                    [5, none, 4, 2, 1, none, none, none, none]], np.int32)
+    ds = axisymmetric.create_dataset(
+        wp.array(bounds, dtype=wp.vec4f, device=device), wp.array(gid, device=device),
+        _ints([2, 1, 1, 1, 1, 1], device), _ints([1, 2, 3, 4, 5], device),
+        cell_dims=wp.vec2i(4, 4), angular_cells=8, angle_range=angle_range)
+    values = (np.arange(6)[:, None] * 100 + np.arange(16)[None, :]).astype(np.float32)
+    source = sd.Field.from_array(wp.array(values.reshape(-1), device=device),
+                                 sd.AssociationType.ELEMENT)
+    ds.add_field("f", axisymmetric.create_element_field(ds, source))
+    return ds, values
+
+
+def test_flash_is_an_amr_hierarchy_of_revolved_boxes(device, wp_device):
+    ds, values = _flash(wp_device)
+    amr = from_simdata(ds)
+    assert isinstance(amr, td.AMRDataSet) and len(amr.levels) == 2
+    assert [tuple(r) for r in np.atleast_2d(amr.ratios)] == [(2, 2, 1)]
+    assert [b.topology.offset for b in amr.levels[0]] == [(0, 0, 0), (0, 4, 0)]
+    assert [b.topology.offset for b in amr.levels[1]] == \
+        [(0, 0, 0), (4, 0, 0), (0, 4, 0), (4, 4, 0)]
+    # The refined root's cells are marked, the other root's not.
+    refined = [(b.ghosts.cells.numpy() & td.Ghosts.REFINEDCELL) != 0 for b in amr.levels[0]]
+    assert refined[0].all() and not refined[1].any()
+
+
+def test_flash_boxes_are_warp_simdatas_points_and_values(device, wp_device):
+    """Each leaf box's points are warp-simdata's revolved nodes (same order for a
+    partial turn), and each cell holds its meridional cell's value in every
+    sector, read from the packed field without a copy."""
+    from warp_simdata.data_models.vtk.conversion import to_vtk_data_model
+
+    ds, values = _flash(wp_device)
+    amr = from_simdata(ds)
+    nodes = to_vtk_data_model(ds).handle.points.numpy()
+    per_block = 5 * 5 * 9
+    boxes = {0: amr.levels[0][0], 1: amr.levels[0][1], 2: amr.levels[1][0],
+             3: amr.levels[1][1], 4: amr.levels[1][2], 5: amr.levels[1][3]}
+    for leaf, block in enumerate([1, 2, 3, 4, 5]):
+        np.testing.assert_allclose(boxes[block].positions(),
+                                   nodes[leaf * per_block:(leaf + 1) * per_block], atol=2e-7)
+    for block, box in boxes.items():
+        f = box.fields["f"].values
+        assert isinstance(f, tack.arrays._Implicit)                # nothing stored
+        np.testing.assert_array_equal(tack.arrays.to_host(f), np.tile(values[block], 8))
+
+
+def test_a_probe_finds_the_finest_flash_cell(device, wp_device):
+    ds, _ = _flash(wp_device)
+    amr = from_simdata(ds)
+    r, z, a = 0.8, 0.8, 0.3                 # block 5, cell (2, 2): 5 * 100 + 10
+    out = td.probe(amr, np.array([[r * np.cos(a), z, r * np.sin(a)]]))
+    assert out.fields["valid"].values.numpy()[0] == 1
+    assert out.fields["f"].values.numpy()[0] == 510
+
+
+def test_flash_over_a_full_turn_filters_and_reduces(device, wp_device):
+    """A full revolution (its seam's points repeated in each box) and the boxes on
+    the axis (degenerate hexahedra there): contours run on every box, and the
+    hierarchy's statistics count each leaf cell once per sector, refined cells
+    left out."""
+    ds, values = _flash(wp_device, angle_range=(0.0, 2.0 * np.pi))
+    amr = from_simdata(ds)
+    for level, box in amr:
+        with device:
+            box.fields["p"] = td.project(box, "f", td.H1(box))
+            iso = td.contour(box, "p", float(np.median(values)))
+        assert iso.num_points >= 0
+    stats = td.statistics(amr, "f")
+    leaves = values[[1, 2, 3, 4, 5]]
+    assert stats.n == leaves.size * 8
+    np.testing.assert_allclose(stats.mean, leaves.mean(), rtol=1e-6)
