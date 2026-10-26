@@ -113,7 +113,16 @@ from tack.dataset.dataset import (
 )
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
-from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
+from tack.dataset.implicit import (
+    Box,
+    Cylinder,
+    Difference,
+    Intersection,
+    Plane,
+    Planes,
+    Sphere,
+    Union,
+)
 from tack.dataset.locator import CellLocator, Locations
 from tack.dataset.octree import OctreeDataSet
 from tack.dataset.partitioned import PartitionedDataSet
@@ -149,12 +158,14 @@ __all__ = [
     "Constant",
     "Cylinder",
     "DataSet",
+    "Difference",
     "EdgeKind",
     "FaceGeometry",
     "Field",
     "FlowQuantities",
     "Ghosts",
     "GlobalIds",
+    "Intersection",
     "Locations",
     "OctreeDataSet",
     "ParticleStatus",
@@ -176,6 +187,7 @@ __all__ = [
     "Streaklines",
     "StructuredTopology",
     "TimeDerivative",
+    "Union",
     "UnstructuredTopology",
     "Values",
     "advect",

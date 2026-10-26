@@ -11,7 +11,10 @@ Each is a ``@tack.device_class`` object whose parameters are instance
 values: a kernel takes it as a template and calls ``f.value(p)`` on a
 3-vector, and moving a sphere or resizing a box does not compile anything
 anew. ``algorithms.implicit_values`` evaluates one on a dataset's geometry;
-``slice``, ``extract_geometry`` and ``extract_points`` take one.
+``slice``, ``clip``, ``extract_geometry`` and ``extract_points`` take one.
+``Union``, ``Intersection`` and ``Difference`` combine them, as VTK's
+``vtkImplicitBoolean`` does (the smaller value, the larger, the first's or the
+second's negated), on the device: a kernel inlines the whole tree.
 
 Parameters are positions in world coordinates. On a dataset with an origin
 (``DataSet.origin``) a filter evaluates the function at the geometry's values
@@ -33,7 +36,7 @@ import numpy as np
 
 import tack
 
-__all__ = ["Box", "Cylinder", "Plane", "Planes", "Sphere"]
+__all__ = ["Box", "Cylinder", "Difference", "Intersection", "Plane", "Planes", "Sphere", "Union"]
 
 
 def relative_to(function, origin):
@@ -241,6 +244,67 @@ class Planes:
             z = (p[2] - self.planes[b + 2]) * self.planes[b + 5]
             most = max(most, x + y + z)
         return most
+
+
+def _operand(function):
+    if not callable(getattr(function, "value", None)):
+        raise TypeError(f"an implicit function has a value(p): {function!r} has none")
+    return function
+
+
+class _Boolean:
+    """Two functions combined, as VTK's ``vtkImplicitBoolean`` combines them;
+    more than two fold into a chain of the same operation. The operands are
+    device classes held as attributes, so a kernel inlines the whole tree."""
+
+    def __init__(self, first, second, *more):
+        self.a = _operand(first)
+        self.b = type(self)(second, *more) if more else _operand(second)
+
+    def _relative_to(self, origin):
+        return _copy(self, a=relative_to(self.a, origin), b=relative_to(self.b, origin))
+
+    def _matching(self, dtype, device):
+        """The operands at ``dtype`` on ``device`` (a ``Planes`` holds arrays)."""
+        def matched(f):
+            m = getattr(type(f), "_matching", None)
+            return m(f, dtype, device) if m is not None else f
+
+        a, b = matched(self.a), matched(self.b)
+        return self if a is self.a and b is self.b else _copy(self, a=a, b=b)
+
+
+@tack.device_class
+class Union(_Boolean):
+    """Inside either function's region: the smaller of their values."""
+
+    @tack.func
+    def value(self, p):
+        return min(self.a.value(p), self.b.value(p))
+
+
+@tack.device_class
+class Intersection(_Boolean):
+    """Inside both functions' regions: the larger of their values."""
+
+    @tack.func
+    def value(self, p):
+        return max(self.a.value(p), self.b.value(p))
+
+
+@tack.device_class
+class Difference(_Boolean):
+    """Inside the first function's region and outside the others': the first's
+    value or the second's negated, whichever is larger."""
+
+    def __init__(self, first, second, *more):
+        # first - (second | more...): the rest as one union.
+        self.a = _operand(first)
+        self.b = Union(second, *more) if more else _operand(second)
+
+    @tack.func
+    def value(self, p):
+        return max(self.a.value(p), -self.b.value(p))
 
 
 @tack.device_class

@@ -55,7 +55,9 @@ threshold. These different measures are intentional.
 
 `Plane`, `Sphere`, `Cylinder`, `Box` and `Planes` expose a `value(position)`
 that is negative inside, zero on the boundary and positive outside. For the
-plane in the example it is `x - 0.125`.
+plane in the example it is `x - 0.125`. `Union`, `Intersection` and
+`Difference` combine them (`Difference(box, sphere)` is the box with a ball
+taken out), as VTK's `vtkImplicitBoolean` does, on the device.
 
 `clip(data, plane)` keeps values **at or above zero**, here the positive-x
 side. Pass `inside=True` to keep the other side, inside the function's

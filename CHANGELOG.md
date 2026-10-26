@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Implicit booleans: `td.Union(f, g, ...)`, `td.Intersection(...)` and
+  `td.Difference(...)` combine implicit functions as VTK's
+  `vtkImplicitBoolean` does (the smallest value, the largest, the first's or
+  the rest's negated), on the device, wherever a function is taken (clip,
+  slice, extract_geometry, extract_points, implicit_values); held to VTK in
+  every implicit-function comparison.
 - `td.surface_normals(data, consistent=True)`: a surface's polygons wound
   alike -- each connected region as its first cell, by union-find with
   parities over the edges on the device -- and its unit normals on cells and,

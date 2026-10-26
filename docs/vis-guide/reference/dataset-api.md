@@ -1101,6 +1101,13 @@ the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.
 
+`Union(f, g, ...)`, `Intersection(f, g, ...)` and `Difference(f, g, ...)`
+combine functions as VTK's `vtkImplicitBoolean` does: the smallest value, the
+largest, and the first's or the rest's union's negated, whichever is larger.
+They hold their operands as nested device classes, so a kernel inlines the
+whole tree, and move them by an origin and match a `Planes` to the data as
+each operand would be.
+
 Each is a `@tack.device_class` object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
 template and calls `f.value(p)`. Their parameters are world positions: on a
