@@ -1337,7 +1337,7 @@ for VTK's `vtkStreamTracer` on 8 threads.
 
 | Function | |
 |---|---|
-| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, `vtkPolyData` (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
 | (both) | a `vtkPartitionedDataSet` and a `PartitionedDataSet` convert piece by piece (null pieces skipped); a `vtkPartitionedDataSetCollection` and a `dict` of names to `PartitionedDataSet`s convert by `vtkCompositeDataSet.NAME()` (`"block<i>"` without one, `"<name>#<i>"` for a name taken) |
 | `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |

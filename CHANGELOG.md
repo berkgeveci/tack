@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `vtk_to_dataset` reads `vtkPolyData` -- what VTK's surface readers (STL,
+  PLY, OBJ, `.vtp`) and its contours give -- as the unstructured grid of its
+  cells in VTK's order: triangles and quads an `UnstructuredTopology`, larger
+  polygons a `PolygonalTopology`, lines a `PolylineTopology`, triangle strips
+  as their triangles (wound alike, each taking its strip's cell data). It
+  was refused, and needed `vtkAppendFilter` first.
 - `contour(..., dimension=)`: 3, 2 or 1, the cells to contour -- by default
   the mesh's highest -- each dimension's alone, never mixed as VTK mixes
   them: the boundary triangles beside a mesh's tetrahedra give lines with
