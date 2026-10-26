@@ -44,7 +44,7 @@ Tack did not allocate with the same `Array` class.
 | Backend | Buffer | Allocation | New contents | Host ↔ device |
 |---|---|---|---|---|
 | CPU | `NumpyBuffer` | uninitialized NumPy storage | unspecified, untouched | `np.copyto` / `.copy()` |
-| Metal | `MetalBuffer` | `newBufferWithLength_options_`, shared storage mode | zeros: Metal clears a new buffer (`starts_zeroed`) | `np.copyto` into the shared view / `.copy()`, after waiting for queued launches |
+| Metal | `MetalBuffer` | `newBufferWithLength_options_`, shared storage mode; 1 MiB or more reused from a pool of freed buffers (`_BufferPool`) | zeros for a new buffer (`starts_zeroed`); a reused one holds what it held | `np.copyto` into the shared view / `.copy()`, after waiting for queued launches |
 | CUDA | `CUDABuffer` | `cuMemAllocAsync` on the context's stream | zeros, from a queued `cuMemsetD8Async` | `cuMemcpyHtoDAsync` (queued) / `cuMemcpyDtoHAsync` and a wait |
 | HIP | `HIPBuffer` | `hipMallocAsync` on the device's stream (`hipMalloc` without memory pools) | zeros, from a queued `hipMemsetAsync` | `hipMemcpyAsync` (queued) / `hipMemcpyAsync` and a wait |
 | Level Zero | `L0Buffer` | `zeMemAllocDevice` (at least one byte) | zeros, from a queued device fill | `zeCommandListAppendMemoryCopy` on the backend's queue, from a snapshot of the array / and a wait |
@@ -53,7 +53,11 @@ The contract makes a new array's contents unspecified until a kernel,
 `tack.copyto` or `fill` writes them; `tack.zeros`, `ones` and `full` are the
 calls that fill. The GPU backends happen to zero new buffers, and only
 Metal declares it (`starts_zeroed`), so `tack.zeros` fills on the others
-again. The CPU leaves a new array untouched.
+again -- and on Metal's reused buffers: a freed buffer of 1 MiB or more goes
+back to a pool, since a new one's pages are mapped and cleared on first
+touch at about 13 GB/s on an M1 Max (50 ms for a 640 MB temporary, more than
+the filter's kernels), and the next array of its capacity takes it as it
+is. The CPU leaves a new array untouched.
 
 **CPU.** `NumpyBuffer._data` *is* the storage. `CPUBackend.allocate_array`
 (`runtime/cpu.py`) does not fill it: its pages are first touched by the

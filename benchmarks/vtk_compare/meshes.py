@@ -28,7 +28,7 @@ FACES = {
 }
 
 # Approximate cell counts of the size sweep.
-SIZES = {"10k": 10_000, "100k": 100_000, "1M": 1_000_000, "5M": 5_000_000}
+SIZES = {"10k": 10_000, "100k": 100_000, "1M": 1_000_000, "5M": 5_000_000, "20M": 20_000_000}
 
 
 @dataclass

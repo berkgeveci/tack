@@ -462,10 +462,12 @@ def test_zeros_do_not_wait_for_queued_launches(monkeypatch):
     np.testing.assert_array_equal(a.numpy(), np.full(1000, 3))
 
 
-def test_new_arrays_are_zero():
-    """Arrays are not cleared on the CPU: Metal clears new buffers. Hold it to that
-    where reuse would show -- the same sizes again, after buffers the CPU and the
-    GPU dirtied were freed."""
+def test_zeros_are_zero_on_reused_buffers():
+    """A new array's contents are unspecified; `tack.zeros` takes a fresh Metal
+    buffer as it is (Metal clears it) and fills a reused one (`_BufferPool`).
+    Hold it to that where reuse shows -- the same sizes again, after buffers
+    the CPU and the GPU dirtied were freed -- and hold the pool to reusing
+    them."""
     import gc
 
     @tack.kernel
@@ -473,14 +475,23 @@ def test_new_arrays_are_zero():
         for i in range(a.shape[0]):
             a[i] = 7
 
-    for n in (1, 1000, 1 << 20):
+    for n in (1, 1000, 1 << 20, 3 << 20):
         for _ in range(5):
-            a = tack.empty((n,), tack.i32)
+            a = tack.zeros((n,), tack.i32)
             assert not a.numpy().any()
             tack.copyto(a, np.full(n, -1, np.int32))
-            b = tack.empty((n,), tack.i32)
+            b = tack.zeros((n,), tack.i32)
             assert not b.numpy().any()
             dirty(b)
             tack.sync()
             del a, b
             gc.collect()
+    first = tack.empty((3 << 20,), tack.i32)
+    tack.copyto(first, np.full(3 << 20, 5, np.int32))
+    held = first._buffer.metal_buffer
+    del first
+    gc.collect()
+    again = tack.empty((3 << 20,), tack.i32)           # the same class: reused
+    assert again._buffer.metal_buffer is held
+
+

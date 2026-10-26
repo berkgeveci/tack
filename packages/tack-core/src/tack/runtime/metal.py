@@ -108,6 +108,52 @@ def _synchronize_all():
 atexit.register(_synchronize_all)
 
 
+class _BufferPool:
+    """MTLBuffers of arrays that have died, by capacity, for the next arrays of
+    that capacity. A new buffer's pages are mapped for the GPU and cleared on
+    first touch, about 13 GB/s on an M1 Max -- 50 ms for a filter's 640 MB
+    temporary, three times its kernels -- where a reused one is written at the
+    kernel's speed. Only buffers of ``MIN`` bytes or more, up to ``limit``
+    bytes held; a buffer goes back only once nothing uses it (a queued launch
+    keeps its arrays until it completes), and never memory handed outside
+    Tack."""
+
+    MIN = 1 << 20
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.held = 0
+        self._free = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def capacity(nbytes):
+        """The class ``nbytes`` falls in: rounded up to a quarter of its power of
+        two, so a reused buffer wastes at most a quarter."""
+        step = max(1 << (nbytes.bit_length() - 1) >> 2, 1)
+        return -(-nbytes // step) * step
+
+    def take(self, capacity):
+        with self._lock:
+            free = self._free.get(capacity)
+            if not free:
+                return None
+            self.held -= capacity
+            return free.pop()
+
+    def give(self, buffer, capacity):
+        with self._lock:
+            if self.held + capacity > self.limit:
+                return                            # let Metal free it
+            self._free.setdefault(capacity, []).append(buffer)
+            self.held += capacity
+
+    def clear(self):
+        with self._lock:
+            self._free.clear()
+            self.held = 0
+
+
 class MetalBuffer(DeviceBuffer):
     """Metal shared buffer — zero-copy on Apple Silicon unified memory.
 
@@ -128,8 +174,28 @@ class MetalBuffer(DeviceBuffer):
     # a buffer this new: about 0.26 ms each, ten times a launch.
     starts_zeroed = True
 
-    def __init__(self, device, numpy_dtype, shape, sync=None):
+    _pool = None             # where the MTLBuffer goes back when the array dies
+    _capacity = 0
+
+    def __init__(self, device, numpy_dtype, shape, sync=None, pool=None):
         nbytes = int(math.prod(shape)) * np.dtype(numpy_dtype).itemsize
+        if pool is not None and nbytes >= pool.MIN:
+            capacity = pool.capacity(nbytes)
+            reused = pool.take(capacity)
+            self._pool, self._capacity = pool, capacity
+            if reused is not None:
+                # Not cleared: `tack.zeros` fills it (a new array's contents
+                # are unspecified otherwise).
+                self.starts_zeroed = False
+                self._metal_buffer = reused
+                self._view = np.frombuffer(reused.contents().as_buffer(nbytes),
+                                           dtype=numpy_dtype).reshape(shape)
+                if sync is not None:
+                    self._sync = sync
+                return
+            nbytes_new = capacity
+        else:
+            nbytes_new = nbytes
         # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory). A
         # zero-length request returns no buffer, so an empty array (the
         # result of a filter that selected nothing) gets one byte it never
@@ -138,7 +204,7 @@ class MetalBuffer(DeviceBuffer):
         # starts zeroed without the CPU pass over every byte that clearing it
         # here once made -- most of a large filter's time on Metal, for the
         # temporaries it allocates. test_new_arrays_are_zero holds Metal to it.
-        self._metal_buffer = device.newBufferWithLength_options_(max(nbytes, 1), 0)
+        self._metal_buffer = device.newBufferWithLength_options_(max(nbytes_new, 1), 0)
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
         if sync is not None:
@@ -147,6 +213,14 @@ class MetalBuffer(DeviceBuffer):
     def synchronize(self):
         """Wait for queued kernels: they may be reading or writing this memory."""
         self._sync()
+
+    def __del__(self):
+        pool = self._pool
+        if pool is not None and not self._shared:
+            try:
+                pool.give(self._metal_buffer, self._capacity)
+            except Exception:       # interpreter shutdown
+                pass
 
     # Reading waits for queued command buffers, so `Array.numpy_async`
     # reads in a worker thread. Metal needs no per-thread binding.
@@ -500,6 +574,10 @@ class MetalBackend(GPUBackend):
             raise RuntimeError("No Metal-capable GPU found")
 
         self._command_queue = self._device.newCommandQueue()
+        # A quarter of the memory Metal recommends a process keep in use, at most
+        # 8 GiB, held for reuse (`_BufferPool`).
+        self._pool = _BufferPool(min(int(self._device.recommendedMaxWorkingSetSize()) // 4,
+                                     8 << 30))
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledMetalKernel}
         self._reduce_pipelines: dict[str, object] = {}
         # Queued launches: the open command buffer and what its launches read
@@ -581,7 +659,8 @@ class MetalBackend(GPUBackend):
 
     def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> MetalBuffer:
-        return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=_synchronize_all)
+        return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=_synchronize_all,
+                           pool=self._pool)
 
     def texture_in_hardware(self, shape_3d) -> bool:
         return True

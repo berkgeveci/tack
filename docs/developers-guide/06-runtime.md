@@ -257,7 +257,8 @@ fill to `Backend.fill_array`. The CPU backend takes a fill of 256 KiB or
 more and runs `tack.algorithms.copy._fill_kernel` through its dispatch, so
 the threads that will use the pages touch them first; GPU buffers fill on
 the device. Metal's new buffers are already zero (`starts_zeroed`), so
-`tack.zeros` skips the fill there. Code that reads an array before writing
+`tack.zeros` skips the fill there -- but not for a buffer of 1 MiB or more
+reused from Metal's pool of freed ones, which holds what it held. Code that reads an array before writing
 it must make it with `tack.zeros`.
 
 ## Kernel Dispatch

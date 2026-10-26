@@ -259,7 +259,14 @@ flight, and owns what it reads -- a fresh argument buffer, its packed
 scalars as `_Uniforms`, references to its arrays until it completes. The
 host waits only when it touches array memory (every `MetalBuffer` method,
 reductions, texture uploads) or calls `tack.sync()`; `tack.zeros` takes a
-new buffer as Metal cleared it (`starts_zeroed`), without waiting. Bindings
+new buffer as Metal cleared it (`starts_zeroed`), without waiting. Buffers of
+1 MiB or more go back to a pool when their array dies (`_BufferPool`, by
+capacity in quarter steps of a power of two, at most a quarter of the
+recommended working set or 8 GiB, never memory handed outside Tack) and are
+reused without clearing (`starts_zeroed` false on that buffer, so `zeros`
+fills it): a new buffer's pages are mapped and cleared on first touch at
+about 13 GB/s, which made large filters' temporaries cost more than their
+kernels (`test_zeros_are_zero_on_reused_buffers`). Bindings
 are resolved before an encoder opens, since committing an open encoder aborts. A
 buffer's host access waits for every live Metal backend (`_backends`,
 `_synchronize_all`), not the one it was made on, in case more than one

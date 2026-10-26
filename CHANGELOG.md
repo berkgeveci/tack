@@ -462,6 +462,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Metal reuses the buffers of arrays that have died (1 MiB or more, by
+  capacity): a new buffer's pages are mapped and cleared on first touch at
+  about 13 GB/s, so a filter's large temporaries cost more than its kernels
+  (640 MB took 50 ms to first fill). At 20M hexahedra on an M1 Max,
+  threshold went from 67.7 to 25.4 ms, contour 41.6 to 28.7, slice 50.1 to
+  32.3, cell centers 14.7 to 6.8 (VTK on 8 threads: 152, 73, 59, 301). A
+  reused buffer is not cleared, so `tack.zeros` fills it; a new array's
+  contents were always unspecified.
 - Small meshes pay less around their kernels: filters keep their constant
   tables (clip's cases, corner orders) on each device instead of uploading
   them per call (`_common._table`); `exclusive_scan(..., close=True)` writes
