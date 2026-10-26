@@ -465,6 +465,7 @@ and pass it on; without one, nothing changes (it is compiled out).
 | `voxel_downsample(data, size, keep="centroid")` | one point per occupied voxel of side `size` (or three sides) anchored at the points' lower corner: the voxel's centroid (new points: floating-point fields averaged, integer fields its first point's; ghost marks dropped), its first point, or its point nearest the centroid (input points, in input order, fields and marks kept). Voxels by a stable sort, each reduced in index order: the same bits run to run, and the same voxels and kept points on every backend. VTK's `vtkVoxelGrid` fits a whole number of bins to the box, so its voxels are not exactly `size`; PDAL's `filters.voxeldownsize` is this |
 | `outliers(data, radius=, min_neighbors=)` | marks (`outlier`, u8) points with fewer than `min_neighbors` others within `radius`, with each point's count (`neighbors`): VTK's `vtkRadiusOutlierRemoval`, the same points |
 | `outliers(data, k=, deviations=1.0)` | marks points whose mean distance to their `k` nearest is more than `deviations` standard deviations above the mean of those means, with each one (`mean_distance`): VTK's `vtkStatisticalOutlierRemoval` and PCL, the same points, mean and deviation. Marked, not removed, as PDAL marks (class 7): `threshold_points(out, "outlier", 0, 0)` keeps the rest |
+| `surface_normals(data, consistent=True)` | a surface's polygons wound alike (each region as its first cell) and its unit normals: `cell_normals` (Newell's) and `normals` at the points (the cells' summed, made unit), as VTK's `vtkPolyDataNormals` without splitting; a non-orientable surface is refused |
 | `point_normals(data, k=None, radius=None, viewpoint=None, direction=(0, 0, 1))` | each point's unit normal from the covariance of its `k` nearest points (itself included) or those within `radius`: the eigenvector of the least eigenvalue, in closed form; signed toward `viewpoint` (a world position) or along `direction` (up). Zero with fewer than three neighbours, or on a line. VTK's `vtkPCANormalEstimation` agrees within 0.1° |
 | `connected_components(data, radius=, min_size=None)` | with `radius`, points within it of each other connect too: on a point cloud, Euclidean clusters (VTK's `vtkEuclideanClusterExtraction`, one to one) and friends-of-friends halos with the linking length. The radius hook walks the locator's bins (nothing stored per pair, each pair once). `min_size` makes regions of fewer points -1 and numbers the rest again |
 | `deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=False)` | points onto an axis-aligned image: into the cell holding each (`"nearest"`, a field on the cells) or onto its corners by trilinear weights (`"cic"`, cloud in cell, on the points), as Viskores' particle density filters and yt. Counts without a field; with one, `"sum"`, `"mean"`, `"count"`, and for `"nearest"` `"min"` and `"max"` (a LiDAR surface model: the highest return per cell of a 2D image). Empty cells hold 0, or NaN for means and extrema; `per_volume` divides by the cell's volume. Points outside are left out. Each target reduced in point order, by a sort: the same bits run to run; counts, minima and maxima the same on every backend, sums and means to rounding |
@@ -1100,6 +1101,13 @@ the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.
 
+`Union(f, g, ...)`, `Intersection(f, g, ...)` and `Difference(f, g, ...)`
+combine functions as VTK's `vtkImplicitBoolean` does: the smallest value, the
+largest, and the first's or the rest's union's negated, whichever is larger.
+They hold their operands as nested device classes, so a kernel inlines the
+whole tree, and move them by an origin and match a `Planes` to the data as
+each operand would be.
+
 Each is a `@tack.device_class` object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
 template and calls `f.value(p)`. Their parameters are world positions: on a
@@ -1148,6 +1156,9 @@ keeps its distinct points if three are left), as warp-simdata drops it. VTK
 and Viskores keep such cells and points, so their counts are higher where a
 level runs through mesh points (a plane through grid points, an isovalue
 some points have exactly); the areas agree.
+
+`extract_extent(data, extent, rate=1)` keeps a box of a structured grid's points, every
+`rate`-th, as a structured grid of the same kind (VTK's `vtkExtractGrid`).
 
 Without a function: `extract_cells(data, cells)`, where `cells` is ids (a
 host array or an integer field), a cell `Set` of `data`, or the name of one
@@ -1337,7 +1348,7 @@ for VTK's `vtkStreamTracer` on 8 threads.
 
 | Function | |
 |---|---|
-| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, `vtkPolyData` (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
 | (both) | a `vtkPartitionedDataSet` and a `PartitionedDataSet` convert piece by piece (null pieces skipped); a `vtkPartitionedDataSetCollection` and a `dict` of names to `PartitionedDataSet`s convert by `vtkCompositeDataSet.NAME()` (`"block<i>"` without one, `"<name>#<i>"` for a name taken) |
 | `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |

@@ -119,9 +119,13 @@ CALLS = {
     "slice": lambda d: td.slice(d, td.Plane((0.5, 0, 0), (1, 0, 0))),
     "clip": lambda d: td.clip(d, "s", 3.0),
     "clip_polyhedra": lambda d: td.clip(td.as_polyhedra(d), "s", 3.0),
+    "clip_boolean": lambda d: td.clip(d, td.Difference(
+        td.Sphere((1, 1, 1), 1.2), td.Planes([(1.5, 0, 0)], [(-1, 0.2, 0)]))),
     "threshold": lambda d: td.threshold(d, "s", 0.0, 3.0),
     "extract_geometry": lambda d: td.extract_geometry(d, td.Sphere((0, 0, 0), 1.5)),
     "extract_cells": lambda d: td.extract_cells(d, [0, 1]),
+    "extract_extent": lambda d: (td.extract_extent(d, [(0, 1)] * len(d.topology.point_dims))
+                                 if isinstance(d.topology, td.StructuredTopology) else None),
     "mask": lambda d: td.mask(d, 2),
     "mask_points": lambda d: td.mask_points(d, 2),
     "threshold_points": lambda d: td.threshold_points(d, "s", 0.0, 3.0),
@@ -131,6 +135,7 @@ CALLS = {
     "boundary_faces": td.boundary_faces,
     "extract_edges": td.extract_edges,
     "feature_edges": lambda d: td.feature_edges(td.extract_surface(d, td.boundary_faces(d))),
+    "surface_normals": lambda d: td.surface_normals(td.extract_surface(d)),
     "tetrahedralize": td.tetrahedralize,
     "shrink": td.shrink,
     "warp": lambda d: td.warp(d, (0, 0, 1), scale=0.5),

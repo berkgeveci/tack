@@ -1,6 +1,10 @@
 """Small helpers every algorithm shares: fields by name or object, new
 fields of values, compaction of 0/1 flags into ids, closing offsets."""
 
+import weakref
+
+import numpy as np
+
 import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
@@ -19,6 +23,26 @@ def _crossing(level, a, b):
     elif b - b != 0.0:
         w = 0.0
     return w
+
+
+#: Constant tables as device arrays, per backend (released with it) and key.
+_CONSTANTS = weakref.WeakKeyDictionary()
+
+
+def _table(key, values, dtype=tack.i32):
+    """``values`` (a sequence, or a function giving one) as a constant array of
+    ``dtype`` on the current device, made once per device and ``key``: a filter's
+    case tables and corner orders, which uploading on every call cost a small
+    mesh's filter as much as its kernels (clip's tables, 0.25 ms a call). Never
+    to be written to."""
+    from tack.runtime.dispatch import get_backend
+
+    per_device = _CONSTANTS.setdefault(get_backend(), {})
+    full = (key, dtype)
+    if full not in per_device:
+        made = values() if callable(values) else values
+        per_device[full] = tack.array(np.asarray(made, dtype.numpy_dtype).reshape(-1), dtype)
+    return per_device[full]
 
 
 def _vectors(n, dtype, width=3):

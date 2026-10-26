@@ -9,6 +9,7 @@ import numpy as np
 
 import tack
 from tack.dataset import shapes
+from tack.dataset.algorithms._common import _table
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import get_backend, on_inputs_device
@@ -530,7 +531,7 @@ def cell_quality(data, measures=None):
             if jacobian:
                 norms, inverses = _pyramid_tables(dtype)
                 _pyramid_quality(view, norms, inverses, big, sj, ratio, cond)
-            edges = tack.array(np.array(_PYRAMID_EDGES, np.int32).reshape(-1))
+            edges = _table("pyramid edges", _PYRAMID_EDGES)
             _edges_by_table(view, edges, lo, hi)
         elif shape is shapes.Polyhedron:
             if jacobian:
@@ -547,8 +548,8 @@ def cell_quality(data, measures=None):
             if shape is shapes.PolyLine:
                 _edges_of_lines(view, lo, hi)
             else:
-                _edges_by_table(view, tack.array(np.array([0, 1] if shape is shapes.Line
-                                                          else [0, 0], np.int32)), lo, hi)
+                _edges_by_table(view, _table(("line edges", shape is shapes.Line),
+                                             [0, 1] if shape is shapes.Line else [0, 0]), lo, hi)
     if "edge_ratio" in names:
         out["edge_ratio"] = tack.empty((n,), dtype)
         if n:

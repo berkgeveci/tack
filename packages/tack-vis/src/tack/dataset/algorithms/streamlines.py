@@ -4,7 +4,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, units
 from tack.dataset.algorithms._advection import _run
-from tack.dataset.algorithms._common import _close, _has_quantity, _time_unit
+from tack.dataset.algorithms._common import _has_quantity, _time_unit
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -96,8 +96,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     if lines:
         _moved_paths(flags, slots, lengths, kept, seed_of, line_lengths)
     line_offsets = tack.empty((lines + 1,), idt)
-    length = exclusive_scan(line_lengths, line_offsets, lines) if lines else 0
-    _close(line_offsets, lines, length)
+    length = exclusive_scan(line_lengths, line_offsets, lines, close=True)
     line_points = tack.empty((length,), idt)
     if lines:
         _chains(kept, starts, lengths, line_offsets, line_points)

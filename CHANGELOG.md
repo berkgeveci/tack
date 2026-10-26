@@ -7,6 +7,30 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Implicit booleans: `td.Union(f, g, ...)`, `td.Intersection(...)` and
+  `td.Difference(...)` combine implicit functions as VTK's
+  `vtkImplicitBoolean` does (the smallest value, the largest, the first's or
+  the rest's negated), on the device, wherever a function is taken (clip,
+  slice, extract_geometry, extract_points, implicit_values); held to VTK in
+  every implicit-function comparison.
+- `td.surface_normals(data, consistent=True)`: a surface's polygons wound
+  alike -- each connected region as its first cell, by union-find with
+  parities over the edges on the device -- and its unit normals on cells and,
+  summed and made unit, on points, as VTK's `vtkPolyDataNormals` without
+  splitting (matched to it on spheres, scrambled windings, curved quads and
+  polygons). A surface no winding makes consistent is refused.
+- `td.extract_extent(data, extent, rate=1)`: a box of a structured grid's
+  points (VTK's VOI, in the whole grid's indices), every `rate`-th, as a
+  structured grid of the same kind -- an image stays uniform, a rectilinear
+  grid's axes are cut, a curvilinear grid's points taken; a k-plane of a 3D
+  grid is a 2D grid. Matched to `vtkExtractVOI`, `vtkExtractRectilinearGrid`
+  and `vtkExtractGrid` point for point and cell for cell.
+- `vtk_to_dataset` reads `vtkPolyData` -- what VTK's surface readers (STL,
+  PLY, OBJ, `.vtp`) and its contours give -- as the unstructured grid of its
+  cells in VTK's order: triangles and quads an `UnstructuredTopology`, larger
+  polygons a `PolygonalTopology`, lines a `PolylineTopology`, triangle strips
+  as their triangles (wound alike, each taking its strip's cell data). It
+  was refused, and needed `vtkAppendFilter` first.
 - `contour(..., dimension=)`: 3, 2 or 1, the cells to contour -- by default
   the mesh's highest -- each dimension's alone, never mixed as VTK mixes
   them: the boundary triangles beside a mesh's tetrahedra give lines with
@@ -438,6 +462,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Metal reuses the buffers of arrays that have died (1 MiB or more, by
+  capacity): a new buffer's pages are mapped and cleared on first touch at
+  about 13 GB/s, so a filter's large temporaries cost more than its kernels
+  (640 MB took 50 ms to first fill). At 20M hexahedra on an M1 Max,
+  threshold went from 67.7 to 25.4 ms, contour 41.6 to 28.7, slice 50.1 to
+  32.3, cell centers 14.7 to 6.8 (VTK on 8 threads: 152, 73, 59, 301). A
+  reused buffer is not cleared, so `tack.zeros` fills it; a new array's
+  contents were always unspecified.
+- Small meshes pay less around their kernels: filters keep their constant
+  tables (clip's cases, corner orders) on each device instead of uploading
+  them per call (`_common._table`); `exclusive_scan(..., close=True)` writes
+  the total at `output[n]` in the scan's own launch, so CSR offsets need no
+  launch of their own; and clip scans its five kinds of counts in one
+  launch below 2048 cells. A clip of 360 triangles went from 1.0 ms to 0.49
+  (VTK's `vtkClipPolyData` 0.14), from 28 launches to 17.
 - `extract_surface` of a 2D mesh, by default, is the mesh itself -- its cells
   passed through, hidden ones left out -- as VTK's geometry filter passes
   polygons; it was the boundary edges, which `extract_surface(data,

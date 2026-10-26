@@ -28,6 +28,8 @@ or the `td.Field` itself; a raw value buffer needs a space wrapper first.
 | Keep cells whose scalar lies in an interval | `threshold` | Whole cells, preserving their shapes |
 | Keep cells inside a region described by a function | `extract_geometry` | Whole cells |
 | Keep a named or explicit cell selection | `extract_cells` | Whole cells in input order |
+| Keep a box of a structured grid, every n-th point | `extract_extent` | A structured grid of the same kind (VTK's `vtkExtractGrid`/`vtkExtractVOI`); a one-point-thick box is a grid of one dimension less |
+| Normals of a surface, its polygons wound alike | `surface_normals` | The surface with `normals` on points and `cell_normals` on cells (VTK's `vtkPolyDataNormals` without splitting) |
 | Keep the part on one side of a level | `clip` | Whole cells and pieces of cut cells |
 | Extract a scalar level set, or several | `contour` | Triangles in 3D; line cells in 2D; vertices on lines; `dimension=` picks which cells of a mixed mesh (the highest by default, never mixed); with several values, all of them, each cell's in `contour_value` |
 | Intersect with a plane or another implicit function, or several parallel ones | `slice_plane`, `slice` | Intersection geometry |
@@ -53,7 +55,9 @@ threshold. These different measures are intentional.
 
 `Plane`, `Sphere`, `Cylinder`, `Box` and `Planes` expose a `value(position)`
 that is negative inside, zero on the boundary and positive outside. For the
-plane in the example it is `x - 0.125`.
+plane in the example it is `x - 0.125`. `Union`, `Intersection` and
+`Difference` combine them (`Difference(box, sphere)` is the box with a ball
+taken out), as VTK's `vtkImplicitBoolean` does, on the device.
 
 `clip(data, plane)` keeps values **at or above zero**, here the positive-x
 side. Pass `inside=True` to keep the other side, inside the function's

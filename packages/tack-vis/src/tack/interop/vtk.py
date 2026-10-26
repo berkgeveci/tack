@@ -419,8 +419,8 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
 
 def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
                    origin=None):
-    """Copy a ``vtkUnstructuredGrid``, ``vtkStructuredGrid``, ``vtkRectilinearGrid`` or
-    ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
+    """Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,
+    ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
     ``UniformCoordinates`` (with its direction matrix), a rectilinear grid's as a
     ``CartesianProduct``, a structured grid's as its explicit points.
 
@@ -438,6 +438,13 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``PolygonalTopology`` (its triangles and quads polygons too, and no other
     cells allowed). Its types, offsets and connectivity stay implicit where
     VTK's are (a cell type given as a number, affine offsets).
+    A ``vtkPolyData`` is taken as the unstructured grid of its cells in VTK's
+    order -- verts, lines, polygons (of three or four points triangles and
+    quads), and triangle strips, each strip as its triangles, which take its
+    cell data -- so the same rules hold: a surface of triangles and quads is
+    an ``UnstructuredTopology``, one with larger polygons a ``PolygonalTopology``,
+    lines a ``PolylineTopology``, and polylines or polygons beside other cells
+    are refused.
     With ``orient``, inconsistently wound polyhedra are repaired first
     (``PolyhedralTopology.from_cell_faces``); without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
@@ -467,6 +474,79 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     if grid.GetInformation().Has(_time_key()):
         _stamp(out, grid.GetInformation().Get(_time_key()))
     return out
+
+
+def _strip_triangles(offsets, connectivity):
+    """``(rows, strip of each)``: triangle strips as triangles, each strip's
+    triangles in order, every other one turned so all wind as the first does."""
+    import numpy as np
+
+    sizes = np.diff(offsets)
+    counts = np.maximum(sizes - 2, 0)
+    strip = np.repeat(np.arange(len(sizes)), counts)
+    t = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+    first = offsets[:-1][strip] + t
+    odd = (t % 2).astype(bool)
+    rows = np.stack([connectivity[first], connectivity[first + 1], connectivity[first + 2]], 1)
+    rows[odd, 0], rows[odd, 1] = rows[odd, 1], rows[odd, 0].copy()
+    return rows, strip
+
+
+def _polydata_as_grid(polydata):
+    """A ``vtkPolyData`` as the ``vtkUnstructuredGrid`` of its cells, on the same
+    points and point data: its verts, lines, polygons and strips in VTK's cell
+    order (a polygon of three or four points a triangle or quad, as
+    ``vtkPolyData.GetCellType`` says), each strip as its triangles, which take
+    its cell data."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import vtkIdList, vtkUnsignedCharArray
+    from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
+
+    types, sizes, members, sources = [], [], [], []
+    first = 0
+    for kind, cells in (("verts", polydata.verts), ("lines", polydata.lines),
+                        ("polys", polydata.polys), ("strips", polydata.strips)):
+        n = cells.number_of_cells
+        if not n:
+            continue
+        offsets = np.asarray(cells.offsets_array, np.int64)
+        connectivity = np.asarray(cells.connectivity_array, np.int64)
+        size = np.diff(offsets)
+        if kind == "strips":
+            rows, strip = _strip_triangles(offsets, connectivity)
+            types.append(np.full(len(rows), 5, np.uint8))
+            sizes.append(np.full(len(rows), 3))
+            members.append(rows.reshape(-1))
+            sources.append(first + strip)
+        else:
+            types.append({"verts": np.where(size == 1, 1, 2),
+                          "lines": np.where(size == 2, 3, 4),
+                          "polys": np.select([size == 3, size == 4], [5, 9], 7)}[kind]
+                         .astype(np.uint8))
+            sizes.append(size)
+            members.append(connectivity)
+            sources.append(first + np.arange(n))
+        first += n
+    grid = vtkUnstructuredGrid()
+    grid.SetPoints(polydata.GetPoints())
+    grid.GetPointData().ShallowCopy(polydata.GetPointData())
+    grid.GetFieldData().ShallowCopy(polydata.GetFieldData())
+    if not types:
+        return grid
+    offsets = np.concatenate([[0], np.cumsum(np.concatenate(sizes))]).astype(np.int64)
+    grid.cells = (vtkUnsignedCharArray(np.concatenate(types)),
+                  vtkCellArray(offsets=offsets, connectivity=np.concatenate(members)))
+    source = np.concatenate(sources)
+    if len(source) == polydata.number_of_cells:            # no strips: the same cells
+        grid.GetCellData().ShallowCopy(polydata.GetCellData())
+    else:
+        ids = vtkIdList()
+        ids.SetNumberOfIds(len(source))
+        for i, s in enumerate(source.tolist()):
+            ids.SetId(i, s)
+        grid.GetCellData().CopyAllocate(polydata.GetCellData(), len(source))
+        grid.GetCellData().CopyData(polydata.GetCellData(), ids, 0)
+    return grid
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
@@ -504,6 +584,10 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
     shift = np.asarray(as_origin(origin))
     if isinstance(grid, vtkOverlappingAMR):
         return _amr_to_dataset(grid, options)
+    from vtkmodules.vtkCommonDataModel import vtkPolyData
+
+    if isinstance(grid, vtkPolyData):
+        return _vtk_to_dataset(_polydata_as_grid(grid), **options)
     from vtkmodules.vtkCommonDataModel import vtkHyperTreeGrid
 
     if isinstance(grid, vtkHyperTreeGrid):
@@ -573,7 +657,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
         geometry = _vtk_points(grid) - shift
     else:
-        raise TypeError(f"expected a vtkUnstructuredGrid, vtkStructuredGrid, "
+        raise TypeError(f"expected a vtkUnstructuredGrid, vtkPolyData, vtkStructuredGrid, "
                         f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
     fields = _attributes_to_fields(grid.point_data, H1(topology), dtype)

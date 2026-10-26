@@ -50,6 +50,7 @@ from tack.dataset.algorithms import (
     entropy,
     extract_cells,
     extract_edges,
+    extract_extent,
     extract_geometry,
     extract_points,
     extract_surface,
@@ -88,6 +89,7 @@ from tack.dataset.algorithms import (
     split,
     statistics,
     streamlines,
+    surface_normals,
     tetrahedralize,
     threshold,
     threshold_points,
@@ -111,7 +113,16 @@ from tack.dataset.dataset import (
 )
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
-from tack.dataset.implicit import Box, Cylinder, Plane, Planes, Sphere
+from tack.dataset.implicit import (
+    Box,
+    Cylinder,
+    Difference,
+    Intersection,
+    Plane,
+    Planes,
+    Sphere,
+    Union,
+)
 from tack.dataset.locator import CellLocator, Locations
 from tack.dataset.octree import OctreeDataSet
 from tack.dataset.partitioned import PartitionedDataSet
@@ -147,12 +158,14 @@ __all__ = [
     "Constant",
     "Cylinder",
     "DataSet",
+    "Difference",
     "EdgeKind",
     "FaceGeometry",
     "Field",
     "FlowQuantities",
     "Ghosts",
     "GlobalIds",
+    "Intersection",
     "Locations",
     "OctreeDataSet",
     "ParticleStatus",
@@ -174,6 +187,7 @@ __all__ = [
     "Streaklines",
     "StructuredTopology",
     "TimeDerivative",
+    "Union",
     "UnstructuredTopology",
     "Values",
     "advect",
@@ -203,6 +217,7 @@ __all__ = [
     "extend_paths",
     "extract_cells",
     "extract_edges",
+    "extract_extent",
     "extract_geometry",
     "extract_points",
     "extract_surface",
@@ -250,6 +265,7 @@ __all__ = [
     "split",
     "statistics",
     "streamlines",
+    "surface_normals",
     "tangle",
     "tetrahedralize",
     "threshold",
