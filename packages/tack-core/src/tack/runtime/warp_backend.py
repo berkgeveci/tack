@@ -39,6 +39,9 @@ class WarpBuffer(DeviceBuffer):
     """A flat ``wp.array`` holding an array's elements."""
 
     backend_name = "warp"
+    #: Memory something outside Tack reads or owns (a wrapped pointer, an
+    #: export): launches that use it complete before returning.
+    _shared = False
 
     def __init__(self, backend, dtype, shape, array=None):
         wp = _warp()
@@ -49,6 +52,12 @@ class WarpBuffer(DeviceBuffer):
             array = wp.empty(math.prod(self._shape), dtype=_warp_dtype(dtype),
                              device=backend.wp_device)
         self.array = array
+
+    def share(self):
+        """Complete the queued launches, and from now on every one that uses this
+        array, as the other GPU backends do for memory handed outside Tack."""
+        self._shared = True
+        self.synchronize()
 
     def from_numpy(self, arr: np.ndarray):
         """On CUDA, one copy from ``arr``'s memory on the backend's stream, after

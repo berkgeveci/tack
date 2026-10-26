@@ -414,3 +414,4 @@ def test_workgroups_on_cuda(warp):
     keys = np.random.default_rng(5).integers(-1 << 40, 1 << 40, 50_000)
     np.testing.assert_array_equal(argsort(tack.array(keys, device=warp)).numpy(),
                                   np.argsort(keys, kind="stable"))
+

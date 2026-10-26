@@ -272,9 +272,9 @@ def _get_device_info(array):
         return kDLOneAPI, array._backend.ordinal, data_ptr
 
     if cls_name == "WarpBuffer":
-        # The prototype completes the queued launches now, but not the later
-        # ones that use it, as `share()` does for the other GPU buffers.
-        buf.synchronize()
+        # As for CUDABuffer: complete the queued launches now, and every
+        # later one that uses it.
+        buf.share()
         device = array._backend.wp_device
         if device.is_cuda:
             return kDLCUDA, device.ordinal, buf.address
