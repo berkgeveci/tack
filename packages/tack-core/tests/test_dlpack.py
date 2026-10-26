@@ -177,6 +177,29 @@ def test_an_unconsumed_versioned_capsule_is_released():
     assert len(dlpack._prevent_gc) == before
 
 
+def test_a_consumers_error_survives_the_capsule(monkeypatch):
+    """A consumer that refuses the tensor sets its error and drops the capsule,
+    whose destructor then runs with the error pending. A ctypes destructor
+    cleared it, whatever it did: np.from_dlpack of a CUDA array raised
+    "SystemError: <built-in function from_dlpack> returned NULL without
+    setting an exception" in place of NumPy's own error (mustafar-linux,
+    2026-10-25). Here a host array says it is on CUDA, which NumPy refuses
+    the same way. The export is released all the same."""
+    pytest.importorskip("llvmlite")
+    real = dlpack._get_device_info
+    monkeypatch.setattr(dlpack, "_get_device_info",
+                        lambda array: (dlpack.kDLCUDA, 0, real(array)[2]))
+    gc.collect()
+    before = len(dlpack._prevent_gc)
+    for _ in range(5):
+        array = _array(np.arange(4, dtype=np.float32), tack.f32)
+        with pytest.raises(RuntimeError, match="Unsupported device"):
+            np.from_dlpack(array)
+        del array
+    gc.collect()
+    assert len(dlpack._prevent_gc) == before
+
+
 def test_tack_sets_no_prototype_on_the_shared_c_api():
     """``ctypes.pythonapi.<name>`` is one object for the whole process, so a
     prototype set on it re-types every other library's calls, and theirs

@@ -231,6 +231,93 @@ for _thunk in (_dlpack_deleter, _dlpack_deleter_versioned, _capsule_destructor):
 del _thunk
 
 
+# ── Keeping a consumer's error ───────────────────────────────────────
+#
+# A consumer that refuses a tensor sets its error and then drops the capsule,
+# so the capsule's destructor runs with that error pending -- and so may the
+# deleter, if a consumer gives up after adopting the tensor. A ctypes thunk
+# cannot keep it: whatever Python the thunk runs, even a function that only
+# appends to a list, meets the pending error (a C-API call raises it, and a
+# call that returns finds "a result with an exception set"), ctypes reports
+# that as unraisable and clears it, and the consumer returns NULL with no
+# error set. np.from_dlpack of a CUDA array raised "SystemError:
+# <built-in function from_dlpack> returned NULL without setting an
+# exception" in place of NumPy's "Unsupported device in DLTensor."
+# (mustafar-linux, Tack's CUDA, HIP and Level Zero arrays alike).
+#
+# So C is handed native functions that set the error aside, call the thunk
+# and put the error back, compiled with llvmlite where it is installed (the
+# cpu extra); without it the thunks are handed over as before.
+
+_DELETER = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+_natives = None         # id(thunk) -> its native wrapper, made at the first export
+
+
+def _natively(thunk):
+    """``thunk`` behind a native function that keeps a pending error; ``thunk``
+    itself without llvmlite."""
+    global _natives
+    if _natives is None:
+        _natives = _wrap_natively((_dlpack_deleter, _dlpack_deleter_versioned,
+                                   _capsule_destructor))
+    return _natives.get(id(thunk), thunk)
+
+
+def _wrap_natively(thunks):
+    """``{id(thunk): native wrapper}`` for ctypes thunks taking one pointer (a
+    function pointer is not hashable; the thunks live as long as the process,
+    see above), or ``{}`` without llvmlite. The wrappers' code is never freed
+    either."""
+    try:
+        import llvmlite.binding as llvm
+        import llvmlite.ir as ll
+    except ImportError:
+        return {}
+    import sys
+
+    def c_api(name):
+        return ctypes.cast(getattr(ctypes.pythonapi, name), ctypes.c_void_p).value
+
+    pointer = ll.IntType(8).as_pointer()
+    address = ll.IntType(8 * ctypes.sizeof(ctypes.c_void_p))
+    void = ll.VoidType()
+
+    def call(builder, function, result, args):
+        ftype = ll.FunctionType(result, [a.type for a in args])
+        return builder.call(builder.inttoptr(ll.Constant(address, function),
+                                             ftype.as_pointer()), args)
+
+    module = ll.Module("tack_dlpack")
+    module.triple = llvm.get_process_triple()
+    for k, thunk in enumerate(thunks):
+        function = ll.Function(module, ll.FunctionType(void, [pointer]), f"tack_dlpack_{k}")
+        b = ll.IRBuilder(function.append_basic_block())
+        target = ctypes.cast(thunk, ctypes.c_void_p).value
+        # The GIL first: a capsule's destructor runs with it, but Tack's own
+        # import calls the deleter through ctypes, which releases it.
+        gil = call(b, c_api("PyGILState_Ensure"), ll.IntType(32), [])
+        if sys.version_info >= (3, 12):
+            error = call(b, c_api("PyErr_GetRaisedException"), pointer, [])
+            call(b, target, void, [function.args[0]])
+            call(b, c_api("PyErr_SetRaisedException"), void, [error])
+        else:
+            slots = [b.alloca(pointer) for _ in range(3)]
+            call(b, c_api("PyErr_Fetch"), void, slots)
+            call(b, target, void, [function.args[0]])
+            call(b, c_api("PyErr_Restore"), void, [b.load(s) for s in slots])
+        call(b, c_api("PyGILState_Release"), void, [gil])
+        b.ret_void()
+
+    llvm.initialize_native_target()
+    llvm.initialize_native_asmprinter()
+    machine = llvm.Target.from_default_triple().create_target_machine()
+    engine = llvm.create_mcjit_compiler(llvm.parse_assembly(str(module)), machine)
+    engine.finalize_object()
+    _Py_IncRef(engine)
+    return {id(thunk): _DELETER(engine.get_function_address(f"tack_dlpack_{k}"))
+            for k, thunk in enumerate(thunks)}
+
+
 def _get_device_info(array):
     """Determine DLPack device type and data pointer for an array."""
     buf = array._buffer
@@ -333,14 +420,14 @@ def array_to_dlpack(array, versioned=False):
     # gets back. Pin everything the capsule points at under that key.
     key = next(_ctx_keys)
     managed.manager_ctx = ctypes.c_void_p(key)
-    managed.deleter = deleter
+    managed.deleter = _natively(deleter)
     _prevent_gc[key] = (array, managed, shape_arr, strides_arr)
 
     # addressof, not byref: byref yields a temporary whose lifetime is not
     # tied to the capsule. `managed` itself is kept alive by _prevent_gc.
     return _PyCapsule_New(
         ctypes.addressof(managed), capsule_name,
-        ctypes.cast(_capsule_destructor, ctypes.c_void_p),
+        ctypes.cast(_natively(_capsule_destructor), ctypes.c_void_p),
     )
 
 
