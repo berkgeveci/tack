@@ -10,7 +10,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import materialize
 from tack.dataset import ids, shapes
-from tack.dataset.algorithms._common import _close, _vectors
+from tack.dataset.algorithms._common import _table, _vectors
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.carry import Same, _point_values, carry
 from tack.dataset.dataset import Field
@@ -145,12 +145,11 @@ def feature_edges(data, angle=30.0, boundary=True, feature=True, non_manifold=Tr
             if group.shape in _ROUND:
                 _loop_sizes(data.domain_view("cells", group), len(_ROUND[group.shape]), sizes)
         offsets = tack.empty((n_cells + 1,), tack.i64)
-        total = int(exclusive_scan(sizes, offsets, n_cells)) if n_cells else 0
-        _close(offsets, n_cells, total)
+        total = int(exclusive_scan(sizes, offsets, n_cells, close=True))
         loops = tack.empty((total,), idt)
         for group in groups:
             if group.shape in _ROUND:
-                order = tack.array(np.array(_ROUND[group.shape], np.int32))
+                order = _table(("round", group.shape), _ROUND[group.shape])
                 _shape_loops(data.domain_view("cells", group), order, offsets, loops)
     total = int(loops.shape[0])
     positions = materialize(_point_values(data.geometry.values, data.num_points))

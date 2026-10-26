@@ -3,7 +3,6 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Same, carry
 from tack.dataset.polyhedra import PolygonalTopology
 from tack.runtime.dispatch import on_inputs_device
@@ -45,8 +44,7 @@ def as_polygons(data, fields=None):
         if group.count:
             _polygon_sizes(group.view(), sizes)
     offsets = tack.empty((n + 1,), idt)
-    total = exclusive_scan(sizes, offsets, n) if n else 0
-    _close(offsets, n, total)
+    total = exclusive_scan(sizes, offsets, n, close=True)
     loops = tack.empty((total,), idt)
     for group in topology.groups():
         if group.count:

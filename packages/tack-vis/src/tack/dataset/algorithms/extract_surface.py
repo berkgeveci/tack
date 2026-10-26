@@ -4,7 +4,6 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids as id_types
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Pieces, Same, Take, _take, carry, selected
 from tack.dataset.dataset import Field
 from tack.dataset.sets import Set
@@ -227,8 +226,7 @@ def _polygon_surface(data, ids, fields=None):
     offsets = tack.empty((n + 1,), idt)
     if n:
         _surface_loop_sizes(ids, topology.face_offsets, sizes)
-    total = exclusive_scan(sizes, offsets, n) if n else 0
-    _close(offsets, n, total)
+    total = exclusive_scan(sizes, offsets, n, close=True)
     loops = tack.empty((total,), idt)
     if n:
         _surface_loops(ids, topology.face_offsets, topology.face_points, offsets, loops)

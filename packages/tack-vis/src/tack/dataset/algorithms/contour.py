@@ -756,8 +756,7 @@ def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
         if group.count:
             _lopez_counts(data.domain_view("cells", group), values, levels, nlevels, counts)
     pair_offsets = tack.empty((entries + 1,), odt)
-    pairs = exclusive_scan(counts, pair_offsets, entries) if entries else 0
-    _close(pair_offsets, entries, pairs)
+    pairs = exclusive_scan(counts, pair_offsets, entries, close=True)
     pair_from = tack.empty((pairs,), tack.vec(2, kdt))
     pair_to = tack.empty((pairs,), tack.vec(2, kdt))
     if pairs:

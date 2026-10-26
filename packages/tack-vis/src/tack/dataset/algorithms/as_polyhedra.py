@@ -3,7 +3,6 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
-from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Same, carry
 from tack.dataset.polyhedra import PolyhedralTopology
 from tack.runtime.dispatch import on_inputs_device
@@ -92,8 +91,7 @@ def as_polyhedra(data, fields=None):
     starts = tack.empty((nf + 1,), fdt)
     if nf:
         _face_sizes(faces.kinds, sizes)
-    total = exclusive_scan(sizes, starts, nf) if nf else 0
-    _close(starts, nf, total)
+    total = exclusive_scan(sizes, starts, nf, close=True)
     face_points = tack.empty((total,), fdt)
     if nf:
         _face_rows(faces.rows, starts, sizes, face_points)
@@ -104,8 +102,7 @@ def as_polyhedra(data, fields=None):
         if group.count:
             _cell_face_counts(group.view(), counts)
     cell_offsets = tack.empty((n + 1,), idt)
-    entries = exclusive_scan(counts, cell_offsets, n) if n else 0
-    _close(cell_offsets, n, entries)
+    entries = exclusive_scan(counts, cell_offsets, n, close=True)
     cell_faces = tack.empty((entries,), idt)
     cell_face_sides = tack.empty((entries,), tack.u8)
     for group in topology.groups():

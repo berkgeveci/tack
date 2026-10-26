@@ -462,6 +462,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Small meshes pay less around their kernels: filters keep their constant
+  tables (clip's cases, corner orders) on each device instead of uploading
+  them per call (`_common._table`); `exclusive_scan(..., close=True)` writes
+  the total at `output[n]` in the scan's own launch, so CSR offsets need no
+  launch of their own; and clip scans its five kinds of counts in one
+  launch below 2048 cells. A clip of 360 triangles went from 1.0 ms to 0.49
+  (VTK's `vtkClipPolyData` 0.14), from 28 launches to 17.
 - `extract_surface` of a 2D mesh, by default, is the mesh itself -- its cells
   passed through, hidden ones left out -- as VTK's geometry filter passes
   polygons; it was the boundary edges, which `extract_surface(data,

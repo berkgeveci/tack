@@ -5,7 +5,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _vectors
+from tack.dataset.algorithms._common import _table, _vectors
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.carry import Same, _take, carry
 from tack.dataset.dataset import Field
@@ -172,7 +172,7 @@ def _consistent(data):
     for group in data.launch_groups("cells", []):
         if group.count and group.shape in _REVERSED:
             _rewound(data.domain_view("cells", group), parents, offsets,
-                     tack.array(np.array(_REVERSED[group.shape], np.int32)), connectivity)
+                     _table(("reversed", group.shape), _REVERSED[group.shape]), connectivity)
     out = UnstructuredTopology(topology.types, topology.offsets, connectivity,
                                num_points=data.num_points, id_dtype=topology.id_dtype)
     return carry(data, out, points=Same(), cells=Same())
@@ -215,7 +215,7 @@ def surface_normals(data, consistent=True):
             continue
         view = data.domain_view("cells", group)
         if group.shape in _ROUND:
-            _shape_normals(view, tack.array(np.array(_ROUND[group.shape], np.int32)),
+            _shape_normals(view, _table(("round", group.shape), _ROUND[group.shape]),
                            cell_normals)
         else:
             _polygon_normals(view, cell_normals)

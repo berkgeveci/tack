@@ -19,9 +19,9 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
-from tack.dataset.algorithms._common import _compact
+from tack.dataset.algorithms._common import _compact, _table
 from tack.dataset.carry import Pieces, Same, carry
-from tack.dataset.topology import UnstructuredTopology, _as_field, uniform_cells
+from tack.dataset.topology import UnstructuredTopology, uniform_cells
 
 # A structured hexahedron's two splits into 5 (VTK's corner order): a tetrahedron of
 # alternate corners in the middle, one at each other corner. Neighbours take the
@@ -238,9 +238,7 @@ def _tetrahedra(data, fields):
     for group in groups:
         view = data.domain_view("cells", group)        # with the corners' positions
         if structured:
-            _parity_tets(view, _as_field(np.asarray(_EVEN_TETS, np.int32).reshape(-1),
-                                                 tack.i32),
-                         _as_field(np.asarray(_ODD_TETS, np.int32).reshape(-1), tack.i32),
+            _parity_tets(view, _table("even tets", _EVEN_TETS), _table("odd tets", _ODD_TETS),
                          shift, starts, connectivity, sources)
         else:
             _cone_tets(view, rank, starts, connectivity, sources)
@@ -265,6 +263,6 @@ def _split(data, kind, fields):
     sources = tack.empty((count,), data.id_dtype)
     for group in groups:
         table = np.asarray(tables[int(group.shape.ID)], np.int32)
-        _split_cells(group.view(), _as_field(table.reshape(-1), tack.i32), len(table), width,
-                     starts, connectivity, sources)
+        _split_cells(group.view(), _table(("pieces", kind, int(group.shape.ID)), table),
+                     len(table), width, starts, connectivity, sources)
     return _pieces_topology(data, connectivity, sources, count, shape, width, fields)

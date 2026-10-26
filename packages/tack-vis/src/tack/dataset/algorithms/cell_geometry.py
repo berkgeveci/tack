@@ -2,11 +2,9 @@
 
 from typing import NamedTuple
 
-import numpy as np
-
 import tack
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _measure_unit, _vectors
+from tack.dataset.algorithms._common import _measure_unit, _table, _vectors
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -171,7 +169,7 @@ def cell_geometry(data):
         elif group.count and group.shape.DIMENSION < data.topology.dimension and \
                 group.shape in _ROUND:
             _corner_polygon_geometry(data.domain_view("cells", group),
-                                     tack.array(np.array(_ROUND[group.shape], np.int32)),
+                                     _table(("round", group.shape), _ROUND[group.shape]),
                                      volumes, centroids)
         elif group.count and group.shape.DIMENSION == 2:
             _polygon_geometry(data.domain_view("cells", group), volumes, centroids)

@@ -1,6 +1,5 @@
 """``clip``: the part of ``data`` where ``by`` -- point data (a field or its name) or an implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or with ``inside`` below it (inside an implicit function's region): Viskores' ClipWithField and (``value`` 0) ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their shape; cut cells become the pieces their case lists. Points are the kept corners, the crossings on cut edges (merged across cells) and centroid points; point data is interpolated onto them, cell data goes to each piece."""
 
-import numpy as np
 
 import tack
 from tack import arrays
@@ -14,13 +13,14 @@ from tack.dataset.algorithms._common import (
     _field,
     _floating_dtype,
     _in_unit_of,
+    _table,
 )
 from tack.dataset.algorithms.implicit_values import implicit_values
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.carry import Interpolate, Pieces, _point_values, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
-from tack.dataset.topology import UnstructuredTopology, _as_field
+from tack.dataset.topology import UnstructuredTopology
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['clip']
@@ -40,6 +40,21 @@ _KINDS = 5            # cells, connectivity, records, centroids, centroid member
 # Entries of any kind one cell can make, at most: a bound for the output's ids.
 _MOST = 64
 
+# Cells up to which one thread scans every kind's counts (``_scan_kinds``).
+_SERIAL_KINDS = 2048
+
+
+@tack.kernel
+def _scan_kinds(counts, starts, sums, n):
+    # Each kind's exclusive scan of the cells' counts, in one thread, as a
+    # vector of the kinds, and their totals.
+    for i in range(1):
+        running = starts[0] * 0
+        for c in range(n):
+            starts[c] = running
+            running += counts[c]
+        sums[0] = running
+
 
 def _shape_tables(shape_id, invert):
     """``(data, cases, edges, remap, whole_type, whole_order)`` for one shape: the
@@ -52,11 +67,11 @@ def _shape_tables(shape_id, invert):
     n = len(remap) if remap else {1: 1, 3: 2, 5: 3, 9: 4, 10: 4, 12: 8, 13: 6, 14: 5}[table]
     remap = remap or list(range(n))
     whole_order = list(range(n)) if shape_id == int(shapes.WEDGE) else remap
-    return (_as_field(np.asarray(tables.DATA[invert], np.int32), tack.i32),
-            _as_field(np.asarray(tables.CASES[invert][table], np.int32), tack.i32),
-            _as_field(np.asarray(tables.EDGES[table] or [0, 0], np.int32), tack.i32),
-            _as_field(np.asarray(remap, np.int32), tack.i32), table,
-            _as_field(np.asarray(whole_order, np.int32), tack.i32))
+    return (_table(("clip data", invert), tables.DATA[invert]),
+            _table(("clip cases", invert, table), tables.CASES[invert][table]),
+            _table(("clip edges", table), tables.EDGES[table] or [0, 0]),
+            _table(("clip remap", shape_id), remap), table,
+            _table(("clip whole", shape_id), whole_order))
 
 
 @tack.kernel
@@ -289,18 +304,24 @@ def clip(data, by, value=0.0, inside=False, fields=None):
         _clip_counts(group.view(), values, float(value), invert, table, cases, remap, counts)
     idt = data.id_dtype
     odt = ids.for_output(data, _MOST * n)
-    totals, parts = [], []
-    for kind in range(_KINDS):
-        part = tack.empty((n,), tack.i32)
-        starts = tack.empty((n,), odt)
-        if n:
-            _split_counts(counts, kind, part)
-        totals.append(exclusive_scan(part, starts, n) if n else 0)
-        parts.append(starts)
-    n_cells, n_conn, n_records, n_centroids, n_members = totals
     starts = tack.empty((n,), tack.vec(_KINDS, odt))
-    if n:
+    if n <= _SERIAL_KINDS:
+        # A small mesh: every kind's scan in one thread, one launch and one read,
+        # where the parallel scans below are eleven launches.
+        sums = tack.empty((1,), tack.vec(_KINDS, odt))
+        if n:
+            _scan_kinds(counts, starts, sums, n)
+        totals = [int(v) for v in sums.numpy().reshape(-1)] if n else [0] * _KINDS
+    else:
+        totals, parts = [], []
+        for kind in range(_KINDS):
+            part = tack.empty((n,), tack.i32)
+            kind_starts = tack.empty((n,), odt)
+            _split_counts(counts, kind, part)
+            totals.append(exclusive_scan(part, kind_starts, n))
+            parts.append(kind_starts)
         _join_starts(*parts, starts)
+    n_cells, n_conn, n_records, n_centroids, n_members = totals
 
     types = tack.empty((n_cells,), tack.u8)
     offsets = tack.zeros((n_cells + 1,), odt)
