@@ -25,7 +25,7 @@ import atexit
 import math
 import threading
 import weakref
-from collections import deque
+from collections import OrderedDict, deque
 
 import numpy as np
 
@@ -123,7 +123,9 @@ class _BufferPool:
     def __init__(self, limit):
         self.limit = limit
         self.held = 0
-        self._free = {}
+        self._by_capacity = {}            # capacity -> tokens, the latest last
+        self._entries = OrderedDict()     # token -> (capacity, buffer), the oldest first
+        self._next = 0
         self._lock = threading.Lock()
 
     @staticmethod
@@ -135,22 +137,34 @@ class _BufferPool:
 
     def take(self, capacity):
         with self._lock:
-            free = self._free.get(capacity)
-            if not free:
+            tokens = self._by_capacity.get(capacity)
+            if not tokens:
                 return None
+            _, buffer = self._entries.pop(tokens.pop())
             self.held -= capacity
-            return free.pop()
+            return buffer
 
     def give(self, buffer, capacity):
+        """Keep ``buffer``; past the limit, let Metal free the oldest kept, so
+        the sizes a program uses now stay (holding on to the first ones kept
+        once filled the pool with a pipeline's earlier temporaries, and the
+        next filter's went back to Metal)."""
+        if capacity > self.limit:
+            return
         with self._lock:
-            if self.held + capacity > self.limit:
-                return                            # let Metal free it
-            self._free.setdefault(capacity, []).append(buffer)
+            token, self._next = self._next, self._next + 1
+            self._entries[token] = (capacity, buffer)
+            self._by_capacity.setdefault(capacity, []).append(token)
             self.held += capacity
+            while self.held > self.limit:
+                oldest, (size, _) = self._entries.popitem(last=False)
+                self._by_capacity[size].remove(oldest)
+                self.held -= size
 
     def clear(self):
         with self._lock:
-            self._free.clear()
+            self._by_capacity.clear()
+            self._entries.clear()
             self.held = 0
 
 
