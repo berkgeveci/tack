@@ -2125,6 +2125,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/14-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Communicate Between Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -17621,7 +17649,11 @@ the values' width.</p>
 <p><code>tack.communication</code> moves data between blocks -- units of work with global
 ids, each on a device, such as the pieces of a partitioned dataset -- and
 combines values over them. <code>World()</code> is this process; its blocks may be on any
-of its devices.</p>
+of its devices. The Visualization Guide's
+<a href="../../vis-guide/14-communication/">Communicate Between Blocks</a> builds an
+algorithm on it step by step, and the
+<a href="../../contracts/runtime-api/#communication-between-blocks">Runtime API contract</a>
+says what it guarantees.</p>
 
 
 <div class="doc doc-object doc-class">
@@ -17795,7 +17827,8 @@ then rank 1's, as VTK numbers a partitioned dataset's pieces across ranks.
 
     <div class="doc doc-contents ">
 
-        <p>The rank holding block <code>gid</code>.</p>
+        <p>The rank holding block <code>gid</code>, any block's: global ids run over rank 0's
+blocks, then rank 1's, and so on.</p>
 
 
             <details class="mkdocstrings-source">
@@ -17803,8 +17836,10 @@ then rank 1's, as VTK numbers a partitioned dataset's pieces across ranks.
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">42</span>
 <span class="normal">43</span>
 <span class="normal">44</span>
-<span class="normal">45</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rank_of</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gid</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;The rank holding block ``gid``.&quot;&quot;&quot;</span>
+<span class="normal">45</span>
+<span class="normal">46</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rank_of</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gid</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The rank holding block ``gid``, any block&#39;s: global ids run over rank 0&#39;s</span>
+<span class="sd">    blocks, then rank 1&#39;s, and so on.&quot;&quot;&quot;</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">_check_gid</span><span class="p">(</span><span class="n">gid</span><span class="p">,</span> <span class="s2">&quot;block&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_starts</span><span class="p">,</span> <span class="n">gid</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;right&quot;</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span>
 </code></pre></div></td></tr></table></div>
@@ -17826,15 +17861,18 @@ then rank 1's, as VTK numbers a partitioned dataset's pieces across ranks.
 
     <div class="doc doc-contents ">
 
-        <p>The <code>tack.Device</code> of local block <code>gid</code>.</p>
+        <p>The <code>tack.Device</code> of block <code>gid</code>, one of this rank's: where its arrays
+are, sent and received. <code>ValueError</code> for another rank's block.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_blocks.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gid</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;The `tack.Device` of local block ``gid``.&quot;&quot;&quot;</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gid</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The `tack.Device` of block ``gid``, one of this rank&#39;s: where its arrays</span>
+<span class="sd">    are, sent and received. ``ValueError`` for another rank&#39;s block.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">as_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend</span><span class="p">(</span><span class="n">gid</span><span class="p">))</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -17869,9 +17907,7 @@ arrays themselves, so a sender must not write to what it sent.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_blocks.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 74</span>
-<span class="normal"> 75</span>
-<span class="normal"> 76</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 76</span>
 <span class="normal"> 77</span>
 <span class="normal"> 78</span>
 <span class="normal"> 79</span>
@@ -17895,7 +17931,9 @@ arrays themselves, so a sender must not write to what it sent.</p>
 <span class="normal"> 97</span>
 <span class="normal"> 98</span>
 <span class="normal"> 99</span>
-<span class="normal">100</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">exchange</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outgoing</span><span class="p">):</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">exchange</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outgoing</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Send messages between blocks and return what each block received.</span>
 
 <span class="sd">    ``outgoing`` is ``{source: {destination: message}}``: for blocks on this</span>
@@ -17948,16 +17986,16 @@ are small Python objects (over MPI they are pickled).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_blocks.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">102</span>
-<span class="normal">103</span>
-<span class="normal">104</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">104</span>
 <span class="normal">105</span>
 <span class="normal">106</span>
 <span class="normal">107</span>
 <span class="normal">108</span>
 <span class="normal">109</span>
 <span class="normal">110</span>
-<span class="normal">111</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">all_gather</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">all_gather</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Every block&#39;s value, a list indexed by global id, on every rank.</span>
 
 <span class="sd">    ``values`` is ``{gid: value}`` for every block on this rank; the values</span>
@@ -17995,9 +18033,7 @@ the blocks are assigned.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_blocks.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">113</span>
-<span class="normal">114</span>
-<span class="normal">115</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">115</span>
 <span class="normal">116</span>
 <span class="normal">117</span>
 <span class="normal">118</span>
@@ -18013,7 +18049,9 @@ the blocks are assigned.</p>
 <span class="normal">128</span>
 <span class="normal">129</span>
 <span class="normal">130</span>
-<span class="normal">131</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">all_reduce</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">):</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">all_reduce</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``values`` (``{gid: number or NumPy array}``, every block on this rank)</span>
 <span class="sd">    combined over every block by ``op`` (``&quot;sum&quot;``, ``&quot;min&quot;`` or ``&quot;max&quot;``).</span>
 
@@ -18059,9 +18097,7 @@ a global numbering starts.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_blocks.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">133</span>
-<span class="normal">134</span>
-<span class="normal">135</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">135</span>
 <span class="normal">136</span>
 <span class="normal">137</span>
 <span class="normal">138</span>
@@ -18070,7 +18106,9 @@ a global numbering starts.</p>
 <span class="normal">141</span>
 <span class="normal">142</span>
 <span class="normal">143</span>
-<span class="normal">144</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">exclusive_scan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">counts</span><span class="p">):</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">exclusive_scan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">counts</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each block&#39;s offset, the sum of the counts of the blocks before it:</span>
 <span class="sd">    ``({gid: offset}, total)`` for the blocks on this rank, from ``counts``</span>
 <span class="sd">    (``{gid: int}``, every block on this rank) -- where each block&#39;s share of</span>
@@ -18112,9 +18150,7 @@ of <code>r</code> finds every block within <code>r</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/communication/_blocks.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">146</span>
-<span class="normal">147</span>
-<span class="normal">148</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">148</span>
 <span class="normal">149</span>
 <span class="normal">150</span>
 <span class="normal">151</span>
@@ -18143,7 +18179,9 @@ of <code>r</code> finds every block within <code>r</code>.</p>
 <span class="normal">174</span>
 <span class="normal">175</span>
 <span class="normal">176</span>
-<span class="normal">177</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">link_by_bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">boxes</span><span class="p">,</span> <span class="n">margin</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">link_by_bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">boxes</span><span class="p">,</span> <span class="n">margin</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each block&#39;s neighbours: ``{gid: [other gids]}`` for the blocks on this</span>
 <span class="sd">    rank, every block whose box overlaps or touches its box grown by</span>
 <span class="sd">    ``margin`` on every side.</span>

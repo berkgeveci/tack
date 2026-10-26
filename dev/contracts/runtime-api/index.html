@@ -2125,6 +2125,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/14-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Communicate Between Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3247,6 +3275,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#communication-between-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Communication between blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#inspection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4115,6 +4154,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#communication-between-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Communication between blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#inspection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4921,6 +4971,104 @@ context, or importing while the default Level Zero device is in one,
 raises <code>RuntimeError</code>. The
 check is necessary because the driver accepts pointers from any context.
 See <a href="../../design/interoperability/">Interoperability</a>.</p>
+<h2 id="communication-between-blocks">Communication between blocks<a class="headerlink" href="#communication-between-blocks" title="Permanent link">&para;</a></h2>
+<p>Defined in <code>packages/tack-core/src/tack/communication/</code>. A guide:
+<a href="../../vis-guide/14-communication/">Communicate Between Blocks</a>.</p>
+<p><strong>Blocks and worlds.</strong> <code>Blocks(devices, world=None)</code> holds this rank's
+blocks, one per entry of <code>devices</code>. Global ids run over every rank's
+blocks, contiguous by rank (rank 0's first), and <code>Blocks.local</code> is the
+range of this rank's. <code>World()</code> is one process; <code>World(comm, gpu_aware=False)</code>
+takes an mpi4py communicator, or any object with <code>Dup</code>, <code>Get_rank</code>,
+<code>Get_size</code>, <code>allgather</code>, <code>alltoall</code>, <code>Isend</code> and <code>Irecv</code>, and communicates
+on <code>comm.Dup()</code>, so its messages never meet the caller's. Tack imports no
+MPI module.</p>
+<ul>
+<li><strong>Collective.</strong> Every call -- the <code>Blocks</code>, <code>Plan</code> and <code>Routing</code>
+  constructors, <code>exchange</code>, <code>all_gather</code>, <code>all_reduce</code>, <code>exclusive_scan</code>,
+  <code>link_by_bounds</code>, <code>Plan.run</code>, <code>Routing.send</code>, <code>Routing.reply</code>,
+  <code>sort_by_key</code> -- is made by every rank of the world, in the same order.
+  Arguments keyed by global id name only this rank's blocks; the
+  collectives and <code>Routing</code> need an entry for every one of them.</li>
+<li><strong>Independent of the assignment.</strong> <code>all_reduce</code>, <code>all_gather</code> and
+  <code>exclusive_scan</code> combine in order of global id, so their results, a
+  floating-point sum's bits included, do not depend on which rank holds
+  which block. <code>exchange</code> returns each block's messages in order of source;
+  <code>sort_by_key</code> and <code>Routing</code> decide by global id too.</li>
+<li><strong>Exchange.</strong> <code>exchange({source: {destination: {name: Array}}})</code> returns
+  <code>{destination: {source: {name: Array}}}</code> for every block on this rank,
+  an empty dict where nothing came. A sent array is on its source block's
+  device; a received one on its destination block's, the sent array itself
+  where that device addresses its memory, so a sender must not write to
+  what it sent. Element types and shapes arrive as sent. Every MPI request
+  is complete when <code>exchange</code> returns.</li>
+<li><strong>Transport.</strong> Between ranks, a world stages each rank pair's arrays
+  through one host buffer. With <code>gpu_aware=True</code> it hands MPI the arrays
+  themselves through DLPack, or a device copy in
+  <code>Backend.allocate_mpi_array</code>'s memory where <code>Backend.mpi_direct</code> says
+  the MPI may not take them (CUDA's and HIP's stream-ordered pools), and
+  receives into such memory. A GPU-aware MPI uses the device current when
+  MPI starts: make the rank's device before importing <code>mpi4py.MPI</code>.</li>
+<li><strong>Plans.</strong> <code>Plan(blocks, sends, receives)</code> checks, across ranks, that
+  every send has a receive of its length and the other way round.
+  <code>Plan.run(values)</code> writes received elements in place and leaves the
+  others; a block sending to itself reads before anything is written.</li>
+<li><strong>Routing.</strong> A point is asked of every block whose box holds it, with a
+  relative slack of 1e-6, and goes to the block whose <code>holds</code> gives the
+  highest rank, the lowest block on a tie, or nowhere (-1) where every
+  rank is 0. Coordinates travel as f64 bits. <code>send</code> delivers in order of
+  origin block and then of the points there; <code>reply</code> answers in that
+  order, zero for a point that went nowhere.</li>
+<li><strong>Sorting.</strong> <code>sort_by_key</code> takes one-dimensional <code>i32</code>, <code>u32</code>, <code>i64</code> or
+  <code>u64</code> keys of one type on every block. Block 0 ends with the smallest
+  keys, each block ascending; every copy of a key ends on one block; the
+  sort is stable, by block and then index.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Exception</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A global id out of range, or naming another rank's block where this rank's is needed</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td>A collective or <code>Routing</code> missing an entry for one of this rank's blocks</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td>A message or value that is not a dict of names to Tack arrays, or a structure of arrays</td>
+<td><code>TypeError</code></td>
+</tr>
+<tr>
+<td>An array not on its block's device</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td>A <code>Plan</code> whose sends and receives disagree in length across blocks</td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td><code>Plan.run</code> with element types that differ between blocks</td>
+<td><code>TypeError</code></td>
+</tr>
+<tr>
+<td><code>sort_by_key</code> keys of another type, or of different types on different blocks</td>
+<td><code>TypeError</code></td>
+</tr>
+<tr>
+<td><code>all_reduce</code> with an operation other than <code>"sum"</code>, <code>"min"</code> or <code>"max"</code></td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td><code>World(gpu_aware=True)</code> without a communicator</td>
+<td><code>ValueError</code></td>
+</tr>
+</tbody>
+</table>
 <h2 id="inspection">Inspection<a class="headerlink" href="#inspection" title="Permanent link">&para;</a></h2>
 <h3 id="tackinspectkernel-args-modesource"><code>tack.inspect(kernel, *args, mode="source")</code><a class="headerlink" href="#tackinspectkernel-args-modesource" title="Permanent link">&para;</a></h3>
 <p>Defined in <code>packages/tack-core/src/tack/lang/inspect_kernel.py</code>. Runs the
