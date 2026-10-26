@@ -283,3 +283,41 @@ def test_a_vtk_grid_built_with_implicit_arrays_stays_implicit():
     explicit = vtkConstantArray[np.uint8](2, VTK_TETRA)
     grid.cells = (explicit, grid.cells)
     assert _kinds(vtk_to_dataset(grid).topology)[0] == "ConstantArray"
+
+
+def _hexes(n=3):
+    """A grid of n^3 hexahedra as an unstructured mesh: points and connectivity."""
+    i, j, k = np.meshgrid(*(np.arange(n + 1),) * 3, indexing="ij")
+    points = np.stack([i, j, k], -1).transpose(2, 1, 0, 3).reshape(-1, 3).astype(np.float32)
+    def pid(a, b, c):
+        return a + (n + 1) * (b + (n + 1) * c)
+    rows = [[pid(a, b, c), pid(a + 1, b, c), pid(a + 1, b + 1, c), pid(a, b + 1, c),
+             pid(a, b, c + 1), pid(a + 1, b, c + 1), pid(a + 1, b + 1, c + 1), pid(a, b + 1, c + 1)]
+            for c in range(n) for b in range(n) for a in range(n)]
+    return points, np.asarray(rows, np.int32).reshape(-1)
+
+
+def test_one_shape_cells_share_their_connectivity_as_rows():
+    """Cells of one shape in order, k points each from k * c (counting offsets):
+    the stored connectivity is the shape group's rows, not gathered into a copy,
+    and the filters compute as with stored offsets, which gather."""
+    points, conn = _hexes()
+    n = len(conn) // 8
+    types, offsets = uniform_cells(12, n, tack.i32)
+    connectivity = tack.array(conn)
+    shared = td.DataSet(td.UnstructuredTopology(types, offsets, connectivity), points)
+    stored = td.DataSet(td.UnstructuredTopology(np.full(n, 12, np.uint8),
+                                                np.arange(0, 8 * n + 1, 8, dtype=np.int32),
+                                                conn.copy()), points)
+    rows = shared.topology.groups()[0].args[0]
+    assert rows._buffer is connectivity._buffer and rows.shape == (n, 8)
+    gathered = stored.topology.groups()[0].args[0]
+    assert gathered._buffer is not stored.topology.connectivity._buffer
+    np.testing.assert_array_equal(rows.numpy(), gathered.numpy())
+    for data in (shared, stored):
+        data.fields["h"] = td.Field(td.H1(data), tack.array(points[:, 2] + 0.1 * points[:, 0]))
+    for call in (lambda d: td.algorithms.cell_geometry(d)[0].values,
+                 lambda d: td.algorithms.gradients(d, "h").values):
+        np.testing.assert_array_equal(call(shared).numpy(), call(stored).numpy())
+    a, b = td.contour(shared, "h", 1.3), td.contour(stored, "h", 1.3)
+    np.testing.assert_array_equal(a.positions(), b.positions())
