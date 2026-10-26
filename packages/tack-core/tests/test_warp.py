@@ -415,3 +415,26 @@ def test_workgroups_on_cuda(warp):
     np.testing.assert_array_equal(argsort(tack.array(keys, device=warp)).numpy(),
                                   np.argsort(keys, kind="stable"))
 
+
+def _table_reader(values):
+    """A kernel reading ``values`` at a runtime index: each call's kernel has the
+    same name and code, and its own table."""
+    table = tack.constant(values, dtype=tack.i32)
+
+    @tack.kernel
+    def read_table(out):
+        for i in range(out.shape[0]):
+            out[i] = table[i]
+    return read_table
+
+
+def test_kernels_whose_tables_differ_keep_their_own(warp):
+    """The generated code names a table, not its values, so two kernels reading
+    tables that differ only in their values have the same source: the second
+    got the first's compiled kernel, tables included (a voxel's faces read as
+    a hexahedron's, 60 faces for 52)."""
+    out = tack.empty(6, tack.i32, device=warp)
+    _table_reader((0, 1, 4, 9, 16, 25))(out)
+    np.testing.assert_array_equal(out.numpy(), [0, 1, 4, 9, 16, 25])
+    _table_reader((0, 1, 8, 27, 64, 125))(out)
+    np.testing.assert_array_equal(out.numpy(), [0, 1, 8, 27, 64, 125])

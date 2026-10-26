@@ -117,6 +117,18 @@ class WarpBuffer(DeviceBuffer):
         return math.prod(self._shape) * self._dtype.numpy_dtype.itemsize
 
 
+class _WarpVariant:
+    """A compiled variant: the Warp kernel, its generated source and its tables."""
+
+    __slots__ = ("kernel", "tack_source", "tables", "table_addresses")
+
+    def __init__(self, kernel, source, tables):
+        self.kernel = kernel
+        self.tack_source = source
+        self.tables = tables
+        self.table_addresses = [t.ptr for t in tables]
+
+
 class WarpBackend(GPUBackend):
     """Tack on Warp: Warp compiles and launches every kernel."""
 
@@ -188,34 +200,34 @@ class WarpBackend(GPUBackend):
         return self._compile_kernel(typed), None, None
 
     def _compile_kernel(self, typed_ir):
-        """The ``wp.Kernel`` for ``typed_ir``, defined from generated source.
+        """The ``wp.Kernel`` for ``typed_ir``, defined from generated source, with
+        the variant's constant tables.
 
         Warp reads a kernel's source through `inspect`, so the source is
-        registered with `linecache` under a name of its own; the module
-        name is unique too, so each variant is a Warp module of its own.
+        registered with `linecache` under a name of its own. Each distinct
+        source is defined once: its Warp module is named by its content, and
+        defining the same kernel again replaced the first in that module
+        (face derivations then failed their orientation check after other
+        cell shapes' ran). Variants with the same code, which differ in what
+        the code does not depend on or in their tables' values (the source
+        names a table, not its contents: a hexahedron's faces and a voxel's
+        read the same), share the kernel and keep their own tables.
         """
         wp = _warp()
         source, entry, tables = generate_warp_source(typed_ir)
         kernel = self._kernels.get(source)
-        if kernel is not None:
-            # Two variants that differ only in what the code does not depend
-            # on (a CPU-only disjointness, a dimension it never reads) compiled
-            # the same module twice.
-            return kernel
-        number = next(_modules)
-        filename = f"<tack-warp-{number}>"
-        linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
-        namespace = {"__name__": f"tack_warp_{number}"}
-        exec(compile(source, filename, "exec"), namespace)
-        kernel = namespace[entry]
-        kernel.tack_source = source
-        self._kernels[source] = kernel
+        if kernel is None:
+            number = next(_modules)
+            filename = f"<tack-warp-{number}>"
+            linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
+            namespace = {"__name__": f"tack_warp_{number}"}
+            exec(compile(source, filename, "exec"), namespace)
+            kernel = self._kernels[source] = namespace[entry]
         # Constant tables, made once on the device and passed at every launch.
-        kernel.tack_tables = [
+        return _WarpVariant(kernel, source, [
             wp.array(np.asarray(values, dtype=dtype.numpy_dtype),
                      dtype=getattr(wp, _WARP_TYPES[dtype][3:]), device=self.wp_device)
-            for dtype, values in tables]
-        return kernel
+            for dtype, values in tables])
 
     def _launch(self, compiled, kernel_args, loop_end, extents):
         from tack.lang.array import Array
@@ -223,9 +235,9 @@ class WarpBackend(GPUBackend):
         inputs = [a._buffer.address if isinstance(a, Array) else a for a in kernel_args]
         inputs.append(loop_end)
         inputs.extend(extents)
-        inputs.extend(t.ptr for t in compiled.tack_tables)
+        inputs.extend(compiled.table_addresses)
         # Blocks of 256 lanes: Tack's workgroup size, and Warp's default.
-        _warp().launch(compiled, dim=loop_end, inputs=inputs, device=self.wp_device,
+        _warp().launch(compiled.kernel, dim=loop_end, inputs=inputs, device=self.wp_device,
                        block_dim=256)
 
     def _launch_guard(self, variant):
