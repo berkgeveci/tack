@@ -4,6 +4,7 @@ one mesh, pyramids and wedges beside hexahedra, polygons. Measures held to
 Viskores' own expected values (``UnitTestCellMeasuresFilter``), filters to VTK's,
 and every algorithm run on every dataset, to an answer or a stated refusal."""
 
+import pathlib
 import re
 
 import _viskores_datasets as vd
@@ -90,6 +91,61 @@ def test_as_polyhedra_refuses_inside_out_neighbours():
     level = float(np.median(s))
     assert _measure(td.clip(polyhedra, "s", level)) == pytest.approx(
         _measure(td.clip(data, "s", level)), rel=1e-12)
+
+
+_DATA = pathlib.Path(__file__).parent / "data" / "viskores"
+
+
+def _read(name):
+    from vtkmodules.vtkIOLegacy import vtkDataSetReader
+
+    return vtkDataSetReader(file_name=str(_DATA / name))()
+
+
+@pytest.mark.quick
+def test_contours_of_viskores_files():
+    """``UnitTestContourFilter``'s files. Seven values over the 3D cells of one of
+    every shape (Viskores contours a mesh's highest dimension, as Tack does): 10
+    triangles, VTK's count and points; wedges at the gyroid's zero: 52."""
+    from vtkmodules.vtkFiltersCore import vtkContourFilter
+    from vtkmodules.vtkFiltersExtraction import vtkExtractCellsByType
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    solids = vtkExtractCellsByType()
+    for shape in (vd.TETRA, 11, vd.HEXAHEDRON, vd.WEDGE, vd.PYRAMID):
+        solids.AddCellType(shape)
+    solids = solids(_read("mixed-cell-shapes.vtk"))
+    values = [5.5, 9.5, 11.5, 14.5, 17.5, 20.5, 25.5]
+    with pytest.warns(UserWarning, match="point array and a cell array named 'scalars'"):
+        data = vtk_to_dataset(solids)
+    ours = td.contour(data, "scalars", values)
+    f = vtkContourFilter()
+    for i, value in enumerate(values):
+        f.SetValue(i, value)
+    f.SetInputArrayToProcess(0, 0, 0, 0, "scalars")
+    theirs = f(solids)
+    assert (ours.num_cells, ours.num_points) == (10, theirs.number_of_points) == \
+        (theirs.number_of_cells, theirs.number_of_points)
+    assert _measure(ours) == pytest.approx(_vtk_measure(theirs), rel=1e-6)
+    assert td.contour(vtk_to_dataset(_read("wedge_cells.vtk")), "gyroid", 0.0).num_cells == 52
+
+
+@pytest.mark.quick
+def test_a_point_and_a_cell_array_of_one_name_both_arrive():
+    """VTK keeps point and cell arrays apart; a dataset's fields share one name
+    space. The cell array of ``mixed-cell-shapes.vtk``'s ``scalars`` once
+    replaced the point array, and a contour of it found nothing."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = vd.to_vtk(vd.make_3d_explicit_5())
+    grid.point_data["v"] = np.arange(grid.number_of_points, dtype=np.float64)
+    grid.cell_data["v"] = -np.arange(grid.number_of_cells, dtype=np.float64)
+    with pytest.warns(UserWarning, match="the cell array is the field 'v \\(cells\\)'"):
+        data = vtk_to_dataset(grid)
+    assert isinstance(data.fields["v"].space, td.H1)
+    np.testing.assert_array_equal(data.fields["v"].values.numpy(), np.arange(11))
+    np.testing.assert_array_equal(data.fields["v (cells)"].values.numpy(), [0, -1, -2, -3])
 
 
 #: Where Tack differs from VTK by design: a 2D mesh's surface is its boundary

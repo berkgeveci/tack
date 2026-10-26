@@ -333,6 +333,20 @@ def _attributes_to_fields(attributes, space, float_dtype):
     return fields
 
 
+def _cell_field_name(name, fields):
+    """A cell array's field name: its own, or, where a point array has it (VTK
+    keeps the two apart, a dataset's fields share one namespace), ``"<name>
+    (cells)"``, with a warning, so neither is lost."""
+    import warnings
+
+    if name not in fields:
+        return name
+    renamed = f"{name} (cells)"
+    warnings.warn(f"VTK has a point array and a cell array named {name!r}; the cell "
+                  f"array is the field {renamed!r}", stacklevel=4)
+    return renamed
+
+
 def _global_ids(attributes):
     """An attributes object's ``GlobalIds`` array as i64 ids, or ``None``."""
     import numpy as np
@@ -412,7 +426,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
 
     Points and floating-point arrays become fields of ``dtype``; integer
     arrays keep their type. Named point data become ``H1`` fields and named
-    cell data ``Constant`` fields; a ``vtkGhostType`` array becomes the ghost marks
+    cell data ``Constant`` fields (a cell array named as a point array is
+    ``"<name> (cells)"``, with a warning); a ``vtkGhostType`` array becomes the ghost marks
     (``data.ghosts``), not a field; a constant or affine array (VTK's implicit
     arrays) stays implicit, as a ``ConstantArray`` or ``CountingArray``. An
     unstructured grid's cells must all be linear shapes -- unless it holds
@@ -562,7 +577,8 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
                         f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
     fields = _attributes_to_fields(grid.point_data, H1(topology), dtype)
-    fields.update(_attributes_to_fields(grid.cell_data, Constant(topology), dtype))
+    for name, field in _attributes_to_fields(grid.cell_data, Constant(topology), dtype).items():
+        fields[_cell_field_name(name, fields)] = field
     if isinstance(grid, vtkRectilinearGrid):
         unit = _units_label(grid.x_coordinates)
     elif isinstance(grid, vtkImageData):

@@ -359,6 +359,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   pyramid written as a hexahedron) leave out its pieces with a repeated
   point, which measure nothing; VTK keeps them, but their repeated faces made
   every filter that derives faces refuse the output.
+- `vtk_to_dataset` of a grid with a point array and a cell array of one name
+  (VTK keeps them apart) kept only the cell array, so a contour of the name
+  found nothing: the cell array is now the field `"<name> (cells)"`, with a
+  warning. Viskores' `mixed-cell-shapes.vtk` has such a pair.
 - Point filters on GPUs (the validation round on mustafar-linux, headroom
   and illyad, 2026-10-25):
   - `PointLocator.neighbors` and `nearest` ran on the default device when no
