@@ -435,7 +435,7 @@ def from_simdata(ds):
         types = from_warp(handle.cell_types)
         present = {int(t) for t in np.unique(types.numpy())}
         if 42 in present:
-            with device:                    # built on the host, then on the Warp device
+            with device:                    # its new arrays on the Warp device
                 topology = _polyhedra_from_simdata(handle, PolyhedralTopology, n)
         else:
             topology = UnstructuredTopology(types, from_warp(handle.cell_offsets),
@@ -452,11 +452,100 @@ def from_simdata(ds):
     return data
 
 
+# Polyhedra on the device. warp-simdata keeps a table of faces and, per cell,
+# the faces it has with an orientation each (+1 the loop is outward for that
+# cell, -1 inward; 0 if never computed, taken as +1). Tack keeps each face
+# once, its loop outward for its side-0 cell, and a side per cell entry.
+
+# The summary's entries: some face has two cells; some face is irregular (no
+# cell, more than two, or seen outward or inward twice); some face is seen
+# only from inside (its loop must be reversed).
+_SHARED, _IRREGULAR, _FLIPS = range(3)
+
+
+@tack.kernel
+def _count_face_slots(cell_faces, orientation, outward, inward):
+    for s in range(cell_faces.shape[0]):
+        if orientation[s] < 0:
+            tack.atomic_add(inward, cell_faces[s], 1)
+        else:
+            tack.atomic_add(outward, cell_faces[s], 1)
+
+
+@tack.kernel
+def _face_summary(outward, inward, summary):
+    for f in range(outward.shape[0]):
+        seen = outward[f] + inward[f]
+        if seen == 2:
+            tack.atomic_max(summary, 0, 1)
+        if seen == 0 or seen > 2 or outward[f] > 1 or inward[f] > 1:
+            tack.atomic_max(summary, 1, 1)
+        if outward[f] == 0 and inward[f] == 1:
+            tack.atomic_max(summary, 2, 1)
+
+
+@tack.kernel
+def _slot_sides(cell_faces, orientation, outward, sides):
+    # Side 0 where the loop is outward for the cell, or will be once reversed
+    # (a face no cell sees outward).
+    for s in range(cell_faces.shape[0]):
+        if orientation[s] >= 0 or outward[cell_faces[s]] == 0:
+            sides[s] = 0
+        else:
+            sides[s] = 1
+
+
+@tack.kernel
+def _reverse_unseen(face_offsets, face_points, outward, out):
+    # Each face's loop, walked backwards from the same first point where no cell
+    # sees it outward (as dataset_to_vtk writes a side-1 copy), else as it is.
+    for f in range(face_offsets.shape[0] - 1):
+        a = face_offsets[f]
+        n = face_offsets[f + 1] - a
+        for i in range(n):
+            if outward[f] == 0:
+                out[a + i] = face_points[a + (n - i) % n]
+            else:
+                out[a + i] = face_points[a + i]
+
+
 def _polyhedra_from_simdata(handle, PolyhedralTopology, num_points):
-    """An unstructured grid of polyhedra as a ``PolyhedralTopology``: each cell's
-    faces walked outward by warp-simdata's face orientations (+1 keeps a face
-    loop, -1 reverses it), as VTK gives them, so the faces match as
-    ``from_cell_faces`` matches VTK's. Read on the host."""
+    """An unstructured grid of polyhedra as a ``PolyhedralTopology``.
+
+    On the device when warp-simdata's faces are shared between cells (CGNS
+    ``NFACE_n``, OpenFOAM): its face and cell-face arrays are Tack's, shared,
+    the sides come from its face orientations, and only faces no cell sees
+    outward are reversed, into a new face-points array (none, nothing copied).
+    A grid whose faces are each cell's own copies (as VTK files have them), or
+    irregular, is matched by point sets on the host (``from_cell_faces``)."""
+    face_offsets, face_points = from_warp(handle.faces_offsets), from_warp(handle.faces_connectivity)
+    cell_offsets = from_warp(handle.face_locations_offsets)
+    cell_faces = from_warp(handle.face_locations_connectivity)
+    orientation = from_warp(handle.face_orientations)
+    num_faces, slots = face_offsets.shape[0] - 1, cell_faces.shape[0]
+    outward, inward = tack.zeros((num_faces,), tack.i32), tack.zeros((num_faces,), tack.i32)
+    summary = tack.zeros((3,), tack.i32)
+    if slots:
+        _count_face_slots(cell_faces, orientation, outward, inward)
+    if num_faces:
+        _face_summary(outward, inward, summary)
+    found = summary.numpy()
+    if found[_IRREGULAR] or not found[_SHARED]:
+        return _polyhedra_on_host(handle, PolyhedralTopology, num_points)
+    sides = tack.empty((slots,), tack.u8)
+    _slot_sides(cell_faces, orientation, outward, sides)
+    if found[_FLIPS]:
+        loops = tack.empty_like(face_points)
+        _reverse_unseen(face_offsets, face_points, outward, loops)
+        face_points = loops
+    return PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, sides,
+                              num_points=num_points)
+
+
+def _polyhedra_on_host(handle, PolyhedralTopology, num_points):
+    """Each cell's faces walked outward by warp-simdata's face orientations (+1
+    keeps a face loop, -1 reverses it), as VTK gives them, so the copies match
+    by point set as ``from_cell_faces`` matches VTK's. Read on the host."""
     face_offsets = handle.faces_offsets.numpy()
     face_points = handle.faces_connectivity.numpy()
     where = handle.face_locations_offsets.numpy()

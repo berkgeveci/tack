@@ -156,6 +156,89 @@ def test_polyhedra_keep_their_shared_faces(device):
     _same_fields(poly, back)
 
 
+def _simdata_polyhedra(poly, loops_of_cell, device):
+    """A warp-simdata unstructured grid of polyhedra: each cell's faces from
+    ``loops_of_cell(c)`` (a list of (face id, loop)), faces numbered by id."""
+    from warp_simdata.data_models.vtk import unstructured_grid
+    t = poly.topology
+    faces = {}
+    locations, location_offsets = [], [0]
+    for c in range(t.num_cells):
+        for f, loop in loops_of_cell(c):
+            faces[f] = loop
+            locations.append(f)
+        location_offsets.append(len(locations))
+    face_offsets = np.concatenate([[0], np.cumsum([len(faces[f]) for f in range(len(faces))])])
+    face_points = np.concatenate([faces[f] for f in range(len(faces))])
+    point_offsets, point_ids = (a.numpy() for a in t.cell_points())
+    def ints(a):
+        return wp.array(np.asarray(a, np.int32), dtype=wp.int32, device=device)
+    return unstructured_grid.create_dataset(
+        wp.array(poly.positions().astype(np.float32), dtype=wp.vec3f, device=device),
+        wp.full(t.num_cells, 42, dtype=wp.uint8, device=device), ints(point_offsets),
+        ints(point_ids), faces_offsets=ints(face_offsets), faces_connectivity=ints(face_points),
+        face_locations_offsets=ints(location_offsets),
+        face_locations_connectivity=ints(locations))
+
+
+def _poly(device):
+    with device:
+        return td.as_polyhedra(_two_hexes_and_a_pyramid())
+
+
+def test_shared_polyhedral_faces_convert_on_the_device(device, wp_device):
+    """Shared faces (as CGNS NFACE_n and OpenFOAM keep them) become Tack's without a
+    copy: warp-simdata's face and cell-face arrays are the topology's."""
+    poly = _poly(device)
+    grid = to_simdata(poly)
+    t = from_simdata(grid).topology
+    assert t.face_points._buffer.address == grid.handle.faces_connectivity.ptr
+    assert t.cell_faces._buffer.address == grid.handle.face_locations_connectivity.ptr
+    assert _boundary(t) == _boundary(poly.topology) and t.num_faces == poly.topology.num_faces
+
+
+def test_a_face_seen_only_from_inside_is_reversed(device, wp_device):
+    """A boundary face wound into its cell: warp-simdata orients it (-1), and the
+    device path reverses its loop, in a new face-points array."""
+    poly = _poly(device)
+    t = poly.topology
+    face_offsets, face_points, cell_offsets, cell_faces, sides = t.arrays()
+    boundary = set(t.faces().boundary().numpy().tolist())
+    reversed_faces = sorted(boundary)[:3]
+
+    def loops(c):
+        out = []
+        for f in cell_faces[cell_offsets[c]:cell_offsets[c + 1]]:
+            ring = face_points[face_offsets[f]:face_offsets[f + 1]]
+            out.append((int(f), ring[::-1] if f in reversed_faces else ring))
+        return out
+    grid = _simdata_polyhedra(poly, loops, wp_device)
+    back = from_simdata(grid)
+    assert back.topology.face_points._buffer.address != grid.handle.faces_connectivity.ptr
+    assert back.topology.cell_faces._buffer.address == grid.handle.face_locations_connectivity.ptr
+    assert _boundary(back.topology) == _boundary(t) and len(td.check_winding(back)) == 0
+
+
+def test_faces_each_cell_has_a_copy_of_are_matched_on_the_host(device, wp_device):
+    """As VTK files keep polyhedra: every cell its own face loops, outward. They
+    are matched by point set, so shared faces come out once."""
+    poly = _poly(device)
+    t = poly.topology
+    face_offsets, face_points, cell_offsets, cell_faces, sides = t.arrays()
+    ids = iter(range(len(cell_faces)))
+
+    def loops(c):
+        out = []
+        for k in range(cell_offsets[c], cell_offsets[c + 1]):
+            f = cell_faces[k]
+            ring = face_points[face_offsets[f]:face_offsets[f + 1]]
+            out.append((next(ids), ring if sides[k] == 0 else np.roll(ring[::-1], 1)))
+        return out
+    back = from_simdata(_simdata_polyhedra(poly, loops, wp_device))
+    assert back.topology.num_faces == t.num_faces
+    assert _boundary(back.topology) == _boundary(t) and len(td.check_winding(back)) == 0
+
+
 def test_pieces_and_collections(device):
     with device:
         pieces = td.split(_with_fields(td.uniform_grid((6, 4, 3))), (2, 1, 1))
