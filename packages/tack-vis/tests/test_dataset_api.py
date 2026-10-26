@@ -1124,7 +1124,7 @@ def _star_of_tetrahedra(n=120):
     more faces than ``_LARGEST``, which sends the derivation to the sort."""
     angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
     ring = np.c_[np.cos(angles), np.sin(angles), np.zeros(n)]
-    points = np.vstack([[0, 0, 0], [0, 0, 1], [0, 0, -1], ring + 3]).astype(np.float64)
+    points = np.vstack([[0, 0, 0], [0, 0, 1], [0, 0, -1], ring + 3]).astype(np.float32)
     cells = []
     for i in range(n):
         a, b = 3 + i, 3 + (i + 1) % n
@@ -1167,7 +1167,7 @@ def test_a_fresh_meshs_surface_is_the_derived_faces_boundary(backend):
     from tack.dataset.algorithms.extract_surface import _fresh_boundary
 
     for make in (lambda: td.tetrahedralize(td.uniform_grid((6, 5, 4))),
-                 lambda: vd.to_tack(vd.make_3d_explicit_zoo()), _star_of_tetrahedra):
+                 lambda: vd.to_tack(vd.make_3d_explicit_zoo(), dtype=tack.f32), _star_of_tetrahedra):
         data = make()
         data.fields["x"] = td.Field(td.H1(data), tack.array(data.positions()[:, 0].astype(np.float32)))
         data.fields["c"] = td.Field(td.Constant(data),
