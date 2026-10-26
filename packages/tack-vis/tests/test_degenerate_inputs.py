@@ -397,3 +397,69 @@ def test_vtk_images_of_one_point_or_none_go_both_ways(backend, dims):
     assert data.num_points == int(np.prod(dims))
     back = dataset_to_vtk(data)
     assert isinstance(back, vtk.vtkImageData) and back.dimensions == dims
+
+
+# ── Every algorithm on degenerate variants of one mesh ─────────────
+
+
+def _variant(name, device):
+    """A small hexahedral mesh (``test_dataset_devices``'), made degenerate."""
+    import test_dataset_devices as devices
+
+    data = devices._hexes(device, n=2 if name == "one cell" else 3)
+    x = data.positions()
+    if name in ("all hidden", "some hidden"):
+        marks = np.zeros(data.num_cells, np.uint8)
+        marks[:: 1 if name == "all hidden" else 2] = td.Ghosts.HIDDENCELL
+        data.ghosts = td.Ghosts(cells=tack.array(marks, device=device))
+    elif name == "NaN values":
+        s = data.fields["s"].values.numpy().copy()
+        s[::3] = np.nan
+        v = data.fields["v"].values.numpy().copy()
+        v[::4] = np.nan
+        data.fields["s"] = td.Field(td.H1(data), tack.array(s, device=device))
+        data.fields["v"] = td.Field(td.H1(data), tack.array(v, tack.vec3(), device=device))
+    elif name in ("coincident points", "far and close"):
+        x = np.full_like(x, 1.0) if name == "coincident points" else \
+            (x.astype(np.float64) * 1e-7 + 1e7).astype(np.float32)
+        data = devices._with_fields(
+            td.DataSet(data.topology, tack.array(x, tack.vec3(), device=device)), device)
+    elif name == "unused points":
+        t = data.topology
+        x = np.vstack([x, [[9, 9, 9], [8, 8, 8]]]).astype(np.float32)
+        data = devices._with_fields(td.DataSet(
+            td.UnstructuredTopology(t.types, t.offsets, t.connectivity, num_points=len(x)),
+            tack.array(x, tack.vec3(), device=device)), device)
+    elif name == "no cells":
+        with device:
+            top = td.UnstructuredTopology(tack.zeros((0,), tack.u8), [0],
+                                          tack.zeros((0,), tack.i32), num_points=len(x))
+            data = td.DataSet(top, tack.array(x, tack.vec3()))
+            data.fields["s"] = td.Field(td.H1(data), tack.array((x ** 2).sum(1)))
+            data.fields["v"] = td.Field(td.H1(data), tack.array(x, tack.vec3()))
+    return data
+
+
+#: What an algorithm may say on these variants: each names what it will not do.
+_STATED = ("is not supported yet",                     # chosen faces among hidden cells
+           "is not finite; pass a finite range",       # histograms of NaN
+           "cell ids lie outside")                     # extract_cells([0, 1]) of fewer
+
+
+@pytest.mark.parametrize("name", ["all hidden", "some hidden", "NaN values", "one cell",
+                                  "coincident points", "far and close", "unused points",
+                                  "no cells"])
+def test_every_algorithm_answers_or_says_why(backend, name):
+    """Every algorithm of the device tests on a mesh made degenerate one way: an
+    answer, or a refusal that names the reason. NaN values once broke the
+    polyhedral contour and clip."""
+    import test_dataset_devices as devices
+
+    failures = []
+    for call, run in devices.CALLS.items():
+        try:
+            run(_variant(name, tack.device(backend)))
+        except Exception as e:                        # sorted below
+            if not any(reason in str(e) for reason in _STATED):
+                failures.append(f"{call}: {type(e).__name__}: {e}")
+    assert not failures, "\n".join(failures)
