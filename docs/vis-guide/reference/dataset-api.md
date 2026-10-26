@@ -1008,7 +1008,7 @@ Integer `magnitude` and `log_values` therefore return floating point fields.
 
 Empty supported filters return valid empty topologies and carry selected fields
 and sets by the same maps as nonempty filters; missing `fields=` names still
-raise `KeyError`. Empty polyline contouring retains the documented refusal.
+raise `KeyError`.
 
 In the table,
 "polyhedral" means `PolyhedralTopology`, "polygonal" `PolygonalTopology`
@@ -1023,7 +1023,7 @@ and "polyline" `PolylineTopology`.
 | `boundary_faces`, `extract_surface` | yes (a 2D mesh's boundary: line cells; by default `extract_surface` passes a 2D mesh's cells through) | yes (the surface is polygonal) | yes (boundary: line cells; by default the polygons pass through) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
-| `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | no (would give points) |
+| `contour`, `slice`, `slice_plane` | yes (`dimension=` 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | yes (`contour`: vertex cells, of point data) |
 | `clip` | yes (with an `H1` geometry) | yes (into polyhedra: faces clipped once, iso-polygons as caps) | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |

@@ -7,6 +7,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `contour(..., dimension=)`: 3, 2 or 1, the cells to contour -- by default
+  the mesh's highest -- each dimension's alone, never mixed as VTK mixes
+  them: the boundary triangles beside a mesh's tetrahedra give lines with
+  `dimension=2`. Contours of lines and polylines (`dimension=1`, or a 1D
+  mesh) are vertex cells at the crossings, a crossing at a point whose value
+  is the level that point once; they were refused. Matched to VTK per
+  dimension on Viskores' `mixed-cell-shapes.vtk`.
 - Voxelization: `td.voxelize(data, grid, fields=None, samples=4)`, each voxel
   of an image the fraction of its volume the data covers and each field's
   mean over it, by sampling through `probe`, so for datasets, pieces, AMR
@@ -368,6 +375,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   ("check_winding"); a NaN is now below every level, as the shape path's
   cases have it, and an inside clip keeps it, so the clipped volumes are the
   shape path's on both sides.
+- `contour` of a 2D mesh with a NaN in the field: the first crossing was
+  found with `< iso` but crossings paired with `>= iso`, so fewer lines were
+  written than counted and the rest held whatever `empty` gave them -- read
+  as indices, a bus error now and then. A NaN is below the level there too.
 - Point filters on GPUs (the validation round on mustafar-linux, headroom
   and illyad, 2026-10-25):
   - `PointLocator.neighbors` and `nearest` ran on the default device when no

@@ -141,6 +141,48 @@ def test_contours_of_viskores_files():
 
 
 @pytest.mark.quick
+def test_contours_by_cell_dimension():
+    """``TestMixedShapes``' input cell dimensions, on the shapes of
+    ``mixed-cell-shapes.vtk`` Tack holds in one topology (its polygon, strip and
+    polyline left out): each dimension's cells contoured alone, as VTK contours
+    those cells -- triangles, lines, vertices -- never mixed; the default is
+    the highest."""
+    from vtkmodules.vtkFiltersCore import vtkContourFilter
+    from vtkmodules.vtkFiltersExtraction import vtkExtractCellsByType
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    by_dimension = {3: (vd.TETRA, 11, vd.HEXAHEDRON, vd.WEDGE, vd.PYRAMID),
+                    2: (vd.TRIANGLE, 8, vd.QUAD), 1: (vd.LINE,), 0: (vd.VERTEX,)}
+    grid = _read("mixed-cell-shapes.vtk")
+
+    def cells(*dimensions):
+        e = vtkExtractCellsByType()
+        for d in dimensions:
+            for shape in by_dimension[d]:
+                e.AddCellType(shape)
+        return e(grid)
+
+    with pytest.warns(UserWarning, match="named 'scalars'"):
+        data = vtk_to_dataset(cells(3, 2, 1, 0))
+    values = [5.5, 9.5, 11.5, 14.5, 17.5, 20.5, 25.5]
+    f = vtkContourFilter()
+    for i, value in enumerate(values):
+        f.SetValue(i, value)
+    f.SetInputArrayToProcess(0, 0, 0, 0, "scalars")
+    shapes = {3: {vd.TRIANGLE}, 2: {vd.LINE}, 1: {vd.VERTEX}}
+    for dimension in (3, 2, 1):
+        ours = td.contour(data, "scalars", values, dimension=dimension)
+        theirs = f(cells(dimension))
+        assert ours.num_cells == theirs.number_of_cells > 0, dimension
+        assert set(np.unique(ours.topology.types.numpy())) == shapes[dimension]
+        assert _measure(ours) == pytest.approx(_vtk_measure(theirs), rel=1e-6)
+    assert td.contour(data, "scalars", values).num_cells == f(cells(3)).number_of_cells
+    with pytest.raises(ValueError, match="3, 2 or 1"):
+        td.contour(data, "scalars", values, dimension=0)
+
+
+@pytest.mark.quick
 def test_a_point_and_a_cell_array_of_one_name_both_arrive():
     """VTK keeps point and cell arrays apart; a dataset's fields share one name
     space. The cell array of ``mixed-cell-shapes.vtk``'s ``scalars`` once
