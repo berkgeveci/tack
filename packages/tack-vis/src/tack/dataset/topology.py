@@ -30,7 +30,6 @@ from tack.arrays import Cast, ConstantArray, CountingArray, _Implicit, size_of
 from tack.dataset import ids, shapes
 from tack.dataset.buckets import (
     _CHUNK,
-    _LARGEST,
     _largest_counts,
     bucket_order,
     key_order,
@@ -591,6 +590,46 @@ def _face_bucket_counts(cells, counts):
 
 
 @tack.kernel
+def _square_counts(counts, squares, chunk, nchunks, nbuckets):
+    # Each chunk of buckets' sum of squared sizes: a bucket of k faces costs
+    # about k * k to insertion-sort.
+    for c in range(nchunks):
+        total = tack.i64(0)
+        for b in range(c * chunk, min(c * chunk + chunk, nbuckets)):
+            k = tack.i64(counts[b])
+            total += k * k
+        squares[c] = total
+
+
+#: The most faces one point's bucket may hold before the sorted path takes the
+#: mesh: one thread insertion-sorts a bucket.
+_CROWDED = 8192
+
+#: The most insertion-sorting work a face may cost, on average, as the sum of
+#: the buckets' squared sizes over the faces: 6 for generated hexahedra, 24
+#: for tetrahedra (45 with their point ids shuffled), 65 for a real
+#: tetrahedral mesh, all far cheaper sorted in buckets than by the sort.
+_SORT_WORK = 512
+
+
+def _face_buckets_affordable(counts, nbuckets, total):
+    """Whether the face buckets (``counts`` faces a point) are cheap to sort one
+    thread a bucket. A few crowded points are: a real mesh of 8.7M tetrahedra
+    had one point of 266 faces among 1.5M, and a single cap of 256 sent it
+    whole to the sorted path (930 ms where buckets take a fraction). A mesh of
+    them is not: a star of tetrahedra round one point (``_star_of_tetrahedra``)
+    is all one bucket."""
+    nchunks = (nbuckets + _CHUNK - 1) // _CHUNK
+    largest = tack.empty((nchunks,), tack.i32)
+    _largest_counts(counts, largest, _CHUNK, nchunks, nbuckets)
+    if int(largest.numpy().max()) > _CROWDED:
+        return False
+    squares = tack.empty((nchunks,), tack.i64)
+    _square_counts(counts, squares, _CHUNK, nchunks, nbuckets)
+    return int(squares.numpy().sum()) <= _SORT_WORK * total
+
+
+@tack.kernel
 def _place_faces(cells, start, starts, fill, records, lo, hi, base):
     # Each (cell, face) whose lowest point is in [lo, hi) straight into its
     # bucket, as one record: the rest of its key and its entry (one write to
@@ -998,7 +1037,8 @@ class Faces(_OnItsArrays):
         themselves: each (cell, face) counted under its lowest point, placed in
         its bucket once, each bucket sorted in place by key and entry, then the
         runs read along the records. ``None`` where a bucket would hold more
-        than ``_LARGEST`` (a point of thousands of faces): the sorted path
+        than ``_CROWDED`` faces, or buckets crowded overall
+        (``_face_buckets_affordable``: a point of thousands of faces): the sorted path
         takes those. At 20M hexahedra a third of the sorted path's time."""
         self = cls()
         top = topology.dimension
@@ -1015,10 +1055,7 @@ class Faces(_OnItsArrays):
         for group in cell_groups:
             if group.count:
                 _face_bucket_counts(group.view(), counts)
-        nchunks = (np_ + _CHUNK - 1) // _CHUNK
-        largest = tack.empty((nchunks,), tack.i32)
-        _largest_counts(counts, largest, _CHUNK, nchunks, np_)
-        if int(largest.numpy().max()) > _LARGEST:
+        if not _face_buckets_affordable(counts, np_, total):
             return None
         bucket_starts = tack.empty((np_ + 1,), idt)
         exclusive_scan(counts, bucket_starts, np_, total=False, close=True)

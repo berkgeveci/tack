@@ -1120,9 +1120,9 @@ def test_structured_faces_and_edges_are_the_general_derivations(backend, dims):
                                       err_msg=f"edges.{name}")
 
 
-def _star_of_tetrahedra(n=120):
+def _star_of_tetrahedra(n=2100):
     """Tetrahedra round point 0, every face of theirs through it: its bucket holds
-    more faces than ``_LARGEST``, which sends the derivation to the sort."""
+    more faces than ``_CROWDED`` (8400), which sends the derivation to the sort."""
     angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
     ring = np.c_[np.cos(angles), np.sin(angles), np.zeros(n)]
     points = np.vstack([[0, 0, 0], [0, 0, 1], [0, 0, -1], ring + 3]).astype(np.float32)
@@ -1182,6 +1182,29 @@ def test_a_fresh_surface_in_passes_is_the_same_surface(backend, monkeypatch):
                                           getattr(whole.topology, name).numpy())
         np.testing.assert_array_equal(parts.fields["c"].values.numpy(),
                                       whole.fields["c"].values.numpy())
+
+
+def test_a_crowded_point_keeps_the_faces_in_buckets(backend):
+    """A real mesh has a few points of many faces (an aneurysm's 8.7M tetrahedra:
+    one point of 266 faces among 1.5M). One such point no longer sends the
+    whole mesh to the sorted derivation, only a mesh too crowded to sort a
+    bucket a thread (``_face_buckets_affordable``); the faces are the sorted
+    derivation's either way."""
+    from tack.dataset.topology import Faces
+
+    star = _star_of_tetrahedra(80)                    # 320 faces at point 0
+    grid = td.tetrahedralize(td.uniform_grid((12, 12, 12)))
+    g, s = grid.topology, star.topology
+    offset = g.num_points
+    conn = np.concatenate([g.connectivity.numpy(), s.connectivity.numpy() + offset])
+    types = np.concatenate([g.types.numpy(), s.types.numpy()])
+    offsets = np.arange(len(types) + 1) * 4
+    mesh = td.UnstructuredTopology(types, offsets, conn, num_points=offset + s.num_points)
+    ours, theirs = Faces._derive_bucketed(mesh), Faces._derive_sorted(mesh)
+    assert ours is not None
+    for name in ("rows", "kinds", "sides", "side_face", "side_slot", "side_orientation"):
+        np.testing.assert_array_equal(getattr(ours, name).numpy(), getattr(theirs, name).numpy(),
+                                      err_msg=name)
 
 
 def test_a_fresh_meshs_surface_is_the_derived_faces_boundary(backend):

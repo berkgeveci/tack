@@ -516,6 +516,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A few crowded points no longer send a mesh's face derivation to the slow
+  sorted path. Faces go into buckets by lowest point, and one thread sorts
+  each bucket. Any bucket over 256 faces used to fall back to the sort, and
+  an aneurysm's 8.7M real tetrahedra had one point of 266 among 1.5M. The
+  test is now the sorting work: the buckets' squared sizes at most 512 per
+  face, and no bucket over 8192. A fresh mesh's `extract_surface` there went
+  from 930 ms to 350 (VTK on 8 threads: 532).
 - Cold compiles cost less. Walking the IR uses an explicit stack, not
   nested generators, which handed each node up once per level of depth.
   Lowering copies syntax trees directly rather than through `copy.deepcopy`.
