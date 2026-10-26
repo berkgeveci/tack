@@ -620,14 +620,14 @@ def dlpack_to_array(source, writable=True, device=None):
     if allowed is None:
         raise ValueError(
             f"unsupported DLPack device type {tensor.device.device_type}")
+    where = (tensor.device.device_type, tensor.device.device_id)
     if device is not None:
         backend = _target(device)
     else:
         backend = get_backend()
-        if backend.name not in allowed or (
-                backend.multi_device and backend.ordinal != tensor.device.device_id):
+        if not backend.addresses_dlpack(*where):
             backend = _tensor_device(allowed[0], tensor.device.device_id)
-    if backend.name not in allowed:
+    if backend.name not in allowed and not backend.addresses_dlpack(*where):
         message = (
             f"the tensor is on a device the '{backend.name}' device cannot "
             f"wrap without copying (DLPack device type "

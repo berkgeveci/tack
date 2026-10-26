@@ -143,6 +143,16 @@ class Backend:
         """Wrap existing memory as a DeviceBuffer without copying."""
         raise NotImplementedError
 
+    def addresses_dlpack(self, device_type: int, device_id: int) -> bool:
+        """Whether this backend can wrap a DLPack tensor on ``(device_type,
+        device_id)`` without copying, so `from_dlpack` may put it here. By
+        default by the backend's name (``lang/dlpack.py``'s
+        ``_DEVICE_BACKENDS``) and, for a type with several devices, its ordinal.
+        The Warp backend answers for the one device it drives."""
+        from tack.lang.dlpack import _DEVICE_BACKENDS
+        return self.name in _DEVICE_BACKENDS.get(device_type, ()) and (
+            not self.multi_device or self.ordinal == device_id)
+
     def mpi_direct(self, buffer) -> bool:
         """Whether a GPU-aware MPI may read and write ``buffer``'s memory as it is
         (``tack.communication.World(comm, gpu_aware=True)``). True by default;

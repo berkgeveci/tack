@@ -182,6 +182,15 @@ class WarpBackend(GPUBackend):
         buf._shared = True
         return buf
 
+    def addresses_dlpack(self, device_type, device_id):
+        """A tensor on the device Warp drives: its CUDA device (by ordinal), or
+        host memory when Warp's device is its CPU. So ``tack.from_dlpack`` with
+        the Warp device as the default keeps such a tensor there."""
+        from tack.lang.dlpack import kDLCPU, kDLCUDA, kDLCUDAManaged
+        if self.wp_device.is_cuda:
+            return device_type in (kDLCUDA, kDLCUDAManaged) and device_id == self.wp_device.ordinal
+        return device_type == kDLCPU
+
     def synchronize(self):
         # Tack queues everything on the device's stream, so that is all to wait for.
         wp = _warp()
