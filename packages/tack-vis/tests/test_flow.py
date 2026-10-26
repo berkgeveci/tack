@@ -166,6 +166,44 @@ def test_streamlines_are_the_paths(backend):
     np.testing.assert_allclose(x[[30, 61]], advected.positions()[:2], atol=1e-6)
 
 
+def test_streamlines_by_length_follow_the_direction(backend):
+    """``step_unit="length"``: each step an arc length along the velocity's
+    direction, as vtkStreamTracer steps by default, with the time it takes
+    integrated beside it by the same weights -- NumPy's RK4 of v / |v| and
+    1 / |v|. Over pieces, the whole's paths."""
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.0]])
+    h, n = 0.05, 30
+
+    def f(p):
+        v = np.array([-p[1], p[0], 0.25])
+        speed = np.linalg.norm(v)
+        return v / speed, 1.0 / speed
+
+    lines = td.streamlines(data, "v", seeds, h, n, step_unit="length")
+    x = lines.positions()
+    times = lines.fields["time"].values.numpy()
+    for s, seed in enumerate(seeds):
+        p, t = np.asarray(seed, float), 0.0
+        for k in range(n):
+            (a, ta), (b, tb) = f(p), f(p + h / 2 * f(p)[0])
+            (c, tc) = f(p + h / 2 * b)
+            (d, td_) = f(p + h * c)
+            p = p + h / 6 * (a + 2 * b + 2 * c + d)
+            t += h / 6 * (ta + 2 * tb + 2 * tc + td_)
+        np.testing.assert_allclose(x[s * (n + 1) + n], p, atol=2e-4)
+        np.testing.assert_allclose(times[s * (n + 1) + n], t, rtol=2e-4)
+        chords = np.linalg.norm(np.diff(x[s * (n + 1):(s + 1) * (n + 1)], axis=0), axis=1)
+        np.testing.assert_allclose(chords, h, rtol=2e-3)       # a chord of an arc of h
+    pieces = td.streamlines(td.split(data, (2, 2, 1), ghost_layers=1), "v", seeds, h, n,
+                            step_unit="length")
+    traced = np.concatenate([q.positions() for q in pieces if q.num_points])
+    for end in (x[n], x[2 * n + 1]):
+        assert np.abs(traced - end).max(axis=1).min() < 1e-5
+    with pytest.raises(ValueError, match="step_unit"):
+        td.streamlines(data, "v", seeds, h, n, step_unit="cells")
+
+
 def test_particles_stay_on_the_device(backend, monkeypatch):
     """Seeds in an array of 3-vectors are copied on the device, the particles stay
     there, and the streamlines' paths are chosen and numbered there: nothing is
