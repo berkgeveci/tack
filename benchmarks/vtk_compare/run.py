@@ -6,7 +6,8 @@ threading (and Tack its backend) at start-up:
   cpu1    VTK Sequential,            Tack CPU, 1 thread
   cpuN    VTK STDThread, N threads,  Tack CPU, N threads (any N)
   cuda, hip, level_zero, metal
-          Tack on that GPU; VTK runs only to check Tack's outputs, on
+          Tack on that GPU (warp: Tack on NVIDIA Warp's default device, the
+          prototype backend); VTK runs only to check Tack's outputs, on
           --vtk-threads threads -- compare with the cpuN run of as many
 
 ``--config`` takes a comma-separated list, each run in a process of its own;
@@ -55,7 +56,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQUARE_BEND = os.environ.get("TACK_SQUARE_BEND") or os.path.expanduser(
     "~/Data/VTK/Data/OpenFOAM/squareBend/squareBend.foam")
-GPUS = ("cuda", "hip", "level_zero", "metal")
+GPUS = ("cuda", "hip", "level_zero", "metal", "warp")
 
 
 def _config(name):
@@ -157,6 +158,8 @@ def _gpu(arch, backend):
         return getattr(backend, "_device_name", "")
     if arch == "metal":
         return str(backend._device.name())
+    if arch == "warp":
+        return f"Warp {backend.wp_device} ({backend.wp_device.name})"
     return ""
 
 

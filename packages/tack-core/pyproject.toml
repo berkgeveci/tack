@@ -60,6 +60,11 @@ hip = [
 # to libze_loader.so and libocloc.so, which are system libraries from the
 # Intel compute runtime; there is no Python package to depend on.
 level_zero = []
+# NVIDIA Warp, for the prototype Warp backend (tack.device("warp")). Its
+# wheels are for Linux, Windows and Apple silicon; none for Intel macOS.
+warp = [
+    "warp-lang>=1.18; sys_platform != 'darwin' or platform_machine == 'arm64'",
+]
 dev = [
     "pytest",
 ]

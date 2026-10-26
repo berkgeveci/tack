@@ -23,6 +23,14 @@ dependencies = [
     "unyt>=3.0",
 ]
 
+[project.optional-dependencies]
+# Warp and warp-simdata, for tack.interop.warp (the Warp backend's arrays and
+# warp-simdata's datasets). No wheels for Intel macOS.
+warp = [
+    "tack-core[warp]",
+    "warp-simdata>=0.2; sys_platform != 'darwin' or platform_machine == 'arm64'",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

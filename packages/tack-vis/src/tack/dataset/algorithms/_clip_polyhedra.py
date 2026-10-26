@@ -6,6 +6,7 @@ conforming ``PolyhedralTopology``."""
 import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import size_of
 from tack.dataset import ids
 from tack.dataset.algorithms._common import _close, _crossing
 from tack.dataset.buckets import bucket_order, run_offsets
@@ -184,12 +185,12 @@ def clip_polyhedra(data, values, iso, inside, fields):
     (poly_starts, vertices, poly_cells, _, polygons, cap_ends, _, _,
      cap_count) = _lopez_polygons(data, values, levels, 1, weight_dtype)
 
-    n_faces, n_cells = int(t.face_offsets.shape[0]) - 1, data.num_cells
+    n_faces, n_cells = size_of(t.face_offsets) - 1, data.num_cells
     sizes = tack.empty((n_faces,), tack.i32)
     face_kept = tack.empty((n_faces,), tack.i32)
     if n_faces:
         _face_sizes(t.face_offsets, t.face_points, values, iso, sizes, face_kept)
-    odt = ids.for_output(data, 2 * int(t.face_points.shape[0]) + cap_count + n_faces)
+    odt = ids.for_output(data, 2 * size_of(t.face_points) + cap_count + n_faces)
     starts = tack.empty((n_faces,), odt)
     face_keys = exclusive_scan(sizes, starts, n_faces) if n_faces else 0
     face_slots = tack.empty((n_faces,), odt)

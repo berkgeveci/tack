@@ -283,3 +283,119 @@ def test_a_vtk_grid_built_with_implicit_arrays_stays_implicit():
     explicit = vtkConstantArray[np.uint8](2, VTK_TETRA)
     grid.cells = (explicit, grid.cells)
     assert _kinds(vtk_to_dataset(grid).topology)[0] == "ConstantArray"
+
+
+def _hexes(n=3):
+    """A grid of n^3 hexahedra as an unstructured mesh: points and connectivity."""
+    i, j, k = np.meshgrid(*(np.arange(n + 1),) * 3, indexing="ij")
+    points = np.stack([i, j, k], -1).transpose(2, 1, 0, 3).reshape(-1, 3).astype(np.float32)
+    def pid(a, b, c):
+        return a + (n + 1) * (b + (n + 1) * c)
+    rows = [[pid(a, b, c), pid(a + 1, b, c), pid(a + 1, b + 1, c), pid(a, b + 1, c),
+             pid(a, b, c + 1), pid(a + 1, b, c + 1), pid(a + 1, b + 1, c + 1), pid(a, b + 1, c + 1)]
+            for c in range(n) for b in range(n) for a in range(n)]
+    return points, np.asarray(rows, np.int32).reshape(-1)
+
+
+def test_one_shape_cells_share_their_connectivity_as_rows():
+    """Cells of one shape in order, k points each from k * c (counting offsets):
+    the stored connectivity is the shape group's rows, not gathered into a copy,
+    and the filters compute as with stored offsets, which gather."""
+    points, conn = _hexes()
+    n = len(conn) // 8
+    ids = td.ids.choose()                        # i64 under --ids=i64, which would convert i32
+    types, offsets = uniform_cells(12, n, ids)
+    connectivity = tack.array(conn).astype(ids)
+    shared = td.DataSet(td.UnstructuredTopology(types, offsets, connectivity), points)
+    stored = td.DataSet(td.UnstructuredTopology(np.full(n, 12, np.uint8),
+                                                np.arange(0, 8 * n + 1, 8, dtype=np.int32),
+                                                conn.copy()), points)
+    rows = shared.topology.groups()[0].args[0]
+    assert rows._buffer is connectivity._buffer and rows.shape == (n, 8)
+    gathered = stored.topology.groups()[0].args[0]
+    assert gathered._buffer is not stored.topology.connectivity._buffer
+    np.testing.assert_array_equal(rows.numpy(), gathered.numpy())
+    for data in (shared, stored):
+        data.fields["h"] = td.Field(td.H1(data), tack.array(points[:, 2] + 0.1 * points[:, 0]))
+    for call in (lambda d: td.algorithms.cell_geometry(d)[0].values,
+                 lambda d: td.algorithms.gradients(d, "h").values):
+        np.testing.assert_array_equal(call(shared).numpy(), call(stored).numpy())
+    a, b = td.contour(shared, "h", 1.3), td.contour(stored, "h", 1.3)
+    np.testing.assert_array_equal(a.positions(), b.positions())
+
+
+# ── Polyhedral, polygonal and polyline topologies keep implicit arrays ──
+
+@tack.func
+def _same(x):
+    return x
+
+
+def _implicit(values):
+    """``values`` read through an identity ``Transform``: an implicit array, so a
+    topology given it takes the path implicit inputs take."""
+    return tack.arrays.Transform(_same, values)
+
+
+def _faces_twins():
+    """Polyhedra, polygons and polylines, each with a twin built from the same
+    arrays read implicitly."""
+    w = td.wavelet(3)
+    poly = td.as_polyhedra(w)
+    t = poly.topology
+    implicit_poly = td.DataSet(td.PolyhedralTopology(
+        _implicit(t.face_offsets), _implicit(t.face_points), _implicit(t.cell_offsets),
+        _implicit(t.cell_faces), t.cell_face_sides, num_points=t.num_points), poly.geometry.values)
+    n = 5
+    i, j = np.meshgrid(np.arange(n + 1), np.arange(n + 1), indexing="ij")
+    flat = np.stack([j.ravel() * 0.3, i.ravel() * 0.2, (i * j).ravel() * 0.01], -1).astype(np.float32)
+    pid = lambda a, b: a * (n + 1) + b
+    loops = np.array([[pid(a, b), pid(a + 1, b), pid(a + 1, b + 1), pid(a, b + 1)]
+                      for a in range(n) for b in range(n)], np.int32).reshape(-1)
+    loop_offsets = np.arange(0, len(loops) + 1, 4, dtype=np.int32)
+    polygons = td.DataSet(td.PolygonalTopology(loop_offsets, loops), flat)
+    implicit_polygons = td.DataSet(td.PolygonalTopology(
+        _implicit(tack.array(loop_offsets)), _implicit(tack.array(loops)), num_points=len(flat)),
+        flat)
+    chains = np.arange(len(flat), dtype=np.int32)
+    line_offsets = np.array([0, 9, 20, len(flat)], np.int32)
+    lines = td.DataSet(td.PolylineTopology(line_offsets, chains), flat)
+    implicit_lines = td.DataSet(td.PolylineTopology(
+        _implicit(tack.array(line_offsets)), _implicit(tack.array(chains)), num_points=len(flat)),
+        flat)
+    for data in (poly, implicit_poly, polygons, implicit_polygons, lines, implicit_lines):
+        p = data.positions()
+        data.fields["h"] = td.Field(td.H1(data), tack.array((p[:, 0] + 2 * p[:, 1]).astype(np.float32)))
+    return {"polyhedra": (poly, implicit_poly), "polygons": (polygons, implicit_polygons),
+            "polylines": (lines, implicit_lines)}
+
+
+@pytest.mark.parametrize("name", ["polyhedra", "polygons", "polylines"])
+def test_faces_and_lines_from_implicit_arrays_compute_as_stored_ones(name):
+    """Polyhedral, polygonal and polyline topologies keep implicit inputs as an
+    unstructured one does (no host copy), and compute as their stored twins."""
+    stored, implicit = _faces_twins()[name]
+    kept = {"polyhedra": ("face_points", "cell_faces"), "polygons": ("loop_points",),
+            "polylines": ("line_points",)}[name]
+    for attribute in kept:
+        assert isinstance(getattr(implicit.topology, attribute), tack.arrays._Implicit)
+    computes = [lambda d: td.cell_centers(d).values,
+                lambda d: td.project(d, "h", td.Constant(d)).values]
+    if name != "polylines":
+        computes.append(lambda d: td.face_geometry(d)[1].values)
+    if name == "polyhedra":
+        computes += [lambda d: td.gradients(d, "h").values,
+                     lambda d: td.cell_geometry(d)[0].values]
+    for compute in computes:
+        np.testing.assert_allclose(_host(compute(implicit)), _host(compute(stored)), rtol=1e-6)
+    cuts = [lambda d: td.threshold(d, "h", 0.4, 1.2)]
+    if name == "polyhedra":
+        cuts += [td.extract_surface, lambda d: td.slice_plane(d, (1.0, 1.0, 1.0), (1.0, 0.5, 0.2)),
+                 lambda d: td.clip(d, "h", 1.0)]
+        assert len(td.check_winding(implicit)) == 0
+    if name == "polygons":
+        cuts.append(td.triangulate)
+    for cut in cuts:
+        x, y = cut(implicit), cut(stored)
+        assert x.num_cells == y.num_cells
+        np.testing.assert_allclose(x.positions(), y.positions(), rtol=1e-6)

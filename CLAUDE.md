@@ -106,6 +106,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 | CUDA | `cuda_gen.py` → CUDA C source | NVRTC → PTX | cuLaunchKernel |
 | HIP | `hip_gen.py` → HIP C source (extends CUDA) | hipRTC → code object | hipModuleLaunchKernel |
 | Level Zero | `opencl_gen.py` → OpenCL C source (extends CUDA) | libocloc → SPIR-V | zeCommandListAppendLaunchKernel |
+| Warp (prototype) | `warp_gen.py` → `@wp.kernel` Python source | Warp | `wp.launch` on Warp's current stream |
 
 ### Key abstraction: Array with DeviceBuffer
 
@@ -776,6 +777,31 @@ the VTK interop refuses Level Zero arrays from any other context. Intel's driver
 context, so this check is the only one that catches the mistake. The
 backend reports `device_memory_spaces = {"level_zero"}` via
 `zeMemGetAllocProperties`. See `test_level_zero_context.py`.
+
+## Warp backend notes
+
+A prototype sixth backend, `tack.device("warp")` (the `warp` extra, with
+warp-simdata), on Warp's default device (its first CUDA device, else its CPU),
+so that tack-vis and `tack.communication` can run on NVIDIA Warp unchanged.
+`warp_gen.py` writes a `@wp.kernel` from the typed IR: every operand
+converted to its annotated type, locals declared once, arrays passed by
+address (`wp.uint64`) and accessed through `wp.func_native` helpers at a
+64-bit index, constant tables as array arguments, one module per variant
+(`module="unique"`). Helpers carry Tack's semantics where Warp's differ
+(wrapping integers in an unsigned carrier, floor `//`/`%`, 64-bit trip
+counts, NaN-preferring min/max, signed zeros, no `fuse_fp`); see the
+generator's docstring. Arrays are `wp.array` buffers (`WarpBuffer`);
+launches go on Warp's current stream, so `wp.ScopedStream` applies.
+`wrap_ptr`, DLPack (`Backend.addresses_dlpack`) and debug bounds checks
+work; workgroups on CUDA only; no `tack.inspect` (`supports_inspect`
+false), textures, device reductions or disk-cached variants.
+`tack.interop.warp` (tack-vis) shares arrays (`from_warp`/`to_warp`) and
+exchanges datasets with warp-simdata (`from_simdata`/`to_simdata`), most
+models without copies. `test_warp.py`, `test_warp_interop.py` and
+`test_simdata_interop.py` skip without Warp, or fail with `TACK_REQUIRE_WARP`
+set, as CI's `warp` job sets it; the suite runs on the backend
+with `PYTHONPATH=packages/tack-core/tests uv run pytest -p _warp_default`.
+Status and history: the vault's Warp backend proposal.
 
 ## VTK
 

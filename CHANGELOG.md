@@ -7,6 +7,27 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A prototype NVIDIA Warp backend (`tack.device("warp")`, the `warp`
+  extra): kernels lower to generated `@wp.kernel` source from Tack's typed
+  IR and run on Warp's CPU or CUDA device, on its current stream, with
+  Tack's integer and floating-point semantics, `wrap_ptr`, DLPack and debug
+  bounds checks; workgroups on CUDA only, no `tack.inspect`
+  (`Backend.supports_inspect`). Its arrays are `wp.array`s. CI's `warp`
+  job runs it and the interop on Warp's CPU device.
+- `tack.interop.warp`: `from_warp`/`to_warp` share arrays both ways (Warp's
+  vector and matrix types as Tack's), and `from_simdata`/`to_simdata`
+  exchange datasets with warp-simdata. Point clouds, curves, surface meshes,
+  OpenFOAM meshes and patches, CGNS sections (one shape, MIXED, NGON_n,
+  NFACE_n), EnSight parts, corner-point grids and FLASH axisymmetric data
+  (an `AMRDataSet` of revolved boxes, coordinates implicit) come across
+  without copies, CGNS's 1-based and MIXED connectivities read lazily;
+  other models through warp-simdata's VTK conversion.
+- An unstructured topology of one shape whose offsets count in steps of the
+  shape's points shares its connectivity as the shape's rows rather than
+  gathering them, so an imported mesh stays one copy through the filters.
+  Polyhedral, polygonal and polyline topologies keep implicit arrays as
+  given.
+
 - Implicit booleans: `td.Union(f, g, ...)`, `td.Intersection(...)` and
   `td.Difference(...)` combine implicit functions as VTK's
   `vtkImplicitBoolean` does (the smallest value, the largest, the first's or
@@ -375,6 +396,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- `np.from_dlpack` of a GPU array (CUDA, HIP, Level Zero) raised
+  `SystemError` in place of NumPy's own error: the capsule's destructor, a
+  ctypes callback, met and cleared the pending exception. C now gets native
+  destructors.
+- `point_normals` gave a line of points (no plane) an arbitrary normal, and
+  on CUDA `[0, 0, 1]`: the least eigenvalue counts as repeated within the
+  closed form's rounding, not only when exactly equal.
 - A mesh with cells of more than one dimension (a surface's triangles among
   tetrahedra, as Gmsh and Exodus meshes carry): `cell_geometry` measures each
   cell in its own dimension, and `net_flux`, `perot` and `divergence` give its
