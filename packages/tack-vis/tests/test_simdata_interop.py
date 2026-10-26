@@ -592,3 +592,156 @@ def test_flash_over_a_full_turn_filters_and_reduces(device, wp_device):
     leaves = values[[1, 2, 3, 4, 5]]
     assert stats.n == leaves.size * 8
     np.testing.assert_allclose(stats.mean, leaves.mean(), rtol=1e-6)
+
+
+# ── Curves, patches, NGON_n and NFACE_n, EnSight, corner-point grids ──
+
+def _cell_faces(poly):
+    """Each Tack polyhedron's faces as (face id, outward 0 or inward 1)."""
+    t = poly.topology
+    face_offsets, face_points, cell_offsets, cell_faces, sides = t.arrays()
+    return face_offsets, face_points, cell_offsets, cell_faces, sides
+
+
+def test_curves_are_polylines(device, wp_device, no_vtk_conversion):
+    from warp_simdata.data_models.custom import curves
+
+    xyz = np.random.default_rng(2).random((9, 3)).astype(np.float32)
+    ds = curves.create_dataset(wp.array(xyz, dtype=wp.vec3f, device=wp_device),
+                               _ints([4, 2, 3], wp_device))
+    data = from_simdata(ds)
+    t = data.topology
+    assert isinstance(t, td.PolylineTopology)
+    assert isinstance(t.line_points, tack.arrays.CountingArray)
+    np.testing.assert_array_equal(t.line_offsets.numpy(), [0, 4, 6, 9])
+    np.testing.assert_array_equal(data.positions(), xyz)
+
+
+def test_an_openfoam_patch_is_a_view_of_its_mesh(device, wp_device, no_vtk_conversion):
+    from warp_simdata.data_models.openfoam import boundary_mesh
+
+    with device:
+        poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    mesh = _openfoam(poly, wp_device)
+    h = mesh.handle
+    internal = int(h.neighbour.shape[0])
+    patch = boundary_mesh.create_dataset(h.points, h.faces, h.face_offsets, internal,
+                                         int(h.face_offsets.shape[0]) - 1 - internal)
+    data = from_simdata(patch)
+    t = data.topology
+    assert isinstance(t, td.PolygonalTopology)
+    offsets, loops = t.loops()
+    assert isinstance(loops, tack.arrays._Implicit) and int(offsets.numpy()[0]) == 0
+    expected = h.faces.numpy()[h.face_offsets.numpy()[internal]:]
+    np.testing.assert_array_equal(tack.arrays.to_host(loops), expected)
+    assert data.num_cells == poly.topology.faces().boundary().numpy().size
+
+
+def _ngon_nface(poly, device, split=None):
+    """Tack's polyhedra as CGNS NGON_n faces (in one block, or two at ``split``)
+    and NFACE_n cells, entries signed by side (negative: into the cell)."""
+    from warp_simdata.data_models.sids import nface_n
+    from warp_simdata.data_models.sids import unstructured as sids
+
+    face_offsets, face_points, cell_offsets, cell_faces, sides = _cell_faces(poly)
+    nf = len(face_offsets) - 1
+    coords = wp.array(poly.positions().astype(np.float32), dtype=wp.vec3f, device=device)
+    ranges = [(0, nf)] if split is None else [(0, split), (split, nf)]
+    blocks = []
+    for lo, hi in ranges:
+        conn = face_points[face_offsets[lo]:face_offsets[hi]] + 1
+        blocks.append(sids.create_handle(coords, 22, wp.vec2i(lo + 1, hi), _ints(conn, device),
+                                         _ints(face_offsets[lo:hi + 1] - face_offsets[lo], device)))
+    entries = np.where(sides == 0, cell_faces + 1, -(cell_faces + 1))
+    nface = sids.create_handle(coords, 23, wp.vec2i(nf + 1, nf + len(cell_offsets) - 1),
+                               _ints(entries, device), _ints(cell_offsets, device))
+    return nface_n.create_dataset(nface, blocks)
+
+
+@pytest.mark.parametrize("split", [None, 6])
+def test_cgns_nface_polyhedra_are_read_lazily(device, wp_device, split, no_vtk_conversion):
+    """NGON_n blocks joined lazily, each cell's faces through the blocks' ranges,
+    the sides from the signs: the same polyhedra, nothing copied."""
+    with device:
+        poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    data = from_simdata(_ngon_nface(poly, wp_device, split))
+    t = data.topology
+    assert isinstance(t, td.PolyhedralTopology)
+    assert all(isinstance(a, tack.arrays._Implicit)
+               for a in (t.face_points, t.cell_faces, t.cell_face_sides))
+    for a, b in zip(t.arrays(), poly.topology.arrays()):
+        np.testing.assert_array_equal(a, b)
+    assert len(td.check_winding(data)) == 0
+    np.testing.assert_allclose(td.algorithms.cell_geometry(data)[0].values.numpy(),
+                               td.algorithms.cell_geometry(poly)[0].values.numpy(), rtol=1e-6)
+
+
+def test_cgns_ngon_polygons(device, wp_device, no_vtk_conversion):
+    from warp_simdata.data_models.sids import unstructured as sids
+
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 0, 0]], np.float32)
+    ds = sids.create_dataset(wp.array(points, dtype=wp.vec3f, device=wp_device), 22,
+                             wp.vec2i(1, 2), _ints([1, 2, 3, 4, 2, 5, 3], wp_device),
+                             _ints([0, 4, 7], wp_device))
+    t = from_simdata(ds).topology
+    assert isinstance(t, td.PolygonalTopology)
+    np.testing.assert_array_equal(tack.arrays.to_host(t.loops()[1]), [0, 1, 2, 3, 1, 4, 2])
+
+
+def test_ensight_parts(device, wp_device, no_vtk_conversion):
+    """Pieces of linear shapes joined lazily (0-based), and a part of polygons."""
+    from warp_simdata.data_models.ensight_gold import unstructured_part as ensight
+
+    base = _two_hexes_and_a_pyramid()
+    conn = base.topology.connectivity.numpy() + 1
+    coords = wp.array(base.positions().astype(np.float32), dtype=wp.vec3f, device=wp_device)
+    part = ensight.create_dataset(coords, [ensight.create_piece_handle(13, _ints(conn[:16], wp_device)),
+                                           ensight.create_piece_handle(9, _ints(conn[16:], wp_device))])
+    data = from_simdata(part)
+    t = data.topology
+    np.testing.assert_array_equal(tack.arrays.to_host(t.types), [12, 12, 14])
+    np.testing.assert_array_equal(tack.arrays.to_host(t.offsets), [0, 8, 16, 21])
+    np.testing.assert_array_equal(tack.arrays.to_host(t.connectivity), conn - 1)
+    twin = _stored_twin(data)
+    np.testing.assert_array_equal(td.algorithms.cell_geometry(data)[0].values.numpy(),
+                                  td.algorithms.cell_geometry(twin)[0].values.numpy())
+    polygons = ensight.create_dataset(coords, [ensight.create_piece_handle(
+        15, _ints([1, 2, 5, 4, 2, 3, 6], wp_device), element_node_counts=_ints([4, 3], wp_device))])
+    t = from_simdata(polygons).topology
+    assert isinstance(t, td.PolygonalTopology)
+    np.testing.assert_array_equal(tack.arrays.to_host(t.loops()[1]), [0, 1, 4, 3, 1, 2, 5])
+
+
+@pytest.mark.parametrize("depth", ["zUp", "zDown"])
+def test_a_corner_point_grid_is_computed_where_read(device, wp_device, depth):
+    """Hexahedra stored nowhere, points from COORD and ZCORN (a fault: the two
+    cells' shared face at different depths), ACTNUM's inactive cell hidden; the
+    points are warp-simdata's."""
+    from warp_simdata.data_models.reservoir import corner_point_grid
+    from warp_simdata.data_models.vtk.conversion import to_vtk_data_model
+
+    nx, ny, nz = 2, 1, 2
+    coord = []
+    for j in range(ny + 1):
+        for i in range(nx + 1):
+            coord += [i * 1.0, j * 1.0 + 0.1 * i, 0.0, i * 1.0 + 0.2, j * 1.0, 10.0]
+    zcorn = np.zeros((2 * nz, 2 * ny, 2 * nx), np.float32)
+    for k in range(2 * nz):
+        zcorn[k] = 1.0 + 2.0 * ((k + 1) // 2)
+    zcorn[:, :, 2:] += 0.5                                   # the fault: cells of i = 1 lower
+    actnum = np.ones(nx * ny * nz, np.int32)
+    actnum[3] = 0
+    ds = corner_point_grid.create_dataset(
+        wp.vec3i(nx, ny, nz), wp.array(np.asarray(coord, np.float32), device=wp_device),
+        wp.array(zcorn.reshape(-1), device=wp_device), _ints(actnum, wp_device),
+        depth_direction=depth)
+    data = from_simdata(ds)
+    t = data.topology
+    assert all(isinstance(a, (tack.arrays.ConstantArray, tack.arrays.CountingArray))
+               for a in (t.types, t.offsets, t.connectivity))
+    expected = to_vtk_data_model(ds).handle.points.numpy()
+    np.testing.assert_allclose(data.positions(), expected, rtol=1e-6, atol=1e-6)
+    hidden = (data.ghosts.cells.numpy() & td.Ghosts.HIDDENCELL) != 0
+    np.testing.assert_array_equal(hidden, actnum == 0)
+    volumes = td.algorithms.cell_geometry(data)[0].values.numpy()
+    assert (volumes[actnum == 1] > 0).all()

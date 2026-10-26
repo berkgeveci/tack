@@ -35,6 +35,7 @@ import numpy as np
 
 import tack
 from tack.arrays import (
+    Concatenate,
     ConstantArray,
     CountingArray,
     Permutation,
@@ -408,6 +409,11 @@ def from_simdata(ds):
         return _flash_amr(ds, device)
     with device:
         direct = _direct_topology(ds, device)
+        if direct is None:
+            more = _more_direct(ds, device)
+            if more is not None:
+                topology, geometry, ghosts = more
+                return _with_fields(ds, topology, geometry, device, ghosts)
     if direct is not None:
         return _with_fields(ds, *direct, device)
     ds = to_vtk_data_model(ds)
@@ -471,14 +477,15 @@ def from_simdata(ds):
     return _with_fields(ds, topology, geometry, device)
 
 
-def _with_fields(ds, topology, geometry, device):
-    """The dataset of ``topology`` and ``geometry`` with ``ds``'s fields: NODE as H1,
-    ELEMENT as Constant, each sharing its storage."""
+def _with_fields(ds, topology, geometry, device, ghosts=None):
+    """The dataset of ``topology`` and ``geometry`` (and ``ghosts``, a corner-point
+    grid's inactive cells hidden) with ``ds``'s fields: NODE as H1, ELEMENT as
+    Constant, each sharing its storage."""
     sd = _simdata()
     from tack.dataset import H1, Constant, DataSet, Field
 
     with device:
-        data = DataSet(topology, geometry)
+        data = DataSet(topology, geometry, ghosts=ghosts)
         for name in ds.get_field_names():
             field = ds.get_field(name)
             space = H1(data) if field.association == sd.AssociationType.NODE else Constant(data)
@@ -499,7 +506,7 @@ _SHARED, _IRREGULAR, _FLIPS = range(3)
 
 @tack.kernel
 def _count_face_slots(cell_faces, orientation, outward, inward):
-    for s in range(cell_faces.shape[0]):
+    for s in range(len(cell_faces)):
         if orientation[s] < 0:
             tack.atomic_add(inward, cell_faces[s], 1)
         else:
@@ -852,3 +859,254 @@ def _flash_amr(ds, device):
                                                                   cells, cells * sectors))
             boxes[levels[b]].append(box)
         return AMRDataSet(boxes, ratios=[(2, 2, 1)] * (len(boxes) - 1))
+
+
+# ── More warp-simdata models taken as they are ──────────────────────────
+#
+# With polygonal, polyline and polyhedral topologies keeping implicit arrays,
+# curves, OpenFOAM boundary patches, CGNS NGON_n and NFACE_n and EnSight parts
+# come across lazily too; a corner-point grid's points are computed from its
+# COORD and ZCORN where read.
+
+#: VTK's cell type for each linear EnSight element type, and its corners.
+_VTK_BY_ENSIGHT = {0: (1, 1), 1: (3, 2), 3: (5, 3), 5: (9, 4), 7: (10, 4), 9: (14, 5),
+                   11: (13, 6), 13: (12, 8)}
+_ENSIGHT_NSIDED = 15
+
+
+@tack.func
+def _inward(entry):
+    return tack.u8(1) if entry < 0 else tack.u8(0)
+
+
+@tack.device_class
+class _Shifted(_Implicit):
+    """``base[k] + delta``: offsets of a stretch of another CSR array, from 0."""
+
+    def __init__(self, base, delta):
+        self.base = _operand(base)
+        self.delta = int(delta)
+        _metadata(self, size_of(self.base), None, tack.i32)
+
+    @tack.func
+    def get(self, k):
+        return tack.i32(self.base.get(k) + self.delta)
+
+
+@tack.device_class
+class _NfaceFaces(_Implicit):
+    """A CGNS NFACE_n entry's face: ``|entry|``, a 1-based NGON element number, as
+    an index into the NGON blocks joined in order -- block ``b``'s elements
+    numbered from ``starts[b]``, its faces from ``bases[b]`` among them all."""
+
+    def __init__(self, entries, starts, bases):
+        self.entries, self.starts, self.bases = _operands(entries, starts, bases)
+        self.blocks = size_of(self.starts)
+        _metadata(self, size_of(self.entries), None, tack.i32)
+
+    @tack.func
+    def get(self, k):
+        e = self.entries.get(k)
+        f = e if e >= 0 else -e
+        b = 0
+        for i in range(1, self.blocks):
+            if self.starts.get(i) <= f:
+                b = i
+        return tack.i32(self.bases.get(b) + f - self.starts.get(b))
+
+
+@tack.device_class
+class _CornerPoints(_Implicit):
+    """A corner-point grid's points: corner ``l`` of cell ``c`` at ``8 c + l`` (VTK's
+    hexahedron order), on its pillars from COORD at its depth in ZCORN, through
+    MAPAXES and the depth convention -- warp-simdata's arithmetic, where read."""
+
+    def __init__(self, coord, zcorn, dims, map_x, map_y, depth_down, device):
+        self.coord, self.zcorn = _operands(coord, zcorn)
+        self.nx, self.ny, self.nz = (int(d) for d in dims)
+        self.down = int(depth_down)
+        scale = 1.0 - 2.0 * self.down
+        self.frame = _store(np.array([map_x[0], map_x[1], map_y[0], map_y[1], scale], np.float64),
+                            tack.f32, device)
+        _metadata(self, 8 * self.nx * self.ny * self.nz, 3, tack.f32)
+
+    @tack.func
+    def get(self, p):
+        c = p // 8
+        corner = p - 8 * c
+        i = c % self.nx
+        rest = c // self.nx
+        j = rest % self.ny
+        k = rest // self.ny
+        di = 1 if corner == 1 or corner == 2 or corner == 5 or corner == 6 else 0
+        dj = 1 if corner == 2 or corner == 3 or corner == 6 or corner == 7 else 0
+        dk = 1 if corner >= 4 else 0
+        base = 6 * ((j + dj) * (self.nx + 1) + i + di)
+        f = self.frame
+        top = [self.coord.get(base) * f[0] + self.coord.get(base + 1) * f[2],
+               self.coord.get(base) * f[1] + self.coord.get(base + 1) * f[3],
+               self.coord.get(base + 2) * f[4]]
+        bottom = [self.coord.get(base + 3) * f[0] + self.coord.get(base + 4) * f[2],
+                  self.coord.get(base + 3) * f[1] + self.coord.get(base + 4) * f[3],
+                  self.coord.get(base + 5) * f[4]]
+        zk = 2 * k + (dk ^ self.down)
+        z = self.zcorn.get(2 * i + di + 2 * self.nx * (2 * j + dj + 2 * self.ny * zk)) * f[4]
+        denom = bottom[2] - top[2]
+        t = (z - top[2]) / denom if denom != 0.0 else 0.0 * z
+        return [top[0] + t * (bottom[0] - top[0]), top[1] + t * (bottom[1] - top[1]), z]
+
+
+@tack.kernel
+def _put(values, at, value):
+    for i in range(1):
+        values[at] = value
+
+
+@tack.kernel
+def _hidden_where_inactive(actnum, marks, hidden):
+    for c in range(len(actnum)):
+        marks[c] = hidden if actnum[c] == 0 else 0
+
+
+def _joined_offsets(starts, sizes):
+    """CSR offsets of several blocks end to end: each block's offsets (but the
+    last block's, its trailing entry kept) shifted by the entries before it."""
+    parts, before = [], 0
+    for b, (start, size) in enumerate(zip(starts, sizes)):
+        last = b == len(starts) - 1
+        part = start if last else View(start, 0, size_of(start) - 1)
+        parts.append(part if before == 0 else _Shifted(part, before))
+        before += size
+    return parts[0] if len(parts) == 1 else Concatenate(*parts)
+
+
+def _more_direct(ds, device):
+    """``(topology, geometry, ghosts or None)`` for curves, boundary patches,
+    NGON_n and NFACE_n, EnSight parts and corner-point grids, or None."""
+    from warp_simdata.data_models.custom import curves
+    from warp_simdata.data_models.ensight_gold import unstructured_part as ensight
+    from warp_simdata.data_models.openfoam import boundary_mesh
+    from warp_simdata.data_models.reservoir import corner_point_grid
+    from warp_simdata.data_models.sids import nface_n
+    from warp_simdata.data_models.sids import unstructured as sids
+
+    from tack.algorithms.scan import exclusive_scan
+    from tack.dataset import (
+        Ghosts,
+        PolygonalTopology,
+        PolyhedralTopology,
+        PolylineTopology,
+        UnstructuredTopology,
+    )
+
+    model, handle = ds.data_model, ds.handle
+    n_points = ds.get_num_nodes()
+    if model is curves.DataModel:
+        counts = from_warp(handle.curve_vertex_counts)
+        n = size_of(counts)
+        offsets = tack.empty((n + 1,), tack.i32)
+        total = int(exclusive_scan(counts, offsets, n))
+        _put(offsets, n, total)                     # the scan leaves the trailing offset
+        return (PolylineTopology(offsets, CountingArray(total, dtype=tack.i32), num_points=n_points),
+                from_warp(handle.points), None)
+    if model is boundary_mesh.DataModel:
+        offsets = from_warp(handle.face_offsets)
+        start, count = int(handle.start_face), int(handle.n_faces)
+        first, last = int(offsets[start]), int(offsets[start + count])
+        loops = PolygonalTopology(_Shifted(View(offsets, start, count + 1), -first),
+                                  View(from_warp(handle.faces), first, last - first),
+                                  num_points=n_points)
+        return loops, from_warp(handle.points), None
+    if getattr(model, "DatasetHandle", None) is sids.DatasetHandle and \
+            int(handle.element_type) == 22:                              # NGON_n
+        return (PolygonalTopology(from_warp(handle.element_start_offset),
+                                  Transform(_zero_based, from_warp(handle.element_connectivity),
+                                            dtype=tack.i32), num_points=n_points),
+                from_warp(handle.grid_coords), None)
+    if model is nface_n.DataModel:
+        return _nface_n(ds, device, PolyhedralTopology)
+    if getattr(model, "DatasetHandle", None) is ensight.DatasetHandle:
+        return _ensight(ds, device, PolygonalTopology, UnstructuredTopology)
+    if model is corner_point_grid.DataModel:
+        nx, ny, nz = (int(d) for d in handle.logical_cell_dims)
+        n = nx * ny * nz
+        points = _CornerPoints(from_warp(handle.coord), from_warp(handle.zcorn), (nx, ny, nz),
+                               tuple(handle.map_x_axis), tuple(handle.map_y_axis),
+                               int(handle.depth_down), device)
+        topology = UnstructuredTopology(ConstantArray(12, n, dtype=tack.u8, device=device),
+                                        CountingArray(n + 1, step=8, dtype=tack.i32),
+                                        CountingArray(8 * n, dtype=tack.i32), num_points=8 * n)
+        ghosts = None
+        if int(handle.has_actnum):
+            marks = tack.empty((n,), tack.u8)
+            _hidden_where_inactive(from_warp(handle.actnum), marks, Ghosts.HIDDENCELL)
+            ghosts = Ghosts(cells=marks)
+        return topology, points, ghosts
+    return None
+
+
+def _nface_n(ds, device, PolyhedralTopology):
+    """CGNS NFACE_n polyhedra: the NGON_n blocks joined lazily as the faces (ids
+    0-based), each cell's faces its entries' ``|id|`` through the blocks' ranges,
+    its sides their signs (CGNS: negative, the face points into the cell). A
+    face no cell sees outward needs its loop reversed: that, and anything
+    irregular, goes through to_vtk_data_model instead, which orients faces."""
+    handle = ds.handle
+    nface = handle.nface_n_block
+    blocks = list(ds.ngon_n_blocks)
+    starts = [from_warp(b.element_start_offset) for b in blocks]
+    sizes = [int(b.element_connectivity.shape[0]) for b in blocks]
+    face_points = Concatenate(*(Transform(_zero_based, from_warp(b.element_connectivity),
+                                          dtype=tack.i32) for b in blocks)) \
+        if len(blocks) > 1 else Transform(_zero_based, from_warp(blocks[0].element_connectivity),
+                                          dtype=tack.i32)
+    counts = [int(b.element_range[1]) - int(b.element_range[0]) + 1 for b in blocks]
+    entries = from_warp(nface.element_connectivity)
+    cell_faces = _NfaceFaces(entries, np.array([int(b.element_range[0]) for b in blocks], np.int32),
+                             np.concatenate([[0], np.cumsum(counts)[:-1]]).astype(np.int32))
+    num_faces = int(sum(counts))
+    outward, inward = tack.zeros((num_faces,), tack.i32), tack.zeros((num_faces,), tack.i32)
+    summary = tack.zeros((3,), tack.i32)
+    if size_of(entries):
+        _count_face_slots(cell_faces, entries, outward, inward)
+    if num_faces:
+        _face_summary(outward, inward, summary)
+    found = summary.numpy()
+    if found[_IRREGULAR] or found[_FLIPS]:
+        return None
+    topology = PolyhedralTopology(_joined_offsets(starts, sizes), face_points,
+                                  from_warp(nface.element_start_offset), cell_faces,
+                                  Transform(_inward, entries, dtype=tack.u8),
+                                  num_points=ds.get_num_nodes())
+    return topology, from_warp(nface.grid_coords), None
+
+
+def _ensight(ds, device, PolygonalTopology, UnstructuredTopology):
+    """An EnSight part: pieces of linear shapes joined lazily into an unstructured
+    topology (ids 0-based), or a part of nsided polygons alone as a polygonal
+    one. nfaced polyhedra (each element its own faces) and mixtures go through
+    to_vtk_data_model."""
+    pieces = list(ds.pieces)
+    kinds = [int(p.element_type) for p in pieces]
+    if kinds == [_ENSIGHT_NSIDED]:
+        p = pieces[0]
+        return (PolygonalTopology(from_warp(p.element_node_offsets),
+                                  Transform(_zero_based, from_warp(p.connectivity), dtype=tack.i32),
+                                  num_points=ds.get_num_nodes()),
+                from_warp(ds.handle.points), None)
+    if not pieces or any(k not in _VTK_BY_ENSIGHT for k in kinds):
+        return None
+    types, offsets, points, before = [], [], [], 0
+    for p, kind in zip(pieces, kinds):
+        vtk, corners = _VTK_BY_ENSIGHT[kind]
+        n = int(p.num_elements)
+        types.append(ConstantArray(vtk, n, dtype=tack.u8, device=device))
+        offsets.append(CountingArray(n, start=before, step=corners, dtype=tack.i32))
+        points.append(Transform(_zero_based, from_warp(p.connectivity), dtype=tack.i32))
+        before += n * corners
+    offsets.append(CountingArray(1, start=before, dtype=tack.i32))
+    def joined(parts):
+        return parts[0] if len(parts) == 1 else Concatenate(*parts)
+    return (UnstructuredTopology(joined(types), joined(offsets), joined(points),
+                                 num_points=ds.get_num_nodes()),
+            from_warp(ds.handle.points), None)
