@@ -239,7 +239,9 @@ def test_a_model_that_is_not_vtk_shaped(device, wp_device):
                                              sd.AssociationType.NODE))
     data = from_simdata(cloud)
     assert data.num_points == 50 and data.num_cells == 50
-    assert set(np.unique(data.topology.types.numpy())) == {1}             # VTK_VERTEX
+    types = data.topology.types
+    assert isinstance(types, tack.arrays.ConstantArray)                    # stored nowhere
+    assert set(np.unique(tack.arrays.to_host(types))) == {1}               # VTK_VERTEX
     np.testing.assert_array_equal(data.positions(), xyz)
     np.testing.assert_array_equal(data.fields["m"].values.numpy(), xyz[:, 0])
 

@@ -368,7 +368,7 @@ def from_simdata(ds):
     )
     from warp_simdata.data_models.vtk.conversion import to_vtk_data_model
 
-    from tack.arrays import UniformCoordinates
+    from tack.arrays import ConstantArray, UniformCoordinates
     from tack.dataset import (
         H1,
         Constant,
@@ -420,8 +420,15 @@ def from_simdata(ds):
                 topology = PolylineTopology(offsets, points, num_points=n)
             else:
                 count = (len(offsets) if isinstance(offsets, np.ndarray) else offsets.shape[0]) - 1
-                topology = UnstructuredTopology(np.full(count, 1, np.uint8), offsets, points,
-                                                num_points=n)
+                if points.shape[0] == count:
+                    # One point each: every cell a VTK_VERTEX, an implicit array stored
+                    # nowhere, as Tack's own point clouds' (uniform_cells).
+                    types = ConstantArray(1, count, dtype=tack.u8)
+                else:
+                    # Poly-vertices among them (VTK_POLY_VERTEX, 2): a type per cell.
+                    counts = np.diff(offsets.numpy() if isinstance(offsets, Array) else offsets)
+                    types = np.where(counts == 1, 1, 2).astype(np.uint8)
+                topology = UnstructuredTopology(types, offsets, points, num_points=n)
         geometry = from_warp(handle.points)
     elif kind is unstructured_grid.DatasetHandle:
         n = ds.get_num_nodes()
