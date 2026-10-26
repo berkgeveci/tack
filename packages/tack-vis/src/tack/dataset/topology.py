@@ -581,16 +581,27 @@ def _face_bucket_counts(cells, counts):
 
 
 @tack.kernel
-def _place_faces(cells, start, starts, fill, records):
-    # Each (cell, face) straight into its bucket, by its lowest point, as one
-    # record: the rest of its key and its entry (one write to one place). The
-    # lowest point is the bucket's, so records compare only within a bucket.
+def _place_faces(cells, start, starts, fill, records, lo, hi, base):
+    # Each (cell, face) whose lowest point is in [lo, hi) straight into its
+    # bucket, as one record: the rest of its key and its entry (one write to
+    # one place), at its bucket's start less base. The lowest point is the
+    # bucket's, so records compare only within a bucket.
     for c in cells:
-        first = start + cells.index(c) * cells.NUM_FACES
-        for f in range(cells.NUM_FACES):
-            key = _key_of(_face_row(cells, c, f))
-            slot = starts[key[0]] + tack.atomic_add(fill, key[0], 1)
-            records[slot] = [key[1], key[2], key[3], first + f]
+        # A face's lowest point is one of the cell's: a cell with none in
+        # [lo, hi) has no face there, and in a pass over part of the points
+        # (point ids follow cell ids in a mesh) most cells are such.
+        least = cells.point_id(c, 0)
+        most = least
+        for j in range(1, cells.NUM_POINTS):
+            least = min(least, cells.point_id(c, j))
+            most = max(most, cells.point_id(c, j))
+        if least < hi and most >= lo:
+            first = start + cells.index(c) * cells.NUM_FACES
+            for f in range(cells.NUM_FACES):
+                key = _key_of(_face_row(cells, c, f))
+                if key[0] >= lo and key[0] < hi:
+                    slot = starts[key[0]] - base + tack.atomic_add(fill, key[0], 1)
+                    records[slot] = [key[1], key[2], key[3], first + f]
 
 
 @tack.func
@@ -616,12 +627,12 @@ def _same_key(a, b):
 
 
 @tack.kernel
-def _sort_face_buckets(starts, records, nbuckets):
+def _sort_face_buckets(starts, records, lo, hi, base):
     # Each bucket's records in order (insertion, in place): a bucket's records
     # lie together, so this reads and writes memory a thread has to itself.
-    for b in range(nbuckets):
-        begin = starts[b]
-        end = starts[b + 1]
+    for b in range(lo, hi):
+        begin = starts[b] - base
+        end = starts[b + 1] - base
         for i in range(begin + 1, end):
             r = records[i]
             j = i - 1
@@ -969,8 +980,9 @@ class Faces(_OnItsArrays):
         records = tack.empty((total,), tack.vec(4, idt))
         for group, start in zip(cell_groups, starts[:-1]):
             if group.count:
-                _place_faces(group.view(), int(start), bucket_starts, counts, records)
-        _sort_face_buckets(bucket_starts, records, np_)
+                _place_faces(group.view(), int(start), bucket_starts, counts, records, 0, np_,
+                             0)
+        _sort_face_buckets(bucket_starts, records, 0, np_, 0)
         # Each bucket's faces counted, then numbered along its records: two walks
         # of the buckets in place of per-record run flags and ids.
         _bucket_face_counts(bucket_starts, records, counts, np_)
