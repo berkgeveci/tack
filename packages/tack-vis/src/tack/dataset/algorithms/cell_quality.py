@@ -510,8 +510,8 @@ def cell_quality(data, measures=None):
     big = float(np.finfo(dtype.numpy_dtype).max)
     out = {m: tack.empty((n,), dtype) for m in ("scaled_jacobian", "jacobian_ratio",
                                                 "condition", "min_edge", "max_edge")}
-    if data.topology.dimension > 1:
-        data.topology.faces()                      # the incidence face walks need
+    if data.topology.dimension > 1 and not getattr(data.topology, "reference_cells", True):
+        data.topology.faces()                      # polyhedra and polygons walk theirs
     jacobian = {"scaled_jacobian", "jacobian_ratio", "condition"} & set(names)
     for group in data.launch_groups("cells", []):
         if not group.count:

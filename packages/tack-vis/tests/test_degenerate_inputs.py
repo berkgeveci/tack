@@ -174,6 +174,31 @@ def test_derivatives_on_cells_of_no_volume_are_nan(backend, kind):
     assert np.isnan(td.perot(data, td.upwind_flux(data, "c", (1, 0, 0))).values.numpy()).all()
 
 
+def test_splitting_a_collapsed_cell_keeps_the_pieces_with_volume(backend):
+    """A hexahedron whose top face is pinched to a point (a pyramid written as a
+    hexahedron, as meshers do) and a quad with a repeated point: their pieces
+    with a repeated point measure nothing and are left out. VTK keeps them,
+    but their faces repeat, and every filter deriving faces refused the
+    output ("faces are shared by more than two cells")."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+                       [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 2]], np.float32)
+    data = td.DataSet(td.UnstructuredTopology(
+        [12, 12], [0, 8, 16], [0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7, 8, 8, 8, 8]), points)
+    data.fields["c"] = td.Field(td.Constant(data), tack.array(np.array([1.0, 2.0], np.float32)))
+    tets = td.tetrahedralize(data)
+    measure = td.cell_geometry(tets).measure.values.numpy()
+    assert tets.num_cells == 8 and (measure > 0).all()
+    assert measure.sum() == pytest.approx(1 + 1 / 3, rel=1e-6)
+    np.testing.assert_array_equal(tets.fields["c"].values.numpy(), [1] * 6 + [2] * 2)
+    assert td.extract_surface(tets).num_cells == 14      # 5 squares and 4 sides, split
+    quads = td.DataSet(td.UnstructuredTopology([9, 9], [0, 4, 8], [0, 1, 1, 2, 1, 4, 5, 2],
+                                               num_points=6),
+                       np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 0, 0],
+                                 [2, 1, 0]], np.float32))
+    np.testing.assert_allclose(td.cell_geometry(td.triangulate(quads)).measure.values.numpy(),
+                               [0.5, 0.5, 0.5])
+
+
 def test_polygons_and_polylines_of_no_extent(backend):
     flat = td.DataSet(td.PolygonalTopology([0, 3], [0, 1, 2]), np.ones((3, 3), np.float32))
     area, centroid = td.cell_geometry(flat)
@@ -209,6 +234,47 @@ def test_a_crossing_beside_a_value_that_is_not_finite_lies_at_the_other_end(back
     clipped = td.clip(data, "p", 0.03)
     assert np.isfinite(clipped.positions()).all()
     assert np.isfinite(clipped.fields["v"].values.numpy()).all()
+
+
+@pytest.mark.parametrize("value", [np.inf, -np.inf, np.nan])
+def test_polyhedra_put_values_that_are_not_finite_where_shapes_do(backend, value):
+    """A NaN is below every level, as the shape path's case index has it; the
+    polyhedral tracing once took it as neither above nor below, and its faces
+    did not close (blaming the winding). The clipped volumes are the shape
+    path's, on both sides, which together make the whole."""
+    data = _ramp_with(value)
+    polyhedra = td.as_polyhedra(data)
+    surface = td.contour(polyhedra, "p", 0.5)
+    assert surface.num_cells and np.isfinite(surface.positions()).all()
+    volumes = []
+    for inside in (False, True):
+        ours = td.clip(polyhedra, "p", 0.03, inside=inside)
+        assert np.isfinite(ours.positions()).all()
+        volumes.append(td.cell_geometry(ours).measure.values.numpy().sum())
+        assert volumes[-1] == pytest.approx(
+            td.cell_geometry(td.clip(data, "p", 0.03, inside=inside)).measure.values.numpy().sum(),
+            rel=1e-5)
+    assert sum(volumes) == pytest.approx(8.0, rel=1e-5)
+
+
+def test_a_nan_is_below_the_level_in_2d_contours_too(backend):
+    """A 2D mesh's lines found their first rising crossing with ``< iso`` but
+    paired crossings by ``>= iso``, so a NaN made the lines counted and the
+    lines written disagree, and the unwritten ones' slots (whatever ``empty``
+    held) indexed past an array: a bus error, now and then. A NaN gives the
+    lines -inf gives."""
+    rng = np.random.default_rng(1)
+    grid = td.uniform_grid((12, 12))
+    for _ in range(10):
+        v = rng.random(grid.num_points).astype(np.float32)
+        v[rng.random(grid.num_points) < 0.2] = np.nan
+        counts = []
+        for values in (v, np.where(np.isnan(v), -np.inf, v).astype(np.float32)):
+            grid.fields["v"] = td.Field(td.H1(grid), tack.array(values))
+            lines = td.contour(grid, "v", 0.5)
+            lines.topology.validate()
+            counts.append(lines.num_cells)
+        assert counts[0] == counts[1]
 
 
 # ── A level through mesh points ─────────────────────────────────────
@@ -351,3 +417,69 @@ def test_vtk_images_of_one_point_or_none_go_both_ways(backend, dims):
     assert data.num_points == int(np.prod(dims))
     back = dataset_to_vtk(data)
     assert isinstance(back, vtk.vtkImageData) and back.dimensions == dims
+
+
+# ── Every algorithm on degenerate variants of one mesh ─────────────
+
+
+def _variant(name, device):
+    """A small hexahedral mesh (``test_dataset_devices``'), made degenerate."""
+    import test_dataset_devices as devices
+
+    data = devices._hexes(device, n=2 if name == "one cell" else 3)
+    x = data.positions()
+    if name in ("all hidden", "some hidden"):
+        marks = np.zeros(data.num_cells, np.uint8)
+        marks[:: 1 if name == "all hidden" else 2] = td.Ghosts.HIDDENCELL
+        data.ghosts = td.Ghosts(cells=tack.array(marks, device=device))
+    elif name == "NaN values":
+        s = data.fields["s"].values.numpy().copy()
+        s[::3] = np.nan
+        v = data.fields["v"].values.numpy().copy()
+        v[::4] = np.nan
+        data.fields["s"] = td.Field(td.H1(data), tack.array(s, device=device))
+        data.fields["v"] = td.Field(td.H1(data), tack.array(v, tack.vec3(), device=device))
+    elif name in ("coincident points", "far and close"):
+        x = np.full_like(x, 1.0) if name == "coincident points" else \
+            (x.astype(np.float64) * 1e-7 + 1e7).astype(np.float32)
+        data = devices._with_fields(
+            td.DataSet(data.topology, tack.array(x, tack.vec3(), device=device)), device)
+    elif name == "unused points":
+        t = data.topology
+        x = np.vstack([x, [[9, 9, 9], [8, 8, 8]]]).astype(np.float32)
+        data = devices._with_fields(td.DataSet(
+            td.UnstructuredTopology(t.types, t.offsets, t.connectivity, num_points=len(x)),
+            tack.array(x, tack.vec3(), device=device)), device)
+    elif name == "no cells":
+        with device:
+            top = td.UnstructuredTopology(tack.zeros((0,), tack.u8), [0],
+                                          tack.zeros((0,), tack.i32), num_points=len(x))
+            data = td.DataSet(top, tack.array(x, tack.vec3()))
+            data.fields["s"] = td.Field(td.H1(data), tack.array((x ** 2).sum(1)))
+            data.fields["v"] = td.Field(td.H1(data), tack.array(x, tack.vec3()))
+    return data
+
+
+#: What an algorithm may say on these variants: each names what it will not do.
+_STATED = ("is not supported yet",                     # chosen faces among hidden cells
+           "is not finite; pass a finite range",       # histograms of NaN
+           "cell ids lie outside")                     # extract_cells([0, 1]) of fewer
+
+
+@pytest.mark.parametrize("name", ["all hidden", "some hidden", "NaN values", "one cell",
+                                  "coincident points", "far and close", "unused points",
+                                  "no cells"])
+def test_every_algorithm_answers_or_says_why(backend, name):
+    """Every algorithm of the device tests on a mesh made degenerate one way: an
+    answer, or a refusal that names the reason. NaN values once broke the
+    polyhedral contour and clip."""
+    import test_dataset_devices as devices
+
+    failures = []
+    for call, run in devices.CALLS.items():
+        try:
+            run(_variant(name, tack.device(backend)))
+        except Exception as e:                        # sorted below
+            if not any(reason in str(e) for reason in _STATED):
+                failures.append(f"{call}: {type(e).__name__}: {e}")
+    assert not failures, "\n".join(failures)

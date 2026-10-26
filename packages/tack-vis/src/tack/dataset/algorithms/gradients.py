@@ -15,16 +15,33 @@ from tack.runtime.dispatch import on_inputs_device
 __all__ = ['gradients']
 
 
+@tack.func
+def _world_gradient(cells, u, c, pc):
+    # d(u)/d(x) from d(u)/d(pc), through the geometry's Jacobian J. A solid's is
+    # J^-T d(u)/d(pc). A 2D cell's lies in its tangent plane, spanned by J's
+    # columns a and b: g = alpha a + beta b with g . a and g . b the parametric
+    # derivatives, VTK's and Viskores' in-plane gradient (no area: NaN, as a
+    # solid of no volume). Lines and vertices: zero.
+    g = tack.vec3(0.0, 0.0, 0.0)
+    if cells.DIMENSION == 3:
+        g = cells.geometry_jacobian(c, pc).inverse().transpose() @ u.parametric_gradient(c, pc)
+    elif cells.DIMENSION == 2:
+        m = cells.geometry_jacobian(c, pc)
+        a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
+        b = tack.vec3(m[0, 1], m[1, 1], m[2, 1])
+        d = u.parametric_gradient(c, pc)
+        aa = a.dot(a)
+        ab = a.dot(b)
+        bb = b.dot(b)
+        det = aa * bb - ab * ab
+        g = ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
+    return g
+
+
 @tack.kernel
 def _gradients(cells, u, out):
     for c in cells:
-        pc = cells.parametric_center()
-        if cells.DIMENSION == 3:
-            # d(u)/d(x) = J^-T d(u)/d(pc), J from the geometry, d(u)/d(pc) from u.
-            out[cells.entity_id(c)] = (cells.geometry_jacobian(c, pc).inverse().transpose()
-                                       @ u.parametric_gradient(c, pc))
-        else:
-            out[cells.entity_id(c)] = [0.0, 0.0, 0.0]
+        out[cells.entity_id(c)] = _world_gradient(cells, u, c, cells.parametric_center())
 
 
 @tack.kernel
@@ -32,22 +49,14 @@ def _corner_gradients(cells, u, start, out):
     for c in cells:
         first = start + cells.index(c) * cells.NUM_POINTS
         for j in range(cells.NUM_POINTS):
-            if cells.DIMENSION != 3:
-                out[first + j] = [0.0, 0.0, 0.0]
-            elif cells.ID == shapes.PYRAMID and j == 4:
+            if cells.ID == shapes.PYRAMID and j == 4:
                 # The Jacobian is singular at a pyramid's apex. Extrapolate from
                 # two points just below it on the axis, as vtkPyramid does.
-                a = tack.vec3(0.5, 0.5, 0.998)
-                b = tack.vec3(0.5, 0.5, 0.996)
-                ga = (cells.geometry_jacobian(c, a).inverse().transpose()
-                      @ u.parametric_gradient(c, a))
-                gb = (cells.geometry_jacobian(c, b).inverse().transpose()
-                      @ u.parametric_gradient(c, b))
+                ga = _world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.998))
+                gb = _world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.996))
                 out[first + j] = 2.0 * ga - gb
             else:
-                pc = cells.parametric_point(j)
-                out[first + j] = (cells.geometry_jacobian(c, pc).inverse().transpose()
-                                  @ u.parametric_gradient(c, pc))
+                out[first + j] = _world_gradient(cells, u, c, cells.parametric_point(j))
 
 
 @tack.kernel
@@ -104,6 +113,27 @@ def _polyhedral_gradients(cells, u, out):
 
 
 @tack.kernel
+def _polygon_gradients(cells, u, out):
+    for c in cells:
+        # In-plane Green-Gauss: (1/A) times the sum over the edges of each edge's
+        # outward in-plane normal (its length long) times its mean value, with N
+        # the Newell vector (2A along the normal): sum (u_k + u_k+1) ((p_k+1 - p_k)
+        # x N) / |N|^2. Exact for a linear field on a planar polygon. Positions
+        # and values from the first point, as the polyhedral gradient takes them.
+        origin = cells.side_position(c, 0, 0)
+        u0 = u[cells.side_point_id(c, 0, 0)]
+        newell = tack.vec3(0.0, 0.0, 0.0)
+        total = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(cells.num_faces(c)):
+            a = cells.side_position(c, k, 0) - origin
+            b = cells.side_position(c, k, 1) - origin
+            newell += a.cross(b)
+            total += (u[cells.side_point_id(c, k, 0)] + u[cells.side_point_id(c, k, 1)]
+                      - 2.0 * u0) * (b - a)
+        out[cells.entity_id(c)] = total.cross(newell) / newell.dot(newell)
+
+
+@tack.kernel
 def _zero_gradients(cells, out):
     for c in cells:
         out[cells.entity_id(c)] = [0.0, 0.0, 0.0]
@@ -119,9 +149,10 @@ def _entry_cells(offsets, cells):
 
 def _polyhedral_scalar_gradients(data, field, at):
     """A scalar field's gradient on a topology without reference elements: per 3D
-    cell Green-Gauss over the fanned faces (exact for a linear field), zero for
-    polygons and polylines and for cell data (constant in each cell, as on the
-    shape path), and at the points the mean of the cells' around each point."""
+    cell Green-Gauss over the fanned faces, per polygon in its plane over its
+    edges (both exact for a linear field), zero for polylines and for cell data
+    (constant in each cell, as on the shape path), and at the points the mean of
+    the cells' around each point."""
     cells = _vectors(data.num_cells, data.dtype)
     on_points = isinstance(field.space, H1)
     values = materialize(field.values) if on_points else None
@@ -131,6 +162,8 @@ def _polyhedral_scalar_gradients(data, field, at):
         view = data.domain_view("cells", group)
         if on_points and group.shape.DIMENSION == 3:
             _polyhedral_gradients(view, values, cells)
+        elif on_points and group.shape.DIMENSION == 2:
+            _polygon_gradients(view, values, cells)
         else:
             _zero_gradients(view, cells)
     if at == "cells":
@@ -171,7 +204,7 @@ def _scalar_gradients(data, field, at):
         return out
     # At the points: each cell's gradient at each of its corners, averaged over
     # the cells around each point, in layout order (VTK's and Viskores' point
-    # gradients). Lower-dimensional cells contribute zero.
+    # gradients). Lines and vertices contribute zero.
     start_of, total = corner_layout(data.topology)
     corners = _vectors(total, data.dtype)
     for group in data.launch_groups("cells", [field]):
@@ -197,8 +230,10 @@ def gradients(data, field, at="cells"):
     values, row by row -- ``d(u_i)/d(x_j)`` at ``3 * i + j``, the layout of
     VTK's and Viskores' gradient tensors. The field's basis gives its
     derivative in parametric coordinates and the geometry's Jacobian turns that
-    into a world gradient, so the two need not share a space. Cells below three
-    dimensions get zero, and a cell of no volume NaN (its Jacobian is singular). ``flow_quantities`` derives divergence, vorticity and
+    into a world gradient, so the two need not share a space. A 2D cell's
+    gradient lies in its plane (VTK's and Viskores' in-plane gradient), lines
+    and vertices get zero, and a cell of no volume or area NaN (its Jacobian is
+    singular). ``flow_quantities`` derives divergence, vorticity and
     the Q-criterion from a vector field's gradient.
 
     On a polyhedral topology there is no reference element. A cell's gradient
@@ -207,8 +242,9 @@ def gradients(data, field, at="cells"):
     measures the volume by), each triangle's area vector times the mean of its
     values, over the volume. That is exact for a linear field and needs no
     interpolant. Cell data, constant in each cell, has a zero gradient there,
-    as on shapes; polygons and polylines get zero. At the points, the cells'
-    gradients are averaged over the cells around each point."""
+    as on shapes. A polygon's is the same in its plane, over its edges; polylines
+    get zero. At the points, the cells' gradients are averaged over the cells
+    around each point."""
     field = _with_basis(data, _field(data, field))
     if (not getattr(data.topology, "reference_cells", True)
             and not isinstance(field.space, (H1, Constant))):

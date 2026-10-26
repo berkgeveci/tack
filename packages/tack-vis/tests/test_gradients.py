@@ -18,7 +18,9 @@ except ImportError:
 
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
 
-KINDS = {"hexahedron": 12, "tetra": 10, "wedge": 13, "pyramid": 14}
+KINDS = {"hexahedron": 12, "tetra": 10, "wedge": 13, "pyramid": 14,
+         # 2D cells, on the surface the skew curves out of z = 0: in-plane gradients.
+         "triangle": 5, "quad": 9}
 
 
 def _grid(kind):

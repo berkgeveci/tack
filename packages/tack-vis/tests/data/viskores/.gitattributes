@@ -1,0 +1,2 @@
+# Viskores test data: keep byte for byte, never normalize line endings.
+*.vtk -text

@@ -29,7 +29,7 @@ or the `td.Field` itself; a raw value buffer needs a space wrapper first.
 | Keep cells inside a region described by a function | `extract_geometry` | Whole cells |
 | Keep a named or explicit cell selection | `extract_cells` | Whole cells in input order |
 | Keep the part on one side of a level | `clip` | Whole cells and pieces of cut cells |
-| Extract a scalar level set, or several | `contour` | Triangles in 3D; line cells in 2D; with several values, all of them, each cell's in `contour_value` |
+| Extract a scalar level set, or several | `contour` | Triangles in 3D; line cells in 2D; vertices on lines; `dimension=` picks which cells of a mixed mesh (the highest by default, never mixed); with several values, all of them, each cell's in `contour_value` |
 | Intersect with a plane or another implicit function, or several parallel ones | `slice_plane`, `slice` | Intersection geometry |
 | Keep original points by scalar or region | `threshold_points`, `extract_points` | Vertex cells, without cell connectivity |
 
@@ -195,10 +195,10 @@ assert td.feature_edges(open_top).num_cells == 12           # its boundary
 |---|---|---|---|
 | Select whole cells; measure cells | Yes | Yes | Yes |
 | Extract boundaries | Yes, subject to line-cell limitations | Yes | Chain ends |
-| Contour or slice | Yes, of order-1 and `L2` fields (an order-2 `H1` field is refused) | Yes | Currently unsupported |
+| Contour or slice | Yes, of order-1 and `L2` fields (an order-2 `H1` field is refused) | Yes | Contour: vertices, of point data |
 | Clip cells | H1 geometry required | Polyhedra: yes, into polyhedra (faces clipped, iso-polygons as caps); polygons not yet | Currently unsupported |
 | Project between point and cell data | Yes | Yes | Yes |
-| Gradients and flow quantities | Yes | Yes: Green–Gauss over each polyhedron's faces (exact for linear fields); zero on polygons | Yes (zero) |
+| Gradients and flow quantities | Yes (2D cells in their plane) | Yes: Green–Gauss over each polyhedron's faces, and over each polygon's edges in its plane (exact for linear fields) | Yes (zero) |
 | Locate cells and probe | Yes | Yes: in sub-tetrahedra or fanned triangles; cells must be star-shaped from their points' mean | Yes, on segments |
 | Advection and streamlines | Yes, 2D and 3D cells | Yes, as probing locates | Currently unsupported |
 | Carry ghost marks over pieces | Yes | Yes | Yes |

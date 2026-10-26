@@ -7,6 +7,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `contour(..., dimension=)`: 3, 2 or 1, the cells to contour -- by default
+  the mesh's highest -- each dimension's alone, never mixed as VTK mixes
+  them: the boundary triangles beside a mesh's tetrahedra give lines with
+  `dimension=2`. Contours of lines and polylines (`dimension=1`, or a 1D
+  mesh) are vertex cells at the crossings, a crossing at a point whose value
+  is the level that point once; they were refused. Matched to VTK per
+  dimension on Viskores' `mixed-cell-shapes.vtk`.
 - Voxelization: `td.voxelize(data, grid, fields=None, samples=4)`, each voxel
   of an image the fraction of its volume the data covers and each field's
   mean over it, by sampling through `probe`, so for datasets, pieces, AMR
@@ -344,6 +351,34 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A mesh with cells of more than one dimension (a surface's triangles among
+  tetrahedra, as Gmsh and Exodus meshes carry): `cell_geometry` measures each
+  cell in its own dimension, and `net_flux`, `perot` and `divergence` give its
+  lower-dimensional cells zero; all three failed inside kernel resolution
+  ("no @tack.func method 'side_position'"), and `perot` left those cells
+  unwritten. Found with Viskores' test datasets, now in the tests
+  (`_viskores_datasets.py`, measures held to Viskores' expected values).
+- `as_polyhedra` refuses an inside-out cell beside an upright one, which no
+  polyhedral face can record, saying so; `contour` and `clip` of the result
+  failed later, with faces that "do not close" and a pointer to
+  `check_winding`, which passes such cells.
+- `tetrahedralize` and `triangulate` of a collapsed cell (repeated points, a
+  pyramid written as a hexahedron) leave out its pieces with a repeated
+  point, which measure nothing; VTK keeps them, but their repeated faces made
+  every filter that derives faces refuse the output.
+- `vtk_to_dataset` of a grid with a point array and a cell array of one name
+  (VTK keeps them apart) kept only the cell array, so a contour of the name
+  found nothing: the cell array is now the field `"<name> (cells)"`, with a
+  warning. Viskores' `mixed-cell-shapes.vtk` has such a pair.
+- `contour` and `clip` of polyhedra with a NaN in the field: the tracing took
+  a NaN as neither above nor below the level, and its faces did not close
+  ("check_winding"); a NaN is now below every level, as the shape path's
+  cases have it, and an inside clip keeps it, so the clipped volumes are the
+  shape path's on both sides.
+- `contour` of a 2D mesh with a NaN in the field: the first crossing was
+  found with `< iso` but crossings paired with `>= iso`, so fewer lines were
+  written than counted and the rest held whatever `empty` gave them -- read
+  as indices, a bus error now and then. A NaN is below the level there too.
 - Point filters on GPUs (the validation round on mustafar-linux, headroom
   and illyad, 2026-10-25):
   - `PointLocator.neighbors` and `nearest` ran on the default device when no
@@ -403,6 +438,23 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `extract_surface` of a 2D mesh, by default, is the mesh itself -- its cells
+  passed through, hidden ones left out -- as VTK's geometry filter passes
+  polygons; it was the boundary edges, which `extract_surface(data,
+  boundary_faces(data))` still gives.
+- `gradients` of 2D cells -- triangles, quads, pixels and polygons, in a 2D
+  mesh or among 3D cells -- lie in the cell's plane, as VTK's and Viskores'
+  do (matched to `vtkGradientFilter` and `vtkCellDerivatives` on a curved
+  surface, and to Viskores' `UnitTestGradientExplicit`); they were zero. A
+  polygon's is Green-Gauss over its edges, exact for a linear field. Lines
+  and vertices still give zero.
+- `cell_geometry` and `cell_quality` of shape cells no longer derive the
+  mesh's faces: a shape's faces walk from its tables (`_FaceWalk` is in every
+  shape cell's domain view), so on a fresh mesh of 1M tetrahedra volumes take
+  6.5 ms instead of 24 (VTK's `vtkCellSizeFilter` 39 ms); polyhedra and
+  polygons still derive theirs. Deriving faces computes each side's
+  orientation in the pass that matches the sides (1.5 ms less at 1M
+  tetrahedra).
 - `uniform_grid` takes an origin and spacing of one value per size (a 2D
   image no longer needs a third spacing) and a 2 x 2 direction for a 2D
   image. `DataSet.rebased` keeps an image an image, its corner moved in double

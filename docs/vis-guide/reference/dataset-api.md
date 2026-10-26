@@ -1008,7 +1008,7 @@ Integer `magnitude` and `log_values` therefore return floating point fields.
 
 Empty supported filters return valid empty topologies and carry selected fields
 and sets by the same maps as nonempty filters; missing `fields=` names still
-raise `KeyError`. Empty polyline contouring retains the documented refusal.
+raise `KeyError`.
 
 In the table,
 "polyhedral" means `PolyhedralTopology`, "polygonal" `PolygonalTopology`
@@ -1020,17 +1020,17 @@ and "polyline" `PolylineTopology`.
 | `cell_quality` (scaled Jacobian, Jacobian ratio, condition, edge ratio, shortest and longest edge) | yes (order 2 along its curved edges; a pyramid by its four tetrahedra) | yes (by its fan tetrahedra) | yes (by its fan triangles) | edges only |
 | `feature_edges` (boundary, feature, non-manifold, manifold edges of a surface) | yes (2D cells) | no (a volume: `extract_surface` first) | yes | no |
 | `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
-| `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
+| `boundary_faces`, `extract_surface` | yes (a 2D mesh's boundary: line cells; by default `extract_surface` passes a 2D mesh's cells through) | yes (the surface is polygonal) | yes (boundary: line cells; by default the polygons pass through) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
-| `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | no (would give points) |
+| `contour`, `slice`, `slice_plane` | yes (`dimension=` 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | yes (`contour`: vertex cells, of point data) |
 | `clip` | yes (with an `H1` geometry) | yes (into polyhedra: faces clipped once, iso-polygons as caps) | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
 | `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point; star-shaped too) | yes (on segments) |
 | `advect`, `streamlines` | yes (2D and 3D cells) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point) | no |
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
-| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (in the polygon's plane, Green–Gauss over its edges; 2D cells on shapes in their plane too) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
 | `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
 | side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |
