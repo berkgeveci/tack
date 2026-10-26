@@ -25,8 +25,9 @@ can be written there.
 (NVIDIA's simulation-data library on Warp, an optional import): image
 data, structured grids, polydata and unstructured grids (polyhedra
 included) against Tack's topologies, NODE and ELEMENT fields against point
-and cell fields, collections against partitioned datasets. Any of
-warp-simdata's other models comes through its ``to_vtk_data_model``.
+and cell fields, collections against partitioned datasets. Most of
+warp-simdata's other models come across as they are, sharing their arrays
+(see `from_simdata`); the rest through its ``to_vtk_data_model``.
 """
 
 import math
@@ -366,11 +367,13 @@ def from_simdata(ds):
     """A warp-simdata dataset (or ``DatasetCollection``) as a Tack ``DataSet`` (or
     ``PartitionedDataSet``) on the Warp device, sharing its arrays.
 
-    Point clouds, surface meshes, OpenFOAM polyMesh and CGNS sections of linear
-    elements (one shape or MIXED) are taken as they are: their arrays become
-    Tack's, CGNS's 1-based and MIXED connectivities read lazily (see "models
-    imported as they are"). Every other model goes through warp-simdata's
-    ``to_vtk_data_model`` first. Image data becomes a uniform grid (``offset`` from its extent), a structured
+    Point clouds, curves, surface meshes, OpenFOAM polyMesh and boundary
+    patches, CGNS sections of linear elements (one shape, MIXED, NGON_n and
+    NFACE_n), EnSight parts of one kind, corner-point grids (inactive cells
+    hidden) and FLASH axisymmetric data (an ``AMRDataSet`` of revolved boxes)
+    are taken as they are: their arrays become Tack's, CGNS's 1-based and MIXED
+    connectivities read lazily (see "models imported as they are"). Every
+    other model goes through warp-simdata's ``to_vtk_data_model`` first. Image data becomes a uniform grid (``offset`` from its extent), a structured
     grid a structured topology over its points, polydata of polygons or
     polylines a polygonal or polyline topology (vertices alone become vertex
     cells; a mix of kinds is refused: split it first), and an unstructured grid
