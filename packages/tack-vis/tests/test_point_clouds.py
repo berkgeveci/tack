@@ -302,13 +302,31 @@ def test_normals_point_toward_the_viewpoint():
     assert ((facing * (above - cloud.world_positions())).sum(axis=1) >= 0).all()
 
 
-def test_normals_where_there_is_no_plane():
+def test_normals_where_there_is_no_plane(backend):
+    """Found on CUDA (2026-10-25): the x axis got [0, 0, 1] where the CPU's
+    least eigenvalue cancelled to zero exactly, and a line in any other
+    direction got an arbitrary normal on the CPU too. The closed form puts a
+    line's two least eigenvalues up to 1.22 sqrt(eps) apart; point_normals
+    calls a neighbourhood a line within 4 sqrt(eps)."""
     normals = td.point_normals(td.point_cloud(np.eye(3)), k=8).fields["normals"]
     np.testing.assert_allclose(normals.values.numpy(), np.full((3, 3), 3 ** -0.5), atol=1e-6)
     line = np.column_stack([np.arange(10.0), np.zeros(10), np.zeros(10)])
     assert not td.point_normals(td.point_cloud(line), k=4).fields["normals"].values.numpy().any()
     two = td.point_normals(td.point_cloud(np.eye(3)[:2]), k=8).fields["normals"]
     assert not two.values.numpy().any()             # fewer than three points
+    rng = np.random.default_rng(8)
+    for dtype in (np.float32, np.float64):
+        for _ in range(20):
+            q, _ = np.linalg.qr(rng.standard_normal((3, 3)))
+            along = np.column_stack([rng.uniform(0, 10, 40), np.zeros(40), np.zeros(40)])
+            cloud = td.point_cloud((along @ q.T + rng.uniform(-100, 100, 3)).astype(dtype))
+            got = td.point_normals(cloud, k=12).fields["normals"].values.numpy()
+            assert not got.any(), f"a line in direction {q[:, 0]} has normals"
+            # A strip a tenth as wide as it is long is a plane: its normal is q's third axis.
+            strip = np.column_stack([rng.uniform(0, 10, 40), rng.uniform(0, 1, 40), np.zeros(40)])
+            got = td.point_normals(td.point_cloud((strip @ q.T).astype(dtype)),
+                                   k=12).fields["normals"].values.numpy()
+            np.testing.assert_allclose(np.abs(got @ q[:, 2]), 1.0, atol=1e-3)
 
 
 # ── Against VTK ─────────────────────────────────────────────────────

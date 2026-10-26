@@ -83,6 +83,11 @@ class Backend:
     #: supported atomic types/scopes, or safe partial-workgroup execution.
     supports_workgroups: bool = False
 
+    #: Whether `tack.inspect` shows this backend's kernels. The Warp backend
+    #: says no: its generated code is Warp's Python, which Warp compiles
+    #: further out of Tack's sight; inspect the kernel on another device.
+    supports_inspect: bool = True
+
     #: Keyword options `tack.device()` forwards to this backend's constructor.
     #: Anything else is rejected there, so a misspelt or misdirected option
     #: cannot be silently dropped.
@@ -137,6 +142,16 @@ class Backend:
     def wrap_ptr(self, ptr, dtype: ScalarType, shape: tuple[int, ...]):
         """Wrap existing memory as a DeviceBuffer without copying."""
         raise NotImplementedError
+
+    def addresses_dlpack(self, device_type: int, device_id: int) -> bool:
+        """Whether this backend can wrap a DLPack tensor on ``(device_type,
+        device_id)`` without copying, so `from_dlpack` may put it here. By
+        default by the backend's name (``lang/dlpack.py``'s
+        ``_DEVICE_BACKENDS``) and, for a type with several devices, its ordinal.
+        The Warp backend answers for the one device it drives."""
+        from tack.lang.dlpack import _DEVICE_BACKENDS
+        return self.name in _DEVICE_BACKENDS.get(device_type, ()) and (
+            not self.multi_device or self.ordinal == device_id)
 
     def mpi_direct(self, buffer) -> bool:
         """Whether a GPU-aware MPI may read and write ``buffer``'s memory as it is

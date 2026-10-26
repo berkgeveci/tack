@@ -3,6 +3,7 @@
 
 import tack
 from tack.algorithms.scan import exclusive_scan
+from tack.arrays import size_of
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.polyhedra import _cell_sizes
 from tack.dataset.sets import Set
@@ -57,7 +58,7 @@ def _loop_ends(cell_offsets, cell_faces, cell_face_sides, face_points, keys, end
 
 
 def _check_loops(t):
-    total = int(t.cell_faces.shape[0])
+    total = size_of(t.cell_faces)
     bad = tack.zeros((t.num_cells,), tack.i32)
     if total:
         keys = tack.empty((2 * total,), tack.vec(2, t.id_dtype))

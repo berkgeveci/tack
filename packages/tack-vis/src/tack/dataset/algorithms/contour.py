@@ -6,7 +6,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
-from tack.arrays import CountingArray
+from tack.arrays import CountingArray, size_of
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import (
     _close,
@@ -746,10 +746,10 @@ def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
     from tack.dataset.polyhedra import SizeBuckets
 
     t = data.topology
-    entries = int(t.cell_faces.shape[0])
+    entries = size_of(t.cell_faces)
     idt = data.id_dtype
     # A face's crossings are at most its points; every face is in two cells at most.
-    odt = ids.for_output(data, 2 * int(t.face_points.shape[0]) * nlevels)
+    odt = ids.for_output(data, 2 * size_of(t.face_points) * nlevels)
     kdt = ids.at_least(idt, data.num_points * nlevels)      # keys hold the level
     counts = tack.zeros((entries,), tack.i32)
     for group in data.launch_groups("cells", []):
