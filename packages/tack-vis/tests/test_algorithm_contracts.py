@@ -68,13 +68,9 @@ def test_empty_filter_pipelines_preserve_maps_and_ids(backend, kind, unused_poin
     points = td.project(data, "c", td.H1(data))
     np.testing.assert_array_equal(points.values.numpy(), np.zeros(unused_points))
     assert td.project(data, "p", td.Constant(data)).values.size == 0
-    if kind == "polyline":
-        with pytest.raises(NotImplementedError, match="polylines"):
-            td.contour(data, "p", 0.5)
-    else:
-        assert td.contour(data, "p", 0.5).num_cells == 0
-        with pytest.raises(KeyError, match="missing"):
-            td.contour(data, "p", 0.5, fields="missing")
+    assert td.contour(data, "p", 0.5).num_cells == 0
+    with pytest.raises(KeyError, match="missing"):
+        td.contour(data, "p", 0.5, fields="missing")
     if kind == "shape":
         assert td.clip(data, "p", 0.5).num_cells == 0
         for algorithm in (td.clip, td.extract_cells):

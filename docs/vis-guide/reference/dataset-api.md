@@ -465,6 +465,7 @@ and pass it on; without one, nothing changes (it is compiled out).
 | `voxel_downsample(data, size, keep="centroid")` | one point per occupied voxel of side `size` (or three sides) anchored at the points' lower corner: the voxel's centroid (new points: floating-point fields averaged, integer fields its first point's; ghost marks dropped), its first point, or its point nearest the centroid (input points, in input order, fields and marks kept). Voxels by a stable sort, each reduced in index order: the same bits run to run, and the same voxels and kept points on every backend. VTK's `vtkVoxelGrid` fits a whole number of bins to the box, so its voxels are not exactly `size`; PDAL's `filters.voxeldownsize` is this |
 | `outliers(data, radius=, min_neighbors=)` | marks (`outlier`, u8) points with fewer than `min_neighbors` others within `radius`, with each point's count (`neighbors`): VTK's `vtkRadiusOutlierRemoval`, the same points |
 | `outliers(data, k=, deviations=1.0)` | marks points whose mean distance to their `k` nearest is more than `deviations` standard deviations above the mean of those means, with each one (`mean_distance`): VTK's `vtkStatisticalOutlierRemoval` and PCL, the same points, mean and deviation. Marked, not removed, as PDAL marks (class 7): `threshold_points(out, "outlier", 0, 0)` keeps the rest |
+| `surface_normals(data, consistent=True)` | a surface's polygons wound alike (each region as its first cell) and its unit normals: `cell_normals` (Newell's) and `normals` at the points (the cells' summed, made unit), as VTK's `vtkPolyDataNormals` without splitting; a non-orientable surface is refused |
 | `point_normals(data, k=None, radius=None, viewpoint=None, direction=(0, 0, 1))` | each point's unit normal from the covariance of its `k` nearest points (itself included) or those within `radius`: the eigenvector of the least eigenvalue, in closed form; signed toward `viewpoint` (a world position) or along `direction` (up). Zero with fewer than three neighbours, or on a line. VTK's `vtkPCANormalEstimation` agrees within 0.1° |
 | `connected_components(data, radius=, min_size=None)` | with `radius`, points within it of each other connect too: on a point cloud, Euclidean clusters (VTK's `vtkEuclideanClusterExtraction`, one to one) and friends-of-friends halos with the linking length. The radius hook walks the locator's bins (nothing stored per pair, each pair once). `min_size` makes regions of fewer points -1 and numbers the rest again |
 | `deposit(data, grid, field=None, reduce=None, method="nearest", per_volume=False)` | points onto an axis-aligned image: into the cell holding each (`"nearest"`, a field on the cells) or onto its corners by trilinear weights (`"cic"`, cloud in cell, on the points), as Viskores' particle density filters and yt. Counts without a field; with one, `"sum"`, `"mean"`, `"count"`, and for `"nearest"` `"min"` and `"max"` (a LiDAR surface model: the highest return per cell of a 2D image). Empty cells hold 0, or NaN for means and extrema; `per_volume` divides by the cell's volume. Points outside are left out. Each target reduced in point order, by a sort: the same bits run to run; counts, minima and maxima the same on every backend, sums and means to rounding |
@@ -1008,7 +1009,7 @@ Integer `magnitude` and `log_values` therefore return floating point fields.
 
 Empty supported filters return valid empty topologies and carry selected fields
 and sets by the same maps as nonempty filters; missing `fields=` names still
-raise `KeyError`. Empty polyline contouring retains the documented refusal.
+raise `KeyError`.
 
 In the table,
 "polyhedral" means `PolyhedralTopology`, "polygonal" `PolygonalTopology`
@@ -1020,17 +1021,17 @@ and "polyline" `PolylineTopology`.
 | `cell_quality` (scaled Jacobian, Jacobian ratio, condition, edge ratio, shortest and longest edge) | yes (order 2 along its curved edges; a pyramid by its four tetrahedra) | yes (by its fan tetrahedra) | yes (by its fan triangles) | edges only |
 | `feature_edges` (boundary, feature, non-manifold, manifold edges of a surface) | yes (2D cells) | no (a volume: `extract_surface` first) | yes | no |
 | `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
-| `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
+| `boundary_faces`, `extract_surface` | yes (a 2D mesh's boundary: line cells; by default `extract_surface` passes a 2D mesh's cells through) | yes (the surface is polygonal) | yes (boundary: line cells; by default the polygons pass through) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
-| `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | no (would give points) |
+| `contour`, `slice`, `slice_plane` | yes (`dimension=` 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | yes (`contour`: vertex cells, of point data) |
 | `clip` | yes (with an `H1` geometry) | yes (into polyhedra: faces clipped once, iso-polygons as caps) | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
 | `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point; star-shaped too) | yes (on segments) |
 | `advect`, `streamlines` | yes (2D and 3D cells) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point) | no |
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
-| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (zero, as for 2D cells on shapes) | yes (zero) |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (in the polygon's plane, Green–Gauss over its edges; 2D cells on shapes in their plane too) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
 | `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
 | side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |
@@ -1100,6 +1101,13 @@ the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.
 
+`Union(f, g, ...)`, `Intersection(f, g, ...)` and `Difference(f, g, ...)`
+combine functions as VTK's `vtkImplicitBoolean` does: the smallest value, the
+largest, and the first's or the rest's union's negated, whichever is larger.
+They hold their operands as nested device classes, so a kernel inlines the
+whole tree, and move them by an origin and match a `Planes` to the data as
+each operand would be.
+
 Each is a `@tack.device_class` object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
 template and calls `f.value(p)`. Their parameters are world positions: on a
@@ -1148,6 +1156,9 @@ keeps its distinct points if three are left), as warp-simdata drops it. VTK
 and Viskores keep such cells and points, so their counts are higher where a
 level runs through mesh points (a plane through grid points, an isovalue
 some points have exactly); the areas agree.
+
+`extract_extent(data, extent, rate=1)` keeps a box of a structured grid's points, every
+`rate`-th, as a structured grid of the same kind (VTK's `vtkExtractGrid`).
 
 Without a function: `extract_cells(data, cells)`, where `cells` is ids (a
 host array or an integer field), a cell `Set` of `data`, or the name of one
@@ -1337,7 +1348,7 @@ for VTK's `vtkStreamTracer` on 8 threads.
 
 | Function | |
 |---|---|
-| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, `vtkPolyData` (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
 | (both) | a `vtkPartitionedDataSet` and a `PartitionedDataSet` convert piece by piece (null pieces skipped); a `vtkPartitionedDataSetCollection` and a `dict` of names to `PartitionedDataSet`s convert by `vtkCompositeDataSet.NAME()` (`"block<i>"` without one, `"<name>#<i>"` for a name taken) |
 | `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |

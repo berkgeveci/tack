@@ -719,8 +719,11 @@ gradient at the center. Each face is walked once.
   and `N = Σ p_j × p_j+1`, the Newell vector.
 - The face's share of 6V is `F · N`.
 
-At points, the cells' gradients are averaged, as on shapes. Polygons and
-polylines get zero, as lower-dimensional cells do on shapes.
+At points, the cells' gradients are averaged, as on shapes. A polygon's
+gradient lies in its plane, as a 2D shape's does: in-plane Green–Gauss over
+its edges, `Σ (u_k + u_k+1)((p_k+1 − p_k) × N) / |N|²` with `N` the Newell
+vector, exact for a linear field on a planar polygon. Polylines get zero, as
+lines do on shapes.
 
 **Locating, and the view.** The proposal (in the vault) had field views
 evaluate at world positions, `value_at(c, x)`. That cannot work: a field

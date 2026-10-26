@@ -556,14 +556,41 @@ def _face_keys(rows, keys):
             keys[k] = [a, b, c, d]
 
 
+@tack.func
+def _orientation(mine, face):
+    # ``2 * r + reflected``: where this side's first point sits in the face's
+    # row (side 0's order), and whether the side lists the points the other
+    # way round; -1 if it goes round neither way.
+    n = 2 if mine[2] == _NO_POINT else (3 if mine[3] == _NO_POINT else 4)
+    r = 0
+    for j in range(n):
+        if face[j] == mine[0]:
+            r = j
+    after = r + 1 if r + 1 < n else 0
+    before = r - 1 if r > 0 else n - 1
+    result = -1
+    # A line's points are the same forwards and back from its second: the
+    # side that starts there is reflected, as side 1 of a 3D face is.
+    if face[after] == mine[1] and (n > 2 or r == 0):
+        result = 2 * r
+    elif face[before] == mine[1]:
+        result = 2 * r + 1
+    return result
+
+
 @tack.kernel
 def _faces_from_runs(order, offsets, rows, kinds, owners, face_rows, face_kinds, face_sides,
-                     side_face, side_slot, too_many, count):
+                     side_face, side_slot, orientation, too_many, bad, count):
+    # Each run of equal keys is a face: its row (side 0's), kind and two sides;
+    # each of its entries learns its face, slot and orientation, in this one pass
+    # over the runs (a separate pass over the entries read every face row again,
+    # at random).
     for r in range(count):
         begin = offsets[r]
         end = offsets[r + 1]
         first = order[begin]
-        face_rows[r] = rows[first]
+        face = rows[first]
+        face_rows[r] = face
         face_kinds[r] = kinds[first]
         o0 = owners[first]
         o1 = owners[order[begin + 1]] if end - begin > 1 else [-1, -1]
@@ -571,33 +598,15 @@ def _faces_from_runs(order, offsets, rows, kinds, owners, face_rows, face_kinds,
         if end - begin > 2:
             tack.atomic_add(too_many, 0, 1)
         for i in range(begin, end):
-            side_face[order[i]] = r
-            side_slot[order[i]] = i - begin
-
-
-@tack.kernel
-def _side_orientations(rows, side_face, face_rows, orientation, bad):
-    # Where this side's first face point sits in the face's row (side 0's
-    # order), and whether the side lists the points the other way round.
-    for s in range(side_face.shape[0]):
-        mine = rows[s]
-        face = face_rows[side_face[s]]
-        n = 2 if mine[2] == _NO_POINT else (3 if mine[3] == _NO_POINT else 4)
-        r = 0
-        for j in range(n):
-            if face[j] == mine[0]:
-                r = j
-        after = r + 1 if r + 1 < n else 0
-        before = r - 1 if r > 0 else n - 1
-        # A line's points are the same forwards and back from its second: the
-        # side that starts there is reflected, as side 1 of a 3D face is.
-        if face[after] == mine[1] and (n > 2 or r == 0):
-            orientation[s] = 2 * r
-        elif face[before] == mine[1]:
-            orientation[s] = 2 * r + 1
-        else:
-            orientation[s] = 0
-            tack.atomic_add(bad, 0, 1)
+            s = order[i]
+            side_face[s] = r
+            side_slot[s] = i - begin
+            o = _orientation(rows[s], face)
+            if o < 0:
+                orientation[s] = 0
+                tack.atomic_add(bad, 0, 1)
+            else:
+                orientation[s] = o
 
 
 @tack.kernel
@@ -796,12 +805,12 @@ class Faces(_OnItsArrays):
         self.sides = tack.empty((count,), tack.vec(4, idt))
         if count:
             too_many = tack.zeros((1,), tack.i32)
+            bad = tack.zeros((1,), tack.i32)
             _faces_from_runs(order, offsets, rows, kinds, owners, self.rows, self.kinds,
-                             self.sides, self.side_face, self.side_slot, too_many, count)
+                             self.sides, self.side_face, self.side_slot, self.side_orientation,
+                             too_many, bad, count)
             if too_many[0]:
                 raise ValueError(f"{too_many[0]} faces are shared by more than two cells")
-            bad = tack.zeros((1,), tack.i32)
-            _side_orientations(rows, self.side_face, self.rows, self.side_orientation, bad)
             if bad[0]:
                 raise ValueError(f"{bad[0]} cell faces do not go round their face's points "
                                  "in either direction")

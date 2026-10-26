@@ -29,12 +29,9 @@ _spec = importlib.util.spec_from_file_location(
 _vtk_pairs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_vtk_pairs)
 ISOVALUE, NORMAL, THRESHOLD = _vtk_pairs.ISOVALUE, _vtk_pairs.NORMAL, _vtk_pairs.THRESHOLD
+CONTOUR_ISOVALUE = _vtk_pairs.CONTOUR_ISOVALUE
 _center = _vtk_pairs._center
 
-# On the generated grids p is exactly 0.5 at mesh points, where VTK, Tack and
-# Viskores resolve the degenerate crossings differently (all validly); the
-# contour is taken just off them.
-CONTOUR_ISOVALUE = 0.5123
 ELEVATION_RANGE = (0.0, 1.0)
 WARP_SCALE = 0.1
 SPHERE_FRACTION = 0.3517          # the clip sphere's radius, of the box's extent: off the grid points

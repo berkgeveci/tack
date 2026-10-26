@@ -147,6 +147,24 @@ def test_fill_value(backend):
     np.testing.assert_array_equal(dst.numpy(), np.full(n, 42.0, dtype=np.float32))
 
 
+@pytest.mark.parametrize("n", [0, 1, 7, 4096, 4097, 50_000])
+@pytest.mark.parametrize("total", [True, False])
+def test_exclusive_scan_closes_the_offsets(backend, n, total):
+    """With ``close`` the total lands at ``output[n]``, so the output is CSR
+    offsets: in the scan's own launch for one launch's worth (a small mesh's
+    filters saved a launch each), by one more for the chunked levels, and as
+    0 for no elements."""
+    values = np.random.default_rng(n).integers(0, 9, n).astype(np.int32)
+    out = tack.empty((n + 1,), tack.i64)
+    out.fill(-7)
+    got = algorithms.exclusive_scan(tack.array(values), out, n, total=total, close=True)
+    want = np.concatenate([[0], np.cumsum(values)])
+    np.testing.assert_array_equal(out.numpy(), want)
+    assert got == (int(want[-1]) if total else None)
+    with pytest.raises(ValueError, match="close writes output"):
+        algorithms.exclusive_scan(tack.array(values), tack.empty((n,), tack.i64), n, close=True)
+
+
 def test_scans_of_no_elements_return_zero_and_write_nothing(backend):
     """n=0 used to read index -1: garbage or a launch error on CUDA."""
     for scan in (algorithms.exclusive_scan, algorithms.inclusive_scan):

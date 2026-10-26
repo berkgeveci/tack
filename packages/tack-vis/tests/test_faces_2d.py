@@ -90,9 +90,14 @@ def test_edge_geometry_and_closed_cells(backend, mesh):
 
 @pytest.mark.parametrize("mesh", [m for m in MESHES if m != "polygons"])
 def test_the_boundary_of_a_2d_mesh_is_lines(backend, mesh):
+    """Its boundary faces, chosen, are lines; by default a 2D mesh is its own
+    surface, its cells passed through, as VTK's geometry filter passes them."""
     data = MESHES[mesh]()
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
-    outside = td.extract_surface(data)
+    itself = td.extract_surface(data)
+    assert itself.topology is data.topology
+    np.testing.assert_array_equal(itself.fields["cell"].values.numpy(), np.arange(data.num_cells))
+    outside = td.extract_surface(data, td.boundary_faces(data))
     assert set(outside.topology.types.numpy()) == {3}               # VTK_LINE
     _, lengths = td.face_geometry(data)
     perimeter = lengths.values.numpy()[td.boundary_faces(data).numpy()].sum()

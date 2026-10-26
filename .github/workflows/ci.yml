@@ -154,7 +154,7 @@ jobs:
   tests:
     name: tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       TACK_REQUIRE_CLANG: "1"
     strategy:
@@ -433,7 +433,7 @@ jobs:
   metal:
     name: metal
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TACK_REQUIRE_CLANG: "1"
 

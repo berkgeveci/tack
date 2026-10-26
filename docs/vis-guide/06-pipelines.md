@@ -136,8 +136,8 @@ shared buffer.
 
 ## Exchange whole datasets with VTK
 
-With `tack-vis` and VTK installed, `vtk_to_dataset` reads VTK image, rectilinear
-or unstructured data. Point fields become H1, cell fields Constant; geometry
+With `tack-vis` and VTK installed, `vtk_to_dataset` reads VTK image, rectilinear,
+structured, unstructured or polygonal (`vtkPolyData`) data. Point fields become H1, cell fields Constant; geometry
 and connectivity are converted into the dataset model. `dataset_to_vtk` creates
 the matching VTK dataset for visualization or writing to a file.
 

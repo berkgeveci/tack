@@ -77,6 +77,8 @@ SHIFTED = {
     "box": lambda d: td.extract_points(d, td.Box(w(d, (-1, -1, -1)), w(d, (1.5, 1.5, 1.5)))),
     "cylinder": lambda d: td.implicit_values(d, td.Cylinder(w(d, (1, 1, 0)), (0, 0, 1), 1.0)),
     "planes": lambda d: td.implicit_values(d, td.Planes([w(d, (1, 0, 0))], [(1, 1, 0)])),
+    "clip_boolean": lambda d: td.clip(d, td.Difference(
+        td.Sphere(w(d, (1, 1, 1)), 1.2), td.Planes([w(d, (1.5, 0, 0))], [(-1, 0.2, 0)]))),
     "connected_components": td.connected_components,
 }
 #: What depends on absolute position, compared with ``_world``'s.

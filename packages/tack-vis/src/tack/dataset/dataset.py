@@ -570,6 +570,11 @@ class DataSet:
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[group.root])
+            elif group.shape.NUM_FACES and not issubclass(group.kind, (views._CellsById,
+                                                                       views._PolylineCells)):
+                # A shape's faces walk from its tables alone, with no derived
+                # faces: a fresh mesh's volumes need not sort them.
+                mixins.append(views._FaceWalk)
             edges = self.topology._edges
             if edges is not None and group.shape.NUM_EDGES:
                 mixins.append(views._EdgeIncidence)

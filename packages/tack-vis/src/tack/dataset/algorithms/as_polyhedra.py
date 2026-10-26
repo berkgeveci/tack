@@ -3,7 +3,6 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
-from tack.dataset.algorithms._common import _close
 from tack.dataset.carry import Same, carry
 from tack.dataset.polyhedra import PolyhedralTopology
 from tack.runtime.dispatch import on_inputs_device
@@ -40,6 +39,17 @@ def _cell_face_entries(cells, offsets, cell_faces, cell_face_sides):
             cell_face_sides[at + f] = tack.u8(cells.face_side(c, f))
 
 
+@tack.kernel
+def _same_way(cells, count):
+    # A cell going round its face the way the face's row does (side 0's outward
+    # order) while on side 1, or the other way while on side 0: it and the
+    # face's other cell go round it alike, one of them inside out.
+    for c in cells:
+        for f in range(cells.NUM_FACES):
+            if cells.face_orientation(c, f) % 2 != cells.face_side(c, f):
+                tack.atomic_add(count, 0, 1)
+
+
 @on_inputs_device
 def as_polyhedra(data, fields=None):
     """A shape-based dataset as a polyhedral one, every cell a polyhedron.
@@ -47,7 +57,9 @@ def as_polyhedra(data, fields=None):
     Its derived faces already hold every face once, in side 0's outward order
     (a voxel's pixel faces as quads), with the side of each cell's reference, so
     they become the polyhedral faces as they stand: face ids, and so fields on
-    faces, are unchanged. Edges come out numbered as before. Cells must be 3D.
+    faces, are unchanged. Edges come out numbered as before. Cells must be 3D,
+    and neighbours wound alike: an inside-out cell beside an upright one is
+    refused, since their shared face would have them on one side.
     ``Constant`` and ``H1`` order-1 fields, values on points, cells, faces and
     edges, and sets carry over; fields needing a reference element are dropped.
     """
@@ -61,6 +73,15 @@ def as_polyhedra(data, fields=None):
             raise ValueError(f"{group.shape.__name__} cells are not 3D: a polyhedral "
                              "topology is of 3D cells (as_polygons takes 2D ones)")
     faces = topology.faces()
+    same_way = tack.zeros((1,), tack.i32)
+    for group in topology.groups():
+        if group.count:
+            _same_way(data.domain_view("cells", group), same_way)
+    if same_way[0]:
+        raise ValueError(f"{same_way[0]} faces are wound the same way by both their cells "
+                         "(an inside-out cell beside an upright one, as cell_geometry's "
+                         "negative measures show); a polyhedral topology needs each face's "
+                         "cells on opposite sides of it")
     nf = faces.num_faces
     idt = topology.id_dtype
     # The faces' points: 4 a face, past 12 a cell when faces are not shared (a
@@ -70,8 +91,7 @@ def as_polyhedra(data, fields=None):
     starts = tack.empty((nf + 1,), fdt)
     if nf:
         _face_sizes(faces.kinds, sizes)
-    total = exclusive_scan(sizes, starts, nf) if nf else 0
-    _close(starts, nf, total)
+    total = exclusive_scan(sizes, starts, nf, close=True)
     face_points = tack.empty((total,), fdt)
     if nf:
         _face_rows(faces.rows, starts, sizes, face_points)
@@ -82,8 +102,7 @@ def as_polyhedra(data, fields=None):
         if group.count:
             _cell_face_counts(group.view(), counts)
     cell_offsets = tack.empty((n + 1,), idt)
-    entries = exclusive_scan(counts, cell_offsets, n) if n else 0
-    _close(cell_offsets, n, entries)
+    entries = exclusive_scan(counts, cell_offsets, n, close=True)
     cell_faces = tack.empty((entries,), idt)
     cell_face_sides = tack.empty((entries,), tack.u8)
     for group in topology.groups():

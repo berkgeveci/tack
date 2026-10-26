@@ -37,7 +37,37 @@ FUNCTIONS = {
                                          radius=1.9)),
     "planes": (lambda: td.Planes([(2.07, 0, 0), (4.13, 0, 0)], [(-1, 0.1, 0), (1, 0, 0.2)]),
                lambda: _vtk_planes([(2.07, 0, 0), (4.13, 0, 0)], [(-1, 0.1, 0), (1, 0, 0.2)])),
+    # VTK's vtkImplicitBoolean: the smaller value, the larger, and the first's
+    # or the rest's union negated; a Planes inside one follows the data too.
+    "union": (lambda: td.Union(td.Sphere((1.1, 2.9, 3.05), 1.3), td.Box((3.1, 0.9, 1.3),
+                                                                        (4.7, 5.1, 3.9))),
+              lambda: _vtk_boolean("Union", vtk.vtkSphere(center=(1.1, 2.9, 3.05), radius=1.3),
+                                   vtk.vtkBox(bounds=(3.1, 4.7, 0.9, 5.1, 1.3, 3.9)))),
+    "intersection": (lambda: td.Intersection(
+        td.Sphere((3.1, 2.9, 3.05), 2.3), td.Cylinder((3.05, 3.1, 0.0), (0.2, 0.1, 1.0), 1.9),
+        td.Plane((3.03, 2.97, 3.1), (1, 0.4, 0.2))),
+        lambda: _vtk_boolean("Intersection", vtk.vtkSphere(center=(3.1, 2.9, 3.05), radius=2.3),
+                             vtk.vtkCylinder(center=(3.05, 3.1, 0.0),
+                                             axis=_unit((0.2, 0.1, 1.0)), radius=1.9),
+                             vtk.vtkPlane(origin=(3.03, 2.97, 3.1),
+                                          normal=_unit((1, 0.4, 0.2))))),
+    "difference": (lambda: td.Difference(
+        td.Box((1.1, 0.9, 1.3), (4.7, 5.1, 3.9)), td.Sphere((3.1, 2.9, 3.05), 1.4),
+        td.Planes([(2.07, 0, 0), (4.13, 0, 0)], [(-1, 0.1, 0), (1, 0, 0.2)])),
+        lambda: _vtk_boolean("Difference", vtk.vtkBox(bounds=(1.1, 4.7, 0.9, 5.1, 1.3, 3.9)),
+                             vtk.vtkSphere(center=(3.1, 2.9, 3.05), radius=1.4),
+                             _vtk_planes([(2.07, 0, 0), (4.13, 0, 0)],
+                                         [(-1, 0.1, 0), (1, 0, 0.2)]))),
 }
+
+
+def _vtk_boolean(operation, *functions):
+    out = vtk.vtkImplicitBoolean()
+    getattr(out, f"SetOperationTypeTo{operation}")()     # no pythonic setter for the enum
+    for f in functions:
+        out.AddFunction(f)
+    out.functions = list(functions)                      # kept alive with it
+    return out
 
 
 def _unit(v):

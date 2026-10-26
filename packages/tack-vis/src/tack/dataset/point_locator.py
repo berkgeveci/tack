@@ -414,10 +414,7 @@ class PointLocator:
             return offsets, tack.empty((0,), id_dtype)
         grid = self.grid()
         _count_within(grid, queries, float(radius), own, counts)
-        total = exclusive_scan(counts, offsets, m)
-        from tack.dataset.algorithms._common import _close
-
-        _close(offsets, m, total)
+        total = exclusive_scan(counts, offsets, m, close=True)
         ids = tack.empty((int(total),), id_dtype)
         if total:
             _fill_within(grid, queries, float(radius), own, offsets, ids)

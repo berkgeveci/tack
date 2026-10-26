@@ -3,6 +3,8 @@ dimensions down. Their faces are their ends; their geometry, extraction,
 averaging, boundary and VTK round trip; streamlines are tested with advection.
 And contour lines of 2D meshes, shape-based and polygonal."""
 
+import itertools
+
 import numpy as np
 import pytest
 from test_dataset_api import _scalars
@@ -161,11 +163,52 @@ def test_vtk_round_trip(backend):
         vtk_to_dataset(grid)
 
 
+@pytest.mark.parametrize("levels", [[1.5], [4.5, 7.5], [3.0]])
+def test_contours_of_lines_are_vertices(backend, levels):
+    """A vertex at each crossing of the segments, VTK's points; a level at a
+    point's value (3.0, where two chains meet) is that point, once; the same
+    lines as line cells of an unstructured topology give the same."""
+    data = _lines()
+    data.fields["s"] = td.Field(td.H1(data), _scalars(X[:, 0]))
+    data.fields["c"] = td.Field(td.Constant(data), _scalars(np.arange(4.0)))
+    ours = td.contour(data, "s", levels if len(levels) > 1 else levels[0])
+    assert set(ours.topology.types.numpy()) <= {1}                  # VTK_VERTEX
+    x = ours.positions().astype(np.float64)
+    np.testing.assert_allclose(ours.fields["s"].values.numpy(),
+                               x[:, 0], rtol=1e-6)                   # interpolated
+    segments = [[a, b] for chain in LINES for a, b in itertools.pairwise(chain)]
+    lines = td.DataSet(td.UnstructuredTopology([3] * len(segments),
+                                               np.arange(0, 2 * len(segments) + 1, 2),
+                                               np.ravel(segments)), X)
+    lines.fields["s"] = td.Field(td.H1(lines), _scalars(X[:, 0]))
+    np.testing.assert_allclose(np.sort(td.contour(lines, "s", levels).positions(), axis=0),
+                               np.sort(x, axis=0), rtol=1e-6)
+    named = {}                         # a crossing's name: its point at the level, or edge
+    for v in levels:
+        for chain in LINES:
+            for a, b in itertools.pairwise(chain):
+                if (X[a, 0] >= v) != (X[b, 0] >= v):
+                    name = next(((p,) for p in (a, b) if X[p, 0] == v), (min(a, b), max(a, b)))
+                    named[name, v] = X[a] + (v - X[a, 0]) / (X[b, 0] - X[a, 0]) * (X[b] - X[a])
+    np.testing.assert_allclose(np.sort(x, axis=0), np.sort(list(named.values()), axis=0),
+                               atol=1e-5)
+    unique = np.unique(np.round(np.array(list(named.values()), np.float64), 5), axis=0)
+    if vtk is not None:
+        from vtkmodules.vtkFiltersCore import vtkContourFilter
+
+        grid = dataset_to_vtk(data)
+        f = vtkContourFilter()
+        for i, v in enumerate(levels):
+            f.SetValue(i, v)
+        f.SetInputArrayToProcess(0, 0, 0, 0, "s")
+        theirs = f(grid)
+        points = np.array([theirs.GetPoint(i) for i in range(theirs.number_of_points)])
+        np.testing.assert_allclose(np.unique(np.round(points, 5), axis=0), unique, atol=1e-5)
+
+
 def test_what_polylines_refuse(backend):
     data = _lines()
     data.fields["s"] = td.Field(td.H1(data), _scalars(X[:, 0]))
-    with pytest.raises(NotImplementedError, match="contour of lines"):
-        td.contour(data, "s", 1.5)
     with pytest.raises(NotImplementedError, match="not 1D"):
         td.triangulate(data)
     with pytest.raises(NotImplementedError, match="edges"):
