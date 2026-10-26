@@ -462,6 +462,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A fresh mesh's first filters cost less at scale. Faces are derived by a
+  counting sort of the (cell, face) records into buckets of their lowest
+  point, each record placed once and each bucket sorted in place, with
+  rows and sides from the cells in their order (the same faces, id for id);
+  `extract_surface` of a mesh whose faces are not derived keeps the faces
+  of one cell from those records without deriving the whole incidence; and
+  point links of a one-shape mesh bucket its connectivity as it stands. At
+  20M hexahedra on 8 threads, a fresh `extract_surface` went from about
+  430 ms to 193 (VTK 249), at 20M tetrahedra from about 300 to 166 (VTK
+  216).
 - Metal reuses the buffers of arrays that have died (1 MiB or more, by
   capacity): a new buffer's pages are mapped and cleared on first touch at
   about 13 GB/s, so a filter's large temporaries cost more than its kernels
