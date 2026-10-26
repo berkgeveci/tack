@@ -1080,8 +1080,13 @@ What each filter gives:
 
 Every one of them takes `fields=`: all fields by default, a name or a list
 of names, or `[]` for none; a name the input lacks raises `KeyError`. A new
-filter states its maps and calls `carry(data, out, points=..., cells=...,
-fields=fields)`.
+filter states its maps and calls `td.carry(data, out, points=..., cells=...,
+fields=fields)`. The maps, `carry`, `keep_marks`/`drop_marks`, `visible`,
+`owned_values`, `Set.from_flags` and `td.units` are public, so a filter of
+your own is written as the built-ins are
+([Filters of your own](data-model.md#filters-of-your-own));
+`test_public_filters.py` rewrites built-ins with public names only and holds
+them to the originals.
 
 **Gradients.** `algorithms.gradients(data, field, at="cells")` gives each
 cell's gradient at its parametric center; `at="points"` evaluates each cell's

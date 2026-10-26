@@ -168,7 +168,7 @@ def _kept(flags, slots, ids):
 
 
 def owned_values(data, field):
-    """The values of ``field`` (a ``Field`` of ``data``) that ``data`` owns: all of
+    """The values of ``field`` (a ``Field`` of ``data``, or its name) that ``data`` owns: all of
     them when it has no marks for where they live, else those of cells and
     points not marked a duplicate or hidden, materialized. Fields on faces or
     edges, and order-2 fields, have no marks of their own yet; on a dataset
@@ -176,6 +176,8 @@ def owned_values(data, field):
     from tack.dataset.carry import _take
     from tack.dataset.spaces import H1, L2, Constant, Values
 
+    if isinstance(field, str):
+        field = data.fields[field]
     if data._ghosts_lost:
         why = data._ghosts_lost if isinstance(data._ghosts_lost, str) else (
             "the filter that made it does not carry the marks")

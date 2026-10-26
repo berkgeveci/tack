@@ -19,6 +19,9 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 - [Locating points](#locating-points): `CellLocator`, `PointLocator`
 - [Steps in time](#steps-in-time): temporal filters and particle paths
 - [Kernels over meshes](#kernels-over-meshes): `for_each`
+- [Filters of your own](#filters-of-your-own): `carry` and its maps, ghost
+  marks, hidden cells, owned values
+- [Units](#units): parameters as quantities, units of what a filter computes
 - [Interoperability](#interoperability): VTK, MFEM, Warp
 
 ## Datasets and fields
@@ -149,6 +152,54 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 ## Kernels over meshes
 
 ::: tack.dataset.for_each
+
+## Filters of your own
+
+What the built-in filters are written with. A filter that makes a new
+dataset states how its output's points, cells, faces and edges come from
+the input's, and `carry` takes the fields, sets, ghost marks, global ids,
+origin, unit and time along by those maps. A filter that builds its
+`DataSet` some other way passes its input's marks on with `keep_marks` (the
+same cells and points) or records their loss with `drop_marks`, so that
+reductions over pieces refuse what they would count twice. Filters that
+make cells start from `visible(data)`, which leaves out hidden cells, and a
+reduction over a piece takes its `owned_values`. A selection made by a
+kernel becomes a set with `Set.from_flags`, and `extract_cells` keeps it.
+
+::: tack.dataset.carry
+    options: {members: false}
+
+::: tack.dataset.carry.carry
+    options: {show_root_full_path: false}
+
+::: tack.dataset.Same
+
+::: tack.dataset.Take
+
+::: tack.dataset.Pieces
+
+::: tack.dataset.Interpolate
+
+::: tack.dataset.keep_marks
+
+::: tack.dataset.drop_marks
+
+::: tack.dataset.visible
+
+::: tack.dataset.owned_values
+
+## Units
+
+A filter's parameters take quantities (`"300 K"`, `(1, "cm")`) where the
+built-ins do: `units.magnitude(value, field.unit, "the bounds")` gives a
+number in a field's unit, `units.magnitude(value, data.unit, "the radius")`
+one in the spatial unit, and a plain number passes through. A field a filter
+computes gets the unit of what it is: `units.delta` for a difference (a
+difference of degrees Celsius is in kelvin), `units.derived` for a product
+of powers, `units.named` for the SI name. Unknown in, unknown out: `None`,
+never a guess.
+
+::: tack.dataset.units
 
 ## Interoperability
 

@@ -7,6 +7,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- What the built-in filters are written with is public, so a filter of
+  your own is written the same way: `td.carry` and its maps (`td.Same`,
+  `td.Take`, `td.Pieces`, `td.Interpolate`), `td.keep_marks` and
+  `td.drop_marks`, `td.visible`, `td.owned_values` (which takes a field's
+  name too), `td.Set.from_flags` (a selection a kernel flags, for
+  `extract_cells`) and `td.units` (quantities as parameters; the units of
+  differences, products and SI names). On the Data Model page. An audit
+  that rewrote built-ins with public names only found three silent errors a
+  user's filter made without them: a dataset built by hand dropped the
+  record of lost ghost marks (reductions over pieces then counted shared
+  points twice), a difference of degrees Celsius kept the unit, and a
+  hidden cell was processed. `test_public_filters.py` keeps six such
+  rewrites equal to the built-ins, every part of the result. `td.carry` is
+  now the function; the module is still `tack.dataset.carry` for
+  `from ... import`.
 - Two reference pages in the Visualization Guide, generated from the
   docstrings: **Algorithms**, every `tack.dataset` algorithm by what it does,
   each group with a table of what it gives, what it takes (pieces, AMR,
