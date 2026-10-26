@@ -450,6 +450,72 @@ raises `RuntimeError`. The
 check is necessary because the driver accepts pointers from any context.
 See [Interoperability](../design/interoperability.md).
 
+## Communication between blocks
+
+Defined in `packages/tack-core/src/tack/communication/`. A guide:
+[Communicate Between Blocks](../vis-guide/14-communication.md).
+
+**Blocks and worlds.** `Blocks(devices, world=None)` holds this rank's
+blocks, one per entry of `devices`. Global ids run over every rank's
+blocks, contiguous by rank (rank 0's first), and `Blocks.local` is the
+range of this rank's. `World()` is one process; `World(comm, gpu_aware=False)`
+takes an mpi4py communicator, or any object with `Dup`, `Get_rank`,
+`Get_size`, `allgather`, `alltoall`, `Isend` and `Irecv`, and communicates
+on `comm.Dup()`, so its messages never meet the caller's. Tack imports no
+MPI module.
+
+- **Collective.** Every call -- the `Blocks`, `Plan` and `Routing`
+  constructors, `exchange`, `all_gather`, `all_reduce`, `exclusive_scan`,
+  `link_by_bounds`, `Plan.run`, `Routing.send`, `Routing.reply`,
+  `sort_by_key` -- is made by every rank of the world, in the same order.
+  Arguments keyed by global id name only this rank's blocks; the
+  collectives and `Routing` need an entry for every one of them.
+- **Independent of the assignment.** `all_reduce`, `all_gather` and
+  `exclusive_scan` combine in order of global id, so their results, a
+  floating-point sum's bits included, do not depend on which rank holds
+  which block. `exchange` returns each block's messages in order of source;
+  `sort_by_key` and `Routing` decide by global id too.
+- **Exchange.** `exchange({source: {destination: {name: Array}}})` returns
+  `{destination: {source: {name: Array}}}` for every block on this rank,
+  an empty dict where nothing came. A sent array is on its source block's
+  device; a received one on its destination block's, the sent array itself
+  where that device addresses its memory, so a sender must not write to
+  what it sent. Element types and shapes arrive as sent. Every MPI request
+  is complete when `exchange` returns.
+- **Transport.** Between ranks, a world stages each rank pair's arrays
+  through one host buffer. With `gpu_aware=True` it hands MPI the arrays
+  themselves through DLPack, or a device copy in
+  `Backend.allocate_mpi_array`'s memory where `Backend.mpi_direct` says
+  the MPI may not take them (CUDA's and HIP's stream-ordered pools), and
+  receives into such memory. A GPU-aware MPI uses the device current when
+  MPI starts: make the rank's device before importing `mpi4py.MPI`.
+- **Plans.** `Plan(blocks, sends, receives)` checks, across ranks, that
+  every send has a receive of its length and the other way round.
+  `Plan.run(values)` writes received elements in place and leaves the
+  others; a block sending to itself reads before anything is written.
+- **Routing.** A point is asked of every block whose box holds it, with a
+  relative slack of 1e-6, and goes to the block whose `holds` gives the
+  highest rank, the lowest block on a tie, or nowhere (-1) where every
+  rank is 0. Coordinates travel as f64 bits. `send` delivers in order of
+  origin block and then of the points there; `reply` answers in that
+  order, zero for a point that went nowhere.
+- **Sorting.** `sort_by_key` takes one-dimensional `i32`, `u32`, `i64` or
+  `u64` keys of one type on every block. Block 0 ends with the smallest
+  keys, each block ascending; every copy of a key ends on one block; the
+  sort is stable, by block and then index.
+
+| Condition | Exception |
+|---|---|
+| A global id out of range, or naming another rank's block where this rank's is needed | `ValueError` |
+| A collective or `Routing` missing an entry for one of this rank's blocks | `ValueError` |
+| A message or value that is not a dict of names to Tack arrays, or a structure of arrays | `TypeError` |
+| An array not on its block's device | `ValueError` |
+| A `Plan` whose sends and receives disagree in length across blocks | `ValueError` |
+| `Plan.run` with element types that differ between blocks | `TypeError` |
+| `sort_by_key` keys of another type, or of different types on different blocks | `TypeError` |
+| `all_reduce` with an operation other than `"sum"`, `"min"` or `"max"` | `ValueError` |
+| `World(gpu_aware=True)` without a communicator | `ValueError` |
+
 ## Inspection
 
 ### `tack.inspect(kernel, *args, mode="source")`
