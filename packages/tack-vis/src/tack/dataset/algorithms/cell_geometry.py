@@ -160,8 +160,8 @@ def cell_geometry(data):
     triangle, quad, pixel or polygon -- along its own normal (Newell's), from
     its edges going round it. A line's or a polyline's length, and the
     centroid of its segments; a vertex's point, with measure 0."""
-    if data.topology.dimension > 1:
-        data.topology.faces()                      # the incidence the cell views need
+    if data.topology.dimension > 1 and not getattr(data.topology, "reference_cells", True):
+        data.topology.faces()                      # polyhedra and polygons walk theirs
     n = data.num_cells
     volumes = tack.empty((n,), data.dtype)
     centroids = _vectors(n, data.dtype)

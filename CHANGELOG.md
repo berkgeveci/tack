@@ -427,6 +427,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `cell_geometry` and `cell_quality` of shape cells no longer derive the
+  mesh's faces: a shape's faces walk from its tables (`_FaceWalk` is in every
+  shape cell's domain view), so on a fresh mesh of 1M tetrahedra volumes take
+  6.5 ms instead of 24 (VTK's `vtkCellSizeFilter` 39 ms); polyhedra and
+  polygons still derive theirs. Deriving faces computes each side's
+  orientation in the pass that matches the sides (1.5 ms less at 1M
+  tetrahedra).
 - `uniform_grid` takes an origin and spacing of one value per size (a 2D
   image no longer needs a third spacing) and a 2 x 2 direction for a 2D
   image. `DataSet.rebased` keeps an image an image, its corner moved in double
