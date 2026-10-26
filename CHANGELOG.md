@@ -516,6 +516,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `merge_pieces` of unstructured pieces gathers cells' point ids in one go
+  instead of slicing them a cell at a time in Python: 8.0 s to 0.9 s to merge
+  an aneurysm's ten pieces (8.7M tetrahedra).
 - A few crowded points no longer send a mesh's face derivation to the slow
   sorted path. Faces go into buckets by lowest point, and one thread sorts
   each bucket. Any bucket over 256 faces used to fall back to the sort, and

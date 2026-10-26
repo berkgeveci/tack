@@ -186,6 +186,17 @@ def _merged_structured(blocks, pieces, names, kind_of, target, device, tiled):
         return _assembled(topology, geometry, first, names, kind_of, parts)
 
 
+def _rows(offsets, connectivity, cells):
+    """The point ids of ``cells`` (CSR ``offsets``/``connectivity``), one after
+    another, and each cell's size: one gather, not a slice a cell (a Python
+    loop over 8.7M cells took 7 of merging ten pieces' 8 seconds)."""
+    sizes = offsets[cells + 1] - offsets[cells]
+    starts = np.concatenate(([0], np.cumsum(sizes)))
+    at = (np.arange(starts[-1], dtype=np.int64) - np.repeat(starts[:-1], sizes)
+          + np.repeat(offsets[cells], sizes))
+    return connectivity[at], sizes
+
+
 def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
     """Any pieces: owned cells and points, numbered by ``generate_global_ids``."""
     from tack.dataset.algorithms.extract_cells import extract_cells
@@ -222,9 +233,7 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
         offsets = np.asarray(arrays.to_host(piece.topology.offsets), np.int64).reshape(-1)
         conn = np.asarray(arrays.to_host(piece.topology.connectivity), np.int64).reshape(-1)
         types = np.asarray(arrays.to_host(piece.topology.types), np.uint8).reshape(-1)
-        sizes = np.diff(offsets)[owned_cells]
-        rows = (np.concatenate([conn[offsets[c]:offsets[c + 1]] for c in owned_cells])
-                if len(owned_cells) else np.zeros(0, np.int64))
+        rows, sizes = _rows(offsets, conn, owned_cells)
         dev = blocks.device(g)
         message = {"cell_at": tack.array(cell_ids[owned_cells], tack.i64, device=dev),
                    "point_at": tack.array(point_ids[owned_points], tack.i64, device=dev),
@@ -252,9 +261,8 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
         sizes = np.concatenate(sizes_in) if nc else np.zeros(0, np.int64)
         starts = np.concatenate(([0], np.cumsum(sizes)))
         conn = np.concatenate(conn_in) if nc else np.zeros(0, np.int64)
-        rows = [conn[starts[c]:starts[c + 1]] for c in order]
-        offsets = np.concatenate(([0], np.cumsum(sizes[order])))
-        connectivity = np.concatenate(rows) if rows else np.zeros(0, np.int64)
+        connectivity, ordered = _rows(starts, conn, order)
+        offsets = np.concatenate(([0], np.cumsum(ordered)))
         topology = UnstructuredTopology(types, offsets, connectivity, num_points=np_,
                                         id_dtype=first.topology.id_dtype)
         parts = _placed(messages, np_, nc)
