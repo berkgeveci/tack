@@ -159,11 +159,38 @@ class WarpCodeGen:
         self._lines.append("    " * self._indent + line)
 
     def _declare_locals(self, body):
-        """Give every typed local one type at kernel scope, as a typed zero:
-        Warp refuses a later assignment of another type, and a name first
-        bound inside a branch or loop must exist after it."""
-        for node in walk_ir(body):
-            if isinstance(node, ir.IRAssign) and node.target not in self._locals:
+        """Give every typed local one type. Warp refuses a later assignment of
+        another type, and a name first bound inside a branch or loop must exist
+        after it, so a local is declared at kernel scope, as a typed zero,
+        unless every use is inside one block whose first use is an assignment
+        at that block's top level: then that assignment declares it, and each
+        entry into the block (each iteration, in a loop) sets it before any
+        read.
+
+        Warp merges every variable an ``if`` assigns with a ``wp::where`` after
+        it, so declaring all of them at kernel scope multiplied the merges: the
+        probe's search from the points had 4433 locals there, 13,000
+        ``wp::where`` and 79,000 lines of CUDA, and NVRTC took 7 to 300 s on it
+        (the time swinging with names and address layout)."""
+        params = set(self._locals)
+        uses = {}               # local -> [(block path, is a write)], in program order
+        typed = {}              # local -> the type of its first binding, in that order
+        loop_vars = set()       # sequential loops' variables: kernel scope
+
+        def note_reads(expr, path):
+            for n in walk_ir(expr):
+                if isinstance(n, ir.IRName):
+                    uses.setdefault(n.name, []).append((path, False))
+
+        def block(stmts, path):
+            for stmt in stmts:
+                statement(stmt, path)
+
+        def statement(node, path):
+            if isinstance(node, ir.IRAssign):
+                note_reads(node.value, path)
+                if node.target in params:
+                    return
                 if node._resolved_type is None:
                     # A local naming an array: bound where it is assigned.
                     source = node.value
@@ -171,12 +198,47 @@ class WarpCodeGen:
                         raise NotImplementedError(
                             f"Warp backend: untyped local '{node.target}'")
                     self._arrays[node.target] = self._arrays[source.name]
-                    continue
-                self._locals[node.target] = node._resolved_type
-                self._emit(f"{_v(node.target)} = {self._zero(node._resolved_type)}")
-            elif isinstance(node, ir.IRSequentialFor) and node.var not in self._locals:
-                self._locals[node.var] = _INDEX
-                self._emit(f"{_v(node.var)} = {self._zero(_INDEX)}")
+                    return
+                typed.setdefault(node.target, node._resolved_type)
+                uses.setdefault(node.target, []).append((path, True))
+            elif isinstance(node, ir.IRIf):
+                note_reads(node.condition, path)
+                block(node.then_body, path + (id(node.then_body),))
+                if node.else_body:
+                    block(node.else_body, path + (id(node.else_body),))
+            elif isinstance(node, ir.IRWhile):
+                # Read before and after every iteration: in the enclosing block.
+                note_reads(node.condition, path)
+                block(node.body, path + (id(node.body),))
+            elif isinstance(node, ir.IRSequentialFor):
+                for bound in (node.start, node.end, node.step):
+                    if bound is not None:
+                        note_reads(bound, path)
+                if node.var not in params:
+                    typed.setdefault(node.var, _INDEX)
+                    loop_vars.add(node.var)
+                block(node.body, path + (id(node.body),))
+            elif isinstance(node, ir.IRParallelFor):
+                block(node.body, path + (id(node.body),))
+            else:
+                note_reads(node, path)
+
+        block(body, ())
+        for name, dtype in typed.items():
+            self._locals[name] = dtype
+            if name in loop_vars:
+                self._emit(f"{_v(name)} = {self._zero(dtype)}")
+                continue
+            accesses = uses[name]
+            first_path, first_is_write = accesses[0]
+            common = first_path
+            for path, _ in accesses[1:]:
+                n = 0
+                while n < min(len(common), len(path)) and common[n] == path[n]:
+                    n += 1
+                common = common[:n]
+            if not (first_is_write and first_path == common and common):
+                self._emit(f"{_v(name)} = {self._zero(dtype)}")
 
     def _body(self, stmts):
         if not stmts:
