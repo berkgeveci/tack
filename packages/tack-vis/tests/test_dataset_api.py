@@ -9,6 +9,7 @@ DG layout and back is unchanged -- and against vtkCellCenters,
 vtkCellDataToPointData and vtkGeometryFilter.
 """
 
+import importlib
 import types
 
 import numpy as np
@@ -1156,6 +1157,31 @@ def test_faces_by_buckets_are_the_sorted_derivation(backend):
             np.testing.assert_array_equal(getattr(ours, name).numpy(),
                                           getattr(theirs, name).numpy(), err_msg=name)
     assert Faces._derive_bucketed(_star_of_tetrahedra().topology) is None
+
+
+def test_a_fresh_surface_in_passes_is_the_same_surface(backend, monkeypatch):
+    """The fresh boundary holds at most ``_RECORDS_BYTES`` of face records at once,
+    taking the points in ranges; its surface is the same in any number of
+    passes, since its order is the buckets'."""
+    module = importlib.import_module("tack.dataset.algorithms.extract_surface")
+    data = td.tetrahedralize(td.uniform_grid((7, 6, 5)))
+    data.fields["c"] = td.Field(td.Constant(data),
+                                tack.array(np.arange(data.num_cells, dtype=np.float32)))
+    whole = module._fresh_boundary(data, None)
+    records = 16 * 4 * data.num_cells                      # four faces a tetrahedron
+    for passes in (2, 3, 7):
+        monkeypatch.setattr(module, "_RECORDS_BYTES", records // passes)
+        fresh = td.DataSet(td.UnstructuredTopology(data.topology.types, data.topology.offsets,
+                                                   data.topology.connectivity,
+                                                   num_points=data.num_points),
+                           data.geometry.values)
+        fresh.fields["c"] = data.fields["c"]
+        parts = module._fresh_boundary(fresh, None)
+        for name in ("types", "offsets", "connectivity"):
+            np.testing.assert_array_equal(getattr(parts.topology, name).numpy(),
+                                          getattr(whole.topology, name).numpy())
+        np.testing.assert_array_equal(parts.fields["c"].values.numpy(),
+                                      whole.fields["c"].values.numpy())
 
 
 def test_a_fresh_meshs_surface_is_the_derived_faces_boundary(backend):

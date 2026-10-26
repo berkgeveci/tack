@@ -12,7 +12,7 @@ from tack.dataset.buckets import bucket_order
 from tack.dataset.carry import _like, _take
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import H1, L2, Constant, SideTraces, Values, reference_cells
-from tack.dataset.topology import corner_layout
+from tack.dataset.topology import UnstructuredTopology, corner_layout
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['project']
@@ -67,6 +67,20 @@ def _corner_contributions(cells, u, start, contributions):
 
 
 @tack.kernel
+def _average_cell_values(offsets, entries, cells, values, out):
+    # Each point the mean of the values of the cells around it, in the links'
+    # order: an entry is a cell's index times its corners, plus the corner.
+    for p in range(out.shape[0]):
+        begin = offsets[p]
+        end = offsets[p + 1]
+        if end > begin:
+            total = values[cells.entity_id(entries[begin] // cells.NUM_POINTS)]
+            for i in range(begin + 1, end):
+                total += values[cells.entity_id(entries[i] // cells.NUM_POINTS)]
+            out[p] = total / (end - begin)
+
+
+@tack.kernel
 def _node_contributions(cells, u, t, start, keys, contributions):
     # Each cell's value at each node of the order-2 target, keyed by the node.
     for c in cells:
@@ -101,6 +115,17 @@ def _onto_points(data, field, values):
     """Order-1 H1: each point the mean of what the cells around it give it -- their
     corner values -- summed in a fixed order through the point links."""
     topology = data.topology
+    groups = topology.groups() if isinstance(topology, UnstructuredTopology) else ()
+    if len(groups) == 1 and isinstance(field.space, Constant) and groups[0].count:
+        # A value a cell, cells of one shape, indexed by an integer: each
+        # corner's contribution is its cell's value, read through the links,
+        # without a contribution a corner (8 values a hexahedron: 640 MB at
+        # 20M).
+        out = _like(values, data.num_points)
+        out.fill(0)
+        link_offsets, entries = topology.point_links()
+        _average_cell_values(link_offsets, entries, groups[0].view(), values, out)
+        return out
     if not getattr(topology, "reference_cells", True):
         offsets, point_ids = topology.cell_points()
         total = int(point_ids.shape[0])

@@ -65,8 +65,11 @@ _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
 
 @tack.kernel
-def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, trace,
-            trace_times, lengths, capacity, record, ghosts, handoff):
+def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps, status,
+            trace, trace_times, lengths, capacity, record, ghosts, handoff):
+    # by_length: h is an arc length, and the particle follows the velocity's
+    # direction, v / |v| -- vtkStreamTracer's length unit -- with the time a
+    # unit of length takes, 1 / |v|, integrated beside it by the same weights.
     for q in range(xs.shape[0]):
         x = xs[q]
         t = times[q]
@@ -82,6 +85,9 @@ def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, tr
         k2 = k1
         k3 = k1
         vel = k1
+        w1 = h - h
+        w2 = w1
+        w3 = w1
         curr = x
         out = x
         mode = _STEP
@@ -123,6 +129,16 @@ def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, tr
             v = p - p
             if found == 1:
                 v = velocity.value(mesh, best, best_type, best_pc, best_tet)
+            # Along the direction, the time a unit of length takes; a speed
+            # at zero velocity's threshold stops the particle as before.
+            w = h - h + 1.0
+            if by_length == 1:
+                if v.dot(v) > eps:
+                    w = 1.0 / v.norm()
+                    v = v * w
+                else:
+                    v = v - v
+                    w = h - h
 
             # A whole step that ended in a ghost cell hands the particle to the
             # cell's owner, which goes on from there with whole steps; only
@@ -152,21 +168,29 @@ def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, tr
                 elif rk4 == 1 and stage < 3:
                     if stage == 0:
                         k1 = v
+                        w1 = w
                     elif stage == 1:
                         k2 = v
+                        w2 = w
                     else:
                         k3 = v
+                        w3 = w
                     stage += 1
                 else:
                     vel = v
+                    pace = w
                     if rk4 == 1:
                         vel = (k1 + 2.0 * k2 + 2.0 * k3 + v) / 6.0
+                        pace = (w1 + 2.0 * w2 + 2.0 * w3 + w) / 6.0
                     else:
                         k1 = v
                     stage = 0
                     if mode == _STEP:
                         x = x + h * vel
-                        t += h
+                        if by_length == 1:
+                            t += h * pace
+                        else:
+                            t += h
                         n += 1
                         took = 1
                         if record == 1:
@@ -198,7 +222,10 @@ def _advect(mesh, velocity, h, max_steps, rk4, eps, xs, times, steps, status, tr
             elif mode == _LAST:
                 vel = v
                 out = curr + r1 * vel
-                t += r1
+                if by_length == 1:
+                    t += r1 * w
+                else:
+                    t += r1
                 mode = _OUT
             else:
                 # Where the push out ends: the step is taken, in or out.
@@ -250,15 +277,18 @@ def _velocity(data, field):
 
 
 def _run(data, field, seeds, step_size, steps, integrator, locator, record, resume=None,
-         handoff=False):
+         handoff=False, unit="time"):
     """``resume``, ``(times, steps, status)`` for the seeds, goes on from there:
     ``steps`` counts the steps already taken, and a stopped particle stays.
     ``handoff`` stops a particle after a whole step ending in a ghost cell
-    (``HANDOFF``)."""
+    (``HANDOFF``). ``unit`` is what ``step_size`` measures: ``"time"``, or
+    ``"length"`` along the path."""
     if int(steps) < 1:
         raise ValueError(f"steps must be at least 1, not {steps!r}")
     if integrator not in ("rk4", "euler"):
         raise ValueError(f"integrator is 'rk4' or 'euler', not {integrator!r}")
+    if unit not in ("time", "length"):
+        raise ValueError(f"step_unit is 'time' or 'length', not {unit!r}")
     geometry = data.geometry
     if not isinstance(geometry.space, H1) or geometry.space.order != 1:
         raise TypeError("advection needs an order-1 H1 geometry: one position per point")
@@ -314,7 +344,8 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
         ghosts = marks if marks is not None else tack.zeros((1,), tack.u8)
         eps = float(np.finfo(dtype.numpy_dtype).eps)
         _advect(mesh, velocity, float(step_size), int(steps),
-                1 if integrator == "rk4" else 0, eps, xs, times, taken, status, trace,
+                1 if integrator == "rk4" else 0, 1 if unit == "length" else 0, eps, xs, times,
+                taken, status, trace,
                 trace_times, lengths, capacity, 1 if record else 0, ghosts,
                 1 if marks is not None else 0)
     return xs, times, taken, status, (trace, trace_times), lengths, capacity

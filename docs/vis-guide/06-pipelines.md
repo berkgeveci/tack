@@ -103,6 +103,13 @@ The default integrator is fixed-step RK4; Euler is also available. The step
 is in the integration parameter for `dx/dt = velocity`, so its spatial length
 depends on speed. This is not an adaptive error-controlled integration.
 
+`streamlines(..., step_unit="length")` steps a fixed arc length instead,
+following the velocity's direction as VTK's `vtkStreamTracer` does by
+default: slow flow takes steps as long as fast flow, and `steps * step_size`
+is the longest path. `time` on the points is still the time the particle
+takes. Where speeds vary widely, a time step sized for the fastest makes
+tiny steps elsewhere, so length steps reach as far in far fewer steps.
+
 The example's `[-y, x, 0]` velocity rotates a point at unit angular speed.
 Twenty steps of 0.05 reach time 1. The program checks the final positions
 against sine and cosine, and checks path lengths against the radii times

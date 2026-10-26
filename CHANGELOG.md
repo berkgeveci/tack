@@ -22,6 +22,24 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   rewrites equal to the built-ins, every part of the result. `td.carry` is
   now the function; the module is still `tack.dataset.carry` for
   `from ... import`.
+- `td.streamlines(..., step_unit="length")`: steps of a fixed arc length
+  along the velocity's direction, as VTK's `vtkStreamTracer` steps by
+  default, with `steps * step_size` the longest path and `time` still the
+  time the particle takes (1 / |v| integrated beside the path by the same
+  weights). The default, `"time"`, is unchanged. A time step sized for the
+  fastest speed made tiny steps where the flow is slow: the carotid port's
+  median step was 0.0005 long against VTK's 0.1, and GPU streamlines from
+  a few dozen seeds were 4-100x VTK's time. With length steps the four
+  streamline ports take VTK's steps, match its paths to 2e-7 (carotid
+  2e-4), and run in 0.16-0.57x its time on 8 CPU threads.
+- A Visualization Guide chapter, **Communicate Between Blocks**, on writing
+  an algorithm over pieces with `tack.communication`: collectives,
+  exchanges, a ghost `Plan` that makes a diffusion over blocks give the
+  whole line's bits, `Routing` points to the block that holds them, and
+  `sort_by_key`. Its examples run in `validate.py` and, unchanged but for
+  the world, under `mpiexec`. The Runtime API contract gains a
+  Communication section: what is collective, what does not depend on how
+  blocks are assigned, and the errors.
 - Two reference pages in the Visualization Guide, generated from the
   docstrings: **Algorithms**, every `tack.dataset` algorithm by what it does,
   each group with a table of what it gives, what it takes (pieces, AMR,
@@ -513,6 +531,40 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Cold compiles cost less. Walking the IR uses an explicit stack, not
+  nested generators, which handed each node up once per level of depth.
+  Lowering copies syntax trees directly rather than through `copy.deepcopy`.
+  Weak literal locals are found in one rewrite of the body, and copy
+  propagation leaves alone the statements it has nothing to replace in.
+  A cold probe of a mesh of five shapes went from 2.5 s to 2.1, with the
+  generated code identical (LLVM IR hashed for 470 variants). Point links
+  sort each bucket by entry alone, without reading keys every entry of a
+  bucket shares.
+- Filters hold less memory at scale, measured beside VTK's by the new
+  `benchmarks/vtk_compare/memory.py`, which samples the allocator's bytes in
+  use through one call in a process of its own. At 20M hexahedra on the CPU:
+  - `contour`'s peak is 183 MB, down from 671 (VTK 74); `slice_plane`'s is
+    294, down from 725 (VTK 319). Merging a few million crossings no longer
+    allocates bucket counts and offsets over every point: `key_order` radix
+    sorts keys that are far fewer than their buckets. The per-cell counts are
+    scanned in place.
+  - `extract_surface` of a fresh mesh peaks at 2.1 GB, down from 4.0 (VTK
+    1.5); `faces()` holds less while it works too. Past 20M hexahedra the
+    fresh boundary takes the points in ranges, holding at most 2 GiB of face
+    records at once, for the same surface. At 100M hexahedra it takes 1.46 s
+    and peaks at 4.7 GB, against VTK's 1.47 s and 7.6 GB; in one pass it
+    took 3.9 s. A face record no longer
+    stores its lowest point, which its bucket already gives. Each bucket
+    counts its faces and numbers them in place of per-record flags, run ids
+    and slots, and the surface's rows come from each boundary face's cell
+    rather than a slot for every (cell, face).
+  - Cell to point of a cell field on cells of one shape reads the cells'
+    values through the point links, rather than a contribution for every
+    corner (640 MB at 20M). At 20M hexahedra its peak went from 1.7 GB to
+    1.07 (VTK 0.99), and its warm time from 25 ms to 12 (VTK 96); at 100M
+    tetrahedra it peaks at 1.9 GB against VTK's 3.4.
+
+  Every filter runs at 50M and 100M hexahedra and tetrahedra.
 - A fresh mesh's first filters cost less at scale. Faces are derived by a
   counting sort of the (cell, face) records into buckets of their lowest
   point, each record placed once and each bucket sorted in place, with

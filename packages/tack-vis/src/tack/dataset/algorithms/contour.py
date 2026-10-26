@@ -17,7 +17,7 @@ from tack.dataset.algorithms._common import (
     _scalar_floating,
     _with_basis,
 )
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import key_order, run_offsets
 from tack.dataset.carry import Interpolate, Pieces, _like, carry
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import H1, Values
@@ -64,6 +64,15 @@ def _cell_case(cells, u, c, level):
         if u.corner_value(c, j) >= level:
             case |= 1 << j
     return case
+
+
+def _scanned(counts, n, odt):
+    """``(starts, total)``: the exclusive scan of ``counts`` (i32, one per cell) in
+    ``odt``, in place when ``odt`` is i32 -- one array a cell, not two."""
+    if not n:
+        return tack.empty((0,), odt), 0
+    starts = counts if odt == counts.dtype else tack.empty((n,), odt)
+    return starts, exclusive_scan(counts, starts, n)
 
 
 @tack.kernel
@@ -317,8 +326,7 @@ def _contour_vertices(data, field, levels, nlevels, several, merge_points, field
                         else _line_crossing_counts)
         count_kernel(data.domain_view("cells", group), values, levels, nlevels, counts)
     odt = ids.for_output(data, n_cells * nlevels + 1)
-    starts = tack.empty((n_cells,), odt)
-    n = exclusive_scan(counts, starts, n_cells) if n_cells else 0
+    starts, n = _scanned(counts, n_cells, odt)
     keys = tack.empty((n,), tack.vec(2, kdt))
     ends = tack.empty((n,), tack.vec(2, idt))
     weights = tack.empty((n,), arrays.dtype_of(field.values))
@@ -329,7 +337,7 @@ def _contour_vertices(data, field, levels, nlevels, several, merge_points, field
         emit(data.domain_view("cells", group), values, levels, nlevels, starts, keys, ends,
              weights, sources, which)
     if merge_points and n:
-        order, _ = bucket_order(keys, data.num_points * nlevels, odt)
+        order = key_order(keys, data.num_points * nlevels, odt)
         offsets, count = run_offsets(keys, order)
         merged = (_like(ends, count), _like(weights, count), _like(sources, count),
                   _like(which, count))
@@ -461,8 +469,7 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None):
     for group in groups:
         _contour_counts(data.domain_view("cells", group), field.view(group), levels, nlevels,
                         counts)
-    starts = tack.empty((n_cells,), odt)
-    triangles = exclusive_scan(counts, starts, n_cells) if n_cells else 0
+    starts, triangles = _scanned(counts, n_cells, odt)
 
     n = 3 * triangles
     points = tack.empty((n,), tack.vec(3, data.dtype))
@@ -493,7 +500,7 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None):
     if merge_points and n:
         # A key is the edge's (low, high) points, or (within cells) (cell, local edge),
         # its first part times the levels plus the level.
-        order, _ = bucket_order(keys, (n_cells if per_cell else data.num_points) * nlevels,
+        order = key_order(keys, (n_cells if per_cell else data.num_points) * nlevels,
                                 odt)
         offsets, count = run_offsets(keys, order)
         merged = tack.empty((count,), tack.vec(3, data.dtype))
@@ -801,7 +808,7 @@ def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
     names = tack.empty((pairs,), tack.vec(2, kdt))
     if pairs:
         _crossing_names(pair_from, values, levels, nlevels, names)
-    order, _ = bucket_order(names, data.num_points * nlevels, odt)
+    order = key_order(names, data.num_points * nlevels, odt)
     offsets, count = run_offsets(names, order)
     positions = tack.empty((count,), tack.vec(3, data.dtype))
     ends = tack.empty((count,), tack.vec(2, idt))
@@ -1112,8 +1119,7 @@ def _contour_cell_lines(data, field, levels, nlevels, several, fields=None):
         _cell_line_counts(data.domain_view("cells", group), field.view(group), levels, nlevels,
                           counts)
     odt = ids.for_output(data, 4 * n * nlevels)  # at most two lines, four points, a cell
-    starts = tack.empty((n,), odt)
-    lines = exclusive_scan(counts, starts, n) if n else 0
+    starts, lines = _scanned(counts, n, odt)
     line_cells = tack.empty((lines,), idt)
     line_levels = tack.empty((lines,), tack.i32)
     ends = tack.empty((2 * lines,), tack.vec(2, idt))
@@ -1176,8 +1182,7 @@ def _contour_lines(data, field, levels, nlevels, several, fields=None):
     np_ = data.num_points
     odt = ids.for_output(data, (2 * nf + np_) * nlevels)
     sdt = ids.at_least(idt, nfv + np_ * nlevels)            # face-and-level slots
-    starts = tack.empty((n,), odt)
-    lines = exclusive_scan(counts, starts, n) if n else 0
+    starts, lines = _scanned(counts, n, odt)
     line_faces = tack.empty((lines,), tack.vec(2, sdt))
     line_cells = tack.empty((lines,), idt)
     line_levels = tack.empty((lines,), tack.i32)

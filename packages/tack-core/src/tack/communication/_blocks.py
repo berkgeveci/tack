@@ -40,12 +40,14 @@ class Blocks:
         return f"Blocks({self.count} blocks, {len(self.local)} on rank {self.world.rank})"
 
     def rank_of(self, gid):
-        """The rank holding block ``gid``."""
+        """The rank holding block ``gid``, any block's: global ids run over rank 0's
+        blocks, then rank 1's, and so on."""
         self._check_gid(gid, "block")
         return int(np.searchsorted(self._starts, gid, side="right")) - 1
 
     def device(self, gid):
-        """The `tack.Device` of local block ``gid``."""
+        """The `tack.Device` of block ``gid``, one of this rank's: where its arrays
+        are, sent and received. ``ValueError`` for another rank's block."""
         return as_device(self._backend(gid))
 
     def _backend(self, gid):

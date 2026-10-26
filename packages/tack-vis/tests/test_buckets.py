@@ -8,7 +8,7 @@ import pytest
 
 import tack
 from tack.dataset import buckets
-from tack.dataset.buckets import bucket_groups, bucket_order, run_offsets
+from tack.dataset.buckets import bucket_groups, bucket_order, key_order, run_offsets
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -54,6 +54,21 @@ def test_tuples_are_the_stable_lexicographic_order(backend, dtype, width):
     assert runs == len(distinct)
     np.testing.assert_array_equal(np.diff(offsets.numpy()),
                                   np.unique(keys, axis=0, return_counts=True)[1])
+
+
+@pytest.mark.parametrize("width", [1, 2, 4])
+@pytest.mark.parametrize("dtype", ID_TYPES, ids=lambda t: t.name)
+def test_key_order_of_few_keys_among_many_buckets(backend, dtype, width):
+    """``key_order`` radix sorts keys far fewer than their buckets (a contour's
+    crossings among a mesh's points) and buckets the rest: the stable order
+    either way, ties included."""
+    rng = np.random.default_rng(width)
+    for n, nbuckets in ((300, 100_000), (300, 400)):
+        keys = np.c_[rng.integers(0, nbuckets, n), rng.integers(0, 4, (n, width - 1))]
+        keys[1::2] = keys[0::2]                   # every key twice: ties by index
+        values = keys[:, 0] if width == 1 else keys
+        order = key_order(_keys(values, dtype), nbuckets, dtype)
+        np.testing.assert_array_equal(order.numpy(), _stable(keys))
 
 
 @pytest.mark.parametrize("indices", ID_TYPES, ids=lambda t: t.name)
