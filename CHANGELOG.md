@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Two reference pages in the Visualization Guide, generated from the
+  docstrings: **Algorithms**, every `tack.dataset` algorithm by what it does,
+  each group with a table of what it gives, what it takes (pieces, AMR,
+  octrees) and its VTK and Viskores counterparts; and **Data Model**, the
+  classes, constructors and sources, and the VTK, MFEM and Warp interop.
+  A test fails when an exported name has no entry. The site's API pages now
+  see tack-vis (a Griffe extension, `docs/_ext/tack_namespace.py`): before,
+  nothing under `tack.dataset` or `tack.interop` could be rendered.
 - A prototype NVIDIA Warp backend (`tack.device("warp")`, the `warp`
   extra): kernels lower to generated `@wp.kernel` source from Tack's typed
   IR and run on Warp's CPU or CUDA device, on its current stream, with

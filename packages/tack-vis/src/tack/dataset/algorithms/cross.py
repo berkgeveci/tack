@@ -19,7 +19,10 @@ def _crosses(a, b, out):
 
 @on_inputs_device
 def cross(data, a, b):
-    """``a x b`` at every value of two 3-vector fields of one dtype and space."""
+    """``a x b`` at every value of two 3-vector fields ``a`` and ``b`` (fields
+    or names) of one dtype and space: a 3-vector field in that space and dtype
+    (``tack.arrays.Cast`` converts one first). Its unit is the product of
+    theirs, by its SI name where it has one."""
     a, b = _field(data, a), _field(data, b)
     space, n = _same_space(a, b)
     if width_of(a.values) != 3 or width_of(b.values) != 3:

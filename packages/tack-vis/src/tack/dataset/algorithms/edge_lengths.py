@@ -16,7 +16,10 @@ def _edge_lengths(edges, out):
 
 @on_inputs_device
 def edge_lengths(data):
-    """Each edge's length: a field on edges."""
+    """Each edge's length, the distance between its ends in the spatial unit: a
+    field on edges (``Values(data, "edges")``), numbered as
+    ``data.topology.edges()`` numbers them. An order-2 geometry's edges are
+    measured straight. Polylines have no derived edges."""
     out = tack.empty((data.topology.edges().num_edges,), data.dtype)
     for_each(_edge_lengths, data, "edges", out)
     return Field(Values(data, "edges"), out, data.unit)
