@@ -34,8 +34,6 @@ import sys
 import threading
 import time
 
-import numpy as np
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
