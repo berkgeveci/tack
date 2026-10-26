@@ -9,7 +9,9 @@ that corner, each quadrilateral face split from its own corner of smallest
 point id -- a rule both cells of a face apply alike, in whatever order they
 come (a hexahedron in 6, a wedge in 3, a pyramid in 2). The cone fills a
 convex cell. Triangles of 2D cells need no rule: cells share edges, which
-are not split."""
+are not split. A collapsed cell (repeated points) keeps only its pieces with
+distinct points: the others measure nothing, and their repeated faces would
+meet more than two cells."""
 
 import numpy as np
 
@@ -17,6 +19,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import CountingArray
 from tack.dataset import ids, shapes
+from tack.dataset.algorithms._common import _compact
 from tack.dataset.carry import Pieces, Same, carry
 from tack.dataset.topology import UnstructuredTopology, _as_field, uniform_cells
 
@@ -156,8 +159,48 @@ def _fans(loop_offsets, loop_points, starts, connectivity, sources):
             sources[at + k] = c
 
 
+@tack.kernel
+def _distinct(connectivity, width, flags):
+    # 1 where a piece's points are distinct: a collapsed cell's (a hexahedron with
+    # its top face pinched to a point) repeat one and measure nothing.
+    for t in range(flags.shape[0]):
+        whole = 1
+        for a in range(width):
+            for b in range(a + 1, width):
+                if connectivity[t * width + a] == connectivity[t * width + b]:
+                    whole = 0
+        flags[t] = whole
+
+
+@tack.kernel
+def _kept_pieces(kept, width, connectivity, sources, out_connectivity, out_sources):
+    for i in range(kept.shape[0]):
+        t = kept[i]
+        for v in range(width):
+            out_connectivity[i * width + v] = connectivity[t * width + v]
+        out_sources[i] = sources[t]
+
+
+def _without_repeats(connectivity, sources, count, width):
+    """The pieces whose points are distinct. VTK keeps the others, of no volume,
+    but their faces repeat and would meet more than two cells."""
+    if not count:
+        return connectivity, sources, count
+    flags = tack.empty((count,), tack.i32)
+    _distinct(connectivity, width, flags)
+    _, kept, whole = _compact(flags, connectivity.dtype)
+    if whole == count:
+        return connectivity, sources, count
+    out_connectivity = tack.empty((whole * width,), connectivity.dtype)
+    out_sources = tack.empty((whole,), sources.dtype)
+    if whole:
+        _kept_pieces(kept, width, connectivity, sources, out_connectivity, out_sources)
+    return out_connectivity, out_sources, whole
+
+
 def _pieces_topology(data, connectivity, sources, count, shape, width, fields):
     # All tetrahedra, or all triangles: the types and offsets are implicit.
+    connectivity, sources, count = _without_repeats(connectivity, sources, count, width)
     types, offsets = uniform_cells(int(shape), count, connectivity.dtype, width)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
     return carry(data, out, points=Same(), cells=Pieces(sources), fields=fields)

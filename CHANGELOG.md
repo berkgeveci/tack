@@ -355,6 +355,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   polyhedral face can record, saying so; `contour` and `clip` of the result
   failed later, with faces that "do not close" and a pointer to
   `check_winding`, which passes such cells.
+- `tetrahedralize` and `triangulate` of a collapsed cell (repeated points, a
+  pyramid written as a hexahedron) leave out its pieces with a repeated
+  point, which measure nothing; VTK keeps them, but their repeated faces made
+  every filter that derives faces refuse the output.
 - Point filters on GPUs (the validation round on mustafar-linux, headroom
   and illyad, 2026-10-25):
   - `PointLocator.neighbors` and `nearest` ran on the default device when no

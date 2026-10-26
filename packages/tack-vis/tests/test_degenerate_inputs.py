@@ -174,6 +174,31 @@ def test_derivatives_on_cells_of_no_volume_are_nan(backend, kind):
     assert np.isnan(td.perot(data, td.upwind_flux(data, "c", (1, 0, 0))).values.numpy()).all()
 
 
+def test_splitting_a_collapsed_cell_keeps_the_pieces_with_volume(backend):
+    """A hexahedron whose top face is pinched to a point (a pyramid written as a
+    hexahedron, as meshers do) and a quad with a repeated point: their pieces
+    with a repeated point measure nothing and are left out. VTK keeps them,
+    but their faces repeat, and every filter deriving faces refused the
+    output ("faces are shared by more than two cells")."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+                       [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 2]], np.float32)
+    data = td.DataSet(td.UnstructuredTopology(
+        [12, 12], [0, 8, 16], [0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7, 8, 8, 8, 8]), points)
+    data.fields["c"] = td.Field(td.Constant(data), tack.array(np.array([1.0, 2.0], np.float32)))
+    tets = td.tetrahedralize(data)
+    measure = td.cell_geometry(tets).measure.values.numpy()
+    assert tets.num_cells == 8 and (measure > 0).all()
+    assert measure.sum() == pytest.approx(1 + 1 / 3, rel=1e-6)
+    np.testing.assert_array_equal(tets.fields["c"].values.numpy(), [1] * 6 + [2] * 2)
+    assert td.extract_surface(tets).num_cells == 14      # 5 squares and 4 sides, split
+    quads = td.DataSet(td.UnstructuredTopology([9, 9], [0, 4, 8], [0, 1, 1, 2, 1, 4, 5, 2],
+                                               num_points=6),
+                       np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 0, 0],
+                                 [2, 1, 0]], np.float32))
+    np.testing.assert_allclose(td.cell_geometry(td.triangulate(quads)).measure.values.numpy(),
+                               [0.5, 0.5, 0.5])
+
+
 def test_polygons_and_polylines_of_no_extent(backend):
     flat = td.DataSet(td.PolygonalTopology([0, 3], [0, 1, 2]), np.ones((3, 3), np.float32))
     area, centroid = td.cell_geometry(flat)
