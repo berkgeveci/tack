@@ -33,7 +33,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids, shapes
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import bucket_order, key_order, run_offsets
 from tack.dataset.topology import (
     _as_field,
     _checks_ids,
@@ -242,7 +242,7 @@ def _derive_cell_points(t, cell_offsets=None, cell_faces=None, face_offsets=None
     if total:
         _cell_point_keys(cell_offsets, cell_faces, face_offsets, face_points, starts,
                          keys, n)
-    order, _ = bucket_order(keys, n, idt)
+    order = key_order(keys, n, idt)
     offsets_of_runs, runs = run_offsets(keys, order)
     points = tack.empty((runs,), idt)
     counts = tack.zeros((n,), tack.i32)
@@ -294,7 +294,7 @@ class PolygonEdges(_OnItsArrays):
         if total:
             _face_edge_keys(t.face_offsets, t.face_points, keys, self.face_edge_sign,
                             t.num_faces)
-            order, _ = bucket_order(keys, t.num_points, idt)
+            order = key_order(keys, t.num_points, idt)
             offsets, count = run_offsets(keys, order)
         else:
             count = 0
@@ -651,7 +651,7 @@ class PolygonalTopology(PolyhedralTopology):
         count = 0
         if total:
             _loop_edge_keys(loop_offsets, loop_points, keys, directions, n)
-            order, _ = bucket_order(keys, num_points, idt)
+            order = key_order(keys, num_points, idt)
             offsets, count = run_offsets(keys, order)
         face_points = tack.empty((2 * count,), idt)
         if count:
@@ -820,7 +820,7 @@ class PolylineTopology(_Topology):
             sides = tack.empty((2 * n,), tack.u8)
             count = 0
             if n:
-                order, _ = bucket_order(self._ends, self.num_points, idt)
+                order = key_order(self._ends, self.num_points, idt)
                 offsets, count = run_offsets(self._ends, order)
             face_points = tack.empty((count,), idt)
             if count:

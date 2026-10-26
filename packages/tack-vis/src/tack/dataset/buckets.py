@@ -256,6 +256,24 @@ def bucket_order(values, nbuckets, index_dtype=None):
     return order, starts
 
 
+#: Keys at least this many times fewer than the buckets are radix sorted by
+#: ``key_order``: a bucket sort's counts and offsets would be mostly empty.
+_SPARSE = 8
+
+
+@on_inputs_device
+def key_order(values, nbuckets, index_dtype=None):
+    """The stable permutation sorting ``values`` as ``bucket_order``'s does, without
+    the buckets' offsets. Keys much fewer than the buckets (a contour's crossings
+    among a mesh's points) are radix sorted, in memory and time proportional to
+    the keys; ``bucket_order``'s counts and offsets are proportional to the
+    buckets, which at 20M points was 230 MB to sort a few million keys."""
+    n = _count(values)
+    if n and nbuckets > _SPARSE * n:
+        return _radix_order(values, n, _index_dtype(max(n, nbuckets), index_dtype))
+    return bucket_order(values, nbuckets, index_dtype)[0]
+
+
 @tack.kernel
 def _tally(keys, skip, counts):
     for i in range(keys.shape[0]):

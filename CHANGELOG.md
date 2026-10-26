@@ -462,6 +462,26 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Filters hold less memory at scale, measured beside VTK's by the new
+  `benchmarks/vtk_compare/memory.py`, which samples the allocator's bytes in
+  use through one call in a process of its own. At 20M hexahedra on the CPU:
+  - `contour`'s peak is 183 MB, down from 671 (VTK 74); `slice_plane`'s is
+    294, down from 725 (VTK 319). Merging a few million crossings no longer
+    allocates bucket counts and offsets over every point: `key_order` radix
+    sorts keys that are far fewer than their buckets. The per-cell counts are
+    scanned in place.
+  - `extract_surface` of a fresh mesh peaks at 2.1 GB, down from 4.0 (VTK
+    1.5); `faces()` holds less while it works too. A face record no longer
+    stores its lowest point, which its bucket already gives. Each bucket
+    counts its faces and numbers them in place of per-record flags, run ids
+    and slots, and the surface's rows come from each boundary face's cell
+    rather than a slot for every (cell, face).
+  - Cell to point of a cell field on cells of one shape reads the cells'
+    values through the point links, rather than a contribution for every
+    corner (640 MB at 20M). Its peak went from 1.7 GB to under VTK's, and
+    its warm time from 25 ms to 12 (VTK 96).
+
+  Every filter runs at 50M and 100M hexahedra and tetrahedra.
 - A fresh mesh's first filters cost less at scale. Faces are derived by a
   counting sort of the (cell, face) records into buckets of their lowest
   point, each record placed once and each bucket sorted in place, with

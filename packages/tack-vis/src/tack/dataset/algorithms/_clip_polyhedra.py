@@ -8,7 +8,7 @@ from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import ids
 from tack.dataset.algorithms._common import _close, _crossing
-from tack.dataset.buckets import bucket_order, run_offsets
+from tack.dataset.buckets import key_order, run_offsets
 from tack.dataset.carry import Interpolate, Take, carry
 
 
@@ -205,7 +205,7 @@ def clip_polyhedra(data, values, iso, inside, fields):
     point_of = tack.empty((total,), odt)
     count = 0
     if total:
-        order, _ = bucket_order(keys, data.num_points, odt)
+        order = key_order(keys, data.num_points, odt)
         runs, count = run_offsets(keys, order)
     ends = tack.empty((count,), tack.vec(2, idt))
     weights = tack.empty((count,), weight_dtype)
