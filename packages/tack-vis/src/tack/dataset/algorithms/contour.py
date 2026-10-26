@@ -351,7 +351,7 @@ def _lopez_counts(cells, values, levels, nlevels, counts):
                     for j in range(n):
                         va = values[cells.side_point_id(c, k, j)]
                         vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
-                        if va < iso and vb >= iso:
+                        if not va >= iso and vb >= iso:     # below: not at or above (NaN too)
                             keyed += 1
                     counts[cells.entry(c, k)] += keyed
 
@@ -382,7 +382,7 @@ def _face_pairs(cells, c, k, n, values, iso, v, nlevels, at, pair_from, pair_to)
     for j in range(n):
         va = values[cells.side_point_id(c, k, j)]
         vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
-        if va < iso and vb >= iso:
+        if not va >= iso and vb >= iso:     # below: not at or above (NaN too)
             nxt = j
             for m in range(1, n):
                 j2 = j + m if j + m < n else j + m - n

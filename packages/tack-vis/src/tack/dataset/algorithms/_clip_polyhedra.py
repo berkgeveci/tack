@@ -16,7 +16,9 @@ from tack.dataset.carry import Interpolate, Take, carry
 def _face_sizes(face_offsets, face_points, values, iso, sizes, kept):
     # Each face's clipped polygon: its kept points, and a crossing on each edge
     # strictly between the sides (a point at the value is kept, so an edge from
-    # it has no other crossing). Under three points, the face is gone.
+    # it has no other crossing). Below is not at or above, so a NaN is below,
+    # as contour's tracing and the shape path's cases have it. Under three
+    # points, the face is gone.
     for f in range(sizes.shape[0]):
         start = face_offsets[f]
         n = face_offsets[f + 1] - start
@@ -26,7 +28,7 @@ def _face_sizes(face_offsets, face_points, values, iso, sizes, kept):
             vb = values[face_points[start + (j + 1 if j + 1 < n else 0)]]
             if va >= iso:
                 k += 1
-            if (va > iso and vb < iso) or (va < iso and vb > iso):
+            if (va > iso and not vb >= iso) or (not va >= iso and vb > iso):
                 k += 1
         sizes[f] = k if k >= 3 else 0
         kept[f] = 1 if k >= 3 else 0
@@ -49,7 +51,7 @@ def _face_keys(face_offsets, face_points, values, iso, sizes, starts, keys):
                 if va >= iso:
                     keys[at] = [a, a]
                     at += 1
-                if (va > iso and vb < iso) or (va < iso and vb > iso):
+                if (va > iso and not vb >= iso) or (not va >= iso and vb > iso):
                     keys[at] = [min(a, b), max(a, b)]
                     at += 1
 
@@ -174,7 +176,7 @@ def clip_polyhedra(data, values, iso, inside, fields):
     if inside:
         negated = tack.empty_like(values)
         if arrays.size_of(values):
-            _negate(values, negated)
+            _negate(values, negated, float("inf"))
         values, iso = negated, -iso
     idt = data.id_dtype
     weight_dtype = arrays.dtype_of(values)
@@ -258,9 +260,12 @@ def clip_polyhedra(data, values, iso, inside, fields):
 
 
 @tack.kernel
-def _negate(values, out):
+def _negate(values, out, infinity):
+    # A NaN is below every level, so after negating it must be above them all:
+    # the inside part keeps it, as the shape path's inside clip does.
     for i in range(out.shape[0]):
-        out[i] = -values[i]
+        v = values[i]
+        out[i] = -v if v == v else infinity
 
 
 @tack.kernel

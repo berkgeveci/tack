@@ -363,6 +363,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   (VTK keeps them apart) kept only the cell array, so a contour of the name
   found nothing: the cell array is now the field `"<name> (cells)"`, with a
   warning. Viskores' `mixed-cell-shapes.vtk` has such a pair.
+- `contour` and `clip` of polyhedra with a NaN in the field: the tracing took
+  a NaN as neither above nor below the level, and its faces did not close
+  ("check_winding"); a NaN is now below every level, as the shape path's
+  cases have it, and an inside clip keeps it, so the clipped volumes are the
+  shape path's on both sides.
 - Point filters on GPUs (the validation round on mustafar-linux, headroom
   and illyad, 2026-10-25):
   - `PointLocator.neighbors` and `nearest` ran on the default device when no

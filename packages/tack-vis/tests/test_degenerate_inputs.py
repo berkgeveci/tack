@@ -236,6 +236,27 @@ def test_a_crossing_beside_a_value_that_is_not_finite_lies_at_the_other_end(back
     assert np.isfinite(clipped.fields["v"].values.numpy()).all()
 
 
+@pytest.mark.parametrize("value", [np.inf, -np.inf, np.nan])
+def test_polyhedra_put_values_that_are_not_finite_where_shapes_do(backend, value):
+    """A NaN is below every level, as the shape path's case index has it; the
+    polyhedral tracing once took it as neither above nor below, and its faces
+    did not close (blaming the winding). The clipped volumes are the shape
+    path's, on both sides, which together make the whole."""
+    data = _ramp_with(value)
+    polyhedra = td.as_polyhedra(data)
+    surface = td.contour(polyhedra, "p", 0.5)
+    assert surface.num_cells and np.isfinite(surface.positions()).all()
+    volumes = []
+    for inside in (False, True):
+        ours = td.clip(polyhedra, "p", 0.03, inside=inside)
+        assert np.isfinite(ours.positions()).all()
+        volumes.append(td.cell_geometry(ours).measure.values.numpy().sum())
+        assert volumes[-1] == pytest.approx(
+            td.cell_geometry(td.clip(data, "p", 0.03, inside=inside)).measure.values.numpy().sum(),
+            rel=1e-5)
+    assert sum(volumes) == pytest.approx(8.0, rel=1e-5)
+
+
 # ── A level through mesh points ─────────────────────────────────────
 
 
