@@ -603,20 +603,58 @@ def _before_record(a, b):
     return less
 
 
+#: Buckets of at most this many records are sorted in the thread's own arrays.
+_SMALL_BUCKET = tack.constant(32)
+
+
 @tack.kernel
 def _sort_face_buckets(starts, records, nbuckets):
-    # Each bucket's records in order (insertion, in place): a bucket's records
-    # lie together, so this reads and writes memory a thread has to itself.
+    # Each bucket's records in order (insertion): a bucket's records lie
+    # together, so this reads and writes memory a thread has to itself. A
+    # small bucket is read once into local arrays, its order found there by
+    # insertion on one-byte indices, and its records written back in that
+    # order. Sorted in place in global memory, each step of the insertion
+    # waited for a load and a store of a whole record: on CUDA (RTX 4060 Ti)
+    # the sort took 41 of a 5M-tetrahedron derivation's 70 ms (buckets of
+    # about 23 records) and 22 of a 5M-hexahedron's 69. A larger bucket is
+    # sorted in place.
     for b in range(nbuckets):
+        k0 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k1 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k2 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k3 = tack.local_array_like(starts, _SMALL_BUCKET)
+        k4 = tack.local_array_like(starts, _SMALL_BUCKET)
+        order = tack.local_array(tack.u8, _SMALL_BUCKET)
         begin = starts[b]
         end = starts[b + 1]
-        for i in range(begin + 1, end):
-            r = records[i]
-            j = i - 1
-            while j >= begin and _before_record(r, records[j]) == 1:
-                records[j + 1] = records[j]
-                j -= 1
-            records[j + 1] = r
+        n = end - begin
+        if n <= _SMALL_BUCKET:
+            for i in range(n):
+                r = records[begin + i]
+                k0[i] = r[0]
+                k1[i] = r[1]
+                k2[i] = r[2]
+                k3[i] = r[3]
+                k4[i] = r[4]
+                j = i - 1
+                while j >= 0:
+                    o = order[j]
+                    if _before_record(r, [k0[o], k1[o], k2[o], k3[o], k4[o]]) == 0:
+                        break
+                    order[j + 1] = o
+                    j -= 1
+                order[j + 1] = tack.u8(i)
+            for i in range(n):
+                o = order[i]
+                records[begin + i] = [k0[o], k1[o], k2[o], k3[o], k4[o]]
+        else:
+            for i in range(begin + 1, end):
+                r = records[i]
+                j = i - 1
+                while j >= begin and _before_record(r, records[j]) == 1:
+                    records[j + 1] = records[j]
+                    j -= 1
+                records[j + 1] = r
 
 
 @tack.kernel
