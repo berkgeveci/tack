@@ -6,9 +6,9 @@ is a ``@wp.kernel`` that `codegen/warp_gen.py` writes from the typed IR,
 which Warp compiles (and caches) and launches on its own stream. Scalars
 go to Warp as kernel arguments, so nothing is packed.
 
-Not offered: ``tack.inspect`` (``supports_inspect``). Not yet: textures,
-workgroups, device reductions and the disk cache's variants (Warp's own
-kernel cache keeps the compiled code).
+Not offered: ``tack.inspect`` (``supports_inspect``). Workgroups on CUDA
+devices only. Not yet: textures, device reductions and the disk cache's
+variants (Warp's own kernel cache keeps the compiled code).
 """
 
 import ctypes
@@ -127,6 +127,8 @@ class WarpBackend(GPUBackend):
         wp.config.enable_backward = False
         wp.init()
         self.wp_device = wp.get_device()
+        # Shared arrays and barriers are CUDA's (native helpers in warp_gen).
+        self.supports_workgroups = self.wp_device.is_cuda
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: variant}
         self._kernels = {}                # generated source -> its wp.Kernel
 
@@ -213,7 +215,9 @@ class WarpBackend(GPUBackend):
         inputs.append(loop_end)
         inputs.extend(extents)
         inputs.extend(t.ptr for t in compiled.tack_tables)
-        _warp().launch(compiled, dim=loop_end, inputs=inputs, device=self.wp_device)
+        # Blocks of 256 lanes: Tack's workgroup size, and Warp's default.
+        _warp().launch(compiled, dim=loop_end, inputs=inputs, device=self.wp_device,
+                       block_dim=256)
 
     def _launch_guard(self, variant):
         # Every launch passes all its arguments; nothing is shared between calls.

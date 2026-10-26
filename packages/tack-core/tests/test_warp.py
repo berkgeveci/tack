@@ -364,3 +364,53 @@ def test_inspect_is_not_offered(warp):
     for mode in ("ir", "source", "optimized"):
         with pytest.raises(NotImplementedError, match="another device"):
             tack.inspect(_saxpy, 1.0, x, x, x, mode=mode)
+
+
+@tack.kernel
+def _rotate_lanes(x, out):
+    lanes = tack.shared_like(x, 256)
+    for i in range(x.shape[0]):
+        t = tack.thread_id()
+        lanes[t] = x[i]
+        tack.barrier()
+        out[i] = lanes[(t + 1) % 256]
+
+
+@tack.kernel
+def _block_reductions(x, out):
+    for i in range(x.shape[0]):
+        out[i, 0] = tack.block_sum(x[i])
+        out[i, 1] = tack.block_min(x[i])
+        out[i, 2] = tack.block_max(x[i])
+
+
+def test_workgroups_on_cuda(warp):
+    """Shared arrays, barriers, lanes and block reductions are CUDA's (native
+    helpers); the scans and sorts take their tile paths with them."""
+    if not warp._backend.wp_device.is_cuda:
+        assert not warp._backend.supports_workgroups
+        pytest.skip("workgroups are CUDA's; Warp's device here is its CPU")
+    x = np.random.default_rng(3).standard_normal(1024).astype(np.float32)
+    x[300], x[600:700], x[650] = np.nan, 0.0, -0.0
+    a = tack.array(x, device=warp)
+    rotated = tack.empty(1024, tack.f32, device=warp)
+    _rotate_lanes(a, rotated)
+    np.testing.assert_array_equal(rotated.numpy(), np.roll(x.reshape(4, 256), -1, axis=1).ravel())
+    reduced = tack.empty((1024, 3), tack.f32, device=warp)
+    _block_reductions(a, reduced)
+    blocks = x.reshape(4, 256)
+    got = reduced.numpy().reshape(4, 256, 3)
+    np.testing.assert_allclose(got[:, :, 0], np.broadcast_to(blocks.sum(axis=1, dtype=np.float64)[:, None],
+                                                              (4, 256)), rtol=1e-5)
+    np.testing.assert_array_equal(got[1:, :, 1], np.broadcast_to(blocks[1:].min(axis=1)[:, None], (3, 256)))
+    assert np.isnan(got[1, :, 0]).all() and np.isnan(got[1, :, 2]).all()   # NaN propagates
+    np.testing.assert_array_equal(np.signbit(got[2, :, 1]), np.signbit(blocks[2].min()))
+
+    from tack.algorithms import argsort, exclusive_scan
+    ints = np.random.default_rng(4).integers(0, 100, 100_000).astype(np.int32)
+    scanned = tack.empty(len(ints), tack.i64, device=warp)
+    exclusive_scan(tack.array(ints, device=warp), scanned, len(ints))
+    np.testing.assert_array_equal(scanned.numpy(), np.concatenate([[0], np.cumsum(ints)[:-1]]))
+    keys = np.random.default_rng(5).integers(-1 << 40, 1 << 40, 50_000)
+    np.testing.assert_array_equal(argsort(tack.array(keys, device=warp)).numpy(),
+                                  np.argsort(keys, kind="stable"))

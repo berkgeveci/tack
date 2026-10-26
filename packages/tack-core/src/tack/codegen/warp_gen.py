@@ -30,12 +30,16 @@ Where Warp's semantics differ from Tack's, helpers carry Tack's:
 Debug mode's bounds checks (``IRBoundsCheck``) call one helper per kernel,
 as ``codegen/bounds.py`` has it in C.
 
-Not yet: textures, workgroups (shared memory, barriers, block
-reductions) and ``print``.
+Workgroups (shared arrays, barriers, the thread's lane, block reductions)
+are CUDA's, through native helpers: kernels using them run on Warp's CUDA
+devices only, in blocks of 256.
+
+Not yet: textures and ``print``.
 """
 
 from tack.codegen.identifiers import kernel_entry_name
 from tack.lang import ir, ir_bounds
+from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import (
     ScalarType,
@@ -226,6 +230,13 @@ class WarpCodeGen:
         elif isinstance(node, ir.IRContinue):
             # The kernel body is one iteration of the parallel loop.
             self._emit("return" if node.outermost else "continue")
+        elif isinstance(node, ir.IRSharedAlloc):
+            if not isinstance(node.size, ir.IRConstant):
+                raise NotImplementedError("Warp backend: a shared array's size must be a constant")
+            self._arrays[node.name] = node.dtype
+            self._emit(f"{_v(node.name)} = {self._shared_helper(node.dtype, node.size.value)}()")
+        elif isinstance(node, ir.IRBarrier):
+            self._emit(f"{self._cuda_helper('barrier')}()")
         elif isinstance(node, ir.IRCall):
             self._emit(self._expr(node))
         else:
@@ -377,6 +388,10 @@ class WarpCodeGen:
             return self._table_load(node)
         if isinstance(node, ir.IRBoundsCheck):
             return self._bounds_check(node)
+        if isinstance(node, ir.IRThreadId):
+            return f"{self._cuda_helper('lane')}()"
+        if isinstance(node, ir.IRBlockReduce):
+            return self._block_reduce(node)
         raise NotImplementedError(f"Warp backend: expression {type(node).__name__}")
 
     def _binop(self, node: ir.IRBinOp) -> str:
@@ -499,6 +514,74 @@ class WarpCodeGen:
                 stub = f"def {name}(p: wp.uint64, i: wp.int64, v: {w}) -> {w}:"
             self._helpers[name] = [f"@wp.func_native({snippet!r})", stub, "    ..."]
         return name
+
+    # ── Workgroups (CUDA) ────────────────────────────────────────────
+
+    def _cuda_only(self, name, signature, body):
+        """A native helper whose ``body`` is CUDA device code (Warp compiles
+        helpers for the host too, where it is never called)."""
+        if name not in self._helpers:
+            fallback = "return 0;" if "->" in signature else ""
+            snippet = f"#if defined(__CUDA_ARCH__)\n{body}\n#else\n{fallback}\n#endif\n"
+            self._helpers[name] = [f"@wp.func_native({snippet!r})",
+                                   f"def {name}{signature}:", "    ..."]
+        return name
+
+    def _cuda_helper(self, kind):
+        if kind == "barrier":
+            return self._cuda_only("tack_barrier", "()", "__syncthreads();")
+        return self._cuda_only("tack_lane", "() -> wp.int32", "return (wp::int32)threadIdx.x;")
+
+    def _shared_helper(self, t, size):
+        """The address of a ``__shared__`` array of its own: one per allocation,
+        as CUDACodeGen declares one per ``tack.shared``."""
+        name = f"tack_shared_{len(self._helpers)}"
+        c = warp_type(t).replace("wp.", "wp::")
+        return self._cuda_only(name, "() -> wp.uint64",
+                               f"__shared__ {c} lanes[{size}];\nreturn (wp::uint64)lanes;")
+
+    def _block_reduce(self, node: ir.IRBlockReduce) -> str:
+        """CUDACodeGen's tree over a shared f32 array, for every lane of the
+        block; the result is a local, read after a barrier."""
+        smem, lane, step = self._fresh_name("bsmem"), self._fresh_name("blane"), self._fresh_name("bstep")
+        result = self._fresh_name("bresult")
+        load, store = self._memory_helper("load", f32), self._memory_helper("store", f32)
+        if node.op == "sum":
+            def combine(a, b):
+                return f"({a} + {b})"
+        else:
+            helper = self._reduce_extremum_helper(node.op)
+            def combine(a, b):
+                return f"{helper}({a}, {b})"
+        barrier = self._cuda_helper("barrier")
+        value = self._typed(node.value, f32)
+        self._emit(f"{smem} = {self._shared_helper(f32, WORKGROUP_SIZE)}()")
+        self._emit(f"{lane} = wp.int64({self._cuda_helper('lane')}())")
+        self._emit(f"{store}({smem}, {lane}, {value})")
+        self._emit(f"{barrier}()")
+        self._emit(f"{step} = wp.int64({WORKGROUP_SIZE // 2})")
+        self._emit(f"while {step} > wp.int64(0):")
+        self._emit(f"    if {lane} < {step}:")
+        self._emit(f"        {store}({smem}, {lane}, "
+                   f"{combine(f'{load}({smem}, {lane})', f'{load}({smem}, {lane} + {step})')})")
+        self._emit(f"    {barrier}()")
+        self._emit(f"    {step} = {step} >> wp.int64(1)")
+        self._emit(f"{result} = {load}({smem}, wp.int64(0))")
+        # Every lane reads before a later iteration reuses the array.
+        self._emit(f"{barrier}()")
+        self._locals[result] = f32
+        return result
+
+    def _reduce_extremum_helper(self, op):
+        """``reductions.f32_reduction_helpers``' semantics: NaN propagates, and
+        a tie of zeros does not depend on the order."""
+        comparison, bits = ("<", "|") if op == "min" else (">", "&")
+        return self._cuda_only(
+            f"tack_reduce_{op}_f32", "(a: wp.float32, b: wp.float32) -> wp.float32",
+            f"if (a != a || b != b) return __uint_as_float(0x7fc00000u);\n"
+            f"if (a == 0.0f && b == 0.0f) return __uint_as_float(__float_as_uint(a) {bits} "
+            f"__float_as_uint(b));\n"
+            f"return a {comparison} b ? a : b;")
 
     def _atomic(self, node: ir.IRAtomicOp) -> str:
         array = self._array_name(node.array)
