@@ -5,7 +5,7 @@ from tack.arrays import materialize
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._faces import _on_faces
 from tack.dataset.carry import _like
-from tack.dataset.dataset import Field, for_each
+from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -32,11 +32,17 @@ def net_flux(data, flux):
     the area), it is the net outflow of each cell, ``V`` times the divergence;
     ``divergence`` divides by the cells' measure. Nothing is weighted: the
     values are summed as they are, so face area vectors sum to zero on a closed
-    cell."""
+    cell. Cells of a lower dimension than the mesh's have no faces: zero."""
     flux = _field(data, flux)
     if not _on_faces(data, flux):
         raise TypeError("net_flux sums a field on faces")
     data.topology.faces()                          # the incidence the cell views need
     out = _like(flux.values, data.num_cells)
-    for_each(_outward_sums, data, "cells", materialize(flux.values), out)
+    out.fill(0)
+    # Cells of a lower dimension (a surface's triangles among tetrahedra) have
+    # no faces of the mesh's, so no flux: zero.
+    values = materialize(flux.values)
+    for group in data.launch_groups("cells", []):
+        if group.count and group.shape.DIMENSION == data.topology.dimension:
+            _outward_sums(data.domain_view("cells", group), values, out)
     return Field(Values(data, "cells"), out, flux.unit)

@@ -344,6 +344,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A mesh with cells of more than one dimension (a surface's triangles among
+  tetrahedra, as Gmsh and Exodus meshes carry): `cell_geometry` measures each
+  cell in its own dimension, and `net_flux`, `perot` and `divergence` give its
+  lower-dimensional cells zero; all three failed inside kernel resolution
+  ("no @tack.func method 'side_position'"), and `perot` left those cells
+  unwritten. Found with Viskores' test datasets, now in the tests
+  (`_viskores_datasets.py`, measures held to Viskores' expected values).
+- `as_polyhedra` refuses an inside-out cell beside an upright one, which no
+  polyhedral face can record, saying so; `contour` and `clip` of the result
+  failed later, with faces that "do not close" and a pointer to
+  `check_winding`, which passes such cells.
 - Point filters on GPUs (the validation round on mustafar-linux, headroom
   and illyad, 2026-10-25):
   - `PointLocator.neighbors` and `nearest` ran on the default device when no

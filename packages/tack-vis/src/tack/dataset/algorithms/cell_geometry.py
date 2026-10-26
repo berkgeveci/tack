@@ -2,6 +2,8 @@
 
 from typing import NamedTuple
 
+import numpy as np
+
 import tack
 from tack.dataset import shapes
 from tack.dataset.algorithms._common import _measure_unit, _vectors
@@ -73,6 +75,40 @@ def _polygon_geometry(cells, areas, centroids):
             centroids[cells.entity_id(c)] = origin + corners / cells.num_faces(c)
 
 
+#: A 2D shape's corners in order round it.
+_ROUND = {shapes.Triangle: (0, 1, 2), shapes.Quad: (0, 1, 2, 3), shapes.Pixel: (0, 1, 3, 2)}
+
+
+@tack.kernel
+def _corner_polygon_geometry(cells, order, areas, centroids):
+    # As _polygon_geometry, round the shape's corners: a triangle, quad or pixel
+    # among cells of a higher dimension, whose views have no sides of it.
+    for c in cells:
+        size = order.shape[0]
+        origin = cells.corner_position(c, order[0])
+        n = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(size):
+            n += (cells.corner_position(c, order[k]) - origin).cross(
+                cells.corner_position(c, order[k + 1 if k + 1 < size else 0]) - origin)
+        length = n.norm()
+        unit = n / length if length > 0.0 else n
+        twice = 0.0
+        weighted = tack.vec3(0.0, 0.0, 0.0)
+        corners = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(size):
+            a = cells.corner_position(c, order[k]) - origin
+            b = cells.corner_position(c, order[k + 1 if k + 1 < size else 0]) - origin
+            t = a.cross(b).dot(unit)
+            twice += t
+            weighted += t * (a + b)
+            corners += a
+        areas[cells.entity_id(c)] = 0.5 * twice
+        if twice != 0.0:
+            centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
+        else:
+            centroids[cells.entity_id(c)] = origin + corners / size
+
+
 @tack.kernel
 def _line_geometry(cells, lengths, centroids):
     for c in cells:
@@ -132,6 +168,11 @@ def cell_geometry(data):
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 3:
             _cell_geometry(data.domain_view("cells", group), volumes, centroids)
+        elif group.count and group.shape.DIMENSION < data.topology.dimension and \
+                group.shape in _ROUND:
+            _corner_polygon_geometry(data.domain_view("cells", group),
+                                     tack.array(np.array(_ROUND[group.shape], np.int32)),
+                                     volumes, centroids)
         elif group.count and group.shape.DIMENSION == 2:
             _polygon_geometry(data.domain_view("cells", group), volumes, centroids)
         elif group.count and group.shape is shapes.PolyLine:
