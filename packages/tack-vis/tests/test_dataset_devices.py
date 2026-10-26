@@ -122,6 +122,8 @@ CALLS = {
     "threshold": lambda d: td.threshold(d, "s", 0.0, 3.0),
     "extract_geometry": lambda d: td.extract_geometry(d, td.Sphere((0, 0, 0), 1.5)),
     "extract_cells": lambda d: td.extract_cells(d, [0, 1]),
+    "extract_extent": lambda d: (td.extract_extent(d, (0, 1, 0, 2, 1, 1)) if
+                                 isinstance(d.topology, td.StructuredTopology) else None),
     "mask": lambda d: td.mask(d, 2),
     "mask_points": lambda d: td.mask_points(d, 2),
     "threshold_points": lambda d: td.threshold_points(d, "s", 0.0, 3.0),

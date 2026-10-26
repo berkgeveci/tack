@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `td.extract_extent(data, extent, rate=1)`: a box of a structured grid's
+  points (VTK's VOI, in the whole grid's indices), every `rate`-th, as a
+  structured grid of the same kind -- an image stays uniform, a rectilinear
+  grid's axes are cut, a curvilinear grid's points taken; a k-plane of a 3D
+  grid is a 2D grid. Matched to `vtkExtractVOI`, `vtkExtractRectilinearGrid`
+  and `vtkExtractGrid` point for point and cell for cell.
 - `vtk_to_dataset` reads `vtkPolyData` -- what VTK's surface readers (STL,
   PLY, OBJ, `.vtp`) and its contours give -- as the unstructured grid of its
   cells in VTK's order: triangles and quads an `UnstructuredTopology`, larger

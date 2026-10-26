@@ -28,6 +28,7 @@ or the `td.Field` itself; a raw value buffer needs a space wrapper first.
 | Keep cells whose scalar lies in an interval | `threshold` | Whole cells, preserving their shapes |
 | Keep cells inside a region described by a function | `extract_geometry` | Whole cells |
 | Keep a named or explicit cell selection | `extract_cells` | Whole cells in input order |
+| Keep a box of a structured grid, every n-th point | `extract_extent` | A structured grid of the same kind (VTK's `vtkExtractGrid`/`vtkExtractVOI`); a one-point-thick box is a grid of one dimension less |
 | Keep the part on one side of a level | `clip` | Whole cells and pieces of cut cells |
 | Extract a scalar level set, or several | `contour` | Triangles in 3D; line cells in 2D; vertices on lines; `dimension=` picks which cells of a mixed mesh (the highest by default, never mixed); with several values, all of them, each cell's in `contour_value` |
 | Intersect with a plane or another implicit function, or several parallel ones | `slice_plane`, `slice` | Intersection geometry |
