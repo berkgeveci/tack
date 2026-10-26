@@ -17,6 +17,11 @@ from typing import Callable
 import numpy as np
 
 ISOVALUE = 0.5                    # p spans about [-0.25, 1.25]
+# On the generated grids p is exactly 0.5 at mesh points, where Tack makes one
+# point of every crossing there and VTK and Viskores keep the degenerate
+# cells (all validly), so the counts would differ; the contour is taken just
+# off them.
+CONTOUR_ISOVALUE = 0.5123
 THRESHOLD = (0.25, 0.75)          # c is each cell center's x across the box
 NORMAL = np.array([1.0, 0.3, 0.2]) / np.linalg.norm([1.0, 0.3, 0.2])
 
@@ -57,7 +62,7 @@ def _contour_3d_linear_grid(grid, mesh, form):
                                # Tack's polyhedral contour gives polygons
                                generate_triangles=form == "shape")
     f.SetInputArrayToProcess(0, 0, 0, 0, "p")
-    f.SetValue(0, ISOVALUE)
+    f.SetValue(0, CONTOUR_ISOVALUE)
     return f
 
 
@@ -68,7 +73,7 @@ def _contour_filter(grid, mesh, form):
                          compute_scalars=False, use_scalar_tree=False,
                          generate_triangles=form == "shape")
     f.SetInputArrayToProcess(0, 0, 0, 0, "p")
-    f.SetValue(0, ISOVALUE)
+    f.SetValue(0, CONTOUR_ISOVALUE)
     return f
 
 
@@ -183,7 +188,7 @@ def _tack():
 PAIRS = [
     Pair("contour",
          vtk=_contour_3d_linear_grid, others={"vtkContourFilter": _contour_filter},
-         tack=lambda d, m: _tack()[0].contour(d, "p", ISOVALUE),
+         tack=lambda d, m: _tack()[0].contour(d, "p", CONTOUR_ISOVALUE),
          point_fields=("p",), output="surface"),
     Pair("slice",
          vtk=_plane_cutter,
