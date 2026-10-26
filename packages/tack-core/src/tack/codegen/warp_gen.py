@@ -39,7 +39,6 @@ Not yet: textures and ``print``.
 
 from tack.codegen.identifiers import kernel_entry_name
 from tack.lang import ir, ir_bounds
-from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import (
     ScalarType,
@@ -54,6 +53,7 @@ from tack.lang.types import (
     u32,
     u64,
 )
+from tack.lang.workgroup_participation import WORKGROUP_SIZE
 
 _WARP_TYPES = {
     i8: "wp.int8", u8: "wp.uint8", i16: "wp.int16", u16: "wp.uint16",
@@ -203,13 +203,13 @@ class WarpCodeGen:
                 uses.setdefault(node.target, []).append((path, True))
             elif isinstance(node, ir.IRIf):
                 note_reads(node.condition, path)
-                block(node.then_body, path + (id(node.then_body),))
+                block(node.then_body, (*path, id(node.then_body)))
                 if node.else_body:
-                    block(node.else_body, path + (id(node.else_body),))
+                    block(node.else_body, (*path, id(node.else_body)))
             elif isinstance(node, ir.IRWhile):
                 # Read before and after every iteration: in the enclosing block.
                 note_reads(node.condition, path)
-                block(node.body, path + (id(node.body),))
+                block(node.body, (*path, id(node.body)))
             elif isinstance(node, ir.IRSequentialFor):
                 for bound in (node.start, node.end, node.step):
                     if bound is not None:
@@ -217,9 +217,9 @@ class WarpCodeGen:
                 if node.var not in params:
                     typed.setdefault(node.var, _INDEX)
                     loop_vars.add(node.var)
-                block(node.body, path + (id(node.body),))
+                block(node.body, (*path, id(node.body)))
             elif isinstance(node, ir.IRParallelFor):
-                block(node.body, path + (id(node.body),))
+                block(node.body, (*path, id(node.body)))
             else:
                 note_reads(node, path)
 

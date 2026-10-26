@@ -120,7 +120,7 @@ class WarpBuffer(DeviceBuffer):
 class _WarpVariant:
     """A compiled variant: the Warp kernel, its generated source and its tables."""
 
-    __slots__ = ("kernel", "tack_source", "tables", "table_addresses")
+    __slots__ = ("kernel", "table_addresses", "tables", "tack_source")
 
     def __init__(self, kernel, source, tables):
         self.kernel = kernel
