@@ -157,14 +157,11 @@ def test_a_point_and_a_cell_array_of_one_name_both_arrive():
     np.testing.assert_array_equal(data.fields["v (cells)"].values.numpy(), [0, -1, -2, -3])
 
 
-#: Where Tack differs from VTK by design: a 2D mesh's surface is its boundary
-#: edges (VTK's geometry filter passes the polygons); in a mesh with 3D cells,
-#: lower-dimensional cells add nothing to a contour or a surface; and clip
-#: takes no polygons yet.
+#: Where Tack differs from VTK by design: in a mesh with 3D cells,
+#: lower-dimensional cells add nothing to a contour or a surface (VTK's add
+#: theirs); and clip takes no polygons yet.
 _DESIGN = {
-    "surface": {"2d_uniform_0", "2d_uniform_1", "2d_rectilinear_0", "2d_rectilinear_1",
-                "2d_explicit_0", "3d_explicit_0", "3d_explicit_1", "3d_explicit_6",
-                "3d_explicit_polygonal"},
+    "surface": {"3d_explicit_6"},
     "contour": {"3d_explicit_6"},
     "clip": {"2d_explicit_0", "3d_explicit_polygonal"},
 }

@@ -427,6 +427,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `extract_surface` of a 2D mesh, by default, is the mesh itself -- its cells
+  passed through, hidden ones left out -- as VTK's geometry filter passes
+  polygons; it was the boundary edges, which `extract_surface(data,
+  boundary_faces(data))` still gives.
 - `gradients` of 2D cells -- triangles, quads, pixels and polygons, in a 2D
   mesh or among 3D cells -- lie in the cell's plane, as VTK's and Viskores'
   do (matched to `vtkGradientFilter` and `vtkCellDerivatives` on a curved

@@ -1020,7 +1020,7 @@ and "polyline" `PolylineTopology`.
 | `cell_quality` (scaled Jacobian, Jacobian ratio, condition, edge ratio, shortest and longest edge) | yes (order 2 along its curved edges; a pyramid by its four tetrahedra) | yes (by its fan tetrahedra) | yes (by its fan triangles) | edges only |
 | `feature_edges` (boundary, feature, non-manifold, manifold edges of a surface) | yes (2D cells) | no (a volume: `extract_surface` first) | yes | no |
 | `edge_lengths`, `extract_edges` | yes | yes | yes | no (no derived edges) |
-| `boundary_faces`, `extract_surface` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
+| `boundary_faces`, `extract_surface` | yes (a 2D mesh's boundary: line cells; by default `extract_surface` passes a 2D mesh's cells through) | yes (the surface is polygonal) | yes (boundary: line cells; by default the polygons pass through) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
 | `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | no (would give points) |

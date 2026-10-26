@@ -49,7 +49,9 @@ def extract_surface(data, faces=None, fields=None):
     (``boundary_faces``), VTK's external faces -- as a dataset on the same points: a 3D
     mesh's faces as triangles, quads or polygons, each in its side 0's outward
     order; a 2D mesh's edges as line cells; a polyline mesh's ends as vertex
-    cells. Fields on faces become the surface's
+    cells. By default a 2D mesh is its own surface: its cells pass through (its
+    hidden ones left out), as VTK's geometry filter passes polygons; its
+    boundary edges are ``extract_surface(data, boundary_faces(data))``. Fields on faces become the surface's
     cell fields, and so do cell fields (``Constant``, values on cells), each face
     taking its side 0 cell's value; point fields (``H1``, values on points) stay on
     the same points. A 3D mesh's order-2 ``H1`` fields and geometry stay order 2
@@ -66,6 +68,10 @@ def extract_surface(data, faces=None, fields=None):
         refuse_hidden(data, "extract_surface of chosen faces")
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
+    if faces is None and data.topology.dimension == 2:
+        # A surface mesh is its own surface: its polygons pass through, as VTK's
+        # geometry filter passes them.
+        return carry(data, data.topology, points=Same(), cells=Same(), fields=fields)
     if faces is None:
         from tack.dataset.algorithms.boundary_faces import boundary_faces
         faces = boundary_faces(data)
