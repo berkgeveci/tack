@@ -11,6 +11,7 @@ workgroups, device reductions and the disk cache's variants (Warp's own
 kernel cache keeps the compiled code).
 """
 
+import ctypes
 import itertools
 import linecache
 import math
@@ -55,16 +56,34 @@ class WarpBuffer(DeviceBuffer):
         wp.copy(self.array, wp.array(source, dtype=self.array.dtype, device="cpu"))
 
     def to_numpy(self) -> np.ndarray:
-        return self.array.numpy().reshape(self._shape).copy()
+        return self.read_range(0, math.prod(self._shape)).reshape(self._shape)
 
     def read_range(self, start: int, count: int) -> np.ndarray:
-        return self.array[start:start + count].numpy().copy()
+        """``count`` elements from ``start``, after the launches queued so far.
+
+        On CUDA, one copy on the backend's stream into a new NumPy array, then
+        a wait for that stream: ``wp.array.numpy()`` made a host array, copied
+        and waited for the whole device, 110 us for one element where Tack's
+        CUDA backend takes 38 (RTX 4060 Ti)."""
+        device = self._backend.wp_device
+        if not device.is_cuda:
+            return self.array[start:start + count].numpy().copy()
+        out = np.empty(count, self._dtype.numpy_dtype)
+        if count:
+            from warp._src.context import runtime
+            size = out.itemsize
+            if not runtime.core.wp_memcpy_d2h(device.context, ctypes.c_void_p(out.ctypes.data),
+                                              ctypes.c_void_p(self.array.ptr + start * size),
+                                              count * size, device.stream.cuda_stream):
+                raise RuntimeError("Warp backend: a copy from the device failed")
+            _warp().synchronize_stream(device.stream)
+        return out
 
     def fill(self, value):
         self.array.fill_(value)
 
     def synchronize(self):
-        _warp().synchronize_device(self._backend.wp_device)
+        self._backend.synchronize()
 
     @property
     def address(self) -> int:
@@ -125,7 +144,12 @@ class WarpBackend(GPUBackend):
         return buf
 
     def synchronize(self):
-        _warp().synchronize_device(self.wp_device)
+        # Tack queues everything on the device's stream, so that is all to wait for.
+        wp = _warp()
+        if self.wp_device.is_cuda:
+            wp.synchronize_stream(self.wp_device.stream)
+        else:
+            wp.synchronize_device(self.wp_device)
 
     def _build_variant(self, ir_func, effective_args):
         """Annotate and compile; Warp takes scalars as arguments, so no packing."""
