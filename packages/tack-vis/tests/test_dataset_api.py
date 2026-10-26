@@ -1169,7 +1169,7 @@ def test_a_fresh_meshs_surface_is_the_derived_faces_boundary(backend):
     for make in (lambda: td.tetrahedralize(td.uniform_grid((6, 5, 4))),
                  lambda: vd.to_tack(vd.make_3d_explicit_zoo()), _star_of_tetrahedra):
         data = make()
-        data.fields["x"] = td.Field(td.H1(data), tack.array(data.positions()[:, 0].copy()))
+        data.fields["x"] = td.Field(td.H1(data), tack.array(data.positions()[:, 0].astype(np.float32)))
         data.fields["c"] = td.Field(td.Constant(data),
                                     tack.array(np.arange(data.num_cells, dtype=np.float32)))
         fresh = _fresh_boundary(data, None)
