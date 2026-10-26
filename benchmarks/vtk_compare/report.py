@@ -55,13 +55,13 @@ def main():
     parser.add_argument("--mesh", help="hex, tet or squareBend")
     args = parser.parse_args()
     runs = _load(args.directory)
+    if not runs:
+        raise SystemExit(f"no <config>.json in {args.directory}")
     cpus = sorted((int(c[3:]), c) for c in runs if c.startswith("cpu"))
-    if not cpus:
-        raise SystemExit(f"no cpu<N>.json in {args.directory}")
     one = runs.get("cpu1")
-    many = runs[cpus[-1][1]] if cpus[-1][0] > 1 else None
+    many = runs[cpus[-1][1]] if cpus and cpus[-1][0] > 1 else None
     gpus = [c for c in runs if not c.startswith("cpu")]
-    n = cpus[-1][0]
+    n = cpus[-1][0] if cpus else "N"      # GPU runs alone: VTK only checked them
 
     for config, data in runs.items():
         m = data["meta"]
