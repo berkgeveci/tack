@@ -215,3 +215,15 @@ def _compact(flags, dtype):
 
 def _all(n):
     return tack.arange(n, dtype=at_least(tack.i32, n))
+
+
+def _csr_rows(offsets, connectivity, cells):
+    """The point ids of ``cells`` (CSR ``offsets``/``connectivity``), one after
+    another, and each cell's size: one gather on the host, not a slice a
+    cell (a Python loop over 8.7M cells took 7 of merging ten pieces' 8
+    seconds)."""
+    sizes = offsets[cells + 1] - offsets[cells]
+    starts = np.concatenate(([0], np.cumsum(sizes)))
+    at = (np.arange(starts[-1], dtype=np.int64) - np.repeat(starts[:-1], sizes)
+          + np.repeat(offsets[cells], sizes))
+    return connectivity[at], sizes

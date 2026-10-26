@@ -119,10 +119,11 @@ def _fresh_boundary(data, fields):
     orientations of every face) nobody asked for -- VTK's external faces
     hashes faces the same way. ``None`` where the full path is needed: faces
     derived already (then they are free), ghost marks (placed through the
-    faces), order-2 fields, or a point of more than ``_LARGEST`` faces."""
-    from tack.dataset.buckets import _CHUNK, _LARGEST, _largest_counts
+    faces), order-2 fields, or buckets too crowded to sort a thread each
+    (``topology._face_buckets_affordable``)."""
     from tack.dataset.topology import (
         _face_bucket_counts,
+        _face_buckets_affordable,
         _place_faces,
         _sort_face_buckets,
     )
@@ -143,10 +144,7 @@ def _fresh_boundary(data, fields):
     for group in groups:
         if group.count:
             _face_bucket_counts(group.view(), counts)
-    nchunks = (np_ + _CHUNK - 1) // _CHUNK
-    largest = tack.empty((nchunks,), tack.i32)
-    _largest_counts(counts, largest, _CHUNK, nchunks, np_)
-    if int(largest.numpy().max()) > _LARGEST:
+    if not _face_buckets_affordable(counts, np_, total):
         return None
     bucket_starts = tack.empty((np_ + 1,), idt)
     exclusive_scan(counts, bucket_starts, np_, total=False, close=True)

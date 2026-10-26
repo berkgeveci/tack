@@ -7,6 +7,7 @@ import tack
 from tack import arrays
 from tack import communication as tc
 from tack.arrays import CartesianProduct, UniformCoordinates
+from tack.dataset.algorithms._common import _csr_rows
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
@@ -222,9 +223,7 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
         offsets = np.asarray(arrays.to_host(piece.topology.offsets), np.int64).reshape(-1)
         conn = np.asarray(arrays.to_host(piece.topology.connectivity), np.int64).reshape(-1)
         types = np.asarray(arrays.to_host(piece.topology.types), np.uint8).reshape(-1)
-        sizes = np.diff(offsets)[owned_cells]
-        rows = (np.concatenate([conn[offsets[c]:offsets[c + 1]] for c in owned_cells])
-                if len(owned_cells) else np.zeros(0, np.int64))
+        rows, sizes = _csr_rows(offsets, conn, owned_cells)
         dev = blocks.device(g)
         message = {"cell_at": tack.array(cell_ids[owned_cells], tack.i64, device=dev),
                    "point_at": tack.array(point_ids[owned_points], tack.i64, device=dev),
@@ -252,9 +251,8 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
         sizes = np.concatenate(sizes_in) if nc else np.zeros(0, np.int64)
         starts = np.concatenate(([0], np.cumsum(sizes)))
         conn = np.concatenate(conn_in) if nc else np.zeros(0, np.int64)
-        rows = [conn[starts[c]:starts[c + 1]] for c in order]
-        offsets = np.concatenate(([0], np.cumsum(sizes[order])))
-        connectivity = np.concatenate(rows) if rows else np.zeros(0, np.int64)
+        connectivity, ordered = _csr_rows(starts, conn, order)
+        offsets = np.concatenate(([0], np.cumsum(ordered)))
         topology = UnstructuredTopology(types, offsets, connectivity, num_points=np_,
                                         id_dtype=first.topology.id_dtype)
         parts = _placed(messages, np_, nc)
