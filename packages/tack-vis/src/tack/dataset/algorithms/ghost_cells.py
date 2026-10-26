@@ -34,6 +34,7 @@ from tack import arrays
 from tack import communication as tc
 from tack.dataset import _matching
 from tack.dataset._matching import INDEX_BITS, INDEX_MASK
+from tack.dataset.algorithms._common import _csr_rows
 from tack.dataset.algorithms._structured_ghosts import structured_ghost_cells
 from tack.dataset.carry import _take
 from tack.dataset.dataset import DataSet, Field
@@ -352,7 +353,7 @@ def _ghost_parts(blocks, pieces, hosts, needed, owners, names, numbered):
         device = blocks.device(g)
         outgoing[g] = {}
         for neighbour, cells in sorted(needed[g].items()):
-            used = np.concatenate([connectivity[offsets[c]:offsets[c + 1]] for c in cells])
+            used, _ = _csr_rows(offsets, connectivity, cells)
             points, local = np.unique(used, return_inverse=True)
             sizes = counts[cells]
             message = {
