@@ -40,6 +40,7 @@ from tack.dataset import ids
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.lang.array import Array as _DeviceArray
+from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["Interpolate", "Pieces", "Same", "Take", "carry"]
 
@@ -290,6 +291,7 @@ def selected(data, fields):
     return [name for name in names if name in fields]
 
 
+@on_inputs_device
 def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None,
           edges=None, edges_to_cells=None, geometry=None, fields=None, sets=None):
     """A dataset on topology ``out`` with ``data``'s fields, by the maps given.

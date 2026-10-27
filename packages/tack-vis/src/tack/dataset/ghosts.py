@@ -26,7 +26,13 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import materialize, size_of
-from tack.runtime.dispatch import as_device, backend_of, get_backend, same_device
+from tack.runtime.dispatch import (
+    as_device,
+    backend_of,
+    get_backend,
+    on_inputs_device,
+    same_device,
+)
 
 __all__ = ["Ghosts"]
 
@@ -167,6 +173,7 @@ def _kept(flags, slots, ids):
             ids[slots[i]] = i
 
 
+@on_inputs_device
 def owned_values(data, field):
     """The values of ``field`` (a ``Field`` of ``data``, or its name) that ``data`` owns: all of
     them when it has no marks for where they live, else those of cells and
@@ -436,6 +443,7 @@ def _clear_marked(marks, bits, keep, out):
         out[c] = keep[c] if (marks[c] & bits) == 0 else 0
 
 
+@on_inputs_device
 def without_hidden(data, keep):
     """``keep`` (an i32 flag per cell of ``data``) with ``data``'s hidden and refined
     cells (``MASKED_CELLS``) cleared: ``keep`` itself when it has none."""
@@ -447,6 +455,7 @@ def without_hidden(data, keep):
     return out
 
 
+@on_inputs_device
 def visible(data, *arguments):
     """``data`` without its hidden cells (``HIDDENCELL``: data not valid there) and
     refined cells (``REFINEDCELL``: an AMR cell a finer level covers), which
@@ -477,6 +486,7 @@ def visible(data, *arguments):
     return (out, *(carried.get(id(a), a) for a in arguments))
 
 
+@on_inputs_device
 def refuse_hidden(data, what):
     """Refuse ``data`` with hidden or refined cells where ``what`` (a phrase) cannot
     leave them out."""
