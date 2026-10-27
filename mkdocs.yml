@@ -152,6 +152,7 @@ nav:
           - Octrees: vis-guide/11-octrees.md
           - Filter and Analyze: vis-guide/04-filters.md
           - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
+          - Write a Filter: vis-guide/15-write-a-filter.md
           - Sample and Connect Simulations: vis-guide/06-pipelines.md
           - Stream Steps: vis-guide/13-streaming.md
       - Data in Pieces:
