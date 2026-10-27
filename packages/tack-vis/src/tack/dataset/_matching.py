@@ -66,19 +66,24 @@ def match(blocks, entries):
     width = max(widths) if widths else 0
     sorted_keys, sorted_values = tc.sort_by_key(blocks, keys, values)
 
-    outgoing = {}
-    for g in blocks.local:
-        found = _pairs(sorted_keys[g].numpy(),
+    found = {g: _pairs(sorted_keys[g].numpy(),
                        [sorted_values[g][f"c{c}"].numpy() for c in range(width)],
                        *(sorted_values[g][n].numpy() for n in ("piece", "index", "flag")))
+             for g in blocks.local}
+    if _all_here(blocks):
+        return _partners_here(blocks, found)
+    outgoing = {}
+    for g in blocks.local:
+        piece, *columns = found[g]
+        order, starts = _runs_by_piece(piece)
         device = blocks.device(g)
         outgoing[g] = {}
-        for piece in np.unique(found[0]).tolist():
-            rows = found[0] == piece
+        for at in range(len(starts) - 1):
+            rows = order[starts[at]:starts[at + 1]]
             message = {name: tack.array(column[rows], tack.i64, device=device)
-                       for name, column in zip(("index", "other", "other_index"), found[1:4])}
-            message["other_flag"] = tack.array(found[4][rows], tack.u8, device=device)
-            outgoing[g][int(piece)] = message
+                       for name, column in zip(("index", "other", "other_index"), columns)}
+            message["other_flag"] = tack.array(columns[3][rows], tack.u8, device=device)
+            outgoing[g][int(piece[rows[0]])] = message
     incoming = blocks.exchange(outgoing)
     partners = {}
     for g in blocks.local:
@@ -90,16 +95,55 @@ def match(blocks, entries):
     return partners
 
 
+def _runs_by_piece(piece):
+    """Rows in order of piece (stable) and where each piece's run starts."""
+    order = np.argsort(piece, kind="stable")
+    ordered = piece[order]
+    if not len(piece):
+        return order, np.zeros(1, np.int64)
+    return order, np.flatnonzero(np.r_[True, ordered[1:] != ordered[:-1], True])
+
+
+def _all_here(blocks):
+    """Whether every block is on this rank."""
+    return len(blocks.local) == blocks.count
+
+
+def _partners_here(blocks, found):
+    """``match``'s answer when every block is on this rank: the rows handed to their
+    pieces on the host, in the order the messages would bring them (by sending
+    block, then row), without a message from every block to every piece."""
+    gids = list(blocks.local)
+    rows = [np.concatenate([found[g][k] for g in gids]) for k in range(5)]
+    order, starts = _runs_by_piece(rows[0])
+    rows = [column[order] for column in rows]
+    partners = {g: (np.zeros(0, np.int64),) * 3 + (np.zeros(0, np.uint8),) for g in gids}
+    for at in range(len(starts) - 1):
+        run = slice(starts[at], starts[at + 1])
+        partners[int(rows[0][starts[at]])] = tuple(column[run] for column in rows[1:])
+    return partners
+
+
 def _pairs(keys, columns, piece, index, flag):
     """Rows ``(piece, index, other piece, other index, other flag)`` for every two
     entries of one value on different pieces, from sorted keys and their entries."""
     if not len(keys):
         return tuple(np.zeros(0, np.uint8 if k == 4 else np.int64) for k in range(5))
-    table = np.stack([keys, *columns], axis=1).view(np.int64)
-    _, group, sizes = np.unique(table, axis=0, return_inverse=True, return_counts=True)
-    group = group.reshape(-1)
-    order = np.argsort(group, kind="stable")
-    group, piece, index, flag = group[order], piece[order], index[order], flag[order]
+    # Rows grouped by value, groups in key order, rows of a group in their order.
+    # The keys come sorted, so runs of a key are the groups unless two values
+    # hash alike; only then are the rows sorted by value (np.lexsort is stable).
+    # (np.unique(axis=0) sorted rows as void scalars: 7 of ghost cells' 18
+    # seconds over 128 pieces.)
+    change = np.r_[True, keys[1:] != keys[:-1]]
+    if not all(np.array_equal(c[1:][~change[1:]], c[:-1][~change[1:]]) for c in columns):
+        order = np.lexsort([*columns[::-1], keys])
+        keys, columns = keys[order], [c[order] for c in columns]
+        piece, index, flag = piece[order], index[order], flag[order]
+        change = np.r_[True, keys[1:] != keys[:-1]]
+        for c in columns:
+            change[1:] |= c[1:] != c[:-1]
+    group = np.cumsum(change) - 1
+    sizes = np.bincount(group)
     starts = np.concatenate(([0], np.cumsum(sizes)))[group]
     size = sizes[group]
     first = np.repeat(np.arange(len(group)), size)
