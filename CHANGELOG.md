@@ -7,6 +7,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `td.merge_points(data, tolerance=0)`: coincident points made one, as VTK's
+  `vtkStaticCleanUnstructuredGrid` and Viskores' `CleanGrid` merge them.
+  Points at most `tolerance` apart join, and so do chains of them; each set
+  becomes its smallest point, with that point's position, point fields,
+  ghost marks and global id, and the cells stay the same cells on the
+  merged points. It is for meshes written without merging their points. A
+  simulation's 512 pieces store each point about 2.6 times, so matching
+  points across pieces numbered 16.9M of them; merged piece by piece first,
+  `generate_global_ids` numbers 6,310,285, the merged mesh's count. Point
+  counts match VTK's static clean, exactly and with a tolerance.
+
 - What the built-in filters are written with is public, so a filter of
   your own is written the same way: `td.carry` and its maps (`td.Same`,
   `td.Take`, `td.Pieces`, `td.Interpolate`), `td.keep_marks` and

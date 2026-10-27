@@ -140,17 +140,21 @@ A mesh's faces and edges, as sets or datasets on the same points.
 
 ## Connectivity and winding
 
-Which cells belong together, and which are wound wrong.
+Which cells belong together, which are wound wrong, and which points are one.
 
 | Algorithm | Gives | Takes | VTK | Viskores |
 |---|---|---|---|---|
 | [`connected_components`](#tack.dataset.algorithms.connected_components.connected_components) | regions of cells connected through points (or within a radius) | dataset, pieces | vtkConnectivityFilter, vtkEuclideanClusterExtraction | CellSetConnectivity |
 | [`check_winding`](#tack.dataset.algorithms.check_winding.check_winding) | cells whose faces do not wind consistently, as a cell set | dataset | — | — |
+| [`merge_points`](#tack.dataset.algorithms.merge_points.merge_points) | coincident points (or points within a tolerance) made one | dataset | vtkStaticCleanUnstructuredGrid | CleanGrid |
 
 ::: tack.dataset.algorithms.connected_components.connected_components
     options: {show_root_full_path: false}
 
 ::: tack.dataset.algorithms.check_winding.check_winding
+    options: {show_root_full_path: false}
+
+::: tack.dataset.algorithms.merge_points.merge_points
     options: {show_root_full_path: false}
 
 ## Changing cell types
