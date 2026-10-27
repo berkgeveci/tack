@@ -113,6 +113,71 @@ def test_trying_the_last_cell_first_changes_nothing(backend, mesh, monkeypatch):
     np.testing.assert_array_equal(traces[0][1], traces[1][1])
 
 
+def test_a_step_after_a_push_out_starts_afresh(backend, monkeypatch):
+    """Rotation inside a disk of cells, particles near its staircased rim: a
+    step's stages leave the mesh, the step is bisected, and the particle pushed
+    out often lands inside and goes on. Its next whole step must begin at its
+    first stage and at the full size: they kept the bisection's last trial
+    size and stage, so the next step sampled short of where it went or began
+    mid-step on stale stage velocities, and some particles stopped as if
+    seeded outside (``SUCCESS`` cleared). Launches of one step, each starting
+    afresh, then disagreed with one launch on 20 of these 24 particles."""
+    from tack.dataset.algorithms import _advection
+
+    grid = td.uniform_grid((41, 41, 3), origin=(-2.0, -2.0, -0.1), spacing=(0.1, 0.1, 0.1))
+    centers = td.cell_centers(grid).values.numpy()
+    disk = td.extract_cells(grid, np.flatnonzero(np.hypot(centers[:, 0], centers[:, 1]) < 1.9))
+    x = disk.positions()
+    disk.fields["v"] = td.Field(td.H1(disk), _vectors(np.c_[-x[:, 1], x[:, 0], 0.0 * x[:, 2]]))
+    angles = np.linspace(0.0, 2.0 * np.pi, 24, endpoint=False)
+    seeds = np.c_[1.84 * np.cos(angles), 1.84 * np.sin(angles), np.zeros(24)]
+    monkeypatch.setattr(_advection, "_CHUNKED_ON_CPU", True)
+    monkeypatch.setattr(_advection, "_GROWTH", 1)
+    runs = []
+    for first in (10**9, 1):
+        monkeypatch.setattr(_advection, "_FIRST_STEPS", first)
+        out = td.advect(disk, "v", seeds, 0.05, 300)
+        runs.append([out.fields[f].values.numpy() for f in ("steps", "status", "time")]
+                    + [out.positions()])
+    for one, few in zip(*runs):
+        np.testing.assert_array_equal(one, few)
+    status = runs[0][1]
+    moved = (status & td.ParticleStatus.TOOK_ANY_STEPS) != 0
+    assert moved.sum() > 12 and (status[moved] & td.ParticleStatus.SUCCESS).all()
+
+
+@pytest.mark.parametrize("budget", [1, 7])
+@pytest.mark.parametrize("mesh", [*MESHES, "graded tetrahedra"])
+def test_launches_of_a_few_steps_change_nothing(backend, mesh, budget, monkeypatch):
+    """On a GPU, advection runs in launches of a bounded number of steps, each
+    going on where the last paused (``_advection._launches``): a launch that
+    runs too long loses the device (the ONERA M6's streamlines on headroom's
+    Level Zero). Launches of 1 and 7 steps give one launch's paths, times,
+    statuses and steps, bit for bit, on every shape, RK4 and Euler, and through
+    a resumed call."""
+    from tack.dataset.algorithms import _advection
+
+    data = _graded() if mesh == "graded tetrahedra" else MESHES[mesh]()
+    center = (0.0, 0.0) if mesh.startswith(("structured", "graded")) else (2.0, 2.0)
+    _rotation(data, center)
+    seeds = np.array([[center[0] + 1.0, center[1], 0.1], [center[0] + 0.3, center[1] + 0.6, 0.2],
+                      [center[0] + 1.9, center[1] + 0.5, -0.45], [9.0, 9.0, 9.0]])
+    monkeypatch.setattr(_advection, "_CHUNKED_ON_CPU", True)
+    monkeypatch.setattr(_advection, "_GROWTH", 1)
+    runs = []
+    for first in (10**9, budget):                 # one launch, then launches of budget steps
+        monkeypatch.setattr(_advection, "_FIRST_STEPS", first)
+        out = td.streamlines(data, "v", seeds, 0.03, 200)
+        moved = td.advect(data, "v", seeds, 0.03, 60, integrator="euler")
+        on = td.advect(data, "v", moved, 0.03, 90)
+        runs.append([out.geometry.values.numpy(), out.fields["time"].values.numpy()]
+                    + [d.fields[f].values.numpy() for d in (moved, on)
+                       for f in ("steps", "time", "status")]
+                    + [moved.geometry.values.numpy(), on.geometry.values.numpy()])
+    for one, few in zip(*runs):
+        np.testing.assert_array_equal(one, few)
+
+
 @pytest.mark.parametrize("polyhedra", [False, True])
 def test_a_mixed_mesh(backend, polyhedra):
     data = _two_hexes_and_a_pyramid()

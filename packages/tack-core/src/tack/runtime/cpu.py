@@ -793,12 +793,18 @@ class CompiledKernel:
         result to `call_range` for each chunk.
         """
         prefix = []
-        for arg, ptype, is_array in zip(kernel_args, self._param_types,
-                                        self._param_is_array):
-            if is_array:
-                prefix.append(arg._buffer.address)
-            else:
-                prefix.append(_CTYPES_MAP[ptype](arg))
+        try:
+            for arg, ptype, is_array in zip(kernel_args, self._param_types,
+                                            self._param_is_array):
+                if is_array:
+                    prefix.append(arg._buffer.host_address)
+                else:
+                    prefix.append(_CTYPES_MAP[ptype](arg))
+        except TypeError as e:
+            if len(prefix) < len(self._param_is_array) and self._param_is_array[len(prefix)]:
+                raise TypeError(f"kernel '{self._func_name}', argument {len(prefix)}: "
+                                f"{e}") from None
+            raise
         prefix.extend(int(e) for e in extents)
         return tuple(prefix)
 

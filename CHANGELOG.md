@@ -17,6 +17,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   points across pieces numbered 16.9M of them; merged piece by piece first,
   `generate_global_ids` numbers 6,310,285, the merged mesh's count. Point
   counts match VTK's static clean, exactly and with a tolerance.
+- A "Write a Filter" chapter in the Visualization Guide: five built-in
+  filters (`point_elevation`, `threshold`, `shrink`, `jump`, `triangulate`)
+  and `entropy` over pieces rewritten with public names only, each section
+  on what that kind of filter must keep (relative positions, the device,
+  implicit arrays, quantities as parameters, units of results, ghost marks
+  through `carry`, `keep_marks` or `drop_marks`, hidden cells, owned values
+  over pieces). Its program, `docs/examples/data_filters.py`, holds every
+  rewrite to the built-in in every part, and runs in `validate.py`.
 - `tolerance=` on `generate_global_ids`, `ghost_cells` and `merge_pieces`
   (VTK's `vtkGenerateGlobalIds` has one): points of different pieces at most
   that far apart are copies, and so are chains of them, for pieces whose
@@ -459,6 +467,42 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- Advection on a GPU runs in launches of a bounded number of steps, each
+  going on where the last paused, sized to about 0.2 s at the last launch's
+  pace (the first takes 16 steps). One launch carried every particle's whole
+  path, and a GPU driver resets a device whose launch runs past its limit:
+  the ONERA M6's streamlines lost headroom's Level Zero device every time
+  (7.5 s there; 2 s by default on Windows), and a lost device takes every
+  array of the process with it. The office port's one launch took 4.9 s.
+  A pause keeps each particle's position, time, steps and status, whether it
+  stepped in this call (a hand-off between pieces needs it) and the cell it
+  was last found in, so the paths are one launch's, bit for bit, on the CPU
+  and on Metal. The CPU still runs one launch.
+- A particle pushed across a mesh boundary that landed inside and went on
+  took its next whole steps from a stale state: its RK4 stages placed at the
+  bisection's last trial size rather than the step's, and, when a trial's
+  stage had left the mesh, starting mid-step on the trial's stage
+  velocities. Some such particles then stopped as if seeded outside
+  (`SUCCESS` cleared). Particles that run along a curved wall, an
+  aneurysm's, changed path: 82 of 20,000 seeds there.
+- `carry`, `visible`, `owned_values` and `orient` run on their dataset's
+  device. Made public for filters of one's own (#163), the first three had
+  only been called from inside algorithms that had already made that device
+  the default; called directly they allocated on the default device, and
+  failed with "arrays on two devices" (six of `test_public_filters`'
+  rewrites in a CUDA run, after an earlier test left CUDA the default).
+  `orient` failed the same way on a topology on another device, and
+  `without_hidden` and `refuse_hidden`, which the built-ins call, allocate
+  on their dataset's device too. The "Write
+  a Filter" chapter's `triangulate` makes its `ConstantArray` on the data's
+  device.
+- A compiled CPU kernel bound to another device's arrays raises a
+  `TypeError` naming the kernel and the argument, where it wrote device
+  pointers from the host and segfaulted (CUDA arrays, met through the Warp
+  backend's run of `test_parallel_dims.py`). Arrays bind through
+  `DeviceBuffer.host_address`, which only host memory has: the CPU's, and
+  Warp's on its CPU device. A kernel call never got that far, since
+  dispatch picks a device that can address every array.
 - A repeated `extract_surface` of a mesh whose faces were never derived
   costs only the carry again. The fresh boundary (#157), which finds the
   surface without deriving every face, kept nothing, so every call paid
@@ -559,6 +603,32 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `CellLocator` takes its cells' bounds on the device, a GPU's threads
+  each over every k-th box and the CPU's over a block, and reads back only
+  the partial results. It read every box back and reduced them with NumPy:
+  on the ONERA M6 (46.9M cells) that was 1.0 s of the locator's 1.4 s
+  build on an M1 Max's GPU, and over PCIe on a discrete GPU (jura's CUDA
+  build took 4.9 s, against Viskores' 3.0). The M6's build is now 0.45 s on
+  Metal and 1.7 s on the CPU (2.7 s); the bounds, so the grid and every
+  result, are the same bit for bit.
+- The cell locator bins cells on two levels, as Viskores'
+  `CellLocatorTwoLevel` does: a coarse uniform grid of about 32 cells a bin,
+  each bin a uniform grid of leaves sized by its count, about 8 cells a leaf.
+  One level of about a cell a bin held up to 2.1M cells in a bin near the
+  ONERA M6 wing (46.9M cells graded toward the wing in a far field a hundred
+  chords wide), so a location there scanned 164k candidates on average, and
+  a GPU's threads waited for their group's worst: Tack's streamlines on the
+  M6 took 27.9 s for one seed on CUDA against Viskores' 3.5 s, and 230 s for
+  17 on an M1 Max's GPU. Now the largest leaf holds 13,918 cells, and the 17
+  streamlines take 0.36 s on Metal and about 4 ms warm on the CPU (1.5-2.3 s
+  before). The build is faster (M6 5.6 s to 2.8 s on the CPU) with fewer
+  entries (8.8 to 5.7 a cell); the aneurysm's 8.7M tetrahedra build in 0.68
+  s (0.83), 12.9 entries a cell (7.8), and probe and streamlines there are
+  as fast as before. Traces and probes are the same, bit for bit: the leaves
+  only propose cells, and the search ranks them as before. Viskores sizes
+  leaves at 2 cells; a bin's count is of the boxes overlapping it, a
+  tetrahedron's box about six times its volume, and at 2 the aneurysm's
+  tetrahedra were each entered 34 times (296M entries).
 - The CPU threading policy fans out a short range of costly elements on its
   first dispatch, and balances it. A range too short for a timing slice ran
   whole on one thread, and the first recheck ran it whole again; fanned out,
