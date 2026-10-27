@@ -17,6 +17,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   points across pieces numbered 16.9M of them; merged piece by piece first,
   `generate_global_ids` numbers 6,310,285, the merged mesh's count. Point
   counts match VTK's static clean, exactly and with a tolerance.
+- A "Write a Filter" chapter in the Visualization Guide: five built-in
+  filters (`point_elevation`, `threshold`, `shrink`, `jump`, `triangulate`)
+  and `entropy` over pieces rewritten with public names only, each section
+  on what that kind of filter must keep (relative positions, the device,
+  implicit arrays, quantities as parameters, units of results, ghost marks
+  through `carry`, `keep_marks` or `drop_marks`, hidden cells, owned values
+  over pieces). Its program, `docs/examples/data_filters.py`, holds every
+  rewrite to the built-in in every part, and runs in `validate.py`.
 - `tolerance=` on `generate_global_ids`, `ghost_cells` and `merge_pieces`
   (VTK's `vtkGenerateGlobalIds` has one): points of different pieces at most
   that far apart are copies, and so are chains of them, for pieces whose

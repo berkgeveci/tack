@@ -62,6 +62,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Physical Units](12-units.md) | Give fields and positions units, keep them through filters, convert |
 | [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
+| [Write a Filter](15-write-a-filter.md) | Write a filter of your own that keeps origins, units, ghost marks and hidden cells as the built-ins do |
 | [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
 | [Streaming Steps](13-streaming.md) | Analyze a simulation step by step, in situ: running statistics, time derivatives, pathlines |
 | [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells |
