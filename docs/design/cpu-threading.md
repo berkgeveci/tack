@@ -138,7 +138,7 @@ serial ≈ n · r_s      parallel ≈ F + n · r_p      crossover n* = F / (r_s 
 `CPUBackend._min_elems` stores the crossover scaled by a margin `M`:
 
 ```
-parallel_min_elems = max(num_threads, int(F · M / rate))
+parallel_min_elems = max(2, int(F · M / rate))
     rate = r_s − min(r_p, 0.9 · r_s)
 ```
 
@@ -158,8 +158,15 @@ Until a fan-out has measured it, `r_p` is 0.0 and the rate is `r_s`, so
 denominator positive when a noisy `r_p` approaches `r_s`, and caps the
 threshold at ten times the serial-rate-only one for the same inputs.
 
-The `max(num_threads, …)` floor keeps chunks at one element or more. An
-unmeasured kernel, or a one-thread backend, gets `_NEVER` (`1 << 62`).
+The floor is two elements, the fewest a fan-out can split; above it the
+costs decide, and a range shorter than the thread count leaves the threads
+it does not need idle (the pool's workers claim chunks from a counter, the
+executor's take one element each). It was the thread count, which kept
+chunks at one element or more when a fan-out split its range into one chunk
+a thread, and ran fewer dear elements than threads serially on every call:
+17 streamlines on the ONERA M6 wing took 30 ms a call on jura's 28 threads,
+against 7-12 ms on 8 (2026-10-27). An unmeasured kernel, or a one-thread
+backend, gets `_NEVER` (`1 << 62`).
 
 ### The margin
 
