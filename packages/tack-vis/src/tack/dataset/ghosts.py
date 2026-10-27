@@ -26,7 +26,13 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import materialize, size_of
-from tack.runtime.dispatch import as_device, backend_of, get_backend, same_device
+from tack.runtime.dispatch import (
+    as_device,
+    backend_of,
+    get_backend,
+    on_inputs_device,
+    same_device,
+)
 
 __all__ = ["Ghosts"]
 
@@ -167,6 +173,7 @@ def _kept(flags, slots, ids):
             ids[slots[i]] = i
 
 
+@on_inputs_device
 def owned_values(data, field):
     """The values of ``field`` (a ``Field`` of ``data``, or its name) that ``data`` owns: all of
     them when it has no marks for where they live, else those of cells and
@@ -447,6 +454,7 @@ def without_hidden(data, keep):
     return out
 
 
+@on_inputs_device
 def visible(data, *arguments):
     """``data`` without its hidden cells (``HIDDENCELL``: data not valid there) and
     refined cells (``REFINEDCELL``: an AMR cell a finer level covers), which
