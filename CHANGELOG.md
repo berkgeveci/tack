@@ -437,6 +437,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A repeated `extract_surface` of a mesh whose faces were never derived
+  costs only the carry again. The fresh boundary (#157), which finds the
+  surface without deriving every face, kept nothing, so every call paid
+  for it: on jura, 20M hexahedra's warm surface went from 5.7 ms to 447 on
+  the CPU (1.5 to 28 on CUDA). The topology now keeps the surface it found;
+  5M hexahedra's repeated call on an M1 Max takes 0.3 ms, against 55-150.
 - `np.from_dlpack` of a GPU array (CUDA, HIP, Level Zero) raised
   `SystemError` in place of NumPy's own error: the capsule's destructor, a
   ctypes callback, met and cleared the pending exception. C now gets native
