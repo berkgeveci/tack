@@ -957,6 +957,7 @@ def _orient_cells(cells, positions):
 # ── Winding ─────────────────────────────────────────────────────────
 
 
+@on_inputs_device
 def orient(topology):
     """A topology whose faces wound into their only cell are turned around: each such
     face's points reversed and its one reference made side 0. Other faces are left as

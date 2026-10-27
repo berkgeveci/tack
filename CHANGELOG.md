@@ -467,6 +467,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- `carry`, `visible`, `owned_values` and `orient` run on their dataset's
+  device. Made public for filters of one's own (#163), the first three had
+  only been called from inside algorithms that had already made that device
+  the default; called directly they allocated on the default device, and
+  failed with "arrays on two devices" (six of `test_public_filters`'
+  rewrites in a CUDA run, after an earlier test left CUDA the default).
+  `orient` failed the same way on a topology on another device, and
+  `without_hidden` and `refuse_hidden`, which the built-ins call, allocate
+  on their dataset's device too. The "Write
+  a Filter" chapter's `triangulate` makes its `ConstantArray` on the data's
+  device.
 - A compiled CPU kernel bound to another device's arrays raises a
   `TypeError` naming the kernel and the argument, where it wrote device
   pointers from the host and segfaulted (CUDA arrays, met through the Warp
