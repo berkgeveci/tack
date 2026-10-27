@@ -167,7 +167,7 @@ def test_quantities_hidden_cells_and_refusals():
     assert out.num_cells == soup.num_cells - 1 and out.num_points == 8
     with pytest.raises(TypeError, match="unstructured"):
         td.merge_points(td.uniform_grid((3, 3, 3)))
-    with pytest.raises(TypeError, match="unstructured"):
+    with pytest.raises(NotImplementedError, match="not supported yet"):
         td.merge_points(td.as_polyhedra(_hexes((3, 2, 2))))
     with pytest.raises(ValueError, match="at least zero"):
         td.merge_points(soup, -1.0)

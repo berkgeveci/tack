@@ -11,7 +11,7 @@ from tack.dataset.carry import Same, Take, carry
 from tack.dataset.ghosts import visible
 from tack.dataset.point_locator import cached_point_locator
 from tack.dataset.spaces import H1
-from tack.dataset.topology import UnstructuredTopology
+from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 from tack.runtime.dispatch import get_backend, on_inputs_device
 
 __all__ = ["merge_points"]
@@ -62,11 +62,12 @@ def merge_points(data, tolerance=0.0, fields=None):
     tolerance = _length(data, tolerance, "merge_points's tolerance")
     if not tolerance >= 0:
         raise ValueError(f"tolerance must be at least zero, not {tolerance!r}")
+    if isinstance(data.topology, StructuredTopology):
+        raise TypeError("merge_points takes an unstructured topology: a structured "
+                        "grid's points are its lattice")
     if not isinstance(data.topology, UnstructuredTopology):
-        raise TypeError(f"merge_points takes an unstructured topology, not "
-                        f"{type(data.topology).__name__}: a structured grid's points are "
-                        f"its lattice, and polyhedral, polygonal and polyline topologies "
-                        f"are not handled yet")
+        raise NotImplementedError(f"merge_points of a {type(data.topology).__name__} is "
+                                  f"not supported yet")
     if not isinstance(data.geometry.space, H1) or data.geometry.space.order != 1:
         raise TypeError("merge_points needs an order-1 H1 geometry: one position per point")
     data = visible(data)
