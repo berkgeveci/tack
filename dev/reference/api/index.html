@@ -18937,7 +18937,9 @@ sorts what arrives.</p>
 <span class="normal">80</span>
 <span class="normal">81</span>
 <span class="normal">82</span>
-<span class="normal">83</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sort_by_key</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sort_by_key</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Sort the keys of every block, carrying ``values`` along: block 0 ends with the</span>
 <span class="sd">    smallest keys, the last block with the largest, each block&#39;s ascending.</span>
 
@@ -18980,6 +18982,8 @@ sorts what arrives.</p>
         <span class="n">chosen</span> <span class="o">=</span> <span class="n">gather</span><span class="p">(</span><span class="n">ordered</span><span class="p">[</span><span class="n">gid</span><span class="p">],</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">at</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">gid</span><span class="p">)))</span>
         <span class="n">picks</span><span class="p">[</span><span class="n">gid</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">chosen</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">n</span><span class="p">)</span>
     <span class="n">splitters</span> <span class="o">=</span> <span class="n">_splitters</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">(</span><span class="n">picks</span><span class="p">),</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">_in_one_place</span><span class="p">(</span><span class="n">blocks</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_sorted_in_one_place</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">ordered</span><span class="p">,</span> <span class="n">carried</span><span class="p">,</span> <span class="n">splitters</span><span class="p">,</span> <span class="n">kinds</span><span class="p">,</span> <span class="n">given</span><span class="p">)</span>
 
     <span class="n">outgoing</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">gid</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
