@@ -117,6 +117,14 @@ class DeviceBuffer:
         raise NotImplementedError
 
     @property
+    def host_address(self) -> int:
+        """The address a CPU kernel reads and writes through: only memory in the
+        host's address space has one. A CPU kernel bound to another device's
+        memory wrote device pointers from the host and segfaulted; this
+        raises instead."""
+        raise TypeError(f"a CPU kernel cannot address {self.backend_name or 'device'} memory")
+
+    @property
     def nbytes(self) -> int:
         raise NotImplementedError
 
@@ -161,6 +169,9 @@ class NumpyBuffer(DeviceBuffer):
         address = self._data.ctypes.data
         self._address = (self._data, address)
         return address
+
+    #: Host memory, so the address is a CPU kernel's (one property, no cost).
+    host_address = address
 
     @property
     def span(self) -> tuple[int, int]:
