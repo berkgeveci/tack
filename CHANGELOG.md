@@ -467,6 +467,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A dropped dataset frees its device memory at once. A topology interned
+  its spaces in a dict and each space holds its topology, so every dataset
+  with a field was a reference cycle, freed only when Python's cycle
+  collector ran, which counts objects, not device memory: on a 16 GB GPU
+  the 20M-cell checks ran out of memory with dropped datasets still on the
+  card. The topology holds its spaces weakly. A topology's cached cell and
+  point locators still hold a dataset of it, a cycle left for now.
 - Advection on a GPU runs in launches of a bounded number of steps, each
   going on where the last paused, sized to about 0.2 s at the last launch's
   pace (the first takes 16 steps). One launch carried every particle's whole
