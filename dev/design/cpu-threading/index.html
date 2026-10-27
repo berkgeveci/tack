@@ -4831,13 +4831,28 @@ quarter of the way from the old value toward the mean of the two slices.</p>
    back-off, counted separately (<code>serial_since_rp</code>, <code>rp_recheck_after</code>), and
    fans out the whole range. A range that size costs at least a margin's
    worth of fan-outs serially, so a losing recheck costs about one fan-out.</li>
-<li><strong>Measured, or too small to probe:</strong> run the whole range serially.
+<li><strong>Measured:</strong> run the whole range serially, as one sample. This is every
+   small dispatch's path, so it stays one timed call.</li>
+<li><strong>Too small to probe, on first sight</strong> (<code>_short_range</code>).
    <code>_probe_min_range()</code> is <code>max(num_threads, F · 2.0 / 24 ns)</code>, with <code>F</code> the
    calibrated or default fan-out — the range at which a hypothetical
    24 ns/element kernel (<code>_PROBE_REFERENCE_NS_PER_ELEM</code>) could repay a
-   fan-out. Dearer kernels pay one serial dispatch before they have an
-   estimate.</li>
-<li><strong>First sight</strong> of an unmeasured kernel on a range large enough to
+   fan-out. One element is timed first (a range of fewer than two runs
+   whole: element 0 of an empty range is no element).</li>
+<li>Under <code>_COSTLY_ELEMENT_NS</code> (100 µs), that sample is forgotten, and the
+     rest runs serially as the kernel's first sample, as the whole range did
+     before.</li>
+<li>A dearer element starts slices of 2, 4, … elements until one's work
+     lasts <code>_TRUSTED_SAMPLE_NS</code> (20 ms), long enough that neither fixed
+     costs nor descheduling move its rate much (<code>trusted_sample</code>). The rest
+     then fans out if it reaches the threshold and needs no confirmation.</li>
+</ol>
+<p>Before, a short range of dear elements ran whole twice before its first
+   fan-out: 17 streamlines on the ONERA M6 wing at a quarter second each,
+   8.8 and 8.5 s, against 2.4 and 2.1 s now (M1 Max, 8 threads,
+   2026-10-27). A measured kernel's first heavy short range (an estimate from
+   light work) still runs whole once.
+4. <strong>First sight</strong> of an unmeasured kernel on a range large enough to
    matter. A slice of <code>max(probe_min // 16, loop_end // 64)</code> elements is
    timed at the first golden-ratio position, a little past 60% of the way
    in, not at the front. If <code>_needs_confirmation</code> now holds, head and tail
@@ -4845,8 +4860,7 @@ quarter of the way from the old value toward the mean of the two slices.</p>
    out if it alone reaches the new threshold, else runs on this thread
    (head untimed, tail timed). If nothing fanned out, the range is marked not
    scattered. A backend that has not calibrated yet judges this against the
-   200 µs default and calibrates on the next dispatch above threshold.</li>
-</ol>
+   200 µs default and calibrates on the next dispatch above threshold.</p>
 <h2 id="failure-modes-and-their-defenses">Failure modes and their defenses<a class="headerlink" href="#failure-modes-and-their-defenses" title="Permanent link">&para;</a></h2>
 <p>Each mechanism above exists because a specific failure was measured:</p>
 <table>
@@ -4892,6 +4906,11 @@ quarter of the way from the old value toward the mean of the two slices.</p>
 <td><strong>Stale floors.</strong> A floor learned on expensive inputs survives when the same compiled kernel gets cheap inputs, and keeps it threading.</td>
 <td>A whole-range fan-out with every span short retires the floor and schedules a serial sample.</td>
 <td><code>retire_floor</code> in <code>_parallel_execute</code>, <code>_record_parallel_cost</code></td>
+</tr>
+<tr>
+<td><strong>A short range of dear elements.</strong> 17 streamlines of a quarter second each ran whole on one thread twice: unmeasured, then in a recheck whose guard believes no rate above the reference kernel's until a fan-out measured one. Fanned out, the pool cut 17 elements into chunks of 3 over 8 threads, so the three dearest ran on one.</td>
+<td>One element timed on first sight, slices up to a trusted sample, the rest fanned out; a trusted sample's rate believed by the recheck guard; chunks capped at <code>_CHUNK_WORK_NS</code> (20 µs) of estimated work (<code>CPool.run</code>'s <code>most</code>).</td>
+<td><code>_short_range</code>, <code>_TRUSTED_SAMPLE_NS</code>, <code>_sample_elems</code>, <code>_chunk_limit</code></td>
 </tr>
 <tr>
 <td><strong>Fixed cost dominating short samples.</strong> For a cheap kernel the call is most of a sample; for a short chunk the GIL hand-back is most of a span.</td>
