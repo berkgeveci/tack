@@ -255,6 +255,25 @@ def test_cpu_chunks_carry_across_planes_in_3d():
                                   np.where(k >= 1, i * 1_000_000 + j * 1000 + k, -1))
 
 
+def test_a_cpu_kernel_refuses_another_devices_memory():
+    """A compiled CPU kernel bound to an array in device memory wrote the
+    device pointer from the host and segfaulted (CUDA arrays, through the Warp
+    plugin's run of these tests); binding raises instead, naming the kernel
+    and the argument. Dispatch never gets this far: it picks a device that
+    can address every array."""
+    from tack.lang.array import DeviceBuffer
+
+    class _DeviceMemory(DeviceBuffer):
+        backend_name = "cuda"
+
+    tack.set_default_device("cpu")
+    a = _i32((15, 4))
+    compiled, extents = _compile_cpu(_fill2, [a])
+    a._buffer = _DeviceMemory()
+    with pytest.raises(TypeError, match=r"argument 0: a CPU kernel cannot address cuda memory"):
+        compiled.bind([a], extents)
+
+
 def test_cpu_empty_chunk_with_a_zero_extent_does_not_divide():
     """The dispatcher's probes run empty chunks; a zero extent must not reach a division."""
     tack.set_default_device("cpu")

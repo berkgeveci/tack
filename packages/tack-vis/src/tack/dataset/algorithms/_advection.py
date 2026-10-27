@@ -1,10 +1,14 @@
 """The advection kernel ``advect`` and ``streamlines`` share, by Viskores' rules:
 RK4 or Euler steps; a step leaving the mesh bisected to the boundary and the
 particle pushed out; a stop after its steps, outside, or at zero velocity.
-Each particle's whole path is one thread of one launch, its stages located
-from the particle's side by ``by_id``'s search (over ``CellLocator.cell_bins``,
-ranked as the locator ranks cells), its velocity read by cell id there, as
-``CellLocator.find`` and ``probe`` do."""
+Each particle's path is one thread, its stages located from the particle's
+side by ``by_id``'s search (over ``CellLocator.cell_bins``, ranked as the
+locator ranks cells), its velocity read by cell id there, as
+``CellLocator.find`` and ``probe`` do. On the CPU the whole path is one
+launch; on a GPU, launches of a bounded number of steps, sized to a fraction
+of a second, each going on where the last stopped: a GPU driver resets a
+device whose launch runs past its limit (7.5 s on headroom's Level Zero, 2 s
+by default on Windows), and a lost device takes every array with it."""
 
 import enum
 
@@ -12,6 +16,7 @@ import numpy as np
 
 import tack
 from tack import arrays
+from tack.dataset import ids
 from tack.dataset.algorithms._common import _field
 from tack.dataset.by_id import _as_vectors, cells_by_id, field_by_id, mesh_search
 from tack.dataset.dataset import Field
@@ -66,18 +71,29 @@ _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
 @tack.kernel
 def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps, status,
-            trace, trace_times, lengths, capacity, record, ghosts, handoff):
+            trace, trace_times, lengths, capacity, record, ghosts, handoff, budget, first,
+            moved, hints):
     # by_length: h is an arc length, and the particle follows the velocity's
     # direction, v / |v| -- vtkStreamTracer's length unit -- with the time a
     # unit of length takes, 1 / |v|, integrated beside it by the same weights.
+    # One launch takes at most budget steps of each particle and pauses it after
+    # a whole step, where its state is its position, time, steps and status (the
+    # cell it was last found in only speeds the search); the next launch
+    # (first 0) goes on from there, its trace after lengths[q] points, with
+    # moved[q], whether it took a step in this call, which a hand-off needs,
+    # and hints[q], the cell it was last found in: the hint and the search
+    # find the same cell, but a GPU compiler may round the two call sites'
+    # arithmetic apart, so a launch goes on with the hint one launch would
+    # have had.
     for q in range(xs.shape[0]):
         x = xs[q]
         t = times[q]
         n = steps[q]
         st = status[q]
-        took = 0
-        length = 0
-        if record == 1:
+        took = moved[q]
+        here = 0
+        length = lengths[q]
+        if record == 1 and first == 1:
             trace[q * capacity] = x
             trace_times[q * capacity] = t
             length = 1
@@ -97,13 +113,15 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
         r1 = h
         div = 1.0
         last = mesh.ncells        # the cell the particle was last found in
+        if first == 0:
+            last = hints[q]
         # A resumed particle that stopped -- outside, at zero velocity, handed on,
         # or with its steps done -- stays where it is; one that stopped at an
         # earlier call's step limit goes on.
         running = 1
         if (st & (SPATIAL_BOUNDS | ZERO_VELOCITY | HANDOFF)) != 0 or n >= max_steps:
             running = 0
-        else:
+        elif first == 1:
             st = st & ~TERMINATE
         while running == 1:
             # Where to locate the particle next.
@@ -196,6 +214,7 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
                         else:
                             t += h
                         n += 1
+                        here += 1
                         took = 1
                         if record == 1:
                             trace[q * capacity + length] = x
@@ -206,6 +225,8 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
                             running = 0
                         elif n == max_steps:
                             st = st | TERMINATE
+                            running = 0
+                        elif here == budget:
                             running = 0
                     else:
                         mode = _TRIAL
@@ -235,6 +256,7 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
                 # Where the push out ends: the step is taken, in or out.
                 x = out
                 n += 1
+                here += 1
                 took = 1
                 if record == 1:
                     trace[q * capacity + length] = x
@@ -246,10 +268,18 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
                     st = st | ZERO_VELOCITY | TERMINATE
                 if n == max_steps:
                     st = st | TERMINATE
-                if (st & (SPATIAL_BOUNDS | ZERO_VELOCITY | TERMINATE)) != 0:
+                if (st & (SPATIAL_BOUNDS | ZERO_VELOCITY | TERMINATE)) != 0 or here == budget:
                     running = 0
                 else:
                     mode = _STEP
+                # Whole steps again, from their first stage and at h: they kept
+                # the bisection's last trial size and, when a trial's stage left
+                # the mesh, its stage, so a step after a push out that stayed
+                # inside sampled its stages short of where it went, or began
+                # mid-step on the trial's stage velocities.
+                sub = h
+                div = 1.0
+                stage = 0
             if bisect == 1:
                 # The next trial step, or the push out once the bracket is small.
                 if r1 - r0 > 10.0 * eps:
@@ -264,6 +294,54 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
         steps[q] = n
         status[q] = st | (TOOK_ANY_STEPS if took == 1 else 0)
         lengths[q] = length
+        moved[q] = took
+        hints[q] = last
+
+
+@tack.kernel
+def _running(steps, status, max_steps, count):
+    # Particles a later launch would move: not stopped, steps left.
+    for q in range(steps.shape[0]):
+        if (status[q] & (SPATIAL_BOUNDS | ZERO_VELOCITY | HANDOFF | TERMINATE)) == 0 \
+                and steps[q] < max_steps:
+            tack.atomic_add(count, 0, 1)
+
+
+# Launches of advection on a GPU: the first takes this many steps of each
+# particle, and each later one as many as should take _LAUNCH_SECONDS at the
+# last launch's pace, at most _GROWTH times as many. The CPU has no such
+# limit and runs the whole path in one launch (_CHUNKED_ON_CPU: the tests).
+_FIRST_STEPS = 16
+_LAUNCH_SECONDS = 0.2
+_GROWTH = 4
+_CHUNKED_ON_CPU = False
+
+
+def _launches(mesh, velocity, step_size, steps, args, device):
+    """Run ``_advect`` (``args``, its arguments from ``rk4`` to ``handoff``) until no
+    particle has steps left or is not stopped: on the CPU in one launch, else
+    in launches of a bounded number of steps."""
+    import time
+
+    xs, taken, status = args[3], args[5], args[6]
+    m = int(xs.shape[0])
+    moved = tack.zeros((m,), tack.i32)
+    hints = tack.empty((m,), ids.at_least(tack.i32, int(mesh.ncells)))
+    if device.type == "cpu" and not _CHUNKED_ON_CPU:
+        _advect(mesh, velocity, step_size, steps, *args, steps, 1, moved, hints)
+        return
+    count = tack.empty((1,), tack.i32)
+    budget, first = min(_FIRST_STEPS, steps), 1
+    while True:
+        start = time.perf_counter()
+        _advect(mesh, velocity, step_size, steps, *args, budget, first, moved, hints)
+        count.fill(0)
+        _running(taken, status, steps, count)
+        if int(count[0]) == 0:
+            return
+        elapsed = time.perf_counter() - start
+        budget = max(1, min(_GROWTH * budget, int(budget * _LAUNCH_SECONDS / max(elapsed, 1e-6))))
+        first = 0
 
 
 def _velocity(data, field):
@@ -347,9 +425,9 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
         marks = data.ghosts.cells if handoff and data.ghosts is not None else None
         ghosts = marks if marks is not None else tack.zeros((1,), tack.u8)
         eps = float(np.finfo(dtype.numpy_dtype).eps)
-        _advect(mesh, velocity, float(step_size), int(steps),
-                1 if integrator == "rk4" else 0, 1 if unit == "length" else 0, eps, xs, times,
-                taken, status, trace,
-                trace_times, lengths, capacity, 1 if record else 0, ghosts,
-                1 if marks is not None else 0)
+        lengths.fill(0)
+        _launches(mesh, velocity, float(step_size), int(steps),
+                  (1 if integrator == "rk4" else 0, 1 if unit == "length" else 0, eps, xs, times,
+                   taken, status, trace, trace_times, lengths, capacity, 1 if record else 0,
+                   ghosts, 1 if marks is not None else 0), xs.device)
     return xs, times, taken, status, (trace, trace_times), lengths, capacity

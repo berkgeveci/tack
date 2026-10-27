@@ -46,6 +46,7 @@ from tack.dataset.algorithms.magnitude import magnitude
 from tack.dataset.algorithms.mask import mask
 from tack.dataset.algorithms.mask_points import mask_points
 from tack.dataset.algorithms.merge_pieces import merge_pieces
+from tack.dataset.algorithms.merge_points import merge_points
 from tack.dataset.algorithms.net_flux import net_flux
 from tack.dataset.algorithms.outliers import outliers
 from tack.dataset.algorithms.perot import perot
@@ -126,6 +127,7 @@ __all__ = [
     "mask",
     "mask_points",
     "merge_pieces",
+    "merge_points",
     "net_flux",
     "outliers",
     "perot",

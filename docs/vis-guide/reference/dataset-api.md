@@ -1205,10 +1205,11 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `split(data, pieces, ghost_layers=0)` | a structured grid cut into a `PartitionedDataSet`, with ghost layers (see *Partitioned datasets*) |
 | `remove_ghosts(data)` | `data` without its duplicate and hidden cells, keeping the points it owns (see *Partitioned datasets*) |
 | `connected_components(data)` | which cells are connected through shared points, as VTK's `vtkConnectivityFilter` (all regions, colored) and Viskores' `CellSetConnectivity`: `data` with `region` on the cells and `point_region` on the points, numbered from 0 in order of their lowest cell (VTK's numbering); -1 for hidden cells and unused points; union-find on the device. Of a `PartitionedDataSet` too: regions numbered across every piece and rank, in order of their lowest global cell id where pieces have global ids (the whole's numbering for the whole's ids) |
-| `ghost_cells(pds, layers=1)` | unstructured pieces with a layer of their neighbours' cells, as `vtkGhostCellsGenerator` (see *Partitioned datasets*) |
+| `merge_points(data, tolerance=0)` | coincident points made one, as VTK's `vtkStaticCleanUnstructuredGrid` and Viskores' `CleanGrid` merge them: points at most `tolerance` apart join, chains of them too (union-find through the point locator's bins, each set's root its smallest point whatever the order), and each set becomes its smallest point, keeping its position, point fields, marks and global id; the cells are the same on the merged points. For meshes written without merging their points, which must be merged before their pieces can be matched: the 512 pieces of a simulation's output, each storing a point about 2.6 times, merged piece by piece then numbered by `generate_global_ids`, give the merged mesh's 6,310,285 points. Unstructured topologies |
+| `ghost_cells(pds, layers=1, tolerance=0)` | unstructured pieces with a layer of their neighbours' cells, as `vtkGhostCellsGenerator` (see *Partitioned datasets*); with `tolerance`, pieces share points at most that far apart, for copies that differ in their last bits |
 | `update_ghosts(pds, *fields)` | ghost values refreshed from their owners, in place, for pieces `ghost_cells` made |
-| `merge_pieces(pds, root=0)` | the pieces as one dataset, each cell and point once (see *Partitioned datasets*) |
-| `generate_global_ids(pds)` | the pieces' points and cells numbered across all of them, as `vtkGenerateGlobalIds` (see *Partitioned datasets*) |
+| `merge_pieces(pds, root=0, tolerance=0)` | the pieces as one dataset, each cell and point once (see *Partitioned datasets*); `tolerance` as `generate_global_ids` takes it |
+| `generate_global_ids(pds, tolerance=0)` | the pieces' points and cells numbered across all of them, as `vtkGenerateGlobalIds` (see *Partitioned datasets*); with `tolerance` (VTK's `Tolerance`), points of different pieces at most that far apart are one, and so are chains of them. Points a piece repeats within itself stay apart: `merge_points` merges them first |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 
@@ -1225,7 +1226,14 @@ each field's mean over it, as cell data, by `samples` probes a side per voxel
 octrees); with one sample it is the probe at the voxel centres.
 
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
-uniform grid over the dataset, about `density` bins per cell. It records
+two-level grid over the dataset, as Viskores' `CellLocatorTwoLevel` does: a
+coarse uniform grid of about 32 cells a bin, each bin split into a uniform
+grid of leaves sized by its count, about 8 cells a leaf. A point is searched
+for among its leaf's cells, so a mesh graded toward a body in a large far
+field (the ONERA M6 wing's) is not all in a few bins. Where the search runs
+from the cells instead (cells a by-id search cannot read, or a fresh
+locator's first small query), the points are bucketed into a uniform grid of
+about `density` bins per cell. It records
 the topology, the geometry's values and their state when made;
 `locator.serves(data)` says whether it still locates in `data`'s cells.
 `probe`, `advect` and `streamlines` take a locator for any dataset of the

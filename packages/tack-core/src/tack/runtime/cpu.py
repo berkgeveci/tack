@@ -537,6 +537,14 @@ _RP_MIN_WORKER_NS = 1_000.0
 _RP_BOUND_SPAN_RATIO = 20.0
 
 
+def _chunk_limit(compiled) -> int | None:
+    """The longest chunk a fan-out of `compiled` should claim: `_CHUNK_WORK_NS`
+    of its estimated work, or no limit before it has an estimate."""
+    if compiled.ns_per_elem <= 0.0:
+        return None
+    return max(1, int(_CHUNK_WORK_NS / compiled.ns_per_elem))
+
+
 def _worker_median(ordered: list) -> float:
     """The median of per-worker measurements, sorted ascending.
 
@@ -583,6 +591,32 @@ _SAMPLE_OVERHEAD_RATIO = 10.0
 # one in elements meant two whole-frame serial runs. Confirming costs at
 # most two serial dispatches, once per kernel.
 _CONFIRM_BAND = 4.0
+
+# The most estimated work one chunk of a fan-out holds. The pool's chunks
+# (GRAIN a worker, at least MIN_CHUNK elements) balance cheap kernels; for
+# a short range of costly elements they were the range over the threads:
+# 17 streamlines on 8 threads went in chunks of 3 consecutive seeds, so 6
+# threads worked and the three costliest ran on one. A claim costs well
+# under a microsecond, so 20 us of work a chunk keeps that under a few per
+# cent while letting each costly element go on its own. Kernels under about
+# 80 ns an element keep the pool's chunks.
+_CHUNK_WORK_NS = 20_000.0
+
+# How long a serial sample's work must last to be believed as it stands. The
+# estimate's guards exist because a sample can lie: a few elements timed
+# against a fixed call cost, or a run the OS descheduled, read 10-640x dear.
+# Neither can move a sample this long by much (a timeslice is a few ms), so
+# its rate is the kernel's. Without it, a short range of costly elements --
+# 17 streamlines of a quarter second each -- ran whole on one thread twice
+# before its first fan-out: once unmeasured, and once more because the
+# recheck's guard would not believe a rate above the reference kernel's
+# until a fan-out had measured one (21 s each, against 1 s threaded).
+_TRUSTED_SAMPLE_NS = 20e6
+
+# An element dear enough that a short range of them is worth timing in
+# slices rather than running whole (`_short_range`):
+# a hundred such elements already cost 10 ms.
+_COSTLY_ELEMENT_NS = 100e3
 
 # Parallel dispatches to allow between refreshes of the cost estimate.
 # Doubles up to the cap, so a wrong decision to thread is caught after a
@@ -675,6 +709,9 @@ class CompiledKernel:
         # Whether any serial sample has been clean. v2 will not fan out a
         # range near its threshold on an estimate that never was (P7).
         self.rate_confirmed = False
+        # Whether the latest serial sample's work lasted `_TRUSTED_SAMPLE_NS`,
+        # so its rate stands without the guards for short samples.
+        self.trusted_sample = False
         # The range of the dispatch in progress, for pricing a serial run
         # of it from inside `_run_serial`.
         self.loop_end = 0
@@ -756,12 +793,18 @@ class CompiledKernel:
         result to `call_range` for each chunk.
         """
         prefix = []
-        for arg, ptype, is_array in zip(kernel_args, self._param_types,
-                                        self._param_is_array):
-            if is_array:
-                prefix.append(arg._buffer.address)
-            else:
-                prefix.append(_CTYPES_MAP[ptype](arg))
+        try:
+            for arg, ptype, is_array in zip(kernel_args, self._param_types,
+                                            self._param_is_array):
+                if is_array:
+                    prefix.append(arg._buffer.host_address)
+                else:
+                    prefix.append(_CTYPES_MAP[ptype](arg))
+        except TypeError as e:
+            if len(prefix) < len(self._param_is_array) and self._param_is_array[len(prefix)]:
+                raise TypeError(f"kernel '{self._func_name}', argument {len(prefix)}: "
+                                f"{e}") from None
+            raise
         prefix.extend(int(e) for e in extents)
         return tuple(prefix)
 
@@ -1237,11 +1280,15 @@ class CPUBackend(Backend):
             return
 
         probe_min_range = self._probe_min_range()
-        if compiled.ns_per_elem > 0.0 or loop_end < probe_min_range \
-                or self.num_threads <= 1:
-            # Already measured and too small, or too small to be worth
-            # splitting off a probe.
+        if compiled.ns_per_elem > 0.0 or self.num_threads <= 1:
+            # Already measured and too small. (Whole: this is every small
+            # dispatch's path, where a second timed call would cost more
+            # than a heavy call that the estimate misjudges once.)
             self._run_whole_serial(compiled, prefix, loop_end)
+            return
+        if loop_end < probe_min_range:
+            # Too small to split a probe off -- unless its elements are dear.
+            self._short_range(compiled, prefix, loop_end)
             return
 
         # First sight of this kernel at a range where threading might pay.
@@ -1388,6 +1435,57 @@ class CPUBackend(Backend):
         budget = _CONFIRM_BAND * self._margin() * self._fan_out_estimate()
         return loop_end * compiled.ns_per_elem <= budget
 
+    def _short_range(self, compiled: CompiledKernel, prefix: tuple, loop_end: int):
+        """First sight of a kernel on a range too short for a probe slice.
+
+        A range a reference kernel could not repay a fan-out on ran whole on
+        this thread, which is right for cheap elements and wrong for dear
+        ones: 17 streamlines of a quarter second each took 21 s on one
+        thread, against 1 s on eight. So one element is timed first. A cheap
+        one (under `_COSTLY_ELEMENT_NS`) is forgotten and the rest runs here
+        as the kernel's first sample, as the whole range did. A dear one
+        starts slices of 2, 4, ... elements until one lasts long enough to
+        trust (`_TRUSTED_SAMPLE_NS`); the rest then fans out if the estimate
+        says it repays it. Every sample goes through `_run_serial`.
+
+        Only on first sight: a measured kernel's short ranges, every small
+        dispatch, run whole as one sample. So a kernel measured on light work
+        (two steps of a streamline) runs its first heavy short range (two
+        thousand) on one thread, and fans out from the next.
+        """
+        if loop_end < 2:
+            # Nothing to split. (And element 0 of an empty range is no
+            # element: a multi-dimensional one with a zero extent never ends.)
+            self._run_whole_serial(compiled, prefix, loop_end)
+            return
+        before = (compiled.ns_per_elem, compiled.parallel_min_elems,
+                  compiled.rate_confirmed)
+        self._run_serial(compiled, prefix, 0, 1)
+        pos = 1
+        if compiled.last_sample < _COSTLY_ELEMENT_NS:
+            if loop_end > pos:
+                # The rest is the better sample. (A range of one element was
+                # its own whole range, and keeps it.)
+                (compiled.ns_per_elem, compiled.parallel_min_elems,
+                 compiled.rate_confirmed) = before
+                self._run_serial(compiled, prefix, pos, loop_end)
+            compiled.scattered = False
+            return
+        size = 2
+        while pos < loop_end and not compiled.trusted_sample:
+            end = min(loop_end, pos + size)
+            self._run_serial(compiled, prefix, pos, end)
+            pos, size = end, 2 * size
+        rest = loop_end - pos
+        if (rest > 0 and rest >= compiled.parallel_min_elems
+                and not self._needs_confirmation(compiled, rest)):
+            self._parallel_execute(compiled, prefix, pos, loop_end)
+            return
+        if rest > 0:
+            self._run_serial(compiled, prefix, pos, loop_end)
+        # Every element ran on this thread, so the next sample is clean.
+        compiled.scattered = False
+
     def _run_whole_serial(self, compiled: CompiledKernel, prefix: tuple,
                           loop_end: int):
         """Run the whole range on this thread, which gathers it here.
@@ -1497,8 +1595,9 @@ class CPUBackend(Backend):
         frame reads as the half-second of work it is.
         """
         rate = max(compiled.ns_per_elem, _MIN_NS_PER_ELEM)
-        guard_rate = max(compiled.serial_floor_ns,
-                         min(rate, _PROBE_REFERENCE_NS_PER_ELEM))
+        # A trusted sample's rate stands as it is (`_TRUSTED_SAMPLE_NS`).
+        believed = rate if compiled.trusted_sample else _PROBE_REFERENCE_NS_PER_ELEM
+        guard_rate = max(compiled.serial_floor_ns, min(rate, believed))
         if loop_end * guard_rate <= self._fan_out_estimate():
             return loop_end
 
@@ -1536,8 +1635,13 @@ class CPUBackend(Backend):
         # chunk pays, so threading does not divide it down -- and folding it
         # into a per-element rate is what made a cheap kernel read 2.6x more
         # expensive than it is, and fan out where serial was faster.
-        work_ns = elapsed - compiled.call_overhead_ns
-        sample = max(work_ns / (end - start), _MIN_NS_PER_ELEM)
+        self._take_sample(compiled, end - start, elapsed - compiled.call_overhead_ns)
+
+    def _take_sample(self, compiled: CompiledKernel, elems: int, work_ns: float):
+        """Refresh the cost estimate from `elems` elements run serially in
+        `work_ns` (the fixed call cost already taken off)."""
+        compiled.trusted_sample = work_ns >= _TRUSTED_SAMPLE_NS
+        sample = max(work_ns / elems, _MIN_NS_PER_ELEM)
         compiled.last_sample = sample
         prev = compiled.ns_per_elem
 
@@ -2177,7 +2281,8 @@ class CPUBackend(Backend):
         # The pool's workers claim chunks, so each reports what it ran; the
         # report is read in the run's own transaction, before another
         # thread's run can overwrite it.
-        report = jit.run(wrapper, pack, start, end, self.num_threads, measure=True)
+        report = jit.run(wrapper, pack, start, end, self.num_threads, measure=True,
+                         most=_chunk_limit(compiled))
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
         raw, counts = report
         rates: list = [0.0] * self.num_threads

@@ -7,7 +7,7 @@ import tack
 from tack import arrays
 from tack import communication as tc
 from tack.arrays import CartesianProduct, UniformCoordinates
-from tack.dataset.algorithms._common import _csr_rows
+from tack.dataset.algorithms._common import _csr_rows, _tolerance
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
@@ -17,14 +17,14 @@ from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
 __all__ = ["merge_pieces"]
 
-def merge_pieces(data, root=0, fields=None, device=None):
+def merge_pieces(data, root=0, fields=None, device=None, tolerance=0.0):
     """``data``'s pieces as one dataset: every cell a piece owns, once, and every point
     once, with the point and cell fields (``fields`` choosing them as filters
     do), as VTK's vtkMergeBlocks after vtkRemoveGhosts.
 
     Copies of a point several pieces hold become one point, matched as
     ``generate_global_ids`` matches them (the ghost marks' owners, else exact
-    positions); ghost cells are left out, and hidden cells kept, marked. The
+    positions, or positions at most ``tolerance`` apart); ghost cells are left out, and hidden cells kept, marked. The
     points and cells are numbered as ``generate_global_ids`` numbers them:
     each piece's owned ones after the pieces before it. The pieces' own global
     ids, if they have them, come along as the result's.
@@ -44,6 +44,7 @@ def merge_pieces(data, root=0, fields=None, device=None):
     pieces = list(data)
     names = _carried(pieces, fields)
     common_origin(data, "merge_pieces")
+    tolerance = _tolerance(data, tolerance, "merge_pieces")
     blocks = tc.Blocks([piece.device for piece in pieces], data.world)
     world = blocks.world
     if not 0 <= root < world.size:
@@ -63,7 +64,8 @@ def merge_pieces(data, root=0, fields=None, device=None):
         if tiled is not None:
             return _merged_structured(blocks, pieces, names, _kind, target, out_device,
                                       tiled)
-    return _merged_unstructured(blocks, pieces, names, _kind, target, out_device)
+    return _merged_unstructured(blocks, pieces, names, _kind, target, out_device,
+                                tolerance)
 
 
 def _box(blocks, pieces):
@@ -187,7 +189,7 @@ def _merged_structured(blocks, pieces, names, kind_of, target, device, tiled):
         return _assembled(topology, geometry, first, names, kind_of, parts)
 
 
-def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
+def _merged_unstructured(blocks, pieces, names, kind_of, target, device, tolerance=0.0):
     """Any pieces: owned cells and points, numbered by ``generate_global_ids``."""
     from tack.dataset.algorithms.extract_cells import extract_cells
     from tack.dataset.algorithms.generate_global_ids import generate_global_ids
@@ -205,7 +207,8 @@ def _merged_unstructured(blocks, pieces, names, kind_of, target, device):
             converted_piece.ghosts = piece.ghosts
             piece = converted_piece
         converted.append(piece)
-    numbered = list(generate_global_ids(PartitionedDataSet(converted, world=blocks.world)))
+    numbered = list(generate_global_ids(PartitionedDataSet(converted, world=blocks.world),
+                                        tolerance=tolerance))
     outgoing = {}
     for g, piece, original in zip(blocks.local, numbered, converted):
         if not isinstance(piece.topology, UnstructuredTopology):

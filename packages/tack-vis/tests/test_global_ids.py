@@ -286,6 +286,74 @@ def test_generate_global_ids_refuses():
         td.generate_global_ids(td.PartitionedDataSet(pieces))
 
 
+def _jittered(pieces, size=1e-7):
+    """``pieces`` in f64, each point moved by up to ``size`` along every axis, by a
+    generator seeded by the piece's index: copies of a shared point differ in
+    their last bits, as the pieces of a simulation's output that each computed
+    their own do."""
+    out = []
+    for g, piece in enumerate(pieces):
+        rng = np.random.default_rng(g)
+        x = piece.positions().astype(np.float64) + rng.uniform(-size, size, (piece.num_points, 3))
+        out.append(td.DataSet(piece.topology, x, fields=dict(piece.fields), dtype=tack.f64))
+    return td.PartitionedDataSet(out, getattr(pieces, "world", None))
+
+
+def test_a_tolerance_matches_copies_that_differ_in_their_last_bits():
+    """Copies 1e-7 apart are distinct to exact matching; within a tolerance they
+    get the ids exact copies get, and merge, and ghost layers grow, as the
+    exact pieces' do."""
+    whole = td.wavelet(4)
+    plain = _unstructured(td.split(whole, 6))
+    expected = by_position(td.generate_global_ids(plain))
+    jittered = _jittered(plain)
+    exact = td.generate_global_ids(jittered)
+    assert max(int(p.global_ids.points.numpy().max()) for p in exact) + 1 > whole.num_points
+    near = td.generate_global_ids(jittered, tolerance=1e-5)
+    assert by_position(near) == expected
+    _check_numbering(near)
+    merged = td.merge_pieces(jittered, tolerance=1e-5)
+    assert (merged.num_points, merged.num_cells) == (whole.num_points, whole.num_cells)
+    for layers in (1, 2):
+        ours = td.ghost_cells(jittered, layers=layers, tolerance=1e-5)
+        theirs = td.ghost_cells(plain, layers=layers)
+        assert [p.num_cells for p in ours] == [p.num_cells for p in theirs]
+        assert [p.num_points for p in ours] == [p.num_points for p in theirs]
+    with pytest.raises(ValueError, match="at least zero"):
+        td.generate_global_ids(jittered, tolerance=-1.0)
+
+
+def test_near_matching_through_messages_and_colliding_hashes(monkeypatch):
+    """The near path through messages, and with every cell's key one of four,
+    gives the same ids."""
+    from tack.dataset import _matching
+
+    jittered = _jittered(_unstructured(td.split(td.wavelet(4), 6)))
+    expected = by_position(td.generate_global_ids(jittered, tolerance=1e-5))
+    monkeypatch.setattr(_matching, "_all_here", lambda blocks: False)
+    assert by_position(td.generate_global_ids(jittered, tolerance=1e-5)) == expected
+    hashed = _matching.hashed
+    monkeypatch.setattr(_matching, "hashed", lambda columns: hashed(columns) & np.uint64(3))
+    assert by_position(td.generate_global_ids(jittered, tolerance=1e-5)) == expected
+
+
+def test_a_chain_of_near_copies_is_one_point():
+    """Copies at 0, 0.6 and 1.2 (times 1e-6) on three pieces, at a tolerance of
+    1e-6: the ends are too far apart to be partners, so the third takes the
+    first's identity only once the chain is settled."""
+    from tack.dataset import _matching
+
+    blocks = tc.Blocks([tack.device("cpu")] * 3, tc.World())
+    entries = {g: (np.array([0]), np.array([[0.6e-6 * g, 0.0, 0.0]]), np.zeros(1, np.uint8))
+               for g in range(3)}
+    partners = _matching.match_positions(blocks, entries, 1e-6)
+    assert len(partners[2][0]) == 1 and partners[2][1][0] == 1    # its one partner: piece 1
+    identities = {g: _matching.owners(g, 1, partners[g], np.zeros(1, bool)) for g in range(3)}
+    assert identities[2][0] == 1 << _matching.INDEX_BITS
+    _matching.settled(blocks, identities, partners)
+    assert [int(identities[g][0]) for g in range(3)] == [0, 0, 0]
+
+
 def test_generated_ids_across_mpi_ranks(mpiexec):
     script = os.path.join(os.path.dirname(__file__), "_global_ids_mpi.py")
     for ranks in (2, 3):
@@ -293,9 +361,16 @@ def test_generated_ids_across_mpi_ranks(mpiexec):
         assert run.returncode == 0 and "ok" in run.stdout, run.stdout + run.stderr
 
 
+def _jittered_share(every, world, share):
+    """This rank's share of ``every`` piece jittered, each by its global index."""
+    jittered = list(_jittered(every))
+    return td.PartitionedDataSet(jittered[world.rank * share:(world.rank + 1) * share], world)
+
+
 def global_ids_across(world):
-    """The three routes over this rank's share of six pieces: each piece's ids by
-    position, ``{route: {gid: ids}}``."""
+    """The routes over this rank's share of six pieces: each piece's ids by
+    position, ``{route: {gid: ids}}``. "plain" numbers the pieces without ghost
+    cells, which is what "near" (the same pieces jittered) must give."""
     whole = td.wavelet(4)
     every = list(_unstructured(td.split(whole, 6)))
     share = len(every) // world.size
@@ -306,6 +381,8 @@ def global_ids_across(world):
         "matched": td.generate_global_ids(td.PartitionedDataSet(list(td.ghost_cells(plain)),
                                                                 world)),
         "carried": td.ghost_cells(td.generate_global_ids(plain)),
+        "plain": td.generate_global_ids(plain),
+        "near": td.generate_global_ids(_jittered_share(every, world, share), tolerance=1e-5),
     }
     blocks = tc.Blocks([p.device for p in mine], world)
     return {route: dict(zip(blocks.local, by_position(pieces)))

@@ -401,6 +401,45 @@ def test_searching_from_the_points_finds_what_searching_from_the_cells_does(back
                                    atol=1e-5)
 
 
+@pytest.mark.parametrize("threads, blocks", [(7, 3), (1 << 16, 256)])
+def test_the_grid_spans_the_boxes_exactly(backend, threads, blocks, monkeypatch):
+    """The locator takes its cells' bounds on the device (a GPU's threads each
+    over every k-th box, the CPU's over a block), not by reading every box
+    back: on the ONERA M6 that was 1.0 of a 1.4 s build. min and max are
+    exact, so the grid is the one every box's bounds give, remainders and
+    all."""
+    from tack.dataset import locator as L
+
+    monkeypatch.setattr(L, "_BOUNDS_THREADS", threads)
+    monkeypatch.setattr(L, "_BOUNDS_BLOCKS", blocks)
+    data = td.tetrahedralize(td.wavelet(4))
+    loc = td.CellLocator(data)
+    lo, hi = loc.lo.numpy(), loc.hi.numpy()
+    np.testing.assert_array_equal(loc.origin, lo.min(axis=0).astype(float))
+    np.testing.assert_array_equal(loc.origin + loc.dims / loc.inverse,
+                                  loc.origin + (hi.max(axis=0).astype(float) - loc.origin))
+
+
+def test_a_dense_core_in_a_far_field_is_split_into_leaves(backend):
+    """Cells shrinking geometrically toward the centre, a body's in its far field,
+    as the ONERA M6 wing's are. With one level of about a cell a bin, the bins
+    at the centre held 8% of the mesh (13,720 of its 163,840 tetrahedra), and
+    every search there scanned them: on the M6, up to 2.1M cells, and a GPU's
+    streamlines took minutes. Each coarse bin's leaves are sized by its count,
+    so no leaf holds 1%, and the searches from the points and from the cells
+    still agree, at the centre and around it."""
+    half = 1e-3 * 1.5 ** np.arange(16)
+    axis = np.r_[-half[::-1], 0.0, half]
+    data = td.tetrahedralize(td.rectilinear_grid(axis, axis, axis))
+    offsets, _ = td.CellLocator(data).cell_bins()
+    assert np.diff(offsets.numpy()).max() < 0.01 * data.num_cells
+    rng = np.random.default_rng(5)
+    points = np.r_[rng.normal(0.0, 0.01, (1500, 3)), rng.uniform(-0.4, 0.4, (500, 3))]
+    (a, _), (b, _) = _both_ways(data, points)
+    np.testing.assert_array_equal(a.cells.numpy(), b.cells.numpy())
+    assert (a.cells.numpy() >= 0).all()
+
+
 @needs_vtk
 @pytest.mark.parametrize("kind", SHAPES)
 def test_a_point_shared_by_several_cells_goes_to_the_smallest_id(backend, kind):

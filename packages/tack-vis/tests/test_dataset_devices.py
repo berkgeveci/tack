@@ -137,6 +137,8 @@ CALLS = {
     "feature_edges": lambda d: td.feature_edges(td.extract_surface(d, td.boundary_faces(d))),
     "surface_normals": lambda d: td.surface_normals(td.extract_surface(d)),
     "tetrahedralize": td.tetrahedralize,
+    "merge_points": lambda d: (None if isinstance(d.topology, td.StructuredTopology)
+                               else td.merge_points(d)),
     "shrink": td.shrink,
     "warp": lambda d: td.warp(d, (0, 0, 1), scale=0.5),
     "transform": lambda d: td.transform(d, np.eye(4)),
@@ -264,6 +266,37 @@ def test_derived_state_and_iteration_are_on_the_datasets_device(second, make):
     found = td.CellLocator(data).find(tack.array(np.array([[0.5, 0.5, 0.5]], np.float32),
                                                  tack.vec3(), device=second))
     assert _on(second, found.cells) and _on(second, found.pcs) and found.tets is None
+
+
+@pytest.mark.parametrize("make", ["hexes", "grid"])
+def test_the_public_building_blocks_run_on_the_datasets_device(second, make):
+    """What filters of one's own are written with (`visible`, `owned_values`,
+    `carry`), on marked data, so each allocates, and `orient`: called directly,
+    not from inside an algorithm that already made the dataset's device the
+    default, they once allocated on the default device ("arrays on two
+    devices")."""
+    data = (_hexes if make == "hexes" else _grid)(second)
+    cells = np.zeros(data.num_cells, np.uint8)
+    cells[0] = td.Ghosts.HIDDENCELL
+    cells[1] = td.Ghosts.DUPLICATECELL
+    points = np.zeros(data.num_points, np.uint8)
+    points[0] = td.Ghosts.DUPLICATEPOINT
+    data.ghosts = td.Ghosts(cells=tack.array(cells, device=second),
+                            points=tack.array(points, device=second))
+    kept = td.visible(data)
+    assert kept.num_cells == data.num_cells - 1 and _on(second, kept)
+    assert _on(second, td.owned_values(data, "s"))
+    every = tack.array(np.arange(data.num_cells, dtype=np.int32), device=second)
+    assert _on(second, td.carry(data, data.topology, points=td.Same(), cells=td.Take(every)))
+    polyhedra = td.as_polyhedra(data).topology
+    assert td.orient(polyhedra).device == polyhedra.device == second
+    # And what the built-ins call on marked data, outside an algorithm's scope.
+    from tack.dataset.ghosts import refuse_hidden, without_hidden
+
+    flags = tack.array(np.ones(data.num_cells, np.int32), device=second)
+    assert _on(second, without_hidden(data, flags))
+    with pytest.raises(NotImplementedError, match="hidden"):
+        refuse_hidden(data, "this")
 
 
 def test_a_dataset_refuses_parts_on_two_devices(second):

@@ -1,8 +1,10 @@
 """Finding the cell a point lies in, and probing fields there.
 
-``CellLocator(data)`` bins the cells' bounding boxes on a uniform grid over
-the dataset's bounds, about one cell per bin (Viskores' CellLocatorUniformBins
-and VTK's cell locators do the same in spirit). ``find(points)`` returns each
+``CellLocator(data)`` bins the cells' bounding boxes on a two-level grid over
+the dataset's bounds, as Viskores' CellLocatorTwoLevel does: a coarse uniform
+grid of about 32 cells a bin, each bin a uniform grid of leaves sized by its
+count (about 8 cells a leaf), so a body's cells in a large far field are not
+all in a few bins. ``find(points)`` returns each
 point's cell -- of the cells that hold it the smallest id, or, if none does
 but some come within the tolerance, the smallest of those; -1 for none --
 and its parametric coordinates there, found by the shapes' own Newton
@@ -10,14 +12,14 @@ inversion (``world_to_parametric``, VTK's EvaluatePosition) and domain test.
 
 The search runs from the points where ``by_id`` serves the dataset (an
 order-1 geometry over the shapes it knows, structured grids, polyhedra): one
-launch, each point searching the cells its bin may hold (``cell_bins``),
+launch, each point searching the cells its leaf may hold (``cell_bins``),
 reached by id. Elsewhere it runs from the cells: the points are bucketed into
-the same bins, and every cell, through its own view, tests the points in the
-bins its box overlaps (a view addresses its cells its own way, a structured
+a uniform grid of about ``density`` bins a cell, and every cell, through its
+own view, tests the points in the bins its box overlaps (a view addresses its cells its own way, a structured
 grid's by (i, j, k)), the winner decided by an atomic minimum and a second pass
 writing its coordinates. A fresh locator's first query of few points in many
-cells also runs from the cells, sparing the cell bins (about eight entries a
-cell) until it is used again. Both rank candidates alike: a cell that holds the
+cells also runs from the cells, sparing the cell bins (6-13 entries a cell on
+real meshes) until it is used again. Both rank candidates alike: a cell that holds the
 point ranks ahead of one that only comes within the tolerance, then the smaller
 id wins. Without the first part a point just inside a cell went to a
 lower-numbered neighbour within the tolerance, and was extrapolated there.
@@ -38,7 +40,7 @@ from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import gather
 from tack.dataset import ids
 from tack.dataset.buckets import bucket_groups
-from tack.dataset.by_id import _bin
+from tack.dataset.by_id import _bin, _leaf, _span
 from tack.dataset.dataset import for_each
 from tack.dataset.shapes import HOLD_TOLERANCE
 from tack.runtime.dispatch import on_inputs_device
@@ -238,40 +240,134 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
 
 
 @tack.kernel
-def _bins_per_cell(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, counts):
-    # The bins each cell's box, widened by its tolerance, overlaps.
+def _bounds(lo, hi, first, step, count, low, high):
+    # The boxes' bounds in partial results, combined on the host: result b over
+    # count boxes from b * first, step apart -- on a GPU every k-th box from b
+    # (first 1, step k: neighbouring threads read neighbouring boxes), on the
+    # CPU a block of them (first count, step 1). min and max are exact, so the
+    # bounds are those of every box at once.
+    for b in range(low.shape[0]):
+        a = lo[b * first]
+        c = hi[b * first]
+        for j in range(1, count):
+            e = b * first + j * step
+            if e < lo.shape[0]:
+                a = min(a, lo[e])
+                c = max(c, hi[e])
+        low[b] = a
+        high[b] = c
+
+
+# Partial results for the boxes' bounds: on a GPU enough threads to fill it,
+# few enough to read back and combine at once; on the CPU a few a thread.
+_BOUNDS_THREADS = 1 << 16
+_BOUNDS_BLOCKS = 256
+
+
+# ── The two-level grid the search from the points reads ─────────────
+#
+# Viskores' CellLocatorTwoLevel (Kalojanov, Billeter and Slusallek, "Two-Level
+# Grids for Ray Tracing on GPUs", 2011): a coarse uniform grid of about
+# _CELLS_PER_BIN cells a bin, and in each bin a uniform grid of leaves sized
+# by the bin's count, about _CELLS_PER_LEAF a leaf. One level of about a cell a
+# bin held up to 2.1M cells in a bin near the ONERA M6 wing, a mesh graded a
+# millionfold: a streamline's location there scanned 164k candidates on
+# average, and on a GPU every thread waited for its group's worst. Viskores
+# sizes leaves at 2 cells; a bin's count is of the boxes overlapping it, and a
+# tetrahedron's box is about six times its volume, so leaves that small held
+# each of the aneurysm's tetrahedra 34 times (296M entries, build 1.4 s). At 8,
+# 12.9 entries a cell and 0.68 s there, 5.7 and 2.8 s on the M6 (one level:
+# 7.8 and 0.83 s, 8.8 and 5.6 s), and the streamlines as fast on the CPU.
+_CELLS_PER_BIN = 32.0
+_CELLS_PER_LEAF = 8.0
+
+
+@tack.kernel
+def _coarse_counts(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, counts):
+    # How many cells each coarse bin holds: the cells whose boxes, widened by
+    # their tolerance, overlap it.
+    for e in range(lo.shape[0]):
+        a = lo[e]
+        b = hi[e]
+        slack = tolerance * (b - a).norm()
+        fi0, fi1, i0, i1 = _span(a[0] - slack, b[0] + slack, ox, ix, nx)
+        fj0, fj1, j0, j1 = _span(a[1] - slack, b[1] + slack, oy, iy, ny)
+        fk0, fk1, k0, k1 = _span(a[2] - slack, b[2] + slack, oz, iz, nz)
+        for k in range(k0, k1 + 1):
+            for j in range(j0, j1 + 1):
+                for i in range(i0, i1 + 1):
+                    tack.atomic_add(counts, i + nx * (j + ny * k), 1)
+
+
+@tack.kernel
+def _leaf_dims(counts, ux, uy, uz, sides, per_leaf, dims, sizes):
+    # Each coarse bin's leaves, as Viskores' ComputeGridDimension sizes them:
+    # cubes along the axes the grid spans, about per_leaf cells a leaf. ux, uy
+    # and uz are a bin's sides over the sides-th root of its volume (0 along an
+    # axis the grid does not span), so nothing here depends on the units.
+    for b in range(counts.shape[0]):
+        c = counts[b]
+        r = 0.0 * ux
+        if c > 0:
+            r = exp(log(c / per_leaf) / sides)
+        lx = max(tack.i64(ux * r), 1)
+        ly = max(tack.i64(uy * r), 1)
+        lz = max(tack.i64(uz * r), 1)
+        dims[3 * b] = lx
+        dims[3 * b + 1] = ly
+        dims[3 * b + 2] = lz
+        sizes[b] = lx * ly * lz
+
+
+@tack.kernel
+def _leaves_per_cell(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, dims, tolerance, counts):
+    # The leaves each cell's box, widened by its tolerance, overlaps.
     for e in range(counts.shape[0]):
         a = lo[e]
         b = hi[e]
         slack = tolerance * (b - a).norm()
-        i0 = max(tack.i64(floor((a[0] - slack - ox) * ix)), 0)
-        j0 = max(tack.i64(floor((a[1] - slack - oy) * iy)), 0)
-        k0 = max(tack.i64(floor((a[2] - slack - oz) * iz)), 0)
-        i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
-        j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
-        k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
-        counts[e] = max(i1 - i0 + 1, 0) * max(j1 - j0 + 1, 0) * max(k1 - k0 + 1, 0)
+        fi0, fi1, i0, i1 = _span(a[0] - slack, b[0] + slack, ox, ix, nx)
+        fj0, fj1, j0, j1 = _span(a[1] - slack, b[1] + slack, oy, iy, ny)
+        fk0, fk1, k0, k1 = _span(a[2] - slack, b[2] + slack, oz, iz, nz)
+        total = tack.i64(0)
+        for k in range(k0, k1 + 1):
+            for j in range(j0, j1 + 1):
+                for i in range(i0, i1 + 1):
+                    c = 3 * (i + nx * (j + ny * k))
+                    lx = dims[c]
+                    ly = dims[c + 1]
+                    lz = dims[c + 2]
+                    total += ((_leaf(fi1, i, lx) - _leaf(fi0, i, lx) + 1)
+                              * (_leaf(fj1, j, ly) - _leaf(fj0, j, ly) + 1)
+                              * (_leaf(fk1, k, lz) - _leaf(fk0, k, lz) + 1))
+        counts[e] = total
 
 
 @tack.kernel
-def _bin_entries(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, starts, keys, cells):
+def _leaf_entries(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, dims, leaf_starts, tolerance,
+                  starts, keys, cells):
     for e in range(starts.shape[0]):
         a = lo[e]
         b = hi[e]
         slack = tolerance * (b - a).norm()
-        i0 = max(tack.i64(floor((a[0] - slack - ox) * ix)), 0)
-        j0 = max(tack.i64(floor((a[1] - slack - oy) * iy)), 0)
-        k0 = max(tack.i64(floor((a[2] - slack - oz) * iz)), 0)
-        i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
-        j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
-        k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
+        fi0, fi1, i0, i1 = _span(a[0] - slack, b[0] + slack, ox, ix, nx)
+        fj0, fj1, j0, j1 = _span(a[1] - slack, b[1] + slack, oy, iy, ny)
+        fk0, fk1, k0, k1 = _span(a[2] - slack, b[2] + slack, oz, iz, nz)
         at = starts[e]
         for k in range(k0, k1 + 1):
             for j in range(j0, j1 + 1):
                 for i in range(i0, i1 + 1):
-                    keys[at] = i + nx * (j + ny * k)
-                    cells[at] = e
-                    at += 1
+                    bin = i + nx * (j + ny * k)
+                    lx = dims[3 * bin]
+                    ly = dims[3 * bin + 1]
+                    lz = dims[3 * bin + 2]
+                    first = leaf_starts[bin]
+                    for lk in range(_leaf(fk0, k, lz), _leaf(fk1, k, lz) + 1):
+                        for lj in range(_leaf(fj0, j, ly), _leaf(fj1, j, ly) + 1):
+                            for li in range(_leaf(fi0, i, lx), _leaf(fi1, i, lx) + 1):
+                                keys[at] = first + li + lx * (lj + ly * lk)
+                                cells[at] = e
+                                at += 1
 
 
 @tack.kernel
@@ -316,7 +412,9 @@ def _resolve(found, none, ncells):
 
 class CellLocator:
     """Locates points in ``data``'s cells; build once, ``find`` many times. ``density``
-    is the bins per cell.
+    is the bins per cell of the uniform grid a search from the cells buckets
+    the points in; the search from the points reads the two-level cell bins
+    (``cell_bins``).
 
     The bins follow the cells' bounding boxes when it is made. It records the
     geometry it was made from and that geometry's state (`serves`): `probe`
@@ -362,8 +460,20 @@ class CellLocator:
         elif n:
             for_each(_cell_boxes, data, "cells", self.lo, self.hi)
         if n:
-            lo, hi = self.lo.numpy(), self.hi.numpy()
-            low, high = lo.min(axis=0).astype(float), hi.max(axis=0).astype(float)
+            # On the device: reading the boxes back to take their bounds there
+            # was 1.0 of the M6's 1.4 s build on an M1 Max's GPU (NumPy's
+            # strided reductions, and the copy, over PCIe elsewhere).
+            if self.lo.device.type == "cpu":
+                count = -(-n // min(n, _BOUNDS_BLOCKS))
+                k, first, step = -(-n // count), count, 1
+            else:
+                k = min(n, _BOUNDS_THREADS)
+                first, step, count = 1, k, -(-n // k)
+            lows = tack.empty((k,), tack.vec(3, dtype))
+            highs = tack.empty((k,), tack.vec(3, dtype))
+            _bounds(self.lo, self.hi, first, step, count, lows, highs)
+            low = lows.numpy().min(axis=0).astype(float)
+            high = highs.numpy().max(axis=0).astype(float)
         else:
             low = high = np.zeros(3)
         extent = high - low
@@ -377,6 +487,17 @@ class CellLocator:
         self.inverse = np.where(live, self.dims / np.where(live, extent, 1.0), 0.0)
         # A point this close to the grid can be within a cell's tolerance.
         self.slack = _TOLERANCE * float(np.linalg.norm(extent))
+        # The coarse grid of the two-level one (cell_bins), as the uniform grid
+        # above with about _CELLS_PER_BIN cells a bin.
+        side = (np.prod(extent[live]) / max(n / _CELLS_PER_BIN, 1)) ** (1.0 / max(live.sum(), 1))
+        coarse = np.where(live, np.clip(np.ceil(extent / max(side, 1e-30)), 1, 1024), 1)
+        self.coarse_dims = coarse.astype(np.int64)
+        self.coarse_inverse = np.where(live, coarse / np.where(live, extent, 1.0), 0.0)
+        # Its bins' sides over the sides-th root of their volume, for the leaves.
+        widths = np.where(live, extent / coarse, 0.0)
+        sides = max(int(live.sum()), 1)
+        root = float(np.prod(widths[live])) ** (1.0 / sides) if live.any() else 1.0
+        self._units = (*map(float, widths / root), float(sides))
 
     def serves(self, data):
         """Whether it locates in ``data``'s cells as they are: the topology and the
@@ -389,30 +510,58 @@ class CellLocator:
     def _grid(self):
         return (*map(float, self.origin), *map(float, self.inverse), *map(int, self.dims))
 
+    def _coarse_grid(self):
+        return (*map(float, self.origin), *map(float, self.coarse_inverse),
+                *map(int, self.coarse_dims))
+
     def cell_bins(self):
-        """The cells each bin may hold, for queries that run from the points (a
-        particle asking for its cell): ``(offsets, cells)``, CSR by bin, the
-        cells whose boxes, widened by their tolerance, overlap the bin. Made on
-        first use and kept."""
+        """The cells each leaf may hold, for queries that run from the points (a
+        particle asking for its cell): ``(offsets, cells)``, CSR by leaf, the
+        cells whose boxes, widened by their tolerance, overlap the leaf. The
+        leaves are a two-level grid: a coarse uniform grid of about
+        ``_CELLS_PER_BIN`` cells a bin, each bin a uniform grid of leaves sized
+        by its count (``leaves``). Made on first use and kept."""
         if "_cell_bins" not in self.__dict__:
             data = self.data
             n = data.num_cells
-            nbins = int(np.prod(self.dims))
-            counts = tack.empty((n,), tack.i32)
+            grid = self._coarse_grid()
+            nbins = int(np.prod(self.coarse_dims))
+            # Each coarse bin's cells, then its leaves (sizes, by a scan their
+            # first leaf), then each cell's leaves, entered and grouped.
+            counts = tack.zeros((nbins,), tack.i32)
+            if n:
+                _coarse_counts(self.lo, self.hi, *grid, _TOLERANCE, counts)
+            dims = tack.empty((3 * nbins,), tack.i32)
+            sizes = tack.empty((nbins,), tack.i64)
+            _leaf_dims(counts, *self._units, _CELLS_PER_LEAF, dims, sizes)
+            leaf_starts = tack.empty((nbins,), tack.i64)
+            nleaves = exclusive_scan(sizes, leaf_starts, nbins)
+            del counts, sizes
+            per_cell = tack.empty((n,), tack.i64)
             starts = tack.empty((n,), tack.i64)
             total = 0
             if n:
-                _bins_per_cell(self.lo, self.hi, *self._grid(), _TOLERANCE, counts)
-                total = exclusive_scan(counts, starts, n)
-            index = ids.at_least(data.id_dtype, total)
-            keys = tack.empty((total,), tack.i32)
+                _leaves_per_cell(self.lo, self.hi, *grid, dims, _TOLERANCE, per_cell)
+                total = exclusive_scan(per_cell, starts, n)
+            del per_cell
+            index = ids.at_least(data.id_dtype, max(total, nleaves))
+            keys = tack.empty((total,), ids.at_least(tack.i32, nleaves))
             cells = tack.empty((total,), data.id_dtype)
             if total:
-                _bin_entries(self.lo, self.hi, *self._grid(), _TOLERANCE, starts, keys, cells)
-            # A bin's cells in any order: the search ranks its candidates itself.
-            order, offsets = bucket_groups(keys, nbins, index)
+                _leaf_entries(self.lo, self.hi, *grid, dims, leaf_starts, _TOLERANCE, starts,
+                              keys, cells)
+            # A leaf's cells in any order: the search ranks its candidates itself.
+            order, offsets = bucket_groups(keys, nleaves, index)
+            self._leaves = (dims, leaf_starts)
             self._cell_bins = (offsets, gather(cells, order) if total else cells)
         return self._cell_bins
+
+    def leaves(self):
+        """The two-level grid's leaves (``cell_bins``): ``(dims, starts)``, each
+        coarse bin's leaves along x, y and z (``dims[3 * b + axis]``) and its
+        first leaf's index."""
+        self.cell_bins()
+        return self._leaves
 
     @property
     def _device(self):

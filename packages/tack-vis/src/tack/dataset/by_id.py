@@ -43,6 +43,25 @@ def _bin(x, origin, inverse, n, slack):
     return i
 
 
+@tack.func
+def _span(low, high, origin, inverse, n):
+    """``(f0, f1, i0, i1)``: an interval's ends in grid units along one axis, and
+    the bins it overlaps (clamped to the grid; empty, ``i1 < i0``, past it)."""
+    f0 = (low - origin) * inverse
+    f1 = (high - origin) * inverse
+    return f0, f1, max(tack.i64(floor(f0)), 0), min(tack.i64(floor(f1)), n - 1)
+
+
+@tack.func
+def _leaf(f, i, m):
+    """The leaf along one axis, of ``m`` in coarse bin ``i``, of a coordinate at
+    ``f`` in coarse grid units, clamped to the bin's leaves. The build and the
+    search both place by this from the same ``f`` (``(x - origin) * inverse``):
+    rounding and ``floor`` keep order, so a point inside a cell's widened box
+    lands in one of the leaves the cell was entered in."""
+    return min(max(tack.i64(floor((f - i) * m)), 0), m - 1)
+
+
 # ── Cells by id ─────────────────────────────────────────────────────
 
 class _NoPolyhedra:
@@ -254,8 +273,8 @@ def cells_by_id(data, positions, strict=True):
 
 @tack.device_class
 class _MeshSearch:
-    """A point's cell by the locator's cell bins (``CellLocator.cell_bins``), ranked
-    as the locator ranks them, and the shapes' functions by cell id."""
+    """A point's cell by the locator's two-level cell bins (``CellLocator.cell_bins``),
+    ranked as the locator ranks them, and the shapes' functions by cell id."""
 
     #: ``find_from`` tries the cell it is given before the bins; 0 searches every
     #: time (the tests compare the two, bit for bit).
@@ -276,8 +295,9 @@ class _MeshSearch:
         self.lo = locator.lo
         self.hi = locator.hi
         self.bin_offsets, self.bin_cells = locator.cell_bins()
+        self.leaf_dims, self.leaf_starts = locator.leaves()
         (self.ox, self.oy, self.oz, self.ix, self.iy, self.iz,
-         self.nx, self.ny, self.nz) = locator._grid()
+         self.nx, self.ny, self.nz) = locator._coarse_grid()
         self.slack = float(locator.slack)
         self.tolerance = float(tolerance)
         self.ncells = locator.data.num_cells
@@ -359,7 +379,14 @@ class _MeshSearch:
         bj = _bin(p[1], self.oy, self.iy, self.ny, self.slack)
         bk = _bin(p[2], self.oz, self.iz, self.nz, self.slack)
         if bi >= 0 and bj >= 0 and bk >= 0:
-            b = bi + self.nx * (bj + self.ny * bk)
+            # The coarse bin, then the leaf in it (CellLocator.cell_bins).
+            c = bi + self.nx * (bj + self.ny * bk)
+            lx = self.leaf_dims[3 * c]
+            ly = self.leaf_dims[3 * c + 1]
+            li = _leaf((p[0] - self.ox) * self.ix, bi, lx)
+            lj = _leaf((p[1] - self.oy) * self.iy, bj, ly)
+            lk = _leaf((p[2] - self.oz) * self.iz, bk, self.leaf_dims[3 * c + 2])
+            b = self.leaf_starts[c] + li + lx * (lj + ly * lk)
             for m in range(self.bin_offsets[b], self.bin_offsets[b + 1]):
                 e = self.bin_cells[m]
                 a = self.lo[e]

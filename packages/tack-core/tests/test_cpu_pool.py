@@ -185,6 +185,40 @@ def test_chunks_are_claimed_and_cover_the_range(monkeypatch):
     np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
 
 
+def test_a_chunk_holds_at_most_its_limit(monkeypatch):
+    """`most` caps a chunk, so a short range of dear elements -- 17 streamlines
+    on 8 threads went in chunks of 3 -- goes one element a claim; the backend
+    asks for about `_CHUNK_WORK_NS` of a kernel's estimated work, so a cheap
+    kernel keeps the pool's chunks."""
+    assert cpu_pool.CPool.chunk_size(17, 8) == 3
+    assert cpu_pool.CPool.chunk_size(17, 8, most=1) == 1
+    assert cpu_pool.CPool.chunk_size(1_000_000, 4, most=10**9) == \
+        cpu_pool.CPool.chunk_size(1_000_000, 4)
+
+    class Estimate:
+        ns_per_elem = 0.0
+    kernel = Estimate()
+    assert cpu_mod._chunk_limit(kernel) is None
+    kernel.ns_per_elem = 250e6                      # a quarter-second streamline
+    assert cpu_mod._chunk_limit(kernel) == 1
+    kernel.ns_per_elem = 1.0
+    assert cpu_mod._chunk_limit(kernel) >= cpu_pool.MIN_CHUNK
+
+    backend = _fresh_backend(4, monkeypatch)
+    n = 17
+    out = tack.zeros((n,), tack.i64)
+    compiled, prefix, _ = _compiled(backend, _number, [out])
+    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)    # makes the pool
+    pool = backend._cpool
+    assert pool is not None, backend.pool_kind
+    wrapper = cpu_pool.chunk_wrapper(compiled)
+    pack = cpu_pool.pack_args(compiled, prefix)
+    out.fill(0)
+    spans, elems = pool.run(wrapper, pack, 0, n, backend.num_threads, measure=True, most=1)
+    assert sum(elems) == n
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
+
+
 def test_concurrent_fan_outs_keep_their_own_launch_state(monkeypatch):
     """The pool's launch state is one set of globals for the process, so
     two threads fanning out at once must take turns: before they did,
