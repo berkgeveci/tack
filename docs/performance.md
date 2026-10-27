@@ -48,8 +48,9 @@ threads (TBB), Tack's CPU on 28 threads, Viskores 1.2.0 and Tack on CUDA.
 - **Tack on the GPU against VTK on the CPU**: 10–88×.
 
 Contour and slice of hexahedra on CUDA were 1.3–1.5× slower in this run than
-a week earlier (5M hexahedra's contour 5.4 → 7.8 ms), which is being looked
-into.
+a week earlier (5M hexahedra's contour 5.4 → 7.8 ms): merging their
+crossings now sorts by radix where, on CUDA, buckets are 1.3–1.7× faster
+(jura, 2026-10-27). The choice is being made per device.
 
 ## macOS: Apple M1 Max
 
@@ -92,6 +93,41 @@ the best each has here.
 - **Tack on Metal**: against VTK on the CPU, 1.5–154× on every filter but
   tetrahedra's cell to point (0.71×); against Viskores on the CPU, 1.4–36×.
 
+## Streamlines on the GPU, against Viskores
+
+Viskores' streamlines on CUDA against Tack's, on the ONERA M6 wing (46.9M
+tetrahedra and wedges, graded toward the wing in a far field a hundred
+chords wide) and the aneurysm (8.7M tetrahedra), by seed count. Viskores
+builds its cell locator, a two-level grid, on every call; the column shows
+how much of its time that is. Tack's topology keeps its locator, so a later
+call on the same mesh reuses it. Tack is shown both ways: building a new
+locator each call, as Viskores does, and with the locator kept.
+
+| mesh | seeds | Viskores (its locator) | Tack, new locator | Tack, locator kept | Viskores / Tack, new locator |
+|---|---|---|---|---|---|
+| M6 wing | 1 | 3,507 (3,036) | 112 | 15.0 | 31× |
+| | 17 | 4,129 (3,025) | 195 | 82.3 | 21× |
+| | 1,024 | 4,762 (3,031) | 239 | 148 | 20× |
+| | 16,384 | 4,727 (3,027) | 200 | 107 | 24× |
+| aneurysm | 1 | 1,694 (1,546) | 25.8 | 2.8 | 66× |
+| | 25 | 2,105 (1,556) | 49.6 | 22.9 | 42× |
+| | 2,000 | 2,881 (1,553) | 88.1 | 63.4 | 33× |
+| | 20,000 | 6,814 (1,552) | 578 | 562 | 12× |
+
+- **The paths agree.** On the M6, every path is the same length in both,
+  and they lie within 1.6e-6 of each other at 17 seeds and within 3.5e-6
+  at 16,384. On the aneurysm the agreement is within 2.1e-6 over the first
+  quarter at 25 seeds. At 20,000 seeds, paths through its recirculation
+  separate further: 19,730 of 20,000 are the same length (Viskores computes
+  in double precision, Tack in the geometry's single precision).
+- **Before Tack's two-level grid (#175)** it scanned the M6's crowded bins
+  near the wing: 28–105 s on this GPU.
+
+Machine: jura (NVIDIA RTX 6000 Ada). Viskores 1.2.0 (CUDA, double
+precision), run through a C++ driver of its `Streamline` filter. Tack
+`main` at `91808db` with #178 (2026-10-27). Times are warm, in ms; the
+first call compiles.
+
 ## Real data, against VTK
 
 Four datasets from production simulations, read with VTK's readers. Tack's
@@ -105,18 +141,20 @@ with VTK's output.
 | | pressure gradients | 1289 | 88 | 14.6× |
 | | low-density cells (threshold) | 107 | 83 | 1.3× |
 | | outer surfaces of a fresh mesh | 1122 | 1178 | 0.95× |
-| | streamlines, 17 seeds, by length ³ | 3900 | 1000 | 3.9× |
+| | streamlines, 17 seeds, by length ³ | 3900 | 3.6 | 1,083× |
 | aneurysm blood flow, 8.7M tetrahedra | isosurface, slice, gradients | | | 2.7×, 2.0×, 17× |
-| | streamlines, 25 seeds ³ | 3.6 | 1.7 | 2.1× |
+| | streamlines, 25 seeds ³ | 3.6 | 1.1 | 3.3× |
 | LANL wildfire, 18.7M curvilinear cells | plume, slice, gradients, fuel cells, surface | | | 4.3×, 1.9×, 33×, 4.0×, 5.9× |
 | 512 pieces of a simulation's output, 5.5M voxels | global ids | 10,400 | 9,000 | 1.2× |
 | | a layer of ghost cells | 27,300 | 28,700 | 0.95× |
 
-³ Tack's streamlines try the cell a particle was last found in before
-searching (#166). VTK's default interpolator finds cells through the nearest
-point, which ends 7 of the M6's 17 paths early, inside the mesh. With VTK's
-cell-locator interpolator, every path runs its full length, within 3.8e-6 of
-Tack's, in 22.9 s.
+³ Measured 2026-10-27, after the two-level grid (#175). Tack's
+streamlines try the cell a particle was last found in, then search its
+two-level cell grid, so a location near the M6's wing no longer scans
+thousands of cells (it was 1.0 s with one level of bins). VTK's default
+interpolator finds cells through the nearest point, which ends 7 of the
+M6's 17 paths early, inside the mesh. With VTK's cell-locator interpolator,
+every path runs its full length, within 3.8e-6 of Tack's, in 22.9 s.
 
 ## How these were measured
 
