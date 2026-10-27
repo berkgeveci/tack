@@ -679,6 +679,10 @@ class MetalBackend(GPUBackend):
         return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=_synchronize_all,
                            pool=self._pool)
 
+    def release_memory(self):
+        """Let Metal free the buffers the pool keeps."""
+        self._pool.clear()
+
     def texture_in_hardware(self, shape_3d) -> bool:
         return True
 

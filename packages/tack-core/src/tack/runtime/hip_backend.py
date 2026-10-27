@@ -4,7 +4,7 @@ Pipeline:
     Tack IR → HIP C source → hipRTC (code object) → hipModuleLoad → hipLaunchKernel
 
 Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
-``hipMallocAsync``.  Transfers are explicit:
+``hipMalloc``, through a cache of dropped arrays' buffers.  Transfers are explicit:
 
     tack.copyto(a, arr)     # host → device, queued
     arr = a.numpy()         # device → host, queued and waited for
@@ -27,6 +27,7 @@ import contextlib
 import ctypes
 import inspect
 import math
+import os
 import threading
 
 import numpy as np
@@ -39,6 +40,7 @@ from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u3
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime import device_fill
 from tack.runtime.backend import DeviceMemoryError
+from tack.runtime.buffer_cache import BufferCache
 from tack.runtime.gpu_backend import GPUBackend
 from tack.runtime.kernel_utils import (
     as_address,
@@ -272,13 +274,16 @@ class _Queue:
 
     The stream is a blocking one, so it stays ordered with the null stream
     that synchronous HIP calls (and other libraries) use. Memory comes from
-    the device's pool in stream order (``hipMallocAsync``/``hipFreeAsync``),
-    so an array Python drops while a queued launch still uses it is freed
-    after that launch; a device without pools allocates with ``hipMalloc``,
-    whose ``hipFree`` waits for the device.
+    ``hipMalloc`` through a cache of dropped arrays' buffers (``cache``,
+    ``buffer_cache.BufferCache``): every use of a buffer is queued on this
+    one stream, in order, so a dropped array's queued work runs before its
+    buffer's next array's, as a stream-ordered pool promises. ROCm 7.1.1's
+    pool (``hipMallocAsync``) slowed with every allocation it had made and
+    stalled the 512 eta pieces for two hours; ``TACK_HIP_ALLOCATOR=pool``
+    still selects it (``pooled``), where the device has pools.
     """
 
-    __slots__ = ("device", "pooled", "stream")
+    __slots__ = ("cache", "device", "pooled", "stream")
 
     def __init__(self, device):
         self.device = device
@@ -288,7 +293,9 @@ class _Queue:
         err, pools = hip.hipDeviceGetAttribute(
             hip.hipDeviceAttribute_t.hipDeviceAttributeMemoryPoolsSupported, device)
         _check_hip(err)
-        self.pooled = bool(pools)
+        self.pooled = bool(pools) and _ALLOCATOR == "pool"
+        self.cache = None if self.pooled else BufferCache(_cache_limit(device),
+                                                          _freeing(device))
         if self.pooled:
             # Keep freed memory in the pool rather than returning it to the
             # device at every synchronization: a filter allocates and drops
@@ -301,6 +308,35 @@ class _Queue:
                     ctypes.c_uint64(2**64 - 1)))
             except Exception:
                 pass                        # the pool releases at syncs; still correct
+
+
+# Where HIP arrays get their memory: "cache" (hipMalloc through a cache of
+# dropped arrays' buffers, the default) or "pool" (the device's stream-ordered
+# pool, hipMallocAsync, where it has one).
+_ALLOCATOR = os.environ.get("TACK_HIP_ALLOCATOR", "cache")
+
+
+def _cache_limit(device):
+    """Bytes a device's buffer cache may hold: a quarter of its memory."""
+    try:
+        with _on_device(device):
+            err, free, total = hip.hipMemGetInfo()
+        _check_hip(err)
+        return int(total) // 4
+    except Exception:
+        return 1 << 30
+
+
+def _freeing(device):
+    """``hipFree`` on ``device``, for its cache's evictions (it waits for the
+    device, so a buffer a queued launch still uses is freed after it)."""
+    def free(address):
+        try:
+            with _on_device(device):
+                hip.hipFree(address)
+        except Exception:
+            pass
+    return free
 
 
 # One queue per device, made on first use, with the device current.
@@ -349,19 +385,32 @@ class HIPBuffer(DeviceBuffer):
         self._shape = shape
         self._nbytes = int(math.prod(shape)) * self._numpy_dtype.itemsize
         self._queue = queue = queue or _queue()
-        # From the device's stream-ordered pool when it has one, unless asked
-        # not to: memory for a GPU-aware MPI (``pooled=False``,
-        # ``allocate_mpi_array``), whose UCX may not know pool memory.
+        # From the device's buffer cache (or its pool, TACK_HIP_ALLOCATOR=pool),
+        # unless asked not to: memory for a GPU-aware MPI (``pooled=False``,
+        # ``allocate_mpi_array``), whose UCX may not know pool memory, is plain
+        # hipMalloc's and goes back to hipFree.
         self._pooled = queue.pooled if pooled is None else (pooled and queue.pooled)
+        cache = queue.cache if pooled is None else None
+        # hip-python returns None for a zero-byte request, which a launch
+        # cannot pass as a pointer; an empty array gets one byte it never
+        # reads, as on CUDA and Level Zero.
+        size = max(self._nbytes, 1)
+        self._capacity = None
         with _on_device(queue.device):
-            # hip-python returns None for a zero-byte request, which a launch
-            # cannot pass as a pointer; an empty array gets one byte it never
-            # reads, as on CUDA and Level Zero.
+            err = hip.hipError_t.hipSuccess
             if self._pooled:
-                err, self._device_ptr = hip.hipMallocAsync(max(self._nbytes, 1),
-                                                           queue.stream)
+                err, self._device_ptr = hip.hipMallocAsync(size, queue.stream)
+            elif cache is not None:
+                self._capacity = size = cache.capacity(size)
+                self._device_ptr = cache.take(size)
+                if self._device_ptr is None:
+                    err, self._device_ptr = hip.hipMalloc(size)
+                    if (err != hip.hipError_t.hipSuccess and cache.held
+                            and err == hip.hipError_t.hipErrorOutOfMemory):
+                        cache.clear()           # what the cache holds, back first
+                        err, self._device_ptr = hip.hipMalloc(size)
             else:
-                err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
+                err, self._device_ptr = hip.hipMalloc(size)
             if err != hip.hipError_t.hipSuccess and err == hip.hipError_t.hipErrorOutOfMemory:
                 raise DeviceMemoryError(f"HIP is out of memory for {self._nbytes} bytes")
             _check_hip(err)
@@ -493,6 +542,12 @@ class HIPBuffer(DeviceBuffer):
     def __del__(self):
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
+                capacity = getattr(self, "_capacity", None)
+                if capacity is not None and not self._shared:
+                    # Back to the cache: its next array's work is queued after
+                    # every launch queued so far, which may still use it.
+                    self._queue.cache.give(self._device_ptr, capacity)
+                    return
                 with self._on_device():
                     if getattr(self, "_pooled", self._queue.pooled):
                         # In stream order: after every launch queued so far,
@@ -886,6 +941,12 @@ class HIPBackend(GPUBackend):
     def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
         return HIPBuffer(dtype.numpy_dtype, shape, getattr(self, "_queue", None))
+
+    def release_memory(self):
+        """Free the buffers this device's cache holds."""
+        queue = getattr(self, "_queue", None)
+        if queue is not None and queue.cache is not None:
+            queue.cache.clear()
 
     def mpi_direct(self, buffer) -> bool:
         """Pool memory (``hipMallocAsync``) is not for a GPU-aware MPI: HSA calls it

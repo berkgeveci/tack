@@ -46,7 +46,7 @@ Tack did not allocate with the same `Array` class.
 | CPU | `NumpyBuffer` | uninitialized NumPy storage | unspecified, untouched | `np.copyto` / `.copy()` |
 | Metal | `MetalBuffer` | `newBufferWithLength_options_`, shared storage mode; 1 MiB or more reused from a pool of freed buffers (`_BufferPool`) | zeros for a new buffer (`starts_zeroed`); a reused one holds what it held | `np.copyto` into the shared view / `.copy()`, after waiting for queued launches |
 | CUDA | `CUDABuffer` | `cuMemAllocAsync` on the context's stream | zeros, from a queued `cuMemsetD8Async` | `cuMemcpyHtoDAsync` (queued) / `cuMemcpyDtoHAsync` and a wait |
-| HIP | `HIPBuffer` | `hipMallocAsync` on the device's stream (`hipMalloc` without memory pools) | zeros, from a queued `hipMemsetAsync` | `hipMemcpyAsync` (queued) / `hipMemcpyAsync` and a wait |
+| HIP | `HIPBuffer` | `hipMalloc` through a cache of dropped arrays' buffers, reused in stream order (`hipMallocAsync` with `TACK_HIP_ALLOCATOR=pool`) | zeros, from a queued `hipMemsetAsync` | `hipMemcpyAsync` (queued) / `hipMemcpyAsync` and a wait |
 | Level Zero | `L0Buffer` | `zeMemAllocDevice` (at least one byte) | zeros, from a queued device fill | `zeCommandListAppendMemoryCopy` on the backend's queue, from a snapshot of the array / and a wait |
 
 The contract makes a new array's contents unspecified until a kernel,

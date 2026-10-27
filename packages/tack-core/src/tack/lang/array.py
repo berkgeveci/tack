@@ -867,7 +867,8 @@ def _allocate(backend, dtype, shape, **options):
     the cycle collector runs, and that collector counts objects, not device
     memory: a 16 GB GPU ran out with dropped meshes still on it. The wait
     lets frees a backend defers (Level Zero's, a device without memory
-    pools) complete before the retry."""
+    pools) complete before the retry, and buffers the collection returned to
+    a backend's cache (HIP's, Metal's) are freed (``release_memory``)."""
     try:
         return backend.allocate_array(dtype, shape, **options)
     except MemoryError:
@@ -875,6 +876,7 @@ def _allocate(backend, dtype, shape, **options):
 
         gc.collect()
         backend.synchronize()
+        backend.release_memory()        # what the collection gave back to a cache
         return backend.allocate_array(dtype, shape, **options)
 
 
