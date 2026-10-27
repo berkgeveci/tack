@@ -473,7 +473,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the default; called directly they allocated on the default device, and
   failed with "arrays on two devices" (six of `test_public_filters`'
   rewrites in a CUDA run, after an earlier test left CUDA the default).
-  `orient` failed the same way on a topology on another device. The "Write
+  `orient` failed the same way on a topology on another device, and
+  `without_hidden` and `refuse_hidden`, which the built-ins call, allocate
+  on their dataset's device too. The "Write
   a Filter" chapter's `triangulate` makes its `ConstantArray` on the data's
   device.
 - A compiled CPU kernel bound to another device's arrays raises a

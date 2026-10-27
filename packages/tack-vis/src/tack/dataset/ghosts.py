@@ -443,6 +443,7 @@ def _clear_marked(marks, bits, keep, out):
         out[c] = keep[c] if (marks[c] & bits) == 0 else 0
 
 
+@on_inputs_device
 def without_hidden(data, keep):
     """``keep`` (an i32 flag per cell of ``data``) with ``data``'s hidden and refined
     cells (``MASKED_CELLS``) cleared: ``keep`` itself when it has none."""
@@ -485,6 +486,7 @@ def visible(data, *arguments):
     return (out, *(carried.get(id(a), a) for a in arguments))
 
 
+@on_inputs_device
 def refuse_hidden(data, what):
     """Refuse ``data`` with hidden or refined cells where ``what`` (a phrase) cannot
     leave them out."""

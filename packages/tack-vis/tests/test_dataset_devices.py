@@ -290,6 +290,13 @@ def test_the_public_building_blocks_run_on_the_datasets_device(second, make):
     assert _on(second, td.carry(data, data.topology, points=td.Same(), cells=td.Take(every)))
     polyhedra = td.as_polyhedra(data).topology
     assert td.orient(polyhedra).device == polyhedra.device == second
+    # And what the built-ins call on marked data, outside an algorithm's scope.
+    from tack.dataset.ghosts import refuse_hidden, without_hidden
+
+    flags = tack.array(np.ones(data.num_cells, np.int32), device=second)
+    assert _on(second, without_hidden(data, flags))
+    with pytest.raises(NotImplementedError, match="hidden"):
+        refuse_hidden(data, "this")
 
 
 def test_a_dataset_refuses_parts_on_two_devices(second):
