@@ -115,6 +115,13 @@ class WarpBuffer(DeviceBuffer):
         return self.array.ptr or 0
 
     @property
+    def host_address(self) -> int:
+        """On Warp's CPU the array is host memory, which a CPU kernel can use."""
+        if self._backend.wp_device.is_cuda:
+            return super().host_address
+        return self.address
+
+    @property
     def nbytes(self) -> int:
         return math.prod(self._shape) * self._dtype.numpy_dtype.itemsize
 

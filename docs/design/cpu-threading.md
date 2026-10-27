@@ -506,13 +506,28 @@ quarter of the way from the old value toward the mean of the two slices.
    back-off, counted separately (`serial_since_rp`, `rp_recheck_after`), and
    fans out the whole range. A range that size costs at least a margin's
    worth of fan-outs serially, so a losing recheck costs about one fan-out.
-2. **Measured, or too small to probe:** run the whole range serially.
+2. **Measured:** run the whole range serially, as one sample. This is every
+   small dispatch's path, so it stays one timed call.
+3. **Too small to probe, on first sight** (`_short_range`).
    `_probe_min_range()` is `max(num_threads, F · 2.0 / 24 ns)`, with `F` the
    calibrated or default fan-out — the range at which a hypothetical
    24 ns/element kernel (`_PROBE_REFERENCE_NS_PER_ELEM`) could repay a
-   fan-out. Dearer kernels pay one serial dispatch before they have an
-   estimate.
-3. **First sight** of an unmeasured kernel on a range large enough to
+   fan-out. One element is timed first (a range of fewer than two runs
+   whole: element 0 of an empty range is no element).
+   - Under `_COSTLY_ELEMENT_NS` (100 µs), that sample is forgotten, and the
+     rest runs serially as the kernel's first sample, as the whole range did
+     before.
+   - A dearer element starts slices of 2, 4, … elements until one's work
+     lasts `_TRUSTED_SAMPLE_NS` (20 ms), long enough that neither fixed
+     costs nor descheduling move its rate much (`trusted_sample`). The rest
+     then fans out if it reaches the threshold and needs no confirmation.
+
+   Before, a short range of dear elements ran whole twice before its first
+   fan-out: 17 streamlines on the ONERA M6 wing at a quarter second each,
+   8.8 and 8.5 s, against 2.4 and 2.1 s now (M1 Max, 8 threads,
+   2026-10-27). A measured kernel's first heavy short range (an estimate from
+   light work) still runs whole once.
+4. **First sight** of an unmeasured kernel on a range large enough to
    matter. A slice of `max(probe_min // 16, loop_end // 64)` elements is
    timed at the first golden-ratio position, a little past 60% of the way
    in, not at the front. If `_needs_confirmation` now holds, head and tail
@@ -535,6 +550,7 @@ Each mechanism above exists because a specific failure was measured:
 | **Scattered samples.** A sample after a fan-out, or on untouched pages, reads dear; believed, it keeps the backend fanning out, which keeps the next sample scattered. | `scattered` tracking; scattered samples only lower an affordable estimate; confirmation before the first near-threshold fan-out; first clean sample believed. | `scattered`, `rate_confirmed`, `_run_serial`, `_needs_confirmation` |
 | **Contention.** Threads on one atomic counter or a few shared lines run slower than one thread, `r_p` above `r_s`; the floor turned that rate into the serial estimate and the kernel fanned out on every call, 8–9x slower (jura, 2026-10-24). | In a kernel with atomics, an `r_p` above `r_s` sets no floor but a whole-range serial run on the next dispatch; slower threaded, the kernel is `contended` and serial, until a P9 recheck fans out faster. | `_record_parallel_cost`, `_arbitrate`, `_threshold` |
 | **Stale floors.** A floor learned on expensive inputs survives when the same compiled kernel gets cheap inputs, and keeps it threading. | A whole-range fan-out with every span short retires the floor and schedules a serial sample. | `retire_floor` in `_parallel_execute`, `_record_parallel_cost` |
+| **A short range of dear elements.** 17 streamlines of a quarter second each ran whole on one thread twice: unmeasured, then in a recheck whose guard believes no rate above the reference kernel's until a fan-out measured one. Fanned out, the pool cut 17 elements into chunks of 3 over 8 threads, so the three dearest ran on one. | One element timed on first sight, slices up to a trusted sample, the rest fanned out; a trusted sample's rate believed by the recheck guard; chunks capped at `_CHUNK_WORK_NS` (20 µs) of estimated work (`CPool.run`'s `most`). | `_short_range`, `_TRUSTED_SAMPLE_NS`, `_sample_elems`, `_chunk_limit` |
 | **Fixed cost dominating short samples.** For a cheap kernel the call is most of a sample; for a short chunk the GIL hand-back is most of a span. | Call overhead subtracted; slices sized to 10x it; worker rates ignored below 1 µs; spans trusted as a floor only above `trusted_span`. | `_measure_call_overhead`, `_SAMPLE_OVERHEAD_RATIO`, `_RP_MIN_WORKER_NS`, `_RP_BOUND_SPAN_RATIO` |
 | **Load, descheduling, a moving fan-out cost.** Load and idle states change the fan-out cost mid-program; a descheduled worker dominates a max; a high estimate stops the fan-outs that would lower it. | Idle curve; free and scheduled refreshes, including the hot knot's recovery probe; median worker; work-share condition; derived margin. | `_fan_out_estimate`, `_record_fan_out`, `_refresh_fan_out`, `_margin` |
 | **Calibration dearer than the work.** Sleeping through idle gaps cost a 100k-element add a thousand times its own runtime (`_FAN_OUT_IDLE_PRIOR`'s comment). | Pessimistic priors replaced by measurements at real pauses; confirmation checked before calibration. | `_seed_fan_out_curve`, `_prior_knot_near`, order of checks in `_run` |

@@ -1057,7 +1057,9 @@ def test_a_wrong_decision_to_thread_gets_corrected(cpu, monkeypatch):
         pytest.skip("machine has one core")
     n = 4096
     compiled, args = _measured(backend, _scale, n)
-    honest = compiled.ns_per_elem
+    # A rate the scripted clock, which ticks in whole nanoseconds, gives back
+    # exactly over n elements (the first sample may have been of fewer).
+    honest = round(compiled.ns_per_elem * n) / n
     _pin_fan_out(monkeypatch, backend)
     _controlled_serial_clock(backend, lambda a, b: honest)
 
@@ -1075,6 +1077,67 @@ def test_a_wrong_decision_to_thread_gets_corrected(cpu, monkeypatch):
     assert compiled.ns_per_elem == pytest.approx(honest, rel=1e-6), (
         f"estimate {compiled.ns_per_elem:.3f} after a clean sample of "
         f"{honest:.3f}: the 8x-below rule did not believe it outright")
+
+
+def _short_range_dispatch(monkeypatch, rate_ns, n=16):
+    """A kernel's first dispatch over `n` elements, too few for a probe slice,
+    with every serial sample scripted at `rate_ns` an element and the fan-out
+    cost pinned: `(serial slices, fanned ranges, compiled)`."""
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    args = [x, out, n]
+    compiled = _compile_for(backend, _scale, args)
+    backend._measure_call_overhead(compiled, compiled.bind(args))
+    _pin_fan_out(monkeypatch, backend)
+    assert n < backend._probe_min_range(), "the range must be too short for a probe"
+    _controlled_serial_clock(backend, lambda a, b: rate_ns)
+    serial, parallel = [], []
+    real_serial, real_parallel = backend._run_serial, backend._parallel_execute
+    backend._run_serial = lambda c, p, a, b: (serial.append((a, b)), real_serial(c, p, a, b))[1]
+    backend._parallel_execute = lambda c, p, a, b, **kw: (parallel.append((a, b)),
+                                                        real_parallel(c, p, a, b, **kw))[1]
+    backend._dispatch(compiled, args, n)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.float32) * 2.0 + 1.0)
+    return serial, parallel, compiled
+
+
+def test_a_short_range_of_dear_elements_fans_out_on_first_sight(cpu, monkeypatch):
+    """17 streamlines of a quarter second each ran whole on one thread, 21 s
+    against 1 s threaded, because a range that short could not repay a
+    fan-out for a reference kernel. Now a first element of 5 ms starts
+    slices of 2 and 4 elements; the 4 (20 ms) are long enough to trust,
+    and the rest fans out."""
+    serial, parallel, compiled = _short_range_dispatch(monkeypatch, 5e6)
+    assert serial == [(0, 1), (1, 3), (3, 7)], serial
+    assert parallel == [(7, 16)], parallel
+    assert compiled.trusted_sample
+    assert compiled.ns_per_elem == pytest.approx(5e6)
+
+
+def test_a_short_range_of_cheap_elements_still_runs_whole(cpu, monkeypatch):
+    """The probe costs a cheap kernel nothing it did not pay before: its one
+    timed element is forgotten, the rest runs on this thread as the first
+    sample, and nothing fans out."""
+    serial, parallel, compiled = _short_range_dispatch(monkeypatch, 10.0)
+    assert serial == [(0, 1), (1, 16)], serial
+    assert parallel == []
+    assert not compiled.trusted_sample
+    assert compiled.ns_per_elem == pytest.approx(10.0, rel=0.01)
+    assert not compiled.scattered
+
+
+@pytest.mark.parametrize("n", [0, 1])
+def test_an_empty_or_one_element_range_is_not_split(cpu, monkeypatch, n):
+    """Nothing to split, so no element is timed alone: element 0 of an empty
+    range is no element, and running it hung a multi-dimensional range with
+    a zero extent (test_parallel_dims' empty ranges)."""
+    serial, parallel, _ = _short_range_dispatch(monkeypatch, 5e6, n=n)
+    assert serial == [(0, n)], serial
+    assert parallel == []
 
 
 def test_negative_control_no_rechecks_means_no_correction(cpu, monkeypatch):
