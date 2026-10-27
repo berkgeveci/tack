@@ -96,6 +96,7 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
         r0 = h - h
         r1 = h
         div = 1.0
+        last = mesh.ncells        # the cell the particle was last found in
         # A resumed particle that stopped -- outside, at zero velocity, handed on,
         # or with its steps done -- stays where it is; one that stopped at an
         # earlier call's step limit goes on.
@@ -122,10 +123,13 @@ def _advect(mesh, velocity, h, max_steps, rk4, by_length, eps, xs, times, steps,
                 p = out
 
             # Its cell, ranked as the locator ranks them -- holding the point
-            # ahead of coming within the tolerance, then the smaller id -- and
-            # the velocity there (by_id).
-            best, best_type, best_pc, best_tet = mesh.find(p)
+            # ahead of coming within the tolerance, then the smaller id -- tried
+            # first in the cell it was last found in, and the velocity there
+            # (by_id).
+            best, best_type, best_pc, best_tet = mesh.find_from(p, last)
             found = 1 if best < mesh.ncells else 0
+            if found == 1:
+                last = best
             v = p - p
             if found == 1:
                 v = velocity.value(mesh, best, best_type, best_pc, best_tet)

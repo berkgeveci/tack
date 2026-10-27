@@ -85,6 +85,34 @@ def test_rk4_through_a_linear_field_is_exact(backend, mesh):
     np.testing.assert_allclose(out.fields["time"].values.numpy(), 2.4, rtol=1e-5)
 
 
+def _graded():
+    """Cells growing geometrically from z = 0, a boundary layer's, as tetrahedra."""
+    axis = np.linspace(-2.0, 2.0, 9)
+    z = np.concatenate(([0.0], 1e-4 * 1.6 ** np.arange(24)))
+    return td.tetrahedralize(td.rectilinear_grid(axis, axis, z - 0.5))
+
+
+@pytest.mark.parametrize("mesh", [*MESHES, "graded tetrahedra"])
+def test_trying_the_last_cell_first_changes_nothing(backend, mesh, monkeypatch):
+    """Advection tries the cell a particle was last found in before the bins
+    (``_MeshSearch.find_from``); the traces are the search's, bit for bit, on
+    every shape and on cells graded a millionfold, leaving the mesh included."""
+    from tack.dataset.by_id import _MeshSearch
+
+    data = _graded() if mesh == "graded tetrahedra" else MESHES[mesh]()
+    center = (0.0, 0.0) if mesh.startswith(("structured", "graded")) else (2.0, 2.0)
+    _rotation(data, center)
+    seeds = np.array([[center[0] + 1.0, center[1], 0.1], [center[0] + 0.3, center[1] + 0.6, 0.2],
+                      [center[0] + 1.9, center[1] + 0.5, -0.45]])
+    traces = []
+    for previous in (0, 1):
+        monkeypatch.setattr(_MeshSearch, "PREVIOUS_CELL", previous)
+        out = td.streamlines(data, "v", seeds, 0.03, 200)
+        traces.append((out.geometry.values.numpy(), out.fields["time"].values.numpy()))
+    np.testing.assert_array_equal(traces[0][0], traces[1][0])
+    np.testing.assert_array_equal(traces[0][1], traces[1][1])
+
+
 @pytest.mark.parametrize("polyhedra", [False, True])
 def test_a_mixed_mesh(backend, polyhedra):
     data = _two_hexes_and_a_pyramid()

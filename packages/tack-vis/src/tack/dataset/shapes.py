@@ -113,6 +113,11 @@ NEWTON_DIVERGED = tack.constant(1e6)
 #: own tolerance: a point this close to a neighbour is extrapolated by at most
 #: this much in it.
 HOLD_TOLERANCE = tack.constant(1e-5)
+#: How far inside its parametric domain a point must lie for a cell to be the
+#: only one holding it (``_MeshSearch.find_from``): a neighbour across a face
+#: holds it only if its own 1e-5 reaches that far, which takes a neighbour a
+#: hundred times as deep across the face.
+WELL_INSIDE = tack.constant(1e-3)
 #: A point this close to a pyramid's apex, relative to the pyramid's size, is
 #: taken to be at it (``Pyramid.world_to_parametric``): there every ``(r, s)``
 #: at ``t = 1`` is the same point, Newton's Jacobian is singular, and it did
