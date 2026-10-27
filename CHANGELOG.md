@@ -467,6 +467,24 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- Advection on a GPU runs in launches of a bounded number of steps, each
+  going on where the last paused, sized to about 0.2 s at the last launch's
+  pace (the first takes 16 steps). One launch carried every particle's whole
+  path, and a GPU driver resets a device whose launch runs past its limit:
+  the ONERA M6's streamlines lost headroom's Level Zero device every time
+  (7.5 s there; 2 s by default on Windows), and a lost device takes every
+  array of the process with it. The office port's one launch took 4.9 s.
+  A pause keeps each particle's position, time, steps and status, whether it
+  stepped in this call (a hand-off between pieces needs it) and the cell it
+  was last found in, so the paths are one launch's, bit for bit, on the CPU
+  and on Metal. The CPU still runs one launch.
+- A particle pushed across a mesh boundary that landed inside and went on
+  took its next whole steps from a stale state: its RK4 stages placed at the
+  bisection's last trial size rather than the step's, and, when a trial's
+  stage had left the mesh, starting mid-step on the trial's stage
+  velocities. Some such particles then stopped as if seeded outside
+  (`SUCCESS` cleared). Particles that run along a curved wall, an
+  aneurysm's, changed path: 82 of 20,000 seeds there.
 - `carry`, `visible`, `owned_values` and `orient` run on their dataset's
   device. Made public for filters of one's own (#163), the first three had
   only been called from inside algorithms that had already made that device

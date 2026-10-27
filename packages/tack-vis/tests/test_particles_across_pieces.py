@@ -107,6 +107,35 @@ def test_pieces_with_a_ghost_layer_give_the_wholes_particles(make):
     assert got[2][1] < 200
 
 
+@pytest.mark.parametrize("budget", [1, 3])
+def test_launches_of_a_few_steps_hand_particles_on_alike(budget, monkeypatch):
+    """Advection in launches of a few steps (a GPU's) pauses particles after whole
+    steps; a hand-off needs a step taken in this call, which a pause must not
+    forget. Over ghosted pieces the particles and the streamlines' stretches
+    are one launch's, bit for bit."""
+    from tack.dataset.algorithms import _advection
+
+    pieces = td.split(helix(), (2, 2, 2), ghost_layers=1)
+    monkeypatch.setattr(_advection, "_CHUNKED_ON_CPU", True)
+    monkeypatch.setattr(_advection, "_GROWTH", 1)
+    runs = []
+    for first in (10**9, budget):
+        monkeypatch.setattr(_advection, "_FIRST_STEPS", first)
+        particles = by_seed(td.advect(pieces, "v", SEEDS, 0.02, 200))
+        paths = td.streamlines(pieces, "v", SEEDS[:4], 0.02, 200)
+        runs.append((particles, [(p.positions(), p.fields["time"].values.numpy(),
+                                  p.fields["seed"].values.numpy(),
+                                  p.fields["segment"].values.numpy()) for p in paths]))
+    (one, one_paths), (few, few_paths) = runs
+    assert sorted(one) == sorted(few)
+    for q in one:
+        for a, b in zip(one[q], few[q]):
+            np.testing.assert_array_equal(a, b)
+    for a, b in zip(one_paths, few_paths):
+        for x, y in zip(a, b):
+            np.testing.assert_array_equal(x, y)
+
+
 @pytest.mark.quick
 def test_pieces_without_ghost_cells_cross_by_the_short_step():
     grid = helix()
