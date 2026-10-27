@@ -270,6 +270,10 @@ class _Topology:
     _locator = None
     #: The `PointLocator` it keeps (`point_locator.cached_point_locator`).
     _point_locator = None
+    #: The boundary `extract_surface` found from the cells alone
+    #: (`extract_surface._fresh_boundary`): the surface's topology and each of
+    #: its faces' cells, so that a repeated call only carries the fields.
+    _boundary = None
 
     #: The arrays it is built from, which say its device.
     _STORED = ()

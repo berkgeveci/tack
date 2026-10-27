@@ -120,7 +120,9 @@ def _fresh_boundary(data, fields):
     hashes faces the same way. ``None`` where the full path is needed: faces
     derived already (then they are free), ghost marks (placed through the
     faces), order-2 fields, or buckets too crowded to sort a thread each
-    (``topology._face_buckets_affordable``)."""
+    (``topology._face_buckets_affordable``). The topology keeps what it found
+    (``_boundary``), so a repeated call costs only the carry, as it did when
+    the first call derived the faces."""
     from tack.dataset.topology import (
         _face_bucket_counts,
         _face_buckets_affordable,
@@ -134,6 +136,9 @@ def _fresh_boundary(data, fields):
             or any(isinstance(f.space, H1) and f.space.order != 1
                    for f in data.fields.values())):
         return None
+    if topology._boundary is not None:
+        surface, cells = topology._boundary
+        return carry(data, surface, points=Same(), cells=Pieces(cells), fields=fields)
     groups = [g for g in topology.groups() if g.shape.NUM_FACES and g.shape.DIMENSION == 3]
     starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_FACES
                                              for g in groups])]).astype(int)
@@ -193,6 +198,7 @@ def _fresh_boundary(data, fields):
                 _boundary_rows(group.view(), int(start), slot_entry, offsets, types,
                                connectivity, cells)
     surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
+    topology._boundary = (surface, cells)
     return carry(data, surface, points=Same(), cells=Pieces(cells), fields=fields)
 
 

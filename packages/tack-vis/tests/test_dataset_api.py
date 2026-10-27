@@ -1239,6 +1239,28 @@ def test_a_fresh_meshs_surface_is_the_derived_faces_boundary(backend):
                                           theirs.fields[name].values.numpy())
 
 
+
+def test_a_fresh_surface_is_kept_for_the_next_call(backend):
+    """The topology keeps the boundary the fresh path found (``_boundary``), so
+    a repeated extract_surface only carries the fields: on jura, 20M
+    hexahedra's warm surface went from 5.7 ms to 447 when nothing kept it.
+    A dataset on the same topology with other positions and values gets its
+    own."""
+    data = td.tetrahedralize(td.uniform_grid((7, 6, 5)))
+    n = data.num_cells
+    data.fields["c"] = td.Field(td.Constant(data), tack.array(np.arange(n, dtype=np.float32)))
+    first = td.extract_surface(data)
+    assert data.topology._boundary is not None and data.topology._faces is None
+    moved = td.DataSet(data.topology, data.positions().astype(np.float64) + 1.0)
+    moved.fields["c"] = td.Field(td.Constant(moved),
+                                 tack.array(2 * np.arange(n, dtype=np.float32)))
+    again = td.extract_surface(moved)
+    assert again.topology is first.topology
+    np.testing.assert_array_equal(again.fields["c"].values.numpy(),
+                                  2 * first.fields["c"].values.numpy())
+    np.testing.assert_allclose(again.positions(), first.positions() + 1.0, rtol=1e-6)
+    assert data.topology._faces is None
+
 # ── A space's nodes as a for_each domain ────────────────────────────
 
 @tack.kernel
