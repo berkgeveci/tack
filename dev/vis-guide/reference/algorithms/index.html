@@ -12992,6 +12992,10 @@ along.</p>
 piece to piece, in rounds: each goes to the lowest piece one of whose own
 cells (not a ghost) holds it, steps until it leaves that piece, and is
 handed on, until none is in flight on any rank.</p>
+<p>Each particle is one thread that takes all its steps, so on a GPU a few
+seeds use a few threads of a device built for thousands, each slower than
+a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
+(the Visualization Guide's "Integrate a steady velocity field").</p>
 
 
             <details class="mkdocstrings-source">
@@ -13040,7 +13044,12 @@ handed on, until none is in flight on any rank.</p>
 <span class="normal">58</span>
 <span class="normal">59</span>
 <span class="normal">60</span>
-<span class="normal">61</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">advect</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">steps</span><span class="p">,</span> <span class="n">integrator</span><span class="o">=</span><span class="s2">&quot;rk4&quot;</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Seeds moved through the velocity ``field`` (a 3-vector field or its name: point</span>
 <span class="sd">    data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as</span>
@@ -13060,7 +13069,12 @@ handed on, until none is in flight on any rank.</p>
 <span class="sd">    Over a ``PartitionedDataSet`` (``field`` by name), particles cross from</span>
 <span class="sd">    piece to piece, in rounds: each goes to the lowest piece one of whose own</span>
 <span class="sd">    cells (not a ghost) holds it, steps until it leaves that piece, and is</span>
-<span class="sd">    handed on, until none is in flight on any rank.&quot;&quot;&quot;</span>
+<span class="sd">    handed on, until none is in flight on any rank.</span>
+
+<span class="sd">    Each particle is one thread that takes all its steps, so on a GPU a few</span>
+<span class="sd">    seeds use a few threads of a device built for thousands, each slower than</span>
+<span class="sd">    a CPU core: below a few thousand seeds a CPU copy of the mesh is faster</span>
+<span class="sd">    (the Visualization Guide&#39;s &quot;Integrate a steady velocity field&quot;).&quot;&quot;&quot;</span>
     <span class="c1"># A step as a time (&quot;0.5 s&quot;) is in the spatial unit over the velocity&#39;s.</span>
     <span class="k">if</span> <span class="n">_has_quantity</span><span class="p">(</span><span class="n">step_size</span><span class="p">):</span>
         <span class="n">step_size</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">magnitude</span><span class="p">(</span><span class="n">step_size</span><span class="p">,</span> <span class="n">_time_unit</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">),</span> <span class="s2">&quot;advect&#39;s step size&quot;</span><span class="p">)</span>

@@ -3897,6 +3897,63 @@ default: slow flow takes steps as long as fast flow, and <code>steps * step_size
 is the longest path. <code>time</code> on the points is still the time the particle
 takes. Where speeds vary widely, a time step sized for the fastest makes
 tiny steps elsewhere, so length steps reach as far in far fewer steps.</p>
+<p><strong>Choose the device by the number of seeds.</strong> Each particle is one thread
+that takes all its steps, so a few seeds use a few threads of a GPU built
+for thousands, and a single GPU thread is slower than a CPU core. Below a
+few thousand seeds the CPU is usually faster; above, the GPU. On a
+28-core EPYC against an RTX 6000 Ada (ms, warm):</p>
+<table>
+<thead>
+<tr>
+<th>mesh</th>
+<th>seeds</th>
+<th>CPU</th>
+<th>CUDA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>aneurysm, 8.7M tetrahedra</td>
+<td>25</td>
+<td>8.4</td>
+<td>32.0</td>
+</tr>
+<tr>
+<td></td>
+<td>2,000</td>
+<td>57.2</td>
+<td>75.8</td>
+</tr>
+<tr>
+<td></td>
+<td>20,000</td>
+<td>871</td>
+<td>331</td>
+</tr>
+<tr>
+<td>ONERA M6 wing, 46.9M cells</td>
+<td>17</td>
+<td>41.7</td>
+<td>84.4</td>
+</tr>
+<tr>
+<td></td>
+<td>1,024</td>
+<td>92.9</td>
+<td>149</td>
+</tr>
+<tr>
+<td></td>
+<td>16,384</td>
+<td>1,190</td>
+<td>108</td>
+</tr>
+</tbody>
+</table>
+<p>On an Intel Data Center GPU Max 1100 the gap is wider: the M6's 17 seeds
+took 708 ms against its host CPU's 24.5. For a few seeds on a mesh that
+lives on a GPU, advect a CPU copy of it (<code>data.to_device("cpu")</code>); the
+locator is built where the mesh is.</p>
 <p>The example's <code>[-y, x, 0]</code> velocity rotates a point at unit angular speed.
 Twenty steps of 0.05 reach time 1. The program checks the final positions
 against sine and cosine, and checks path lengths against the radii times
