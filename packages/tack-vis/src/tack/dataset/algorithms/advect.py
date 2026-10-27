@@ -34,7 +34,12 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
     Over a ``PartitionedDataSet`` (``field`` by name), particles cross from
     piece to piece, in rounds: each goes to the lowest piece one of whose own
     cells (not a ghost) holds it, steps until it leaves that piece, and is
-    handed on, until none is in flight on any rank."""
+    handed on, until none is in flight on any rank.
+
+    Each particle is one thread that takes all its steps, so on a GPU a few
+    seeds use a few threads of a device built for thousands, each slower than
+    a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
+    (the Visualization Guide's "Integrate a steady velocity field")."""
     # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
     if _has_quantity(step_size):
         step_size = units.magnitude(step_size, _time_unit(data, field), "advect's step size")

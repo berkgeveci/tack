@@ -609,6 +609,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `key_order`, which merges contour and slice crossings, keeps the bucket
+  sort on CUDA, HIP and Level Zero until buckets outnumber keys 64 to 1
+  (8 to 1 on the CPU and Metal, as before). On CUDA the buckets were
+  1.3-1.7x faster for a contour or slice of hexahedra at 13-20 buckets a
+  key, where the radix sort had made them slower since it was introduced
+  for memory (5M hexahedra's contour 5.4 to 7.8 ms); on the CPU radix is
+  faster there (0.7-0.8x), and Metal goes either way.
+- The Visualization Guide and `advect`'s docstring say when to advect on
+  the CPU: each particle is one thread, so below a few thousand seeds a CPU
+  copy of the mesh is usually faster than a GPU (the aneurysm's 25 seeds
+  8.4 ms on 28 cores against 32 on an RTX 6000 Ada; 20,000 seeds 871
+  against 331).
 - `CellLocator` takes its cells' bounds on the device, a GPU's threads
   each over every k-th box and the CPU's over a block, and reads back only
   the partial results. It read every box back and reduced them with NumPy:
