@@ -368,8 +368,9 @@ def _jittered_share(every, world, share):
 
 
 def global_ids_across(world):
-    """The three routes over this rank's share of six pieces: each piece's ids by
-    position, ``{route: {gid: ids}}``."""
+    """The routes over this rank's share of six pieces: each piece's ids by
+    position, ``{route: {gid: ids}}``. "plain" numbers the pieces without ghost
+    cells, which is what "near" (the same pieces jittered) must give."""
     whole = td.wavelet(4)
     every = list(_unstructured(td.split(whole, 6)))
     share = len(every) // world.size
@@ -380,6 +381,7 @@ def global_ids_across(world):
         "matched": td.generate_global_ids(td.PartitionedDataSet(list(td.ghost_cells(plain)),
                                                                 world)),
         "carried": td.ghost_cells(td.generate_global_ids(plain)),
+        "plain": td.generate_global_ids(plain),
         "near": td.generate_global_ids(_jittered_share(every, world, share), tolerance=1e-5),
     }
     blocks = tc.Blocks([p.device for p in mine], world)
