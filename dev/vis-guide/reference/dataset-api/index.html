@@ -6232,6 +6232,10 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 <td>which cells are connected through shared points, as VTK's <code>vtkConnectivityFilter</code> (all regions, colored) and Viskores' <code>CellSetConnectivity</code>: <code>data</code> with <code>region</code> on the cells and <code>point_region</code> on the points, numbered from 0 in order of their lowest cell (VTK's numbering); -1 for hidden cells and unused points; union-find on the device. Of a <code>PartitionedDataSet</code> too: regions numbered across every piece and rank, in order of their lowest global cell id where pieces have global ids (the whole's numbering for the whole's ids)</td>
 </tr>
 <tr>
+<td><code>merge_points(data, tolerance=0)</code></td>
+<td>coincident points made one, as VTK's <code>vtkStaticCleanUnstructuredGrid</code> and Viskores' <code>CleanGrid</code> merge them: points at most <code>tolerance</code> apart join, chains of them too (union-find through the point locator's bins, each set's root its smallest point whatever the order), and each set becomes its smallest point, keeping its position, point fields, marks and global id; the cells are the same on the merged points. For meshes written without merging their points, which must be merged before their pieces can be matched: the 512 pieces of a simulation's output, each storing a point about 2.6 times, merged piece by piece then numbered by <code>generate_global_ids</code>, give the merged mesh's 6,310,285 points. Unstructured topologies</td>
+</tr>
+<tr>
 <td><code>ghost_cells(pds, layers=1, tolerance=0)</code></td>
 <td>unstructured pieces with a layer of their neighbours' cells, as <code>vtkGhostCellsGenerator</code> (see <em>Partitioned datasets</em>); with <code>tolerance</code>, pieces share points at most that far apart, for copies that differ in their last bits</td>
 </tr>

@@ -2615,6 +2615,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.merge_points.merge_points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        merge_points
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5011,6 +5022,17 @@
     <span class="md-ellipsis">
       
         check_winding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.merge_points.merge_points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        merge_points
       
     </span>
   </a>
@@ -8060,7 +8082,7 @@ result keeps every field; the normals are dimensionless.</p>
     </div>
 
 </div><h2 id="connectivity-and-winding">Connectivity and winding<a class="headerlink" href="#connectivity-and-winding" title="Permanent link">&para;</a></h2>
-<p>Which cells belong together, and which are wound wrong.</p>
+<p>Which cells belong together, which are wound wrong, and which points are one.</p>
 <table>
 <thead>
 <tr>
@@ -8085,6 +8107,13 @@ result keeps every field; the normals are dimensionless.</p>
 <td>dataset</td>
 <td>—</td>
 <td>—</td>
+</tr>
+<tr>
+<td><a href="#tack.dataset.algorithms.merge_points.merge_points"><code>merge_points</code></a></td>
+<td>coincident points (or points within a tolerance) made one</td>
+<td>dataset</td>
+<td>vtkStaticCleanUnstructuredGrid</td>
+<td>CleanGrid</td>
 </tr>
 </tbody>
 </table>
@@ -8336,6 +8365,189 @@ shape-based cells take their faces from their shape's table, so are refused.</p>
         <span class="n">offsets</span><span class="p">,</span> <span class="n">runs</span> <span class="o">=</span> <span class="n">run_offsets</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
         <span class="n">_unbalanced</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">directions</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">bad</span><span class="p">,</span> <span class="n">runs</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Set</span><span class="o">.</span><span class="n">_from_flags</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">bad</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.dataset.algorithms.merge_points.merge_points" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">merge_points</span>
+
+
+<a href="#tack.dataset.algorithms.merge_points.merge_points" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">merge_points</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p><code>data</code> with each set of coincident points made one: points at most
+<code>tolerance</code> apart (inclusive; 0, the default, merges only points of equal
+coordinates) join, and so do chains of them, so a set may span more than
+<code>tolerance</code>. A set becomes the point of its smallest id, which keeps that
+point's position, point fields, ghost marks and global id; the merged points
+keep the order of those ids, and the cells are the same cells on them, a
+cell's corners that merged kept as they are. Cell fields are unchanged.</p>
+<p>For meshes written without merging their points (each piece of a
+simulation's output storing a point once for every cell or block that
+uses it), which nothing can stitch by matching points across cells or
+pieces until each point is one. <code>tolerance</code> is in the dataset's spatial
+unit, or a quantity (<code>"1e-9 m"</code>); it should be far below the distance
+between points that are not copies, since every point compares itself with
+every point that close. Takes an unstructured topology; a structured grid's
+points are its lattice, and polyhedral, polygonal and polyline topologies
+are not handled yet. Hidden cells are dropped first, as every filter that
+makes cells drops them.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/merge_points.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 42</span>
+<span class="normal"> 43</span>
+<span class="normal"> 44</span>
+<span class="normal"> 45</span>
+<span class="normal"> 46</span>
+<span class="normal"> 47</span>
+<span class="normal"> 48</span>
+<span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">merge_points</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` with each set of coincident points made one: points at most</span>
+<span class="sd">    ``tolerance`` apart (inclusive; 0, the default, merges only points of equal</span>
+<span class="sd">    coordinates) join, and so do chains of them, so a set may span more than</span>
+<span class="sd">    ``tolerance``. A set becomes the point of its smallest id, which keeps that</span>
+<span class="sd">    point&#39;s position, point fields, ghost marks and global id; the merged points</span>
+<span class="sd">    keep the order of those ids, and the cells are the same cells on them, a</span>
+<span class="sd">    cell&#39;s corners that merged kept as they are. Cell fields are unchanged.</span>
+
+<span class="sd">    For meshes written without merging their points (each piece of a</span>
+<span class="sd">    simulation&#39;s output storing a point once for every cell or block that</span>
+<span class="sd">    uses it), which nothing can stitch by matching points across cells or</span>
+<span class="sd">    pieces until each point is one. ``tolerance`` is in the dataset&#39;s spatial</span>
+<span class="sd">    unit, or a quantity (``&quot;1e-9 m&quot;``); it should be far below the distance</span>
+<span class="sd">    between points that are not copies, since every point compares itself with</span>
+<span class="sd">    every point that close. Takes an unstructured topology; a structured grid&#39;s</span>
+<span class="sd">    points are its lattice, and polyhedral, polygonal and polyline topologies</span>
+<span class="sd">    are not handled yet. Hidden cells are dropped first, as every filter that</span>
+<span class="sd">    makes cells drops them.&quot;&quot;&quot;</span>
+    <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;merge_points&#39;s tolerance&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">tolerance</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;tolerance must be at least zero, not </span><span class="si">{</span><span class="n">tolerance</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">StructuredTopology</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;merge_points takes an unstructured topology: a structured &quot;</span>
+                        <span class="s2">&quot;grid&#39;s points are its lattice&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">UnstructuredTopology</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;merge_points of a </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> is &quot;</span>
+                                  <span class="sa">f</span><span class="s2">&quot;not supported yet&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">or</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;merge_points needs an order-1 H1 geometry: one position per point&quot;</span><span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">topology</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">at_least</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">supported_atomic_dtypes</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;merging </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> points needs </span><span class="si">{</span><span class="n">dtype</span><span class="si">}</span><span class="s2"> atomics, which the &quot;</span>
+                                  <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> backend does not have&quot;</span><span class="p">)</span>
+    <span class="c1"># Union-find over the points within the tolerance, through the locator&#39;s</span>
+    <span class="c1"># bins: each pair hooks the larger root under the smaller (an atomic</span>
+    <span class="c1"># minimum), until nothing changes, so a set&#39;s root is its smallest point</span>
+    <span class="c1"># whatever the order of the hooks.</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">grid</span> <span class="o">=</span> <span class="n">cached_point_locator</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">grid</span><span class="p">()</span>
+        <span class="n">every</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">)</span>
+        <span class="n">every</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">changed</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">changed</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">_hook_near</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">every</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">tolerance</span><span class="p">),</span> <span class="n">labels</span><span class="p">,</span> <span class="n">changed</span><span class="p">)</span>
+            <span class="n">_jump</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">int</span><span class="p">(</span><span class="n">changed</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">0</span><span class="p">]):</span>
+                <span class="k">break</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
+    <span class="n">index</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">_roots</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">flags</span><span class="p">)</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">exclusive_scan</span><span class="p">(</span><span class="n">flags</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="n">new_id</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
+    <span class="n">kept</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">_numbered</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">new_id</span><span class="p">,</span> <span class="n">kept</span><span class="p">)</span>
+    <span class="n">length</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">size_of</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="p">)</span>
+    <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">length</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">length</span><span class="p">:</span>
+        <span class="n">_renumbered</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="p">,</span> <span class="n">new_id</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">)</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">types</span><span class="p">,</span> <span class="n">topology</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span>
+                                  <span class="n">num_points</span><span class="o">=</span><span class="n">count</span><span class="p">)</span>
+    <span class="n">kept</span> <span class="o">=</span> <span class="n">kept</span> <span class="k">if</span> <span class="n">count</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">merged</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Take</span><span class="p">(</span><span class="n">kept</span><span class="p">),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
