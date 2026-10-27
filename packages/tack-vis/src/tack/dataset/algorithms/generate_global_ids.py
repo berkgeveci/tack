@@ -7,6 +7,7 @@ from tack import arrays
 from tack import communication as tc
 from tack.dataset import _matching
 from tack.dataset._matching import INDEX_BITS
+from tack.dataset.algorithms._common import _tolerance
 from tack.dataset.dataset import DataSet
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
@@ -16,7 +17,7 @@ from tack.dataset.topology import StructuredTopology
 __all__ = ["generate_global_ids"]
 
 
-def generate_global_ids(data, world=None):
+def generate_global_ids(data, world=None, tolerance=0.0):
     """``data``'s pieces numbered across every piece, as VTK's
     ``vtkGenerateGlobalIds``: a new ``PartitionedDataSet`` of the same pieces with
     ``global_ids`` (``tack.dataset.GlobalIds``), every point and cell one id,
@@ -29,9 +30,13 @@ def generate_global_ids(data, world=None):
     a point several pieces hold unmarked, as pieces without ghost cells share
     their boundary points, belongs to the lowest of them, and is marked
     ``DUPLICATEPOINT`` in the others, as VTK marks it. Points are copies of
-    each other when their positions are exactly equal, and cells when their
-    points' global ids are; pieces from ``ghost_cells`` reuse the exchanges it
-    kept instead of matching again.
+    each other when their positions are exactly equal -- or, with
+    ``tolerance``, at most that far apart (in the spatial unit, or a
+    quantity), chains of them too, for pieces whose copies of a shared point
+    differ in their last bits -- and cells when their points' global ids are;
+    pieces from ``ghost_cells`` reuse the exchanges it kept instead of
+    matching again. Points a piece repeats within itself stay apart:
+    ``merge_points`` merges them first.
 
     ``data`` holds this rank's pieces, on any devices; ``world`` is the
     ``tack.communication.World`` they live in (``data.world`` by default).
@@ -42,6 +47,7 @@ def generate_global_ids(data, world=None):
                         f"{type(data).__name__}")
     world = data.world if world is None else world
     common_origin(data, "generate_global_ids", world)
+    tolerance = _tolerance(data, tolerance, "generate_global_ids")
     pieces = list(data)
     blocks = tc.Blocks([piece.device for piece in pieces], world)
     plans = getattr(data, "_ghost_plans", None)
@@ -53,7 +59,8 @@ def generate_global_ids(data, world=None):
         point_owned = {g: (marks[g][1] & Ghosts.DUPLICATEPOINT) == 0 for g in blocks.local}
         point_shared = None
     else:
-        point_owned, point_plan, point_shared = _point_owners(blocks, pieces, marks)
+        point_owned, point_plan, point_shared = _point_owners(blocks, pieces, marks,
+                                                                 tolerance)
     point_ids = _numbered(blocks, pieces, point_owned, point_plan, "points")
 
     # Cells: owned cells numbered, ghost cells from their owners.
@@ -96,7 +103,7 @@ def _marks(piece):
             np.zeros(piece.num_points, np.uint8) if points is None else points.numpy())
 
 
-def _point_owners(blocks, pieces, marks):
+def _point_owners(blocks, pieces, marks, tolerance=0.0):
     """Each piece's owned points (a bool each), the plan bringing its other points'
     ids from their owners, and which of its points another piece also holds."""
     duplicates = blocks.all_reduce({g: int((marks[g][1] & Ghosts.DUPLICATEPOINT).any())
@@ -113,12 +120,16 @@ def _point_owners(blocks, pieces, marks):
             chosen = np.unique(rows[arrays.to_host(faces.boundary()).astype(np.int64)])
             chosen = chosen[chosen >= 0].astype(np.int64)
         flags = (marks[g][1][chosen] & Ghosts.DUPLICATEPOINT).astype(np.uint8)
-        entries[g] = (chosen, _matching.position_bits(piece.positions()[chosen]), flags)
-    partners = _matching.match(blocks, entries)
+        entries[g] = (chosen, piece.positions()[chosen], flags)
+    partners = _matching.match_positions(blocks, entries, tolerance)
+    identities = {g: _matching.owners(g, piece.num_points, partners[g],
+                                      (marks[g][1] & Ghosts.DUPLICATEPOINT) != 0)
+                  for g, piece in zip(blocks.local, pieces)}
+    if tolerance:
+        _matching.settled(blocks, identities, partners)
     owned, receives, shared = {}, {}, {}
     for g, piece in zip(blocks.local, pieces):
-        duplicate = (marks[g][1] & Ghosts.DUPLICATEPOINT) != 0
-        identity = _matching.owners(g, piece.num_points, partners[g], duplicate)
+        identity = identities[g]
         owned[g] = (identity >> INDEX_BITS) == g
         receives[g] = _matching.from_owners(g, identity, np.flatnonzero(~owned[g]))
         shared[g] = np.zeros(piece.num_points, bool)

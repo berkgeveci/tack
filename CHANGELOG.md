@@ -7,6 +7,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tolerance=` on `generate_global_ids`, `ghost_cells` and `merge_pieces`
+  (VTK's `vtkGenerateGlobalIds` has one): points of different pieces at most
+  that far apart are copies, and so are chains of them, for pieces whose
+  copies of a shared point differ in their last bits. Points are binned into
+  cells a little over two tolerances wide, each sent to its own cell and the
+  ones its box reaches, through the same sort over the pieces as exact
+  matching; owners then agree along chains by exchanges between partners.
+  The default, 0, matches exactly as before. On a simulation's 512 pieces in
+  f64, merged first with `merge_points`, a tolerance of 1e-12 numbers
+  6,310,285 points (the merged mesh's), where exact matching numbers
+  6,311,919, and gives VTK's ghost cell count.
+
 - What the built-in filters are written with is public, so a filter of
   your own is written the same way: `td.carry` and its maps (`td.Same`,
   `td.Take`, `td.Pieces`, `td.Interpolate`), `td.keep_marks` and
