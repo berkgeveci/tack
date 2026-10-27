@@ -63,12 +63,25 @@ def test_key_order_of_few_keys_among_many_buckets(backend, dtype, width):
     crossings among a mesh's points) and buckets the rest: the stable order
     either way, ties included."""
     rng = np.random.default_rng(width)
-    for n, nbuckets in ((300, 100_000), (300, 400)):
+    for n, nbuckets in ((300, 100_000), (300, 6_000), (300, 400)):
         keys = np.c_[rng.integers(0, nbuckets, n), rng.integers(0, 4, (n, width - 1))]
         keys[1::2] = keys[0::2]                   # every key twice: ties by index
         values = keys[:, 0] if width == 1 else keys
         order = key_order(_keys(values, dtype), nbuckets, dtype)
         np.testing.assert_array_equal(order.numpy(), _stable(keys))
+
+
+def test_discrete_gpus_keep_the_bucket_sort_longer():
+    """On CUDA, HIP and Level Zero the bucket sort stays faster than the radix
+    sort far past 8 buckets a key (1.3-1.7x on CUDA at 13-20, for a contour or
+    slice of hexahedra), so only memory sends keys to the radix sort there; the
+    CPU, where radix was faster, and Metal keep 8."""
+    from types import SimpleNamespace
+
+    from tack.dataset.buckets import _sparse
+
+    assert [_sparse(SimpleNamespace(name=n)) for n in ("cpu", "metal", "warp")] == [8, 8, 8]
+    assert [_sparse(SimpleNamespace(name=n)) for n in ("cuda", "hip", "level_zero")] == [64] * 3
 
 
 @pytest.mark.parametrize("indices", ID_TYPES, ids=lambda t: t.name)

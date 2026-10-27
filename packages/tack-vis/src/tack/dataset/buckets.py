@@ -24,7 +24,7 @@ quadratic, so then the radix sort is used instead, one component at a time.
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _index_dtype, argsort, gather
-from tack.runtime.dispatch import on_inputs_device
+from tack.runtime.dispatch import get_backend, on_inputs_device
 
 _LARGEST = 256          # entries in one bucket, past which the radix sort is used
 _CHUNK = 1024           # buckets one thread looks through for the largest
@@ -260,7 +260,19 @@ def bucket_order(values, nbuckets, index_dtype=None):
 
 #: Keys at least this many times fewer than the buckets are radix sorted by
 #: ``key_order``: a bucket sort's counts and offsets would be mostly empty.
+#: On a discrete GPU the bucket sort stays faster far past that -- 1.3-1.7x
+#: for a contour or slice of hexahedra on CUDA at 13-20 buckets a key (jura,
+#: 2026-10-27), where radix is 0.7-0.8x on the CPU and Metal goes either way --
+#: so there only memory sends keys to the radix sort (_SPARSE_DISCRETE).
 _SPARSE = 8
+_SPARSE_DISCRETE = 64
+_DISCRETE = ("cuda", "hip", "level_zero")
+
+
+def _sparse(backend):
+    """How many times fewer than the buckets keys must be for ``key_order`` to radix
+    sort them on ``backend``."""
+    return _SPARSE_DISCRETE if backend.name in _DISCRETE else _SPARSE
 
 
 @on_inputs_device
@@ -269,9 +281,11 @@ def key_order(values, nbuckets, index_dtype=None):
     the buckets' offsets. Keys much fewer than the buckets (a contour's crossings
     among a mesh's points) are radix sorted, in memory and time proportional to
     the keys; ``bucket_order``'s counts and offsets are proportional to the
-    buckets, which at 20M points was 230 MB to sort a few million keys."""
+    buckets, which at 20M points was 230 MB to sort a few million keys. On a
+    discrete GPU the buckets stay faster far longer, and only memory sends keys
+    to the radix sort (``_sparse``)."""
     n = _count(values)
-    if n and nbuckets > _SPARSE * n:
+    if n and nbuckets > _sparse(get_backend()) * n:
         return _radix_order(values, n, _index_dtype(max(n, nbuckets), index_dtype))
     return bucket_order(values, nbuckets, index_dtype)[0]
 

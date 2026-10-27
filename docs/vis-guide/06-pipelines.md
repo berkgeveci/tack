@@ -110,6 +110,26 @@ is the longest path. `time` on the points is still the time the particle
 takes. Where speeds vary widely, a time step sized for the fastest makes
 tiny steps elsewhere, so length steps reach as far in far fewer steps.
 
+**Choose the device by the number of seeds.** Each particle is one thread
+that takes all its steps, so a few seeds use a few threads of a GPU built
+for thousands, and a single GPU thread is slower than a CPU core. Below a
+few thousand seeds the CPU is usually faster; above, the GPU. On a
+28-core EPYC against an RTX 6000 Ada (ms, warm):
+
+| mesh | seeds | CPU | CUDA |
+|---|---|---|---|
+| aneurysm, 8.7M tetrahedra | 25 | 8.4 | 32.0 |
+| | 2,000 | 57.2 | 75.8 |
+| | 20,000 | 871 | 331 |
+| ONERA M6 wing, 46.9M cells | 17 | 41.7 | 84.4 |
+| | 1,024 | 92.9 | 149 |
+| | 16,384 | 1,190 | 108 |
+
+On an Intel Data Center GPU Max 1100 the gap is wider: the M6's 17 seeds
+took 708 ms against its host CPU's 24.5. For a few seeds on a mesh that
+lives on a GPU, advect a CPU copy of it (`data.to_device("cpu")`); the
+locator is built where the mesh is.
+
 The example's `[-y, x, 0]` velocity rotates a point at unit angular speed.
 Twenty steps of 0.05 reach time 1. The program checks the final positions
 against sine and cosine, and checks path lengths against the radii times
