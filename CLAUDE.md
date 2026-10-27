@@ -58,7 +58,9 @@ validation round or a merge gate, once per machine, not for iteration.
    6000 tests, 33 minutes of test time, 4:30 on eight workers here, with
    the same counts as the serial run. Tests are handed out one at a time
    (`--dist load`, xdist's default); no module depends on its tests'
-   order. Every xdist worker is a process with its own backends and CUDA
+   order, and the `backend` fixtures put back the default device they
+   found, so a GPU test leaves no default behind for the next test on its
+   worker. Every xdist worker is a process with its own backends and CUDA
    context, so GPU memory scales with the worker count. The `timing`
    tests skip themselves on a busy host, so a parallel run skips them;
    run `-m timing` alone when they matter. A test whose assertion is about
