@@ -459,6 +459,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A compiled CPU kernel bound to another device's arrays raises a
+  `TypeError` naming the kernel and the argument, where it wrote device
+  pointers from the host and segfaulted (CUDA arrays, met through the Warp
+  backend's run of `test_parallel_dims.py`). Arrays bind through
+  `DeviceBuffer.host_address`, which only host memory has: the CPU's, and
+  Warp's on its CPU device. A kernel call never got that far, since
+  dispatch picks a device that can address every array.
 - A repeated `extract_surface` of a mesh whose faces were never derived
   costs only the carry again. The fresh boundary (#157), which finds the
   surface without deriving every face, kept nothing, so every call paid
