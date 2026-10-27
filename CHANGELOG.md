@@ -531,6 +531,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Streamlines and `advect` try the cell a particle was last found in before
+  searching the locator's bins. The cell is taken only where it holds the
+  point well inside (by 1e-3 in its parametric coordinates, a hundred times
+  the tolerance for holding a point), where no other cell of a mesh whose
+  cells do not overlap can hold it, so the traces are the search's bit for
+  bit; near a face, and in pyramids, surfaces and polyhedra, the bins are
+  searched as before. RK4 streamlines on an aneurysm's 8.7M tetrahedra went
+  from 7.4 ms to 1.7 (VTK on 8 threads: 3.6), and on the ONERA M6 wing's
+  46.9M cells, with its boundary layer of wedges, from 4.9 s to 1.0 (VTK:
+  3.9).
 - Matching points across many pieces in one process no longer sends a
   message from every piece to every other. `tack.communication.sort_by_key`
   joins the blocks' sorted keys and cuts them where the splitters do when

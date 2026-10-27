@@ -257,6 +257,10 @@ class _MeshSearch:
     """A point's cell by the locator's cell bins (``CellLocator.cell_bins``), ranked
     as the locator ranks them, and the shapes' functions by cell id."""
 
+    #: ``find_from`` tries the cell it is given before the bins; 0 searches every
+    #: time (the tests compare the two, bit for bit).
+    PREVIOUS_CELL = 1
+
     def __init__(self, cells, present, positions, locator, tolerance):
         self.cells = cells
         self.kinds = _kinds(present)
@@ -286,6 +290,60 @@ class _MeshSearch:
         the coordinates in that); ``e`` is ``ncells`` for none."""
         e, kind, pc, tet, held = self.find_ranked(p)
         return e, kind, pc, tet
+
+    @tack.func
+    def find_from(self, p, hint):
+        """``find``, trying cell ``hint`` first (``ncells`` for none): a particle's
+        next location is mostly in the cell it was last found in. The hint is
+        taken only where it holds ``p`` by ``WELL_INSIDE``, far more than
+        ``HOLD_TOLERANCE``: no other cell of a mesh whose cells do not overlap
+        holds ``p`` then, so the search would give the same cell, and the same
+        coordinates, computed alike. Elsewhere, and for pyramids (whose
+        coordinates collapse at the apex), surfaces and cells without a
+        reference element, the bins are searched."""
+        e = self.ncells
+        kind = 0
+        pc = p - p
+        tet = -1
+        if self.PREVIOUS_CELL == 1 and self.cells.NO_REFERENCE == 0 and hint < self.ncells:
+            e, kind, pc = self._well_inside(p, hint)
+        if e == self.ncells:
+            e, kind, pc, tet = self.find(p)
+        return e, kind, pc, tet
+
+    @tack.func
+    def _well_inside(self, p, e):
+        """``(e, kind, pc)`` if solid cell ``e`` holds ``p`` by ``WELL_INSIDE``,
+        else ``(ncells, 0, 0)``."""
+        pts = tack.local_array_like(self.lo, 24)
+        kind = self.cells.cell_type(e)
+        for j in range(self.cells.num_points(e)):
+            y = self.positions[self.cells.point_id(e, j)]
+            pts[3 * j] = y[0]
+            pts[3 * j + 1] = y[1]
+            pts[3 * j + 2] = y[2]
+        pc = p - p
+        converged = 0
+        inside = 0
+        if (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
+            pc, converged = self.tetra.world_to_parametric(pts, p)
+            inside = self.tetra.is_inside(pc, -shapes.WELL_INSIDE)
+        elif (self.kinds.PRESENT & 2) != 0 and kind == shapes.HEXAHEDRON:
+            pc, converged = self.hexa.world_to_parametric(pts, p)
+            inside = self.hexa.is_inside(pc, -shapes.WELL_INSIDE)
+        elif (self.kinds.PRESENT & 4) != 0 and kind == shapes.WEDGE:
+            pc, converged = self.wedge.world_to_parametric(pts, p)
+            inside = self.wedge.is_inside(pc, -shapes.WELL_INSIDE)
+        elif (self.kinds.PRESENT & 16) != 0 and kind == shapes.VOXEL:
+            pc, converged = self.voxel.world_to_parametric(pts, p)
+            inside = self.voxel.is_inside(pc, -shapes.WELL_INSIDE)
+        found = self.ncells
+        if converged == 1 and inside == 1:
+            found = e
+        else:
+            kind = 0
+            pc = p - p
+        return found, kind, pc
 
     @tack.func
     def find_ranked(self, p):
