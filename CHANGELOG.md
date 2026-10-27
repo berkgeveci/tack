@@ -541,6 +541,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   from 7.4 ms to 1.7 (VTK on 8 threads: 3.6), and on the ONERA M6 wing's
   46.9M cells, with its boundary layer of wedges, from 4.9 s to 1.0 (VTK:
   3.9).
+- Matching points across many pieces in one process no longer sends a
+  message from every piece to every other. `tack.communication.sort_by_key`
+  joins the blocks' sorted keys and cuts them where the splitters do when
+  every block is on this rank and one device, and the matching behind
+  `generate_global_ids`, `ghost_cells` and `merge_pieces` hands each piece
+  its copies on the host there. The copies of a value are grouped from the
+  sorted keys, sorting by value only where two values hash alike, instead
+  of `np.unique` over rows. On a simulation's 512 pieces (5.5M voxels),
+  global ids went from 83 s to 9.0 (VTK on 8 threads: 10.4) and a layer of
+  ghost cells from 184 s to 28.7 (VTK: 27.3). Across MPI ranks the messages
+  are as before.
 - `merge_pieces` of unstructured pieces gathers cells' point ids in one go
   instead of slicing them a cell at a time in Python: 8.0 s to 0.9 s to merge
   an aneurysm's ten pieces (8.7M tetrahedra).

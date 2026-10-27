@@ -310,6 +310,29 @@ def test_a_sort_spans_devices_and_keeps_equal_keys_together(cpu, second):
     assert min(sizes) > 0.5 * sum(sizes) / 3                 # roughly even
 
 
+def test_blocks_in_one_place_sort_without_messages(cpu, monkeypatch):
+    """Every block on this rank and one device: the blocks' keys sorted once and cut
+    at the splitters (``_in_one_place``), not sent block to block (P squared
+    messages; 3.6M kernel launches for 512 pieces). Each block holds what the
+    messages give it, keys and values, equal keys and empty blocks included."""
+    from tack.communication import _sort
+
+    rng = np.random.default_rng(5)
+    sizes = [0, 300, 1, 0, 250, 40, 0, 600]
+    blocks = tc.Blocks(["cpu"] * len(sizes))
+    keys = {g: tack.array(rng.integers(0, 50, n).astype(np.int64), tack.i64)
+            for g, n in enumerate(sizes)}
+    values = {g: {"at": tack.array(np.arange(n, dtype=np.int32) + 1000 * g, tack.i32)}
+              for g, n in enumerate(sizes)}
+    once = tc.sort_by_key(blocks, keys, values)
+    assert _sort._in_one_place(blocks)
+    monkeypatch.setattr(_sort, "_in_one_place", lambda blocks: False)
+    sent = tc.sort_by_key(blocks, keys, values)
+    for g in range(len(sizes)):
+        np.testing.assert_array_equal(once[0][g].numpy(), sent[0][g].numpy())
+        np.testing.assert_array_equal(once[1][g]["at"].numpy(), sent[1][g]["at"].numpy())
+
+
 def test_a_sort_of_one_block_and_of_nothing(cpu):
     one = tc.Blocks(["cpu"])
     out, values = tc.sort_by_key(one, {0: tack.array(np.array([3, 1, 2], np.int32))},

@@ -244,6 +244,23 @@ def test_the_three_routes_agree():
     td.update_ghosts(kept, *kept[0].fields)         # the kept exchanges still work
 
 
+def test_matching_through_messages_and_colliding_hashes(monkeypatch):
+    """Pieces all in this process match on the host; matching through messages, and
+    values whose hashes collide (every key one of four), give the same ids."""
+    from tack.dataset import _matching
+
+    plain = _unstructured(td.split(td.wavelet(4), 6))
+    expected = by_position(td.generate_global_ids(td.ghost_cells(plain)))
+    monkeypatch.setattr(_matching, "_all_here", lambda blocks: False)
+    assert by_position(td.generate_global_ids(td.ghost_cells(plain))) == expected
+    hashed = _matching.hashed
+    monkeypatch.setattr(_matching, "hashed", lambda columns: hashed(columns) & np.uint64(3))
+    assert by_position(td.generate_global_ids(td.ghost_cells(plain))) == expected
+    monkeypatch.undo()
+    monkeypatch.setattr(_matching, "hashed", lambda columns: hashed(columns) & np.uint64(3))
+    assert by_position(td.generate_global_ids(td.ghost_cells(plain))) == expected
+
+
 def test_pieces_on_two_devices_get_the_same_ids():
     whole = td.wavelet(4)
     second = dispatch.as_device(_SecondCPU())
