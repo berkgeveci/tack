@@ -4496,7 +4496,7 @@ parallel rate <code>r_p</code> (ns per element of the whole range when fanned ou
 <div class="highlight"><pre><span></span><code>serial ≈ n · r_s      parallel ≈ F + n · r_p      crossover n* = F / (r_s − r_p)
 </code></pre></div>
 <p><code>CPUBackend._min_elems</code> stores the crossover scaled by a margin <code>M</code>:</p>
-<div class="highlight"><pre><span></span><code>parallel_min_elems = max(num_threads, int(F · M / rate))
+<div class="highlight"><pre><span></span><code>parallel_min_elems = max(2, int(F · M / rate))
     rate = r_s − min(r_p, 0.9 · r_s)
 </code></pre></div>
 <p>The rate keeps <code>r_p</code> because real kernels do not divide perfectly. The
@@ -4513,8 +4513,15 @@ near the crossover lose.</p>
 "not measured yet" needs no special case. The <code>0.9 · r_s</code> clamp keeps the
 denominator positive when a noisy <code>r_p</code> approaches <code>r_s</code>, and caps the
 threshold at ten times the serial-rate-only one for the same inputs.</p>
-<p>The <code>max(num_threads, …)</code> floor keeps chunks at one element or more. An
-unmeasured kernel, or a one-thread backend, gets <code>_NEVER</code> (<code>1 &lt;&lt; 62</code>).</p>
+<p>The floor is two elements, the fewest a fan-out can split; above it the
+costs decide, and a range shorter than the thread count leaves the threads
+it does not need idle (the pool's workers claim chunks from a counter, the
+executor's take one element each). It was the thread count, which kept
+chunks at one element or more when a fan-out split its range into one chunk
+a thread, and ran fewer dear elements than threads serially on every call:
+17 streamlines on the ONERA M6 wing took 30 ms a call on jura's 28 threads,
+against 7-12 ms on 8 (2026-10-27). An unmeasured kernel, or a one-thread
+backend, gets <code>_NEVER</code> (<code>1 &lt;&lt; 62</code>).</p>
 <h3 id="the-margin">The margin<a class="headerlink" href="#the-margin" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
