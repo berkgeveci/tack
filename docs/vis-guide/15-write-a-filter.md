@@ -124,7 +124,9 @@ is the cell on the face's inner side, and a boundary face has one side.
   total, and a second kernel fills the slots. No atomics are needed, and the
   output is in input order on every backend.
 - **A topology's arrays may be implicit.** Every output cell is a triangle,
-  so the types are a `ConstantArray` and the offsets a `CountingArray`.
+  so the types are a `ConstantArray` and the offsets a `CountingArray`. The
+  `ConstantArray` is made with `device=device`, like every array the filter
+  allocates: an implicit array lives on the device it is made for.
 - **`carry` brings everything else.** It takes the input dataset, the new
   topology, and a map for each kind of entity, saying where the output's
   entities came from. It then carries fields, sets, ghost marks, global ids

@@ -271,9 +271,10 @@ def test_derived_state_and_iteration_are_on_the_datasets_device(second, make):
 @pytest.mark.parametrize("make", ["hexes", "grid"])
 def test_the_public_building_blocks_run_on_the_datasets_device(second, make):
     """What filters of one's own are written with (`visible`, `owned_values`,
-    `carry`), on marked data, so each allocates: called directly, not from inside
-    an algorithm that already made the dataset's device the default, they once
-    allocated on the default device ("arrays on two devices")."""
+    `carry`), on marked data, so each allocates, and `orient`: called directly,
+    not from inside an algorithm that already made the dataset's device the
+    default, they once allocated on the default device ("arrays on two
+    devices")."""
     data = (_hexes if make == "hexes" else _grid)(second)
     cells = np.zeros(data.num_cells, np.uint8)
     cells[0] = td.Ghosts.HIDDENCELL
@@ -287,6 +288,8 @@ def test_the_public_building_blocks_run_on_the_datasets_device(second, make):
     assert _on(second, td.owned_values(data, "s"))
     every = tack.array(np.arange(data.num_cells, dtype=np.int32), device=second)
     assert _on(second, td.carry(data, data.topology, points=td.Same(), cells=td.Take(every)))
+    polyhedra = td.as_polyhedra(data).topology
+    assert td.orient(polyhedra).device == polyhedra.device == second
 
 
 def test_a_dataset_refuses_parts_on_two_devices(second):
