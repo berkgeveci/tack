@@ -153,7 +153,8 @@ def triangulate(data):
         table = _TRIANGLES[int(g.shape.ID)]
         _split(g.view(), tack.array(np.array(table, np.int32), device=device),
                len(table) // 3, starts, connectivity, sources)
-    out = td.UnstructuredTopology(ConstantArray(int(td.shapes.TRIANGLE), count, dtype=tack.u8),
+    out = td.UnstructuredTopology(ConstantArray(int(td.shapes.TRIANGLE), count, dtype=tack.u8,
+                                                device=device),
                                   CountingArray(count + 1, start=0, step=3, dtype=idt),
                                   connectivity, num_points=data.num_points)
     # The input's points; each triangle a piece of the cell `sources` names.
