@@ -30,6 +30,7 @@ from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime import device_fill
+from tack.runtime.backend import DeviceMemoryError
 from tack.runtime.gpu_backend import GPUBackend
 from tack.runtime.kernel_utils import (
     as_address,
@@ -398,6 +399,9 @@ class CUDABuffer(DeviceBuffer):
                 if err == driver.CUresult.CUDA_ERROR_OUT_OF_MEMORY and token.dropped:
                     _free_dropped(token, wait=True)
                     err, self._device_ptr = driver.cuMemAlloc(max(self._nbytes, 1))
+            if (err != driver.CUresult.CUDA_SUCCESS
+                    and err == driver.CUresult.CUDA_ERROR_OUT_OF_MEMORY):
+                raise DeviceMemoryError(f"CUDA is out of memory for {self._nbytes} bytes")
             _check(err)
             _check(driver.cuMemsetD8Async(self._device_ptr, 0, self._nbytes, stream))
 

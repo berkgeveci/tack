@@ -34,6 +34,7 @@ from tack.lang.workgroup_participation import (
     requires_full_workgroups,
 )
 from tack.runtime import device_fill
+from tack.runtime.backend import DeviceMemoryError
 from tack.runtime.gpu_backend import GPUBackend
 from tack.runtime.kernel_utils import (
     as_address,
@@ -92,6 +93,8 @@ ZE_MODULE_FORMAT_NATIVE = 1
 ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS = 1
 ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS = 2
 ZE_RESULT_ERROR_UNSUPPORTED_FEATURE = 0x78000003
+ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY = 0x70000002
+ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY = 0x70000003
 
 # Freeing memory after the work queued so far (ZE_extension_memory_free_policies)
 ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC = 0x1000a
@@ -984,11 +987,13 @@ class L0Buffer(DeviceBuffer):
             stype=ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC,
             pNext=None, flags=0, ordinal=0)
         self._device_ptr = ctypes.c_void_p()
-        _check_ze(ze.zeMemAllocDevice(
-            backend._context, ctypes.byref(alloc_desc),
-            alloc_size, 0, backend._device,
-            ctypes.byref(self._device_ptr)),
-            "zeMemAllocDevice")
+        result = ze.zeMemAllocDevice(backend._context, ctypes.byref(alloc_desc),
+                                     alloc_size, 0, backend._device,
+                                     ctypes.byref(self._device_ptr))
+        if result in (ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY, ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY):
+            raise DeviceMemoryError(f"Level Zero is out of memory for {alloc_size} bytes "
+                                    f"(ze_result_t 0x{result:08x})")
+        _check_ze(result, "zeMemAllocDevice")
 
         # Zero-initialize, on the device
         self.fill_bytes(b"\0")

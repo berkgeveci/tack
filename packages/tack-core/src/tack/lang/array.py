@@ -855,8 +855,27 @@ def empty(shape, dtype=f32, *, device=None, exportable=False, layout="aos") -> A
                         dtype.shape)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
     storage = (int(math.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
-    buffer = backend.allocate_array(scalar, storage, exportable=exportable)
+    buffer = _allocate(backend, scalar, storage, exportable=exportable)
     return _array_view(dtype, shape, buffer, device=backend)
+
+
+def _allocate(backend, dtype, shape, **options):
+    """``backend.allocate_array``, collecting Python's garbage and trying once more
+    if the device is out of memory (``DeviceMemoryError``; NumPy's
+    ``MemoryError`` on the CPU). A dropped array in a reference cycle -- a
+    topology's cached locator holds a dataset of it -- keeps its memory until
+    the cycle collector runs, and that collector counts objects, not device
+    memory: a 16 GB GPU ran out with dropped meshes still on it. The wait
+    lets frees a backend defers (Level Zero's, a device without memory
+    pools) complete before the retry."""
+    try:
+        return backend.allocate_array(dtype, shape, **options)
+    except MemoryError:
+        import gc
+
+        gc.collect()
+        backend.synchronize()
+        return backend.allocate_array(dtype, shape, **options)
 
 
 def _empty_for_mpi(shape, dtype, device) -> Array:
@@ -1244,7 +1263,7 @@ class Texture3D:
             self._storage = backend.create_texture_image(shape_3d)
         else:
             self._storage = Array(f32, (source_array.size,),
-                                  backend.allocate_array(f32, (source_array.size,)),
+                                  _allocate(backend, f32, (source_array.size,)),
                                   device=backend)
         self.update()
 

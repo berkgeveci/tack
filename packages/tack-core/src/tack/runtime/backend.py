@@ -29,6 +29,14 @@ what was missing was the declared contract around it.
 from tack.lang.types import ScalarType, f64
 
 
+class DeviceMemoryError(MemoryError):
+    """A device allocation ran out of memory. Every backend raises it (the CPU's
+    NumPy raises its base, ``MemoryError``), so ``tack.empty`` can collect
+    Python's garbage and try once more: a dropped array held in a reference
+    cycle keeps its device memory until the cycle collector runs, which counts
+    objects, not device memory."""
+
+
 class Backend:
     """Base class for Tack compute backends.
 
