@@ -54,6 +54,8 @@ def sort_by_key(blocks, keys, values=None, samples=16):
         chosen = gather(ordered[gid], tack.array(at, tack.i64, device=blocks.device(gid)))
         picks[gid] = (chosen.numpy(), n)
     splitters = _splitters(blocks.all_gather(picks), blocks.count)
+    if _in_one_place(blocks):
+        return _sorted_in_one_place(blocks, ordered, carried, splitters, kinds, given)
 
     outgoing = {}
     for gid in blocks.local:
@@ -80,6 +82,44 @@ def sort_by_key(blocks, keys, values=None, samples=16):
         sorted_values[gid] = {
             name: gather(_joined([run["values." + name] for run in runs], dtype, device), perm)
             for name, dtype in value_types.items()}
+    return sorted_keys, (sorted_values if given else None)
+
+
+def _in_one_place(blocks):
+    """Whether every block is on this rank and on one device: then the ranges need
+    not travel as messages, every block sending to every other (P squared of
+    them: 3.6M kernel launches matching 512 pieces' points)."""
+    if len(blocks.local) != blocks.count or not blocks.count:
+        return False
+    first = blocks.device(blocks.local.start)
+    return all(blocks.device(gid) == first for gid in blocks.local)
+
+
+def _sorted_in_one_place(blocks, ordered, carried, splitters, kinds, given):
+    """``sort_by_key``'s result when every block is here on one device: the blocks'
+    sorted keys joined and sorted once (stable: by key, then block, then place
+    in the block, the order the messages give) and cut where the splitters cut
+    them, so each block holds what it would have received."""
+    gids = list(blocks.local)
+    device = blocks.device(gids[0])
+    key_type, value_types = kinds[gids[0]]
+    counts = np.zeros(blocks.count, np.int64)
+    for gid in gids:
+        n = ordered[gid].size
+        bounds = np.array([0, *search_right(ordered[gid], splitters).tolist(), n], np.int64)
+        counts += np.diff(bounds)
+    joined = _joined([ordered[gid] for gid in gids], key_type, device)
+    perm = argsort(joined)
+    every_key = gather(joined, perm)
+    every_value = {name: gather(_joined([carried[gid][name] for gid in gids], dtype, device),
+                                perm)
+                   for name, dtype in value_types.items()}
+    starts = np.concatenate(([0], np.cumsum(counts)))
+    sorted_keys, sorted_values = {}, {}
+    for gid in gids:
+        start, count = int(starts[gid]), int(counts[gid])
+        sorted_keys[gid] = take(every_key, start, count)
+        sorted_values[gid] = {name: take(v, start, count) for name, v in every_value.items()}
     return sorted_keys, (sorted_values if given else None)
 
 
