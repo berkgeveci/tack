@@ -474,6 +474,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the 20M-cell checks ran out of memory with dropped datasets still on the
   card. The topology holds its spaces weakly. A topology's cached cell and
   point locators still hold a dataset of it, a cycle left for now.
+- An allocation that runs out of device memory collects Python's garbage
+  and tries once more. A dropped array held in a reference cycle keeps its
+  memory until the cycle collector runs, which counts objects, not device
+  memory: a topology's cached locator holds a dataset of that topology, so
+  a mesh dropped after a probe or streamlines stayed on the GPU, and a
+  16 GB card ran out with dropped meshes on it. Every backend raises
+  `DeviceMemoryError` (a `MemoryError`) when an allocation runs out (CUDA,
+  HIP, Level Zero, Metal; NumPy's `MemoryError` on the CPU), and
+  `tack.empty` collects, waits for the device and retries once.
 - The CPU fans out fewer elements than it has threads when each is dear
   enough to repay it. The threshold was floored at the thread count, so on
   jura's 28 threads the ONERA M6's 17 streamlines ran serially on every

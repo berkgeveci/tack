@@ -39,6 +39,7 @@ from tack.lang.workgroup_participation import (
     check_workgroup_launch,
     requires_full_workgroups,
 )
+from tack.runtime.backend import DeviceMemoryError
 from tack.runtime.gpu_backend import GPUBackend, _no_guard
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
@@ -219,6 +220,8 @@ class MetalBuffer(DeviceBuffer):
         # here once made -- most of a large filter's time on Metal, for the
         # temporaries it allocates. test_new_arrays_are_zero holds Metal to it.
         self._metal_buffer = device.newBufferWithLength_options_(max(nbytes_new, 1), 0)
+        if self._metal_buffer is None:
+            raise DeviceMemoryError(f"Metal could not make a buffer of {nbytes_new} bytes")
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
         if sync is not None:

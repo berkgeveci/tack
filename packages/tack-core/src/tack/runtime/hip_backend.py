@@ -38,6 +38,7 @@ from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime import device_fill
+from tack.runtime.backend import DeviceMemoryError
 from tack.runtime.gpu_backend import GPUBackend
 from tack.runtime.kernel_utils import (
     as_address,
@@ -361,6 +362,8 @@ class HIPBuffer(DeviceBuffer):
                                                            queue.stream)
             else:
                 err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
+            if err != hip.hipError_t.hipSuccess and err == hip.hipError_t.hipErrorOutOfMemory:
+                raise DeviceMemoryError(f"HIP is out of memory for {self._nbytes} bytes")
             _check_hip(err)
             _check_hip(hip.hipMemsetAsync(self._device_ptr, 0, self._nbytes, queue.stream))
 
