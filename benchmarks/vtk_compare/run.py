@@ -163,7 +163,7 @@ def _gpu(arch, backend):
     return ""
 
 
-def _start(config, vtk_threads):
+def _start(config, vtk_threads, vtk_smp="STDThread"):
     """Fix both systems' threading and Tack's backend for this process."""
     from vtkmodules.vtkCommonCore import vtkSMPTools
 
@@ -172,7 +172,9 @@ def _start(config, vtk_threads):
     if threads == 1:
         smp.SetBackend("Sequential")
     else:
-        smp.SetBackend("STDThread")
+        # STDThread is in every VTK; a build with TBB or OpenMP may be faster.
+        if not smp.SetBackend(vtk_smp):
+            sys.exit(f"this VTK has no {vtk_smp} SMP backend")
         smp.Initialize(threads or vtk_threads)
     import tack
 
@@ -198,8 +200,8 @@ def _meshes(names, sizes, square_bend):
 
 
 def run_config(config, sizes, mesh_names, filters, budget, vtk_threads,
-               square_bend=SQUARE_BEND, forms=("shape", "polyhedral")):
-    _start(config, vtk_threads)
+               square_bend=SQUARE_BEND, forms=("shape", "polyhedral"), vtk_smp="STDThread"):
+    _start(config, vtk_threads, vtk_smp)
     import meshes as m
     import pairs as p
 
@@ -296,6 +298,9 @@ def main():
                         help="squareBend.foam (or set TACK_SQUARE_BEND)")
     parser.add_argument("--vtk-threads", type=int, default=os.cpu_count(),
                         help="VTK's threads when it only checks a GPU run's outputs")
+    parser.add_argument("--vtk-smp", default="STDThread",
+                        help="VTK's SMP backend for a multi-threaded run: STDThread (in "
+                             "every VTK), or TBB or OpenMP where the build has them")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
     configs = [c.strip() for c in args.config.split(",") if c.strip()]
@@ -308,7 +313,7 @@ def main():
                        "--filters", args.filters,
                        "--budget", str(args.budget), "--output", args.output,
                        "--square-bend", args.square_bend,
-                       "--vtk-threads", str(args.vtk_threads)]
+                       "--vtk-threads", str(args.vtk_threads), "--vtk-smp", args.vtk_smp]
             subprocess.run(command, check=True)
         return
     sys.path.insert(0, HERE)
@@ -318,7 +323,8 @@ def main():
         if form not in ("shape", "polyhedral"):
             parser.error(f"unknown form {form!r}: shape or polyhedral")
     records = run_config(configs[0], args.sizes.split(","), args.meshes.split(","), filters,
-                         args.budget, args.vtk_threads, args.square_bend, forms)
+                         args.budget, args.vtk_threads, args.square_bend, forms,
+                         vtk_smp=args.vtk_smp)
     path = os.path.join(args.output, f"{configs[0]}.json")
     with open(path, "w") as out:
         json.dump({"meta": _meta(configs[0], args.vtk_threads), "records": records}, out,

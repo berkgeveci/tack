@@ -3,100 +3,53 @@
 Tack's visualization filters against VTK on the CPU and Viskores on the GPU,
 on synthetic meshes and on real simulation data. Every Tack output is checked
 against VTK's before its time counts: counts, sums of positions and values,
-areas and volumes. All times are in milliseconds; lower is better.
+areas and volumes.
 
-## Against VTK and Viskores
+Each entry below is how many times faster Tack is: the other system's time
+over Tack's, so above 1× Tack is faster. Tack's time is its **fresh** time,
+which includes deriving the connectivity it needs (faces, point links) from a
+mesh it has not seen, since VTK and Viskores rebuild theirs on every call.
+The running times, fresh and warm, are [at the bottom](#running-times).
 
-Unstructured grids of hexahedra and of tetrahedra, at 5M and 20M cells,
-timed four ways on one machine:
+## Linux: AMD EPYC 7453 and NVIDIA RTX 6000 Ada
 
-- **VTK** on the CPU: VTK master built with TBB, 28 threads.
-- **Tack on the CPU**: 28 threads, in the same process as VTK.
-- **Viskores** 1.2.0 on CUDA, through VTK's Viskores filters.
-- **Tack on CUDA**, in the same process as Viskores and on the same device
-  arrays.
+Unstructured grids of 20M hexahedra and of 20M tetrahedra. VTK on 28 CPU
+threads (TBB), Tack's CPU on 28 threads, Viskores 1.2.0 and Tack on CUDA.
 
-**Fresh** times include deriving the connectivity Tack needs (faces, point
-links) from a mesh it has not seen. VTK and Viskores rebuild theirs on every
-call, so fresh is the like-for-like comparison, and the ratio columns use it.
-The other Tack columns are warm: the topology keeps what it derived, and a
-second filter on the same mesh reuses it.
+| mesh | filter | VTK / Tack CPU | Viskores CUDA / Tack CUDA | VTK / Tack CUDA |
+|---|---|---|---|---|
+| hexahedra | contour | 1.15× | 1.49× | 10.4× |
+| hexahedra | slice | 1.26× | 3.4× | 11.8× |
+| hexahedra | threshold | 3.5× | 5.4× | 88.3× |
+| hexahedra | external faces | 1.66× | 1.63× | 25.2× |
+| hexahedra | point to cell | 2.4× | 1.96× | 40.4× |
+| hexahedra | cell to point | 2.3× | 2.1× | 51.9× |
+| hexahedra | point gradient | – | 1.27× | – |
+| hexahedra | cell gradient | 13.0× | – | – |
+| hexahedra | cell volume | 25.7× | – | – |
+| hexahedra | cell centers | 20.6× | – | – |
+| tetrahedra | contour | 1.24× | 2.3× | 11.2× |
+| tetrahedra | slice | 1.28× | 4.8× | 13.0× |
+| tetrahedra | threshold | 3.0× | 4.9× | 69.3× |
+| tetrahedra | external faces | 1.92× | 1.64× | 16.9× |
+| tetrahedra | point to cell | 2.9× | 2.3× | 45.9× |
+| tetrahedra | cell to point | 1.66× | 0.95× | 16.3× |
+| tetrahedra | point gradient | – | 1.02× | – |
+| tetrahedra | cell gradient | 17.8× | – | – |
+| tetrahedra | cell volume | 24.9× | – | – |
+| tetrahedra | cell centers | 32.2× | – | – |
 
-=== "20M cells"
+- **On the GPU**, Tack is ahead of Viskores on every filter but tetrahedra's
+  cell to point (0.95×), up to 5.4× on threshold and 4.8× on slice. Warm,
+  it is ahead on every filter, by 1.04–12×.
+- **On the CPU**, Tack is ahead of VTK on every filter, by 13–32× on cell
+  gradients, volumes and centers. At 5M cells, contour of hexahedra is the one
+  filter where VTK is faster (0.74×).
+- **Tack on the GPU against VTK on the CPU**: 10–88×.
 
-    | mesh | filter | VTK, 28 threads | Tack CPU | Tack CPU, fresh | VTK / Tack fresh | Viskores, CUDA | Tack CUDA | Tack CUDA, fresh | Viskores / Tack fresh |
-    |---|---|---|---|---|---|---|---|---|---|
-    | hexahedra | contour ² | 98.3 | 87.9 | 85.5 | 1.15× | 14.1 | 9.53 | 9.46 | 1.49× |
-    | hexahedra | slice ² | 118 | 95.9 | 94.0 | 1.26× | 33.7 | 10.1 | 10.0 | 3.4× |
-    | hexahedra | threshold | 696 | 204 | 198 | 3.5× | 42.3 | 7.75 | 7.88 | 5.4× |
-    | hexahedra | external faces ¹ | 758 | 446 | 455 | 1.67× | 49.2 | 27.8 | 30.1 | 1.63× |
-    | hexahedra | point to cell | 69.0 | 28.9 | 28.6 | 2.4× | 3.35 | 1.73 | 1.71 | 1.96× |
-    | hexahedra | cell to point | 524 | 36.0 | 224 | 2.3× | 21.0 | 1.81 | 10.1 | 2.1× |
-    | hexahedra | point gradient | – | – | – | – | 30.0 | 13.7 | 23.6 | 1.27× |
-    | hexahedra | cell gradient | 642 | 49.9 | 49.5 | 13.0× | – | – | – | – |
-    | hexahedra | cell volume | 4772 | 194 | 186 | 25.7× | – | – | – | – |
-    | hexahedra | cell centers | 792 | 40.2 | 38.5 | 20.6× | – | – | – | – |
-    | tetrahedra | contour | 66.5 | 57.6 | 53.6 | 1.24× | 13.7 | 5.95 | 5.95 | 2.3× |
-    | tetrahedra | slice | 74.7 | 60.8 | 58.3 | 1.28× | 27.5 | 5.75 | 5.73 | 4.8× |
-    | tetrahedra | threshold | 369 | 126 | 121 | 3.0× | 26.0 | 5.43 | 5.33 | 4.9× |
-    | tetrahedra | external faces ¹ | 456 | 240 | 238 | 1.92× | 44.2 | 27.0 | 27.0 | 1.64× |
-    | tetrahedra | point to cell | 57.4 | 21.6 | 19.9 | 2.9× | 2.89 | 1.28 | 1.25 | 2.3× |
-    | tetrahedra | cell to point | 176 | 20.3 | 106 | 1.66× | 10.3 | 1.30 | 10.8 | 0.95× |
-    | tetrahedra | point gradient | – | – | – | – | 15.5 | 5.90 | 15.2 | 1.02× |
-    | tetrahedra | cell gradient | 567 | 33.9 | 31.9 | 17.8× | – | – | – | – |
-    | tetrahedra | cell volume | 2398 | 97.6 | 96.5 | 24.8× | – | – | – | – |
-    | tetrahedra | cell centers | 841 | 28.0 | 26.1 | 32.2× | – | – | – | – |
-
-=== "5M cells"
-
-    | mesh | filter | VTK, 28 threads | Tack CPU | Tack CPU, fresh | VTK / Tack fresh | Viskores, CUDA | Tack CUDA | Tack CUDA, fresh | Viskores / Tack fresh |
-    |---|---|---|---|---|---|---|---|---|---|
-    | hexahedra | contour ² | 28.6 | 45.6 | 38.9 | 0.74× | 8.14 | 7.84 | 7.87 | 1.03× |
-    | hexahedra | slice ² | 35.4 | 34.0 | 31.8 | 1.11× | 14.1 | 7.55 | 7.50 | 1.88× |
-    | hexahedra | threshold | 174 | 76.7 | 66.5 | 2.6× | 16.4 | 3.62 | 3.73 | 4.4× |
-    | hexahedra | external faces ¹ | 184 | 124 | 123 | 1.50× | 19.5 | 9.22 | 9.75 | 2.0× |
-    | hexahedra | point to cell | 13.6 | 7.40 | 7.39 | 1.84× | 1.90 | 0.97 | 0.98 | 1.94× |
-    | hexahedra | cell to point | 89.2 | 10.1 | 68.3 | 1.31× | 7.22 | 0.93 | 4.23 | 1.71× |
-    | hexahedra | point gradient | – | – | – | – | 9.32 | 3.73 | 7.45 | 1.25× |
-    | hexahedra | cell gradient | 175 | 17.3 | 18.1 | 9.7× | – | – | – | – |
-    | hexahedra | cell volume | 1170 | 48.7 | 46.4 | 25.2× | – | – | – | – |
-    | hexahedra | cell centers | 173 | 14.6 | 17.9 | 9.7× | – | – | – | – |
-    | tetrahedra | contour | 25.4 | 20.0 | 20.4 | 1.25× | 7.59 | 4.86 | 4.85 | 1.56× |
-    | tetrahedra | slice | 22.7 | 19.5 | 19.9 | 1.14× | 13.1 | 4.87 | 4.86 | 2.7× |
-    | tetrahedra | threshold | 77.4 | 29.6 | 29.0 | 2.7× | 11.5 | 3.30 | 3.33 | 3.5× |
-    | tetrahedra | external faces ¹ | 111 | 70.6 | 71.8 | 1.55× | 17.5 | 9.11 | 9.08 | 1.93× |
-    | tetrahedra | point to cell | 11.3 | 5.50 | 5.04 | 2.2× | 1.74 | 0.80 | 0.83 | 2.1× |
-    | tetrahedra | cell to point | 48.5 | 8.73 | 36.6 | 1.33× | 4.46 | 0.80 | 4.11 | 1.09× |
-    | tetrahedra | point gradient | – | – | – | – | 5.72 | 2.09 | 5.32 | 1.08× |
-    | tetrahedra | cell gradient | 166 | 12.7 | 11.3 | 14.7× | – | – | – | – |
-    | tetrahedra | cell volume | 588 | 28.5 | 29.9 | 19.7× | – | – | – | – |
-    | tetrahedra | cell centers | 179 | 10.9 | 8.86 | 20.2× | – | – | – | – |
-
-¹ Warm external faces were as slow as fresh in this run: the surface was
-recomputed on every call. Since then (#167) the topology keeps it, and a
-repeated call only carries the fields.
-
-² Contour and slice of hexahedra on CUDA were 1.3–1.5× slower here than a
-week earlier (hex 5M contour 5.4 → 7.8 ms), which is being measured.
-
-- **On the GPU**, Tack is ahead of Viskores on every filter fresh except
-  tetrahedra's cell to point at 20M (0.95×), up to 5.4× on threshold and
-  4.8× on slice. Warm, it is ahead everywhere, by 1.04–12×.
-- **On the CPU**, Tack is ahead of VTK everywhere but contour of hexahedra at
-  5M (0.74×): by 9.7–32× on cell gradients, volumes and centers, and 1.1–3.5×
-  on contour, slice, threshold, external faces and the conversions between
-  point and cell data.
-- Viskores' default memory, `cudaMallocManaged`, is 4.7–25× slower than the
-  `cudaMalloc` it ran with here (`NO_VISKORES_MANAGED_MEMORY=1`), from page
-  faults on new buffers. No transfer between the host and the device is in
-  Viskores' times: it was handed Tack's device arrays and kept its output on
-  the device, and a trace of each run confirmed no copies beyond sizes and
-  counts.
-
-Machine: jura, AMD EPYC 7453 (28 cores), NVIDIA RTX 6000 Ada (driver
-615.71.09), idle. Tack `main` at `291fcfe` (2026-10-26). Each time is the
-mean of two passes, the second in reverse order. Harness:
-`benchmarks/vtk_compare` and `benchmarks/viskores_compare`.
+Contour and slice of hexahedra on CUDA were 1.3–1.5× slower in this run than
+a week earlier (5M hexahedra's contour 5.4 → 7.8 ms), which is being looked
+into.
 
 ## Real data, against VTK
 
@@ -123,6 +76,79 @@ searching (#166). VTK's default interpolator finds cells through the nearest
 point, which ends 7 of the M6's 17 paths early, inside the mesh. With VTK's
 cell-locator interpolator, every path runs its full length, within 3.8e-6 of
 Tack's, in 22.9 s.
+
+## How these were measured
+
+- **One process per comparison.** Tack runs in the same process as VTK (the
+  CPU) or Viskores (the GPU), on the same mesh, and its output is checked
+  against the other's before any timing.
+- **Viskores through VTK**: its filters are VTK's Viskores filters
+  (`vtkmContour` and the others). On the GPU it was handed Tack's device
+  arrays and kept its output on the device, and a trace of every run
+  confirmed no transfers beyond sizes and counts. It ran with `cudaMalloc`
+  (`NO_VISKORES_MANAGED_MEMORY=1`): its default, `cudaMallocManaged`, was
+  4.7–25× slower from page faults on new buffers.
+- **Warm and fresh.** A warm Tack run reuses the connectivity its topology
+  keeps from an earlier filter on the same mesh; a fresh one derives it.
+- **Timing.** Repeated runs for a fixed budget, the median taken; Tack's
+  timing ends with `tack.sync()`, since GPU launches are queued. On the
+  Linux machine, two passes, the second in reverse order, and their mean.
+- **Harness**: `benchmarks/vtk_compare` (VTK and Tack) and
+  `benchmarks/viskores_compare` (Viskores and Tack), on the meshes of
+  `benchmarks/vtk_compare/meshes.py`.
+
+## Running times
+
+All in milliseconds. The Linux machine: jura, idle; NVIDIA driver 615.71.09;
+VTK master built with TBB; Viskores 1.2.0 (CUDA arch 89, 64-bit ids,
+double precision); Tack `main` at `291fcfe` (2026-10-26).
+
+| mesh | cells | filter | VTK | Tack CPU | Tack CPU, fresh | Viskores CUDA | Tack CUDA | Tack CUDA, fresh |
+|---|---|---|---|---|---|---|---|---|
+| hexahedra | 5M | contour | 28.6 | 45.6 | 38.9 | 8.14 | 7.84 | 7.87 |
+| hexahedra | 5M | slice | 35.4 | 34.0 | 31.8 | 14.1 | 7.55 | 7.50 |
+| hexahedra | 5M | threshold | 174 | 76.7 | 66.5 | 16.4 | 3.62 | 3.73 |
+| hexahedra | 5M | external faces | 184 | 124 | 123 | 19.5 | 9.22 | 9.75 |
+| hexahedra | 5M | point to cell | 13.6 | 7.40 | 7.39 | 1.90 | 0.97 | 0.98 |
+| hexahedra | 5M | cell to point | 89.2 | 10.1 | 68.3 | 7.22 | 0.93 | 4.23 |
+| hexahedra | 5M | point gradient | – | – | – | 9.32 | 3.73 | 7.45 |
+| hexahedra | 5M | cell gradient | 175 | 17.3 | 18.1 | – | – | – |
+| hexahedra | 5M | cell volume | 1170 | 48.7 | 46.4 | – | – | – |
+| hexahedra | 5M | cell centers | 173 | 14.6 | 17.9 | – | – | – |
+| tetrahedra | 5M | contour | 25.4 | 20.0 | 20.4 | 7.59 | 4.86 | 4.85 |
+| tetrahedra | 5M | slice | 22.7 | 19.5 | 19.9 | 13.1 | 4.87 | 4.86 |
+| tetrahedra | 5M | threshold | 77.4 | 29.6 | 29.0 | 11.5 | 3.30 | 3.33 |
+| tetrahedra | 5M | external faces | 111 | 70.6 | 71.8 | 17.5 | 9.11 | 9.08 |
+| tetrahedra | 5M | point to cell | 11.3 | 5.50 | 5.04 | 1.74 | 0.80 | 0.83 |
+| tetrahedra | 5M | cell to point | 48.5 | 8.73 | 36.6 | 4.46 | 0.80 | 4.11 |
+| tetrahedra | 5M | point gradient | – | – | – | 5.72 | 2.09 | 5.32 |
+| tetrahedra | 5M | cell gradient | 166 | 12.7 | 11.3 | – | – | – |
+| tetrahedra | 5M | cell volume | 588 | 28.5 | 29.9 | – | – | – |
+| tetrahedra | 5M | cell centers | 179 | 10.9 | 8.86 | – | – | – |
+| hexahedra | 20M | contour | 98.3 | 87.9 | 85.5 | 14.1 | 9.53 | 9.46 |
+| hexahedra | 20M | slice | 118 | 95.9 | 94.0 | 33.7 | 10.1 | 10.0 |
+| hexahedra | 20M | threshold | 696 | 204 | 198 | 42.3 | 7.75 | 7.88 |
+| hexahedra | 20M | external faces | 758 | 446 | 455 | 49.2 | 27.8 | 30.1 |
+| hexahedra | 20M | point to cell | 69.0 | 28.9 | 28.6 | 3.35 | 1.73 | 1.71 |
+| hexahedra | 20M | cell to point | 524 | 36.0 | 224 | 21.0 | 1.81 | 10.1 |
+| hexahedra | 20M | point gradient | – | – | – | 30.0 | 13.7 | 23.6 |
+| hexahedra | 20M | cell gradient | 642 | 49.9 | 49.5 | – | – | – |
+| hexahedra | 20M | cell volume | 4772 | 194 | 186 | – | – | – |
+| hexahedra | 20M | cell centers | 792 | 40.2 | 38.5 | – | – | – |
+| tetrahedra | 20M | contour | 66.5 | 57.6 | 53.6 | 13.7 | 5.95 | 5.95 |
+| tetrahedra | 20M | slice | 74.7 | 60.8 | 58.3 | 27.5 | 5.75 | 5.73 |
+| tetrahedra | 20M | threshold | 369 | 126 | 121 | 26.0 | 5.43 | 5.33 |
+| tetrahedra | 20M | external faces | 456 | 240 | 238 | 44.2 | 27.0 | 27.0 |
+| tetrahedra | 20M | point to cell | 57.4 | 21.6 | 19.9 | 2.89 | 1.28 | 1.25 |
+| tetrahedra | 20M | cell to point | 176 | 20.3 | 106 | 10.3 | 1.30 | 10.8 |
+| tetrahedra | 20M | point gradient | – | – | – | 15.5 | 5.90 | 15.2 |
+| tetrahedra | 20M | cell gradient | 567 | 33.9 | 31.9 | – | – | – |
+| tetrahedra | 20M | cell volume | 2398 | 97.6 | 96.5 | – | – | – |
+| tetrahedra | 20M | cell centers | 841 | 28.0 | 26.1 | – | – | – |
+
+Warm external faces were as slow as fresh in this run: the surface was
+recomputed on every call. Since then (#167) the topology keeps it, and a
+repeated call only carries the fields.
 
 ## Kernel throughput (historical)
 
