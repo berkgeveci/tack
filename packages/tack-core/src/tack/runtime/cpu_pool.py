@@ -24,8 +24,9 @@ Python. Measured on the Xeon: 4 µs hot,
 about 100 µs after an idle gap.
 
 Chunks are claimed, not assigned: a run is cut into several chunks per
-worker (`GRAIN`, each at least `MIN_CHUNK` elements) and every worker takes
-the next one from a counter until none is left. A worker that runs slow --
+worker (`GRAIN`, each at least `MIN_CHUNK` elements, and at most the
+caller's `most`) and every worker takes the next one from a counter until
+none is left. A worker that runs slow --
 on the sibling hyperthread of a busy core, or over the dear part of an
 uneven range -- simply takes fewer. With one equal chunk per worker the
 dispatch waited for the slowest: a compute-bound kernel over a million
@@ -61,6 +62,8 @@ SPIN_ITERATIONS = 20_000
 # Chunks per worker, and the smallest chunk worth claiming.
 GRAIN = 4
 MIN_CHUNK = 256
+# `most`'s default: no limit on a chunk.
+_NO_LIMIT = 1 << 62
 SLEEP_NS = 50_000
 # ...doubling each poll up to this, so a pool idle for seconds costs a
 # thousand wake-ups a second per worker, not twenty thousand.
@@ -390,11 +393,12 @@ def _pool_module() -> ir.Module:
     b = ir.IRBuilder(detach_out)
     b.ret(_i32(0))
 
-    # pool_run(fn, pack, start, end): every chunk, this thread's included.
-    run = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _ptr, _i64, _i64, _i32]),
+    # pool_run(fn, pack, start, end, k, most): every chunk, this thread's
+    # included, none longer than `most` elements.
+    run = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _ptr, _i64, _i64, _i32, _i64]),
                       "tack_pool_run")
     b = ir.IRBuilder(run.append_basic_block("entry"))
-    fn_arg, pack_arg, s_arg, e_arg, k_arg = run.args
+    fn_arg, pack_arg, s_arg, e_arg, k_arg, most_arg = run.args
     b.store(fn_arg, cur_fn)
     b.store(pack_arg, cur_pack)
     b.store(s_arg, cur_start)
@@ -409,6 +413,7 @@ def _pool_module() -> ir.Module:
     per_worker = b.sdiv(b.add(total, b.sub(k64, _i64(1))), k64)
     floor = b.select(b.icmp_signed("<", per_worker, _i64(MIN_CHUNK)), per_worker, _i64(MIN_CHUNK))
     chunk = b.select(b.icmp_signed("<", fine, floor), floor, fine)
+    chunk = b.select(b.icmp_signed("<", most_arg, chunk), most_arg, chunk)
     chunk = b.select(b.icmp_signed("<", chunk, _i64(1)), _i64(1), chunk)
     b.store(chunk, cur_chunk)
     b.store(b.trunc(b.sdiv(b.add(total, b.sub(chunk, _i64(1))), chunk), _i32), n_chunks)
@@ -557,7 +562,8 @@ class CPool:
                                        ctypes.c_int64, ctypes.c_int64,
                                        ctypes.c_int64, ctypes.c_int)(addr("tack_pool_start"))
         self._run = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64,
-                                     ctypes.c_int64, ctypes.c_int)(addr("tack_pool_run"))
+                                     ctypes.c_int64, ctypes.c_int,
+                                     ctypes.c_int64)(addr("tack_pool_run"))
         self._get_spans = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_spans"))
         self._get_elems = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_elems"))
         spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
@@ -592,12 +598,15 @@ class CPool:
         return pool if pool and threads <= pool.threads else None
 
     def run(self, wrapper: int, pack, start: int, end: int, threads: int,
-            measure: bool = False):
+            measure: bool = False, most: int | None = None):
         """[start, end) in chunks claimed by `threads` workers, this thread
-        one of them. With `measure`, the run's per-worker spans (ns) and
-        element counts, read before another thread's run can replace them."""
+        one of them, none longer than `most` elements (by default, as long as
+        `chunk_size` makes them). With `measure`, the run's per-worker spans
+        (ns) and element counts, read before another thread's run can
+        replace them."""
         with self._txn:
-            self._run(wrapper, ctypes.addressof(pack), start, end, threads)
+            self._run(wrapper, ctypes.addressof(pack), start, end, threads,
+                      _NO_LIMIT if most is None else max(1, int(most)))
             if measure:
                 return self._spans_and_elems()
         return None
@@ -616,13 +625,17 @@ class CPool:
             return list(self._spans)
 
     @staticmethod
-    def chunk_size(total: int, threads: int) -> int:
+    def chunk_size(total: int, threads: int, most: int | None = None) -> int:
         """The chunk a run of `total` elements over `threads` workers uses:
-        GRAIN per worker, at least MIN_CHUNK unless the range is shorter."""
+        GRAIN per worker, at least MIN_CHUNK unless the range is shorter, and
+        at most `most`."""
         parts = threads * GRAIN
         fine = (total + parts - 1) // parts
         per_worker = (total + threads - 1) // threads
-        return max(1, max(fine, min(per_worker, MIN_CHUNK)))
+        chunk = max(fine, min(per_worker, MIN_CHUNK))
+        if most is not None:
+            chunk = min(chunk, int(most))
+        return max(1, chunk)
 
     def elems(self) -> list:
         """Per worker, the elements it ran in the last run."""
