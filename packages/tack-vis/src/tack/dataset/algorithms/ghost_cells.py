@@ -34,7 +34,7 @@ from tack import arrays
 from tack import communication as tc
 from tack.dataset import _matching
 from tack.dataset._matching import INDEX_BITS, INDEX_MASK
-from tack.dataset.algorithms._common import _csr_rows
+from tack.dataset.algorithms._common import _csr_rows, _tolerance
 from tack.dataset.algorithms._structured_ghosts import structured_ghost_cells
 from tack.dataset.carry import _take
 from tack.dataset.dataset import DataSet, Field
@@ -48,7 +48,7 @@ from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 __all__ = ["ghost_cells", "update_ghosts"]
 
 
-def ghost_cells(data, layers=1, world=None, fields=None):
+def ghost_cells(data, layers=1, world=None, fields=None, tolerance=0.0):
     """``data``'s pieces, each with a layer of its neighbours' cells added as ghosts:
     a new ``PartitionedDataSet``, as VTK's ``vtkGhostCellsGenerator`` makes.
 
@@ -57,7 +57,9 @@ def ghost_cells(data, layers=1, world=None, fields=None):
     on any devices; ``world`` is the
     ``tack.communication.World`` they live in (``data.world``, this process
     alone, by default). Pieces neighbour where they share points at exactly
-    the same position. Each piece gains the cells of other pieces that use a
+    the same position, or with ``tolerance`` at most that far apart (in the
+    spatial unit, or a quantity; chains of them too), for pieces whose copies
+    of a shared point differ in their last bits. Each piece gains the cells of other pieces that use a
     point it shares with them (``DUPLICATECELL``), and their points it lacks
     (``DUPLICATEPOINT``); a point several pieces share belongs to the lowest
     of them, and is ``DUPLICATEPOINT`` in the others. Input marks come along:
@@ -106,6 +108,7 @@ def ghost_cells(data, layers=1, world=None, fields=None):
         raise TypeError(f"ghost_cells takes a PartitionedDataSet, not {type(data).__name__}")
     world = data.world if world is None else world
     common_origin(data, "ghost_cells", world)       # positions are matched as they are
+    tolerance = _tolerance(data, tolerance, "ghost_cells")
     pieces = list(data)
     names = _carried(pieces, fields)
     for i, piece in enumerate(pieces):
@@ -133,19 +136,25 @@ def ghost_cells(data, layers=1, world=None, fields=None):
         for g, p in zip(blocks.local, pieces)}, "min")) if blocks.count else False
         for kind in ("points", "cells")}
 
-    def values(g, piece):
+    def entry(g, piece):
         chosen = hosts[g]["candidates"]
+        unmarked = np.zeros(len(chosen), np.uint8)
         if numbered["points"]:
-            return [piece.global_ids.points.numpy()[chosen].astype(np.uint64)]
-        return _matching.position_bits(hosts[g]["positions"][chosen])
+            return (chosen, [piece.global_ids.points.numpy()[chosen].astype(np.uint64)],
+                    unmarked)
+        return chosen, hosts[g]["positions"][chosen], unmarked
 
-    partners = _matching.match(blocks, {
-        g: (hosts[g]["candidates"], values(g, piece),
-            np.zeros(len(hosts[g]["candidates"]), np.uint8))
-        for g, piece in zip(blocks.local, pieces)})
+    entries = {g: entry(g, piece) for g, piece in zip(blocks.local, pieces)}
+    near = tolerance and not numbered["points"]
+    partners = (_matching.match_positions(blocks, entries, tolerance) if near
+                else _matching.match(blocks, {g: e if numbered["points"] else
+                                              (e[0], _matching.position_bits(e[1]), e[2])
+                                              for g, e in entries.items()}))
     owners = {g: _matching.owners(g, hosts[g]["num_points"], partners[g],
                                   np.zeros(hosts[g]["num_points"], bool))
               for g in blocks.local}
+    if near:
+        _matching.settled(blocks, owners, partners)
     needed = _needed(blocks, hosts, partners, owners, int(layers))
     sent = _ghost_parts(blocks, pieces, hosts, needed, owners, names, numbered)
     incoming = blocks.exchange(sent)
