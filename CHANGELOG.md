@@ -467,6 +467,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- The CPU fans out fewer elements than it has threads when each is dear
+  enough to repay it. The threshold was floored at the thread count, so on
+  jura's 28 threads the ONERA M6's 17 streamlines ran serially on every
+  call (30 ms, against 7-12 on 8 threads), and a short range of dear
+  elements never fanned out from 10 threads up. The floor is two elements,
+  the fewest a fan-out can split; above it the costs decide.
 - `carry`, `visible`, `owned_values` and `orient` run on their dataset's
   device. Made public for filters of one's own (#163), the first three had
   only been called from inside algorithms that had already made that device

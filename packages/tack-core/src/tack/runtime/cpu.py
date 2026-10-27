@@ -1757,8 +1757,11 @@ class CPUBackend(Backend):
             return _NEVER
         fan_out = self._fan_out_estimate()
         rate = ns_per_elem - min(ns_per_elem_parallel, ns_per_elem * 0.9)
-        return max(self.num_threads,
-                   int(fan_out * self._margin() / rate))
+        # At least two elements, the fewest a fan-out can split; above that the
+        # costs decide. A floor at the thread count ran fewer dear elements
+        # than threads serially on every call: 17 streamlines on 28 threads,
+        # 30 ms a call against 7-12 on 8.
+        return max(2, int(fan_out * self._margin() / rate))
 
     def _get_pool(self) -> ThreadPoolExecutor:
         """The persistent executor, made on first use.

@@ -184,13 +184,25 @@ def test_threshold_falls_back_when_the_cost_is_unknown(cpu):
     assert backend._min_elems(0.0) > 10 ** 12
 
 
-def test_threshold_never_drops_below_the_thread_count(cpu):
-    """Fewer elements than threads cannot be worth a fan-out."""
+def test_threshold_never_drops_below_two_elements(cpu):
+    """One element cannot be split, so a fan-out needs two at least."""
     backend = CPUBackend()
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
     backend._fan_out_ns = 1.0    # absurdly cheap threads
-    assert backend._min_elems(10 ** 9) >= backend.num_threads
+    assert backend._min_elems(10 ** 9) == 2
+
+
+def test_fewer_dear_elements_than_threads_fan_out(cpu):
+    """Elements dear enough repay a fan-out however few they are: with the
+    threshold floored at the thread count, 17 streamlines of the ONERA M6
+    ran serially on every call on 28 threads (jura; 30 ms a call against
+    7-12 on 8), and a short range of dear elements never fanned out from 10
+    threads up."""
+    backend = CPUBackend(num_threads=28)
+    backend._fan_out_ns = 20_000.0                # 20 us a fan-out
+    assert backend._min_elems(5e6) < 28           # 5 ms an element
+    assert backend._min_elems(5e6) == 2
 
 
 def test_measured_cost_ranks_two_real_kernels(cpu):
