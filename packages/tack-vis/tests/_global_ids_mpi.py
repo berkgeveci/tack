@@ -22,7 +22,8 @@ def main():
         for route, expected in alone.items():
             across = {g: d for part in gathered for g, d in part[route].items()}
             assert across == expected, f"route {route!r} differs"
-            assert across == alone["kept"], f"route {route!r} differs from 'kept'"
+        # The jittered pieces' ids are the plain pieces', by position.
+        assert alone["near"] == alone["plain"], "the jittered pieces' ids are not the plain ones'"
         print(f"ok: {len(alone['kept'])} pieces on {comm.size} ranks", flush=True)
 
 

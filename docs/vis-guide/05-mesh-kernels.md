@@ -166,4 +166,5 @@ uv run python docs/examples/datasets.py --arch cpu --check
 
 [Download the cell/face kernel program](../examples/data_mesh_kernels.py).
 The [reference](reference/dataset-api.md#kernels) lists the full view methods.
-Continue with [Sampling, Rendering and Simulation Pipelines](06-pipelines.md).
+Continue with [Write a Filter](15-write-a-filter.md) to turn kernels like
+these into filters, or [Sampling, Rendering and Simulation Pipelines](06-pipelines.md).

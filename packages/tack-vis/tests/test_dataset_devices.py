@@ -137,6 +137,8 @@ CALLS = {
     "feature_edges": lambda d: td.feature_edges(td.extract_surface(d, td.boundary_faces(d))),
     "surface_normals": lambda d: td.surface_normals(td.extract_surface(d)),
     "tetrahedralize": td.tetrahedralize,
+    "merge_points": lambda d: (None if isinstance(d.topology, td.StructuredTopology)
+                               else td.merge_points(d)),
     "shrink": td.shrink,
     "warp": lambda d: td.warp(d, (0, 0, 1), scale=0.5),
     "transform": lambda d: td.transform(d, np.eye(4)),

@@ -7,6 +7,36 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `td.merge_points(data, tolerance=0)`: coincident points made one, as VTK's
+  `vtkStaticCleanUnstructuredGrid` and Viskores' `CleanGrid` merge them.
+  Points at most `tolerance` apart join, and so do chains of them; each set
+  becomes its smallest point, with that point's position, point fields,
+  ghost marks and global id, and the cells stay the same cells on the
+  merged points. It is for meshes written without merging their points. A
+  simulation's 512 pieces store each point about 2.6 times, so matching
+  points across pieces numbered 16.9M of them; merged piece by piece first,
+  `generate_global_ids` numbers 6,310,285, the merged mesh's count. Point
+  counts match VTK's static clean, exactly and with a tolerance.
+- A "Write a Filter" chapter in the Visualization Guide: five built-in
+  filters (`point_elevation`, `threshold`, `shrink`, `jump`, `triangulate`)
+  and `entropy` over pieces rewritten with public names only, each section
+  on what that kind of filter must keep (relative positions, the device,
+  implicit arrays, quantities as parameters, units of results, ghost marks
+  through `carry`, `keep_marks` or `drop_marks`, hidden cells, owned values
+  over pieces). Its program, `docs/examples/data_filters.py`, holds every
+  rewrite to the built-in in every part, and runs in `validate.py`.
+- `tolerance=` on `generate_global_ids`, `ghost_cells` and `merge_pieces`
+  (VTK's `vtkGenerateGlobalIds` has one): points of different pieces at most
+  that far apart are copies, and so are chains of them, for pieces whose
+  copies of a shared point differ in their last bits. Points are binned into
+  cells a little over two tolerances wide, each sent to its own cell and the
+  ones its box reaches, through the same sort over the pieces as exact
+  matching; owners then agree along chains by exchanges between partners.
+  The default, 0, matches exactly as before. On a simulation's 512 pieces in
+  f64, merged first with `merge_points`, a tolerance of 1e-12 numbers
+  6,310,285 points (the merged mesh's), where exact matching numbers
+  6,311,919, and gives VTK's ghost cell count.
+
 - What the built-in filters are written with is public, so a filter of
   your own is written the same way: `td.carry` and its maps (`td.Same`,
   `td.Take`, `td.Pieces`, `td.Interpolate`), `td.keep_marks` and
@@ -437,6 +467,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A compiled CPU kernel bound to another device's arrays raises a
+  `TypeError` naming the kernel and the argument, where it wrote device
+  pointers from the host and segfaulted (CUDA arrays, met through the Warp
+  backend's run of `test_parallel_dims.py`). Arrays bind through
+  `DeviceBuffer.host_address`, which only host memory has: the CPU's, and
+  Warp's on its CPU device. A kernel call never got that far, since
+  dispatch picks a device that can address every array.
 - A repeated `extract_surface` of a mesh whose faces were never derived
   costs only the carry again. The fresh boundary (#157), which finds the
   surface without deriving every face, kept nothing, so every call paid
@@ -537,6 +574,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- The CPU threading policy fans out a short range of costly elements on its
+  first dispatch, and balances it. A range too short for a timing slice ran
+  whole on one thread, and the first recheck ran it whole again; fanned out,
+  17 elements went to 8 threads in chunks of 3. Now one element is timed
+  first: a cheap one changes nothing, a costly one (100 µs or more) starts
+  slices until one lasts 20 ms, and the rest fans out; a recheck believes a
+  sample that long; and a fan-out's chunks hold at most about 20 µs of
+  estimated work, so costly elements go one a claim. 17 streamlines on the
+  ONERA M6 wing: the first two calls 8.8 and 8.5 s to 2.4 and 2.1, steady
+  2.7 to 1.6 (M1 Max, 8 threads); an aneurysm's 25 steady 1.5 to 1.1-1.4 ms.
 - Streamlines and `advect` try the cell a particle was last found in before
   searching the locator's bins. The cell is taken only where it holds the
   point well inside (by 1e-3 in its parametric coordinates, a hundred times
