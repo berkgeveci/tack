@@ -467,6 +467,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A dropped dataset frees its device memory at once. A topology interned
+  its spaces in a dict and each space holds its topology, so every dataset
+  with a field was a reference cycle, freed only when Python's cycle
+  collector ran, which counts objects, not device memory: on a 16 GB GPU
+  the 20M-cell checks ran out of memory with dropped datasets still on the
+  card. The topology holds its spaces weakly. A topology's cached cell and
+  point locators still hold a dataset of it, a cycle left for now.
 - An allocation that runs out of device memory collects Python's garbage
   and tries once more. A dropped array held in a reference cycle keeps its
   memory until the cycle collector runs, which counts objects, not device

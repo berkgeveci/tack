@@ -9,8 +9,10 @@ DG layout and back is unchanged -- and against vtkCellCenters,
 vtkCellDataToPointData and vtkGeometryFilter.
 """
 
+import gc
 import importlib
 import types
+import weakref
 
 import numpy as np
 import pytest
@@ -573,6 +575,28 @@ def test_spaces_are_one_object_per_topology_and_parameters(backend):
         td.H1(data, order=3)
     with pytest.raises(ValueError, match="points, edges, faces or cells"):
         td.Values(data, "corners")
+
+
+def test_a_dropped_dataset_is_freed_without_the_cycle_collector(backend):
+    """A topology holds its interned spaces weakly: a space holds its topology,
+    and a cycle kept a dropped dataset's arrays (on a GPU, its device memory)
+    until Python's cycle collector happened to run."""
+    data = _two_hexes_and_a_pyramid()
+    data.fields["c"] = td.Field(td.Constant(data), _scalars(np.zeros(3)))
+    data.topology.faces()
+    order2 = td.H1(data, order=2)
+    assert order2 is td.H1(data, order=2)
+    topology = weakref.ref(data.topology)
+    connectivity = weakref.ref(data.topology.connectivity)
+    del order2
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        del data
+        assert topology() is None and connectivity() is None
+    finally:
+        if enabled:
+            gc.enable()
 
 
 def test_spaces_own_their_layout(backend):

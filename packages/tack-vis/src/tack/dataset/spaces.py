@@ -13,7 +13,9 @@ parameters, as MFEM's ``FiniteElementSpace`` is on a mesh::
 
 Spaces are interned on their topology: the same kind and parameters on the
 same topology is the same object, so fields that share a space share its
-layout -- and equality is identity. The layout is what a kernel needs
+layout -- and equality is identity. The topology holds them weakly: a space
+holds its topology, and a cycle would keep a dropped dataset's arrays (on a
+GPU, its device memory) until Python's cycle collector ran. The layout is what a kernel needs
 beyond a field's values to find them:
 
 - ``H1``, order 1: nothing of its own. Its values are the points', found
@@ -36,6 +38,8 @@ each cell a key (``cell_keys``, here the order), and ``tack.dataset.for_each``
 launches each shape group once per key, with the view ``mixin_for(key)``,
 so every launch is specialized as a uniform space's is.
 """
+
+import weakref
 
 import numpy as np
 
@@ -68,7 +72,7 @@ class Space:
         # one per array object, which it keeps alive, so its id stays unique.
         key = (cls, tuple(sorted((k, ("array", id(v)) if _is_array(v) else v)
                                  for k, v in params.items())))
-        interned = topology.__dict__.setdefault("_spaces", {})
+        interned = topology.__dict__.setdefault("_spaces", weakref.WeakValueDictionary())
         space = interned.get(key)
         if space is None:
             space = super().__new__(cls)
