@@ -142,6 +142,15 @@ def _length(data, value, what):
     return units.magnitude(value, _spatial_unit(data), what)
 
 
+def _tolerance(data, value, who):
+    """A matching tolerance: a distance in ``data``'s spatial unit (a quantity
+    converted), at least zero."""
+    value = _length(data, value, f"{who}'s tolerance")
+    if not value >= 0:
+        raise ValueError(f"{who}'s tolerance must be at least zero, not {value!r}")
+    return float(value)
+
+
 def _in_unit_of(field, value, what):
     """A value compared with ``field``'s (an isovalue, a threshold) as a number in
     its unit: a quantity converted, offsets included (``"20 degC"`` on a field

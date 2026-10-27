@@ -70,6 +70,12 @@ def match(blocks, entries):
                        [sorted_values[g][f"c{c}"].numpy() for c in range(width)],
                        *(sorted_values[g][n].numpy() for n in ("piece", "index", "flag")))
              for g in blocks.local}
+    return _deliver(blocks, found)
+
+
+def _deliver(blocks, found):
+    """Each block's rows ``(piece, index, other piece, other index, other flag)``
+    handed to their pieces: ``{gid: (index, other, other index, other flag)}``."""
     if _all_here(blocks):
         return _partners_here(blocks, found)
     outgoing = {}
@@ -93,6 +99,127 @@ def match(blocks, entries):
             else np.zeros(0, np.uint8 if name == "other_flag" else np.int64)
             for name in ("index", "other", "other_index", "other_flag"))
     return partners
+
+
+def match_positions(blocks, entries, tolerance=0.0):
+    """Copies of points by position: ``entries`` is ``{gid: (index, positions,
+    flags)}`` (positions an ``(n, 3)`` host array relative to the pieces' common
+    origin). At zero ``tolerance``, coordinates equal bit for bit (``match``);
+    otherwise every two points of different pieces at most ``tolerance`` apart
+    are copies, and the owners of chains of them need ``settled``. Returns
+    ``match``'s rows."""
+    if not tolerance:
+        return match(blocks, {g: (index, position_bits(positions), flags)
+                              for g, (index, positions, flags) in entries.items()})
+    return _match_near(blocks, entries, float(tolerance))
+
+
+def _match_near(blocks, entries, tolerance):
+    """Points of different pieces at most ``tolerance`` apart, through cells of
+    a lattice a little over two tolerances wide: each point goes to its own cell
+    (its home) and to the others its box of plus or minus the tolerance
+    reaches, at most eight, all by ``sort_by_key``. Two points that close meet
+    in each one's home, where the other comes to it, so each is told of the
+    other once."""
+    width = 2.0 * tolerance * (1.0 + 1e-6)      # a box (2 tolerances, a hair more)
+    reach = tolerance * (1.0 + 1e-9)            # spans at most two cells an axis
+    keys, values = {}, {}
+    for g in blocks.local:
+        index, positions, flags = entries[g]
+        index = np.asarray(index, np.int64)
+        x = np.asarray(positions, np.float64).reshape(-1, 3) + 0.0
+        home = np.floor(x / width).astype(np.int64)
+        lo = np.floor((x - reach) / width).astype(np.int64)
+        hi = np.floor((x + reach) / width).astype(np.int64)
+        cells, rows = [], []
+        for corner in np.ndindex(2, 2, 2):
+            cell = lo + np.array(corner, np.int64)
+            reached = np.flatnonzero((cell <= hi).all(axis=1))
+            cells.append(cell[reached])
+            rows.append(reached)
+        cells, rows = np.concatenate(cells), np.concatenate(rows)
+        columns = [cells[:, axis].view(np.uint64) for axis in range(3)]
+        device = blocks.device(g)
+        keys[g] = tack.array(hashed(columns), tack.u64, device=device)
+        bits = x[rows].view(np.uint64)
+        values[g] = {"piece": tack.array(np.full(len(rows), g, np.int64), tack.i64,
+                                         device=device),
+                     "index": tack.array(index[rows], tack.i64, device=device),
+                     "flag": tack.array(np.asarray(flags, np.uint8)[rows], tack.u8,
+                                        device=device),
+                     "home": tack.array((cells == home[rows]).all(axis=1).astype(np.uint8),
+                                        tack.u8, device=device)}
+        for axis in range(3):
+            values[g][f"c{axis}"] = tack.array(columns[axis].copy(), tack.u64, device=device)
+            values[g][f"x{axis}"] = tack.array(bits[:, axis].copy(), tack.u64, device=device)
+    sorted_keys, sorted_values = tc.sort_by_key(blocks, keys, values)
+    found = {}
+    for g in blocks.local:
+        v = {name: column.numpy() for name, column in sorted_values[g].items()}
+        found[g] = _near_pairs(sorted_keys[g].numpy(), [v[f"c{a}"] for a in range(3)],
+                               np.stack([v[f"x{a}"] for a in range(3)], axis=1)
+                               .view(np.float64), v["piece"], v["index"], v["flag"],
+                               v["home"], tolerance)
+    return _deliver(blocks, found)
+
+
+def _near_pairs(keys, cells, x, piece, index, flag, home, tolerance):
+    """``_pairs``' rows for every two entries of one cell on different pieces at
+    most ``tolerance`` apart, the second at home there."""
+    if not len(keys):
+        return tuple(np.zeros(0, np.uint8 if k == 4 else np.int64) for k in range(5))
+    change = np.r_[True, keys[1:] != keys[:-1]]
+    if not all(np.array_equal(c[1:][~change[1:]], c[:-1][~change[1:]]) for c in cells):
+        order = np.lexsort([*cells[::-1], keys])
+        keys, cells, x = keys[order], [c[order] for c in cells], x[order]
+        piece, index, flag, home = piece[order], index[order], flag[order], home[order]
+        change = np.r_[True, keys[1:] != keys[:-1]]
+        for c in cells:
+            change[1:] |= c[1:] != c[:-1]
+    group = np.cumsum(change) - 1
+    sizes = np.bincount(group)
+    starts = np.concatenate(([0], np.cumsum(sizes)))[group]
+    size = sizes[group]
+    first = np.repeat(np.arange(len(group)), size)
+    within = np.arange(size.sum()) - np.repeat(np.cumsum(size) - size, size)
+    second = np.repeat(starts, size) + within
+    keep = (piece[first] != piece[second]) & (home[second] == 1)
+    first, second = first[keep], second[keep]
+    d = x[first] - x[second]
+    near = np.einsum("ij,ij->i", d, d) <= tolerance * tolerance
+    first, second = first[near], second[near]
+    return piece[first], index[first], piece[second], index[second], flag[second]
+
+
+def settled(blocks, identities, partners):
+    """Each entry's identity, ``owners``' smallest copy, made the smallest over
+    chains of copies (``a`` near ``b``, ``b`` near ``c``): partners swap
+    identities until none changes, which near copies need and exact ones do not
+    (every exact copy is every other's partner). ``identities`` is ``{gid:
+    owners(...)}``, updated in place and returned."""
+    while True:
+        outgoing = {}
+        for g in blocks.local:
+            index, other, other_index, _ = partners[g]
+            order, starts = _runs_by_piece(other)
+            device = blocks.device(g)
+            outgoing[g] = {}
+            for at in range(len(starts) - 1):
+                rows = order[starts[at]:starts[at + 1]]
+                outgoing[g][int(other[rows[0]])] = {
+                    "index": tack.array(other_index[rows], tack.i64, device=device),
+                    "identity": tack.array(identities[g][index[rows]], tack.i64,
+                                           device=device)}
+        incoming = blocks.exchange(outgoing)
+        changed = {}
+        for g in blocks.local:
+            before = identities[g].copy()
+            for message in incoming[g].values():
+                np.minimum.at(identities[g], message["index"].numpy(),
+                              message["identity"].numpy())
+            changed[g] = int(not np.array_equal(before, identities[g]))
+        if not blocks.all_reduce(changed, "max"):
+            return identities
 
 
 def _runs_by_piece(piece):
