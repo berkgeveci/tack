@@ -603,6 +603,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `CellLocator` takes its cells' bounds on the device, a GPU's threads
+  each over every k-th box and the CPU's over a block, and reads back only
+  the partial results. It read every box back and reduced them with NumPy:
+  on the ONERA M6 (46.9M cells) that was 1.0 s of the locator's 1.4 s
+  build on an M1 Max's GPU, and over PCIe on a discrete GPU (jura's CUDA
+  build took 4.9 s, against Viskores' 3.0). The M6's build is now 0.45 s on
+  Metal and 1.7 s on the CPU (2.7 s); the bounds, so the grid and every
+  result, are the same bit for bit.
 - The cell locator bins cells on two levels, as Viskores'
   `CellLocatorTwoLevel` does: a coarse uniform grid of about 32 cells a bin,
   each bin a uniform grid of leaves sized by its count, about 8 cells a leaf.

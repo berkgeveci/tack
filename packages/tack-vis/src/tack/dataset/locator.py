@@ -239,6 +239,31 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
                                     pcs[q] = pc
 
 
+@tack.kernel
+def _bounds(lo, hi, first, step, count, low, high):
+    # The boxes' bounds in partial results, combined on the host: result b over
+    # count boxes from b * first, step apart -- on a GPU every k-th box from b
+    # (first 1, step k: neighbouring threads read neighbouring boxes), on the
+    # CPU a block of them (first count, step 1). min and max are exact, so the
+    # bounds are those of every box at once.
+    for b in range(low.shape[0]):
+        a = lo[b * first]
+        c = hi[b * first]
+        for j in range(1, count):
+            e = b * first + j * step
+            if e < lo.shape[0]:
+                a = min(a, lo[e])
+                c = max(c, hi[e])
+        low[b] = a
+        high[b] = c
+
+
+# Partial results for the boxes' bounds: on a GPU enough threads to fill it,
+# few enough to read back and combine at once; on the CPU a few a thread.
+_BOUNDS_THREADS = 1 << 16
+_BOUNDS_BLOCKS = 256
+
+
 # ── The two-level grid the search from the points reads ─────────────
 #
 # Viskores' CellLocatorTwoLevel (Kalojanov, Billeter and Slusallek, "Two-Level
@@ -435,8 +460,20 @@ class CellLocator:
         elif n:
             for_each(_cell_boxes, data, "cells", self.lo, self.hi)
         if n:
-            lo, hi = self.lo.numpy(), self.hi.numpy()
-            low, high = lo.min(axis=0).astype(float), hi.max(axis=0).astype(float)
+            # On the device: reading the boxes back to take their bounds there
+            # was 1.0 of the M6's 1.4 s build on an M1 Max's GPU (NumPy's
+            # strided reductions, and the copy, over PCIe elsewhere).
+            if self.lo.device.type == "cpu":
+                count = -(-n // min(n, _BOUNDS_BLOCKS))
+                k, first, step = -(-n // count), count, 1
+            else:
+                k = min(n, _BOUNDS_THREADS)
+                first, step, count = 1, k, -(-n // k)
+            lows = tack.empty((k,), tack.vec(3, dtype))
+            highs = tack.empty((k,), tack.vec(3, dtype))
+            _bounds(self.lo, self.hi, first, step, count, lows, highs)
+            low = lows.numpy().min(axis=0).astype(float)
+            high = highs.numpy().max(axis=0).astype(float)
         else:
             low = high = np.zeros(3)
         extent = high - low

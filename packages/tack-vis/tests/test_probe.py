@@ -401,6 +401,25 @@ def test_searching_from_the_points_finds_what_searching_from_the_cells_does(back
                                    atol=1e-5)
 
 
+@pytest.mark.parametrize("threads, blocks", [(7, 3), (1 << 16, 256)])
+def test_the_grid_spans_the_boxes_exactly(backend, threads, blocks, monkeypatch):
+    """The locator takes its cells' bounds on the device (a GPU's threads each
+    over every k-th box, the CPU's over a block), not by reading every box
+    back: on the ONERA M6 that was 1.0 of a 1.4 s build. min and max are
+    exact, so the grid is the one every box's bounds give, remainders and
+    all."""
+    from tack.dataset import locator as L
+
+    monkeypatch.setattr(L, "_BOUNDS_THREADS", threads)
+    monkeypatch.setattr(L, "_BOUNDS_BLOCKS", blocks)
+    data = td.tetrahedralize(td.wavelet(4))
+    loc = td.CellLocator(data)
+    lo, hi = loc.lo.numpy(), loc.hi.numpy()
+    np.testing.assert_array_equal(loc.origin, lo.min(axis=0).astype(float))
+    np.testing.assert_array_equal(loc.origin + loc.dims / loc.inverse,
+                                  loc.origin + (hi.max(axis=0).astype(float) - loc.origin))
+
+
 def test_a_dense_core_in_a_far_field_is_split_into_leaves(backend):
     """Cells shrinking geometrically toward the centre, a body's in its far field,
     as the ONERA M6 wing's are. With one level of about a cell a bin, the bins
