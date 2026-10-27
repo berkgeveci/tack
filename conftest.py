@@ -105,11 +105,25 @@ def pytest_configure(config):
         ids._minimum = tack.i64
 
 
+def _as_default(spec):
+    """Make ``spec`` the default device for one test, then put back the default
+    it found (``None``, the CPU, unless a plugin chose another). Left set, a
+    GPU test made every later test on its xdist worker allocate there, and a
+    test of CPU datasets failed or passed by the schedule ("arrays on two
+    devices", test_public_filters on four GPU machines)."""
+    from tack.runtime import dispatch
+    was = dispatch._current_backend
+    tack.set_default_device(spec)
+    try:
+        yield spec
+    finally:
+        dispatch._current_backend = was
+
+
 @pytest.fixture(params=available_backends)
 def backend(request):
     """Run a test once per available backend."""
-    tack.set_default_device(request.param)
-    return request.param
+    yield from _as_default(request.param)
 
 
 @pytest.fixture
@@ -140,22 +154,19 @@ def no_disk_cache():
 @pytest.fixture(params=f64_backends)
 def f64_backend(request):
     """Run a test once per backend that supports f64."""
-    tack.set_default_device(request.param)
-    return request.param
+    yield from _as_default(request.param)
 
 
 @pytest.fixture(params=reduction_backends)
 def reduction_backend(request):
     """Run a test once per backend that reduces on the device."""
-    tack.set_default_device(request.param)
-    return request.param
+    yield from _as_default(request.param)
 
 
 @pytest.fixture(params=workgroup_backends)
 def workgroup_backend(request):
     """Run a test once per available backend with workgroup execution."""
-    tack.set_default_device(request.param)
-    return request.param
+    yield from _as_default(request.param)
 
 
 @pytest.fixture
