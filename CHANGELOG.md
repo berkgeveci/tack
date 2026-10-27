@@ -574,6 +574,24 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- The cell locator bins cells on two levels, as Viskores'
+  `CellLocatorTwoLevel` does: a coarse uniform grid of about 32 cells a bin,
+  each bin a uniform grid of leaves sized by its count, about 8 cells a leaf.
+  One level of about a cell a bin held up to 2.1M cells in a bin near the
+  ONERA M6 wing (46.9M cells graded toward the wing in a far field a hundred
+  chords wide), so a location there scanned 164k candidates on average, and
+  a GPU's threads waited for their group's worst: Tack's streamlines on the
+  M6 took 27.9 s for one seed on CUDA against Viskores' 3.5 s, and 230 s for
+  17 on an M1 Max's GPU. Now the largest leaf holds 13,918 cells, and the 17
+  streamlines take 0.36 s on Metal and about 4 ms warm on the CPU (1.5-2.3 s
+  before). The build is faster (M6 5.6 s to 2.8 s on the CPU) with fewer
+  entries (8.8 to 5.7 a cell); the aneurysm's 8.7M tetrahedra build in 0.68
+  s (0.83), 12.9 entries a cell (7.8), and probe and streamlines there are
+  as fast as before. Traces and probes are the same, bit for bit: the leaves
+  only propose cells, and the search ranks them as before. Viskores sizes
+  leaves at 2 cells; a bin's count is of the boxes overlapping it, a
+  tetrahedron's box about six times its volume, and at 2 the aneurysm's
+  tetrahedra were each entered 34 times (296M entries).
 - The CPU threading policy fans out a short range of costly elements on its
   first dispatch, and balances it. A range too short for a timing slice ran
   whole on one thread, and the first recheck ran it whole again; fanned out,
