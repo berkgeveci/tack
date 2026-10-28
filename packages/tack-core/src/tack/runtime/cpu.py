@@ -537,10 +537,14 @@ _RP_MIN_WORKER_NS = 1_000.0
 _RP_BOUND_SPAN_RATIO = 20.0
 
 
-def _chunk_limit(compiled) -> int | None:
-    """The longest chunk a fan-out of `compiled` should claim: `_CHUNK_WORK_NS`
-    of its estimated work, or no limit before it has an estimate."""
+def _chunk_limit(compiled, total: int, threads: int) -> int | None:
+    """The longest chunk a fan-out of `compiled` over `total` elements should
+    claim: `_CHUNK_WORK_NS` of its estimated work where the pool's own chunks
+    are at most MIN_CHUNK elements; no limit on a longer range, or before the
+    kernel has an estimate."""
     if compiled.ns_per_elem <= 0.0:
+        return None
+    if cpu_pool.CPool.chunk_size(total, threads) > cpu_pool.MIN_CHUNK:
         return None
     return max(1, int(_CHUNK_WORK_NS / compiled.ns_per_elem))
 
@@ -600,6 +604,13 @@ _CONFIRM_BAND = 4.0
 # under a microsecond, so 20 us of work a chunk keeps that under a few per
 # cent while letting each costly element go on its own. Kernels under about
 # 80 ns an element keep the pool's chunks.
+#
+# Only on a range whose pool chunks are at most MIN_CHUNK elements, the
+# short range this is for. On a long one the pool's chunks are the range
+# over GRAIN a worker, and cutting them to 20 us interleaved the workers
+# through the range: on 28 threads (jura, EPYC 7453) they faulted the same
+# huge pages of new outputs at once, and threshold of 20M hexahedra took
+# 650 ms against 200, the M6's locator build 5.7 s against 2.0.
 _CHUNK_WORK_NS = 20_000.0
 
 # How long a serial sample's work must last to be believed as it stands. The
@@ -2288,7 +2299,7 @@ class CPUBackend(Backend):
         # report is read in the run's own transaction, before another
         # thread's run can overwrite it.
         report = jit.run(wrapper, pack, start, end, self.num_threads, measure=True,
-                         most=_chunk_limit(compiled))
+                         most=_chunk_limit(compiled, end - start, self.num_threads))
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
         raw, counts = report
         rates: list = [0.0] * self.num_threads
