@@ -292,6 +292,31 @@ Import these from `tack.algorithms`; they are defined in
       docstring_options:
         warn_missing_types: false
 
+### Segmented operations
+
+Import these from `tack.algorithms`; they are defined in
+`tack.algorithms.segmented`.
+
+::: tack.algorithms.segmented.segment_reduce
+    options:
+      docstring_options:
+        warn_missing_types: false
+
+::: tack.algorithms.segmented.segment_scan
+    options:
+      docstring_options:
+        warn_missing_types: false
+
+::: tack.algorithms.segmented.segment_broadcast
+    options:
+      docstring_options:
+        warn_missing_types: false
+
+::: tack.algorithms.segmented.segment_ids
+    options:
+      docstring_options:
+        warn_missing_types: false
+
 ### Sorting and segmented reductions
 
 Import these from `tack.algorithms`; they are defined in
