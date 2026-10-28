@@ -105,14 +105,14 @@ locator each call, as Viskores does, and with the locator kept.
 
 | mesh | seeds | Viskores (its locator) | Tack, new locator | Tack, locator kept | Viskores / Tack, new locator |
 |---|---|---|---|---|---|
-| M6 wing | 1 | 3,507 (3,036) | 112 | 15.0 | 31× |
-| | 17 | 4,129 (3,025) | 195 | 82.3 | 21× |
-| | 1,024 | 4,762 (3,031) | 239 | 148 | 20× |
-| | 16,384 | 4,727 (3,027) | 200 | 107 | 24× |
-| aneurysm | 1 | 1,694 (1,546) | 25.8 | 2.8 | 66× |
-| | 25 | 2,105 (1,556) | 49.6 | 22.9 | 42× |
-| | 2,000 | 2,881 (1,553) | 88.1 | 63.4 | 33× |
-| | 20,000 | 6,814 (1,552) | 578 | 562 | 12× |
+| M6 wing | 1 | 3,526 (3,059) | 107 | 15.2 | 33× |
+| | 17 | 4,143 (3,019) | 188 | 81.5 | 22× |
+| | 1,024 | 4,767 (3,041) | 238 | 146 | 20× |
+| | 16,384 | 4,705 (3,043) | 197 | 106 | 24× |
+| aneurysm | 1 | 1,714 (1,545) | 31.7 | 3.6 | 54× |
+| | 25 | 2,113 (1,539) | 55.2 | 22.6 | 38× |
+| | 2,000 | 2,887 (1,569) | 88.9 | 60.9 | 32× |
+| | 20,000 | 6,812 (1,548) | 561 | 578 | 12× |
 
 - **The paths agree.** On the M6, every path is the same length in both,
   and they lie within 1.6e-6 of each other at 17 seeds and within 3.5e-6
@@ -125,8 +125,8 @@ locator each call, as Viskores does, and with the locator kept.
 
 Machine: jura (NVIDIA RTX 6000 Ada). Viskores 1.2.0 (CUDA, double
 precision), run through a C++ driver of its `Streamline` filter. Tack
-`main` at `91808db` with #178 (2026-10-27). Times are warm, in ms; the
-first call compiles.
+`main` at `2bbaf7e` with #184, the default two-level locator (2026-10-28).
+Times are warm, in ms; the first call compiles.
 
 ## Real data, against VTK
 
