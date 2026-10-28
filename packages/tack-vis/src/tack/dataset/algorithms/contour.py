@@ -525,38 +525,58 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None):
 
 
 @tack.func
-def _straddles(cells, c, values, iso):
-    # Whether the cell has points on both sides of the level: most do not, and
-    # need not walk their faces.
-    below = 0
-    above = 0
+def _value_range(cells, c, values):
+    # The cell's least and greatest values, and whether one is NaN: enough to say
+    # which levels it straddles without walking its points again for each.
+    lo = values[cells.point_id(c, 0)]
+    hi = lo
+    nan = 0
     for j in range(cells.num_points(c)):
-        if values[cells.point_id(c, j)] >= iso:
-            above = 1
-        else:
-            below = 1
-    return below == 1 and above == 1
+        x = values[cells.point_id(c, j)]
+        lo = min(lo, x)                     # a number is preferred to NaN
+        hi = max(hi, x)
+        if x != x:
+            nan = 1
+    return lo, hi, nan
+
+
+@tack.func
+def _straddles(lo, hi, nan, iso):
+    # Whether the cell has points on both sides of the level: at or above it, and
+    # not (below it, or NaN). Most do not, and need not walk their faces.
+    return hi >= iso and (lo < iso or nan == 1)
+
+
+@tack.func
+def _straddles_any(lo, hi, nan, levels, nlevels):
+    found = 0
+    for v in range(nlevels):
+        if _straddles(lo, hi, nan, levels[v]):
+            found = 1
+            break
+    return found == 1
 
 
 @tack.kernel
 def _lopez_counts(cells, values, levels, nlevels, counts):
-    # Each face's rising crossings, of every level; cells on one side of a level
-    # count none for it.
+    # Each face's rising crossings, of every level; cells on one side of every
+    # level keep their faces' zeros.
     for c in cells:
+        lo, hi, nan = _value_range(cells, c, values)
+        if not _straddles_any(lo, hi, nan, levels, nlevels):
+            continue
         for k in range(cells.num_faces(c)):
-            counts[cells.entry(c, k)] = 0
-        for v in range(nlevels):
-            iso = levels[v]
-            if _straddles(cells, c, values, iso):
-                for k in range(cells.num_faces(c)):
-                    n = cells.side_num_points(c, k)
-                    keyed = 0
+            n = cells.side_num_points(c, k)
+            keyed = 0
+            for v in range(nlevels):
+                iso = levels[v]
+                if _straddles(lo, hi, nan, iso):
                     for j in range(n):
                         va = values[cells.side_point_id(c, k, j)]
                         vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
                         if not va >= iso and vb >= iso:     # below: not at or above (NaN too)
                             keyed += 1
-                    counts[cells.entry(c, k)] += keyed
+            counts[cells.entry(c, k)] = keyed
 
 
 @tack.func
@@ -568,12 +588,15 @@ def _edge_key(a, b, v, nlevels):
 @tack.kernel
 def _lopez_pairs(cells, values, levels, nlevels, starts, pair_from, pair_to):
     for c in cells:
+        lo, hi, nan = _value_range(cells, c, values)
+        if not _straddles_any(lo, hi, nan, levels, nlevels):
+            continue
         for k in range(cells.num_faces(c)):
             n = cells.side_num_points(c, k)
             at = starts[cells.entry(c, k)]
             for v in range(nlevels):
                 iso = levels[v]
-                if _straddles(cells, c, values, iso):
+                if _straddles(lo, hi, nan, iso):
                     at = _face_pairs(cells, c, k, n, values, iso, v, nlevels, at, pair_from,
                                      pair_to)
 
