@@ -375,7 +375,7 @@ shapes and a rectilinear grid:
 | `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `traces`, `jump`, `upwind_flux`, `divergence`, `to_points`, `to_cells` |
 | `filters.py` | `contour`, `slice_plane`, `threshold`, `external_faces`, ported from `vis/data-model` onto fields and spaces |
 | `interop/mfem.py` | `mfem_to_dataset`, `mfem_field`: MFEM meshes (curved of order 2 too) and grid functions (H1 orders 1 and 2, L2 orders 0 and 1, vectors), through PyMFEM |
-| `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
+| `interop/vtk/` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant`; `algorithms`: the filters as VTK algorithms |
 
 `packages/tack-vis/examples/42_dataset_api_tour.py` runs every algorithm
 on both grids and writes VTK files, including the DG field with one copy

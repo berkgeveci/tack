@@ -205,6 +205,8 @@ never a guess.
 
 ::: tack.interop.vtk
 
+::: tack.interop.vtk.algorithms
+
 ::: tack.interop.mfem
 
 ::: tack.interop.warp

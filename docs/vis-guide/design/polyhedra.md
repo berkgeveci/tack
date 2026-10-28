@@ -397,7 +397,7 @@ reference element.
 ## 9. Phase 1 as built
 
 `packages/tack-vis/src/tack/dataset/polyhedra.py`, with views in `views.py`
-and VTK conversion in `interop/vtk.py`:
+and VTK conversion in `interop/vtk/`:
 
 - **`PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces,
   cell_face_sides, num_points=None)`.** Everything derived is computed on

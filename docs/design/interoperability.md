@@ -233,7 +233,7 @@ lets the consumer match devices across APIs.
 
 ## VTK
 
-`tack.interop.vtk` (`packages/tack-vis/src/tack/interop/vtk.py`) is a thin
+`tack.interop.vtk` (`packages/tack-vis/src/tack/interop/vtk/`) is a thin
 layer over DLPack and VTK's `vtkmodules.util.dlpack_support`. If that module
 is missing, both functions raise `RuntimeError` saying so. Host arrays work
 with any VTK that has it; device arrays need VTK built with Viskores.
