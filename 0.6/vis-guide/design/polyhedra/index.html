@@ -1,0 +1,4879 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
+      
+      
+      
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.6/vis-guide/design/polyhedra/">
+      
+      
+        <link rel="prev" href="../dataset-api/">
+      
+      
+        <link rel="next" href="../../../design/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Polyhedra - Tack</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#polyhedral-meshes-design-record" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Tack" class="md-header__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Tack
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Polyhedra
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../users-guide/" class="md-tabs__link">
+          
+  
+  
+  User's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+  Visualization Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../design/" class="md-tabs__link">
+          
+  
+  
+  Design and Implementation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contracts/" class="md-tabs__link">
+          
+  
+  
+  Contracts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../developers-guide/" class="md-tabs__link">
+          
+  
+  
+  Developer's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/backends/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Tack" class="md-nav__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Tack
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack User's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/01-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/12-execution-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From Python to a Tack program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/quick-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/14-vectors-and-matrices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vectors and Matrices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/03-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/04-control-flow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Flow and Math
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/05-device-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/06-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/13-memory-and-parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Parallel Correctness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/11-reductions-and-scans/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reductions and Scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/08-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/16-interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing Arrays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/15-debugging-and-timing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging and Timing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worked Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Worked Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/heat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heat Diffusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/dye/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advecting Dye
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/physarum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trail-following Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/contours/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Marching Squares
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/mpm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Particle-to-grid Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../users-guide/tutorials/nbody/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tiled N-body Forces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualization Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Visualization Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Data Model
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    The Data Model
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physical Units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Work with Data
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-point-clouds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../15-write-a-filter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write a Filter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data in Pieces
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-pieces-across/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms Across Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../14-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Communicate Between Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worked Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-vtk-does-today-and-what-to-keep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What VTK does today, and what to keep
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The topology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-kernels-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What kernels see
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-algorithms-as-tests-of-the-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Algorithms, as tests of the API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-api-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. API surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-test-data-and-oracles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Test data and oracles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-questions-to-settle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Questions to settle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-a-phased-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. A phased path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-phase-1-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Phase 1 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-phase-2-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Phase 2 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-phase-3-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Phase 3 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-phase-4-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Phase 4 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-interpolation-inside-a-cell-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Interpolation inside a cell, as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design and Implementation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/compilation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compilation Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/specialization-and-caching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specialization and Caching
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/numerical-semantics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Numerical Semantics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/parallel-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallel Execution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/memory-and-aliasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Aliasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/cpu-threading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Threading Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/backend-implementations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../design/interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contracts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/language-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Language Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contracts/backend-capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Capabilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contracts/runtime-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contracts/conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conformance and Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/01-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/02-ast-transform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AST Transform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/03-ir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/04-ir-passes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR Passes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/05-codegen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codegen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/06-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/07-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developers-guide/08-adding-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-vtk-does-today-and-what-to-keep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What VTK does today, and what to keep
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The topology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-kernels-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What kernels see
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-algorithms-as-tests-of-the-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Algorithms, as tests of the API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-api-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. API surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-test-data-and-oracles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Test data and oracles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-questions-to-settle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Questions to settle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-a-phased-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. A phased path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-phase-1-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Phase 1 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-phase-2-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Phase 2 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-phase-3-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Phase 3 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-phase-4-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Phase 4 as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-interpolation-inside-a-cell-as-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Interpolation inside a cell, as built
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="polyhedral-meshes-design-record">Polyhedral meshes: design record<a class="headerlink" href="#polyhedral-meshes-design-record" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>Status: built</strong>, in <code>tack.dataset</code>. This records how the polyhedral path
+was reasoned out (2026-10-08); the API as it stands is the
+<a href="../../reference/dataset-api/">Dataset API reference</a>, which is right where
+the two differ. Since this was written, the polygonal path gained a
+sibling one dimension further down, <code>PolylineTopology</code>. View methods
+were renamed: <code>side_point</code> is <code>side_point_id</code>, <code>side_size</code> is
+<code>side_num_points</code>, a face view's <code>face_size</code> is <code>num_points</code> and its
+<code>point(f, j)</code> is <code>corner_position(f, j)</code>. Faces and cells of no area or
+volume, which section 10's geometry divided by zero on, now have finite
+geometry: zero normals, a face's center at its points' mean, and a
+cell's centroid at the mean of its faces' point means (a polygon's at
+its corners' mean).</p>
+</blockquote>
+<p>Questions in section 7 were decided as recommended; phases 1 to 4 were
+built (sections 9 to 12). It refines section 10 of
+<a href="../dataset-api/">the dataset API design</a> -- polyhedra get their own
+topology and algorithms, sharing everything above that -- with what three
+studies found:</p>
+<ul>
+<li><strong>VTK master</strong> (2026-09/10), including Jeff Lee's 2026 rewrite of
+  <code>vtkPolyhedron</code>'s contour, clip, inside test and centroid on López's
+  polygon-tracing algorithm (<code>vtkPolyhedronContour</code>), and his design note
+  <code>PolyhedronAlgorithms.md</code>, whose last section proposes a face-based,
+  GPU-ready reformulation;</li>
+<li><strong><code>vtkExplicitUnstructuredGrid</code></strong> (VTK branch <code>explicit-ugrid</code>): faces
+  stored once, cells as lists of faces with an orientation per reference,
+  face data first-class, built for C-grid ocean and atmosphere models
+  (MPAS, ICON) whose prognostic velocity lives on faces;</li>
+<li><strong>the half-face face map</strong> (VTK branches <code>half-face-ugrid</code> and
+  <code>unstructured-grid-face-data</code>): face data on an ordinary unstructured
+  grid, faces derived from cells.</li>
+</ul>
+<p>The two VTK designs correspond to Tack's two paths. The half-face map is
+what Tack's shape-based topologies already have -- faces derived from
+cells, <code>sides</code> per face, face data as <code>Values(data, "faces")</code>. The
+explicit unstructured grid is the polyhedral topology this document
+designs.</p>
+<p>The aim, as for the rest of <code>tack.dataset</code>, is the API: what a polyhedral
+topology is, what kernels see, and how much of the shape-based path's
+API carries over. Algorithms are sketched only as far as they test that.</p>
+<h2 id="1-what-vtk-does-today-and-what-to-keep">1. What VTK does today, and what to keep<a class="headerlink" href="#1-what-vtk-does-today-and-what-to-keep" title="Permanent link">&para;</a></h2>
+<p><strong>Storage.</strong> <code>vtkUnstructuredGrid::SetPolyhedralCells(types, cells,
+faceLocations, faces)</code>:</p>
+<ul>
+<li><code>Faces</code> is a CSR of polygons in global point ids;</li>
+<li><code>FaceLocations</code> is a CSR from each cell to face ids in <code>Faces</code>, empty
+  for non-polyhedral cells;</li>
+<li>a polyhedron's own connectivity is its unique points.</li>
+</ul>
+<p>Faces must be wound counter-clockwise seen from outside (a breaking change
+in 2026). The layout allows sharing a face, but with no orientation bit an
+interior face can be outward for only one of its cells. So in practice
+every producer duplicates faces per cell: readers, <code>vtkExtractCells</code>, clip
+and the Conduit importer. vtkHDF maps one-to-one
+(<code>FaceConnectivity</code>/<code>FaceOffsets</code>, <code>PolyhedronToFaces</code>/<code>PolyhedronOffsets</code>).</p>
+<p><strong>Per-cell processing.</strong> <code>GetCell</code> deep-copies a cell's faces, builds a
+<code>std::map</code> from global to local ids and lazily an edge table. Contour and
+clip remap every cell into a local face stream through a hash map, with
+<code>thread_local</code> scratch that grows to the largest cell. That is fine on a
+CPU and is exactly what a GPU cannot do.</p>
+<p><strong>López's algorithm</strong> (<code>vtkPolyhedronContour</code>) is purely combinatorial:</p>
+<ol>
+<li>Classify points against the isovalue.</li>
+<li>Find crossings on face edges in each face's stored order: an
+   outside→inside step marks the crossing's <em>key face</em>.</li>
+<li>Trace: a crossing's successor is the next crossing on its key face.</li>
+</ol>
+<p>With consistent winding every crossing has one successor and one
+predecessor, so the crossings form cycles: one iso-polygon each,
+disconnected ones separately. It works unchanged for non-convex and
+non-planar faces and cells, and the saddle rule on a face with four
+crossings is the same for both cells sharing it, so the surface is
+watertight. Its scratch is bounded by the cell's size: iso-vertices at
+most E, crossings per face at most the face's size, contour triangles
+nIso − 2·polygons. Clip has a matched <code>CountClip</code>/<code>EmitClip</code> pair, which
+must stay exactly in step.</p>
+<p><strong>The face-based reformulation</strong> (PolyhedronAlgorithms.md, "Future Work")
+removes all cell-level bookkeeping:</p>
+<ul>
+<li>Phase 1 runs over (face, cell) pairs. It walks each face forward for its
+  owner and reversed for its neighbour, and emits each key crossing paired
+  with its neighbouring crossing as one edge of the cell's polygon graph.</li>
+<li>Phase 2 runs over cells, following each cell's degree-2 graph around
+  its cycles.</li>
+</ul>
+<p>It needs no local index remap, works on global ids throughout, and
+matches the original "bit for bit" on 300 cases. Lee's suggested native
+storage is the CFD one: faces stored once, wound for their owner, with
+owner and neighbour cell ids. That is OpenFOAM's
+<code>faces</code>/<code>owner</code>/<code>neighbour</code>, and Fluent's.</p>
+<p><strong><code>vtkExplicitUnstructuredGrid</code></strong> stores <code>CellFaceConnectivity</code> (cell →
+faces), <code>FacePointConnectivity</code> (face → points), and <code>FaceOrientations</code>
+(±1 per reference: the stored face runs the way this cell sees it). It
+then <em>ignores</em> the orientation for polyhedra: its Perot reconstruction
+recovers outward from geometry, <code>sign(S_f · (r_f − r_c))</code>. The ordering
+notes measured that test failing on 15.7% of thin ocean cells.</p>
+<p><strong>Kept here:</strong></p>
+<ul>
+<li>faces stored once;</li>
+<li>an authoritative per-reference orientation;</li>
+<li>López on the face-based formulation;</li>
+<li>count → scan → emit;</li>
+<li>incidence by sorting;</li>
+<li>face numbering as data when the producer authored it.</li>
+</ul>
+<p><strong>Not kept:</strong> duplicated faces, per-cell hash maps, geometric orientation
+tests, and <code>vtkExplicitUnstructuredGrid</code>'s contract that typed cells list
+their faces in a canonical, rotated order. Here every cell is a
+polyhedron.</p>
+<h2 id="2-the-topology">2. The topology<a class="headerlink" href="#2-the-topology" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="n">td</span><span class="o">.</span><span class="n">PolyhedralTopology</span><span class="p">(</span>
+    <span class="n">face_offsets</span><span class="p">,</span> <span class="n">face_points</span><span class="p">,</span>      <span class="c1"># face -&gt; points (CSR), in the order that winds</span>
+                                    <span class="c1">#   the face out of its first cell</span>
+    <span class="n">cell_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span>       <span class="c1"># cell -&gt; faces (CSR)</span>
+    <span class="n">cell_face_sides</span><span class="p">,</span>                <span class="c1"># u8 per cell -&gt; face entry: 0 if the face is wound</span>
+                                    <span class="c1">#   out of this cell (its side 0), 1 if into it</span>
+    <span class="n">num_points</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>The orientation bit is the side.</strong> It is the shape-based path's
+<code>side_slot</code> under the same name and meaning:</p>
+<ul>
+<li>side 0 is the cell the stored winding points out of (OpenFOAM's owner);</li>
+<li>side 1 is its neighbour, which walks the face backwards.</li>
+</ul>
+<p>A face with one side is on the boundary. A face referenced by more than
+two cells, or twice by the same side, is refused, as the shape path
+refuses three cells on a face. (VTK's half-face map allows non-manifold
+faces; nothing here needs them yet.)</p>
+<p><strong>Derived on demand and cached</strong>, by the sorts the shape path already
+uses:</p>
+<table>
+<thead>
+<tr>
+<th>Derived</th>
+<th>How</th>
+<th>For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>faces().sides</code></td>
+<td>counting sort of cell → face entries by face</td>
+<td><code>[cell0, local0, cell1, local1]</code> per face, the same record as the shape path; boundary faces</td>
+</tr>
+<tr>
+<td>cell → points</td>
+<td>each cell's face points, sorted and made unique per cell</td>
+<td>point fields, <code>to_cells</code>/<code>to_points</code>, export to VTK (whose connectivity is exactly this)</td>
+</tr>
+<tr>
+<td><code>edges()</code></td>
+<td>each face's consecutive point pairs as <code>(low, high)</code> u64 keys, radix-sorted into runs</td>
+<td>edge fields; iso-vertex identity (section 4)</td>
+</tr>
+<tr>
+<td>face → edges, edge sign</td>
+<td>from the same sort, per (face, local edge)</td>
+<td>walking a face's edges; edge-attached data</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Numbering is data when authored.</strong> Face ids come from the input and are
+never re-derived. An MPAS edge id <em>is</em> the face id, so face data lines up
+with the file. Derived numberings -- edges, and faces for inputs that do
+not have them -- are deterministic. VTK's half-face map orders faces by
+minimum point id; here the radix sort orders by <code>(low, high)</code> key.</p>
+<p><strong>Orientation is established by readers, not geometry.</strong> Formats either
+carry it or let it be derived combinatorially:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Orientation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OpenFOAM, Fluent, CGNS NGON with ParentElements, CONVERGE</td>
+<td>owner/neighbour: side 0 and side 1 directly</td>
+</tr>
+<tr>
+<td>CGNS NFACE, MPAS (<code>edgeSignOnCell</code>), ICON (<code>orientation_of_normal</code>)</td>
+<td>a sign per cell → face reference</td>
+</tr>
+<tr>
+<td>VTK polyhedra (faces duplicated, each outward for its cell)</td>
+<td>match the two copies, which run in opposite directions; the first copy found is side 0</td>
+</tr>
+</tbody>
+</table>
+<p><code>orient(topology)</code> repairs a consistent-up-to-sign input
+combinatorially: within each cell, every edge must be walked once in each
+direction (VTK's uneven-coedge test, and its CONVERGE fix). A geometric
+fallback exists only on explicit request. <code>check_winding(data)</code> is the
+diagnostic, as VTK's half-face branch has.</p>
+<p><strong>Conversions:</strong></p>
+<ul>
+<li><em>Any shape-based dataset → polyhedral.</em> <code>faces()</code> already holds every
+  face in side 0's order with its sides, so the polyhedral topology is
+  <code>rows</code> → <code>face_points</code> and <code>side_face</code>/<code>side_slot</code> → <code>cell_faces</code> and
+  <code>cell_face_sides</code>. No reordering is needed.</li>
+<li><em>Polyhedral → VTK.</em> <code>SetPolyhedralCells</code> with each face copied per cell,
+  reversed for side 1, since VTK's layout has no orientation bit.</li>
+<li><em>VTK → polyhedral.</em> Match the duplicated faces by sorted point keys.</li>
+</ul>
+<h2 id="3-what-kernels-see">3. What kernels see<a class="headerlink" href="#3-what-kernels-see" title="Permanent link">&para;</a></h2>
+<p><strong>No shape, no parametric coordinates.</strong> A polyhedral cell view has no
+<code>NUM_POINTS</code>, no shape functions and no reference element. Its counts are
+runtime:</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>                               <span class="c1"># one launch per size bucket (below)</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">num_faces</span><span class="p">(</span><span class="n">c</span><span class="p">)):</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">face_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+        <span class="n">side</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">face_side</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>          <span class="c1"># 0: wound out of c; 1: into c</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">side_num_points</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)):</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">side_point_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>  <span class="c1"># point j of face k in c&#39;s outward order:</span>
+                                              <span class="c1">#   forward on side 0, reversed on side 1</span>
+</code></pre></div>
+<p><code>side_point_id</code> is the one abstraction every polyhedral kernel stands on.
+However a face is stored, a cell walks it outward. That is the property
+López, volumes and solid angles all need, and the one the face-based
+formulation exploits by walking a face once per side.</p>
+<p><strong>Faces look the same on both paths.</strong> A polygon face view offers what
+the shape path's face view does:</p>
+<ul>
+<li><code>entity_id(f)</code>, <code>num_sides(f)</code>, <code>side_cell(f, k)</code>, <code>side_local(f, k)</code>;</li>
+<li><code>point_id(f, j)</code> and <code>corner_position(f, j)</code>;</li>
+<li><code>num_points(f)</code> -- constant for a triangle or quad face, runtime for a
+  polygon.</li>
+</ul>
+<p><strong>Recommendation (section 7, question 1): give the shape path's views the
+same entity methods</strong> -- <code>num_points(f)</code> on face views, <code>num_faces(c)</code> on
+cell views, each returning the shape's constant. Section 10 withdrew
+"counts as methods" for the shape kernels themselves, and that stands:
+shape kernels keep their compile-time constants. The point here is
+narrower. Face-based finite-volume algorithms are the polyhedral path's
+main use: <code>face_geometry</code>, <code>jump</code>, <code>upwind_flux</code>, <code>divergence</code>,
+<code>external_faces</code>, and Perot reconstruction. Written against the entity
+methods, each runs on both paths from one source.</p>
+<p><strong>Size buckets.</strong> Kernels that only stream -- sums over faces, flux
+accumulation, volumes -- need no bound and run as one launch. Kernels
+that keep per-cell scratch, such as López's crossings and cycles, need a
+compile-time array size. The topology knows each cell's total face size
+<code>S</code> (its count of face points). <code>for_each</code> groups cells by <code>S</code> into padded
+buckets (32, 64, 128, 256), as it groups by (shape, order). The bucket's
+cap is the view's class constant <code>MAX_FACE_POINTS</code>, so local arrays have a
+fixed size. A kernel opts in by reading the constant; one that does not
+get one group.</p>
+<p><strong>Spaces on polyhedra:</strong></p>
+<ul>
+<li><code>Constant</code> and <code>Values</code> on points, edges, faces and cells: as on the
+  shape path. This is nearly all finite-volume data.</li>
+<li><code>H1</code> order 1 (point data): values at points, read through
+  <code>corner_value</code>-like access to a cell's points. There is no
+  <code>value(c, pc)</code>, since there are no parametric coordinates.</li>
+<li>Interpolating inside a cell, if wanted, is piecewise linear over the
+    cell's sub-tetrahedra: cell center, face centers, each face fanned
+    about its center. That is cheap and local.</li>
+<li>Mean value coordinates (what <code>vtkPolyhedron</code> does) need all faces per
+    point and are not offered.</li>
+<li><code>L2</code> on polyhedra (DG, HHO and VEM style): polynomials in physical
+  coordinates about the cell centroid, so the DOF count per cell depends
+  only on the order. Deferred; the space has room for it.</li>
+<li>The geometry is <code>H1</code> order 1: positions per point. There are no curved
+  polyhedra.</li>
+<li><strong>Face data's sign convention:</strong> a value on a face (MPAS
+  <code>normalVelocity</code>) is along the face's stored normal, out of side 0.
+  Readers convert from the producer's convention.</li>
+</ul>
+<h2 id="4-algorithms-as-tests-of-the-api">4. Algorithms, as tests of the API<a class="headerlink" href="#4-algorithms-as-tests-of-the-api" title="Permanent link">&para;</a></h2>
+<p><strong>Geometry</strong>, streaming and one launch:</p>
+<ul>
+<li>face area vectors and centroids, fanned from the face's own centroid.
+  The face is stored once, so both cells get the same triangulation, even
+  on non-planar faces; VTK's duplicated copies need not;</li>
+<li>cell volume and centroid by the divergence theorem, signed by
+  <code>face_side</code> and taken about the cell's first point, not the global
+  origin (VTK loses precision far from it);</li>
+<li>point-in-cell by summed signed solid angles, fanned. Solid angles are
+  additive, so no ear clipping is needed.</li>
+</ul>
+<p><strong>Face-based finite volume:</strong> <code>divergence</code>, <code>jump</code>, <code>upwind_flux</code> and
+<code>external_faces</code> (faces with one side) run unchanged through the shared
+entity methods. Perot reconstruction (from the explicit-ugrid branch) is
+new: <code>u_c = (1/V) Σ_f A_f u_f (r_f − r_c)</code>, with the outward sign from
+<code>face_side</code> rather than geometry.</p>
+<p><strong>Contour (and slice), face-based López:</strong></p>
+<ol>
+<li><strong>Per side</strong> -- a cell → face entry, so a cell's sides are contiguous.
+   Walk the face's points in the cell's outward order (<code>side_point</code>).
+   Classify, and collect crossings. Each crossing is identified by its
+   global edge, so both cells and both faces name it alike. Emit one
+   successor pair per key crossing. Count, scan, emit.</li>
+<li><strong>Per cell:</strong> follow the cell's successor pairs around its cycles,
+   within the bucket's scratch. Count polygons and their sizes; scan; emit.</li>
+<li><strong>Iso-vertices:</strong> one per crossing edge, positioned once. With
+   <code>edges()</code> derived, the vertex id is the edge's compacted index (flag,
+   scan), with no global merge pass. Without it, sort the <code>(low, high)</code>
+   keys, as the shape path's contour merges.</li>
+</ol>
+<p>Two choices need tests against VTK:</p>
+<ul>
+<li><strong>The saddle rule.</strong> VTK's code pairs a key crossing with the <em>next</em>
+  crossing on its key face; the design note's reformulation says
+  <em>preceding</em>. They differ on faces with four crossings. Match the code,
+  and test against <code>vtkContour3DLinearGrid</code> on saddle faces.</li>
+<li><strong>Triangulating output polygons.</strong> VTK fans iso-polygons in
+  <code>vtkContourHelper</code>, which is wrong for non-convex ones, and ear-clips in
+  <code>ContourCell</code>. Proposed: emit polygons, and triangulate in a separate
+  pass only when triangles are asked for -- a fan from the polygon's
+  centroid (one extra point, branch-free), or a forward-walk ear clip
+  capped at the bucket size, as VTK's WebGPU port does at 32.</li>
+</ul>
+<p><strong>Threshold</strong> keeps whole cells. The output is a polyhedral topology over
+the kept cells' faces, renumbered; a face loses its side when that cell is
+dropped, so a kept cell's face may become boundary. Faces stay shared.</p>
+<p><strong>Clip</strong> is deferred. Cut faces are new per cell, so the output either
+duplicates them again or needs a matching pass. VTK's inside-out pairing
+probably leaves inside-out clips open on saddle faces; choose that pairing
+deliberately.</p>
+<p><strong>Projections:</strong> <code>to_cells</code> and <code>to_points</code> through cell → points; values
+at sub-cells for slices.</p>
+<h2 id="5-api-surface">5. API surface<a class="headerlink" href="#5-api-surface" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">DataSet</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">PolyhedralTopology</span><span class="p">(</span><span class="o">...</span><span class="p">),</span> <span class="n">positions</span><span class="p">)</span>
+<span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>       <span class="c1"># sides, boundary(), groups(): one &quot;Polygon&quot; group</span>
+                            <span class="c1">#   (or per size bucket)</span>
+<span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">edges</span><span class="p">()</span>       <span class="c1"># as on the shape path</span>
+<span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">cell_points</span><span class="p">()</span> <span class="c1"># derived cell -&gt; points (CSR)</span>
+<span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span> <span class="o">|</span> <span class="s2">&quot;faces&quot;</span> <span class="o">|</span> <span class="s2">&quot;edges&quot;</span> <span class="o">|</span> <span class="nb">set</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">)</span>
+
+<span class="n">td</span><span class="o">.</span><span class="n">as_polyhedra</span><span class="p">(</span><span class="n">shape_dataset</span><span class="p">)</span>     <span class="c1"># any shape-based dataset, faces reused</span>
+<span class="n">td</span><span class="o">.</span><span class="n">interop</span><span class="o">.</span><span class="n">vtk</span><span class="o">.</span><span class="n">vtk_to_dataset</span><span class="p">(</span><span class="n">ug</span><span class="p">)</span>  <span class="c1"># polyhedral UGs: duplicated faces matched</span>
+<span class="n">td</span><span class="o">.</span><span class="n">interop</span><span class="o">.</span><span class="n">vtk</span><span class="o">.</span><span class="n">dataset_to_vtk</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>   <span class="c1"># SetPolyhedralCells, side-1 copies reversed</span>
+</code></pre></div>
+<p><code>Values</code>, <code>Constant</code> and <code>H1</code> order-1 fields, sets, <code>traces</code> of cell
+constants, and the face-based algorithms are shared with the shape path.
+<code>L2</code> and <code>H1</code> order 2 are refused on a polyhedral topology, which has no
+reference element.</p>
+<h2 id="6-test-data-and-oracles">6. Test data and oracles<a class="headerlink" href="#6-test-data-and-oracles" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Shape meshes converted to polyhedra.</strong> Every face-based algorithm must
+  reproduce its shape-path result exactly: face counts, sides, areas,
+  volumes, divergence, external faces. A contour of a linear field must
+  match the shape path's contour as a surface: the same area and the same
+  points on cut edges. This is the strongest oracle: any mixed mesh, any
+  backend.</li>
+<li><strong>VTK:</strong></li>
+<li><code>vtkPolyhedron</code>'s volume, centroid and <code>IsInside</code>;</li>
+<li><code>vtkContour3DLinearGrid</code> (López) on the same cells, saddles included;</li>
+<li><code>vtkGeometryFilter</code> for external faces;</li>
+<li>VTK's own test meshes, copied with VTK's license into
+    <code>packages/tack-vis/tests/data/vtk/</code>: <code>onePolyhedron.vtu</code>,
+    <code>polyhedron2pieces.vtu</code>, <code>polyhedron_mesh.vtu</code> (wound inconsistently,
+    and refused), <code>concavePolyhedron.vtu</code>, <code>sliceOfPolyhedron.vtu</code>,
+    <code>vtkHDF/polyhedron.vtu</code> and <code>nonWatertightPolyhedron.vtu</code>;
+    <code>largePolyhedral/</code> and <code>polyhedron.vtkhdf</code> are not used yet;</li>
+<li>CGNS <code>Example_nface_n.cgns</code> (cell → faces with signs) and
+    <code>Example_ngon_pe.cgns</code> (faces with owner and neighbour), the two
+    orientation conventions, and <code>EngineSector.cgns</code>, from the same
+    folder; these need a VTK built with its CGNS reader.</li>
+<li><strong>MPAS-like columns.</strong> Voronoi cells of random points (SciPy's
+  <code>Voronoi</code>) extruded into prisms with polygonal bases, thin vertically as
+  ocean cells are. Exactly the case where geometric orientation failed.</li>
+</ul>
+<h2 id="7-questions-to-settle">7. Questions to settle<a class="headerlink" href="#7-questions-to-settle" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Shared entity methods</strong> (<code>num_points(f)</code>, <code>num_faces(c)</code>) on both
+   paths' views, so face-based finite-volume algorithms are written once?
+   Recommended: yes, for faces and sides. The shape path's own kernels
+   keep their constants.</li>
+<li><strong>Orientation storage:</strong> a <code>u8</code> side per cell → face entry (as above),
+   or the sign packed into the face id's high bit? <code>u8</code> matches the shape
+   path's <code>side_slot</code> and the narrow-column lesson.</li>
+<li><strong>Store cell → faces, or owner/neighbour?</strong> Proposed: cell → faces plus
+   sides, with owner/neighbour derived. Owner/neighbour inputs (OpenFOAM)
+   convert with one counting sort.</li>
+<li><strong>Non-manifold faces:</strong> refuse, as proposed, or a CSR face → cells?</li>
+<li><strong>The saddle rule:</strong> VTK's code (<em>next</em> crossing) or the design note's
+   (<em>preceding</em>)?</li>
+<li><strong>Output triangulation:</strong> polygons by default, triangulated on request
+   -- centroid fan or capped ear clip?</li>
+<li><strong>Interior interpolation of point data:</strong> sub-tetrahedra, or none until
+   an algorithm needs it? Answered in section 13: sub-tetrahedra, built
+   with gradients, centers, probe and advection.</li>
+<li><strong>Bucket caps:</strong> fixed (32/64/128/256), or derived from the mesh?</li>
+</ol>
+<h2 id="8-a-phased-path">8. A phased path<a class="headerlink" href="#8-a-phased-path" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Topology and conversions.</strong> <code>PolyhedralTopology</code>, derived sides,
+   cell → points and edges, <code>as_polyhedra</code>, VTK interop, <code>check_winding</code>
+   and <code>orient</code>. Test: shape meshes round-trip.</li>
+<li><strong>Shared entity methods and the face-based algorithms.</strong> Face
+   geometry, volume and centroid, divergence, jump, upwind flux, external
+   faces and Perot run on both paths. Test: converted meshes reproduce
+   the shape path exactly; VTK's <code>vtkPolyhedron</code> geometry.</li>
+<li><strong>Face-based López contour and slice</strong>, with size buckets. Test:
+   converted meshes match the shape path's surfaces; VTK on polyhedral
+   data, saddles included.</li>
+<li><strong>Threshold</strong>, then readers for the real formats (CGNS NFACE and NGON,
+   OpenFOAM, MPAS) as the data calls for them.</li>
+</ol>
+<h2 id="9-phase-1-as-built">9. Phase 1 as built<a class="headerlink" href="#9-phase-1-as-built" title="Permanent link">&para;</a></h2>
+<p><code>packages/tack-vis/src/tack/dataset/polyhedra.py</code>, with views in <code>views.py</code>
+and VTK conversion in <code>interop/vtk.py</code>:</p>
+<ul>
+<li><strong><code>PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces,
+  cell_face_sides, num_points=None)</code>.</strong> Everything derived is computed on
+  the device and cached:</li>
+<li><code>faces()</code> (<code>PolygonFaces</code>): the shape path's <code>sides</code> record and
+    <code>boundary()</code>, by scattering each cell -&gt; face entry to its (face,
+    side). It refuses a side used twice, which covers more than two cells
+    on a face, and a face wound into its only cell.</li>
+<li><code>cell_points()</code>: (cell, point) pairs as u64 keys, sorted once.</li>
+<li><code>edges()</code> (<code>PolygonEdges</code>): face edges as <code>(low, high)</code> keys, sorted
+    into runs. This gives the same numbering the shape path gives the same
+    edges, and per face-point entry an edge id and sign.</li>
+<li><strong>Kernels.</strong> Cell views are <code>_PolyhedralCells</code>: <code>num_faces(c)</code>,
+  <code>face_id(c, k)</code>, <code>face_side(c, k)</code>, <code>side_num_points(c, k)</code>,
+  <code>side_point_id(c, k, j)</code>, and <code>point_id(c, j)</code> over the derived points.
+  Face views are <code>_PolygonFaces</code>, with the shape path's side methods.
+  <code>Polyhedron</code> and <code>Polygon</code> are deliberately not <code>Shape</code>s, whose methods
+  assume fixed points and shape functions; geometry on them is
+  <code>_PointGeometry</code>, positions only.</li>
+<li><strong>Winding.</strong> <code>check_winding</code> sorts every cell's directed face edges by
+  (cell, edge): a run must be two walks, one each way. <code>orient</code> turns
+  around faces wound into their only cell. Repairing mixed winding inside
+  a cell is not attempted.</li>
+<li><strong>Conversions.</strong> <code>as_polyhedra</code> reuses the shape path's derived faces
+  unchanged: face ids, face fields and edge numbering all carry over, and
+  sides match exactly. VTK import matches duplicated faces by point set
+  and refuses copies wound the same way; it reads on the host, cell by
+  cell. VTK export writes a copy per cell, reversed on side 1.</li>
+<li><strong>Tests (<code>test_polyhedra.py</code>).</strong></li>
+<li>Every shape mesh and VTK solid converts with identical sides, boundary
+    and edges.</li>
+<li>Cells walk their faces as the shape's own tables do.</li>
+<li><code>check_winding</code> finds a turned face; <code>orient</code> mends inward boundary
+    faces.</li>
+<li>Refusals.</li>
+<li>Extruded Voronoi columns: thin, with polygonal faces of up to eight
+    points; Euler's V − E + F − C = 1 holds.</li>
+<li>VTK round trips with positive volumes (1, 1, 1/3 for the mixed mesh)
+    and <code>vtkGeometryFilter</code>'s boundary.</li>
+<li>Six VTK data files.</li>
+<li>Mutations caught: ignoring the side in <code>side_point</code>, in the side
+    scatter or in the winding check; non-unique cell points; exporting
+    side-1 copies unreversed.</li>
+</ul>
+<p><strong>Findings:</strong></p>
+<ul>
+<li>VTK's own <code>polyhedron_mesh.vtu</code> is wound inconsistently. In each cell
+  the faces point both ways, and the face the two cells share runs the
+  same way in both, so VTK reports a volume of 14.5 million for a
+  41 × 41 × 20 box. The import refuses it rather than guess.</li>
+<li><code>nonWatertightPolyhedron.vtu</code> is closed cell by cell; its "non-watertight"
+  is between cells.</li>
+<li>A shape-based mesh's derived faces are already a polyhedral topology.
+  The conversion is a reindexing, which confirms that the two paths share
+  their face conventions exactly.</li>
+</ul>
+<p><strong>Still to do:</strong> size buckets and López (phase 3); an import that is not
+a host loop; <code>orient</code> beyond inward boundary faces.</p>
+<h2 id="10-phase-2-as-built">10. Phase 2 as built<a class="headerlink" href="#10-phase-2-as-built" title="Permanent link">&para;</a></h2>
+<p><strong>Shared entity methods.</strong> Both paths' cell views offer the same methods:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Shape-based cell (<code>_FaceWalk</code>)</th>
+<th>Polyhedral cell</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>num_faces(c)</code></td>
+<td><code>NUM_FACES</code>, a constant</td>
+<td>from the CSR offsets</td>
+</tr>
+<tr>
+<td><code>face_id(c, k)</code>, <code>face_side(c, k)</code></td>
+<td>the face incidence</td>
+<td>the stored entries</td>
+</tr>
+<tr>
+<td><code>side_num_points(c, k)</code></td>
+<td>the face table's count</td>
+<td><code>num_points(face_id(c, k))</code></td>
+</tr>
+<tr>
+<td><code>side_point_id(c, k, j)</code>, <code>side_position(c, k, j)</code></td>
+<td><code>face_corner</code> (a voxel's pixels as quads)</td>
+<td>the stored order, reversed on side 1</td>
+</tr>
+</tbody>
+</table>
+<p>Face views on both paths offer <code>num_points(f)</code>. On the shape path every
+count is a compile-time constant, so a shape kernel compiles as before.</p>
+<p><code>_FaceWalk</code> is a mixin of its own, added only to domain views. An order-2
+field view also carries the face incidence (for its DOF numbering), and
+template classification checks every method of a view, so a
+<code>side_position</code> that needs geometry cannot sit in a mixin a field view
+includes.</p>
+<p><strong>Algorithms written once</strong> (<code>algorithms.py</code>):</p>
+<ul>
+<li><code>face_geometry</code>: Newell's normal and area, fanned from the face's first
+  point, for polygons of any size.</li>
+<li><code>face_centers</code>: area centroids, fanned from the points' mean, so both
+  sides of a face stored once see one fan.</li>
+<li><code>cell_geometry</code>: volume and centroid by the divergence theorem over the
+  outward-walked faces, taken from the cell's first point.</li>
+<li><code>divergence</code>.</li>
+<li><code>jump</code> and <code>upwind_flux</code> of cell data, read from each side's cell (data
+  with a basis still goes through <code>traces</code>, on the shape path).</li>
+<li><code>boundary_faces</code>.</li>
+<li><code>perot</code>: Perot's reconstruction from face-normal components, signed by
+  each cell's side of each face.</li>
+</ul>
+<p><strong>Tests:</strong></p>
+<ul>
+<li>On the mixed mesh, a rectilinear grid and VTK's tetrahedra, wedges,
+  pyramids, hexahedra and voxels, every one of these gives the same
+  answers on the shape path and on the same mesh as polyhedra.</li>
+<li>Known volumes and centroids: the pyramid's is a quarter of the way up.</li>
+<li>Volumes agree with VTK's <code>vtkPolyhedron::ComputeVolume</code>.</li>
+<li>Perot gives back a uniform velocity to 2e-4 (float32) on every mesh,
+  thin Voronoi columns included, and a uniform flow leaves every closed
+  cell with no net outflow.</li>
+<li>Mutations caught: Perot ignoring the side; the shape walk skipping the
+  voxel's reordering; polygon faces sized 4 (this one crashes, reading
+  past the face); polyhedra missing a face.</li>
+</ul>
+<p><strong>Not yet:</strong></p>
+<ul>
+<li><code>extract_surface</code> of a polyhedral topology. Its surface is polygons, and
+  no surface topology holds them (a 2D polygonal topology -- this one, one
+  dimension down -- would). It refuses, pointing to <code>boundary_faces</code>.</li>
+<li>Traces of point data on polygon faces. <code>SideTraces</code> is four points a
+  face.</li>
+</ul>
+<h2 id="11-phase-3-as-built">11. Phase 3 as built<a class="headerlink" href="#11-phase-3-as-built" title="Permanent link">&para;</a></h2>
+<p><strong>Polygons are the same topology, one dimension down.</strong>
+<code>PolygonalTopology(loop_offsets, loop_points)</code> is a <code>PolyhedralTopology</code>
+whose cells are polygons and whose facets are edges.</p>
+<ul>
+<li>It is built from point loops, as producers and isosurfaces give them.
+  Edges are matched by sorting: the first polygon to use an edge is its
+  side 0, and a second must walk it the other way. Inconsistent winding,
+  or a non-orientable surface, is refused, as is an edge of three polygons.</li>
+<li>Sides, boundary, the shared entity methods and the face-based algorithms
+  all carry over. <code>check_winding</code> checks that loops close; <code>cell_geometry</code>
+  gives areas and centroids.</li>
+<li><code>as_polygons</code> converts triangle, quad and pixel meshes.</li>
+<li><code>extract_surface</code> of a polyhedral mesh is now its polygonal surface.
+  The tests check it is closed: no boundary, Euler number 2.</li>
+<li>This also answers the dataset design's question 7: a 2D mesh's facets
+  are its codimension-1 entities, its edges.</li>
+<li>One fix it forced: side 1 walks a facet <code>n - 1 - j</code>. Reversing "from the
+  same first point" is no reversal at all for a 2-point edge.</li>
+</ul>
+<p><strong>Size buckets</strong> (<code>SizeBuckets(topology, caps)</code>) group cells by size
+through the same subgroup machinery that splits launches by order.</p>
+<ul>
+<li>A bucket is any object that gives each cell a key. <code>launch_groups</code>
+  takes such keys beside fields.</li>
+<li>A polyhedral subgroup selects cell ids (<code>_SelectedPolyhedra</code>, through
+  <code>cell(c)</code>) instead of gathering fixed rows.</li>
+<li>The key's <code>domain_mixin</code> gives each launch's view <code>MAX_SCRATCH</code>, so
+  <code>tack.local_array(..., cells.MAX_SCRATCH)</code> has a compile-time size.</li>
+<li>Grouping by shape, by order and by size is now one mechanism.</li>
+</ul>
+<p><strong>Contour (and slice) of polyhedra</strong>, face-based López, in four passes,
+each count → scan → emit:</p>
+<ol>
+<li>Per side, count the key crossings: an outward walk stepping from below
+   the isovalue to at or above it.</li>
+<li>Per side, pair each with the next crossing round that face, both named
+   by global edge id. On side 1, walk edge <code>j</code> is stored edge <code>n - 2 - j</code>.</li>
+<li>Per cell, in its size bucket, follow the pairs round their cycles into
+   polygons, with a <code>used</code> array of <code>MAX_SCRATCH</code>.</li>
+<li>One iso-vertex per crossing edge, interpolated from the lower point
+   id, as the shape path's contour does.</li>
+</ol>
+<p>The output is a <code>PolygonalTopology</code>, and its constructor is a free
+watertightness check: two polygons walking a shared edge the same way are
+refused. Point fields are interpolated onto the surface; cell fields come
+per polygon from the cell it lies in. <code>slice_plane</code> gets this through
+<code>contour</code> unchanged.</p>
+<p><strong>Tests:</strong></p>
+<ul>
+<li>Contours of polyhedra converted from every shape mesh (mixed,
+  tetrahedra, hexahedra, wedges, pyramids, voxels) have exactly the shape
+  path's points. For a linear field, whose iso-polygons are planar, the
+  polygons' area equals the triangles'.</li>
+<li>VTK's López (<code>vtkContour3DLinearGrid</code> with <code>GenerateTrianglesOff</code>) on the
+  same polyhedra gives the same polygons, wound the same way: on every
+  solid, the Voronoi columns, and two cubes sharing a saddle face.</li>
+<li>Cells land in the bucket their size needs, and a cell too large is
+  refused.</li>
+<li>Slice points lie on the plane, with fields carried.</li>
+<li>Mutations:</li>
+<li>mapping side-1 edges wrongly fails 15 tests;</li>
+<li>pairing with the <em>previous</em> crossing -- the design note's wording,
+    question 5 -- fails exactly the saddle comparison, confirming VTK's
+    code uses <em>next</em>;</li>
+<li>counting inside → outside crossings instead changes nothing, rightly:
+    round a closed face they are equal in number.</li>
+</ul>
+<p><strong>Not yet:</strong></p>
+<ul>
+<li>Triangulating output polygons (on request).</li>
+<li>Contour lines of polygonal topologies.</li>
+<li>Threshold and clip (phase 4).</li>
+<li>Iso-polygons are left as polygons. They come out of the trace in a
+  per-cell order, so their numbering differs from VTK's though the
+  polygons are the same.</li>
+</ul>
+<h2 id="12-phase-4-as-built">12. Phase 4 as built<a class="headerlink" href="#12-phase-4-as-built" title="Permanent link">&para;</a></h2>
+<p><strong>Oriented face values.</strong> Threshold forced the question. It keeps whole
+cells, so a face whose side-0 cell is dropped must be turned around for
+its remaining cell. Turning a face negates a quantity measured along its
+normal -- a normal flux, MPAS's <code>normalVelocity</code>, <code>upwind_flux</code>'s output
+-- but not its area or an id. <code>Values(data, "faces", oriented=True)</code> says
+which:</p>
+<ul>
+<li>it is a space of its own, interned apart from plain face values, and
+  only faces may be oriented;</li>
+<li><code>upwind_flux</code> produces it; <code>divergence</code> and <code>perot</code> read either kind;</li>
+<li>conversions carry the flag.</li>
+</ul>
+<p><strong>Threshold of polyhedral and polygonal topologies.</strong> Whole cells are kept
+by cell values, or by point values (all or any), each step a count, scan
+and compaction on the device:</p>
+<ul>
+<li>faces used by kept cells, stored once and numbered in their old order,
+  so face values come along;</li>
+<li>a face whose side-0 cell is gone is turned around and its references
+  made side 0, with its oriented values negated;</li>
+<li>points compacted.</li>
+</ul>
+<p>A polygonal topology keeps its polygons' loops; its edge values, whose
+numbering is derived afresh, are left behind.</p>
+<p><strong>Repairing the winding of real data.</strong>
+<code>PolyhedralTopology.from_cell_faces(cells, num_points, positions=None,
+orient=False)</code> is now public: per-cell face lists, as VTK and readers
+give them, with copies matched by point set. VTK import goes through it.
+With <code>orient</code>, on the host:</p>
+<ol>
+<li>Within each cell, faces walk shared edges oppositely: breadth-first
+   from face to face, reversing as needed.</li>
+<li>Across cells, a shared face's two copies run opposite ways: whole
+   cells reversed as needed.</li>
+<li>Each connected component is turned outward by the sign of its total
+   volume. This is the one geometric test, made once on a sum over many
+   cells, which thin cells cannot fool the way they fool per-cell tests.</li>
+</ol>
+<p><code>vtk_to_dataset(grid, orient=True)</code> uses it. Without it, inconsistent
+input is refused, and the message names the option.</p>
+<p><strong>Readers through VTK.</strong> VTK's CGNS reader brings the two polyhedral
+conventions:</p>
+<ul>
+<li><code>Example_nface_n.cgns</code>: NFACE_n, a sign per reference;</li>
+<li><code>Example_ngon_pe.cgns</code>: NGON_n with ParentElements, owner and
+  neighbour.</li>
+</ul>
+<p>They give the same mesh, consistently wound. <code>EngineSector.cgns</code>, a real
+CFD mesh of 1956 polyhedra, arrives wound inward in 1891 cells and
+inconsistently within 65. It is refused as is; with <code>orient</code> it imports
+in under a second, every cell positive, VTK's own volumes agreeing to
+5e-7, and the boundary matching <code>vtkGeometryFilter</code>'s 6209 faces. Whether
+the file or VTK's reader is at fault is worth a look in VTK.</p>
+<p><strong>Tests.</strong></p>
+<ul>
+<li>Threshold of polyhedra converted from every shape mesh, by cells and by
+  points (all, any), keeps exactly the shape path's cells and points, with
+  the same volumes and faces.</li>
+<li><code>vtkThreshold</code> agrees.</li>
+<li>Keeping the Voronoi columns' upper layers turns the faces between
+  layers. A uniform flow's oriented flux, negated with them, still gives
+  Perot's exact answer; the same numbers as plain face values do not.</li>
+<li>Threshold of polygons.</li>
+<li><code>orient</code> undoes random face and cell reversals.</li>
+<li>Both CGNS conventions agree, and EngineSector is refused, then repaired.</li>
+<li>Mutations caught: oriented values left un-negated, faces left unturned,
+  turned faces keeping their side, <code>orient</code> skipping the volume sign.</li>
+</ul>
+<p><strong>Not yet:</strong></p>
+<ul>
+<li>clip, whose cut faces are new per cell;</li>
+<li>readers beyond VTK's: OpenFOAM's owner/neighbour and MPAS's
+  <code>edgeSignOnCell</code> map onto <code>from_cell_faces</code> or the constructor
+  directly, when there is data;</li>
+<li>carrying edge values through threshold.</li>
+</ul>
+<h2 id="13-interpolation-inside-a-cell-as-built">13. Interpolation inside a cell, as built<a class="headerlink" href="#13-interpolation-inside-a-cell-as-built" title="Permanent link">&para;</a></h2>
+<p>Every algorithm that needs a value or a derivative inside a cell asked a
+reference element for shape functions at parametric coordinates, so on
+polyhedra it refused: <code>gradients</code>, <code>cell_centers</code>, <code>values_at_centers</code>,
+the <code>CellLocator</code> behind <code>probe</code>, and advection. They run now (question 7),
+except for <code>traces</code> and projections into spaces with a basis, which still
+refuse.</p>
+<p><strong>What VTK does.</strong> <code>vtkPolyhedron</code> interpolates by mean value coordinates:
+Ju, Schaefer and Warren's for triangle faces, Langer, Belyaev and Seidel's
+spherical barycentric coordinates for polygonal ones. They are smooth
+inside, exact for linear fields and defined for non-convex cells. Its
+"parametric coordinates" are the point's place in the cell's bounding box,
+and <code>Derivatives</code> takes finite differences of the interpolant in them.</p>
+<p><strong>The interpolant: linear on sub-tetrahedra.</strong>
+- Each face is fanned from its <em>face point</em>, the mean of its points: the
+  apex <code>face_centers</code> fans from (section 10), so the triangles are those.
+- The faces' triangles are fanned from the <em>cell point</em>, the mean of the
+  cell's distinct points. Sub-tetrahedron <em>t</em> is (cell point, face point,
+  <em>a</em>, <em>b</em>) for edge <em>ab</em> of a face, numbered face by face and edge by edge
+  as <code>side_point_id</code> walks them.
+- The two extra points take the means of the values as well as of the
+  positions. The weights match, so a linear field is reproduced exactly.
+- A face is stored once and both its cells fan it from the same point, so
+  the field is continuous across it, non-planar faces included.
+- The cell point is not the volume centroid, which has no such weights.
+  <code>cell_centers</code> and <code>values_at_centers</code> give the cell point and the
+  points' mean value. They match the shape path only where its parametric
+  center maps to the corners' mean: tetrahedra and parallelepipeds, not
+  pyramids.</p>
+<p><strong>Gradients without the interpolant.</strong> A cell's gradient is Green–Gauss
+over the fanned faces, <code>(1/V) Σ A_t ū_t</code>. By the divergence theorem that
+is the volume-weighted mean of the sub-tetrahedra's gradients, and it is
+exact for linear fields. On a parallelepiped it equals the trilinear
+gradient at the center. Each face is walked once.
+- With <em>F</em> its points' mean, triangle <em>j</em>'s doubled area vector is
+  <code>p_j × p_j+1 + (p_j+1 − p_j) × F</code>.
+- So the face's share is <code>S + W × F + u_F N</code>, from sums that do not need
+  <em>F</em>: <code>S = Σ (p_j × p_j+1)(u_j + u_j+1)</code>, <code>W = Σ (p_j+1 − p_j)(u_j + u_j+1)</code>,
+  and <code>N = Σ p_j × p_j+1</code>, the Newell vector.
+- The face's share of 6V is <code>F · N</code>.</p>
+<p>At points, the cells' gradients are averaged, as on shapes. A polygon's
+gradient lies in its plane, as a 2D shape's does: in-plane Green–Gauss over
+its edges, <code>Σ (u_k + u_k+1)((p_k+1 − p_k) × N) / |N|²</code> with <code>N</code> the Newell
+vector, exact for a linear field on a planar polygon. Polylines get zero, as
+lines do on shapes.</p>
+<p><strong>Locating, and the view.</strong> The proposal (in the vault) had field views
+evaluate at world positions, <code>value_at(c, x)</code>. That cannot work: a field
+view holds values, not positions, and a device function can call methods
+only on its own view, not on a view passed to it. So, as on shapes, the
+cell view locates and the field view evaluates:</p>
+<ul>
+<li><code>_PolyhedralLocation</code>, on polyhedral domain views:</li>
+<li><code>locate(c, x, slack)</code> gives <code>(t, pc, inside)</code>: the sub-tetrahedron, the
+    point's coordinates in it, and whether it holds the point (1) or the
+    point is only within <code>slack</code> (0). <code>CellLocator</code> and advection rank a cell
+    that holds the point ahead of one it is only near, as on shapes. <code>pc</code> holds the weights of the face point,
+    <em>a</em> and <em>b</em>; the cell point's is what is left, a reference tetrahedron
+    with the cell point at its origin.</li>
+<li>The coordinates are triple-product ratios (Cramer's rule). The search
+    stops at the first sub-tetrahedron holding the point.</li>
+<li>A point outside every sub-tetrahedron but within <code>slack</code> of a face
+    triangle is extrapolated in that triangle's sub-tetrahedron, as shape
+    coordinates are extrapolated. Clamping to the triangle made a linear
+    field wrong by 6e-4.</li>
+<li><code>locate_from</code> takes the cell point, for a caller testing many points
+    against one cell. <code>cell_point</code>, <code>face_point</code> and <code>tet_jacobian</code> are
+    there too.</li>
+<li><code>_PolyhedralPointField</code> (H1, order 1) and <code>_PolyhedralCellField</code>
+  (Constant):</li>
+<li><code>tet_value(c, t, pc)</code> and <code>tet_parametric_gradient(c, t)</code>, from values
+    alone. The gradient at a point is <code>tet_jacobian(c, t)^-T</code> times the
+    latter.</li>
+<li><code>Space.mixin_for(key, shape)</code> picks them by shape. <code>_H1Field</code> could
+    never be used on polyhedra: every method of a view is resolved, and its
+    <code>value</code> names shape functions a <code>Polyhedron</code> lacks.</li>
+<li><code>CellLocator.find</code> returns <code>(cells, tets, pcs)</code> on polyhedral data;
+  <code>probe</code> evaluates with <code>tet_value</code>.</li>
+<li>The advection kernel's <code>_PolyhedralMesh</code> is a device class made of the
+  same mixins, with the positions and point velocities it reads, so a
+  particle is located exactly as <code>find</code> locates a point.</li>
+</ul>
+<p><strong>Cells that are not star-shaped from their cell point</strong> have inverted
+sub-tetrahedra, which overlap the others. <code>CellLocator</code> refuses a dataset
+with one, or with a cell of no volume (<code>_not_star_shaped</code>), rather than
+find points a cell does not hold. Locating in such cells would need a
+solid-angle test, which is not built.</p>
+<p><strong>Tests, and why not VTK.</strong> The proposal planned exact agreement with
+<code>vtkProbeFilter</code> and <code>vtkGradientFilter</code> on linear fields. On VTK 9.7.1
+neither works on polyhedra:
+- <code>vtkPolyhedron::Derivatives</code> is wrong in each component whose parametric
+  coordinate is 1. Its forward differences likely step out of the cell. So
+  <code>vtkGradientFilter</code>'s point gradients are wrong at every corner of a box
+  but the first.
+- <code>vtkPolyhedron::EvaluatePosition</code> reports points outside a convex cell as
+  inside, while its own <code>IsInside</code> disagrees. So <code>vtkProbeFilter</code> accepted
+  55 of 800 points outside Voronoi columns, and got a linear field wrong by
+  up to 0.18 at 83 of the rest.
+- <code>InterpolateFunctions</code> takes a world position, unlike every other cell's,
+  which takes parametric coordinates.</p>
+<p>The tests use other references:
+- <code>Derivatives</code> at each cell's parametric center, where it is exact;
+- convex-hull membership of the Voronoi cells, which are convex;
+- the shape path on the same cells: the same probe points (all of them
+  where faces are planar), and the same paths for advection, leaving the
+  mesh included;
+- exact RK4 through a linear field on every shape as polyhedra and on
+  Voronoi cells;
+- the refusal of a C-shaped prism, whose cell point lies in its notch.</p>
+<p><strong>Cost.</strong> <code>benchmarks/polyhedra_compare.py</code>: 64³ moved hexahedra against
+the same cells as polyhedra, warm medians on an M1 Max. Polyhedra take,
+relative to hexahedra:</p>
+<table>
+<thead>
+<tr>
+<th>algorithm</th>
+<th style="text-align: right;">CPU</th>
+<th style="text-align: right;">Metal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gradients (cells)</td>
+<td style="text-align: right;">4.9×</td>
+<td style="text-align: right;">2.6×</td>
+</tr>
+<tr>
+<td><code>cell_centers</code>, <code>values_at_centers</code></td>
+<td style="text-align: right;">0.9–1.1×</td>
+<td style="text-align: right;">1.3–1.4×</td>
+</tr>
+<tr>
+<td><code>probe</code></td>
+<td style="text-align: right;">1.3×</td>
+<td style="text-align: right;">1.3×</td>
+</tr>
+<tr>
+<td><code>advect</code></td>
+<td style="text-align: right;">1.4×</td>
+<td style="text-align: right;">1.7×</td>
+</tr>
+<tr>
+<td><code>streamlines</code></td>
+<td style="text-align: right;">1.3×</td>
+<td style="text-align: right;">1.6×</td>
+</tr>
+</tbody>
+</table>
+<p>The cell gradient walks 6 faces of 4 points, each point reached through
+cell → face → face offsets → face points; a hexahedron reads 8 ids and
+inverts one Jacobian. Resolving each face once (a start and a step into
+<code>face_points</code>) measured no change on either backend; the compilers already
+share those loads.</p>
+<p><strong>Not yet:</strong></p>
+<ul>
+<li><code>traces</code> and projections into spaces with a basis on polyhedra;</li>
+<li>~~locating in polygons and polylines~~: built (2026-10-23). A polygon is
+  fanned from its cell point into triangles, the location <code>t = 2k</code> and
+  <code>pc = (0, w_a, w_b)</code> so <code>tet_value</code> reads it unchanged (<code>_PolygonLocation</code>);
+  a polyline is located on its segments (<code>_PolylineLocation</code>,
+  <code>_PolylinePointField</code>). As on shapes' surface cells, a point within the
+  tolerance counts, and is held when its projection falls in the piece.
+  Polygons not star-shaped from their cell point are refused, as polyhedra are;</li>
+<li>cells not star-shaped from their cell point: refused, by decision
+  (2026-10-23). A solid-angle test would say whether a point is inside one,
+  but its fan's pieces overlap, so it has no interpolant to evaluate;</li>
+<li>~~one return shape for <code>CellLocator.find</code> on both paths~~: <code>Locations(cells,
+  pcs, tets)</code> everywhere since #95.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/berkgeveci/tack" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "content.code.copy", "content.code.annotate", "content.tabs.link", "search.suggest", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

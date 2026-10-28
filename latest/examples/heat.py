@@ -63,11 +63,12 @@ def run(arch="cpu", check=False):
 def save_figure(snapshots, output):
     import vtkmodules.vtkRenderingFreeType  # register text rendering
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  # register the rendering backend
-    from vtkmodules.util.numpy_support import numpy_to_vtk
+    from vtkmodules.vtkCommonCore import VTK_RGB, VTK_TEXT_CENTERED, VTK_TEXT_TOP, vtkFloatArray
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkImagingCore import vtkImageMapToColors
     from vtkmodules.vtkIOImage import vtkPNGWriter
     from vtkmodules.vtkRenderingCore import (
+        VTK_NORMALIZED_VIEWPORT,
         vtkColorTransferFunction,
         vtkImageActor,
         vtkRenderer,
@@ -82,51 +83,38 @@ def save_figure(snapshots, output):
                           (0.5, (0.6, 0.1, 0.35)), (0.75, (0.95, 0.4, 0.1)),
                           (1.0, (1.0, 0.95, 0.5))):
         colour.AddRGBPoint(fraction * scale, *rgb)
-    window = vtkRenderWindow()
-    window.SetOffScreenRendering(True)
-    window.SetMultiSamples(0)
-    window.SetSize(400 * len(snapshots), 440)
+    window = vtkRenderWindow(off_screen_rendering=True, multi_samples=0,
+                             size=(400 * len(snapshots), 440))
     for index, (snapshot, label) in enumerate(zip(snapshots, ("Initial", "200 steps", "400 steps", "600 steps"), strict=True)):
         data = np.ascontiguousarray(snapshot)
-        image = vtkImageData()
-        image.SetDimensions(data.shape[1], data.shape[0], 1)
-        image.GetPointData().SetScalars(numpy_to_vtk(data.ravel(), deep=True))
-        mapped = vtkImageMapToColors()
-        mapped.SetInputData(image)
-        mapped.SetLookupTable(colour)
-        mapped.SetOutputFormatToRGB()
-        mapped.Update()
-        actor = vtkImageActor()
-        actor.GetMapper().SetInputData(mapped.GetOutput())
-        actor.InterpolateOff()
-        renderer = vtkRenderer()
-        renderer.SetBackground(1, 1, 1)
-        renderer.SetViewport(index / len(snapshots), 0, (index + 1) / len(snapshots), 1)
+        image = vtkImageData(dimensions=(data.shape[1], data.shape[0], 1))
+        # Attribute data has no settable scalars property: SetScalars makes them active.
+        image.point_data.SetScalars(vtkFloatArray(data.ravel()))
+        actor = vtkImageActor(interpolate=False)
+        image >> vtkImageMapToColors(lookup_table=colour, output_format=VTK_RGB) >> actor.mapper
+        renderer = vtkRenderer(background=(1, 1, 1),
+                               viewport=(index / len(snapshots), 0, (index + 1) / len(snapshots), 1))
         renderer.AddActor(actor)
-        title = vtkTextActor()
-        title.SetInput(label)
-        title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
-        title.SetPosition(0.5, 0.98)
-        title.GetTextProperty().SetJustificationToCentered()
-        title.GetTextProperty().SetVerticalJustificationToTop()
-        title.GetTextProperty().SetFontSize(20)
-        title.GetTextProperty().SetColor(0, 0, 0)
+        title = vtkTextActor(input=label, position=(0.5, 0.98))
+        title.position_coordinate.coordinate_system = VTK_NORMALIZED_VIEWPORT
+        text = title.text_property
+        text.justification = VTK_TEXT_CENTERED
+        text.vertical_justification = VTK_TEXT_TOP
+        text.font_size = 20
+        text.color = (0, 0, 0)
         renderer.AddViewProp(title)
-        camera = renderer.GetActiveCamera()
+        camera = renderer.active_camera
         cx, cy = (data.shape[1] - 1) / 2, (data.shape[0] - 1) / 2
-        camera.SetPosition(cx, cy, 1)
-        camera.SetFocalPoint(cx, cy, 0)
-        camera.ParallelProjectionOn()
-        camera.SetParallelScale(data.shape[0] * 0.6)
+        camera.position = (cx, cy, 1)
+        camera.focal_point = (cx, cy, 0)
+        camera.parallel_projection = True
+        camera.parallel_scale = data.shape[0] * 0.6
         window.AddRenderer(renderer)
     window.Render()
-    capture = vtkWindowToImageFilter()
-    capture.SetInput(window)
-    capture.ReadFrontBufferOff()
-    writer = vtkPNGWriter()
-    writer.SetFileName(str(output))
-    writer.SetInputConnection(capture.GetOutputPort())
-    writer.Write()
+    capture = vtkWindowToImageFilter(input=window, read_front_buffer=False)
+    writer = vtkPNGWriter(file_name=str(output))
+    capture >> writer
+    writer.Write()  # calling the writer, or updating it, writes raw pixels instead of a PNG
     window.Finalize()
 
 

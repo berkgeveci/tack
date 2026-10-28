@@ -1,0 +1,5162 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scientific data analysis, visualization and portable GPU compute in Python.">
+      
+      
+      
+        <link rel="canonical" href="https://berkgeveci.github.io/tack/0.6/design/numerical-semantics/">
+      
+      
+        <link rel="prev" href="../specialization-and-caching/">
+      
+      
+        <link rel="next" href="../parallel-execution/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Numerical Semantics - Tack</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#numerical-semantics" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the latest release's documentation.
+  <a href="../../..">
+    <strong>Go to the latest release.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Tack" class="md-header__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Tack
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Numerical Semantics
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../users-guide/" class="md-tabs__link">
+          
+  
+  
+  User's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../vis-guide/" class="md-tabs__link">
+          
+  
+  
+  Visualization Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Design and Implementation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contracts/" class="md-tabs__link">
+          
+  
+  
+  Contracts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developers-guide/" class="md-tabs__link">
+          
+  
+  
+  Developer's Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/backends/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Tack" class="md-nav__button md-logo" aria-label="Tack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Tack
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/berkgeveci/tack" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    berkgeveci/tack
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack User's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Start Here
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/01-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/12-execution-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From Python to a Tack program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/quick-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Kernels
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Kernels
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/02-arrays-and-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays and Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/14-vectors-and-matrices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vectors and Matrices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/03-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/04-control-flow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Flow and Math
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/05-device-functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Functions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/06-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/13-memory-and-parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Parallel Correctness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Kernel Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/11-reductions-and-scans/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reductions and Scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/07-advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run and Diagnose
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run and Diagnose
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/08-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/16-interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing Arrays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/15-debugging-and-timing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debugging and Timing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/17-kernel-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Kernel Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worked Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Worked Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/heat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heat Diffusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/dye/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advecting Dye
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/physarum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trail-following Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/contours/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Marching Squares
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/mpm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Particle-to-grid Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/tutorials/nbody/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tiled N-body Forces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualization Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Visualization Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Data Model
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    The Data Model
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Space Fundamentals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/01-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understand a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/03-fields-and-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fields and Spaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/12-units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physical Units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Work with Data
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/02-meshes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Meshes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/08-point-clouds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/04-filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/05-mesh-kernels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Mesh Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/15-write-a-filter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write a Filter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Connect Simulations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data in Pieces
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/07-partitioned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work with Data in Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/09-pieces-across/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms Across Pieces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/14-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Communicate Between Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worked Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/reference/dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/reference/algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/reference/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/design/dataset-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vis-guide/design/polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design and Implementation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design and Implementation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../array-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Array API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compilation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compilation Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../specialization-and-caching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Specialization and Caching
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Numerical Semantics
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Numerical Semantics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#design-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-the-semantics-are-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the semantics are decided
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#typing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Typing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Typing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters-and-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters and literals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#float-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Float literals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#binary-promotion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary promotion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#result-type-rules-that-differ-from-promotion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result-type rules that differ from promotion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-type-per-local-variable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One type per local variable
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integer-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integer arithmetic
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integer arithmetic">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wrapping-at-every-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wrapping at every node
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#floor-division-and-remainder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floor division and remainder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#true-division" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        True division
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integer-power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integer power
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#floating-point-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floating-point arithmetic
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Floating-point arithmetic">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#precision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#floating-floor-division-and-remainder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floating floor division and remainder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#safe-math-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Safe math by default
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nan-infinity-and-signed-zero" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NaN, infinity and signed zero
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#denormals-and-accuracy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Denormals and accuracy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reductions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reductions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caller-constraints-and-no-portable-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caller constraints and "no portable result"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tests-and-their-oracles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests and their oracles
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parallel-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallel Execution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory-and-aliasing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory and Aliasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cpu-threading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CPU Threading Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backend-implementations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Implementations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vendor-workarounds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vendor Workarounds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interoperability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contracts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/language-contract/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kernel Language Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/backend-capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Capabilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/runtime-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contracts/conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conformance and Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer's Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tack Developer's Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/01-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/02-ast-transform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AST Transform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/03-ir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/04-ir-passes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IR Passes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/05-codegen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codegen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/06-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/07-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developers-guide/08-adding-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#design-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-the-semantics-are-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where the semantics are decided
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#typing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Typing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Typing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters-and-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters and literals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#float-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Float literals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#binary-promotion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Binary promotion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#result-type-rules-that-differ-from-promotion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result-type rules that differ from promotion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-type-per-local-variable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One type per local variable
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integer-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integer arithmetic
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integer arithmetic">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wrapping-at-every-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wrapping at every node
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#floor-division-and-remainder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floor division and remainder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#true-division" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        True division
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integer-power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integer power
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#floating-point-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floating-point arithmetic
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Floating-point arithmetic">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#precision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#floating-floor-division-and-remainder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floating floor division and remainder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#safe-math-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Safe math by default
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nan-infinity-and-signed-zero" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NaN, infinity and signed zero
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#denormals-and-accuracy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Denormals and accuracy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reductions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reductions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caller-constraints-and-no-portable-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caller constraints and "no portable result"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tests-and-their-oracles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests and their oracles
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="numerical-semantics">Numerical Semantics<a class="headerlink" href="#numerical-semantics" title="Permanent link">&para;</a></h1>
+<p>This page explains how Tack decides what an arithmetic expression <em>means</em>
+and how each backend is made to compute exactly that. The normative rules
+live in the <a href="../../reference/language-contract/">kernel language contract</a>,
+section <a href="../../reference/language-contract/#types-and-numerical-behavior">Types and numerical behavior</a>;
+this page summarizes each rule, records why it was chosen over the
+alternatives, and walks through the modules that implement it. Where this
+page and the contract differ, the contract states the guarantee and this
+page describes the current code.</p>
+<p>The short version: Tack is <strong>fixed-width and Python-flavored</strong>. Integers
+wrap at their annotated width like NumPy arrays; <code>//</code>, <code>%</code> and <code>/</code> follow
+Python's definitions rather than C's; floating-point code is compiled with
+safe math on every backend; and inputs where no portable answer exists
+(zero divisors, oversized shifts, out-of-range float-to-int conversion) are
+documented caller constraints rather than checked at run time.</p>
+<h2 id="design-goals">Design goals<a class="headerlink" href="#design-goals" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Goal</th>
+<th>Consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One answer per defined program, on every backend</td>
+<td>Every rule is enforced in Tack's own type annotation and code generation, never delegated to a target language's implicit conversions</td>
+</tr>
+<tr>
+<td>Python-first semantics where Python's rule is cheap</td>
+<td>Floor division, divisor-signed remainder, true division, Boolean results of <code>0</code>/<code>1</code></td>
+</tr>
+<tr>
+<td>Fixed-width storage, not big integers</td>
+<td>Arithmetic wraps modulo 2^N at each node; promotion picks a type that holds both operands</td>
+</tr>
+<tr>
+<td>No undefined behavior leaking from C</td>
+<td>C-family emitters compute in unsigned carriers and reconstruct signed values with representable casts</td>
+</tr>
+<tr>
+<td>No silent precision loss</td>
+<td>Signed-with-<code>u64</code> mixes are rejected; f32 is never silently narrowed from f64</td>
+</tr>
+<tr>
+<td>Small compiler</td>
+<td>No runtime checks for division by zero or shift ranges; those are caller constraints</td>
+</tr>
+</tbody>
+</table>
+<h2 id="where-the-semantics-are-decided">Where the semantics are decided<a class="headerlink" href="#where-the-semantics-are-decided" title="Permanent link">&para;</a></h2>
+<p>All backends share one typing pass. Code generators read the result and
+never re-derive types from the target language.</p>
+<pre class="mermaid"><code>flowchart LR
+    A[Call arguments] --&gt;|infer_param_types| B[Parameter types]
+    B --&gt; C[annotate_types]
+    C --&gt;|"node.dtype on every expression&lt;br/&gt;_resolved_type on every assignment&lt;br/&gt;_operand_type on comparisons"| D{Backend}
+    D --&gt;|LLVMCodeGen| E["LLVM IR: typed instructions&lt;br/&gt;and internal helpers"]
+    D --&gt;|"CUDA / HIP / MSL / OpenCL"| F["C source + shared helpers&lt;br/&gt;integer_ops, integer_division,&lt;br/&gt;float_division, reductions"]</code></pre>
+<ul>
+<li><code>packages/tack-core/src/tack/lang/type_inference.py</code>: <code>infer_param_types</code>
+  types the parameters from the actual arguments; <code>promote_types</code> is the
+  single binary promotion rule.</li>
+<li><code>packages/tack-core/src/tack/lang/ir_type_annotate.py</code>: <code>annotate_types</code>
+  sets <code>dtype</code> on every expression node, <code>_resolved_type</code> on every
+  <code>IRAssign</code> and <code>_operand_type</code> on every <code>IRCompare</code>.</li>
+<li><code>packages/tack-core/src/tack/codegen/llvm_gen.py</code>: <code>LLVMCodeGen</code> for CPU.</li>
+<li><code>packages/tack-core/src/tack/codegen/integer_ops.py</code>,
+  <code>integer_division.py</code>, <code>float_division.py</code> and <code>reductions.py</code>: helper
+  emitters shared by <code>CUDACodeGen</code>, <code>HIPCodeGen</code>, <code>MSLCodeGen</code> and
+  <code>OpenCLCodeGen</code>.</li>
+</ul>
+<p>Because the annotation is computed per compiled variant (see
+<a href="../specialization-and-caching/">Specialization and Caching</a>), every dtype a
+helper depends on is part of the variant key through the argument types.</p>
+<h2 id="typing">Typing<a class="headerlink" href="#typing" title="Permanent link">&para;</a></h2>
+<h3 id="parameters-and-literals">Parameters and literals<a class="headerlink" href="#parameters-and-literals" title="Permanent link">&para;</a></h3>
+<p><code>infer_param_types</code> gives arrays their element type. Python <code>int</code>
+arguments and integer literals go through <code>integer_type_for_value</code>
+(<code>lang/types.py</code>): i32 if the value fits, else i64, else u64; anything
+outside <code>[-2^63, 2^64 - 1]</code> raises <code>TypeError</code>. Python <code>float</code> arguments are
+f32, unless <em>any</em> array argument is f64, in which case they are f64. (A
+texture is always f32: <code>tack.texture3d()</code> rejects other arrays.) Float
+literals in the kernel body are weakly typed; see
+<a href="#float-literals">Float literals</a>.</p>
+<p>That float-context rule has a consequence worth knowing. An f64 output
+array does not widen an f32 <em>array</em> computation, but it does make a Python
+float scalar argument f64, and the scalar then widens the expression it
+appears in:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">scale</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>          <span class="c1"># a: f32 array, out: f64 array, s: Python float</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">s</span>      <span class="c1"># s is f64 here, so the product is f64</span>
+</code></pre></div>
+<h3 id="float-literals">Float literals<a class="headerlink" href="#float-literals" title="Permanent link">&para;</a></h3>
+<p>Float literals are weakly typed, the way NumPy's
+<a href="https://numpy.org/neps/nep-0050-scalar-promotion.html">NEP 50</a> treats
+Python scalars: a literal takes its precision from what it meets.
+<code>annotate_types</code> marks each node of a <em>literal expression</em> (numeric
+literals combined only by unary <code>+</code>/<code>-</code>, arithmetic, math builtins and
+conditional-expression arms) with <code>_literal</code>, and one containing a float
+literal with <code>_weak</code>. A weak expression is annotated f32 until it meets a
+non-weak floating operand (<code>_meet</code>, for arithmetic, comparisons and
+conditional arms), a math builtin whose result type comes from a non-weak
+floating argument, an explicit <code>tack.f32</code>/<code>tack.f64</code> cast, or a floating
+store, atomic or local target (<code>_adopt</code>). It then takes that type
+throughout (<code>_retype</code>): each float literal converts once from its exact
+Python value, and the expression's operations run at that precision.
+Literal-only subexpressions are not folded at compile time.</p>
+<p>So with an f64 <code>x</code>, <code>x * 0.1</code>, <code>x * -0.1</code> and <code>x * (1.0 / 3.0)</code> equal
+NumPy's f64 results, and <code>tack.f64(0.1)</code> is the f64 nearest 0.1 rather
+than a widened f32. A weak expression that meets none of these keeps the
+f32 default: alone, beside only literals or integers, or combined with an
+integer value (<code>i * 0.1</code> is f32). A local assigned once to a literal-only
+expression, as in <code>a = 0.1</code>, is propagated as a weak expression wherever
+it is read, so <code>x * a</code> retains the literal's full precision when <code>x</code> is f64.
+A local assigned only literals more than once uses f64 when the kernel has
+an f64 array, as a Python float argument does. An expression without f64
+operands annotates exactly as it would with f32 literals, and its
+generated code is unchanged.</p>
+<p>The generators emit an f64-annotated constant at full precision:
+<code>LLVMCodeGen</code> a <code>double</code> constant from the Python value, and the CUDA
+generator (and so HIP and OpenCL) an unsuffixed <code>repr</code>, which round-trips
+exactly. MSL has no f64. The full rule, including how integer
+subexpressions convert, is in the
+<a href="../../reference/language-contract/#floating-point-execution-policy">language contract</a>;
+<code>test_float_literals.py</code> pins it.</p>
+<h3 id="binary-promotion">Binary promotion<a class="headerlink" href="#binary-promotion" title="Permanent link">&para;</a></h3>
+<p><code>promote_types(a, b)</code> is used for arithmetic, comparisons (recorded as
+<code>_operand_type</code>), conditional-expression arms, integer <code>min</code>/<code>max</code>, and the
+join of every assignment to one local variable. Its rule:</p>
+<ol>
+<li>Equal types promote to themselves.</li>
+<li>Any floating operand wins: f64 if present, otherwise f32.</li>
+<li>Integers of the same signedness promote to the wider type.</li>
+<li>Mixed signedness promotes to the narrowest <strong>signed</strong> type with at least
+   <code>max(signed.bits, unsigned.bits + 1)</code> bits. Nothing fits for a signed type
+   with u64, so that raises <code>TypeError</code> ("use an explicit integer cast").</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Operands</th>
+<th>Result</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>i8, u8</td>
+<td>i16</td>
+<td>i16 holds -128..255</td>
+</tr>
+<tr>
+<td>i8, u16</td>
+<td>i32</td>
+<td></td>
+</tr>
+<tr>
+<td>i32, u32</td>
+<td>i64</td>
+<td>C would choose u32 and turn <code>-1</code> into 4294967295</td>
+</tr>
+<tr>
+<td>i16, u32</td>
+<td>i64</td>
+<td></td>
+</tr>
+<tr>
+<td>u8, u64</td>
+<td>u64</td>
+<td>same signedness</td>
+</tr>
+<tr>
+<td>i64, u64</td>
+<td><code>TypeError</code></td>
+<td>no Tack integer holds both ranges</td>
+</tr>
+<tr>
+<td>i64, f32</td>
+<td>f32</td>
+<td>floating wins; large integers can round</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why preserve both ranges.</strong> C's usual arithmetic conversions make
+<code>i32 + u32</code> unsigned, so a comparison like <code>-1 &lt; 1u</code> is false. Before the
+annotations governed every emitter, the GPU generators inherited that rule
+implicitly while the CPU generator followed LLVM widths, and the backends
+disagreed. Integer promotion that preserves both ranges never changes a
+value, so comparisons and <code>min</code>/<code>max</code> operate on mathematical values.</p>
+<p><strong>Why reject signed with u64 instead of choosing f64</strong> (NumPy's choice):
+an implicit trip through binary64 silently rounds integers above 2^53,
+which is exactly the kind of quiet divergence the contract exists to
+remove. An explicit <code>tack.i64(...)</code> or <code>tack.u64(...)</code> cast states the
+intended wrap.</p>
+<h3 id="result-type-rules-that-differ-from-promotion">Result-type rules that differ from promotion<a class="headerlink" href="#result-type-rules-that-differ-from-promotion" title="Permanent link">&para;</a></h3>
+<p><code>_annotate_expr</code> special-cases a few operators:</p>
+<table>
+<thead>
+<tr>
+<th>Expression</th>
+<th>Result type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>int <code>/</code> int</td>
+<td>f32</td>
+<td><a href="#true-division">True division</a></td>
+</tr>
+<tr>
+<td>int <code>**</code> int, <code>pow(int, int)</code></td>
+<td>the base's type</td>
+<td>exponent type ignored; negative literal exponent raises <code>TypeError</code></td>
+</tr>
+<tr>
+<td><code>a &lt;&lt; n</code>, <code>a &gt;&gt; n</code></td>
+<td>type of <code>a</code></td>
+<td>count type does not widen</td>
+</tr>
+<tr>
+<td>comparisons, <code>not</code>, <code>and</code>, <code>or</code></td>
+<td>i32</td>
+<td>values are <code>0</code>/<code>1</code></td>
+</tr>
+<tr>
+<td><code>abs(int)</code></td>
+<td>the argument's type</td>
+<td></td>
+</tr>
+<tr>
+<td><code>min</code>/<code>max</code></td>
+<td>promotion of all arguments</td>
+<td></td>
+</tr>
+<tr>
+<td>other math builtins</td>
+<td>f64 if any argument is f64, else f32</td>
+<td><code>sqrt(i64_value)</code> is f32</td>
+</tr>
+<tr>
+<td><code>block_sum</code>/<code>block_min</code>/<code>block_max</code></td>
+<td>f32</td>
+<td>non-f32 input raises <code>TypeError</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="one-type-per-local-variable">One type per local variable<a class="headerlink" href="#one-type-per-local-variable" title="Permanent link">&para;</a></h3>
+<p>A local gets a single storage slot: an <code>alloca</code> on CPU, one declared C
+variable elsewhere. <code>annotate_types</code> therefore runs a fixpoint over all
+assignments (at most <code>_MAX_JOIN_ROUNDS</code> rounds; the join only widens, so it
+settles quickly) and gives each local the promotion of every type assigned
+to it. The motivating bug was <code>total = 0.0</code> followed by additions from an
+f64 array: the first assignment typed <code>total</code> as f32 and every later
+addition was narrowed. Loop variables, parameters and allocations are
+pinned and do not join. An impossible join (signed with u64) raises
+rather than being dropped.</p>
+<h2 id="integer-arithmetic">Integer arithmetic<a class="headerlink" href="#integer-arithmetic" title="Permanent link">&para;</a></h2>
+<h3 id="wrapping-at-every-node">Wrapping at every node<a class="headerlink" href="#wrapping-at-every-node" title="Permanent link">&para;</a></h3>
+<p><strong>Rule</strong> (<a href="../../reference/language-contract/#types-and-numerical-behavior">contract</a>,
+"fixed-width arithmetic and integer conversion"): integer <code>+</code>, <code>-</code>, <code>*</code>,
+unary <code>-</code>, <code>~</code>, <code>&amp;</code>, <code>|</code>, <code>^</code> and <code>&lt;&lt;</code> produce the low N bits at the node's
+annotated width, interpreted as two's complement for signed types. Each
+nested operation wraps before its value is used.</p>
+<table>
+<thead>
+<tr>
+<th>Expression (operand types)</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tack.i8(a + 1)</code> with i8 <code>a = 127</code></td>
+<td><code>-128</code> (the sum is i32 <code>128</code>; the cast wraps)</td>
+</tr>
+<tr>
+<td><code>a + a</code>, i8 <code>a = 127</code></td>
+<td><code>-2</code></td>
+</tr>
+<tr>
+<td><code>a * a</code>, u16 <code>a = 65535</code></td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>abs(a)</code>, i8 <code>a = -128</code></td>
+<td><code>-128</code></td>
+</tr>
+<tr>
+<td><code>a &gt;&gt; 1</code>, i8 <code>a = -8</code></td>
+<td><code>-4</code> (arithmetic)</td>
+</tr>
+<tr>
+<td><code>a &gt;&gt; 1</code>, u8 <code>a = 200</code></td>
+<td><code>100</code> (logical)</td>
+</tr>
+<tr>
+<td><code>a + b</code>, i32 <code>-1</code>, u32 <code>4294967295</code></td>
+<td><code>4294967294</code> (i64)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why wrap.</strong> Python integers do not overflow, but a fixed-width compiled
+language cannot follow them. The two realistic alternatives were C's
+(promote small types to <code>int</code>, leave signed overflow undefined) and
+NumPy's (wrap at the array's width). Inheriting C's rule gave different
+results on CPU and GPU, and its undefined behavior lets a vendor compiler assume an
+overflow never happens, so an overflowing loop counter could be optimized
+into anything. Wrapping is what the hardware does, matches NumPy arrays,
+and is cheap to express on every target.</p>
+<p><strong>LLVM</strong> (<code>LLVMCodeGen._emit_binop</code>, <code>_emit_int_binop</code>): operands are
+coerced to the annotated width and the operation is emitted as a plain
+<code>add</code>/<code>sub</code>/<code>mul</code>/<code>shl</code> <strong>without <code>nsw</code> or <code>nuw</code> flags</strong>, which LLVM
+defines as wrapping. Unsignedness is not part of an LLVM integer type, so
+the generator tracks unsigned values (<code>_unsigned_vals</code>) to choose <code>zext</code>
+over <code>sext</code>, <code>uitofp</code> over <code>sitofp</code>, <code>lshr</code> over <code>ashr</code>, <code>icmp_unsigned</code>
+over <code>icmp_signed</code>, and <code>umin</code>/<code>umax</code> atomics.</p>
+<p><strong>C-family</strong> (<code>IntegerCodeGen</code> in <code>codegen/integer_ops.py</code>): every integer
+operation becomes a typed helper such as <code>__tack_add_i8__</code>. Inside, the
+operands are converted to an <strong>unsigned carrier of at least 32 bits</strong>, the
+operation runs there (unsigned arithmetic is defined to wrap in C), and the
+result is truncated to the N-bit unsigned type:</p>
+<div class="highlight"><pre><span></span><code><span class="n">__device__</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">short</span><span class="w"> </span><span class="n">__tack_mul_u16__</span><span class="p">(</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">short</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">short</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">short</span><span class="p">)((((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="n">a</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="n">b</span><span class="p">))));</span>
+<span class="p">}</span>
+<span class="n">__device__</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">__tack_bits_i8__</span><span class="p">(</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">x</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">127ULL</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="p">)</span><span class="n">x</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="p">(</span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="p">)(</span><span class="mi">-1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="p">(</span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="p">)((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="p">)</span><span class="o">~</span><span class="n">x</span><span class="p">));</span>
+<span class="p">}</span>
+<span class="n">__device__</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">__tack_add_i8__</span><span class="p">(</span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">signed</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">__tack_bits_i8__</span><span class="p">(((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="p">)((((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="n">a</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">((</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="n">b</span><span class="p">)))));</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The 32-bit floor on the carrier matters: in C, <code>unsigned short * unsigned
+short</code> promotes both operands to <em>signed</em> <code>int</code>, and <code>65535 * 65535</code>
+overflows it, which is undefined. The <code>__tack_bits_*</code> function turns the
+N-bit pattern back into a signed value using only casts of in-range values
+(out-of-range conversion to a signed type is implementation-defined in C).
+Metal has a defined bit reinterpretation, so <code>IntegerCodeGen(bitcast=True)</code>
+emits <code>as_type&lt;char&gt;(x)</code> instead. Signed right shift avoids C's
+implementation-defined <code>&gt;&gt;</code> on negative values by shifting the complement.
+Helpers take their operands as parameters, so each operand is evaluated
+exactly once. Only the helpers a kernel uses are emitted.</p>
+<div class="admonition note">
+<p class="admonition-title">Metal 64-bit addition workaround</p>
+<p>On the M1 Max where it was found, Metal's pipeline compiler crashed
+when a wrapping 64-bit addition that updates a local from its own
+previous value was optimized inside a loop with a runtime bound.
+<code>MSLCodeGen._emit_assign</code> detects that shape and emits a separate
+<code>__attribute__((noinline))</code> i64/u64 add helper for it. The contract
+records this as needing validation on other Apple GPUs.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Level Zero negation and <code>abs</code> workaround</p>
+<p>On an Intel Data Center GPU Max 1100 with IGC 2.7.11, the wrapped
+negation or <code>abs</code> of a signed minimum lost its sign once widened: i16
+<code>-(-32768)</code> widened to <code>32768</code>, and the i8/i16/i32 <code>abs</code> minimum to
+its magnitude. <code>OpenCLCodeGen</code> emits <code>neg</code> below 32 bits and <code>abs</code>
+below 64 bits as <code>__attribute__((noinline))</code> helpers, the one shape
+that held; see <a href="../backend-implementations/">Backend implementations</a>.</p>
+</div>
+<h3 id="conversions">Conversions<a class="headerlink" href="#conversions" title="Permanent link">&para;</a></h3>
+<p>Integer-to-integer casts and integer array stores reduce the value modulo
+2^N of the destination and reinterpret with the destination's signedness.
+Widening follows the <strong>source</strong> signedness: i8 <code>-1</code> to u64 is <code>2^64 - 1</code>;
+u8 <code>255</code> to i64 is <code>255</code>. In LLVM, <code>_emit_cast</code> chooses <code>zext</code>/<code>sext</code> from
+the source annotation. In C, <code>IntegerCodeGen.convert</code> emits a plain cast
+when the destination is unsigned or the conversion widens, and routes
+narrowing-to-signed through the unsigned type and <code>__tack_bits_*</code>.</p>
+<p>Floating-to-integer conversion truncates toward zero (<code>int(-2.7) == -2</code>),
+using <code>fptosi</code>/<code>fptoui</code> on CPU and a C cast elsewhere. The input must be
+finite and its truncated value must fit; see
+<a href="#caller-constraints-and-no-portable-result">Caller constraints</a>.</p>
+<h3 id="floor-division-and-remainder">Floor division and remainder<a class="headerlink" href="#floor-division-and-remainder" title="Permanent link">&para;</a></h3>
+<p><strong>Rule:</strong> for integer operands, <code>a // b</code> rounds toward negative infinity
+and <code>a % b</code> has the divisor's sign, so <code>a == (a // b) * b + a % b</code>. The
+operation runs in the promoted integer type.</p>
+<table>
+<thead>
+<tr>
+<th>Expression</th>
+<th>Tack (Python)</th>
+<th>C truncation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-7 // 3</code></td>
+<td><code>-3</code></td>
+<td><code>-2</code></td>
+</tr>
+<tr>
+<td><code>-7 % 3</code></td>
+<td><code>2</code></td>
+<td><code>-1</code></td>
+</tr>
+<tr>
+<td><code>7 // -3</code></td>
+<td><code>-3</code></td>
+<td><code>-2</code></td>
+</tr>
+<tr>
+<td><code>7 % -3</code></td>
+<td><code>-2</code></td>
+<td><code>1</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why Python's rule.</strong> Kernel authors write Python and test against NumPy,
+which also floors. The divisor-signed remainder is what index arithmetic
+wants: <code>(i - 1) % n</code> wraps to <code>n - 1</code> at <code>i = 0</code> instead of producing <code>-1</code>
+and an out-of-bounds read. Before this rule was enforced, the GPU emitters
+truncated toward zero, as C does, contrary to the Python source.</p>
+<p><strong>LLVM</strong> (<code>LLVMCodeGen._emit_integer_division</code>): unsigned types use
+<code>udiv</code>/<code>urem</code> directly. Signed types compute <code>srem</code> and <code>sdiv</code>, then subtract
+one from the quotient (or add the divisor to the remainder) when the
+remainder is nonzero and its sign differs from the divisor's.</p>
+<p><strong>C-family</strong> (<code>codegen/integer_division.py</code>): <code>integer_division_expr</code>
+emits an unsigned <code>/</code> or <code>%</code> inline, and for signed types a typed helper
+with the same correction:</p>
+<div class="highlight"><pre><span></span><code><span class="n">__device__</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">__tack_floordiv_i32__</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">adjust</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">((</span><span class="n">r</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="p">(</span><span class="n">b</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">));</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">adjust</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Operands are converted to the annotated type before the call, so C's own
+promotions never pick the operation's signedness.</p>
+<h3 id="true-division">True division<a class="headerlink" href="#true-division" title="Permanent link">&para;</a></h3>
+<p><strong>Rule:</strong> integer <code>a / b</code> converts each operand to f32 and returns an f32
+quotient: <code>7 / 2 == 3.5</code>. With a floating operand, <code>/</code> uses the promoted
+floating type. Request f64 explicitly with <code>tack.f64(a) / tack.f64(b)</code>; an
+f64 destination array alone does not widen the division.</p>
+<p><strong>Why f32 and not f64.</strong> Python's <code>/</code> is true division, so returning a
+float is the Python-compatible part; truncating integer division (the old
+GPU behavior) is now spelled <code>//</code>. The precision follows Tack's default
+floating type: Metal has no f64 at all and Level Zero devices may lack it,
+so an f64 result would make plain integer <code>/</code> unsupported on those
+backends. The price is that integers above 2^24 lose precision in the
+conversion. Signed/u64 pairs are allowed here, unlike in integer promotion,
+because each operand is converted to f32 independently.</p>
+<p>Implementation: <code>_annotate_expr</code> sets the f32 dtype; LLVM coerces both
+operands to <code>float</code> and emits <code>fdiv</code>; C-family generators emit
+<code>((float)(a)) / ((float)(b))</code>.</p>
+<h3 id="integer-power">Integer power<a class="headerlink" href="#integer-power" title="Permanent link">&para;</a></h3>
+<p><strong>Rule:</strong> for two integer operands, <code>a ** e</code> and <code>pow(a, e)</code> have the
+<strong>base's</strong> type and equal the exact power modulo 2^N. i8 <code>3 ** 5</code> is <code>-13</code>;
+u8 <code>20 ** 2</code> is <code>144</code>; <code>0 ** 0</code> is <code>1</code>. A negative integer literal exponent
+raises <code>TypeError</code> from <code>_check_integer_exponent</code>; cast the base to a
+floating type for negative powers.</p>
+<p><strong>Why.</strong> The old lowering went through floating <code>pow</code>, which loses exact
+results above 2^24 (f32) or 2^53 and made <code>**</code> and <code>pow</code> disagree. Keeping
+the base's type matches the wrapping rule: the result is what repeated
+wrapping multiplication would give. The exponent's type cannot widen the
+result, so an i8 base with a u64 exponent is still i8.</p>
+<p><strong>Implementation:</strong> exponentiation by squaring. LLVM emits an internal
+<code>__tack_pow_&lt;type&gt;__</code> function (<code>LLVMCodeGen._emit_integer_power</code>) that
+converts the exponent to i64 and halves it with a <em>logical</em> shift, so even
+a negative dynamic exponent terminates within 64 iterations. The C-family
+helper from <code>IntegerCodeGen</code> takes the exponent as an unsigned 64-bit value
+and multiplies in the unsigned carrier.</p>
+<h2 id="floating-point-arithmetic">Floating-point arithmetic<a class="headerlink" href="#floating-point-arithmetic" title="Permanent link">&para;</a></h2>
+<h3 id="precision">Precision<a class="headerlink" href="#precision" title="Permanent link">&para;</a></h3>
+<p>f32 and f64 expressions compute at their annotated precision; floating
+operands promote to f64 if present, otherwise f32. Math builtins convert
+their arguments to the annotated precision before the call (all four
+C-family generators cast each argument explicitly, which also avoids
+OpenCL's overload ambiguity for integer arguments). An integer argument to
+<code>sqrt</code> or a trigonometric, exponential or logarithmic function is f32 unless
+another argument is f64.</p>
+<h3 id="floating-floor-division-and-remainder">Floating floor division and remainder<a class="headerlink" href="#floating-floor-division-and-remainder" title="Permanent link">&para;</a></h3>
+<p><strong>Rule:</strong> with a floating operand, <code>//</code> and <code>%</code> convert both operands to the
+promoted floating type and return that type; <code>//</code> returns an integer-valued
+float. The algorithm is CPython's: a truncating <code>fmod</code>, corrected to the
+divisor's sign, with the quotient reconstructed from it and snapped to the
+nearest integral value.</p>
+<p><strong>Why not <code>floor(a / b)</code>.</strong> The rounded quotient can land exactly on an
+integer that the true quotient does not reach. In binary64 <code>0.1</code> is
+slightly larger than one tenth, so:</p>
+<table>
+<thead>
+<tr>
+<th>Expression (f64)</th>
+<th>Python and Tack</th>
+<th><code>floor(a / b)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0.5 // 0.1</code></td>
+<td><code>4.0</code></td>
+<td><code>5.0</code></td>
+</tr>
+<tr>
+<td><code>1.0 // 0.1</code></td>
+<td><code>9.0</code></td>
+<td><code>10.0</code></td>
+</tr>
+<tr>
+<td><code>0.5 % 0.1</code></td>
+<td><code>0.09999999999999998</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Converting to an integer and back was also rejected: the old GPU lowering
+did that, which overflowed for large or nonfinite quotients and threw away
+f64 precision.</p>
+<p><strong>Implementation:</strong> <code>float_division_helpers</code> (<code>codegen/float_division.py</code>)
+emits one helper per operator and precision; <code>LLVMCodeGen._emit_float_division</code>
+builds the same function in LLVM IR with <code>frem</code>, <code>llvm.floor</code> and
+<code>llvm.copysign</code>. The C form for <code>//</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">__device__</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">__tack_floordiv_f64__</span><span class="p">(</span><span class="kt">double</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">double</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fmod</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">double</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">a</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">r</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">r</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">((</span><span class="n">r</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="p">(</span><span class="n">b</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mf">0.0</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">r</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">            </span><span class="n">q</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mf">1.0</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">q</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">copysign</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">b</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">double</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">floor</span><span class="p">(</span><span class="n">q</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">q</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">0.5</span><span class="p">)</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mf">1.0</span><span class="p">;</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">result</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The call site converts both operands first,
+<code>__tack_floordiv_f64__((double)(x), (double)(y))</code>, so integer operands are
+converted exactly once and the helper never sees mixed types.</p>
+<p>The explicit <code>copysign</code> calls give signed zeros the contract's signs: a zero
+remainder takes the divisor's sign and a zero quotient the true quotient's
+sign. NaN in either operand or an infinite dividend yields NaN for both
+operators; a finite dividend over an infinite divisor follows CPython
+(for example <code>-1.0 // inf == -1.0</code> and <code>-1.0 % inf == inf</code>). These rely on
+safe compiler math, described next.</p>
+<h3 id="safe-math-by-default">Safe math by default<a class="headerlink" href="#safe-math-by-default" title="Permanent link">&para;</a></h3>
+<p>Every kernel on every backend compiles with value-preserving floating-point
+options:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Where</th>
+<th>Setting</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td><code>codegen/llvm_gen.py</code></td>
+<td>no LLVM fast-math flags on any instruction</td>
+</tr>
+<tr>
+<td>CUDA</td>
+<td><code>runtime/cuda_backend.py</code>, <code>_compile_ptx</code></td>
+<td><code>--ftz=false --prec-div=true --prec-sqrt=true --fmad=true</code>, no <code>--use_fast_math</code></td>
+</tr>
+<tr>
+<td>Metal</td>
+<td><code>runtime/metal.py</code>, <code>_compile_kernel</code> and <code>_get_reduce_pipeline</code></td>
+<td><code>MTLCompileOptions.setFastMathEnabled_(False)</code></td>
+</tr>
+<tr>
+<td>HIP</td>
+<td><code>runtime/hip_backend.py</code>, <code>_compile_code_object</code></td>
+<td><code>_HIPRTC_OPTIONS</code>: <code>-ffp-contract=on</code> only; no unsafe or relaxed-math option</td>
+</tr>
+<tr>
+<td>Level Zero</td>
+<td><code>runtime/level_zero_backend.py</code></td>
+<td><code>_OPENCL_OPTIONS</code>: <code>-cl-std=CL2.0 -cl-fp32-correctly-rounded-divide-sqrt</code> (f32 division and sqrt correctly rounded, as CUDA's <code>--prec-div</code>/<code>--prec-sqrt</code>); no relaxed-math option</td>
+</tr>
+</tbody>
+</table>
+<p>The same settings apply to the runtime field-reduction kernels.</p>
+<p><strong>Why.</strong> Under the previous defaults (CUDA <code>--use_fast_math</code>, Metal's
+default fast mode) the Metal compiler demonstrably replaced nonfinite
+identity expressions such as <code>x - x</code> with zero, folded <code>NaN != NaN</code> to false,
+and reassociated parenthesized sums. Those are not low-bit differences;
+they change which branch runs. A single safe policy also means no math mode
+has to participate in the variant key. The cost is throughput on
+arithmetic-heavy kernels, and an opt-in fast mode is an open question; any
+such mode would have to join the specialization key.</p>
+<p><strong>Contraction is permitted, reassociation is not.</strong> <code>--fmad=true</code> lets CUDA
+fuse <code>a * b + c</code> into one rounding; other compilers may do the same. Fusing
+is usually faster and at least as accurate per operation, and forbidding it
+would cost throughput on every GPU, so the contract permits it without
+requiring it. CPU and GPU can therefore differ in the last bits of such
+expressions. Regrouping <code>(a + b) + c</code> as <code>a + (b + c)</code> is never allowed.</p>
+<p>Fusion stays inside one expression: a value bound to a name, or returned
+from a device function, is rounded once, and every read of it sees that
+value, so <code>x - x</code> is zero for a finite <code>x</code>. hipRTC's default,
+<code>-ffp-contract=fast</code>, broke that. It fuses a multiply into an add or
+subtract in a later statement, and on AMD GPUs did so where the product
+had another use, so one variable held two values: with <code>p = k * 0.2</code>,
+<code>p - p</code> came out as the product's rounding error (1.49e-8 for <code>k = 3</code>)
+where CPU and CUDA gave zero. A contour that tests finiteness with
+<code>a - a != 0.0</code> then took finite values for infinite ones. HIP therefore
+compiles with <code>-ffp-contract=on</code>, which fuses only inside one expression;
+the option is part of the disk cache's target, so code objects compiled
+without it are not reused. <code>test_float_semantics.py</code> checks <code>p - p</code> for
+products returned from a device function, in f32 and f64, on every
+backend.</p>
+<p>NVRTC's <code>--fmad=true</code> fuses across statements too, but where a product has
+one later use: <code>p = a * b; out = p + c</code> became one fma, <code>p</code> never rounded.
+<code>p - p</code> cannot show that, since the compiler folds it whether or not it
+fuses, so it went unseen until the locator's two searches, inlining the
+same functions into different kernels, disagreed at shared vertices on
+CUDA. (Fusion inside one expression, which the contract permits, can
+still differ between two such kernels; what fixed the locator was a margin
+on its "holds the point" test, since which cell held a shared vertex was
+rounding noise on every backend.) NVRTC has no per-expression option, so the CUDA generator rounds such
+products itself: a floating product that is not an operand of a <code>+</code> or <code>-</code>
+is <code>__fmul_rn</code>/<code>__dmul_rn</code>, which NVRTC never fuses, and the products of a
+sum stay plain, fusable as the contract permits. A test reads a named
+product once in a later sum against its negated rounding, where a fused
+result is the product's rounding error instead of zero. Metal passes it
+with plain products; OpenCL C contracts per expression by its <code>FP_CONTRACT</code>
+rule.</p>
+<h3 id="nan-infinity-and-signed-zero">NaN, infinity and signed zero<a class="headerlink" href="#nan-infinity-and-signed-zero" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Behavior</th>
+<th>How it is implemented</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NaN != NaN</code> is true; other comparisons with NaN are false</td>
+<td>LLVM uses <code>fcmp</code> unordered for <code>!=</code> and ordered for the rest</td>
+</tr>
+<tr>
+<td>NaN is true in a condition</td>
+<td>LLVM <code>_to_i1</code> tests <code>fcmp une x, 0</code></td>
+</tr>
+<tr>
+<td><code>x - x</code>, <code>x * 0</code> are not folded to zero</td>
+<td>safe-math settings above</td>
+</tr>
+<tr>
+<td><code>-x</code> flips the sign of zero; <code>abs</code> clears it</td>
+<td><code>fneg</code> and <code>llvm.fabs</code> on CPU; <code>fabsf</code>/<code>fabs</code> on CUDA, HIP and OpenCL; <code>abs</code> on Metal</td>
+</tr>
+<tr>
+<td><code>floor</code>, <code>ceil</code> keep signed zero</td>
+<td>intrinsics; plus the Level Zero f64 workaround below</td>
+</tr>
+<tr>
+<td>Floating <code>/</code> by zero gives signed infinity or NaN</td>
+<td>ordinary IEEE division, no Python exception</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Floating <code>min</code>/<code>max</code></strong> return the numeric operand when exactly one input
+is NaN, NaN when both are, and either zero sign on a <code>0.0</code>/<code>-0.0</code> tie. CPU
+uses <code>llvm.minnum</code>/<code>llvm.maxnum</code>, CUDA/HIP <code>fminf</code>/<code>fmaxf</code> (<code>fmin</code>/<code>fmax</code> for
+f64), OpenCL <code>fmin</code>/<code>fmax</code>, Metal <code>min</code>/<code>max</code> on floats. The rule matches
+IEEE 754's <code>minNum</code>/<code>maxNum</code> and the native instructions, and it is
+order-independent. Python's built-in <code>min</code> is not: <code>min(nan, 1.0)</code> is <code>nan</code>
+but <code>min(1.0, nan)</code> is <code>1.0</code>. Array reductions and atomics have their own,
+different extrema rules (below, and in
+<a href="../parallel-execution/">Parallel Execution</a>).</p>
+<div class="admonition warning">
+<p class="admonition-title">Intel f64 <code>floor</code>/<code>ceil</code></p>
+<p>On an Intel Data Center GPU Max 1100 with intel-opencl-icd
+25.05.32567.17, the double-precision <code>floor</code> and <code>ceil</code> builtins return
+<code>+0.0</code> for <code>floor(-0.0)</code> and <code>ceil(-0.1)</code>. <code>OpenCLCodeGen._expr_call</code>
+wraps f64 <code>floor</code>/<code>ceil</code> in <code>copysign(result, x)</code>. Since <code>floor</code> and
+<code>ceil</code> never change the operand's sign, this is exact for every input,
+including infinities, and a no-op where the runtime is already correct.
+It is applied unconditionally rather than per device.</p>
+</div>
+<h3 id="denormals-and-accuracy">Denormals and accuracy<a class="headerlink" href="#denormals-and-accuracy" title="Permanent link">&para;</a></h3>
+<p>Nonzero denormal inputs, intermediates and results are outside the portable
+domain: CUDA is asked for <code>--ftz=false</code>, but safe math does not imply
+gradual underflow on every device. There is no blanket ULP bound for math
+builtins; they use the standard backend routines. The tests state their
+own regression tolerances (four ULP for arithmetic and <code>sqrt</code>, eight ULP for
+bounded transcendental checks), which are not general guarantees.</p>
+<h2 id="reductions">Reductions<a class="headerlink" href="#reductions" title="Permanent link">&para;</a></h2>
+<p><code>Array.sum()</code>, <code>min()</code>, <code>max()</code> and <code>mean()</code> (<code>lang/array.py</code>) reduce all
+logical elements regardless of shape and return a Python <code>float</code>. The
+contract section is
+<a href="../../reference/language-contract/#array-and-parallel-reductions">Array and parallel reductions</a>.</p>
+<pre class="mermaid"><code>flowchart TD
+    A["Array._reduce(op)"] --&gt; B{size == 0?}
+    B --&gt;|yes| C["empty_reduction: sum 0.0,&lt;br/&gt;min/max raise ValueError"]
+    B --&gt;|no| D{backend.supports_device_reductions?}
+    D --&gt;|no: CPU| E[reduce_numpy]
+    D --&gt;|yes| F["backend.reduce_array"]
+    F --&gt; G{"f32? (Level Zero: and device&lt;br/&gt;admits 256-lane groups)"}
+    G --&gt;|no| E
+    G --&gt;|yes| H["native kernel from&lt;br/&gt;array_reduction_source"]</code></pre>
+<p><code>mean()</code> returns NaN for an empty array and otherwise <code>sum() / size</code> in
+host binary64.</p>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th><code>sum</code></th>
+<th><code>min</code> / <code>max</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>empty</td>
+<td><code>0.0</code></td>
+<td><code>ValueError</code></td>
+</tr>
+<tr>
+<td>contains NaN</td>
+<td>NaN</td>
+<td>NaN</td>
+</tr>
+<tr>
+<td><code>inf</code> and <code>-inf</code></td>
+<td>NaN</td>
+<td><code>-inf</code> / <code>inf</code></td>
+</tr>
+<tr>
+<td><code>[0.0, -0.0]</code></td>
+<td>either zero sign</td>
+<td><code>-0.0</code> / <code>0.0</code></td>
+</tr>
+<tr>
+<td><code>[-0.0, -0.0]</code></td>
+<td>either zero sign</td>
+<td><code>-0.0</code> / <code>-0.0</code></td>
+</tr>
+<tr>
+<td>i8 <code>[100, 100]</code></td>
+<td><code>200.0</code> (i64 accumulator)</td>
+<td></td>
+</tr>
+<tr>
+<td>u64 <code>[2^64 - 1, 2]</code></td>
+<td><code>1.0</code> (wraps modulo 2^64)</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Host path</strong> (<code>runtime/reductions.py</code>, <code>reduce_numpy</code>): integer sums use an
+explicit i64 or u64 NumPy accumulator, independent of the platform's
+default integer, and wrap. Extrema use NumPy's NaN-propagating <code>min</code>/<code>max</code>
+and then fix zero ties from the sign bits.</p>
+<p><strong>Native path</strong> (<code>codegen/reductions.py</code>, <code>array_reduction_source</code>): one
+256-lane tree per workgroup in shared memory, then one atomic combine per
+group into the output (native <code>atomicAdd</code> or <code>atomic_float</code> for sums, a
+compare-and-swap loop for extrema). Out-of-range lanes contribute the
+identity: <code>0.0f</code>, or <code>+inf</code>/<code>-inf</code> written as bit patterns. The extrema
+combiner, shared by all four dialects and by block reductions, is:</p>
+<div class="highlight"><pre><span></span><code><span class="n">__device__</span><span class="w"> </span><span class="kr">inline</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">tack_reduce_min_f32</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">a</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">__uint_as_float</span><span class="p">(</span><span class="mh">0x7fc00000u</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">a</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mf">0.0f</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">)</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">__uint_as_float</span><span class="p">(</span><span class="n">__float_as_uint</span><span class="p">(</span><span class="n">a</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">__float_as_uint</span><span class="p">(</span><span class="n">b</span><span class="p">));</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>OR-ing the bit patterns of two zeros yields <code>-0.0</code> if either is negative,
+which is the minimum's tie rule; the maximum uses AND, yielding <code>+0.0</code>
+unless both are negative. Both are independent of the order in which
+groups arrive, which is what makes extrema reproducible while sums are not.</p>
+<p><strong>Why the extrema differ from scalar <code>min</code>/<code>max</code>.</strong> A reduction asks "what
+is the smallest value in this data"; silently skipping a NaN would hide
+corrupted input, so NaN propagates. The scalar builtin is used for clamping,
+where preferring the number is the useful behavior. Order-independent zero
+ties make the reduction result deterministic.</p>
+<p><strong>Order and accuracy.</strong> The sum's group partials are combined atomically in
+arrival order, so low bits can differ between calls. The contract's
+absolute error budget is <code>|computed - exact| &lt;= gamma_n * sum(|x|)</code> with
+<code>gamma_n = n*u / (1 - n*u)</code> (<code>u = 2^-24</code> for f32, <code>2^-53</code> for f64), valid
+when no partial sum overflows or underflows and <code>n*u &lt; 1</code>. It covers both
+the tree and the serial NumPy path; there is no compensated or
+deterministic sum mode.</p>
+<p><strong>Limits.</strong> CUDA, HIP and Level Zero pass the element count to the native
+kernel as a 64-bit (<code>long long</code>) argument, and the CUDA/HIP kernel forms
+its index in 64 bits, so arrays of 2^32 or more elements reduce on the
+device. Each checks the count against its launch limit with
+<code>check_launch_size()</code> first, and raises <code>ValueError</code> ("Array sum(): ...")
+past it. Metal's reduction kernel holds the count, packed as 32-bit
+unsigned bits, and its thread position in 32 bits, so Metal reduces an array
+of 2^32 or more elements with NumPy over the shared buffer instead. Level
+Zero also falls back to the host when its device cannot run 256-lane
+groups, because the tree is written for exactly 256 lanes.</p>
+<p><strong>Block reductions</strong> (<code>tack.block_sum</code>, <code>block_min</code>, <code>block_max</code>) require
+f32 input: <code>annotate_types</code> raises <code>TypeError</code> otherwise, and an explicit
+<code>tack.f32(...)</code> cast is the fix. They were previously annotated with the
+input's type while the GPU code stored <code>float</code>, so the annotation and the
+emitted code disagreed. Their execution model is described in
+<a href="../parallel-execution/">Parallel Execution</a>.</p>
+<h2 id="caller-constraints-and-no-portable-result">Caller constraints and "no portable result"<a class="headerlink" href="#caller-constraints-and-no-portable-result" title="Permanent link">&para;</a></h2>
+<p>Some operations have inputs with no portable answer. Tack does not check
+them at run time; checks would cost every dispatch and a GPU has no good way
+to raise an exception. The contract calls these <strong>caller constraints</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Constraint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>integer <code>//</code>, <code>%</code></td>
+<td>divisor nonzero; not the signed minimum with divisor <code>-1</code></td>
+</tr>
+<tr>
+<td>integer <code>/</code></td>
+<td>divisor nonzero (stated by the contract even though the f32 division itself would produce an infinity or NaN)</td>
+</tr>
+<tr>
+<td>floating <code>//</code>, <code>%</code></td>
+<td>divisor nonzero</td>
+</tr>
+<tr>
+<td><code>&lt;&lt;</code>, <code>&gt;&gt;</code></td>
+<td>count in <code>[0, N)</code> for the left operand's width</td>
+</tr>
+<tr>
+<td>integer <code>**</code></td>
+<td>dynamic exponent nonnegative</td>
+</tr>
+<tr>
+<td>float to integer</td>
+<td>input finite and its truncation fits the destination</td>
+</tr>
+<tr>
+<td><code>range(a, b, step)</code> with a dynamic step</td>
+<td>step positive</td>
+</tr>
+</tbody>
+</table>
+<p>"No portable result" means more than "some unspecified number". The
+target compiler may assume the case cannot occur, so the outcome can differ
+between backends, between optimization levels, and between a cold compile
+and the same code inlined elsewhere. It need not be a value at all: on an
+x86-64 host the CPU backend's integer division by zero raised a hardware
+trap that terminated the Python process. Guarding the operation is the
+supported pattern, and guards are honored: an operation in the unselected
+arm of an <code>if</code>, a conditional expression, or a short-circuit operand is not
+executed.</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">//</span> <span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>   <span class="c1"># division never runs for b == 0</span>
+</code></pre></div>
+<h2 id="tests-and-their-oracles">Tests and their oracles<a class="headerlink" href="#tests-and-their-oracles" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Test module (<code>packages/tack-core/tests/</code>)</th>
+<th>Rule pinned</th>
+<th>Oracle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_integer_semantics.py</code></td>
+<td>wrapping, all 64 integer cast pairs, promotion, shifts, comparisons, exact builtins, full-width literals, one-byte-misaligned imports</td>
+<td>Python big integers reduced modulo 2^N; also structural checks that GPU helpers use unsigned arithmetic</td>
+</tr>
+<tr>
+<td><code>test_integer_division.py</code></td>
+<td>integer <code>//</code>/<code>%</code> at every width, exhaustive valid i8 pairs, mixed promotion, guarded zero divisors</td>
+<td>Python integer <code>//</code> and <code>%</code></td>
+</tr>
+<tr>
+<td><code>test_division_and_power.py</code></td>
+<td>true division (f32 result, explicit f64), integer power for all 64 base/exponent type pairs</td>
+<td>Python modular exponentiation; division with a four-ULP regression tolerance</td>
+</tr>
+<tr>
+<td><code>test_float_division.py</code></td>
+<td>floating <code>//</code>/<code>%</code>: signs, boundaries, overflow, NaN/inf/signed zero, every float/int type pair</td>
+<td>NumPy's typed <code>divmod</code> after explicit conversion; exact zeros and classes, four ULP otherwise</td>
+</tr>
+<tr>
+<td><code>test_float_literals.py</code></td>
+<td>weak float literals: f64 expressions, casts, atomics, conditional arms and locals; f32 kernels unchanged; exact double literals in LLVM, CUDA, HIP and OpenCL source</td>
+<td>NumPy f64 results for the same expressions; generated C++ compiled and run on the host</td>
+</tr>
+<tr>
+<td><code>test_float_semantics.py</code></td>
+<td>safe math without <code>//</code>, exceptional classes, unsafe folds, comparisons, scalar min/max, grouping, contraction, math builtins</td>
+<td>NumPy at the same precision; an exact <code>fractions.Fraction</code> oracle accepts either the separate or the fused multiply-add result; generated C++ run under UBSan on the host</td>
+</tr>
+<tr>
+<td><code>test_reduction_semantics.py</code></td>
+<td>extrema classes and zero ties across groups and tails, exact and bounded sums, integer accumulators, empty arrays, block f32 requirement</td>
+<td>exact expected values; <code>math.fsum</code> with the <code>gamma_n</code> budget; C++/OpenCL syntax checks and UBSan-run helpers</td>
+</tr>
+<tr>
+<td><code>test_integer_expression_differential.py</code></td>
+<td>compositions where an intermediate wrap, cast or promotion decides a later operation</td>
+<td>an independent oracle written from the contract text with Python integers, sharing no code with the compiler; a deliberately naive wrap-only-at-the-end oracle is shown to disagree</td>
+</tr>
+</tbody>
+</table>
+<p>The integer tests compare exactly: a defined integer program has one answer
+on every backend. Floating tests state a tolerance and a domain, because
+the contract does not promise bitwise agreement across backends. Several
+modules also compile the generated C-family source with Clang on the host
+(syntax checks, and UndefinedBehaviorSanitizer runs of the helpers); those
+complement, but do not replace, execution on each GPU. See
+<a href="../../contracts/conformance/">Conformance and Validation</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/berkgeveci/tack" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "content.code.copy", "content.code.annotate", "content.tabs.link", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
