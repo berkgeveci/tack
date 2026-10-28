@@ -486,7 +486,7 @@ def test_subdivided_contours_give_each_piece_its_share(level):
 
 @tack.func
 def _bent(x):
-    return [x[0] + 0.05 * x[1] * x[1], x[1] + 0.07 * x[0] * x[0], x[2] + 0.03 * x[0] * x[1]]
+    return [x[0] + 0.15 * x[1] * x[1], x[1] + 0.2 * x[0] * x[0], x[2] + 0.1 * x[0] * x[1]]
 
 
 @tack.func
@@ -494,33 +494,37 @@ def _cubic(x):
     return x[0] * x[0] * x[1] - 0.7 * x[1] * x[2] * x[2] + 0.3 * x[0]
 
 
-def test_a_lattice_point_has_the_same_bits_in_every_piece_holding_it():
-    """A lattice point on an edge or face is computed from that entity's values in a
-    frame its corners' positions fix, so a piece holding any one of the cells around
-    it gives the whole's bits, of a curved geometry and a field, without the cell
-    the whole evaluated it in."""
-    grid = td.uniform_grid((5, 5, 5))
+def test_shared_nodes_and_lattice_points_have_the_same_bits_in_every_piece():
+    """A node or lattice point on an edge or face is computed from that entity alone,
+    in a frame its corners' positions fix, not from its stored point order (which
+    follows a piece's ids): so every piece holding any cell around it has the whole's
+    bits. ``interpolate`` places the nodes of an order-2 geometry and an order-3 field,
+    and ``subdivide`` evaluates both at the lattice points, without the cell the
+    whole evaluated them in."""
+    grid = td.uniform_grid((5, 5, 5), spacing=(0.3, 0.3, 0.3))
     straight = td.extract_cells(grid, np.arange(grid.num_cells))
 
     def curved(data):
         # As a solver's pieces have them (carry keeps an H1 field's point values
-        # only, so a filter's piece would be straight). On integer coordinates the
-        # nodes are exact, so each piece's node values are the whole's.
+        # only, so a filter's piece would be straight).
         data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3))
         data.geometry = td.interpolate(data, _bent, td.H1(data, order=2), dtype=tack.vec3())
         return data
 
     whole = curved(td.extract_cells(grid, np.arange(grid.num_cells)))
+    nodes = {tuple(x) for x in whole.geometry.values.numpy()}
+    values = set(whole.fields["u"].values.numpy().tolist())
     expected = td.subdivide(whole, 3, fields=["u"])
     at = {tuple(p): u for p, u in zip(expected.positions(), expected.fields["u"].values.numpy())}
     for kept in (np.arange(0, 64, 2), np.arange(1, 64, 2), np.arange(32, 64), [5, 22, 41]):
-        out = td.subdivide(curved(td.extract_cells(straight, np.asarray(kept))), 3,
-                           fields=["u"])
+        piece = curved(td.extract_cells(straight, np.asarray(kept)))
+        assert all(tuple(x) in nodes for x in piece.geometry.values.numpy())
+        assert set(piece.fields["u"].values.numpy().tolist()) <= values
+        out = td.subdivide(piece, 3, fields=["u"])
         positions = [tuple(p) for p in out.positions()]
         assert all(p in at for p in positions)
         np.testing.assert_array_equal(out.fields["u"].values.numpy(),
                                       [at[p] for p in positions])
-
 
 def test_two_dimensional_pieces_give_their_shares():
     grid = td.uniform_grid((21, 17), spacing=(0.1, 0.1, 1.0))
