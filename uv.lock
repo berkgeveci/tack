@@ -1708,7 +1708,7 @@ wheels = [
 
 [[package]]
 name = "tack-core"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/tack-core" }
 dependencies = [
     { name = "numpy" },
@@ -1762,7 +1762,7 @@ provides-extras = ["cpu", "cuda", "metal", "mpi", "hip", "level-zero", "warp", "
 
 [[package]]
 name = "tack-vis"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "packages/tack-vis" }
 dependencies = [
     { name = "tack-core" },
@@ -1786,7 +1786,7 @@ provides-extras = ["warp"]
 
 [[package]]
 name = "tack-workspace"
-version = "0.5.0"
+version = "0.6.0"
 source = { virtual = "." }
 dependencies = [
     { name = "tack-core" },

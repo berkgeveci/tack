@@ -3,10 +3,44 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
-## Unreleased
+## 0.6.0 — 2026-10-28
+
+The headline: the dataset layer takes data in the shapes simulations write
+it. Meshes in pieces, over devices and MPI ranks, through
+`tack.communication`, a subset of DIY with Tack arrays as messages: ghost
+cells and global ids, merging, probes and particles that cross pieces,
+statistics over ranks, GPU-aware MPI on CUDA and HIP. Point clouds, with a
+point locator, SPH, deposits, friends-of-friends halos and periodic boxes.
+Block-structured AMR and octrees. Physical units on fields and parameters,
+and time on datasets, with filters that stream steps. The filters are
+written with public names only, so users can write their own (the
+Visualization Guide's "Write a Filter" chapter). Around them: polyhedra and
+polygons through probe, gradients and advection; voxelization, cell quality
+and feature edges; a two-level cell locator that took the streamlines of the
+ONERA M6 wing (46.9M cells) from minutes to tens of milliseconds on every
+GPU, 20-33x faster than Viskores' on CUDA, each building its locator; a
+prototype NVIDIA Warp backend; and a performance page against VTK and
+Viskores.
+
+Validated on Linux (CPU; CUDA on an RTX 4060 Ti and an RTX 6000 Ada; HIP on
+two MI210s; Level Zero on an Intel Max 1100), macOS (CPU and Metal on an M1
+Max) and Windows Server 2022 (CPU, and CUDA on a T4 in TCC mode), with debug
+mode, both id widths of the dataset tests and MPI over 2 and 3 ranks,
+together with tack-examples' ports, among them four production datasets (up
+to 46.9M cells and 512 pieces). The dataset filters agree with VTK's at 10k
+to 1M cells. Against 0.5, two known costs remain on Windows' CPU: filters
+over about 10k cells are 5-22% slower on two threads, where the first
+fan-out costs more than it saves, and converting a mesh from VTK is 1.2-1.6x
+slower.
 
 ### Added
 
+- A performance page in the documentation: Tack's filters against VTK and
+  Viskores at 20M hexahedra and tetrahedra on the CPU and the GPU (an EPYC
+  7453 with an RTX 6000 Ada, an M1 Max with its GPU), streamlines on CUDA
+  against Viskores' on the ONERA M6 wing and an aneurysm, and four
+  production datasets against VTK. Every Tack output is checked against
+  VTK's before its time counts.
 - `CellLocator(data, levels=1)`: the cells binned on one uniform grid of
   about `density` bins a cell, every bin a leaf, as Viskores'
   `CellLocatorUniformBins` and VTK's `vtkStaticCellLocator` bin them; the
@@ -702,6 +736,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking:** the VTK interop needs VTK 9.7.1 or later (the `interop`
+  extra requires `vtk>=9.7.1`), and uses VTK's pythonic API throughout:
+  keyword constructors, properties, dict-like point and cell data, implicit
+  arrays. A one-component `vtkConstantArray` or `vtkAffineArray` in point or
+  cell data becomes a `ConstantArray` or `CountingArray` field, and back.
 - `key_order`, which merges contour and slice crossings, keeps the bucket
   sort on CUDA, HIP and Level Zero until buckets outnumber keys 64 to 1
   (8 to 1 on the CPU and Metal, as before). On CUDA the buckets were
