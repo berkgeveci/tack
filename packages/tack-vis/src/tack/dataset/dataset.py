@@ -107,7 +107,7 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
     if space.varies and space not in group.keys:
         raise ValueError(f"{space!r} varies from cell to cell: its views come from the "
                          "subgroups for_each makes")
-    if (isinstance(space, H1) and space.order == 2 and not corners_only
+    if (isinstance(space, H1) and space.order >= 2 and not corners_only
             and not _is_cells(group)):
         raise TypeError(f"{space!r} is read cell by cell: on faces, take its traces "
                         "(tack.dataset.traces)")
@@ -125,11 +125,18 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
     mixins.append(storage)
     # Reading only the points' values -- an order-2 geometry on faces and edges
     # -- needs none of the space's own layout.
-    layout = {} if corners_only else space.attributes(group)
+    layout = {} if corners_only else space.attributes(group, dtype=_basis_type(field))
     for name, value in layout.items():
         # The geometry's L2 offsets sit beside the domain view's own names.
         attributes["point_offsets" if space_mixin and name == "offsets" else name] = value
     return mixins, attributes
+
+
+def _basis_type(field):
+    """The float type ``field``'s basis is evaluated in: its own (``spaces._float_type``)."""
+    from tack.dataset.spaces import _float_type
+
+    return _float_type(arrays.dtype_of(field.values), backend_of(field.device))
 
 
 # ── Geometry ────────────────────────────────────────────────────────
@@ -226,11 +233,36 @@ def _geometry_parts(data, group, kind):
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
         return [*mixins, views.quadratic_faces(group.shape)], attributes
+    if geometry.space.order > 2 and kind == "cells":
+        space = geometry.space
+        if space._has_edges(group.shape):
+            data.topology.edges()
+        if space._has_faces(group.shape):
+            data.topology.faces()
+        mixins, attributes = _space_parts(
+            geometry, group, views.of_order(views._H1TensorGeometry, space.order))
+        return [*mixins, *views.tensor_mixins(group.shape)], attributes
     # Faces and edges of a curved geometry see its corners.
     return _space_parts(geometry, group, views._H1Geometry, corners_only=True)
 
 
 # ── Datasets ────────────────────────────────────────────────────────
+
+def _space_nodes(space, geometry):
+    """``space``'s 1D nodes as a device array in the geometry's float type, where
+    node views place its nodes."""
+    from tack.dataset import bases
+
+    dtype = _basis_type(geometry)
+    key = ("_node_points", space.nodes or "gauss_lobatto", space.order, dtype)
+    cache = space.__dict__.setdefault("_tables", {})
+    if key not in cache:
+        values = bases.nodes(key[1], space.order)
+        out = tack.empty((len(values),), dtype)
+        tack.copyto(out, values.astype(dtype.numpy_dtype))
+        cache[key] = out
+    return cache[key]
+
 
 class DataSet:
     """A topology, a geometry, named fields and named sets. The geometry is a
@@ -588,6 +620,46 @@ class DataSet:
         attributes.update(extra_attributes)
         return group.view(*mixins, **attributes)
 
+    def _tensor_nodes(self, space):
+        """``node_views``' edges, quad faces and interiors of an ``H1`` space of order 3
+        or more. An edge's and a face's nodes are placed on its straight geometry, or
+        are the geometry's own values when it has the space's layout; a curved
+        geometry of another order would need the cells to place them, and is
+        refused for now."""
+        geometry = self.geometry
+        face_dofs, cell_dofs, _ = space._layout()
+        points = _space_nodes(space, geometry)
+        same = geometry.space is space
+        if geometry.space.order > 1 and not same:
+            raise NotImplementedError(
+                f"the nodes of {space!r} on a curved geometry of another order "
+                f"({geometry.space!r}): interpolate into the geometry's own space, or "
+                "make the geometry straight")
+        where = views._GeometryAtDof if same else views._StraightNodePosition
+        out = []
+        topology = self.topology
+        dims = {g.shape.DIMENSION for g in topology.groups() if g.count}
+        if dims - {1}:
+            for group in topology.edges().groups():
+                if group.count:
+                    out.append(self.domain_view(
+                        "edges", group, (views.of_order(views._TensorEdgeNodes, space.order),
+                                         where),
+                        node_edge_base=self.num_points, node_points=points))
+        if 3 in dims:
+            for group in topology.faces().groups():
+                if group.count and group.shape is shapes.Quad:
+                    out.append(self.domain_view(
+                        "faces", group, (views.of_order(views._TensorFaceNodes, space.order),
+                                         where),
+                        node_face_dofs=face_dofs, node_points=points))
+        for group in topology.groups():
+            if group.count:
+                out.append(self.domain_view(
+                    "cells", group, (views.of_order(views._TensorInteriorNodes, space.order),),
+                    node_cell_dofs=cell_dofs, node_points=points))
+        return out
+
     @on_inputs_device
     def node_views(self, space):
         """Views over ``space``'s nodes, each visited once: entity views -- points,
@@ -633,6 +705,8 @@ class DataSet:
             raise TypeError(f"values on {space.on} have no nodes to visit as such; "
                             f"for_each over {space.on!r} visits them")
         reference_cells(self.topology, f"the nodes of {space!r}")
+        if isinstance(space, H1) and space.order > 2:
+            return out + self._tensor_nodes(space)
         if isinstance(space, H1):
             face_dofs, cell_dofs, _ = space._layout()
             curved = geometry.space.order == 2
@@ -656,7 +730,12 @@ class DataSet:
         for group in groups:
             if not group.count:
                 continue
-            if isinstance(space, L2):
+            if isinstance(space, L2) and space.tensor:
+                out.append(self.domain_view(
+                    "cells", group, (views.of_order(views._TensorCellNodes, space.order),),
+                    node_offsets=space.offsets,
+                    node_points=_space_nodes(space, self.geometry)))
+            elif isinstance(space, L2):
                 order = group.keys[space] if space.varies else space.order
                 dof = views._CornerDof if order == 1 else views._OffsetDof
                 place = views._CornerPosition if order == 1 else views._CenterPosition

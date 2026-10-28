@@ -31,6 +31,15 @@ def _cell_means(cells, u, out):
 
 
 @tack.kernel
+def _tensor_cell_nodes(cells, u, t, offsets, out):
+    # An L2 cell's values on a tensor basis: the source at the target's nodes.
+    for c in cells:
+        first = offsets[cells.entity_id(c)]
+        for n in range((t.ORDER + 1) ** cells.DIMENSION):
+            out[first + n] = u.value(c, t.node_parametric(n))
+
+
+@tack.kernel
 def _cell_nodes(cells, u, t, offsets, out):
     # An L2 cell's values: its corner mean at order 0, else its corners' values.
     for c in cells:
@@ -74,6 +83,17 @@ def _node_contributions(cells, u, t, start, keys, contributions):
         for k in range(cells.NUM_QUADRATIC):
             keys[first + k] = t.dof_index(c, k)
             contributions[first + k] = u.value(c, cells.quadratic_node(k))
+
+
+@tack.kernel
+def _tensor_node_contributions(cells, u, t, start, keys, contributions):
+    # Each cell's value at each node of a tensor H1 target, keyed by the node.
+    for c in cells:
+        count = (t.ORDER + 1) ** cells.DIMENSION
+        first = start + cells.index(c) * count
+        for n in range(count):
+            keys[first + n] = t.dof_index(c, n)
+            contributions[first + n] = u.value(c, t.node_parametric(n))
 
 
 @tack.kernel
@@ -135,21 +155,23 @@ def _onto_points(data, field, values):
 
 
 def _onto_nodes(data, field, space, values):
-    """Order-2 H1: each node the mean of the cells around it evaluated there."""
+    """H1 of order 2 and up: each node the mean of the cells around it evaluated there."""
     groups = data.topology.groups()
     starts, total = {}, 0
     for group in groups:
         starts[group] = total
-        total += group.count * group.shape.NUM_QUADRATIC
+        per_cell = (group.shape.NUM_QUADRATIC if space.order == 2
+                    else (space.order + 1) ** group.shape.DIMENSION)
+        total += group.count * per_cell
     idt = ids.at_least(data.id_dtype, space.size)
     keys = tack.empty((total,), idt)
     contributions = _like(values, total)
     target = Field(space, _like(values, space.size))
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
-            _node_contributions(data.domain_view("cells", group), field.view(group),
-                                target.view(group), starts[group.root], keys,
-                                contributions)
+            kernel = _node_contributions if space.order == 2 else _tensor_node_contributions
+            kernel(data.domain_view("cells", group), field.view(group), target.view(group),
+                   starts[group.root], keys, contributions)
     out = target.values
     _start(data, field, out)              # an order-2 field's points come first
     if total:
@@ -228,6 +250,7 @@ def project(data, field, space):
     target = Field(space, out)
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
-            _cell_nodes(data.domain_view("cells", group), field.view(group), target.view(group),
-                        space.offsets, out)
+            kernel = _tensor_cell_nodes if getattr(space, "tensor", False) else _cell_nodes
+            kernel(data.domain_view("cells", group), field.view(group), target.view(group),
+                   space.offsets, out)
     return Field(space, out, field.unit)

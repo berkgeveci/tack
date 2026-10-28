@@ -1162,6 +1162,277 @@ class _L2Order0Field:
         return self.get(self.offsets[self.entity_id(i)])
 
 
+# ── Tensor bases of any order (tack.dataset.bases) ──────────────────
+
+
+class _TensorPolynomials:
+    """A Lagrange basis of order ``ORDER`` on a tensor shape: the products of the 1D
+    polynomials through ``basis_nodes``, evaluated in barycentric form with
+    ``basis_weights`` (both in the field's float type). Node ``n`` is ``(i, j, k)``,
+    ``n = i + q * (j + q * k)`` with ``q = ORDER + 1``."""
+
+    @tack.func
+    def lagrange_values(self, t, out):
+        """``out[j]``: the 1D Lagrange polynomial of node ``j`` at ``t``."""
+        for j in range(self.ORDER + 1):
+            v = self.basis_weights[j]
+            for m in range(self.ORDER + 1):
+                if m != j:
+                    v = v * (t - self.basis_nodes[m])
+            out[j] = v
+
+    @tack.func
+    def lagrange_derivatives(self, t, out):
+        """``out[j]``: its derivative at ``t``, by the product rule (no division, so
+        exact at the nodes too)."""
+        for j in range(self.ORDER + 1):
+            d = self.basis_weights[j] - self.basis_weights[j]
+            for k in range(self.ORDER + 1):
+                if k != j:
+                    v = self.basis_weights[j]
+                    for m in range(self.ORDER + 1):
+                        if m != j and m != k:
+                            v = v * (t - self.basis_nodes[m])
+                    d = d + v
+            out[j] = d
+
+    @tack.func
+    def node_parametric(self, n):
+        """Node ``n``'s parametric coordinates."""
+        q = self.ORDER + 1
+        pc = tack.vec3(self.basis_nodes[n % q], 0.0, 0.0)
+        if self.DIMENSION >= 2:
+            pc[1] = self.basis_nodes[(n // q) % q]
+        if self.DIMENSION == 3:
+            pc[2] = self.basis_nodes[n // (q * q)]
+        return pc
+
+    @tack.func
+    def node_weight(self, n, lx, ly, lz):
+        q = self.ORDER + 1
+        w = lx[n % q]
+        if self.DIMENSION >= 2:
+            w = w * ly[(n // q) % q]
+        if self.DIMENSION == 3:
+            w = w * lz[n // (q * q)]
+        return w
+
+    @tack.func
+    def node_gradient(self, n, lx, ly, lz, dx, dy, dz):
+        q = self.ORDER + 1
+        i = n % q
+        j = (n // q) % q
+        k = n // (q * q)
+        g = tack.vec3(dx[i], 0.0, 0.0)
+        if self.DIMENSION == 2:
+            g = tack.vec3(dx[i] * ly[j], lx[i] * dy[j], 0.0)
+        if self.DIMENSION == 3:
+            g = tack.vec3(dx[i] * ly[j] * lz[k], lx[i] * dy[j] * lz[k], lx[i] * ly[j] * dz[k])
+        return g
+
+
+
+class _TensorBasis(_TensorPolynomials):
+    """A field's value and parametric gradient in a tensor basis, from ``dof(c, n)``,
+    the space's."""
+
+
+    @tack.func
+    def value(self, c, pc):
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        total = self.dof(c, 0) * self.node_weight(0, lx, ly, lz)
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            total += self.dof(c, n) * self.node_weight(n, lx, ly, lz)
+        return total
+
+    @tack.func
+    def parametric_gradient(self, c, pc):
+        """From differences to node 0's value (the basis' gradients sum to zero), so
+        a field of large, nearly equal values keeps its small differences."""
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        self.lagrange_derivatives(pc[0], dx)
+        self.lagrange_derivatives(pc[1], dy)
+        self.lagrange_derivatives(pc[2], dz)
+        first = self.dof(c, 0)
+        g = (self.dof(c, 1) - first) * self.node_gradient(1, lx, ly, lz, dx, dy, dz)
+        for n in range(2, (self.ORDER + 1) ** self.DIMENSION):
+            g += (self.dof(c, n) - first) * self.node_gradient(n, lx, ly, lz, dx, dy, dz)
+        return g
+
+
+class _TensorDofs:
+    """Where an ``H1`` space of order ``ORDER`` (3 or more) on tensor shapes keeps
+    cell ``c``'s node ``n`` (``bases.dof_tables``: ``node_kind``,
+    ``node_entity``, ``node_a``, ``node_b``): a corner's at its point; ``ORDER -
+    1`` per edge from ``edge_base``, in order from the edge's lower point id;
+    ``(ORDER - 1)^2`` per quad face from ``face_dofs[face]``, lexicographic in the
+    frame of the face's own row; the interior's from ``cell_dofs[cell]``,
+    lexicographic in the cell's frame. So every cell reading a shared node finds
+    the same value."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        kind = self.node_kind[n]
+        e = self.node_entity[n]
+        if kind == 0:
+            return self.point_id(c, e)
+        if kind == 1:
+            return self.tensor_edge_dof(c, e, self.node_a[n])
+        if kind == 2:
+            return self.tensor_face_dof(c, e, self.node_a[n], self.node_b[n])
+        return self.cell_dofs[self.entity_id(c)] + self.node_a[n]
+
+
+class _TensorEdges:
+    """A shape with edges: an edge node's value, in order from the edge's lower point id."""
+
+    @tack.func
+    def tensor_edge_dof(self, c, e, a):
+        s = a if self.edge_sign(c, e) > 0 else self.ORDER - a
+        return self.edge_base + self.edge_id(c, e) * (self.ORDER - 1) + (s - 1)
+
+
+class _NoTensorEdges:
+    """A segment, whose nodes are its points' and its interior's."""
+
+    @tack.func
+    def tensor_edge_dof(self, c, e, a):
+        return self.cell_dofs[self.entity_id(c)]          # not reached
+
+
+class _TensorFaces:
+    """A solid's quad face node ``(a, b)`` (from the cell's local corner 0 of the face,
+    toward its corners 1 and 3), placed in the frame of the face's own row --
+    the same for both cells sharing it -- by the face's orientation in the cell."""
+
+    @tack.func
+    def tensor_face_dof(self, c, f, a, b):
+        p = self.ORDER
+        r0 = self.face_position(c, f, 0)
+        r1 = self.face_position(c, f, 1)
+        r3 = self.face_position(c, f, 3)
+        # Row corner m sits at (p, 0) for 1, (p, p) for 2, (0, p) for 3.
+        x0 = p if (r0 == 1 or r0 == 2) else 0
+        y0 = p if (r0 == 2 or r0 == 3) else 0
+        x1 = p if (r1 == 1 or r1 == 2) else 0
+        y1 = p if (r1 == 2 or r1 == 3) else 0
+        x3 = p if (r3 == 1 or r3 == 2) else 0
+        y3 = p if (r3 == 2 or r3 == 3) else 0
+        u = x0 + a * ((x1 - x0) // p) + b * ((x3 - x0) // p)
+        v = y0 + a * ((y1 - y0) // p) + b * ((y3 - y0) // p)
+        return self.face_dofs[self.face_id(c, f)] + (v - 1) * (p - 1) + (u - 1)
+
+
+class _NoTensorFaces:
+    """A segment or a 2D cell: its edges are its sides, and it has no face nodes."""
+
+    @tack.func
+    def tensor_face_dof(self, c, f, a, b):
+        return self.cell_dofs[self.entity_id(c)]          # not reached
+
+
+class _H1TensorGeometry(_TensorDofs, _TensorPolynomials, _Geometry):
+    """Curved geometry of order 3 or more on tensor shapes: an ``H1`` field of positions
+    of that order. Positions and Jacobians are formed from differences to node 0's
+    position, as order 1's are, so f32 keeps thin cells."""
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+    @tack.func
+    def position(self, c, pc):
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        first = self.get(self.dof_index(c, 0))
+        x = first
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            x += (self.get(self.dof_index(c, n)) - first) * self.node_weight(n, lx, ly, lz)
+        return x
+
+    @tack.func
+    def geometry_jacobian(self, c, pc):
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        self.lagrange_derivatives(pc[0], dx)
+        self.lagrange_derivatives(pc[1], dy)
+        self.lagrange_derivatives(pc[2], dz)
+        first = self.get(self.dof_index(c, 0))
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            m += (self.get(self.dof_index(c, n)) - first).outer_product(
+                self.node_gradient(n, lx, ly, lz, dx, dy, dz))
+        return m
+
+
+class _H1TensorField(_TensorDofs, _TensorBasis):
+    """H1 of order 3 or more on tensor shapes, Shared."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.dof_index(c, n))
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.dof(c, self.corner_node[j])
+
+
+class _L2TensorField(_TensorBasis):
+    """L2 on tensor shapes at order 2 or more, or on Gauss-Legendre nodes: each cell's
+    ``(ORDER + 1)^d`` values from ``offsets[cell]``, in node order."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.offsets[self.entity_id(c)] + n)
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.value(c, self.parametric_point(j))
+
+
+def tensor_mixins(shape):
+    """The edge and face mixins a tensor ``H1`` view of ``shape`` cells needs."""
+    edges = _TensorEdges if shape.NUM_EDGES and shape.DIMENSION >= 2 else _NoTensorEdges
+    faces = _TensorFaces if shape.DIMENSION == 3 else _NoTensorFaces
+    return edges, faces
+
+
+_by_order = {}
+
+
+def of_order(mixin, order):
+    """``mixin`` with ``ORDER`` set: one class per (mixin, order), so views of one
+    order share their compiled kernels."""
+    key = (mixin, int(order))
+    if key not in _by_order:
+        _by_order[key] = type(f"{mixin.__name__}{order}", (mixin,), {"ORDER": int(order)})
+    return _by_order[key]
+
+
 class _ConstantField:
     """Constant (L2, order 0): one value per cell."""
 
@@ -1414,6 +1685,112 @@ class _CenterPosition:
     @tack.func
     def node_position(self, i, j):
         return self.position(i, self.parametric_center())
+
+
+class _TensorEdgeNodes:
+    """``H1`` of order ``ORDER`` (3 or more): an edge's ``ORDER - 1`` nodes, in order from
+    its lower point id, at the space's 1D nodes (``node_points``) along it -- the
+    edge's straight line between its points, or the geometry's own value there
+    (``_GeometryAtDof``) when the geometry shares the space's layout."""
+
+    @tack.func
+    def node_count(self, i):
+        return self.ORDER - 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_edge_base + self.entity_id(i) * (self.ORDER - 1) + j
+
+    @tack.func
+    def node_place(self, i, j):
+        return tack.vec3(self.node_points[j + 1], 0.0, 0.0)
+
+
+class _TensorFaceNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a quad face's ``(ORDER - 1)^2`` nodes,
+    lexicographic in the frame of its own row (from its point 0, toward its points
+    1 and 3)."""
+
+    @tack.func
+    def node_count(self, i):
+        return (self.ORDER - 1) * (self.ORDER - 1)
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_face_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_place(self, i, j):
+        return tack.vec3(self.node_points[j % (self.ORDER - 1) + 1],
+                         self.node_points[j // (self.ORDER - 1) + 1], 0.0)
+
+
+class _StraightNodePosition:
+    """An edge's or quad face's node where its straight (order-1) geometry puts it:
+    linear between an edge's points, bilinear over a face's, at ``node_place``."""
+
+    @tack.func
+    def node_position(self, i, j):
+        t = self.node_place(i, j)
+        if self.NUM_POINTS == 2:
+            return self.corner_position(i, 0) + t[0] * (self.corner_position(i, 1)
+                                                        - self.corner_position(i, 0))
+        x0 = self.corner_position(i, 0)
+        return (x0 + t[0] * (1.0 - t[1]) * (self.corner_position(i, 1) - x0)
+                + t[0] * t[1] * (self.corner_position(i, 2) - x0)
+                + (1.0 - t[0]) * t[1] * (self.corner_position(i, 3) - x0))
+
+
+class _TensorInteriorNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a cell's ``(ORDER - 1)^d`` interior nodes,
+    lexicographic in its frame, where its geometry maps them."""
+
+    @tack.func
+    def node_count(self, i):
+        n = 1
+        for _ in range(self.DIMENSION):
+            n *= self.ORDER - 1
+        return n
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_cell_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        q = self.ORDER - 1
+        pc = tack.vec3(self.node_points[j % q + 1], 0.0, 0.0)
+        if self.DIMENSION >= 2:
+            pc[1] = self.node_points[(j // q) % q + 1]
+        if self.DIMENSION == 3:
+            pc[2] = self.node_points[j // (q * q) + 1]
+        return self.position(i, pc)
+
+
+class _TensorCellNodes:
+    """``L2`` on a tensor basis: a cell's ``(ORDER + 1)^d`` nodes, in node order, where
+    its geometry maps them."""
+
+    @tack.func
+    def node_count(self, i):
+        n = 1
+        for _ in range(self.DIMENSION):
+            n *= self.ORDER + 1
+        return n
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_offsets[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        q = self.ORDER + 1
+        pc = tack.vec3(self.node_points[j % q], 0.0, 0.0)
+        if self.DIMENSION >= 2:
+            pc[1] = self.node_points[(j // q) % q]
+        if self.DIMENSION == 3:
+            pc[2] = self.node_points[j // (q * q)]
+        return self.position(i, pc)
 
 
 # ── Groups and view classes ─────────────────────────────────────────

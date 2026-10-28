@@ -46,7 +46,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import CountingArray, size_of
-from tack.dataset import ids, shapes, views
+from tack.dataset import bases, ids, shapes, views
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["H1", "L2", "Constant", "SideTraces", "Space", "Values"]
@@ -100,8 +100,10 @@ class Space:
         return type(self)(topology, **{k: v.to_device(target) if _is_array(v) else v
                                        for k, v in self.params.items()})
 
-    def attributes(self, group=None):
-        """The layout a view of this space reads for ``group``, beside the values."""
+    def attributes(self, group=None, dtype=None):
+        """The layout a view of this space reads for ``group``, beside the values;
+        ``dtype`` the float type a basis is evaluated in, for the spaces that have
+        tables of nodes."""
         return {}
 
     def extra_mixins(self, group):
@@ -153,21 +155,66 @@ def _only_order_one(family, order):
 
 
 @tack.kernel
-def _quad_face_dofs(kinds, flags):
+def _face_counts(kinds, per_quad, counts):
     for f in range(kinds.shape[0]):
-        flags[f] = 1 if kinds[f] == shapes.QUAD else 0
+        counts[f] = per_quad if kinds[f] == shapes.QUAD else 0
 
 
 @tack.kernel
-def _place(flags, slots, base, out):
-    for i in range(flags.shape[0]):
-        out[i] = base + slots[i] if flags[i] == 1 else -1
+def _place(counts, slots, base, out):
+    for i in range(counts.shape[0]):
+        out[i] = base + slots[i] if counts[i] > 0 else -1
 
 
 @tack.kernel
-def _interiors(cells, flags):
+def _interior_counts(cells, order, counts):
+    # Order 2 keeps the quadratic elements' interiors (a hexahedron's and a
+    # quad's); order 3 and up are on tensor shapes, (p - 1)^d a cell.
     for c in cells:
-        flags[cells.entity_id(c)] = cells.QUADRATIC_INTERIOR
+        n = cells.QUADRATIC_INTERIOR
+        if order != 2:
+            n = 1
+            for _ in range(cells.DIMENSION):
+                n *= order - 1
+        counts[cells.entity_id(c)] = n
+
+
+def _nodes_param(family, order, families, space):
+    """``nodes`` as a space keeps it: ``None`` where the order makes the families
+    agree (at most 2 for closed ones), so equal spaces are one."""
+    if family not in families:
+        raise ValueError(f"{space} nodes are one of {', '.join(families)}, not {family!r}")
+    return None if family in bases.CLOSED and order <= 2 else family
+
+
+def _basis_tables(space, group, dtype):
+    """A tensor basis' arrays for ``group``'s shape: its 1D nodes and weights in
+    ``dtype`` (the field's float type) and, for ``H1``, where each node's value
+    lives (``bases.dof_tables``)."""
+    family = space.nodes or "gauss_lobatto"
+    key = (group.shape, family, dtype)
+    cache = space.__dict__.setdefault("_tables", {})
+    if key not in cache:
+        def device(values, kind):
+            out = tack.empty((len(values),), kind)
+            tack.copyto(out, np.asarray(values, kind.numpy_dtype))
+            return out
+
+        kind, entity, a, b, corner = bases.dof_tables(group.shape, space.order)
+        cache[key] = {"basis_nodes": device(bases.nodes(family, space.order), dtype),
+                      "basis_weights": device(bases.weights(family, space.order), dtype),
+                      "node_kind": device(kind, tack.i32), "node_entity": device(entity, tack.i32),
+                      "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
+                      "corner_node": device(corner, tack.i32)}
+    return cache[key]
+
+
+def _float_type(dtype, device):
+    """The float type a basis is evaluated in for values of ``dtype``: theirs if
+    floating, else f32 (f64 where the device has it, for 64-bit integers)."""
+    if dtype in (tack.f32, tack.f64):
+        return dtype
+    return tack.f64 if dtype.bits == 64 and device.supports_f64 else tack.f32
 
 
 class H1(Space):
@@ -175,60 +222,82 @@ class H1(Space):
     functions. Order 1 holds one value per point -- today's point data; order 2
     adds one per edge, per quad face and per hexahedron or quad, for the shape's
     quadratic Lagrange functions (tetrahedra, hexahedra, voxels, wedges,
-    triangles, quads and pixels)."""
+    triangles, quads and pixels). Order 3 and up are on segments, quads, pixels,
+    hexahedra and voxels (``tack.dataset.bases``): ``order - 1`` values per edge,
+    ``(order - 1)^2`` per quad face and ``(order - 1)^d`` per cell, on the 1D
+    ``nodes`` ``"gauss_lobatto"`` (the default) or ``"equispaced"``, which agree
+    up to order 2."""
 
     on = "points"
     interpolated = True
+    nodes = None
 
     @classmethod
-    def _params(cls, order=1):
-        if order not in (1, 2):
-            _only_order_one("H1", order)
-        return {"order": int(order)}
+    def _params(cls, order=1, nodes="gauss_lobatto"):
+        order = int(order)
+        if order < 1:
+            raise ValueError(f"H1's order is at least 1, not {order}")
+        family = _nodes_param(nodes, order, bases.CLOSED, "H1")
+        return {"order": order} if family is None else {"order": order, "nodes": family}
 
     @property
     def mixin(self):
-        return views._H1Field if self.order == 1 else views._H1Order2Field
+        if self.order == 1:
+            return views._H1Field
+        if self.order == 2:
+            return views._H1Order2Field
+        return views.of_order(views._H1TensorField, self.order)
 
     @on_inputs_device
     def _layout(self):
-        """Order 2: ``(face_dofs, cell_dofs, size)``, made on first use and kept."""
+        """Order 2 and up: ``(face_dofs, cell_dofs, size)``, made on first use and kept."""
         if "_order2" not in self.__dict__:
-            _needs_reference_cells(self, "H1 of order 2")
+            _needs_reference_cells(self, f"H1 of order {self.order}")
             topology = self.topology
+            p = self.order
             for group in topology.groups():
-                if group.count and not group.shape.NUM_QUADRATIC:
+                if not group.count:
+                    continue
+                if p == 2 and not group.shape.NUM_QUADRATIC:
                     raise NotImplementedError(
                         f"H1 order 2 on {group.shape.__name__} cells is not supported yet; "
                         "it is on tetrahedra, hexahedra, voxels, wedges, triangles, quads "
                         "and pixels")
-            edges = topology.edges()
-            base = topology.num_points + edges.num_edges
+                if p > 2 and not bases.tensor_shape(group.shape):
+                    raise NotImplementedError(
+                        f"H1 order {p} on {group.shape.__name__} cells is not supported "
+                        "yet; orders above 2 are on segments, quads, pixels, hexahedra and "
+                        "voxels")
+            dims = {g.shape.DIMENSION for g in topology.groups() if g.count}
+            edges = topology.edges() if dims - {1} else None
+            ne = edges.num_edges if edges is not None else 0
+            base = topology.num_points + ne * (p - 1)
             # Only quad faces of solids hold values: a mesh of tetrahedra, triangles
             # or quads needs no faces derived.
-            faces = (topology.faces() if any(g.shape.QUADRATIC_FACES for g in topology.groups())
-                     else None)
+            solid = (any(g.count and g.shape.QUADRATIC_FACES for g in topology.groups())
+                     if p == 2 else 3 in dims)
+            faces = topology.faces() if solid else None
             nf = faces.num_faces if faces is not None else 0
             n = topology.num_cells
-            idt = ids.at_least(topology.id_dtype, base + nf + n)
-            flags = tack.empty((nf,), tack.i32)
+            idt = ids.at_least(topology.id_dtype, base + nf * (p - 1) ** 2 + n * (p - 1) ** 3)
+            counts = tack.empty((nf,), tack.i32)
             slots = tack.empty((nf,), idt)
             face_dofs = tack.empty((nf,), idt)
-            quads = 0
+            on_faces = 0
             if nf:
-                _quad_face_dofs(faces.kinds, flags)
-                quads = exclusive_scan(flags, slots, nf)
-                _place(flags, slots, base, face_dofs)
-            flags = tack.zeros((n,), tack.i32)
+                _face_counts(faces.kinds, (p - 1) ** 2, counts)
+                on_faces = exclusive_scan(counts, slots, nf)
+                _place(counts, slots, base, face_dofs)
+            counts = tack.zeros((n,), tack.i32)
             for group in topology.groups():
                 if group.count:
-                    _interiors(group.view(), flags)
+                    _interior_counts(group.view(), p, counts)
             slots = tack.empty((n,), idt)
             cell_dofs = tack.empty((n,), idt)
-            inside = exclusive_scan(flags, slots, n) if n else 0
+            inside = exclusive_scan(counts, slots, n) if n else 0
             if n:
-                _place(flags, slots, base + quads, cell_dofs)
-            self._order2 = (face_dofs, cell_dofs, base + quads + inside)
+                _place(counts, slots, base + on_faces, cell_dofs)
+            self._order2 = (face_dofs, cell_dofs, base + on_faces + inside)
         return self._order2
 
     @property
@@ -237,7 +306,7 @@ class H1(Space):
             return self.topology.num_points
         return self._layout()[2]
 
-    def attributes(self, group=None):
+    def attributes(self, group=None, dtype=None):
         if self.order == 1:
             return {}
         face_dofs, cell_dofs, _ = self._layout()
@@ -246,15 +315,24 @@ class H1(Space):
                       "cell_dofs": cell_dofs}
         if group is not None:
             root = group.root
-            edges = topology.edges()
-            attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
-                              edge_start=edges.group_starts[root])
-            if group.shape.QUADRATIC_FACES:
+            if self._has_edges(group.shape):
+                edges = topology.edges()
+                attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
+                                  edge_start=edges.group_starts[root])
+            if self._has_faces(group.shape):
                 faces = topology.faces()
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[root])
+            if self.order > 2:
+                attributes.update(_basis_tables(self, group, dtype or tack.f32))
         return attributes
+
+    def _has_edges(self, shape):
+        return shape.DIMENSION >= 2 if self.order > 2 else True
+
+    def _has_faces(self, shape):
+        return shape.DIMENSION == 3 if self.order > 2 else bool(shape.QUADRATIC_FACES)
 
     def mixin_for(self, key, shape=None):
         # Polyhedra evaluate in their sub-tetrahedra.
@@ -267,8 +345,12 @@ class H1(Space):
     def extra_mixins(self, group):
         if self.order == 1:
             return ()
-        faces = (views._FaceIncidence,) if group.shape.QUADRATIC_FACES else ()
-        return (views._EdgeIncidence, *faces, views.quadratic_faces(group.shape))
+        shape = group.shape
+        incidence = ((views._EdgeIncidence,) if self._has_edges(shape) else ()) + \
+            ((views._FaceIncidence,) if self._has_faces(shape) else ())
+        if self.order == 2:
+            return (*incidence, views.quadratic_faces(shape))
+        return (*incidence, *views.tensor_mixins(shape))
 
 
 @tack.kernel
@@ -276,6 +358,15 @@ def _l2_counts(cells, orders, counts):
     for c in cells:
         e = cells.entity_id(c)
         counts[e] = 1 if orders[e] == 0 else cells.NUM_POINTS
+
+
+@tack.kernel
+def _tensor_counts(cells, order, counts):
+    for c in cells:
+        n = 1
+        for _ in range(cells.DIMENSION):
+            n *= order + 1
+        counts[cells.entity_id(c)] = n
 
 
 @tack.kernel
@@ -288,24 +379,48 @@ class L2(Space):
     """Discontinuous: each cell's own values, at ``offsets[cell]``. Order 1 holds a
     value at each of the cell's corners -- a linear DG field -- and order 0 one
     value per cell. ``order`` is one order for every cell, or an array of one per
-    cell (p-adaptive), read when the space is made."""
+    cell (p-adaptive, orders 0 and 1), read when the space is made. Order 2 and
+    up, or ``nodes="gauss_legendre"`` at any order from 1, are on segments, quads,
+    pixels, hexahedra and voxels (``tack.dataset.bases``): ``(order + 1)^d`` values
+    a cell in node order, the first axis fastest, on the 1D ``nodes``
+    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``."""
 
-    mixin = views._L2Field
     interpolated = True
+    nodes = None
 
     @classmethod
-    def _params(cls, order=1):
+    def _params(cls, order=1, nodes="gauss_lobatto"):
         if _is_array(order):
+            if nodes != "gauss_lobatto":
+                raise NotImplementedError("an order per cell is on corner values, the "
+                                          "default nodes")
             return {"order": order}
-        if order not in (0, 1):
-            _only_order_one("L2", order)
-        return {"order": int(order)}
+        order = int(order)
+        if order < 0:
+            raise ValueError(f"L2's order is at least 0, not {order}")
+        family = _nodes_param(nodes, order, bases.FAMILIES, "L2")
+        if order == 0:
+            family = None                   # one value at the center, whatever the nodes
+        return {"order": order} if family is None else {"order": order, "nodes": family}
 
     @property
     def varies(self):
         return _is_array(self.order)
 
+    @property
+    def tensor(self):
+        """Whether the cells' values are a tensor basis' nodes, not their corners."""
+        return not self.varies and (self.order >= 2 or self.nodes == "gauss_legendre")
+
+    @property
+    def mixin(self):
+        if self.tensor:
+            return views.of_order(views._L2TensorField, self.order)
+        return views._L2Field
+
     def mixin_for(self, key, shape=None):
+        if self.tensor:
+            return self.mixin
         order = key if self.varies else self.order
         return views._L2Order0Field if order == 0 else views._L2Field
 
@@ -347,6 +462,21 @@ class L2(Space):
                 size = exclusive_scan(counts, offsets, n) if n else 0
                 _set_last(offsets, n, size)
                 self._offsets, self._size = offsets, int(size)
+            elif self.tensor:
+                for group in topology.groups():
+                    if group.count and not bases.tensor_shape(group.shape):
+                        raise NotImplementedError(
+                            f"{self!r} on {group.shape.__name__} cells is not supported "
+                            "yet; it is on segments, quads, pixels, hexahedra and voxels")
+                counts = tack.empty((n,), tack.i32)
+                for group in topology.groups():
+                    if group.count:
+                        _tensor_counts(group.view(), self.order, counts)
+                offsets = tack.empty((n + 1,), ids.at_least(topology.id_dtype,
+                                                            (self.order + 1) ** 3 * n))
+                size = exclusive_scan(counts, offsets, n) if n else 0
+                _set_last(offsets, n, size)
+                self._offsets, self._size = offsets, int(size)
             elif self.order == 0:
                 # A ramp, computed where it is read rather than stored.
                 self._offsets = CountingArray(n + 1, dtype=topology.id_dtype)
@@ -371,8 +501,11 @@ class L2(Space):
     def size(self):
         return self._layout()[1]
 
-    def attributes(self, group=None):
-        return {"offsets": self.offsets}
+    def attributes(self, group=None, dtype=None):
+        attributes = {"offsets": self.offsets}
+        if self.tensor and group is not None:
+            attributes.update(_basis_tables(self, group, dtype or tack.f32))
+        return attributes
 
     def __repr__(self):
         if self.varies:
