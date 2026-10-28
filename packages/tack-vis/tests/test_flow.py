@@ -249,6 +249,168 @@ def test_launches_of_a_few_steps_change_nothing(backend, mesh, budget, monkeypat
         np.testing.assert_array_equal(one, few)
 
 
+def _path_steps(out):
+    """Each path's step lengths (its points' distances), by line."""
+    p = out.positions()
+    offsets, members = (a.numpy() for a in out.topology.lines())
+    return [np.linalg.norm(np.diff(p[members[offsets[k]:offsets[k + 1]]], axis=0), axis=1)
+            for k in range(len(offsets) - 1)]
+
+
+def test_rk45_follows_a_rotation_to_its_tolerance(backend):
+    """A rotation rising along z, which trilinear interpolation reproduces exactly:
+    every point of an RK45 path (Cash-Karp, as VTK's vtkRungeKutta45) is where the
+    exact solution is at its time, to about the tolerance, and the step adapts --
+    the steps vary, within [min_step, max_step], and a tighter tolerance takes
+    more, smaller steps."""
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.1], [0.3, 0.6, 0.2]])
+    counts = {}
+    for tolerance in (1e-4, 1e-6):
+        out = td.streamlines(data, "v", seeds, 0.1, 400, integrator="rk45",
+                             tolerance=tolerance, min_step=0.01, max_step=0.5)
+        p = out.positions().astype(float)
+        t = out.fields["time"].values.numpy().astype(float)
+        offsets, members = (a.numpy() for a in out.topology.lines())
+        for k, seed in enumerate(seeds):
+            rows = members[offsets[k]:offsets[k + 1] - 1]     # the push out at the top aside
+            angle = np.arctan2(seed[1], seed[0]) + t[rows]
+            radius = np.hypot(seed[0], seed[1])
+            exact = np.c_[radius * np.cos(angle), radius * np.sin(angle),
+                          seed[2] + 0.25 * t[rows]]
+            np.testing.assert_allclose(p[rows], exact, atol=50 * tolerance + 2e-5)
+        counts[tolerance] = [len(steps) for steps in _path_steps(out)]
+        for steps, speed in zip(_path_steps(out), (np.hypot(1.0, 0.25), np.hypot(0.67, 0.25))):
+            sizes = steps[:-1] / speed            # a step's time, from its distance
+            assert sizes.min() >= 0.01 * 0.999 and sizes.max() <= 0.5 * 1.001
+    assert all(a < b for a, b in zip(counts[1e-4], counts[1e-6]))
+
+
+def test_rk45_in_the_length_unit_keeps_its_step_bounds(backend):
+    """In the length unit a step is an arc length: every step lies within
+    [min_step, max_step], the path's last step short of it where max_length
+    ends the path."""
+    data = _rotation(_grid())
+    out = td.streamlines(data, "v", np.array([[1.0, 0.0, 0.1]]), 0.05, 500, integrator="rk45",
+                         tolerance=1e-6, min_step=0.005, max_step=0.2, step_unit="length",
+                         max_length=3.0)
+    steps, = _path_steps(out)
+    assert steps[:-1].min() >= 0.005 * 0.99 and steps.max() <= 0.2 * 1.001
+    assert steps.sum() == pytest.approx(3.0, rel=2e-3)        # chords of 3.0 of arc
+
+
+@pytest.mark.parametrize("integrator", ["rk4", "euler", "rk45"])
+def test_max_length_ends_a_path_where_it_says(backend, integrator):
+    """``max_length`` ends a path that has gone that far: in the length unit its
+    last step lands on it (no sliver of a step after), in the time unit it ends
+    after the step that passes it; the particle is ``TERMINATE``d."""
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.1], [0.3, 0.6, 0.2]])
+    out = td.streamlines(data, "v", seeds, 0.05, 1000, integrator=integrator,
+                         step_unit="length", max_length=2.0)
+    for steps in _path_steps(out):
+        assert steps.sum() == pytest.approx(2.0, rel=2e-3)
+        assert steps[-1] > 1e-3
+    ends = td.advect(data, "v", seeds, 0.05, 1000, integrator=integrator, max_length=2.0)
+    assert (ends.fields["status"].values.numpy() & td.ParticleStatus.TERMINATE).all()
+    assert (ends.fields["steps"].values.numpy() < 1000).all()
+
+
+@pytest.mark.parametrize("budget", [1, 7])
+def test_rk45_in_launches_of_a_few_steps_changes_nothing(backend, budget, monkeypatch):
+    """A particle's step, which RK45 adapts, goes from launch to launch with it:
+    launches of 1 and 7 steps give one launch's paths, times and steps, bit for
+    bit, max_length and a resumed call included."""
+    from tack.dataset.algorithms import _advection
+
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.1], [0.3, 0.6, 0.2], [1.9, 0.5, -0.45], [9.0, 9.0, 9.0]])
+    monkeypatch.setattr(_advection, "_CHUNKED_ON_CPU", True)
+    monkeypatch.setattr(_advection, "_GROWTH", 1)
+    runs = []
+    for first in (10**9, budget):
+        monkeypatch.setattr(_advection, "_FIRST_STEPS", first)
+        out = td.streamlines(data, "v", seeds, 0.05, 300, integrator="rk45", tolerance=1e-6,
+                             step_unit="length", max_length=4.0)
+        moved = td.advect(data, "v", seeds, 0.05, 60, integrator="rk45", tolerance=1e-6)
+        on = td.advect(data, "v", moved, 0.05, 90, integrator="rk45", tolerance=1e-6)
+        runs.append([out.geometry.values.numpy(), out.fields["time"].values.numpy()]
+                    + [d.fields[f].values.numpy() for d in (moved, on)
+                       for f in ("steps", "time", "status")])
+    for one, few in zip(*runs):
+        np.testing.assert_array_equal(one, few)
+
+
+def test_euler_and_rk4_are_unchanged_by_the_adaptive_state(backend):
+    """The step and length a particle carries change nothing for Euler and RK4:
+    with no max_length their paths are a fixed step's, as before RK45."""
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.1]])
+    out = td.advect(data, "v", seeds, 0.02, 120)
+    np.testing.assert_allclose(out.positions()[0], _numpy_rk4(seeds[0], 0.02, 120), atol=2e-4)
+
+
+def test_the_rk45_parameters_are_checked(backend):
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.1]])
+    with pytest.raises(ValueError, match="for integrator='rk45'"):
+        td.advect(data, "v", seeds, 0.1, 10, tolerance=1e-6)
+    with pytest.raises(ValueError, match="min_step <= step_size <= max_step"):
+        td.advect(data, "v", seeds, 0.1, 10, integrator="rk45", min_step=0.2)
+    with pytest.raises(ValueError, match="'rk45'"):
+        td.advect(data, "v", seeds, 0.1, 10, integrator="rk5")
+    with pytest.raises(ValueError, match="max_length must be positive"):
+        td.advect(data, "v", seeds, 0.1, 10, max_length=0.0)
+
+
+@pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
+def test_rk45_is_as_close_to_the_path_as_vtks(backend):
+    """A swirl whose speed grows with the radius, on an image: Tack's and VTK's
+    vtkStreamTracer's RK45 at the same tolerance and step bounds (the length
+    unit) take about as many steps and lie as close to the path (a fine RK4's),
+    within a few 1e-5 over their first nine tenths."""
+    from scipy.spatial import cKDTree
+
+    image = vtk.vtkImageData(dimensions=(41, 41, 3), origin=(-2.0, -2.0, -0.1),
+                             spacing=(0.1, 0.1, 0.1))
+    x = np.asarray([image.GetPoint(i) for i in range(image.number_of_points)])
+    r2 = x[:, 0] ** 2 + x[:, 1] ** 2
+    image.point_data["v"] = np.c_[-x[:, 1] * (1 + r2), x[:, 0] * (1 + r2), np.zeros(len(x))]
+    data = vtk_to_dataset(image, dtype=tack.f64 if tack.get_default_device()._backend.supports_f64
+                          else tack.f32)
+    seeds = np.array([[0.5, 0.0, 0.0], [1.2, 0.0, 0.0], [1.7, 0.1, 0.0]])
+
+    def paths(out):
+        p = out.positions()
+        offsets, members = (a.numpy() for a in out.topology.lines())
+        return [p[members[offsets[k]:offsets[k + 1]]] for k in range(len(offsets) - 1)]
+
+    reference = paths(td.streamlines(data, "v", seeds, 0.0005, 20000, step_unit="length",
+                                     max_length=4.0))
+    ours = paths(td.streamlines(data, "v", seeds, 0.05, 2000, integrator="rk45", tolerance=1e-6,
+                                min_step=0.001, max_step=0.1, step_unit="length",
+                                max_length=4.0))
+    tracer = vtk.vtkStreamTracer(
+        integrator_type=vtk.vtkStreamTracer.RUNGE_KUTTA45,
+        integration_direction=vtk.vtkStreamTracer.FORWARD, initial_integration_step=0.05,
+        minimum_integration_step=0.001, maximum_integration_step=0.1, maximum_error=1e-6,
+        maximum_number_of_steps=2000, maximum_propagation=4.0,
+        integration_step_unit=vtk.vtkStreamTracer.LENGTH_UNIT)
+    tracer.SetInputArrayToProcess(0, 0, 0, 0, "v")
+    tracer.SetSourceData(vtk.vtkPolyData(points=vtk.vtkPoints(data=seeds)))
+    lines = tracer(image)
+    offsets, members = lines.lines.offsets_array, lines.lines.connectivity_array
+    theirs = [np.asarray(lines.points.data)[members[offsets[k]:offsets[k + 1]]]
+              for k in range(len(offsets) - 1)]
+    for mine, vtks, path in zip(ours, theirs, reference):
+        t = np.linspace(0.0, 1.0, 20)[:, None, None]
+        tree = cKDTree((path[:-1][None] * (1 - t) + path[1:][None] * t).reshape(-1, 3))
+        far_mine = tree.query(mine[:len(mine) * 9 // 10])[0].max()
+        far_vtk = tree.query(vtks[:len(vtks) * 9 // 10])[0].max()
+        assert far_mine < 5e-5 and far_vtk < 5e-5
+        assert abs(len(mine) - len(vtks)) <= 0.2 * len(vtks)
+
+
 @pytest.mark.parametrize("polyhedra", [False, True])
 def test_a_mixed_mesh(backend, polyhedra):
     data = _two_hexes_and_a_pyramid()

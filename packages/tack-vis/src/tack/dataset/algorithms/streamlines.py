@@ -2,9 +2,9 @@
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import ids, units
-from tack.dataset.algorithms._advection import _run
-from tack.dataset.algorithms._common import _has_quantity, _length, _time_unit
+from tack.dataset import ids
+from tack.dataset.algorithms._advection import _parameters, _run
+from tack.dataset.algorithms._common import _time_unit
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import Values
 from tack.runtime.dispatch import on_inputs_device
@@ -49,7 +49,8 @@ def _chains(kept, starts, lengths, line_offsets, line_points):
 
 @on_inputs_device
 def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
-                step_unit="time", neighbors=False):
+                step_unit="time", tolerance=None, min_step=None, max_step=None,
+                max_length=None, neighbors=False):
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
@@ -63,20 +64,33 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     fast, and ``steps * step_size`` is the longest path. ``time`` is the time
     the particle takes either way.
 
+    ``integrator="rk45"`` adapts the step, as VTK's ``vtkStreamTracer`` with its
+    RK45 (Cash-Karp, ``vtkRungeKutta45``): ``step_size`` is the first step, a
+    step whose error estimate exceeds ``tolerance`` (a distance, in the spatial
+    unit; 1e-6 by default) is tried again smaller, and each accepted step
+    proposes the next, between ``min_step`` and ``max_step`` (by default a
+    fiftieth of ``step_size`` and twice it, VTK's ratios), in ``step_unit``. A
+    step at ``min_step`` is taken whatever its error. ``max_length`` (any
+    integrator) stops a path that has gone that far, its last step landing on
+    it in the length unit.
+
     Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
     piece, each piece holding the stretches it traced."""
     # A step as a time ("0.5 s") is in the spatial unit over the velocity's; as
     # a length ("1 mm"), in the spatial unit.
-    if step_unit == "length":
-        step_size = _length(data, step_size, "streamlines's step size")
-    elif _has_quantity(step_size):
-        step_size = units.magnitude(step_size, _time_unit(data, field), "streamlines's step size")
+    if step_unit not in ("time", "length"):
+        raise ValueError(f"step_unit is 'time' or 'length', not {step_unit!r}")
+    step_size, tolerance, min_step, max_step, max_length = _parameters(
+        data, field, step_unit, "streamlines", step_size, tolerance, min_step, max_step,
+        max_length)
+    adaptive = {"tolerance": tolerance, "min_step": min_step, "max_step": max_step,
+                "max_length": max_length}
     from tack.dataset.partitioned import PartitionedDataSet
 
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import streamlines_pieces
         return streamlines_pieces(data, field, seeds, step_size, steps, integrator, step_unit,
-                                  neighbors)
+                                  neighbors, **adaptive)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
@@ -85,9 +99,9 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
         refuse_hidden(data, "streamlines with a locator")
     from tack.dataset.polyhedra import PolylineTopology
 
-    _, _, _, _, (trace, trace_times), lengths, capacity = _run(
+    _, _, _, _, (trace, trace_times), lengths, capacity, _ = _run(
         data, field, seeds, step_size, steps, integrator, locator, record=True, unit=step_unit,
-        neighbors=neighbors)
+        neighbors=neighbors, **adaptive)
     # Everything is chosen and numbered on the device; only counts come back.
     m = int(lengths.shape[0])
     idt = ids.for_output(data, m * capacity)

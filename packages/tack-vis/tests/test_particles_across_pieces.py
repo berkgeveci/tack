@@ -107,6 +107,24 @@ def test_pieces_with_a_ghost_layer_give_the_wholes_particles(make):
     assert got[2][1] < 200
 
 
+@pytest.mark.quick
+def test_rk45_steps_go_with_the_particles_across_pieces():
+    """RK45 adapts each particle's step, and the step goes with it from piece to
+    piece (as does its path's length, for max_length): the pieces' particles
+    are the whole's, as with fixed steps."""
+    grid = helix()
+    options = {"integrator": "rk45", "tolerance": 1e-5, "max_length": 3.0}
+    whole = td.advect(grid, "v", SEEDS, 0.02, 400, **options)
+    got = by_seed(td.advect(td.split(grid, (2, 2, 2), ghost_layers=1), "v", SEEDS, 0.02, 400,
+                            **options))
+    for q in range(len(SEEDS)):
+        x, n, status, t = got[q]
+        assert n == whole.fields["steps"].values.numpy()[q]
+        assert status == whole.fields["status"].values.numpy()[q]
+        np.testing.assert_allclose(x, whole.positions()[q], atol=1e-5)
+        assert t == pytest.approx(float(whole.fields["time"].values.numpy()[q]), rel=1e-5)
+
+
 @pytest.mark.parametrize("budget", [1, 3])
 def test_launches_of_a_few_steps_hand_particles_on_alike(budget, monkeypatch):
     """Advection in launches of a few steps (a GPU's) pauses particles after whole

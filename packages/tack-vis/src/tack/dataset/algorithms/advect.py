@@ -2,9 +2,8 @@
 
 import numpy as np
 
-from tack.dataset import units
-from tack.dataset.algorithms._advection import ParticleStatus, _run
-from tack.dataset.algorithms._common import _has_quantity, _time_unit
+from tack.dataset.algorithms._advection import ParticleStatus, _parameters, _run
+from tack.dataset.algorithms._common import _time_unit
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.partitioned import PartitionedDataSet
@@ -16,6 +15,7 @@ __all__ = ['ParticleStatus', 'advect']
 
 @on_inputs_device
 def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
+           tolerance=None, min_step=None, max_step=None, max_length=None,
            neighbors=False):
     """Seeds moved through the velocity ``field`` (a 3-vector field or its name: point
     data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as
@@ -23,12 +23,14 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
     one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the
     bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,
     ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of
-    3-vectors; ``integrator`` ``"rk4"`` or ``"euler"``; ``locator`` reuses a
-    ``CellLocator`` of ``data``. ``neighbors=True`` tries the face neighbours of
-    the cell a particle was last found in before searching the locator's bins:
-    the same particles, bit for bit, in about half the time on large meshes, for
-    a table of six ids a cell kept with the locator
-    (``CellLocator.cell_neighbors``).
+    3-vectors; ``integrator`` ``"rk4"``, ``"euler"`` or ``"rk45"`` (adaptive steps,
+    with ``tolerance``, ``min_step`` and ``max_step``: see ``streamlines``);
+    ``max_length`` stops a particle whose path has gone that far; ``locator``
+    reuses a ``CellLocator`` of ``data``.
+    ``neighbors=True`` tries the face neighbours of the cell a particle was last
+    found in before searching the locator's bins: the same particles, bit for
+    bit, in about half the time on large meshes, for a table of six ids a cell
+    kept with the locator (``CellLocator.cell_neighbors``).
 
     ``seeds`` may also be what ``advect`` returned: the particles go on from
     where they stopped, with their times and the steps they took (``steps``
@@ -46,11 +48,14 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
     a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
     (the Visualization Guide's "Integrate a steady velocity field")."""
     # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
-    if _has_quantity(step_size):
-        step_size = units.magnitude(step_size, _time_unit(data, field), "advect's step size")
+    step_size, tolerance, min_step, max_step, max_length = _parameters(
+        data, field, "time", "advect", step_size, tolerance, min_step, max_step, max_length)
+    adaptive = {"tolerance": tolerance, "min_step": min_step, "max_step": max_step,
+                "max_length": max_length}
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import advect_pieces
-        return advect_pieces(data, field, seeds, step_size, steps, integrator, neighbors)
+        return advect_pieces(data, field, seeds, step_size, steps, integrator, neighbors,
+                             **adaptive)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
@@ -58,9 +63,10 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
     else:
         refuse_hidden(data, "advect with a locator")
     seeds, resume, seed_ids = _resumed(seeds, data)
-    xs, times, taken, status, _, _, _ = _run(data, field, seeds, step_size, steps,
-                                             integrator, locator, record=False,
-                                             resume=resume, neighbors=neighbors)
+    xs, times, taken, status, _, _, _, _ = _run(data, field, seeds, step_size, steps,
+                                                integrator, locator, record=False,
+                                                resume=resume, neighbors=neighbors,
+                                                **adaptive)
     out = _vertices(xs, data)                  # the particles stay on the device
     points = Values(out, "points")
     for name, values, unit in (("steps", taken, None), ("time", times, _time_unit(data, field)),

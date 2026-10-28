@@ -101,7 +101,17 @@ that did not move, without inventing a line.
 
 The default integrator is fixed-step RK4; Euler is also available. The step
 is in the integration parameter for `dx/dt = velocity`, so its spatial length
-depends on speed. This is not an adaptive error-controlled integration.
+depends on speed.
+
+`integrator="rk45"` adapts the step to the flow, as VTK's `vtkStreamTracer`
+does with its RK45 (Cash-Karp): `step_size` is the first step, a step whose
+error estimate passes `tolerance` (a distance, 1e-6 by default) is tried
+again smaller, and each step taken proposes the next, between `min_step` and
+`max_step` (by default a fiftieth of `step_size` and twice it, VTK's ratios).
+Smooth stretches take long steps and sharp turns short ones; on a swirl, at
+VTK's settings, it takes about half of fixed RK4's points and lies as close
+to the path as VTK's RK45. `max_length` stops a path that has gone that far,
+whatever the integrator.
 
 `streamlines(..., step_unit="length")` steps a fixed arc length instead,
 following the velocity's direction as VTK's `vtkStreamTracer` does by
