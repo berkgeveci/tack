@@ -383,7 +383,7 @@ def subdivides(data, field):
                                               and (field.space.order > 1
                                                    or getattr(field.space, "tensor", False)))
     tensor = all(bases.tensor_shape(g.shape) for g in data.topology.groups() if g.count)
-    return nonlinear and tensor and data.num_cells > 0
+    return nonlinear and tensor
 
 
 def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, tolerance=None):
