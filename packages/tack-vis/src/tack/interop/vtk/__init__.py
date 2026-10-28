@@ -230,6 +230,35 @@ def array_to_vtk(array, n_components=None, name=None):
 # them). Point data becomes ``H1`` fields and cell data ``Constant`` fields
 # (``docs/vis-guide/design/dataset-api.md`` §5).
 
+def _shared(host, element):
+    """``host``, a NumPy view of VTK's memory, as a read-only CPU array of ``element``s
+    (a scalar type, or a vector of one), sharing it: the array holds the view and
+    the view holds VTK's array. ``None`` where it cannot be shared -- a layout
+    that is not one contiguous block, or values of another type -- for the
+    caller to copy."""
+    import numpy as np
+
+    scalar = element.scalar_dtype if hasattr(element, "scalar_dtype") else element
+    if (not isinstance(host, np.ndarray) or not host.flags.c_contiguous
+            or host.dtype != np.dtype(scalar.numpy_dtype)):
+        return None
+    return tack.array_from_ptr(host, (host.shape[0],), element, device="cpu")
+
+
+def _host_values(array):
+    """A Tack array's values as a NumPy array: a view of its memory where the array
+    is on the CPU (DLPack), a copy otherwise. VTK arrays made from it share the
+    view and hold it, and so the Tack array."""
+    import numpy as np
+
+    from tack.arrays import to_host
+
+    if isinstance(array, tack.Array) and array.device.type == "cpu" and \
+            getattr(array, "layout", "aos") == "aos":
+        return np.from_dlpack(array)
+    return np.array(to_host(array))
+
+
 def _from_vtk(array, dtype=None):
     """A VTK array as Tack takes it: a one-component constant array as a
     ``ConstantArray``, an affine one as a ``CountingArray`` (computed where read,
@@ -249,9 +278,11 @@ def _from_vtk(array, dtype=None):
     return np.asarray(array)
 
 
-def _array_to_field(array, float_dtype):
-    """A VTK data array's values as a field's: floating point in ``float_dtype``,
-    integers in their own type; a constant or affine array stays implicit."""
+def _array_to_field(array, float_dtype, share=False):
+    """A VTK data array's values as a field's: floating point in ``float_dtype`` (in
+    its own type when that is ``None``), integers in their own type; a constant or
+    affine array stays implicit. With ``share``, VTK's memory where it can be
+    (``_shared``)."""
     import numpy as np
 
     from tack.arrays import ConstantArray, CountingArray
@@ -262,12 +293,17 @@ def _array_to_field(array, float_dtype):
         # A vtkCharArray has no numpy-compatible wrapper in 9.7.1, and NumPy reads
         # it as bytes; its values are signed 8-bit integers, as vtk_to_numpy gave.
         host = host.view(np.int8)
-    dtype = float_dtype if host.dtype.kind == "f" else from_numpy_dtype(host.dtype)
+    dtype = (float_dtype if host.dtype.kind == "f" and float_dtype is not None
+             else from_numpy_dtype(host.dtype))
     values = _from_vtk(array, dtype)
     if isinstance(values, (ConstantArray, CountingArray)):
         return values
-    values = np.ascontiguousarray(host)
     n = array.number_of_components
+    if share:
+        shared = _shared(host, dtype if n == 1 else tack.vec(n, dtype))
+        if shared is not None:
+            return shared
+    values = np.ascontiguousarray(host)
     field = tack.empty((array.number_of_tuples,), dtype if n == 1 else tack.vec(n, dtype))
     if values.size:
         tack.copyto(field, values.reshape((-1,) if n == 1 else (-1, n)).astype(dtype.numpy_dtype))
@@ -315,7 +351,7 @@ def _label(array, unit):
 _GHOST_ARRAY = "vtkGhostType"
 
 
-def _attributes_to_fields(attributes, space, float_dtype):
+def _attributes_to_fields(attributes, space, float_dtype, share=False):
     from vtkmodules.vtkCommonCore import vtkDataArray
 
     from tack.dataset import Field
@@ -328,7 +364,7 @@ def _attributes_to_fields(attributes, space, float_dtype):
         # Named data arrays: string and other abstract arrays have no values to compute on,
         # the ghost array becomes the ghost marks and the global ids the global ids.
         if name and name not in skipped and isinstance(array, vtkDataArray):
-            fields[name] = Field(space, _array_to_field(array, float_dtype),
+            fields[name] = Field(space, _array_to_field(array, float_dtype, share),
                                  _units_label(array))
     return fields
 
@@ -347,24 +383,33 @@ def _cell_field_name(name, fields):
     return renamed
 
 
-def _global_ids(attributes):
-    """An attributes object's ``GlobalIds`` array as i64 ids, or ``None``."""
+def _global_ids(attributes, share=False):
+    """An attributes object's ``GlobalIds`` array as i64 ids, or ``None``; with
+    ``share``, VTK's memory where it is i64 already."""
     import numpy as np
 
     array = attributes.GetGlobalIds()               # no pythonic form in 9.7.1
     if array is None:
         return None
-    return tack.array(np.ascontiguousarray(np.asarray(array), np.int64).reshape(-1), tack.i64)
+    host = np.asarray(array).reshape(-1)
+    shared = _shared(host, tack.i64) if share else None
+    if shared is not None:
+        return shared
+    return tack.array(np.ascontiguousarray(host, np.int64), tack.i64)
 
 
-def _ghost_marks(attributes):
-    """An attributes object's ``vtkGhostType`` array as u8 marks, or ``None``."""
+def _ghost_marks(attributes, share=False):
+    """An attributes object's ``vtkGhostType`` array as u8 marks, or ``None``; with
+    ``share``, VTK's memory."""
     import numpy as np
 
     if _GHOST_ARRAY not in attributes.keys():
         return None
-    return tack.array(np.ascontiguousarray(np.asarray(attributes[_GHOST_ARRAY]), np.uint8),
-                      tack.u8)
+    host = np.asarray(attributes[_GHOST_ARRAY]).reshape(-1)
+    shared = _shared(host, tack.u8) if share else None
+    if shared is not None:
+        return shared
+    return tack.array(np.ascontiguousarray(host, np.uint8), tack.u8)
 
 
 def _polyhedral_topology(grid, orient=False, id_dtype=None):
@@ -418,7 +463,7 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
 
 
 def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None):
+                   origin=None, copy=True):
     """Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,
     ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
     ``UniformCoordinates`` (with its direction matrix), a rectilinear grid's as a
@@ -468,9 +513,24 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     it has none, ``"<name>#<i>"`` for a name already taken).
 
     VTK's ``DATA_TIME_STEP`` becomes the step's time (``time``), its unit
-    unknown."""
+    unknown.
+
+    ``dtype=None`` keeps each floating-point array in its own type (f32 or f64),
+    the points too; an image's geometry is then f64, as VTK's is.
+
+    With ``copy=False`` the dataset shares VTK's memory instead of copying it,
+    as CPU arrays (whatever the default device): the points, data arrays, cell
+    types, offsets and connectivity, ghost marks and global ids, wherever
+    their values are one contiguous block of the type Tack keeps them in, and
+    a polygonal dataset's cells where it holds one kind (verts, lines or
+    polygons). Ids then keep VTK's width (``id_dtype`` follows it unless
+    given), and floating-point arrays are shared at their own precision with
+    ``dtype=None``. The shared arrays are read-only to Tack and hold VTK's
+    arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
+    be shared -- an origin to subtract, a type to convert, triangle strips,
+    polyhedra -- is copied as before."""
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
-                          id_dtype=id_dtype, origin=origin)
+                          id_dtype=id_dtype, origin=origin, copy=copy)
     if grid.GetInformation().Has(_time_key()):
         _stamp(out, grid.GetInformation().Get(_time_key()))
     return out
@@ -502,6 +562,29 @@ def _polydata_as_grid(polydata):
     from vtkmodules.vtkCommonCore import vtkIdList, vtkUnsignedCharArray
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
 
+    kinds = [(kind, cells) for kind, cells in (("verts", polydata.verts),
+                                                ("lines", polydata.lines),
+                                                ("polys", polydata.polys),
+                                                ("strips", polydata.strips))
+             if cells.number_of_cells]
+    if len(kinds) == 1 and kinds[0][0] != "strips":
+        # One kind of cell: the grid takes the polydata's cell array itself, so
+        # its offsets and connectivity are not copied, and the cells (and their
+        # cell data) are the same in the same order.
+        kind, cells = kinds[0]
+        size = np.diff(np.asarray(cells.offsets_array))
+        types = {"verts": np.where(size == 1, 1, 2),
+                 "lines": np.where(size == 2, 3, 4),
+                 "polys": np.select([size == 3, size == 4], [5, 9], 7)}[kind].astype(np.uint8)
+        grid = vtkUnstructuredGrid()
+        grid.SetPoints(polydata.GetPoints())
+        grid.GetPointData().ShallowCopy(polydata.GetPointData())
+        grid.GetFieldData().ShallowCopy(polydata.GetFieldData())
+        grid.GetCellData().ShallowCopy(polydata.GetCellData())
+        # One type is a number (a vtkConstantArray), nothing stored per cell.
+        grid.cells = (int(types[0]) if (types == types[0]).all()
+                      else vtkUnsignedCharArray(types), cells)
+        return grid
     types, sizes, members, sources = [], [], [], []
     first = 0
     for kind, cells in (("verts", polydata.verts), ("lines", polydata.lines),
@@ -550,7 +633,7 @@ def _polydata_as_grid(polydata):
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None):
+                   origin=None, copy=True):
     """``vtk_to_dataset`` before the time is stamped."""
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
@@ -578,7 +661,8 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
     from tack.dataset.global_ids import GlobalIds
 
     options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype,
-               "origin": origin}
+               "origin": origin, "copy": copy}
+    share = not copy
     from tack.dataset.dataset import as_origin
 
     shift = np.asarray(as_origin(origin))
@@ -588,6 +672,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
     if isinstance(grid, vtkPolyData):
         return _vtk_to_dataset(_polydata_as_grid(grid), **options)
+    geometry_dtype = dtype
     from vtkmodules.vtkCommonDataModel import vtkHyperTreeGrid
 
     if isinstance(grid, vtkHyperTreeGrid):
@@ -608,18 +693,25 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             polyhedral = 42 in present
     if isinstance(grid, vtkUnstructuredGrid) and polyhedral:
         topology = _polyhedral_topology(grid, orient=orient, id_dtype=id_dtype)
-        geometry = _vtk_points(grid) - shift
+        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, False)
     elif isinstance(grid, vtkUnstructuredGrid):
         cells = grid.cells
         offsets = _from_vtk(cells.offsets_array)
         connectivity = _from_vtk(cells.connectivity_array)
+        if share:
+            offsets, connectivity = _shared_ids(offsets), _shared_ids(connectivity)
+            shared = _shared(types, tack.u8)
+            types = types if shared is None else shared
+            widths = {a.dtype for a in (offsets, connectivity) if isinstance(a, tack.Array)}
+            if id_dtype is None and len(widths) == 1:
+                id_dtype, = widths                  # VTK's width, so nothing converts
         num_points = grid.number_of_points
         if 4 in present:
             # Polylines: their lines are two-point chains; nothing else mixes in.
             if not present <= {3, 4}:
                 raise ValueError("a grid with polylines (VTK_POLY_LINE) may hold only lines "
                                  "and polylines")
-            topology = PolylineTopology(np.asarray(offsets), np.asarray(connectivity),
+            topology = PolylineTopology(_ids(offsets), _ids(connectivity),
                                         num_points=num_points, id_dtype=id_dtype)
         elif 7 in present:
             # Polygons, as dataset_to_vtk writes a PolygonalTopology: triangles
@@ -627,12 +719,12 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             if not present <= {5, 7, 9}:
                 raise ValueError("a grid with polygons (VTK_POLYGON) may hold only "
                                  "triangles, quads and polygons")
-            topology = PolygonalTopology(np.asarray(offsets), np.asarray(connectivity),
+            topology = PolygonalTopology(_ids(offsets), _ids(connectivity),
                                          num_points=num_points, id_dtype=id_dtype)
         else:
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
-        geometry = _vtk_points(grid) - shift
+        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
     elif isinstance(grid, vtkImageData):
         dims = list(grid.dimensions)
         matrix = grid.direction_matrix              # a vtkMatrix3x3: no indexing in 9.7.1
@@ -640,13 +732,18 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         spacing = np.asarray(grid.spacing)
         # Points are origin + direction @ (ijk * spacing), ijk from the extent's start.
         start = np.asarray(grid.origin) + direction @ (np.asarray(grid.extent[0::2]) * spacing)
-        geometry = UniformCoordinates(dims, start - shift, spacing, direction, dtype=dtype)
+        geometry_dtype = dtype if dtype is not None else tack.f64      # VTK's double
+        geometry = UniformCoordinates(dims, start - shift, spacing, direction,
+                                      dtype=geometry_dtype)
         topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
     elif isinstance(grid, vtkRectilinearGrid):
+        if dtype is None:
+            geometry_dtype = (tack.f32 if np.asarray(grid.x_coordinates).dtype == np.float32
+                              else tack.f64)
         geometry = CartesianProduct(np.asarray(grid.x_coordinates, np.float64) - shift[0],
                                     np.asarray(grid.y_coordinates, np.float64) - shift[1],
                                     np.asarray(grid.z_coordinates, np.float64) - shift[2],
-                                    dtype=dtype)
+                                    dtype=geometry_dtype)
         dims = list(grid.dimensions)
         if dims != list(geometry.dims):
             raise ValueError(f"grid dimensions {dims} do not match its coordinates")
@@ -655,13 +752,14 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         dims = [0, 0, 0]
         grid.GetDimensions(dims)        # not a readable property on a structured grid in 9.7.1
         topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
-        geometry = _vtk_points(grid) - shift
+        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkPolyData, vtkStructuredGrid, "
                         f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
-    fields = _attributes_to_fields(grid.point_data, H1(topology), dtype)
-    for name, field in _attributes_to_fields(grid.cell_data, Constant(topology), dtype).items():
+    fields = _attributes_to_fields(grid.point_data, H1(topology), dtype, share)
+    for name, field in _attributes_to_fields(grid.cell_data, Constant(topology), dtype,
+                                             share).items():
         fields[_cell_field_name(name, fields)] = field
     if isinstance(grid, vtkRectilinearGrid):
         unit = _units_label(grid.x_coordinates)
@@ -669,18 +767,57 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         unit = None                     # VTK 9.7.1 has nowhere to keep an image's
     else:
         unit = _units_label(grid.points.data) if grid.points is not None else None
-    cells, points = _ghost_marks(grid.cell_data), _ghost_marks(grid.point_data)
+    cells, points = _ghost_marks(grid.cell_data, share), _ghost_marks(grid.point_data, share)
     ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
-    cells, points = _global_ids(grid.cell_data), _global_ids(grid.point_data)
+    cells, points = _global_ids(grid.cell_data, share), _global_ids(grid.point_data, share)
     global_ids = None if cells is None and points is None else GlobalIds(cells=cells,
                                                                          points=points)
-    return DataSet(topology, geometry, fields=fields, dtype=dtype, ghosts=ghosts,
+    return DataSet(topology, geometry, fields=fields, dtype=geometry_dtype, ghosts=ghosts,
                    global_ids=global_ids, origin=origin, unit=unit)
 
 
-def _to_vtk_types(types):
+def _points_geometry(grid, shift, dtype, share):
+    """``(geometry, its type)``: a point set's positions relative to the origin, as a
+    NumPy array the dataset converts to ``dtype`` (the points' own floating type
+    when ``None``); with ``share``, VTK's points themselves, where no origin
+    moves them and their type is that one (``_shared``)."""
+    import numpy as np
+
+    from tack.lang.types import from_numpy_dtype
+
+    host = _vtk_points(grid)
+    if dtype is None:
+        dtype = from_numpy_dtype(host.dtype) if host.dtype.kind == "f" else tack.f64
+    if share and not np.any(shift):
+        shared = _shared(host, tack.vec(3, dtype))
+        if shared is not None:
+            return shared, dtype
+    return host - shift, dtype
+
+
+def _shared_ids(values):
+    """Offsets or connectivity as VTK holds them, shared where they are stored i32 or
+    i64 values (an implicit array stays as it is)."""
+    import numpy as np
+
+    if isinstance(values, np.ndarray) and values.dtype in (np.int32, np.int64):
+        shared = _shared(values, tack.i32 if values.dtype == np.int32 else tack.i64)
+        return values if shared is None else shared
+    return values
+
+
+def _ids(values):
+    """Ids for a topology's constructor: a Tack array as it is, anything else as a
+    NumPy array."""
+    import numpy as np
+
+    return values if isinstance(values, tack.Array) else np.asarray(values)
+
+
+def _to_vtk_types(types, share=False):
     """Cell types for ``vtkUnstructuredGrid.cells``: a ``ConstantArray``'s value as
-    a number (VTK keeps it as a vtkConstantArray), else a vtkUnsignedCharArray."""
+    a number (VTK keeps it as a vtkConstantArray), else a vtkUnsignedCharArray
+    (with ``share``, of the types' own memory on the CPU)."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
 
@@ -688,6 +825,8 @@ def _to_vtk_types(types):
 
     if isinstance(types, ConstantArray):
         return int(types.value.numpy().reshape(-1)[0])
+    if share and _stored_on_cpu(types) and types.dtype == tack.u8:
+        return vtkUnsignedCharArray(_host_values(types))
     return vtkUnsignedCharArray(np.ascontiguousarray(np.asarray(types), np.uint8))
 
 
@@ -976,25 +1115,55 @@ def _vtk_points(grid):
     return np.zeros((0, 3)) if points is None else np.asarray(points.data)
 
 
-def _vtk_points_of(data):
+def _vtk_points_of(data, share=False):
     """``data``'s positions as vtkPoints of the geometry's own precision:
     ``vtkPoints(data=...)`` given a NumPy array stores doubles, so give it a
     typed array (f32 positions as a vtkFloatArray). A dataset with an origin
-    gives its world positions, in double precision."""
+    gives its world positions, in double precision. With ``share``, stored
+    positions on the CPU and no origin, the geometry's own memory."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkFloatArray, vtkPoints
 
-    positions = data.world_positions() if any(data.origin) else data.positions()
+    values = data.geometry.values
+    if share and not any(data.origin) and _stored_on_cpu(values):
+        positions = _host_values(values)
+    else:
+        positions = data.world_positions() if any(data.origin) else data.positions()
     typed = vtkFloatArray if positions.dtype == np.float32 else vtkDoubleArray
     points = vtkPoints(data=typed(np.ascontiguousarray(positions)))
     _label(points.data, data.unit)
     return points
 
 
-def _to_vtk_values(values):
+def _stored_on_cpu(values):
+    """Whether ``values`` is a stored (not implicit) interleaved array on the CPU,
+    whose memory VTK can share."""
+    return (isinstance(values, tack.Array) and values.device.type == "cpu"
+            and getattr(values, "layout", "aos") == "aos")
+
+
+def _vtk_cells(offsets, connectivity, share=False):
+    """A ``vtkCellArray`` of ``offsets`` and ``connectivity``: implicit ones as VTK's
+    affine arrays, stored ones as int64 copies -- or, with ``share``, both stored
+    on the CPU in one width, their own memory."""
+    from vtkmodules.vtkCommonCore import vtkTypeInt32Array, vtkTypeInt64Array
+    from vtkmodules.vtkCommonDataModel import vtkCellArray
+
+    if (share and _stored_on_cpu(offsets) and _stored_on_cpu(connectivity)
+            and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
+        # As typed VTK arrays: given NumPy arrays, the constructor converts them to
+        # int64; given VTK arrays, it keeps them, 32-bit ones too.
+        typed = vtkTypeInt32Array if offsets.dtype == tack.i32 else vtkTypeInt64Array
+        return vtkCellArray(offsets=typed(_host_values(offsets)),
+                            connectivity=typed(_host_values(connectivity)))
+    return vtkCellArray(offsets=_to_vtk_ids(offsets), connectivity=_to_vtk_ids(connectivity))
+
+
+def _to_vtk_values(values, share=False):
     """A field's values for ``point_data``/``cell_data``: a scalar ``ConstantArray``
     as a vtkConstantArray and a ``CountingArray`` as a vtkAffineArray (nothing
-    stored), anything else copied to the host."""
+    stored), anything else copied to the host -- or, with ``share``, a stored
+    array on the CPU as a view of its memory."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkAffineArray, vtkConstantArray
 
@@ -1005,10 +1174,12 @@ def _to_vtk_values(values):
         return vtkConstantArray[dtype](values.size, values.value.numpy().reshape(-1)[0])
     if isinstance(values, CountingArray):
         return vtkAffineArray[values.dtype.numpy_dtype](values.size, values.step, values.start)
+    if share and _stored_on_cpu(values):
+        return _host_values(values)
     return np.array(to_host(values))            # a copy: the grid owns its values
 
 
-def dataset_to_vtk(data):
+def dataset_to_vtk(data, copy=True):
     """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
     images and rectilinear grids, its ratios the same along every axis, into a
     ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into
@@ -1037,8 +1208,16 @@ def dataset_to_vtk(data):
     arrays. Ghost marks become ``vtkGhostType`` arrays.
 
     The step's time (``data.time``) becomes VTK's ``DATA_TIME_STEP``; VTK has
-    no unit for it."""
-    out = _dataset_to_vtk(data)
+    no unit for it.
+
+    With ``copy=False`` the VTK dataset shares Tack's memory where the arrays
+    are stored on the CPU: the points (with no origin), the field values, the
+    cell types, offsets and connectivity (ids of one width, as VTK keeps 32-bit
+    ids too), ghost marks and global ids. The VTK arrays hold Tack's, and
+    writes on either side reach the other. Implicit arrays go across as VTK's
+    implicit ones either way; anything else -- arrays on a GPU, a polyhedral
+    topology's faces -- is copied as before."""
+    out = _dataset_to_vtk(data, copy)
     time = _time_of(data)
     if time is not None:
         from vtkmodules.vtkCommonDataModel import vtkDataObject
@@ -1047,7 +1226,7 @@ def dataset_to_vtk(data):
     return out
 
 
-def _dataset_to_vtk(data):
+def _dataset_to_vtk(data, copy=True):
     """``dataset_to_vtk`` before the time is stamped."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkAffineArray, vtkUnsignedCharArray
@@ -1094,8 +1273,9 @@ def _dataset_to_vtk(data):
         # Assigned: the keyword constructor ignores it (VTK 9.7.1).
         out.number_of_partitions = len(data)
         for i, piece in enumerate(data):
-            out.SetPartition(i, dataset_to_vtk(piece))
+            out.SetPartition(i, dataset_to_vtk(piece, copy=copy))
         return out
+    share = not copy
     topology = data.topology
     coordinates = data.geometry.values
     # A grid of one point or none has a topology without cells (grid_topology),
@@ -1123,24 +1303,20 @@ def _dataset_to_vtk(data):
         # Explicit coordinates, as a warp or transform leaves; both number the
         # points x fastest.
         grid = vtkStructuredGrid(dimensions=(*topology.point_dims, 1, 1)[:3])
-        grid.points = _vtk_points_of(data)
+        grid.points = _vtk_points_of(data, share)
     elif isinstance(topology, UnstructuredTopology):
         # Implicit types, offsets and connectivity go across as VTK's constant
         # and affine arrays: a cell type given as a number is a vtkConstantArray.
         grid = vtkUnstructuredGrid()
-        grid.points = _vtk_points_of(data)
-        grid.cells = (_to_vtk_types(topology.types),
-                      vtkCellArray(offsets=_to_vtk_ids(topology.offsets),
-                                   connectivity=_to_vtk_ids(topology.connectivity)))
+        grid.points = _vtk_points_of(data, share)
+        grid.cells = (_to_vtk_types(topology.types, share),
+                      _vtk_cells(topology.offsets, topology.connectivity, share))
     elif isinstance(topology, (PolygonalTopology, PolylineTopology)):
         polygons = isinstance(topology, PolygonalTopology)
-        offsets, loops = (a.numpy() for a in (topology.loops() if polygons
-                                                  else topology.lines()))
+        offsets, loops = topology.loops() if polygons else topology.lines()
         grid = vtkUnstructuredGrid()
-        grid.points = _vtk_points_of(data)
-        grid.cells = (7 if polygons else 4,
-                      vtkCellArray(offsets=offsets.astype(np.int64),
-                                   connectivity=loops.astype(np.int64)))
+        grid.points = _vtk_points_of(data, share)
+        grid.cells = (7 if polygons else 4, _vtk_cells(offsets, loops, share))
     elif isinstance(topology, PolyhedralTopology):
         # VTK keeps a face per cell, outward for that cell: side 1's copy is
         # the face walked backwards from the same first point.
@@ -1173,10 +1349,11 @@ def _dataset_to_vtk(data):
         if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
             # An order-2 field's values at the points, its first ones: the grid
             # is linear, as the filters read order-2 data.
-            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points))
+            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
+                                                   share)
             _label(grid.point_data[name], field.unit)
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
-            grid.cell_data[name] = _to_vtk_values(field.values)
+            grid.cell_data[name] = _to_vtk_values(field.values, share)
             _label(grid.cell_data[name], field.unit)
     if data.ghosts is not None:
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
@@ -1185,7 +1362,8 @@ def _dataset_to_vtk(data):
                                   (grid.point_data, data.ghosts.points)):
             if marks is not None:
                 attributes[_GHOST_ARRAY] = vtkUnsignedCharArray(
-                    np.ascontiguousarray(marks.numpy(), np.uint8))
+                    _host_values(marks) if share and _stored_on_cpu(marks)
+                    else np.ascontiguousarray(marks.numpy(), np.uint8))
     if data.global_ids is not None:
         from vtkmodules.vtkCommonCore import vtkIdTypeArray
 
@@ -1193,7 +1371,8 @@ def _dataset_to_vtk(data):
                                       (grid.point_data, data.global_ids.points,
                                        "GlobalPointIds")):
             if ids is not None:
-                array = vtkIdTypeArray(np.ascontiguousarray(ids.numpy(), np.int64))
+                array = vtkIdTypeArray(_host_values(ids) if share and _stored_on_cpu(ids)
+                                       else np.ascontiguousarray(ids.numpy(), np.int64))
                 array.SetName(name)                 # vtkGenerateGlobalIds' names
                 attributes.SetGlobalIds(array)      # no pythonic form in 9.7.1
     return grid
