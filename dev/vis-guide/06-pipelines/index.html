@@ -3890,7 +3890,16 @@ with <code>seed</code> on cells and <code>time</code> on points. It also keeps a
 that did not move, without inventing a line.</p>
 <p>The default integrator is fixed-step RK4; Euler is also available. The step
 is in the integration parameter for <code>dx/dt = velocity</code>, so its spatial length
-depends on speed. This is not an adaptive error-controlled integration.</p>
+depends on speed.</p>
+<p><code>integrator="rk45"</code> adapts the step to the flow, as VTK's <code>vtkStreamTracer</code>
+does with its RK45 (Cash-Karp): <code>step_size</code> is the first step, a step whose
+error estimate passes <code>tolerance</code> (a distance, 1e-6 by default) is tried
+again smaller, and each step taken proposes the next, between <code>min_step</code> and
+<code>max_step</code> (by default a fiftieth of <code>step_size</code> and twice it, VTK's ratios).
+Smooth stretches take long steps and sharp turns short ones; on a swirl, at
+VTK's settings, it takes about half of fixed RK4's points and lies as close
+to the path as VTK's RK45. <code>max_length</code> stops a path that has gone that far,
+whatever the integrator.</p>
 <p><code>streamlines(..., step_unit="length")</code> steps a fixed arc length instead,
 following the velocity's direction as VTK's <code>vtkStreamTracer</code> does by
 default: slow flow takes steps as long as fast flow, and <code>steps * step_size</code>

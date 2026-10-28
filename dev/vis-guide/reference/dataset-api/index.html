@@ -6379,9 +6379,18 @@ Advection likewise preserves that geometry precision and id width.</p>
 <code>x</code>, as VTK's <code>EvaluatePosition</code> does: exactly for triangles and
 tetrahedra, by clamping the parametric coordinates for the others.</p>
 <p><code>advect(data, field, seeds, step_size, steps, integrator="rk4",
-locator=None)</code> moves each seed through a steady velocity field -- point
-data, interpolated in the cell holding the particle, or cell data -- by
-fixed RK4 (or Euler) steps, as Viskores' ParticleAdvection does. It returns
+locator=None, tolerance=None, min_step=None, max_step=None, max_length=None)</code>
+moves each seed through a steady velocity field -- point data, interpolated
+in the cell holding the particle, or cell data -- by fixed RK4 (or Euler)
+steps, as Viskores' ParticleAdvection does, or by RK45 steps that adapt
+(<code>integrator="rk45"</code>: Cash-Karp, VTK's <code>vtkRungeKutta45</code>, with its rules: a
+step whose error estimate passes <code>tolerance</code> is tried again smaller,
+<code>0.9 h (err/tol)^-0.25</code>, keeping its first stage; a step taken proposes the
+next, <code>0.9 h (err/tol)^-0.2</code>, within <code>[min_step, max_step]</code>; one at
+<code>min_step</code> is taken whatever its error). A particle's step goes with it
+between a GPU's launches and from piece to piece. <code>max_length</code> stops a
+particle whose path has gone that far (in the length unit its last step
+lands on it). It returns
 the particles where they stopped, one vertex cell each, with <code>steps</code>, <code>time</code>
 and <code>status</code>. <code>status</code> holds Viskores' bits, <code>ParticleStatus.SUCCESS</code>,
 <code>TERMINATE</code>, <code>SPATIAL_BOUNDS</code>, <code>TOOK_ANY_STEPS</code> and <code>ZERO_VELOCITY</code>.
