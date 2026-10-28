@@ -1,7 +1,10 @@
-"""Tack on CUDA against Viskores on CUDA, reached through VTK's vtkm... filters.
+"""Tack against Viskores, reached through VTK's vtkm... filters: on CUDA, or on
+the CPU (Viskores' TBB or OpenMP device against Tack's CPU or another GPU).
 
-Needs a VTK built with Viskores on CUDA (``VTK_USE_CUDA``); the PyPI wheel
-has no Viskores. Point ``PYTHONPATH`` and ``LD_LIBRARY_PATH`` at its build,
+Needs a VTK built with Viskores on the device compared: CUDA for the default
+(``VTK_USE_CUDA``), TBB or OpenMP for ``--viskores-device TBB`` (a VTK whose
+SMP backend is TBB builds Viskores' TBB device too). The PyPI wheel's
+Viskores has the Serial device alone. ``--arch`` picks Tack's device. Point ``PYTHONPATH`` and ``LD_LIBRARY_PATH`` at its build,
 leave any other ``vtk`` out of the environment, and run, e.g.:
 
     uv run --no-sync python benchmarks/viskores_compare/run.py --output results-viskores
@@ -135,9 +138,9 @@ def _meta(vtk_threads):
             "tack": sha + ("+changes" if dirty else ""), "tack backend": get_backend().label}
 
 
-def _start(vtk_threads, resident):
+def _start(vtk_threads, resident, arch="cuda", viskores_device="Cuda"):
     # Viskores reads its device when VTK first initializes it, at the first filter.
-    os.environ.setdefault("VISKORES_DEVICE", "Cuda")
+    os.environ.setdefault("VISKORES_DEVICE", viskores_device)
     import vtkmodules.vtkAcceleratorsVTKmFilters  # noqa: F401 -- refuse a VTK without Viskores
     from vtkmodules.vtkCommonCore import vtkSMPTools
 
@@ -153,7 +156,7 @@ def _start(vtk_threads, resident):
     smp.Initialize(vtk_threads)
     import tack
 
-    tack.set_default_device("cuda")
+    tack.set_default_device(arch)
 
 
 def _host_output(pair, result):
@@ -199,8 +202,9 @@ def _to_host(output):
     return convert.GetOutput()
 
 
-def run(sizes, mesh_names, filters, budget, vtk_threads, resident=False):
-    _start(vtk_threads, resident)
+def run(sizes, mesh_names, filters, budget, vtk_threads, resident=False, arch="cuda",
+        viskores_device="Cuda"):
+    _start(vtk_threads, resident, arch, viskores_device)
     import meshes as m
     import pairs as p
 
@@ -306,13 +310,12 @@ def run(sizes, mesh_names, filters, budget, vtk_threads, resident=False):
                     records[-1]["comparable"] = False
                 _record(records, **key, impl="tack", mode="warm", comparable=comparable,
                         times=_measure(run_tack, budget=budget))
-                if resident:
-                    # VTK gives Viskores a new dataset on every Update, so it derives
-                    # point links and faces each time; "fresh" gives Tack a new
-                    # topology over the same device arrays each time, likewise.
-                    _record(records, **key, impl="tack", mode="fresh", comparable=comparable,
-                            times=_measure(lambda d: run_tack(data=d), budget=budget,
-                                           setup=lambda f=fields: source.dataset(f, fresh=True)))
+                # VTK gives Viskores a new dataset on every Update, so it derives
+                # point links and faces each time; "fresh" gives Tack a new
+                # topology over the same arrays each time, likewise.
+                _record(records, **key, impl="tack", mode="fresh", comparable=comparable,
+                        times=_measure(lambda d: run_tack(data=d), budget=budget,
+                                       setup=lambda f=fields: source.dataset(f, fresh=True)))
 
                 def round_trip(pair=pair, grid=grid):
                     result = pair.tack(vtk_to_dataset(grid), mesh)
@@ -373,6 +376,10 @@ def main():
                         help="VTK's threads for the CPU reference filters (checks only)")
     parser.add_argument("--resident", action="store_true",
                         help="both sides' data on the GPU (needs the cuda-wheel-gpu-output VTK)")
+    parser.add_argument("--arch", default="cuda",
+                        help="Tack's device: cuda (the default), cpu, metal, hip, level_zero")
+    parser.add_argument("--viskores-device", default="Cuda",
+                        help="Viskores' device (VISKORES_DEVICE): Cuda, TBB, OpenMP, Serial")
     parser.add_argument("--preflight", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
@@ -383,7 +390,8 @@ def main():
         if not filters:
             sys.exit("no pair survived the preflight")
     records = run(args.sizes.split(","), args.meshes.split(","), filters, args.budget,
-                  args.vtk_threads, resident=args.resident)
+                  args.vtk_threads, resident=args.resident, arch=args.arch,
+                  viskores_device=args.viskores_device)
     meta = _meta(args.vtk_threads)
     meta["resident"] = args.resident
     if dropped:
