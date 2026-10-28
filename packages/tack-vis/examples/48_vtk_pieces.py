@@ -24,6 +24,7 @@ Usage:
 """
 
 import argparse
+import itertools
 import pathlib
 
 import numpy as np
@@ -70,6 +71,15 @@ def checked(algorithm, input):
     return out
 
 
+def write(writer, data, path):
+    """``data`` written by ``writer`` (a writer called on its input returns ``None``
+    whether or not it wrote, so check the file)."""
+    path.unlink(missing_ok=True)
+    writer(data)
+    if not path.exists():
+        raise RuntimeError(f"could not write {path}")
+
+
 # ================================================================
 # THE PIECES: SLABS OF THE WAVELET, TETRAHEDRALIZED, WRITTEN
 # ================================================================
@@ -78,17 +88,13 @@ e = _args.extent
 whole = vtkRTAnalyticSource(whole_extent=(-e, e, -e, e, -e, e))()
 cuts = np.linspace(-e, e, _args.pieces + 1).round().astype(int)
 slabs = vtkPartitionedDataSet()
-slabs.number_of_partitions = _args.pieces      # the keyword is ignored (VTK 9.7.1)
-for i in range(_args.pieces):
+for lo, hi in itertools.pairwise(cuts):
     # Neighbours share their plane of points, as a grid's pieces do.
-    voi = (int(cuts[i]), int(cuts[i + 1]), -e, e, -e, e)
-    slabs.SetPartition(i, vtkExtractVOI(voi=voi)(whole))
+    slabs.append(vtkExtractVOI(voi=(int(lo), int(hi), -e, e, -e, e))(whole))
 pieces = checked(Tetrahedralize(), slabs)
 pieces_path = output / "wavelet_pieces.vtpd"
-writer = vtkXMLPartitionedDataSetWriter(file_name=str(pieces_path))
-writer.SetInputData(pieces)
-writer.Write()
-counts = [pieces.GetPartition(i).number_of_cells for i in range(pieces.number_of_partitions)]
+write(vtkXMLPartitionedDataSetWriter(file_name=str(pieces_path)), pieces, pieces_path)
+counts = [piece.number_of_cells for piece in pieces]
 print(f"wrote {pieces_path}: {len(counts)} pieces of {counts} tetrahedra")
 
 
@@ -103,19 +109,16 @@ ghosts, contour = GhostCells(), Contour(field="RTData", value=_args.value)
 # differ in their last bits (4e-8 here); 1e-6 joins them and nothing else.
 merge = MergePieces(tolerance=1e-6)
 surfaces = (reader >> ghosts >> contour)()
-merged = (reader >> ghosts >> contour >> merge)()
-for algorithm in (ghosts, contour, merge):
+for algorithm in (ghosts, contour):
     if algorithm.error is not None:
         raise algorithm.error
-for i in range(surfaces.number_of_partitions):
-    piece = surfaces.GetPartition(i)
-    marks = np.asarray(piece.cell_data["vtkGhostType"])
-    print(f"  piece {i}: {piece.number_of_cells} triangles, {int((marks != 0).sum())} "
-          f"of them its neighbours' (ghosts)")
+merged = checked(merge, surfaces)
+for i, piece in enumerate(surfaces):
+    ghost_triangles = int((piece.cell_data["vtkGhostType"] != 0).sum())
+    print(f"  piece {i}: {piece.number_of_cells} triangles, {ghost_triangles} of them its "
+          f"neighbours' (ghosts)")
 surface_path = output / "pieces_isosurface.vtu"
-out = vtkXMLUnstructuredGridWriter(file_name=str(surface_path))
-out.SetInputData(merged)
-out.Write()
+write(vtkXMLUnstructuredGridWriter(file_name=str(surface_path)), merged, surface_path)
 print(f"wrote {surface_path}: {merged.number_of_cells} triangles, {merged.number_of_points} "
       f"points")
 
@@ -149,16 +152,17 @@ if _args.png:
         vtkWindowToImageFilter,
     )
 
+    colours = [(0.89, 0.42, 0.33), (0.36, 0.62, 0.84), (0.55, 0.78, 0.45), (0.95, 0.77, 0.36),
+               (0.70, 0.52, 0.82), (0.40, 0.80, 0.78)]
     renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    for i in range(surfaces.number_of_partitions):
-        owned = vtkThreshold(lower_threshold=0, upper_threshold=0)   # ghost marks 0
-        owned.SetInputArrayToProcess(0, 0, 0, 1, "vtkGhostType")     # cell data
+    for i, piece in enumerate(surfaces):
+        # Each piece's own triangles: ghost marks 0, in the cell data.
+        owned = vtkThreshold(lower_threshold=0, upper_threshold=0)
+        owned.SetInputArrayToProcess(0, 0, 0, 1, "vtkGhostType")
         mapper = vtkPolyDataMapper(scalar_visibility=False)
-        mapper.SetInputData(vtkGeometryFilter()(owned(surfaces.GetPartition(i))))
+        piece >> owned >> vtkGeometryFilter() >> mapper
         actor = vtkActor(mapper=mapper)
-        hue = i / max(surfaces.number_of_partitions, 1)
-        actor.property.color = (0.5 + 0.5 * np.cos(6.28 * hue), 0.5 + 0.5 * np.cos(6.28 * (hue - 0.33)),
-                                0.5 + 0.5 * np.cos(6.28 * (hue - 0.67)))
+        actor.property.color = colours[i % len(colours)]
         renderer.AddActor(actor)
     window = vtkRenderWindow(off_screen_rendering=True, size=(800, 600))
     window.AddRenderer(renderer)
@@ -166,7 +170,9 @@ if _args.png:
     renderer.active_camera.Azimuth(30)
     renderer.active_camera.Elevation(20)
     window.Render()
+    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
+    # and Write().
     png = vtkPNGWriter(file_name=_args.png)
-    png.SetInputConnection(vtkWindowToImageFilter(input=window).GetOutputPort())
+    vtkWindowToImageFilter(input=window) >> png
     png.Write()
     print(f"rendered {_args.png}")

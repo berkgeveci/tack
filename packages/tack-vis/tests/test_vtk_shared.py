@@ -41,12 +41,14 @@ def _tetrahedra():
     cell data, ghost marks and global ids."""
     grid = vtk.vtkCellTypeSource(cell_type=vtk.VTK_TETRA, blocks_dimensions=(3, 2, 2))()
     x = np.asarray(grid.points.data)
+    # vtkPoints(data=) stores a NumPy array as doubles: a typed array keeps f32.
     grid.points = vtk.vtkPoints(data=vtk.vtkFloatArray(np.ascontiguousarray(x, np.float32)))
     n, m = grid.number_of_points, grid.number_of_cells
-    grid.point_data["s"] = vtk.vtkFloatArray(np.sin(x[:, 0]).astype(np.float32))
-    grid.point_data["v"] = vtk.vtkDoubleArray(np.ascontiguousarray(x * 2.0))
-    grid.cell_data["c"] = vtk.vtkIntArray(np.arange(m, dtype=np.int32))
-    grid.cell_data["vtkGhostType"] = vtk.vtkUnsignedCharArray(np.zeros(m, np.uint8))
+    grid.point_data["s"] = np.sin(x[:, 0]).astype(np.float32)
+    grid.point_data["v"] = x.astype(np.float64) * 2.0
+    grid.cell_data["c"] = np.arange(m, dtype=np.int32)
+    grid.cell_data["vtkGhostType"] = np.zeros(m, np.uint8)
+    # Global ids have no pythonic setter in VTK 9.7.1.
     ids = vtk.vtkIdTypeArray(np.arange(n, dtype=np.int64) + 100)
     ids.SetName("GlobalPointIds")
     grid.point_data.SetGlobalIds(ids)
@@ -193,17 +195,16 @@ def test_vtk_keeps_tacks_arrays_alive():
 
 def test_pieces_are_shared_both_ways():
     pieces = vtk.vtkPartitionedDataSet()
-    pieces.number_of_partitions = 2
     grids = [_tetrahedra(), _tetrahedra()]
-    for i, g in enumerate(grids):
-        pieces.SetPartition(i, g)
+    for g in grids:
+        pieces.append(g)
     pds = vtk_to_dataset(pieces, dtype=None, copy=False)
     assert isinstance(pds, td.PartitionedDataSet) and len(pds) == 2
     for piece, g in zip(pds, grids):
         assert _shares(piece.geometry.values, g.points.data)
     out = dataset_to_vtk(pds, copy=False)
-    for i, piece in enumerate(pds):
-        assert _shares(piece.fields["s"].values, out.GetPartition(i).point_data["s"])
+    for piece, block in zip(pds, out):
+        assert _shares(piece.fields["s"].values, block.point_data["s"])
 
 
 def test_a_round_trip_through_a_filter_shares_both_ways():

@@ -104,6 +104,9 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
 
     # ── The pipeline ────────────────────────────────────────────────
 
+    # The pipeline's information objects are read and set with Get/Set/Append:
+    # vtkInformation takes no item assignment in VTK 9.7.1.
+
     def FillInputPortInformation(self, port, info):
         info.Set(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkDataSet")
         info.Append(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkPartitionedDataSet")
@@ -186,12 +189,11 @@ class _FieldAlgorithm(TackAlgorithm):
         output = self.GetOutputData(outInfo, 0)
         data = vtk_to_dataset(input, dtype=None, copy=False)
         if isinstance(input, vtkPartitionedDataSet):
-            output.number_of_partitions = input.number_of_partitions
-            pieces = iter(data)
-            for i in range(input.number_of_partitions):
-                block = input.GetPartition(i)
-                if block is not None:
-                    output.SetPartition(i, self._with_fields(block, next(pieces)))
+            # Iterating a partitioned dataset gives its non-empty partitions, the
+            # pieces vtk_to_dataset made, in order.
+            output.Initialize()
+            for block, piece in zip(input, data):
+                output.append(self._with_fields(block, piece))
         else:
             output.ShallowCopy(self._with_fields(input, data))
         return 1
@@ -438,8 +440,7 @@ class MergePieces(_OverPieces):
 
         if not isinstance(input, vtkPartitionedDataSet):
             return type(input)
-        kinds = {type(input.GetPartition(i)) for i in range(input.number_of_partitions)
-                 if input.GetPartition(i) is not None}
+        kinds = {type(block) for block in input}
         if len(kinds) == 1 and next(iter(kinds)) is not dm.vtkPolyData:
             return next(iter(kinds))
         return dm.vtkUnstructuredGrid

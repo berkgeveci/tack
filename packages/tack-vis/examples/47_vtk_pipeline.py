@@ -55,9 +55,11 @@ output.mkdir(parents=True, exist_ok=True)
 
 
 def write(data, path):
-    writer = vtkXMLUnstructuredGridWriter(file_name=str(path))
-    writer.SetInputData(data)
-    if not writer.Write():
+    """Write ``data``: a writer called on its input writes it (and returns ``None``
+    whether or not it could, so check the file)."""
+    path.unlink(missing_ok=True)
+    vtkXMLUnstructuredGridWriter(file_name=str(path))(data)
+    if not path.exists():
         raise RuntimeError(f"could not write {path}")
 
 
@@ -79,8 +81,7 @@ print(f"wrote {mesh_path}: {mesh.number_of_cells} tetrahedra, {mesh.number_of_po
 reader = vtkXMLUnstructuredGridReader(file_name=str(mesh_path))
 gradients = Gradients(field="RTData", at="points", name="gradient")
 contour = Contour(field="RTData", value=_args.value)
-pipeline = reader >> gradients >> contour
-surface = pipeline()
+surface = (reader >> gradients >> contour)()
 for algorithm in (gradients, contour):
     if algorithm.error is not None:
         raise algorithm.error
@@ -101,7 +102,7 @@ reference = (reader >> theirs)()
 
 
 def area(data):
-    return float(np.asarray(vtkCellSizeFilter()(data).cell_data["Area"]).sum())
+    return float(vtkCellSizeFilter()(data).cell_data["Area"].sum())
 
 
 ours_area, their_area = area(surface), area(reference)
@@ -119,9 +120,12 @@ assert "gradient" in surface.point_data.keys()
 if _args.png:
     import vtkmodules.vtkInteractionStyle
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+    from vtkmodules.vtkCommonCore import vtkScalarsToColors
     from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
     from vtkmodules.vtkIOImage import vtkPNGWriter
     from vtkmodules.vtkRenderingCore import (
+        VTK_GET_ARRAY_BY_NAME,
+        VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
         vtkActor,
         vtkPolyDataMapper,
         vtkRenderer,
@@ -129,12 +133,13 @@ if _args.png:
         vtkWindowToImageFilter,
     )
 
-    magnitude = np.linalg.norm(np.asarray(surface.point_data["gradient"]), axis=1)
-    mapper = vtkPolyDataMapper(scalar_visibility=True, scalar_range=(0.0, float(magnitude.max())))
-    mapper.SetInputConnection((vtkGeometryFilter(input_data=surface)).GetOutputPort())
-    mapper.SetScalarModeToUsePointFieldData()   # no pythonic form for these in 9.7.1
-    mapper.SelectColorArray("gradient")
-    mapper.lookup_table.SetVectorModeToMagnitude()
+    magnitude = np.linalg.norm(surface.point_data["gradient"], axis=1)
+    mapper = vtkPolyDataMapper(scalar_visibility=True,
+                               scalar_mode=VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
+                               array_access_mode=VTK_GET_ARRAY_BY_NAME, array_name="gradient",
+                               scalar_range=(0.0, float(magnitude.max())))
+    mapper.lookup_table.vector_mode = vtkScalarsToColors.MAGNITUDE
+    surface >> vtkGeometryFilter() >> mapper
     renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
     renderer.AddActor(vtkActor(mapper=mapper))
     window = vtkRenderWindow(off_screen_rendering=True, size=(800, 600))
@@ -143,7 +148,9 @@ if _args.png:
     renderer.active_camera.Azimuth(30)
     renderer.active_camera.Elevation(20)
     window.Render()
+    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
+    # and Write().
     png = vtkPNGWriter(file_name=_args.png)
-    png.SetInputConnection(vtkWindowToImageFilter(input=window).GetOutputPort())
+    vtkWindowToImageFilter(input=window) >> png
     png.Write()
     print(f"rendered {_args.png}")

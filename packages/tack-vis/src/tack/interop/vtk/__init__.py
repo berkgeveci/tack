@@ -1151,11 +1151,11 @@ def _vtk_cells(offsets, connectivity, share=False):
 
     if (share and _stored_on_cpu(offsets) and _stored_on_cpu(connectivity)
             and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
+        # As typed VTK arrays: given NumPy arrays, the constructor converts them to
+        # int64; given VTK arrays, it keeps them, 32-bit ones too.
         typed = vtkTypeInt32Array if offsets.dtype == tack.i32 else vtkTypeInt64Array
-        cells = vtkCellArray()
-        # SetData: the keyword constructor copies 32-bit ids into 64-bit storage.
-        cells.SetData(typed(_host_values(offsets)), typed(_host_values(connectivity)))
-        return cells
+        return vtkCellArray(offsets=typed(_host_values(offsets)),
+                            connectivity=typed(_host_values(connectivity)))
     return vtkCellArray(offsets=_to_vtk_ids(offsets), connectivity=_to_vtk_ids(connectivity))
 
 

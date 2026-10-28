@@ -37,7 +37,6 @@ _parser.add_argument('--png', help='render the tubes to this PNG file')
 _args = _parser.parse_args()
 
 import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
-from vtkmodules.vtkCommonCore import vtkDoubleArray
 from vtkmodules.vtkCommonDataModel import vtkImageData
 from vtkmodules.vtkFiltersCore import vtkTubeFilter
 from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
@@ -56,6 +55,15 @@ output = pathlib.Path(_args.output)
 output.mkdir(parents=True, exist_ok=True)
 
 
+def write(writer, data, path):
+    """``data`` written by ``writer`` (a writer called on its input returns ``None``
+    whether or not it wrote, so check the file)."""
+    path.unlink(missing_ok=True)
+    writer(data)
+    if not path.exists():
+        raise RuntimeError(f"could not write {path}")
+
+
 # ================================================================
 # THE VELOCITY FIELD, WRITTEN AS A .VTI FILE
 # ================================================================
@@ -63,14 +71,10 @@ output.mkdir(parents=True, exist_ok=True)
 image = vtkImageData(dimensions=(41, 41, 41), origin=(-1.0, -1.0, 0.0),
                      spacing=(0.05, 0.05, 0.05))
 z, y, x = np.mgrid[0:41, 0:41, 0:41] * 0.05 + np.array([0.0, -1.0, -1.0]).reshape(3, 1, 1, 1)
-velocity = np.stack([-y.ravel(), x.ravel(), np.full(x.size, _args.rise)], axis=1)
-array = vtkDoubleArray(np.ascontiguousarray(velocity))
-array.SetName("velocity")
-image.point_data.AddArray(array)
+image.point_data["velocity"] = np.stack([-y.ravel(), x.ravel(),
+                                        np.full(x.size, _args.rise)], axis=1)
 field_path = output / "helix_velocity.vti"
-writer = vtkXMLImageDataWriter(file_name=str(field_path))
-writer.SetInputData(image)
-writer.Write()
+write(vtkXMLImageDataWriter(file_name=str(field_path)), image, field_path)
 print(f"wrote {field_path}: {image.number_of_points} points")
 
 
@@ -80,19 +84,18 @@ print(f"wrote {field_path}: {image.number_of_points} points")
 
 seed_source = vtkPointSource(center=(0.3, 0.0, 0.1), radius=0.25,
                              number_of_points=_args.seeds)()
-seeds = np.asarray(seed_source.points.data, np.float64)
+seeds = np.array(seed_source.points.data, np.float64)
 seeds[:, 2] = 0.1                                # all start at one height
 reader = vtkXMLImageDataReader(file_name=str(field_path))
 streamlines = Streamlines(field="velocity", seeds=seeds, step_size=0.02, steps=300)
-tubes = vtkTubeFilter(radius=0.006, number_of_sides=10)
 paths = (reader >> streamlines)()
 if streamlines.error is not None:
     raise streamlines.error
-tube_surface = (reader >> streamlines >> vtkGeometryFilter() >> tubes)()
+# The tube filter takes polygonal data: the paths' polylines through vtkGeometryFilter.
+tube_surface = (paths >> vtkGeometryFilter() >> vtkTubeFilter(radius=0.006,
+                                                              number_of_sides=10))()
 tubes_path = output / "helix_tubes.vtp"
-out = vtkXMLPolyDataWriter(file_name=str(tubes_path))
-out.SetInputData(tube_surface)
-out.Write()
+write(vtkXMLPolyDataWriter(file_name=str(tubes_path)), tube_surface, tubes_path)
 print(f"{paths.number_of_cells} paths, {paths.number_of_points} points; wrote {tubes_path}: "
       f"{tube_surface.number_of_cells} tube polygons")
 
@@ -101,10 +104,10 @@ print(f"{paths.number_of_cells} paths, {paths.number_of_points} points; wrote {t
 # THE CHECK: HELICES
 # ================================================================
 
-points = np.asarray(paths.points.data, np.float64)
-time = np.asarray(paths.point_data["time"], np.float64)
-offsets = np.asarray(paths.cells.offsets_array)
-connectivity = np.asarray(paths.cells.connectivity_array)
+points = paths.points.data
+time = paths.point_data["time"]
+offsets = paths.cells.offsets_array
+connectivity = paths.cells.connectivity_array
 worst_radius = worst_rise = 0.0
 for k in range(paths.number_of_cells):
     ids = connectivity[offsets[k]:offsets[k + 1]]
@@ -128,6 +131,8 @@ if _args.png:
     from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
     from vtkmodules.vtkIOImage import vtkPNGWriter
     from vtkmodules.vtkRenderingCore import (
+        VTK_GET_ARRAY_BY_NAME,
+        VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
         vtkActor,
         vtkPolyDataMapper,
         vtkRenderer,
@@ -135,22 +140,24 @@ if _args.png:
         vtkWindowToImageFilter,
     )
 
+    tube_mapper = vtkPolyDataMapper(scalar_visibility=True,
+                                    scalar_mode=VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
+                                    array_access_mode=VTK_GET_ARRAY_BY_NAME, array_name="time",
+                                    scalar_range=(0.0, float(time.max())))
+    tube_surface >> tube_mapper
+    outline_mapper = vtkPolyDataMapper()
+    reader >> vtkOutlineFilter() >> outline_mapper
     renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    tube_mapper = vtkPolyDataMapper(scalar_visibility=True)
-    tube_mapper.SetInputData(tube_surface)
-    tube_mapper.SetScalarModeToUsePointFieldData()   # no pythonic form in 9.7.1
-    tube_mapper.SelectColorArray("time")
-    tube_mapper.scalar_range = (0.0, float(time.max()))
     renderer.AddActor(vtkActor(mapper=tube_mapper))
-    outline = vtkPolyDataMapper()
-    outline.SetInputConnection((reader >> vtkOutlineFilter()).GetOutputPort())
-    renderer.AddActor(vtkActor(mapper=outline))
+    renderer.AddActor(vtkActor(mapper=outline_mapper))
     window = vtkRenderWindow(off_screen_rendering=True, size=(800, 600))
     window.AddRenderer(renderer)
     renderer.ResetCamera()
     renderer.active_camera.Elevation(-60)
     window.Render()
+    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
+    # and Write().
     png = vtkPNGWriter(file_name=_args.png)
-    png.SetInputConnection(vtkWindowToImageFilter(input=window).GetOutputPort())
+    vtkWindowToImageFilter(input=window) >> png
     png.Write()
     print(f"rendered {_args.png}")

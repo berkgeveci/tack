@@ -33,9 +33,8 @@ def _halves():
     given, so two sources would not)."""
     whole = _wavelet()()
     pieces = vtk.vtkPartitionedDataSet()
-    pieces.number_of_partitions = 2
-    for i, voi in enumerate([(-8, 0, -8, 8, -8, 8), (0, 8, -8, 8, -8, 8)]):
-        pieces.SetPartition(i, vtk.vtkExtractVOI(voi=voi)(whole))
+    for voi in [(-8, 0, -8, 8, -8, 8), (0, 8, -8, 8, -8, 8)]:
+        pieces.append(vtk.vtkExtractVOI(voi=voi)(whole))
     return whole, pieces
 
 
@@ -64,12 +63,12 @@ def test_a_parameter_set_later_runs_the_filter_again():
 
 
 def test_an_error_is_vtks_and_kept():
-    contour = ta.Contour(field="no such field", value=1.0)
-    contour.SetInputDataObject(_wavelet()())
-    assert not contour.Update()
+    image = _wavelet()()
+    contour = ta.Contour(field="no such field", value=150.0)
+    assert contour(image).number_of_cells == 0
     assert isinstance(contour.error, (KeyError, ValueError))
     contour.field = "RTData"
-    assert contour.Update() and contour.error is None
+    assert contour(image).number_of_cells > 0 and contour.error is None
 
 
 def test_an_unknown_parameter_is_refused():
@@ -93,16 +92,16 @@ def test_each_filter_gives_what_the_tack_filter_gives(make, run):
     direct = run(vtk_to_dataset(image, dtype=None))
     assert out.number_of_cells == direct.num_cells
     assert out.number_of_points == direct.num_points
-    np.testing.assert_array_equal(np.asarray(out.points.data), direct.positions())
+    np.testing.assert_array_equal(out.points.data, direct.positions())
 
 
 def test_threshold_and_surface_match_vtks_counts():
     image = _wavelet()()
     ours = ta.Threshold(field="RTData", lower=120.0, upper=200.0)(image)
     theirs = vtk.vtkThreshold(lower_threshold=120.0, upper_threshold=200.0,
-                              threshold_function=vtk.vtkThreshold.THRESHOLD_BETWEEN)
+                              threshold_function=vtk.vtkThreshold.THRESHOLD_BETWEEN,
+                              all_scalars=True)
     theirs.SetInputArrayToProcess(0, 0, 0, 0, "RTData")
-    theirs.all_scalars = True
     assert ours.number_of_cells == theirs(image).number_of_cells
     surface = ta.ExtractSurface()(ta.Tetrahedralize()(image))
     assert surface.number_of_cells == vtk.vtkGeometryFilter()(
@@ -115,7 +114,7 @@ def test_field_filters_add_arrays_to_a_copy_of_their_input():
     assert isinstance(out, vtk.vtkImageData)
     assert "g" in out.point_data.keys() and "g" not in image.point_data.keys()
     direct = td.gradients(vtk_to_dataset(image, dtype=None), "RTData", at="points")
-    np.testing.assert_array_equal(np.asarray(out.point_data["g"]), direct.values.numpy())
+    np.testing.assert_array_equal(out.point_data["g"], direct.values.numpy())
     # The input's own arrays are the same arrays, not copies.
     assert (np.asarray(out.point_data["RTData"]).ctypes.data
             == np.asarray(image.point_data["RTData"]).ctypes.data)
@@ -129,12 +128,12 @@ def test_streamlines_follow_a_rotation():
     image = vtk.vtkImageData(dimensions=(21, 21, 3), origin=(-1.0, -1.0, 0.0),
                              spacing=(0.1, 0.1, 0.1))
     x = np.asarray([image.GetPoint(i) for i in range(image.number_of_points)])
-    image.point_data["v"] = vtk.vtkDoubleArray(np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))])
+    image.point_data["v"] = np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))]
     seeds = np.array([[0.5, 0.0, 0.1], [0.3, 0.0, 0.1]])
     out = ta.Streamlines(field="v", seeds=seeds, step_size=0.05, steps=20)(image)
     direct = td.streamlines(vtk_to_dataset(image, dtype=None), "v", seeds, 0.05, 20)
-    np.testing.assert_array_equal(np.asarray(out.points.data), direct.positions())
-    radii = np.linalg.norm(np.asarray(out.points.data)[:, :2], axis=1)
+    np.testing.assert_array_equal(out.points.data, direct.positions())
+    radii = np.linalg.norm(out.points.data[:, :2], axis=1)
     assert np.allclose(radii[:21], 0.5, atol=1e-3)
 
 
@@ -142,9 +141,8 @@ def test_pieces_are_filtered_one_by_one():
     whole, pieces = _halves()
     out = ta.Contour(field="RTData", value=150.0)(pieces)
     assert isinstance(out, vtk.vtkPartitionedDataSet) and out.number_of_partitions == 2
-    counts = [out.GetPartition(i).number_of_cells for i in range(2)]
-    assert counts == [_vtk_contour(pieces.GetPartition(i), 150.0).number_of_cells
-                      for i in range(2)]
+    counts = [piece.number_of_cells for piece in out]
+    assert counts == [_vtk_contour(piece, 150.0).number_of_cells for piece in pieces]
     assert sum(counts) == _vtk_contour(whole, 150.0).number_of_cells
 
 
@@ -153,30 +151,24 @@ def test_filters_over_pieces_take_them_together():
     merged = ta.MergePieces()(pieces)
     assert isinstance(merged, vtk.vtkImageData)
     assert merged.number_of_points == whole.number_of_points
-    np.testing.assert_array_equal(np.asarray(merged.point_data["RTData"]),
-                                  np.asarray(whole.point_data["RTData"]))
-    tets = vtk.vtkPartitionedDataSet()
-    tets.number_of_partitions = 2
-    for i in range(2):
-        tets.SetPartition(i, ta.Tetrahedralize()(pieces.GetPartition(i)))
+    np.testing.assert_array_equal(merged.point_data["RTData"], whole.point_data["RTData"])
+    tets = ta.Tetrahedralize()(pieces)
     ghosted = ta.GhostCells()(tets)
-    for i in range(2):
-        piece = ghosted.GetPartition(i)
-        assert "vtkGhostType" in piece.cell_data.keys()
-        assert piece.number_of_cells > tets.GetPartition(i).number_of_cells
+    for piece, before in zip(ghosted, tets):
+        assert "vtkGhostType" in piece.cell_data
+        assert piece.number_of_cells > before.number_of_cells
     ids = ta.GenerateGlobalIds()(tets)
-    point_ids = np.concatenate([np.asarray(ids.GetPartition(i).point_data.GetGlobalIds())
-                                for i in range(2)])
+    # Global ids have no pythonic accessor in VTK 9.7.1.
+    point_ids = np.concatenate([piece.point_data.GetGlobalIds() for piece in ids])
     assert len(np.unique(point_ids)) == whole.number_of_points
 
 
 def test_a_reader_tack_and_vtk_filters_in_one_pipeline(tmp_path):
-    path = str(tmp_path / "tets.vtu")
-    writer = vtk.vtkXMLUnstructuredGridWriter(file_name=path)
-    writer.SetInputData(ta.Tetrahedralize()(_wavelet()()))
-    writer.Write()
-    reader = vtk.vtkXMLUnstructuredGridReader(file_name=path)
+    path = tmp_path / "tets.vtu"
+    vtk.vtkXMLUnstructuredGridWriter(file_name=str(path))(ta.Tetrahedralize()(_wavelet()()))
+    assert path.exists()
+    reader = vtk.vtkXMLUnstructuredGridReader(file_name=str(path))
     sizes = (reader >> ta.Contour(field="RTData", value=150.0) >> vtk.vtkCellSizeFilter())()
-    area = float(np.asarray(sizes.cell_data["Area"]).sum())
+    area = float(sizes.cell_data["Area"].sum())
     reference = vtk.vtkCellSizeFilter()(_vtk_contour(reader(), 150.0))
-    assert area == pytest.approx(float(np.asarray(reference.cell_data["Area"]).sum()), rel=1e-5)
+    assert area == pytest.approx(float(reference.cell_data["Area"].sum()), rel=1e-5)
