@@ -4,7 +4,9 @@
 the dataset's bounds, as Viskores' CellLocatorTwoLevel does: a coarse uniform
 grid of about 32 cells a bin, each bin a uniform grid of leaves sized by its
 count (about 8 cells a leaf), so a body's cells in a large far field are not
-all in a few bins. ``find(points)`` returns each
+all in a few bins. ``CellLocator(data, levels=1)`` bins them on one uniform
+grid (Viskores' CellLocatorUniformBins), which searches fewer candidates on a
+small, even mesh. ``find(points)`` returns each
 point's cell -- of the cells that hold it the smallest id, or, if none does
 but some come within the tolerance, the smallest of those; -1 for none --
 and its parametric coordinates there, found by the shapes' own Newton
@@ -277,7 +279,9 @@ _BOUNDS_BLOCKS = 256
 # tetrahedron's box is about six times its volume, so leaves that small held
 # each of the aneurysm's tetrahedra 34 times (296M entries, build 1.4 s). At 8,
 # 12.9 entries a cell and 0.68 s there, 5.7 and 2.8 s on the M6 (one level:
-# 7.8 and 0.83 s, 8.8 and 5.6 s), and the streamlines as fast on the CPU.
+# 7.8 and 0.83 s, 8.8 and 5.6 s), and the streamlines as fast on the CPU
+# (with the leaf counts rounded, 15.6 and 5.7 entries a cell). levels=1 is the
+# one level, every bin a leaf: a small, even mesh's cells in fewer candidates.
 _CELLS_PER_BIN = 32.0
 _CELLS_PER_LEAF = 8.0
 
@@ -305,14 +309,18 @@ def _leaf_dims(counts, ux, uy, uz, sides, per_leaf, dims, sizes):
     # cubes along the axes the grid spans, about per_leaf cells a leaf. ux, uy
     # and uz are a bin's sides over the sides-th root of its volume (0 along an
     # axis the grid does not span), so nothing here depends on the units.
+    # Rounded, where Viskores truncates: a bin of 32 cells over leaves of 8 is
+    # 1.59 leaves a side, which truncated left every bin of a small even mesh
+    # one leaf (fire_ug's 10,462 cells in leaves of 41, and its streamlines
+    # twice as slow on a GPU as with one level); Viskores' 2 a leaf gives 2.52.
     for b in range(counts.shape[0]):
         c = counts[b]
         r = 0.0 * ux
         if c > 0:
             r = exp(log(c / per_leaf) / sides)
-        lx = max(tack.i64(ux * r), 1)
-        ly = max(tack.i64(uy * r), 1)
-        lz = max(tack.i64(uz * r), 1)
+        lx = max(tack.i64(ux * r + 0.5), 1)
+        ly = max(tack.i64(uy * r + 0.5), 1)
+        lz = max(tack.i64(uz * r + 0.5), 1)
         dims[3 * b] = lx
         dims[3 * b + 1] = ly
         dims[3 * b + 2] = lz
@@ -413,8 +421,13 @@ def _resolve(found, none, ncells):
 class CellLocator:
     """Locates points in ``data``'s cells; build once, ``find`` many times. ``density``
     is the bins per cell of the uniform grid a search from the cells buckets
-    the points in; the search from the points reads the two-level cell bins
-    (``cell_bins``).
+    the points in; the search from the points reads the cell bins
+    (``cell_bins``): with ``levels=2`` (the default) a two-level grid, as
+    Viskores' ``CellLocatorTwoLevel``, which holds meshes graded toward a body
+    in a large far field; with ``levels=1`` that uniform grid, as Viskores'
+    ``CellLocatorUniformBins`` and VTK's ``vtkStaticCellLocator``, fewer
+    candidates a search on a small, even mesh, and a few bins holding most of
+    the cells on a graded one.
 
     The bins follow the cells' bounding boxes when it is made. It records the
     geometry it was made from and that geometry's state (`serves`): `probe`
@@ -426,9 +439,12 @@ class CellLocator:
     `wrap_ptr` -- need a new locator."""
 
     @on_inputs_device
-    def __init__(self, data, density=1.0):
+    def __init__(self, data, density=1.0, levels=2):
         from tack.dataset.dataset import DataSet
 
+        if levels not in (1, 2):
+            raise ValueError(f"a cell locator has 1 or 2 levels of bins, not {levels!r}")
+        self.levels = levels
         #: Cells with no reference element -- polyhedra, polygons, polylines --
         #: have no parametric coordinates: points are located in a piece of each
         #: cell's fan (a polyline's segment), which ``find`` says (``tets``).
@@ -488,8 +504,9 @@ class CellLocator:
         # A point this close to the grid can be within a cell's tolerance.
         self.slack = _TOLERANCE * float(np.linalg.norm(extent))
         # The coarse grid of the two-level one (cell_bins), as the uniform grid
-        # above with about _CELLS_PER_BIN cells a bin.
-        side = (np.prod(extent[live]) / max(n / _CELLS_PER_BIN, 1)) ** (1.0 / max(live.sum(), 1))
+        # above with about _CELLS_PER_BIN cells a bin; with one level, that grid.
+        per_bin = _CELLS_PER_BIN if levels == 2 else 1.0 / density
+        side = (np.prod(extent[live]) / max(n / per_bin, 1)) ** (1.0 / max(live.sum(), 1))
         coarse = np.where(live, np.clip(np.ceil(extent / max(side, 1e-30)), 1, 1024), 1)
         self.coarse_dims = coarse.astype(np.int64)
         self.coarse_inverse = np.where(live, coarse / np.where(live, extent, 1.0), 0.0)
@@ -517,26 +534,33 @@ class CellLocator:
     def cell_bins(self):
         """The cells each leaf may hold, for queries that run from the points (a
         particle asking for its cell): ``(offsets, cells)``, CSR by leaf, the
-        cells whose boxes, widened by their tolerance, overlap the leaf. The
-        leaves are a two-level grid: a coarse uniform grid of about
-        ``_CELLS_PER_BIN`` cells a bin, each bin a uniform grid of leaves sized
-        by its count (``leaves``). Made on first use and kept."""
+        cells whose boxes, widened by their tolerance, overlap the leaf. With
+        two levels the leaves are a two-level grid: a coarse uniform grid of
+        about ``_CELLS_PER_BIN`` cells a bin, each bin a uniform grid of leaves
+        sized by its count (``leaves``); with one, the uniform grid of about
+        ``density`` bins a cell, each bin one leaf. Made on first use and kept."""
         if "_cell_bins" not in self.__dict__:
             data = self.data
             n = data.num_cells
             grid = self._coarse_grid()
             nbins = int(np.prod(self.coarse_dims))
             # Each coarse bin's cells, then its leaves (sizes, by a scan their
-            # first leaf), then each cell's leaves, entered and grouped.
-            counts = tack.zeros((nbins,), tack.i32)
-            if n:
-                _coarse_counts(self.lo, self.hi, *grid, _TOLERANCE, counts)
+            # first leaf; with one level every bin is its own leaf), then each
+            # cell's leaves, entered and grouped.
             dims = tack.empty((3 * nbins,), tack.i32)
             sizes = tack.empty((nbins,), tack.i64)
-            _leaf_dims(counts, *self._units, _CELLS_PER_LEAF, dims, sizes)
+            if self.levels == 2:
+                counts = tack.zeros((nbins,), tack.i32)
+                if n:
+                    _coarse_counts(self.lo, self.hi, *grid, _TOLERANCE, counts)
+                _leaf_dims(counts, *self._units, _CELLS_PER_LEAF, dims, sizes)
+                del counts
+            else:
+                dims.fill(1)
+                sizes.fill(1)
             leaf_starts = tack.empty((nbins,), tack.i64)
             nleaves = exclusive_scan(sizes, leaf_starts, nbins)
-            del counts, sizes
+            del sizes
             per_cell = tack.empty((n,), tack.i64)
             starts = tack.empty((n,), tack.i64)
             total = 0

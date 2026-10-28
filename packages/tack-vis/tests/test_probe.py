@@ -342,13 +342,13 @@ def test_probe_of_voronoi_polyhedra_holds_the_points_inside(backend):
 
 # ── From the points and from the cells ──────────────────────────────
 
-def _both_ways(data, points):
+def _both_ways(data, points, levels=2):
     """``find`` and ``probe`` from the points (by_id's search over the cell bins)
     and from the cells (each group's view), on fresh locators."""
-    by_points = td.CellLocator(data)
+    by_points = td.CellLocator(data, levels=levels)
     by_points._search()                                # build the search: from the points
     by_points._found_before = True
-    by_cells = td.CellLocator(data)
+    by_cells = td.CellLocator(data, levels=levels)
     by_cells._mesh_search = None                       # no search: from the cells
     return [(loc.find(points), td.probe(data, points, locator=loc))
             for loc in (by_points, by_cells)]
@@ -375,10 +375,13 @@ def _meshes():
 @pytest.mark.parametrize("name", ["mixed", "structured", "two tets as polyhedra", "polygons",
                                   "polyline", "hexahedron", "tetra", "wedge", "pyramid", "voxel",
                                   "wedges as polyhedra"])
-def test_searching_from_the_points_finds_what_searching_from_the_cells_does(backend, name):
+@pytest.mark.parametrize("levels", [2, 1])
+def test_searching_from_the_points_finds_what_searching_from_the_cells_does(backend, name,
+                                                                            levels):
     """The two searches rank candidates alike -- holding the point first, then the
     smaller id -- so they find the same cells, coordinates and sub-tetrahedra,
-    and probe the same values, points outside the mesh included."""
+    and probe the same values, points outside the mesh included, over either
+    level of bins."""
     meshes = _meshes()
     if name not in meshes:
         pytest.skip("needs VTK for this mesh")
@@ -389,7 +392,7 @@ def test_searching_from_the_points_finds_what_searching_from_the_cells_does(back
                                   _scalars(np.arange(data.num_cells, dtype=float)))
     lo, hi = x.min(axis=0), x.max(axis=0)
     points = np.r_[lo + np.random.default_rng(8).uniform(-0.1, 1.1, (400, 3)) * (hi - lo), x]
-    (a, pa), (b, pb) = _both_ways(data, points)
+    (a, pa), (b, pb) = _both_ways(data, points, levels)
     np.testing.assert_array_equal(a.cells.numpy(), b.cells.numpy())
     inside = a.cells.numpy() >= 0
     assert inside.any() and not inside.all()
@@ -438,6 +441,55 @@ def test_a_dense_core_in_a_far_field_is_split_into_leaves(backend):
     (a, _), (b, _) = _both_ways(data, points)
     np.testing.assert_array_equal(a.cells.numpy(), b.cells.numpy())
     assert (a.cells.numpy() >= 0).all()
+
+
+def test_each_bins_leaves_are_the_nearest_to_the_cells_asked_for(backend):
+    """A coarse bin of c cells has (c / _CELLS_PER_LEAF) ** (1 / sides) leaves a side
+    (times its shape), rounded. Viskores truncates, which at its 32 cells a
+    bin over 2 a leaf is 2.52 leaves a side; at Tack's 8 a leaf it is 1.59, and
+    truncated it left every bin of fire_ug.vtu (10,462 cells, about 41 a bin)
+    one leaf: a search scanned 43 candidates where one level scanned 6.6, and
+    the fire port's streamlines took twice as long on every GPU."""
+    from tack.dataset import locator as L
+
+    counts = tack.array(np.array([0, 1, 8, 20, 41, 63, 64, 216], np.int32))
+    dims = tack.empty((3 * 8,), tack.i32)
+    sizes = tack.empty((8,), tack.i64)
+    L._leaf_dims(counts, 1.0, 1.0, 1.0, 3.0, 8.0, dims, sizes)
+    side = [1, 1, 1, 1, 2, 2, 2, 3]
+    np.testing.assert_array_equal(dims.numpy().reshape(-1, 3), np.repeat(side, 3).reshape(-1, 3))
+    np.testing.assert_array_equal(sizes.numpy(), np.power(side, 3))
+    # A flat grid: no leaves across the axis it does not span.
+    L._leaf_dims(counts, 1.0, 1.0, 0.0, 2.0, 8.0, dims, sizes)
+    side = [1, 1, 1, 2, 2, 3, 3, 5]
+    np.testing.assert_array_equal(dims.numpy().reshape(-1, 3),
+                                  np.c_[side, side, np.ones(8, int)])
+
+
+def test_one_level_bins_the_cells_on_the_uniform_grid(backend):
+    """``CellLocator(data, levels=1)`` is Viskores' CellLocatorUniformBins (VTK's
+    vtkStaticCellLocator): the search from the points reads the uniform grid of
+    about ``density`` bins a cell, each bin one leaf, the locator before the
+    two-level grid. It finds what two levels find, bit for bit."""
+    data = td.tetrahedralize(td.wavelet(4))
+    x = data.positions().astype(np.float64)
+    data.fields["lin"] = td.Field(td.H1(data), _scalars(_linear(x)))
+    one = td.CellLocator(data, levels=1)
+    two = td.CellLocator(data)
+    np.testing.assert_array_equal(one.coarse_dims, one.dims)
+    dims, starts = (a.numpy() for a in one.leaves())
+    assert (dims == 1).all()
+    np.testing.assert_array_equal(starts, np.arange(int(np.prod(one.dims))))
+    assert len(one.cell_bins()[0].numpy()) - 1 > len(two.cell_bins()[0].numpy()) - 1
+    lo, hi = x.min(axis=0), x.max(axis=0)
+    points = lo + np.random.default_rng(3).uniform(-0.1, 1.1, (data.num_cells, 3)) * (hi - lo)
+    a, b = one.find(points), two.find(points)
+    np.testing.assert_array_equal(a.cells.numpy(), b.cells.numpy())
+    np.testing.assert_array_equal(a.pcs.numpy(), b.pcs.numpy())
+    np.testing.assert_array_equal(td.probe(data, points, locator=one).fields["lin"].values.numpy(),
+                                  td.probe(data, points, locator=two).fields["lin"].values.numpy())
+    with pytest.raises(ValueError, match="1 or 2 levels"):
+        td.CellLocator(data, levels=3)
 
 
 @needs_vtk

@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `CellLocator(data, levels=1)`: the cells binned on one uniform grid of
+  about `density` bins a cell, every bin a leaf, as Viskores'
+  `CellLocatorUniformBins` and VTK's `vtkStaticCellLocator` bin them; the
+  default, `levels=2`, is the two-level grid (Changed). VTK and Viskores let
+  the caller choose the locator too. On a small, even mesh one level searches
+  fewer candidates (tack-examples' fire port: 6.6 a location, against 12 for
+  two levels); `probe`, `advect` and `streamlines` take it as `locator=`. On
+  a mesh graded toward a body in a far field (the ONERA M6) a few bins hold
+  most of the cells, and two levels are the choice. Both find the same cells
+  and coordinates, bit for bit.
 - `td.merge_points(data, tolerance=0)`: coincident points made one, as VTK's
   `vtkStaticCleanUnstructuredGrid` and Viskores' `CleanGrid` merge them.
   Points at most `tolerance` apart join, and so do chains of them; each set
@@ -672,7 +682,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   only propose cells, and the search ranks them as before. Viskores sizes
   leaves at 2 cells; a bin's count is of the boxes overlapping it, a
   tetrahedron's box about six times its volume, and at 2 the aneurysm's
-  tetrahedra were each entered 34 times (296M entries).
+  tetrahedra were each entered 34 times (296M entries). A bin's leaves a
+  side are rounded, where Viskores truncates: 32 cells a bin over 8 a leaf is
+  1.59 a side, which truncated left every bin of a small, even mesh one leaf.
+  tack-examples' fire port (10,462 cells, about 41 a bin) scanned 43
+  candidates a location, against one level's 6.6, and its streamlines took
+  twice as long on CUDA, HIP and Level Zero (jura's CUDA: 55 ms to 105).
+  Rounded, 12 candidates (jura measured 83 ms with leaves about that size); the
+  aneurysm 99 (110) at 15.6 entries a cell, the M6 unchanged, and the
+  streamlines on the CPU as fast. `CellLocator(data, levels=1)` (Added) is
+  the one level again, for meshes like the fire's.
 - The CPU threading policy fans out a short range of costly elements on its
   first dispatch, and balances it. A range too short for a timing slice ran
   whole on one thread, and the first recheck ran it whole again; fanned out,

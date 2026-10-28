@@ -1225,12 +1225,18 @@ each field's mean over it, as cell data, by `samples` probes a side per voxel
 `HIDDENCELL`. It takes what `probe` takes (datasets, pieces, AMR hierarchies,
 octrees); with one sample it is the probe at the voxel centres.
 
-`CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
+`CellLocator(data, density=1.0, levels=2)` bins the cells' bounding boxes on a
 two-level grid over the dataset, as Viskores' `CellLocatorTwoLevel` does: a
 coarse uniform grid of about 32 cells a bin, each bin split into a uniform
 grid of leaves sized by its count, about 8 cells a leaf. A point is searched
 for among its leaf's cells, so a mesh graded toward a body in a large far
-field (the ONERA M6 wing's) is not all in a few bins. Where the search runs
+field (the ONERA M6 wing's) is not all in a few bins. `CellLocator(data,
+levels=1)` bins the cells on one uniform grid of about `density` bins a cell
+instead, as Viskores' `CellLocatorUniformBins` and VTK's
+`vtkStaticCellLocator` do: on a small, even mesh a search there scans fewer
+candidates (6.6 a location against 12 on tack-examples' fire mesh), and
+on a graded one a few bins hold most of the cells. Pass it as `locator=`; both levels find the same
+cells. Where the search runs
 from the cells instead (cells a by-id search cannot read, or a fresh
 locator's first small query), the points are bucketed into a uniform grid of
 about `density` bins per cell. It records
