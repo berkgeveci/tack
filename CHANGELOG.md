@@ -3,10 +3,44 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
-## Unreleased
+## 0.6.0 — 2026-10-28
+
+The headline: the dataset layer takes data in the shapes simulations write
+it. Meshes in pieces, over devices and MPI ranks, through
+`tack.communication`, a subset of DIY with Tack arrays as messages: ghost
+cells and global ids, merging, probes and particles that cross pieces,
+statistics over ranks, GPU-aware MPI on CUDA and HIP. Point clouds, with a
+point locator, SPH, deposits, friends-of-friends halos and periodic boxes.
+Block-structured AMR and octrees. Physical units on fields and parameters,
+and time on datasets, with filters that stream steps. The filters are
+written with public names only, so users can write their own (the
+Visualization Guide's "Write a Filter" chapter). Around them: polyhedra and
+polygons through probe, gradients and advection; voxelization, cell quality
+and feature edges; a two-level cell locator that took the streamlines of the
+ONERA M6 wing (46.9M cells) from minutes to tens of milliseconds on every
+GPU, 20-33x faster than Viskores' on CUDA, each building its locator; a
+prototype NVIDIA Warp backend; and a performance page against VTK and
+Viskores.
+
+Validated on Linux (CPU; CUDA on an RTX 4060 Ti and an RTX 6000 Ada; HIP on
+two MI210s; Level Zero on an Intel Max 1100), macOS (CPU and Metal on an M1
+Max) and Windows Server 2022 (CPU, and CUDA on a T4 in TCC mode), with debug
+mode, both id widths of the dataset tests and MPI over 2 and 3 ranks,
+together with tack-examples' ports, among them four production datasets (up
+to 46.9M cells and 512 pieces). The dataset filters agree with VTK's at 10k
+to 1M cells. Against 0.5, two known costs remain on Windows' CPU: filters
+over about 10k cells are 5-22% slower on two threads, where the first
+fan-out costs more than it saves, and converting a mesh from VTK is 1.2-1.6x
+slower.
 
 ### Added
 
+- A performance page in the documentation: Tack's filters against VTK and
+  Viskores at 20M hexahedra and tetrahedra on the CPU and the GPU (an EPYC
+  7453 with an RTX 6000 Ada, an M1 Max with its GPU), streamlines on CUDA
+  against Viskores' on the ONERA M6 wing and an aneurysm, and four
+  production datasets against VTK. Every Tack output is checked against
+  VTK's before its time counts.
 - `CellLocator(data, levels=1)`: the cells binned on one uniform grid of
   about `density` bins a cell, every bin a leaf, as Viskores'
   `CellLocatorUniformBins` and VTK's `vtkStaticCellLocator` bin them; the
@@ -46,7 +80,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   f64, merged first with `merge_points`, a tolerance of 1e-12 numbers
   6,310,285 points (the merged mesh's), where exact matching numbers
   6,311,919, and gives VTK's ghost cell count.
-
 - What the built-in filters are written with is public, so a filter of
   your own is written the same way: `td.carry` and its maps (`td.Same`,
   `td.Take`, `td.Pieces`, `td.Interpolate`), `td.keep_marks` and
@@ -108,7 +141,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   gathering them, so an imported mesh stays one copy through the filters.
   Polyhedral, polygonal and polyline topologies keep implicit arrays as
   given.
-
 - Implicit booleans: `td.Union(f, g, ...)`, `td.Intersection(...)` and
   `td.Difference(...)` combine implicit functions as VTK's
   `vtkImplicitBoolean` does (the smallest value, the largest, the first's or
@@ -303,7 +335,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   does; hidden cells and global ids kept. Structured pieces that tile a box
   come back as that box's grid, `split`'s input exactly; others as an
   unstructured dataset. Across MPI ranks it is gathered on a root rank.
-
 - `connected_components(data)`: cells connected through shared points, as
   VTK's `vtkConnectivityFilter` (all regions, numbered alike) and Viskores'
   `CellSetConnectivity`: `region` on the cells and `point_region` on the
@@ -311,7 +342,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   piece labels its own, the copies of shared points join regions across
   pieces, and regions are numbered across every piece and MPI rank, as on
   the whole dataset where the pieces carry its global ids.
-
 - `ghost_cells(pds, layers=n)` makes any number of layers, each grown from
   the points of the layer before (cells of any piece, so pieces thinner than
   `n` cells are fine), equal to `split`'s and `vtkGhostCellsGenerator`'s for
@@ -319,7 +349,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   box of cells become their blocks grown by the layers, with their offsets,
   values from their owners and grown coordinates (uniform, rectilinear or
   explicit), `split`'s ghost layers exactly; `update_ghosts` works on them.
-
 - `probe` of a `PartitionedDataSet`: each point goes to the lowest piece one
   of whose own cells holds it (holding ahead of the locator's tolerance),
   is evaluated there, and its values come back, equal to probing the whole
@@ -329,7 +358,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   blocks' boxes and the caller's ranked test), values sent with them
   (`send`) and answers returned in the points' order (`reply`). Particles
   across pieces now route through it.
-
 - Particles across pieces: `advect` and `streamlines` of a
   `PartitionedDataSet` route each particle to the piece owning the cell
   that holds it, advance it there, and hand it on when a whole step ends in
@@ -341,13 +369,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   stretches it traced, with `seed` and `segment`.
 - `advect` takes its own output as seeds and goes on from there: times,
   steps and status carried, stopped particles left as they are.
-
 - `statistics` and `entropy` of a `PartitionedDataSet` work across MPI
   ranks: each rank passes its pieces (`PartitionedDataSet(..., world=)`),
   and the pieces' moments and histograms are gathered and combined in the
   pieces' global order, so the result has the same bits however the pieces
   are shared out, a rank with none included, and as in one process.
-
 - Global ids: `data.global_ids` (`tack.dataset.GlobalIds`), an `i64` per
   point and per cell, the same on every piece holding it. VTK's `GlobalIds`
   attributes come in as them (no longer as fields) and go back out;
@@ -357,7 +383,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   with ghost cells it keeps the owners the marks say, where VTK reassigns
   them), in one process or across MPI ranks, and `ghost_cells` carries them
   into the ghost layer, matching points by them.
-
 - `ghost_cells(pds)` gives each unstructured piece of a partitioned dataset
   a layer of its neighbours' cells, as VTK's `vtkGhostCellsGenerator` does:
   the same cells, points, marks (a shared point belongs to the lowest piece
@@ -370,12 +395,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   through the two `Plan`s `ghost_cells` keeps, so a second filter that needs
   neighbours (point gradients of projected values) is right on every owned
   point.
-
 - `tack.communication.sort_by_key(blocks, keys, values)`: every block's keys
   sorted together, the global order cut into one range per block, every
   copy of a key on one block (a sample sort, as DIY's), in one process and
   across MPI ranks.
-
 - `tack.communication`: communication between blocks (units of work with
   global ids, each on a device, such as a partitioned dataset's pieces), the
   patterns that algorithms over pieces are written on. `Blocks.exchange`
@@ -391,7 +414,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   new `mpi` extra), staging arrays through the host or, with
   `gpu_aware=True`, handing them to MPI through DLPack. The same cases run
   on both, and a CI job runs them under `mpiexec`.
-
 - `contour` takes a sequence of values, and `slice` and `slice_plane` take
   one as `value` (parallel planes for `slice_plane`): every value's contour
   in one dataset, made in one pass over the cells, each output cell's value
@@ -399,7 +421,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   lines and per-cell (`L2`) lines. 10 values on 1M hexahedra: 38 ms against
   80 for ten contours (CPU). As warp-simdata's `compute_many`, but one
   dataset, as VTK's and Viskores' contour filters give.
-
 - `topology.validate()` checks the arrays a topology is built from, on their
   device, reading back a few integers: offsets that start at 0, never run
   backwards and end at their members' length, ids within range (points,
@@ -409,14 +430,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   made, before anything is derived from them: a bad id from a reader or a
   caller was read or written out of bounds, silently. As warp-simdata's
   `validate_datasets`.
-
 - `for_each(kernel, data, space, ...)` runs a kernel over a space's nodes, each
   once (`DataSet.node_views`): views over points, edges, quad faces or cells
   whose entities have `node_count(i)` nodes with `node_dof(i, j)` and
   `node_position(i, j)`. `interpolate` is now one kernel over them, with no
   table of writers and no sort, and gives the same values; an `L2` geometry,
   which gives a shared node no position of its own, keeps the first cell's.
-
 - A `@tack.device_class` object, or one it holds, can be passed to a
   `@tack.func` or to another template's method -- `helper(obj, i)`,
   `b.combine(a, i)`, `helper(self)`, `helper(self.base)` -- not only to a
@@ -618,21 +637,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   22.2 GB/s a rank over CUDA IPC on one node, 5.9 across two. `World`'s
   docstring says what such an MPI needs of the launch: each rank's device
   made before MPI starts, and every GPU of a node visible to its ranks.
-
 - `slice` and `slice_plane` of a curved dataset (an order-2 geometry) raised
   `NotImplementedError` since #93 made `contour` refuse order-2 fields: the
   implicit function's values are in the geometry's space. They are now
   projected into order-1 H1 first, so the cells are cut linearized at their
   corners, as before #93. Example 43, which contoured an order-2 field, now
   contours its order-1 interpolant. Found on mustafar's CUDA round.
-
 - Face derivation on AMD GPUs: `_sort_buckets` sorts a bucket of up to 16
   entries in a local array and writes it back once, instead of by insertion
   in global memory, where each shift is a store the next comparison reads.
   1M hexahedra on an MI210: the sort 2.48 to 0.76 ms, `faces()` 9.2 to 7.5,
   a fresh `extract_surface` 11.6 to 9.8; unchanged on an H100 and the CPU.
   Found on illyad's round.
-
 - `tetrahedralize` over the pieces of a partitioned dataset splits each face
   pieces share along the same diagonal on both sides. A structured piece
   alternated its hexahedra by the parity of its own (i, j, k), so a piece
@@ -642,9 +658,89 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   offset=)`). Other pieces split from each cell's corner of smallest local
   id, which differs between pieces; they now rank corners by global id where
   the dataset has global ids. A single dataset's tetrahedra are unchanged.
+- The CPU threading policy kept fanning out kernels whose threads contend
+  (many atomics on a few counters: a cell-type histogram over one type, a
+  hot bucket), at 8-9x their serial time on 28 cores. A fan-out measured
+  slower per element than serial was folded into the serial estimate, and
+  the threshold still credited threads with a 10% gain. Now, in a kernel
+  with atomics, such a fan-out is settled by one whole-range serial run: if serial wins, the kernel is
+  contended and runs serially, with the back-off rechecks still trying
+  threads now and then. jura: histogram 41.2 to 4.8 ms (one thread 4.6);
+  yavin, one atomic counter over 1M elements: 39.2 to 2.3 ms. Found and
+  fixed on jura.
+- Implicit functions (`Plane`, `Sphere`, `Cylinder`, `Box`, `Planes`) give
+  the same bits on every backend: each product in `value` is named, so the
+  float contract rounds it on its own and no backend fuses it into a sum.
+  A slice through grid points made 1015 triangles on Metal and 883 on the
+  CPU (Metal's fused multiply-adds left noise about zero where the CPU had
+  exact zeros, which `contour` merges); both now make 883.
+- `as_polyhedra` and `extract_surface` scanned their faces' point counts (4
+  a face) into the mesh's own id type, which a mesh is given for 12 per
+  cell: a structured grid of 170M cells, or 120M hexahedra that share no
+  points, still on 32-bit ids, wrapped the offsets. They now widen to 64 bits
+  when the faces need it. Found by an audit of every scan in Tack; the other
+  46 were covered by their bounds.
+- A point just outside a pyramid, beside its apex, was located in no cell
+  though within the locator's tolerance: Newton runs off there. Within 0.2%
+  of the pyramid's size of the apex, it is now placed just past the apex,
+  outside the hold margin, so it is near the pyramid (a cell holding it
+  still ranks first) and takes the apex's value.
+- A point at a pyramid's apex was located in no cell: every `(r, s)` at
+  `t = 1` maps to the apex, so Newton's Jacobian is singular there and it
+  did not converge. `Pyramid.world_to_parametric` now takes a point within
+  `shapes.APEX_SNAP` (1e-6 of the pyramid's size) of the apex to be at
+  `(0.5, 0.5, 1)`. In `vtkCellTypeSource`'s pyramid grid, all 18 apexes were
+  found by no cell; both searches find them now. A point just outside a
+  pyramid beside its apex, on the mesh's boundary, is still not found.
+- `CellLocator.find`, `probe` and advection: which cell held a point on a
+  face, edge or vertex that cells share was the sign of rounding noise, so
+  the searches from the points and from the cells could put a mesh point in
+  different cells, on the CPU (hexahedra, tetrahedra, wedges, pyramids) as on
+  CUDA. A cell now holds a point within 1e-5 of its parametric domain
+  (`shapes.HOLD_TOLERANCE`), so every cell that has a shared point holds it
+  and the smallest id wins, in both searches and on every backend.
+- CUDA: a product bound to a name, or returned from a device function, was
+  fused into a later statement's sum (NVRTC's `--fmad=true` fuses across
+  statements: all of 100k values on an RTX 4060 Ti), against the float
+  contract's one rounding per named value. The CUDA generator now emits
+  such products as `__fmul_rn`/`__dmul_rn`; a product inside a sum may
+  still fuse, as the contract permits.
+- DLPack: Tack set argument types on `ctypes.pythonapi`'s capsule
+  functions, which are one object for the whole process, so its types and
+  another library's replaced each other. Imported after Warp, Tack made
+  Warp's capsule destructor raise `ArgumentError` at exit; imported before
+  it, Warp's made Tack's destructor miss its capsule, and every array
+  exported through DLPack and never consumed stayed pinned, its device
+  memory never freed. Tack now binds the functions with prototypes of its
+  own and touches nothing shared.
+- `contour` read only an order-2 `H1` field's corner values, so a quadratic
+  that rises inside a cell from zero at its corners gave no surface,
+  silently. It now refuses an order-2 field (`NotImplementedError`) on
+  every path, until cells are subdivided for contouring.
+- CUDA: Tack works in the device's primary context (retained, and released
+  when its last backend goes) instead of creating its own. PyTorch, CuPy and
+  Warp use the primary context, so a launch of Tack's after one of them made
+  it current no longer fails with `CUDA_ERROR_INVALID_HANDLE`. A context an
+  embedding application made current is still adopted as before.
+- `CellLocator.find`, and so `probe`, located a point in the lowest-numbered
+  cell within the tolerance (0.1% of a cell's box diagonal), whether or not
+  it held the point, and extrapolated there. On a Delaunay mesh of 16k
+  tetrahedra, 2006 of 75k probes were wrong, by up to 1.7. Now a cell that
+  holds the point ranks ahead of one it only comes near, and advection ranks
+  its cells the same way. On GPUs without 64-bit atomics (Metal, Level Zero)
+  the locator's limit halves, to 2^30 − 1 cells.
+- `probe` grouped its points with two radix sorts whenever some lay outside
+  the mesh (they share one bucket): 57 launches. `buckets.bucket_groups`
+  counts, scans and scatters instead, leaving the unread bucket unfilled:
+  19 launches, and on an RTX 4060 Ti 10.5 → 4.0 ms for 100k points.
 
 ### Changed
 
+- **Breaking:** the VTK interop needs VTK 9.7.1 or later (the `interop`
+  extra requires `vtk>=9.7.1`), and uses VTK's pythonic API throughout:
+  keyword constructors, properties, dict-like point and cell data, implicit
+  arrays. A one-component `vtkConstantArray` or `vtkAffineArray` in point or
+  cell data becomes a `ConstantArray` or `CountingArray` field, and back.
 - `key_order`, which merges contour and slice crossings, keeps the bucket
   sort on CUDA, HIP and Level Zero until buckets outnumber keys 64 to 1
   (8 to 1 on the CPU and Metal, as before). On CUDA the buckets were
@@ -827,7 +923,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   copy of its planes in the geometry's floating type on its device, made
   once. A plane at x = 0.1 was off by about 1e-9 on f64 data unless
   `dtype=tack.f64` was asked for.
-
 - `tetrahedralize` makes tetrahedra that meet face to face, as VTK's
   `vtkDataSetTriangleFilter` does. Viskores' fixed tables split each
   hexahedron the same way, so neighbours cut their shared face along
@@ -839,7 +934,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   quadrilateral face split from its own smallest corner, whatever order the
   cells and points come in: hexahedra and voxels give 6 tetrahedra (were 5),
   wedges 3, pyramids 2, as VTK's counts.
-
 - `probe`, `advect` and `streamlines` given no locator reuse the one the
   mesh's topology keeps (`cached_locator`), instead of building one per
   call: probing 100k points in 1M hexahedra again takes 13 ms instead of
@@ -851,7 +945,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   dataset of the same topology and geometry, not only the dataset it was
   made from. Writes through memory shared with another library are not
   seen.
-
 - `contour` and `slice` where the isovalue equals a point's value: the
   crossings of every edge at that point are now that point, once, and a
   triangle, polygon or line left with two corners at one point is dropped,
@@ -867,7 +960,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   mesh of one type, as most readers give, put every worker on one atomic
   counter. A fresh unstructured mesh paid this before its first filter
   (found comparing with warp-simdata on the CPU).
-
 - `gradients` and `flow_quantities` work on polyhedra, which have no
   reference element: each cell's gradient is Green–Gauss over its faces,
   each fanned into triangles from the mean of its points, which is exact for
@@ -908,13 +1000,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   connectivity=...))`, `cells.offsets_array`, `grid.cell_types`). Code that
   reads a topology's arrays as `tack.Array`s should use `numpy()`,
   `np.asarray` or `tack.arrays.materialize`, which accept both.
-
 - **Breaking:** `CellLocator.find` returns `Locations(cells, pcs, tets)`, a
   named tuple of three on every dataset, where it returned `(cells, pcs)`,
   or `(cells, tets, pcs)` on polyhedra. `tets` is `None` except on
   polyhedra. `cells, pcs = locator.find(p)` becomes
   `cells, pcs, _ = locator.find(p)`, or reads `.cells` and `.pcs`.
-
 - `CellLocator.find` and `probe` search from the points where cells can be read
   by id (`tack.dataset.by_id`: an order-1 geometry over the linear shapes,
   structured grids, polyhedra): one launch over the points instead of two
@@ -925,13 +1015,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   GPU. The cell-side search remains for what `by_id` cannot serve, and for a
   fresh locator's first query of few points in many cells, which it answers
   without building the cell bins; both give the same answer.
-
 - Structured grids derive their faces and edges by arithmetic, in one pass
   over the cells with no sort: ids, sides, orientations and signs identical to
   the general derivation's. On a grid of 1M hexahedra, faces 24 → 7.9 ms and
   edges 22 → 9.5 ms on an M1 Max's CPU, 32 → 13.6 ms and 35 → 7.8 ms on its
   GPU; up to 7× on small grids.
-
 - `CellLocator`, `probe` and advection run on polygons, and `CellLocator` and
   `probe` on polylines. A polygon is fanned from the mean of its points into
   triangles, and a point within the tolerance of one is located there (held
@@ -939,88 +1027,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   linear field); a polyline locates on its segments, point data linear along
   them. Polygons not star-shaped from their mean point are refused, as such
   polyhedra are.
-
-### Fixed
-
-- The CPU threading policy kept fanning out kernels whose threads contend
-  (many atomics on a few counters: a cell-type histogram over one type, a
-  hot bucket), at 8-9x their serial time on 28 cores. A fan-out measured
-  slower per element than serial was folded into the serial estimate, and
-  the threshold still credited threads with a 10% gain. Now, in a kernel
-  with atomics, such a fan-out is settled by one whole-range serial run: if serial wins, the kernel is
-  contended and runs serially, with the back-off rechecks still trying
-  threads now and then. jura: histogram 41.2 to 4.8 ms (one thread 4.6);
-  yavin, one atomic counter over 1M elements: 39.2 to 2.3 ms. Found and
-  fixed on jura.
-
-- Implicit functions (`Plane`, `Sphere`, `Cylinder`, `Box`, `Planes`) give
-  the same bits on every backend: each product in `value` is named, so the
-  float contract rounds it on its own and no backend fuses it into a sum.
-  A slice through grid points made 1015 triangles on Metal and 883 on the
-  CPU (Metal's fused multiply-adds left noise about zero where the CPU had
-  exact zeros, which `contour` merges); both now make 883.
-
-- `as_polyhedra` and `extract_surface` scanned their faces' point counts (4
-  a face) into the mesh's own id type, which a mesh is given for 12 per
-  cell: a structured grid of 170M cells, or 120M hexahedra that share no
-  points, still on 32-bit ids, wrapped the offsets. They now widen to 64 bits
-  when the faces need it. Found by an audit of every scan in Tack; the other
-  46 were covered by their bounds.
-- A point just outside a pyramid, beside its apex, was located in no cell
-  though within the locator's tolerance: Newton runs off there. Within 0.2%
-  of the pyramid's size of the apex, it is now placed just past the apex,
-  outside the hold margin, so it is near the pyramid (a cell holding it
-  still ranks first) and takes the apex's value.
-
-- A point at a pyramid's apex was located in no cell: every `(r, s)` at
-  `t = 1` maps to the apex, so Newton's Jacobian is singular there and it
-  did not converge. `Pyramid.world_to_parametric` now takes a point within
-  `shapes.APEX_SNAP` (1e-6 of the pyramid's size) of the apex to be at
-  `(0.5, 0.5, 1)`. In `vtkCellTypeSource`'s pyramid grid, all 18 apexes were
-  found by no cell; both searches find them now. A point just outside a
-  pyramid beside its apex, on the mesh's boundary, is still not found.
-- `CellLocator.find`, `probe` and advection: which cell held a point on a
-  face, edge or vertex that cells share was the sign of rounding noise, so
-  the searches from the points and from the cells could put a mesh point in
-  different cells, on the CPU (hexahedra, tetrahedra, wedges, pyramids) as on
-  CUDA. A cell now holds a point within 1e-5 of its parametric domain
-  (`shapes.HOLD_TOLERANCE`), so every cell that has a shared point holds it
-  and the smallest id wins, in both searches and on every backend.
-- CUDA: a product bound to a name, or returned from a device function, was
-  fused into a later statement's sum (NVRTC's `--fmad=true` fuses across
-  statements: all of 100k values on an RTX 4060 Ti), against the float
-  contract's one rounding per named value. The CUDA generator now emits
-  such products as `__fmul_rn`/`__dmul_rn`; a product inside a sum may
-  still fuse, as the contract permits.
-- DLPack: Tack set argument types on `ctypes.pythonapi`'s capsule
-  functions, which are one object for the whole process, so its types and
-  another library's replaced each other. Imported after Warp, Tack made
-  Warp's capsule destructor raise `ArgumentError` at exit; imported before
-  it, Warp's made Tack's destructor miss its capsule, and every array
-  exported through DLPack and never consumed stayed pinned, its device
-  memory never freed. Tack now binds the functions with prototypes of its
-  own and touches nothing shared.
-- `contour` read only an order-2 `H1` field's corner values, so a quadratic
-  that rises inside a cell from zero at its corners gave no surface,
-  silently. It now refuses an order-2 field (`NotImplementedError`) on
-  every path, until cells are subdivided for contouring.
-- CUDA: Tack works in the device's primary context (retained, and released
-  when its last backend goes) instead of creating its own. PyTorch, CuPy and
-  Warp use the primary context, so a launch of Tack's after one of them made
-  it current no longer fails with `CUDA_ERROR_INVALID_HANDLE`. A context an
-  embedding application made current is still adopted as before.
-
-- `CellLocator.find`, and so `probe`, located a point in the lowest-numbered
-  cell within the tolerance (0.1% of a cell's box diagonal), whether or not
-  it held the point, and extrapolated there. On a Delaunay mesh of 16k
-  tetrahedra, 2006 of 75k probes were wrong, by up to 1.7. Now a cell that
-  holds the point ranks ahead of one it only comes near, and advection ranks
-  its cells the same way. On GPUs without 64-bit atomics (Metal, Level Zero)
-  the locator's limit halves, to 2^30 − 1 cells.
-- `probe` grouped its points with two radix sorts whenever some lay outside
-  the mesh (they share one bucket): 57 launches. `buckets.bucket_groups`
-  counts, scans and scatters instead, leaving the unread bucket unfilled:
-  19 launches, and on an RTX 4060 Ti 10.5 → 4.0 ms for 100k points.
 
 ## 0.5.0 — 2026-10-22
 
