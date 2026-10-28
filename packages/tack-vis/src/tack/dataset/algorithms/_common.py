@@ -9,6 +9,7 @@ import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import size_of
+from tack.dataset.ghosts import _before
 from tack.dataset.ids import at_least
 
 
@@ -23,6 +24,17 @@ def _crossing(level, a, b):
     elif b - b != 0.0:
         w = 0.0
     return w
+
+
+@tack.func
+def _first_end(xa, xb, a, b):
+    """Whether an edge's crossing is interpolated from its end ``a`` (at ``xa``) rather
+    than ``b``: the end first by position (x, then y, then z, as ghost marks give
+    a crossing its owner), the lower id only between coincident points. Point
+    ids are a piece's own, positions every piece's alike, so every piece -- and
+    every cell -- holding the edge computes its crossing, and the values carried
+    there, from the same end, to the same bits."""
+    return _before(xa, xb) or (not _before(xb, xa) and a < b)
 
 
 #: Constant tables as device arrays, per backend (released with it) and key.
