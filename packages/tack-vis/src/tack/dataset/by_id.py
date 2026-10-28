@@ -273,8 +273,9 @@ def cells_by_id(data, positions, strict=True):
 
 @tack.device_class
 class _MeshSearch:
-    """A point's cell by the locator's two-level cell bins (``CellLocator.cell_bins``),
-    ranked as the locator ranks them, and the shapes' functions by cell id."""
+    """A point's cell by the locator's cell bins (``CellLocator.cell_bins``, of one
+    level or two), ranked as the locator ranks them, and the shapes' functions
+    by cell id."""
 
     #: ``find_from`` tries the cell it is given before the bins; 0 searches every
     #: time (the tests compare the two, bit for bit).

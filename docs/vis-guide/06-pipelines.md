@@ -130,6 +130,24 @@ took 708 ms against its host CPU's 24.5. For a few seeds on a mesh that
 lives on a GPU, advect a CPU copy of it (`data.to_device("cpu")`); the
 locator is built where the mesh is.
 
+**Choose the locator by the mesh.** Each step finds the particle's cell
+among the candidates its bin holds. The default locator bins the cells on
+two levels, as Viskores' `CellLocatorTwoLevel` does, so a mesh graded toward
+a body in a large far field (the M6 wing's cells span a millionfold in size)
+is not all in a few bins. On a small mesh of cells of about one size, one
+uniform grid of bins, as Viskores' `CellLocatorUniformBins` and VTK's
+`vtkStaticCellLocator` have, holds fewer candidates a bin: in tack-examples'
+fire room (10,462 hexahedra) a search scans 6.6 cells against 12. Build it
+and pass it in:
+
+```python
+locator = td.CellLocator(data, levels=1)
+paths = td.streamlines(data, "velocity", seeds, 0.02, 2500, locator=locator)
+```
+
+`probe` and `advect` take it the same way. Both locators find the same cells,
+so the paths are the same bit for bit; only the time differs.
+
 The example's `[-y, x, 0]` velocity rotates a point at unit angular speed.
 Twenty steps of 0.05 reach time 1. The program checks the final positions
 against sine and cosine, and checks path lengths against the radii times
