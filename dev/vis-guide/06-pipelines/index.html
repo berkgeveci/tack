@@ -3954,6 +3954,20 @@ few thousand seeds the CPU is usually faster; above, the GPU. On a
 took 708 ms against its host CPU's 24.5. For a few seeds on a mesh that
 lives on a GPU, advect a CPU copy of it (<code>data.to_device("cpu")</code>); the
 locator is built where the mesh is.</p>
+<p><strong>Choose the locator by the mesh.</strong> Each step finds the particle's cell
+among the candidates its bin holds. The default locator bins the cells on
+two levels, as Viskores' <code>CellLocatorTwoLevel</code> does, so a mesh graded toward
+a body in a large far field (the M6 wing's cells span a millionfold in size)
+is not all in a few bins. On a small mesh of cells of about one size, one
+uniform grid of bins, as Viskores' <code>CellLocatorUniformBins</code> and VTK's
+<code>vtkStaticCellLocator</code> have, holds fewer candidates a bin: in tack-examples'
+fire room (10,462 hexahedra) a search scans 6.6 cells against 12. Build it
+and pass it in:</p>
+<div class="highlight"><pre><span></span><code><span class="n">locator</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">CellLocator</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">paths</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">streamlines</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="mi">2500</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="n">locator</span><span class="p">)</span>
+</code></pre></div>
+<p><code>probe</code> and <code>advect</code> take it the same way. Both locators find the same cells,
+so the paths are the same bit for bit; only the time differs.</p>
 <p>The example's <code>[-y, x, 0]</code> velocity rotates a point at unit angular speed.
 Twenty steps of 0.05 reach time 1. The program checks the final positions
 against sine and cosine, and checks path lengths against the radii times
