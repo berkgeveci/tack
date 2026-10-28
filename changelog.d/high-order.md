@@ -22,6 +22,13 @@
   numbering, on any other basis (Bernstein) evaluated at Tack's nodes,
   exactly either way. `mfem_grid_function(data, field, mesh)` gives a field
   back as an MFEM `GridFunction`, the same DOFs in MFEM's numbering.
+- VTK's Lagrange cells: `vtk_to_dataset` reads a grid of
+  `VTK_LAGRANGE_CURVE`, `_QUADRILATERAL` or `_HEXAHEDRON` cells of one order
+  `p` as linear cells on their corners with the geometry and point data in
+  `H1(order=p, nodes="equispaced")`, VTK's nodes; `dataset_to_vtk(...,
+  higher_order=True)` writes a high-order or curved dataset of those shapes as
+  Lagrange cells of its largest order, each shared node one point, which VTK
+  evaluates as Tack does.
 - `contour`, `slice` and `slice_plane` take `subdivision=`: on the tensor
   shapes, a field above order 1 or a curved geometry is cut on linear
   sub-cells, by default as many lattice steps as the largest order of the

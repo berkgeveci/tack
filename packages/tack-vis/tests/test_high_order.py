@@ -375,3 +375,76 @@ def test_slices_of_a_curved_geometry_lie_on_their_plane(backend):
     np.testing.assert_allclose((cut.positions() - 1.0) @ (normal / np.linalg.norm(normal)), 0,
                                atol=1e-12)
     assert _open_edges(cut) > 0                      # a slice is open, where the mesh ends
+
+
+# ── VTK's Lagrange cells ────────────────────────────────────────────
+
+def _vtk_values_at(grid, name, pcs):
+    """VTK's own evaluation of a Lagrange grid: each cell's position and ``name`` at
+    each of ``pcs``."""
+    vtk = pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from vtkmodules.vtkCommonCore import reference
+
+    cell = vtk.vtkGenericCell()
+    xs, us = [], []
+    array = grid.point_data[name]
+    for c in range(grid.number_of_cells):
+        grid.GetCell(c, cell)
+        for pc in pcs:
+            weights = [0.0] * cell.GetNumberOfPoints()
+            x = [0.0, 0.0, 0.0]
+            cell.EvaluateLocation(reference(0), list(pc), x, weights)
+            xs.append(x)
+            us.append(sum(w * array.GetValue(cell.GetPointId(k)) for k, w in enumerate(weights)))
+    return np.array(xs), np.array(us)
+
+
+@pytest.mark.parametrize("order", [2, 3])
+def test_lagrange_cells_are_vtks(backend, order):
+    """``dataset_to_vtk(..., higher_order=True)`` writes VTK Lagrange hexahedra that VTK
+    evaluates as Tack does (positions and values at random parametric points), each
+    shared node one point; ``vtk_to_dataset`` reads them back into the same spaces."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+
+    data = _rotated(_hexes(), seed=4)
+    space = td.H1(data, order=order)
+    data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _cubic, space)
+    data.fields["c"] = td.Field(td.Constant(data),
+                                tack.array(np.arange(data.num_cells, dtype=np.float64)))
+    grid = dataset_to_vtk(data, higher_order=True)
+    assert set(np.asarray(grid.cell_types).tolist()) == {72}
+    assert grid.number_of_points == td.H1(data, order=order, nodes="equispaced").size
+    pcs = np.random.default_rng(order).uniform(0.05, 0.95, (3, 3))
+    xs, us = _vtk_values_at(grid, "u", pcs)
+    probed = td.probe(data, xs)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), us, atol=1e-8)
+    back = vtk_to_dataset(grid, dtype=tack.f64)
+    assert back.geometry.space is td.H1(back, order=order, nodes="equispaced")
+    np.testing.assert_allclose(td.probe(back, xs).fields["u"].values.numpy(), us, atol=1e-8)
+    np.testing.assert_array_equal(back.fields["c"].values.numpy(), np.arange(data.num_cells))
+
+
+def test_vtks_own_lagrange_hexahedra(backend):
+    """VTK's Lagrange hexahedra of order 3 from ``vtkCellTypeSource``, a cubic of the
+    points as point data: Tack reads them as ``H1`` of order 3 on equispaced nodes
+    and evaluates them as VTK does."""
+    vtk = pytest.importorskip("vtkmodules.vtkFiltersSources")
+    from vtkmodules.vtkCommonCore import vtkDoubleArray
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    source = vtk.vtkCellTypeSource(cell_type=72, cell_order=3, blocks_dimensions=(2, 2, 2))
+    grid = source()
+    x = np.asarray(grid.points.data, np.float64)
+    grid.point_data["u"] = vtkDoubleArray(_cubic_at(x))
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    assert data.fields["u"].space is td.H1(data, order=3, nodes="equispaced")
+    assert data.num_cells == 8
+    pcs = np.random.default_rng(9).uniform(0.05, 0.95, (4, 3))
+    xs, us = _vtk_values_at(grid, "u", pcs)
+    # Within the locator's Newton tolerance.
+    np.testing.assert_allclose(td.probe(data, xs).fields["u"].values.numpy(), us, atol=1e-7)
+    np.testing.assert_allclose(us, _cubic_at(xs), atol=1e-7)       # VTK's own, near exact
