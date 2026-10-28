@@ -85,7 +85,7 @@ class GPUBackend(Backend):
         """
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_traversal import clone_ir
-        from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_type_annotate import annotate_types, refuse_f64
         from tack.lang.ir_verify import verify_ir
 
         packed = clone_ir(ir_func)
@@ -93,6 +93,8 @@ class GPUBackend(Backend):
         verify_ir(packed, 'packed')
         annotate_types(packed)
         verify_ir(packed, 'typed')
+        if not self.supports_f64:
+            refuse_f64(packed, self.label)
         compiled = self._compile_kernel(packed)
         return compiled, pack_info, self._variant_scalar_buffers(pack_info, effective_args)
 

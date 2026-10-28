@@ -1184,13 +1184,16 @@ class CPUBackend(Backend):
         compiled.object_code = object_code
         return compiled
 
-    @staticmethod
-    def _build_variant(ir_func, effective_args):
-        """Annotate types and JIT-compile. Runs once per variant."""
-        from tack.lang.ir_type_annotate import annotate_types
+    def _build_variant(self, ir_func, effective_args):
+        """Annotate types and JIT-compile. Runs once per variant. A CPU posing as a
+        device without f64 (the tests') refuses f64 in the kernel as that device
+        would."""
+        from tack.lang.ir_type_annotate import annotate_types, refuse_f64
         from tack.lang.ir_verify import verify_ir
         annotate_types(ir_func)
         verify_ir(ir_func, 'typed')
+        if not self.supports_f64:
+            refuse_f64(ir_func, self.label)
         return _compile_kernel(ir_func)
 
     # ── Dispatch: serial or fan-out ──────────────────────────────────

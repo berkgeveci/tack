@@ -219,7 +219,7 @@ zeros, with unspecified result sign on a zero tie; NaNs/infinities remain
 outside their domain.
 See `test_atomic_contract.py` and the language contract.
 
-Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
+Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. A backend without f64 refuses a kernel whose typed IR computes in f64 (`ir_type_annotate.refuse_f64`, called after `annotate_types` in `GPUBackend._build_variant`, `CPUBackend._build_variant` and `inspect`), naming the cause; so `test_dataset_devices`' CPU without f64 catches what Metal's compiler would (`test_f64_refused.py`). Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 
 ### Kernel execution flow
 

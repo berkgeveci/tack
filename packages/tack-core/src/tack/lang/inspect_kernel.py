@@ -107,6 +107,10 @@ def _prepare_ir(kernel, args, *, backend=None):
     # Type annotation
     annotate_types(ir_func)
     verify_ir(ir_func, 'typed')
+    if backend is not None and not backend.supports_f64:
+        from tack.lang.ir_type_annotate import refuse_f64
+
+        refuse_f64(ir_func, backend.label)
 
     return ir_func, effective_args
 
