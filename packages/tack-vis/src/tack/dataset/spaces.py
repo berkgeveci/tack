@@ -39,11 +39,13 @@ launches each shape group once per key, with the view ``mixin_for(key)``,
 so every launch is specialized as a uniform space's is.
 """
 
+import os
 import weakref
 
 import numpy as np
 
 import tack
+from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import CountingArray, size_of
 from tack.dataset import bases, ids, shapes, views
@@ -79,7 +81,10 @@ class Space:
             space.topology = topology
             space.params = params
             for name, value in params.items():
-                setattr(space, name, value)
+                # A property of the same name resolves the parameter itself (L2's
+                # layout, whose "auto" depends on the device).
+                if not isinstance(getattr(cls, name, None), property):
+                    setattr(space, name, value)
             interned[key] = space
         return space
 
@@ -209,6 +214,12 @@ def _basis_tables(space, group, dtype):
                       "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
                       "corner_node": device(corner, tack.i32)}
     return cache[key]
+
+
+def _on_gpu(topology):
+    """Whether ``topology`` lives on a GPU, where ``L2``'s ``"auto"`` layout is
+    cell-fastest above order 2."""
+    return topology.device.type != "cpu"
 
 
 def _float_type(dtype, device):
@@ -386,17 +397,35 @@ class L2(Space):
     up, or ``nodes="gauss_legendre"`` at any order from 1, are on segments, quads,
     pixels, hexahedra and voxels (``tack.dataset.bases``): ``(order + 1)^d`` values
     a cell in node order, the first axis fastest, on the 1D ``nodes``
-    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``."""
+    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``.
+
+    ``layout`` says how a tensor basis' values are stored: ``"blocks"``, each
+    cell's together (value ``n`` of cell ``c`` at ``offsets[c] + n``: MFEM's and
+    VTK cell grids' layout), or ``"cells"``, cell-fastest (``n * num_cells + c``,
+    so neighbouring GPU threads read neighbouring values). ``"auto"`` (the
+    default) is ``"cells"`` for a tensor basis of order 3 or more on a GPU and
+    ``"blocks"`` otherwise -- each faster where it is chosen (the vault's
+    coefficient-layout proposal) -- read from the topology's device, so moving
+    a field to another device may change it (``to_device`` transposes). The
+    environment variable ``TACK_L2_LAYOUT`` (``cells`` or ``blocks``) overrides
+    ``"auto"`` for tensor bases, to run everything one way. Corner values (order
+    0 and 1) and an order per cell are always blocks."""
 
     interpolated = True
     nodes = None
+    LAYOUTS = ("auto", "blocks", "cells")
 
     @classmethod
-    def _params(cls, order=1, nodes="gauss_lobatto"):
+    def _params(cls, order=1, nodes="gauss_lobatto", layout="auto"):
+        if layout not in cls.LAYOUTS:
+            raise ValueError(f"L2's layout is one of {', '.join(cls.LAYOUTS)}, not {layout!r}")
         if _is_array(order):
             if nodes != "gauss_lobatto":
                 raise NotImplementedError("an order per cell is on corner values, the "
                                           "default nodes")
+            if layout == "cells":
+                raise ValueError("an order per cell has no common stride: its layout is "
+                                 "blocks")
             return {"order": order}
         order = int(order)
         if order < 0:
@@ -404,7 +433,55 @@ class L2(Space):
         family = _nodes_param(nodes, order, bases.FAMILIES, "L2")
         if order == 0:
             family = None                   # one value at the center, whatever the nodes
-        return {"order": order} if family is None else {"order": order, "nodes": family}
+        tensor = order >= 2 or family == "gauss_legendre"
+        if layout == "cells" and not tensor:
+            raise ValueError("corner values (order 0 and 1) are stored in blocks; a "
+                             "cell-fastest layout is for tensor bases")
+        out = {"order": order} if family is None else {"order": order, "nodes": family}
+        if layout != "auto" and tensor:
+            out["layout"] = layout
+        return out
+
+    @property
+    def layout(self):
+        """``"blocks"`` or ``"cells"``: how this space stores a cell's values."""
+        asked = self.params.get("layout", "auto")
+        if not self.tensor:
+            return "blocks"
+        if asked != "auto":
+            return asked
+        forced = os.environ.get("TACK_L2_LAYOUT", "")
+        if forced:
+            if forced not in ("blocks", "cells"):
+                raise ValueError(f"TACK_L2_LAYOUT is blocks or cells, not {forced!r}")
+            return forced if self._uniform() else "blocks"
+        return "cells" if _on_gpu(self.topology) and self.order >= 3 and self._uniform() \
+            else "blocks"
+
+    def _uniform(self):
+        """Whether every cell holds as many values: cells of one dimension."""
+        return len({g.shape.DIMENSION for g in self.topology.groups() if g.count}) <= 1
+
+    def indices(self):
+        """A host ``(num_cells, values a cell)`` array: where each cell's value ``n`` is
+        in this space's values (blocks of one size only)."""
+        n = self.topology.num_cells
+        per_cell = self.size // max(n, 1)
+        if self.layout == "cells":
+            return np.arange(per_cell)[None, :] * n + np.arange(n)[:, None]
+        offsets = np.asarray(arrays.to_host(self.offsets)).reshape(-1)
+        return offsets[:n, None] + np.arange(per_cell)[None, :]
+
+    def blocks(self, values):
+        """``values`` (a host array of a field of this space) as ``(num_cells, values a
+        cell, ...)``, each cell's in node order, whatever the layout. Blocks of one
+        size only (a tensor basis, or corner values of one shape)."""
+        values = np.asarray(values)
+        n = self.topology.num_cells
+        per_cell = self.size // max(n, 1)
+        if self.layout == "cells":
+            return np.moveaxis(values.reshape((per_cell, n, *values.shape[1:])), 0, 1)
+        return values.reshape((n, per_cell, *values.shape[1:]))
 
     @property
     def varies(self):
@@ -418,7 +495,9 @@ class L2(Space):
     @property
     def mixin(self):
         if self.tensor:
-            return views.of_order(views._L2TensorField, self.order)
+            cells = self.layout == "cells"
+            return views.of_order(views._L2CellsField if cells else views._L2TensorField,
+                                  self.order)
         return views._L2Field
 
     def mixin_for(self, key, shape=None):
@@ -508,6 +587,8 @@ class L2(Space):
         attributes = {"offsets": self.offsets}
         if self.tensor and group is not None:
             attributes.update(_basis_tables(self, group, dtype or tack.f32))
+        if self.layout == "cells":
+            attributes["layout_cells"] = self.topology.num_cells
         return attributes
 
     def __repr__(self):

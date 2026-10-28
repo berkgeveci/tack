@@ -167,6 +167,16 @@ def _keep_blocks(marks, skipped, offsets, flags):
 
 
 @tack.kernel
+def _keep_cells(marks, skipped, per_cell, flags):
+    # The same, cell-fastest: value k of cell c at k * cells + c.
+    n = marks.shape[0]
+    for c in range(n):
+        keep = 1 if (marks[c] & skipped) == 0 else 0
+        for k in range(per_cell):
+            flags[k * n + c] = keep
+
+
+@tack.kernel
 def _kept(flags, slots, ids):
     for i in range(flags.shape[0]):
         if flags[i] == 1:
@@ -213,7 +223,9 @@ def owned_values(data, field):
         return values
     flags = tack.empty((n,), tack.i32)
     if isinstance(space, L2):
-        if marks.shape[0]:
+        if marks.shape[0] and space.layout == "cells":
+            _keep_cells(marks, skipped, space.size // marks.shape[0], flags)
+        elif marks.shape[0]:
             _keep_blocks(marks, skipped, space.offsets, flags)
     elif n:
         _keep(marks, skipped, flags)

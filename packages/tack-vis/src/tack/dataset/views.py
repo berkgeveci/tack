@@ -1355,8 +1355,12 @@ class _L2Field(_Interpolated):
     ORDER = 1
 
     @tack.func
+    def dof_index(self, i, j):
+        return self.offsets[self.entity_id(i)] + j
+
+    @tack.func
     def dof(self, i, j):
-        return self.get(self.offsets[self.entity_id(i)] + j)
+        return self.get(self.dof_index(i, j))
 
 
 class _L2Order0Field:
@@ -1364,6 +1368,10 @@ class _L2Order0Field:
     cells of order 0 in a variable-order L2 field."""
 
     ORDER = 0
+
+    @tack.func
+    def dof_index(self, i, j):
+        return self.offsets[self.entity_id(i)]
 
     @tack.func
     def dof(self, i, j):
@@ -1746,11 +1754,34 @@ class _H1TensorField(_TensorDofs, _TensorBasis):
 
 class _L2TensorField(_TensorBasis):
     """L2 on tensor shapes at order 2 or more, or on Gauss-Legendre nodes: each cell's
-    ``(ORDER + 1)^d`` values from ``offsets[cell]``, in node order."""
+    ``(ORDER + 1)^d`` values from ``offsets[cell]``, in node order (layout
+    ``"blocks"``)."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return self.offsets[self.entity_id(c)] + n
 
     @tack.func
     def dof(self, c, n):
-        return self.get(self.offsets[self.entity_id(c)] + n)
+        return self.get(self.dof_index(c, n))
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.value(c, self.parametric_point(j))
+
+
+class _L2CellsField(_TensorBasis):
+    """L2 on a tensor basis, cell-fastest (layout ``"cells"``): value ``n`` of cell
+    ``c`` at ``n * layout_cells + c``, so threads on neighbouring cells read
+    neighbouring values."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return n * self.layout_cells + self.entity_id(c)
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.dof_index(c, n))
 
     @tack.func
     def corner_value(self, c, j):
@@ -2121,7 +2152,8 @@ class _TensorInteriorNodes:
 
 class _TensorCellNodes:
     """``L2`` on a tensor basis: a cell's ``(ORDER + 1)^d`` nodes, in node order, where
-    its geometry maps them."""
+    its geometry maps them (layout ``"blocks"``; ``_TensorCellNodesCells`` is
+    cell-fastest)."""
 
     @tack.func
     def node_count(self, i):
@@ -2143,6 +2175,15 @@ class _TensorCellNodes:
         if self.DIMENSION == 3:
             pc[2] = self.node_points[j // (q * q)]
         return self.position(i, pc)
+
+
+class _TensorCellNodesCells(_TensorCellNodes):
+    """``L2`` on a tensor basis, cell-fastest: node ``j`` of cell ``i`` at ``j *
+    node_cells + i``."""
+
+    @tack.func
+    def node_dof(self, i, j):
+        return j * self.node_cells + self.entity_id(i)
 
 
 # ── Groups and view classes ─────────────────────────────────────────

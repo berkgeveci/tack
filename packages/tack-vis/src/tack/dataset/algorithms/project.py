@@ -32,11 +32,11 @@ def _cell_means(cells, u, out):
 
 @tack.kernel
 def _tensor_cell_nodes(cells, u, t, offsets, out):
-    # An L2 cell's values on a tensor basis: the source at the target's nodes.
+    # An L2 cell's values on a tensor basis: the source at the target's nodes,
+    # stored where the target's layout keeps them.
     for c in cells:
-        first = offsets[cells.entity_id(c)]
         for n in range((t.ORDER + 1) ** cells.DIMENSION):
-            out[first + n] = u.value(c, t.node_parametric(n))
+            out[t.dof_index(c, n)] = u.value(c, t.node_parametric(n))
 
 
 @tack.kernel
