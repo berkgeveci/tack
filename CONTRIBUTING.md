@@ -204,7 +204,14 @@ rule, so it has not been made. Match what is around you.
 
 ## Submitting
 
-Open a PR against `main`. CI runs lint, the suite on Python 3.11/3.12/3.13, the
+Record what the PR changes for users in a file of its own in `changelog.d/`
+(see its README), under the CHANGELOG's headings: `### Added`, `### Changed`
+(`- **Breaking:**` first if it breaks something) or `### Fixed`. Do not edit
+`CHANGELOG.md`: a release gathers the files into it
+(`python tools/changelog.py release VERSION DATE`), so two PRs never conflict
+over it.
+
+Open a PR against `main`. CI runs lint (with `tools/changelog.py check`), the suite on Python 3.11/3.12/3.13, the
 packaging gate, the example sweep, and a Metal job on an Apple Silicon runner.
 All of them should be green.
 

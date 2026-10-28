@@ -67,6 +67,13 @@ jobs:
       - name: Ruff
         run: uvx ruff check --output-format=github .
 
+      # CHANGELOG entries are files in changelog.d/ (one per change, so pull
+      # requests never conflict over CHANGELOG.md), gathered at release.
+      - name: Changelog entries
+        run: |
+          python3 tools/changelog.py check
+          cd tools && uv run --no-project --with pytest pytest -q
+
   # ── Docs ───────────────────────────────────────────────────────────
   #
   # --strict makes a broken internal link or a page missing from the nav a

@@ -21,6 +21,16 @@ Both share the `tack` namespace via `pkgutil.extend_path` in tack-core's `tack/_
 
 The docs site has the same catch: Griffe (mkdocstrings) loads tack-core's `tack` alone, so `docs/_ext/tack_namespace.py`, a Griffe extension named in `mkdocs.yml`, loads tack-vis's subpackages into it. The Visualization Guide's reference pages render the docstrings: `docs/vis-guide/reference/algorithms.md` (every algorithm in a group, with a row in the group's table: what it gives, takes, and its VTK and Viskores counterparts) and `data-model.md` (everything else `tack.dataset` exports, and the interop). A new algorithm or export needs its entry; `test_reference_pages.py` checks.
 
+**The CHANGELOG is gathered, not edited.** A change's entries go in a file
+of its own in `changelog.d/` (named for the change, under `### Added`,
+`### Changed`, `### Fixed`; `- **Breaking:**` entries under Changed), so pull
+requests never conflict over `CHANGELOG.md`. `python tools/changelog.py
+check` (CI's lint job) parses them, `preview` shows the next release's
+sections, and `release VERSION YYYY-MM-DD` writes them into `CHANGELOG.md`
+and deletes the files; edit `CHANGELOG.md` only at a release (its summary).
+`tools/` tests itself alone (`cd tools && uv run --no-project --with pytest
+pytest`; its `pytest.ini` keeps the repository's conftest out).
+
 ## Build & Test Commands
 
 ```bash

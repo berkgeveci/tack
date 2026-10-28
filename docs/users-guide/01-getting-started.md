@@ -9,7 +9,8 @@ first example needs no GPU runtime.
 ### Follow this guide from source
 
 The guide and its tutorial scripts describe the current checkout, including
-[unreleased additions](https://github.com/berkgeveci/tack/blob/main/CHANGELOG.md).
+[unreleased additions](https://github.com/berkgeveci/tack/tree/main/changelog.d)
+(the next release's CHANGELOG entries, a file each).
 To use the same API and run the commands shown throughout the guide, install
 the checkout with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
