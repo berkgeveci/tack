@@ -192,7 +192,7 @@ array accesses.
 
 | Space | Values | Interpolated | Topologies |
 |---|---|---|---|
-| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels |
+| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face; order `p` (`nodes=`) `p - 1` per edge, `(p - 1)^2` per quad face, `(p - 1)^d` per cell | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels; any order on segments, quads, pixels, hexahedra and voxels |
 | `L2(data, order=1)` | each cell's own copies: order 1 one per corner, order 0 one per cell; `order` may be an array, one order per cell | yes, discontinuous | shape-based |
 | `Constant(data)` | one per cell | yes, constant in the cell | all |
 | `Values(data, on, oriented=False)` | one per point, edge, face or cell: data about the entity, with no basis | no | all |
@@ -257,7 +257,7 @@ data.fields["t"] = td.interpolate(data, temperature, td.H1(data, order=2))
 
 | Space | Its nodes |
 |---|---|
-| `H1` | the points; at order 2 also edge middles, quad face centers and cell centers |
+| `H1` | the points; at order 2 also edge middles, quad face centers and cell centers; at order `p` the products of the 1D nodes on each edge, quad face and cell |
 | order-1 `L2` | each cell's corners |
 | `Constant`, order-0 `L2`, `Values(data, "cells")` | each cell's parametric center |
 | `Values(data, "points")` | the points |
@@ -1027,7 +1027,7 @@ and "polyline" `PolylineTopology`.
 | `boundary_faces`, `extract_surface` | yes (a 2D mesh's boundary: line cells; by default `extract_surface` passes a 2D mesh's cells through) | yes (the surface is polygonal) | yes (boundary: line cells; by default the polygons pass through) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `net_flux`, `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
-| `contour`, `slice`, `slice_plane` | yes (`dimension=` 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an `L2` field or geometry gives each cell its own points; an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | yes (`contour`: vertex cells, of point data) |
+| `contour`, `slice`, `slice_plane` | yes (`dimension=` 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an `L2` field or geometry gives each cell its own points; on segments, quads and hexahedra a field above order 1 or a curved geometry is cut on linear sub-cells, `subdivision=` steps along each axis or as many as `tolerance=` needs; elsewhere an order-2 `H1` field is refused, since its corners alone would be contoured) | yes (López, face-based) | yes (line cells) | yes (`contour`: vertex cells, of point data) |
 | `clip` | yes (with an `H1` geometry) | yes (into polyhedra: faces clipped once, iso-polygons as caps) | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
@@ -1036,7 +1036,7 @@ and "polyline" `PolylineTopology`.
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (in the polygon's plane, Green–Gauss over its edges; 2D cells on shapes in their plane too) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
-| `project` into or from `L2`, order-2 `H1`, `SideTraces` | yes | no | no | no |
+| `project` into or from `L2`, `H1` above order 1, `SideTraces` | yes | no | no | no |
 | side traces, and `jump`/`upwind_flux` of point data | yes | no | no | no |
 
 Where the table says "no", the algorithm needs a reference element and
