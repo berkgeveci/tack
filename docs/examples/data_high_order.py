@@ -50,8 +50,17 @@ def run(arch, check):
     linear = td.subdivide(curved, 3)                        # 27 hexahedra a cell
     print(cut.num_cells, "triangles;", linear.num_cells, "linear cells")
     # --8<-- [end:curved]
+    # --8<-- [start:layout]
+    dg = td.L2(data, order=3, nodes="gauss_legendre")             # "auto": by device
+    across = td.L2(data, order=3, nodes="gauss_legendre", layout="cells")
+    p, q = (td.interpolate(data, blob, s) for s in (dg, across))
+    print(dg.layout, across.layout, dg.blocks(p.values.numpy()).shape)
+    # --8<-- [end:layout]
     if check:
         assert np.abs(probed - exact).max() < 1e-5               # f32
+        assert across.layout == "cells"
+        assert dg.layout == ("blocks" if arch == "cpu" else "cells")
+        assert np.array_equal(dg.blocks(p.values.numpy()), across.blocks(q.values.numpy()))
         assert space.size == 17 ** 3                        # (4 * 4 + 1)^3 nodes
         assert coarse.num_cells < fine.num_cells < within.num_cells
         x = within.positions()

@@ -279,6 +279,28 @@ MFEM fields of any order on quads and hexahedra come across through
 (`dataset_to_vtk(..., higher_order=True)` writes them). Other shapes stop at
 order 2 for now.
 
+### Where a cell's values sit
+
+An `L2` field of a tensor basis has a layout. `"blocks"` keeps each cell's
+values together, as MFEM and VTK store them; `"cells"` stores value `n` of
+every cell together, so that GPU threads working on neighbouring cells read
+neighbouring memory. The default, `"auto"`, picks `"cells"` for order 3 and up
+on a GPU and `"blocks"` everywhere else, because each is the faster one where
+it is picked: at order 6 cell-fastest reads 2.3 times and writes 3.6 times
+faster on an RTX 4060 Ti, and blocks read about 1.6 times and write about twice
+as fast on a CPU.
+
+```python
+--8<-- "docs/examples/data_high_order.py:layout"
+```
+
+Every operation gives the same answer in either layout; only the order of
+`field.values` differs. `space.blocks(values)` reads them per cell, `(cells,
+values a cell)`, whatever the layout, and `space.indices()` says where each is.
+Moving a dataset to another device may change an `"auto"` layout, and
+`to_device` reorders the values. MFEM and the VTK interop take and give either.
+Set `TACK_L2_LAYOUT=cells` (or `blocks`) to run everything one way.
+
 ## A material interface exposes the difference
 
 The [two-cell example](01-datasets.md) has material 1 on the left and 3 on the
