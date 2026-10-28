@@ -110,6 +110,12 @@ def _norm2(x):
     return x.dot(x)
 
 
+def _of_order_3(data):
+    """``data`` with ``h``, its field ``s`` in ``H1`` of order 3."""
+    data.fields["h"] = td.project(data, data.fields["s"], td.H1(data, order=3))
+    return data
+
+
 #: Every public algorithm, as a call on a dataset; each must run on the
 #: dataset's device and leave its results there.
 CALLS = {
@@ -156,6 +162,10 @@ CALLS = {
     "discontinuous": lambda d: td.project(d, "s", td.L2(d)),
     "project": lambda d: td.project(d, "s", td.Constant(d)),
     "interpolate": lambda d: td.interpolate(d, _norm2, td.H1(d, order=2)),
+    "interpolate of order 4": lambda d: td.interpolate(d, _norm2, td.H1(d, order=4)),
+    "subdivide": lambda d: td.subdivide(d, 2),
+    "contour of order 3": lambda d: td.contour(_of_order_3(d), "h", 3.0),
+    "contour by tolerance": lambda d: td.contour(_of_order_3(d), "h", 3.0, tolerance=1e-2),
     "traces": lambda d: td.project(d, "s", td.SideTraces(d)),
     "jump": lambda d: td.jump(d, "s"),
     "face_centers": td.face_centers,
