@@ -5929,6 +5929,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.runtime.backend.Backend.release_memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        release_memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.runtime.backend.Backend.synchronize" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -8496,6 +8507,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.runtime.backend.Backend.release_memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        release_memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.runtime.backend.Backend.synchronize" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -10830,12 +10852,12 @@ array's components in one array each (see <code>SoaArray</code>).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">894</span>
-<span class="normal">895</span>
-<span class="normal">896</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">896</span>
 <span class="normal">897</span>
 <span class="normal">898</span>
-<span class="normal">899</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">zeros</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">f32</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;aos&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">899</span>
+<span class="normal">900</span>
+<span class="normal">901</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">zeros</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">f32</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;aos&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array of zeros, filled on the device.&quot;&quot;&quot;</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="n">layout</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">a</span><span class="o">.</span><span class="n">_starts_zeroed</span><span class="p">:</span>
@@ -10867,11 +10889,11 @@ array's components in one array each (see <code>SoaArray</code>).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">902</span>
-<span class="normal">903</span>
-<span class="normal">904</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">904</span>
 <span class="normal">905</span>
-<span class="normal">906</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ones</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">f32</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;aos&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">906</span>
+<span class="normal">907</span>
+<span class="normal">908</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ones</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">f32</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;aos&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array of ones.&quot;&quot;&quot;</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">empty</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="n">layout</span><span class="p">)</span>
     <span class="n">a</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
@@ -10910,9 +10932,7 @@ element <code>dtype</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">909</span>
-<span class="normal">910</span>
-<span class="normal">911</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">911</span>
 <span class="normal">912</span>
 <span class="normal">913</span>
 <span class="normal">914</span>
@@ -10921,7 +10941,9 @@ element <code>dtype</code>.</p>
 <span class="normal">917</span>
 <span class="normal">918</span>
 <span class="normal">919</span>
-<span class="normal">920</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">full</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">fill_value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;aos&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">920</span>
+<span class="normal">921</span>
+<span class="normal">922</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">full</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">fill_value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;aos&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array with every element ``fill_value``.</span>
 
 <span class="sd">    Without ``dtype``, a Python float gives f32 and an int i32 (i64 if it</span>
@@ -10963,15 +10985,15 @@ the defaults.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">943</span>
-<span class="normal">944</span>
-<span class="normal">945</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">945</span>
 <span class="normal">946</span>
 <span class="normal">947</span>
 <span class="normal">948</span>
 <span class="normal">949</span>
 <span class="normal">950</span>
-<span class="normal">951</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">empty_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">951</span>
+<span class="normal">952</span>
+<span class="normal">953</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">empty_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new uninitialized array of ``prototype``&#39;s shape and dtype.</span>
 
 <span class="sd">    ``prototype`` is a Tack or NumPy array; nothing is read from it. A scalar</span>
@@ -11006,12 +11028,12 @@ the defaults.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">954</span>
-<span class="normal">955</span>
-<span class="normal">956</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">956</span>
 <span class="normal">957</span>
 <span class="normal">958</span>
-<span class="normal">959</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">zeros_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">959</span>
+<span class="normal">960</span>
+<span class="normal">961</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">zeros_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array of zeros of ``prototype``&#39;s shape and dtype.&quot;&quot;&quot;</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">layout</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">a</span><span class="o">.</span><span class="n">_starts_zeroed</span><span class="p">:</span>
@@ -11043,11 +11065,11 @@ the defaults.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">962</span>
-<span class="normal">963</span>
-<span class="normal">964</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">964</span>
 <span class="normal">965</span>
-<span class="normal">966</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ones_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">966</span>
+<span class="normal">967</span>
+<span class="normal">968</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">ones_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array of ones of ``prototype``&#39;s shape and dtype.&quot;&quot;&quot;</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">layout</span><span class="p">)</span>
     <span class="n">a</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
@@ -11083,11 +11105,11 @@ the defaults.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">969</span>
-<span class="normal">970</span>
-<span class="normal">971</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">971</span>
 <span class="normal">972</span>
-<span class="normal">973</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">full_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">fill_value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">973</span>
+<span class="normal">974</span>
+<span class="normal">975</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">full_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">fill_value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array of ``prototype``&#39;s shape and dtype, every element ``fill_value``.&quot;&quot;&quot;</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">prototype</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">layout</span><span class="p">)</span>
     <span class="n">a</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">fill_value</span><span class="p">)</span>
@@ -11126,9 +11148,7 @@ interleaved.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 976</span>
-<span class="normal"> 977</span>
-<span class="normal"> 978</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 978</span>
 <span class="normal"> 979</span>
 <span class="normal"> 980</span>
 <span class="normal"> 981</span>
@@ -11160,7 +11180,9 @@ interleaved.</p>
 <span class="normal">1007</span>
 <span class="normal">1008</span>
 <span class="normal">1009</span>
-<span class="normal">1010</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1010</span>
+<span class="normal">1011</span>
+<span class="normal">1012</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A new array holding a copy of ``obj``: a NumPy array, a sequence or a Tack array.</span>
 
 <span class="sd">    Without ``dtype``, all of ``obj``&#39;s dimensions are array dimensions, a</span>
@@ -11223,9 +11245,7 @@ else <code>array(obj, dtype, device=device, layout=layout)</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1013</span>
-<span class="normal">1014</span>
-<span class="normal">1015</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1015</span>
 <span class="normal">1016</span>
 <span class="normal">1017</span>
 <span class="normal">1018</span>
@@ -11235,7 +11255,9 @@ else <code>array(obj, dtype, device=device, layout=layout)</code>.</p>
 <span class="normal">1022</span>
 <span class="normal">1023</span>
 <span class="normal">1024</span>
-<span class="normal">1025</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">asarray</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1025</span>
+<span class="normal">1026</span>
+<span class="normal">1027</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">asarray</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``obj`` itself if it is a Tack array of ``dtype`` (or any, without one)</span>
 <span class="sd">    on ``device`` (or any, without one) in ``layout`` (or either, without one),</span>
 <span class="sd">    else `array(obj, dtype, device=device, layout=layout)`.&quot;&quot;&quot;</span>
@@ -11276,9 +11298,7 @@ and any float argument gives f32.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1070</span>
-<span class="normal">1071</span>
-<span class="normal">1072</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1072</span>
 <span class="normal">1073</span>
 <span class="normal">1074</span>
 <span class="normal">1075</span>
@@ -11289,7 +11309,9 @@ and any float argument gives f32.</p>
 <span class="normal">1080</span>
 <span class="normal">1081</span>
 <span class="normal">1082</span>
-<span class="normal">1083</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">arange</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1083</span>
+<span class="normal">1084</span>
+<span class="normal">1085</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">arange</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Evenly spaced values in ``[start, stop)``, as ``np.arange``.</span>
 
 <span class="sd">    Without ``dtype``, integer arguments give i32 (i64 if a value needs it)</span>
@@ -11329,9 +11351,7 @@ runs.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1086</span>
-<span class="normal">1087</span>
-<span class="normal">1088</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1088</span>
 <span class="normal">1089</span>
 <span class="normal">1090</span>
 <span class="normal">1091</span>
@@ -11352,7 +11372,9 @@ runs.</p>
 <span class="normal">1106</span>
 <span class="normal">1107</span>
 <span class="normal">1108</span>
-<span class="normal">1109</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">concat</span><span class="p">(</span><span class="n">arrays</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1109</span>
+<span class="normal">1110</span>
+<span class="normal">1111</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">concat</span><span class="p">(</span><span class="n">arrays</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Join a sequence of arrays end to end into a new one-dimensional array.</span>
 
 <span class="sd">    All arrays must have the same dtype and be on one device, where the copy</span>
@@ -11666,9 +11688,7 @@ array; <code>np.copyto</code> copies between NumPy arrays.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1028</span>
-<span class="normal">1029</span>
-<span class="normal">1030</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1030</span>
 <span class="normal">1031</span>
 <span class="normal">1032</span>
 <span class="normal">1033</span>
@@ -11705,7 +11725,9 @@ array; <code>np.copyto</code> copies between NumPy arrays.</p>
 <span class="normal">1064</span>
 <span class="normal">1065</span>
 <span class="normal">1066</span>
-<span class="normal">1067</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">copyto</span><span class="p">(</span><span class="n">dst</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">src</span><span class="p">):</span>
+<span class="normal">1067</span>
+<span class="normal">1068</span>
+<span class="normal">1069</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">copyto</span><span class="p">(</span><span class="n">dst</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">src</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy ``src`` into the existing array ``dst``, as ``np.copyto`` does.</span>
 
 <span class="sd">    ``src`` is host data -- a NumPy array, a sequence or a scalar -- whose</span>
@@ -13522,9 +13544,7 @@ texture and no other texture can be handed it.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1237</span>
-<span class="normal">1238</span>
-<span class="normal">1239</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1239</span>
 <span class="normal">1240</span>
 <span class="normal">1241</span>
 <span class="normal">1242</span>
@@ -13553,7 +13573,9 @@ texture and no other texture can be handed it.</p>
 <span class="normal">1265</span>
 <span class="normal">1266</span>
 <span class="normal">1267</span>
-<span class="normal">1268</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_array</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">interp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;linear&#39;</span><span class="p">):</span>
+<span class="normal">1268</span>
+<span class="normal">1269</span>
+<span class="normal">1270</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_array</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">interp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;linear&#39;</span><span class="p">):</span>
     <span class="c1"># Every hardware path builds a single-channel 32-bit float image,</span>
     <span class="c1"># so f64 data would be reinterpreted rather than converted.</span>
     <span class="k">if</span> <span class="n">source_array</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">f32</span><span class="p">:</span>
@@ -13620,9 +13642,7 @@ texture and no other texture can be handed it.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1270</span>
-<span class="normal">1271</span>
-<span class="normal">1272</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1272</span>
 <span class="normal">1273</span>
 <span class="normal">1274</span>
 <span class="normal">1275</span>
@@ -13630,7 +13650,9 @@ texture and no other texture can be handed it.</p>
 <span class="normal">1277</span>
 <span class="normal">1278</span>
 <span class="normal">1279</span>
-<span class="normal">1280</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">1280</span>
+<span class="normal">1281</span>
+<span class="normal">1282</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy the array&#39;s current data into the texture.</span>
 
 <span class="sd">    Sampling after this sees the array as it is now, on every backend.</span>
@@ -13665,9 +13687,9 @@ texture and no other texture can be handed it.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1286</span>
-<span class="normal">1287</span>
-<span class="normal">1288</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">w</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1288</span>
+<span class="normal">1289</span>
+<span class="normal">1290</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">w</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Sample at normalized coordinates. Only usable inside @tack.kernel.&quot;&quot;&quot;</span>
     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Texture3D.sample() can only be used inside a @tack.kernel&quot;</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -13835,9 +13857,7 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1161</span>
-<span class="normal">1162</span>
-<span class="normal">1163</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1163</span>
 <span class="normal">1164</span>
 <span class="normal">1165</span>
 <span class="normal">1166</span>
@@ -13892,7 +13912,9 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
 <span class="normal">1215</span>
 <span class="normal">1216</span>
 <span class="normal">1217</span>
-<span class="normal">1218</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array_from_ptr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">writable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1218</span>
+<span class="normal">1219</span>
+<span class="normal">1220</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array_from_ptr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">writable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap existing device memory as a Tack array without copying.</span>
 
 <span class="sd">    Use this for interop with external libraries (pycuda, cupy, Catalyst)</span>
@@ -14008,9 +14030,7 @@ pointer resides.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1141</span>
-<span class="normal">1142</span>
-<span class="normal">1143</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1143</span>
 <span class="normal">1144</span>
 <span class="normal">1145</span>
 <span class="normal">1146</span>
@@ -14025,7 +14045,9 @@ pointer resides.</p>
 <span class="normal">1155</span>
 <span class="normal">1156</span>
 <span class="normal">1157</span>
-<span class="normal">1158</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">memory_space</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">1158</span>
+<span class="normal">1159</span>
+<span class="normal">1160</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">memory_space</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Query the memory space of a pointer.</span>
 
 <span class="sd">    Uses ``device`` (by default the default device) to determine where the</span>
@@ -14085,9 +14107,7 @@ a = tack.from_dlpack(vtk_capsule)</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1112</span>
-<span class="normal">1113</span>
-<span class="normal">1114</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1114</span>
 <span class="normal">1115</span>
 <span class="normal">1116</span>
 <span class="normal">1117</span>
@@ -14111,7 +14131,9 @@ a = tack.from_dlpack(vtk_capsule)</p>
 <span class="normal">1135</span>
 <span class="normal">1136</span>
 <span class="normal">1137</span>
-<span class="normal">1138</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">from_dlpack</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">copy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1138</span>
+<span class="normal">1139</span>
+<span class="normal">1140</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">from_dlpack</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">copy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A Tack array from a DLPack capsule or any object with ``__dlpack__``.</span>
 
 <span class="sd">    Zero-copy: the array shares memory with the source, and the source is</span>
@@ -19585,6 +19607,39 @@ device through <code>DeviceBuffer.fill</code> and need nothing here.</p>
 <div class="doc doc-object doc-function">
 
 
+<h4 id="tack.runtime.backend.Backend.release_memory" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">release_memory</span>
+
+
+<a href="#tack.runtime.backend.Backend.release_memory" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">release_memory</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Free memory kept for reuse (a cache of dropped arrays' buffers), so an
+allocation that ran out of memory can try again (<code>lang.array._allocate</code>).
+Nothing by default.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">release_memory</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Free memory kept for reuse (a cache of dropped arrays&#39; buffers), so an</span>
+<span class="sd">    allocation that ran out of memory can try again (``lang.array._allocate``).</span>
+<span class="sd">    Nothing by default.&quot;&quot;&quot;</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h4 id="tack.runtime.backend.Backend.synchronize" class="doc doc-heading">
             <span class="doc doc-object-name doc-function-name">synchronize</span>
 
@@ -19604,14 +19659,14 @@ kernels, or handing memory to a library Tack cannot see, waits.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">199</span>
 <span class="normal">200</span>
-<span class="normal">201</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">synchronize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">synchronize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wait until every kernel launched so far has finished.</span>
 
 <span class="sd">    Backends whose launches complete before ``execute`` returns need not</span>
@@ -19650,18 +19705,18 @@ blocking, for one that queues launches and has not added a mark.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">203</span>
-<span class="normal">204</span>
-<span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
-<span class="normal">208</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">208</span>
 <span class="normal">209</span>
 <span class="normal">210</span>
 <span class="normal">211</span>
 <span class="normal">212</span>
 <span class="normal">213</span>
-<span class="normal">214</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">async_marker</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">async_marker</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A mark after every launch queued so far that another thread can</span>
 <span class="sd">    wait on -- an object with a blocking ``wait()``, which raises a</span>
 <span class="sd">    launch&#39;s error as `synchronize` would -- or None.</span>
@@ -19701,15 +19756,15 @@ memory override this and list the results in
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">221</span>
 <span class="normal">222</span>
 <span class="normal">223</span>
-<span class="normal">224</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">memory_space</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ptr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">memory_space</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ptr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Classify where an integer pointer lives.</span>
 
 <span class="sd">    The default says host memory, which is correct for backends whose</span>
@@ -19744,10 +19799,10 @@ does not store compiled variants on disk. See <code>disk_cache</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">236</span>
-<span class="normal">237</span>
-<span class="normal">238</span>
-<span class="normal">239</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cache_target</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cache_target</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;What compiled code for this backend depends on besides the kernel, as a</span>
 <span class="sd">    string (the device, the compiler&#39;s version), or None if this backend</span>
 <span class="sd">    does not store compiled variants on disk. See ``disk_cache``.&quot;&quot;&quot;</span>
@@ -19776,10 +19831,10 @@ from which <code>load_variant</code> rebuilds it in another process.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">241</span>
-<span class="normal">242</span>
-<span class="normal">243</span>
-<span class="normal">244</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">variant_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">variant_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;What of a compiled variant&#39;s payload to store on disk: picklable data</span>
 <span class="sd">    from which ``load_variant`` rebuilds it in another process.&quot;&quot;&quot;</span>
     <span class="k">raise</span> <span class="ne">NotImplementedError</span>
@@ -19810,13 +19865,13 @@ pack buffers. CPU and Metal ignore them.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">246</span>
-<span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span>
-<span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">load_variant</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ir_func</span><span class="p">,</span> <span class="n">artifact</span><span class="p">,</span> <span class="n">effective_args</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">load_variant</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ir_func</span><span class="p">,</span> <span class="n">artifact</span><span class="p">,</span> <span class="n">effective_args</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The payload of a variant, from what ``variant_artifact`` stored.</span>
 
 <span class="sd">    ``effective_args`` are the call&#39;s arguments, for what the payload</span>
@@ -19848,11 +19903,11 @@ pack buffers. CPU and Metal ignore them.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reduce_array</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">array</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reduce_array</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">array</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Reduce an array on the device. Only called when</span>
 <span class="sd">    `supports_device_reductions` is True.&quot;&quot;&quot;</span>
     <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
@@ -19886,16 +19941,16 @@ always holds the storage its compiled kernel binds.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">265</span>
 <span class="normal">266</span>
 <span class="normal">267</span>
 <span class="normal">268</span>
-<span class="normal">269</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">texture_in_hardware</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">texture_in_hardware</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether a `Texture3D` of this extent is sampled by texture units.</span>
 
 <span class="sd">    False means the texture keeps a private array and the generated</span>
@@ -19932,15 +19987,15 @@ the array into it, and frees the device objects when collected.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/runtime/backend.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">271</span>
-<span class="normal">272</span>
-<span class="normal">273</span>
-<span class="normal">274</span>
-<span class="normal">275</span>
-<span class="normal">276</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">276</span>
 <span class="normal">277</span>
 <span class="normal">278</span>
-<span class="normal">279</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_texture_image</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">):</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_texture_image</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Allocate a single-channel f32 3D texture image.</span>
 
 <span class="sd">    Only called when `texture_in_hardware()` is True. The result is</span>

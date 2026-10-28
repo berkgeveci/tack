@@ -4163,7 +4163,7 @@ Tack did not allocate with the same <code>Array</code> class.</p>
 <tr>
 <td>HIP</td>
 <td><code>HIPBuffer</code></td>
-<td><code>hipMallocAsync</code> on the device's stream (<code>hipMalloc</code> without memory pools)</td>
+<td><code>hipMalloc</code> through a cache of dropped arrays' buffers, reused in stream order (<code>hipMallocAsync</code> with <code>TACK_HIP_ALLOCATOR=pool</code>)</td>
 <td>zeros, from a queued <code>hipMemsetAsync</code></td>
 <td><code>hipMemcpyAsync</code> (queued) / <code>hipMemcpyAsync</code> and a wait</td>
 </tr>

@@ -3919,6 +3919,13 @@ end: they follow from the contract, and no vendor fix would remove them.</p>
 <td><code>test_launch_limits.py</code></td>
 </tr>
 <tr>
+<td>Arrays take <code>hipMalloc</code> memory through Tack's cache of dropped arrays' buffers (<code>buffer_cache.BufferCache</code>, <code>_Queue.cache</code>), not the stream-ordered pool.</td>
+<td>ROCm 7.1.1 on two MI210s (illyad, 2026-10-27)</td>
+<td><code>hipMallocAsync</code> slows with every allocation the pool has made (<code>amd::VmHeap::InsertBlock</code>): over the 512 eta pieces' global ids from 63 to 600 µs a call, 2.7 ms when trimmed after each step, and the port stalled for two hours. Plain <code>hipMalloc</code> stays at 17 µs, but each <code>hipFree</code> waits for the device (the pieces' contours 24.7 s against 7.8 pooled).</td>
+<td><code>runtime/hip_backend.py</code> (<code>HIPBuffer</code>, <code>_Queue</code>), <code>runtime/buffer_cache.py</code>; <code>TACK_HIP_ALLOCATOR=pool</code> for the pool</td>
+<td><code>test_buffer_cache.py</code>; <code>test_multi_device_switching.py</code> (each device's cache its own)</td>
+</tr>
+<tr>
 <td>A GPU-aware MPI is handed <code>hipMalloc</code> memory, never the stream-ordered pool's: <code>tack.communication</code> copies an array into a buffer from <code>allocate_mpi_array</code> before a send and receives into one (<code>HIPBackend.mpi_direct</code>).</td>
 <td>MVAPICH-Plus 4.1 for ROCm 7.1.1, its embedded UCX with <code>libuct_rocm</code>; two MI210s (illyad, 2026-10-24)</td>
 <td>HSA reports pool memory (<code>hipMallocAsync</code>) as <code>HSA_EXT_POINTER_TYPE_HSA_VMEM</code>, which this UCX takes for host memory: a send asserts (<code>rndv_rtr.c:121 rkey_size == packed_rkey_size</code>) or, eagerly, segfaults reading the device address. <code>hipMalloc</code> memory (<code>HSA</code>) goes through at 44 GB/s a rank; the copy costs a device-to-device pass.</td>
