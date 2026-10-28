@@ -165,7 +165,7 @@ def test_a_structured_grid_shares_its_points():
 
 
 def test_a_tack_dataset_is_shared_with_vtk():
-    data = vtk_to_dataset(_tetrahedra())            # Tack's own arrays: i32 ids
+    data = vtk_to_dataset(_tetrahedra())            # Tack's own arrays, in its id width
     grid = dataset_to_vtk(data, copy=False)
     topology = data.topology
     assert _shares(data.geometry.values, grid.points.data)
@@ -174,8 +174,10 @@ def test_a_tack_dataset_is_shared_with_vtk():
     assert _shares(data.ghosts.cells, grid.cell_data["vtkGhostType"])
     assert _shares(topology.connectivity, grid.cells.connectivity_array)
     assert _shares(topology.offsets, grid.cells.offsets_array)
-    # i32 ids stay i32: VTK keeps 32-bit cell arrays too.
-    assert topology.connectivity.dtype == tack.i32 and not grid.cells.IsStorage64Bit()
+    # Ids keep their width: VTK keeps 32-bit cell arrays as well as 64-bit ones.
+    wide = topology.connectivity.dtype == tack.i64
+    assert topology.connectivity.dtype in (tack.i32, tack.i64)
+    assert bool(grid.cells.IsStorage64Bit()) == wide
     copied = dataset_to_vtk(data)
     np.testing.assert_array_equal(np.asarray(grid.points.data), np.asarray(copied.points.data))
     np.testing.assert_array_equal(np.asarray(grid.cells.connectivity_array),
