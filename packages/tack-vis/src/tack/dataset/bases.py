@@ -32,7 +32,7 @@ import numpy as np
 
 from tack.dataset import shapes
 
-__all__ = ["FAMILIES", "dof_tables", "nodes", "tensor_shape", "weights"]
+__all__ = ["FAMILIES", "bernstein", "dof_tables", "nodes", "tensor_shape", "weights"]
 
 FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre")
 #: The families with nodes at the ends, which shared values need.
@@ -94,6 +94,23 @@ def weights(family, order):
     w = 1.0 / np.prod(difference, axis=1)
     w.setflags(write=False)
     return w
+
+
+@functools.cache
+def bernstein(family, order):
+    """The matrix taking a 1D polynomial's values at ``nodes(family, order)`` to its
+    Bernstein coefficients, row ``i`` the ``i``-th coefficient. The polynomial lies
+    between its least and greatest coefficients (the convex hull property), so a
+    tensor product of these bounds a cell's geometry, or a field over the cell."""
+    from math import comb
+
+    x = nodes(family, order)
+    p = int(order)
+    at = np.array([[comb(p, j) * t ** j * (1.0 - t) ** (p - j) for j in range(p + 1)]
+                   for t in x])
+    m = np.linalg.inv(at)
+    m.setflags(write=False)
+    return m
 
 
 # ── Shapes: their corners, edges and faces on the host ──────────────

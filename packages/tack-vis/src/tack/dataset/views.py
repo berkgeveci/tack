@@ -31,7 +31,7 @@ the cell ``c`` the loop is at.
 """
 
 import tack
-from tack.dataset.shapes import HOLD_TOLERANCE
+from tack.dataset.shapes import HOLD_TOLERANCE, NEWTON_DIVERGED, NEWTON_TOLERANCE
 
 # ── Entity kinds ────────────────────────────────────────────────────
 
@@ -822,6 +822,11 @@ def quadratic_faces(shape):
 # ── Geometry ────────────────────────────────────────────────────────
 
 
+#: Newton steps for a curved cell: more than the corners' 10, which a polynomial
+#: map of higher degree can take from the center.
+CURVED_NEWTON_ITERATIONS = tack.constant(20, tack.i32)
+
+
 class _Geometry:
     """The geometry field, read through an entity: ``corner_position(i, j)``, which a storage
     mixin below defines, and what follows from it at parametric coordinates.
@@ -847,6 +852,41 @@ class _Geometry:
         for j in range(self.NUM_POINTS):
             x += self.shape_function(j, pc) * self.corner_position(i, j)
         return x
+
+    #: Whether the geometry is curved (of order 2 or more), so that locating a point
+    #: takes ``curved_to_parametric`` and a cell's bounds ``control_box``.
+    CURVED = 0
+
+    @tack.func
+    def control_box(self, i):
+        """``(lo, hi)``, a box holding the cell: here its corners'."""
+        a = self.corner_position(i, 0)
+        b = a
+        for j in range(1, self.NUM_POINTS):
+            p = self.corner_position(i, j)
+            a = min(a, p)
+            b = max(b, p)
+        return a, b
+
+    @tack.func
+    def curved_to_parametric(self, i, x):
+        """``world_to_parametric`` on the geometry itself: Newton's method from the
+        parametric center on ``position`` and ``geometry_jacobian``, the shape's
+        step and VTK's stopping rules, so a curved cell is inverted as it is,
+        not as its corners make it. Returns ``(pc, converged)``."""
+        pc = self.parametric_center()
+        converged = 0
+        for _ in range(CURVED_NEWTON_ITERATIONS):
+            step = self._newton_step(self.geometry_jacobian(i, pc), x - self.position(i, pc))
+            pc += step
+            if not (abs(pc[0]) < NEWTON_DIVERGED and abs(pc[1]) < NEWTON_DIVERGED
+                    and abs(pc[2]) < NEWTON_DIVERGED):
+                break
+            if (abs(step[0]) <= NEWTON_TOLERANCE and abs(step[1]) <= NEWTON_TOLERANCE
+                    and abs(step[2]) <= NEWTON_TOLERANCE):
+                converged = 1
+                break
+        return pc, converged
 
     @tack.func
     def geometry_jacobian(self, i, pc):
@@ -899,7 +939,50 @@ class _L2Geometry(_Geometry):
 class _H1Order2Geometry(_QuadraticDofs, _Geometry):
     """Curved geometry: an order-2 H1 field of positions. ``corner_position(c, j)`` is still
     corner ``j``'s; positions and Jacobians inside go through the quadratic
-    functions. Its edge and face ids come from the domain view's incidence."""
+    functions. Its edge and face ids come from the domain view's incidence.
+    Tetrahedra, triangles and wedges (hexahedra and quads take the tensor
+    geometry, ``_H1TensorGeometry``, of order 2)."""
+
+    CURVED = 1
+
+    @tack.func
+    def _edge_between(self, a, b):
+        found = 0
+        for e in range(self.NUM_EDGES):
+            ea = self.edge_corner(e, 0)
+            eb = self.edge_corner(e, 1)
+            if (ea == a and eb == b) or (ea == b and eb == a):
+                found = e
+        return found
+
+    @tack.func
+    def control_box(self, c):
+        """The box of the cell's Bernstein control points, which hold it: its corners,
+        each edge's ``2 m - (x0 + x1) / 2`` (``m`` its middle node), and each quad
+        face's ``4 f - (its edges' middles) + (its corners) / 4``."""
+        a = self.corner_position(c, 0)
+        b = a
+        for j in range(1, self.NUM_POINTS):
+            p = self.corner_position(c, j)
+            a = min(a, p)
+            b = max(b, p)
+        for e in range(self.NUM_EDGES):
+            p = (2.0 * self.get(self.dof_index(c, self.NUM_POINTS + e))
+                 - 0.5 * (self.corner_position(c, self.edge_corner(e, 0))
+                          + self.corner_position(c, self.edge_corner(e, 1))))
+            a = min(a, p)
+            b = max(b, p)
+        for i in range(self.QUADRATIC_FACES):
+            f = self.NUM_FACES - self.QUADRATIC_FACES + i
+            p = 4.0 * self.get(self.dof_index(c, self.NUM_POINTS + self.NUM_EDGES + i))
+            for k in range(4):
+                ca = self.face_corner(f, k)
+                cb = self.face_corner(f, (k + 1) % 4)
+                p += (0.25 * self.corner_position(c, ca)
+                      - self.get(self.dof_index(c, self.NUM_POINTS + self._edge_between(ca, cb))))
+            a = min(a, p)
+            b = max(b, p)
+        return a, b
 
     @tack.func
     def corner_position(self, c, j):
@@ -1345,9 +1428,54 @@ class _NoTensorFaces:
 
 
 class _H1TensorGeometry(_TensorDofs, _TensorPolynomials, _Geometry):
-    """Curved geometry of order 3 or more on tensor shapes: an ``H1`` field of positions
+    """Curved geometry of order 2 or more on tensor shapes: an ``H1`` field of positions
     of that order. Positions and Jacobians are formed from differences to node 0's
     position, as order 1's are, so f32 keeps thin cells."""
+
+    CURVED = 1
+
+    @tack.func
+    def control_box(self, c):
+        """The box of the cell's Bernstein control points, which hold it: the nodes'
+        positions (less node 0's) taken to Bernstein coefficients one axis at a
+        time by ``basis_bernstein``, the 1D matrix."""
+        q = self.ORDER + 1
+        count = (self.ORDER + 1) ** self.DIMENSION
+        cur = tack.local_array_like(self.basis_nodes, 3 * (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, 3 * (self.ORDER + 1) ** self.DIMENSION)
+        first = self.get(self.dof_index(c, 0))
+        for n in range(count):
+            v = self.get(self.dof_index(c, n)) - first
+            cur[3 * n] = v[0]
+            cur[3 * n + 1] = v[1]
+            cur[3 * n + 2] = v[2]
+        stride = 1
+        for _ in range(self.DIMENSION):
+            for n in range(count):
+                i = (n // stride) % q
+                base = n - i * stride
+                s0 = cur[0] - cur[0]
+                s1 = s0
+                s2 = s0
+                for m in range(q):
+                    w = self.basis_bernstein[i * q + m]
+                    src = 3 * (base + m * stride)
+                    s0 += w * cur[src]
+                    s1 += w * cur[src + 1]
+                    s2 += w * cur[src + 2]
+                nxt[3 * n] = s0
+                nxt[3 * n + 1] = s1
+                nxt[3 * n + 2] = s2
+            for n in range(3 * count):
+                cur[n] = nxt[n]
+            stride *= q
+        a = tack.vec3(cur[0], cur[1], cur[2])
+        b = a
+        for n in range(1, count):
+            p = tack.vec3(cur[3 * n], cur[3 * n + 1], cur[3 * n + 2])
+            a = min(a, p)
+            b = max(b, p)
+        return first + a, first + b
 
     @tack.func
     def corner_position(self, c, j):

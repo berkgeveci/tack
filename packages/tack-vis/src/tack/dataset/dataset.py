@@ -33,7 +33,7 @@ import tack
 from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.arrays import CartesianProduct, UniformCoordinates
-from tack.dataset import shapes, units, views
+from tack.dataset import bases, shapes, units, views
 from tack.dataset.sets import Sets
 from tack.dataset.spaces import H1, L2, Space
 from tack.runtime.dispatch import as_device, backend_of, get_backend, on_inputs_device, same_device
@@ -226,14 +226,16 @@ def _geometry_parts(data, group, kind):
     if group.shape in (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine):
         # No reference element: the points' positions, nothing to map.
         return _space_parts(geometry, group, views._PointGeometry)
-    if geometry.space.order == 2 and kind == "cells":
+    if geometry.space.order == 2 and kind == "cells" and not bases.tensor_shape(group.shape):
         # Curved: the domain view's incidence gives the quadratic nodes' ids.
         data.topology.edges()
         if group.shape.QUADRATIC_FACES:
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
         return [*mixins, views.quadratic_faces(group.shape)], attributes
-    if geometry.space.order > 2 and kind == "cells":
+    if geometry.space.order >= 2 and kind == "cells":
+        # Curved, on tensor shapes (order 2 too: the same layout, read as a tensor
+        # basis, which bounds the cell by its Bernstein control points).
         space = geometry.space
         if space._has_edges(group.shape):
             data.topology.edges()

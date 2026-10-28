@@ -203,6 +203,8 @@ def _basis_tables(space, group, dtype):
         kind, entity, a, b, corner = bases.dof_tables(group.shape, space.order)
         cache[key] = {"basis_nodes": device(bases.nodes(family, space.order), dtype),
                       "basis_weights": device(bases.weights(family, space.order), dtype),
+                      "basis_bernstein": device(bases.bernstein(family, space.order).reshape(-1),
+                                                dtype),
                       "node_kind": device(kind, tack.i32), "node_entity": device(entity, tack.i32),
                       "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
                       "corner_node": device(corner, tack.i32)}
@@ -324,7 +326,8 @@ class H1(Space):
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[root])
-            if self.order > 2:
+            if self.order > 2 or (self.order == 2 and bases.tensor_shape(group.shape)):
+                # Order 2 on tensor shapes: for a curved geometry's tensor views.
                 attributes.update(_basis_tables(self, group, dtype or tack.f32))
         return attributes
 

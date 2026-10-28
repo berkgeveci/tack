@@ -70,14 +70,10 @@ _TOLERANCE = 1e-3
 
 @tack.kernel
 def _cell_boxes(cells, lo, hi):
+    # A curved cell's box holds its Bernstein control points, so all of it.
     for c in cells:
         e = cells.entity_id(c)
-        a = cells.corner_position(c, 0)
-        b = a
-        for j in range(1, cells.NUM_POINTS):
-            p = cells.corner_position(c, j)
-            a = [min(a[0], p[0]), min(a[1], p[1]), min(a[2], p[2])]
-            b = [max(b[0], p[0]), max(b[1], p[1]), max(b[2], p[2])]
+        a, b = cells.control_box(c)
         lo[e] = a
         hi[e] = b
 
@@ -128,6 +124,8 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
                                 and x[1] >= a[1] - slack and x[1] <= b[1] + slack
                                 and x[2] >= a[2] - slack and x[2] <= b[2] + slack):
                             pc, ok = cells.world_to_parametric(pts, x)
+                            if cells.CURVED == 1:
+                                pc, ok = cells.curved_to_parametric(c, x)
                             # VTK's probe: inside, or within 0.1% of the cell's
                             # diagonal of its nearest point (surface cells too).
                             near = 0
@@ -138,6 +136,8 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
                                     near = 1
                                 else:
                                     d = cells.nearest_point(pts, x, pc) - x
+                                    if cells.CURVED == 1:
+                                        d = cells.position(c, cells._clamp(pc)) - x
                                     near = 1 if d.dot(d) <= slack * slack else 0
                             if near == 1:
                                 # Holding the point (within HOLD_TOLERANCE) ranks

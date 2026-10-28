@@ -211,3 +211,81 @@ def test_other_shapes_are_refused_above_order_2():
         _ = td.H1(tets, order=3).size
     with pytest.raises(NotImplementedError, match="on segments, quads"):
         _ = td.L2(tets, order=1, nodes="gauss_legendre").size
+
+
+# ── Curved geometry ─────────────────────────────────────────────────
+
+@tack.func
+def _quadratic(x):
+    return x[0] * x[0] - 2.0 * x[1] * x[1] + x[0] * x[1] + 1.0
+
+
+def _quadratic_at(p):
+    return p[:, 0] ** 2 - 2 * p[:, 1] ** 2 + p[:, 0] * p[:, 1] + 1
+
+
+@tack.func
+def _bend(x):
+    return [x[0] + 0.15 * x[1] * x[1], x[1] + 0.2 * x[0] * x[0], x[2] + 0.1 * x[0] * x[1]]
+
+
+def _wedges(grid):
+    hexes = td.extract_cells(grid, np.arange(grid.num_cells)).topology.connectivity.numpy()
+    conn = []
+    for h in hexes.reshape(-1, 8):
+        conn += [[h[0], h[1], h[3], h[4], h[5], h[7]], [h[1], h[2], h[3], h[5], h[6], h[7]]]
+    types, offsets = uniform_cells(int(shapes.WEDGE), len(conn), tack.i32)
+    topology = td.UnstructuredTopology(types, offsets,
+                                       tack.array(np.array(conn, np.int32).reshape(-1)),
+                                       num_points=grid.num_points)
+    return td.DataSet(topology, grid.positions())
+
+
+@pytest.mark.parametrize("cells, order", [("hexahedra", 2), ("hexahedra", 3), ("hexahedra", 4),
+                                          ("tetrahedra", 2), ("wedges", 2)])
+def test_curved_cells_are_located_as_they_are(backend, cells, order):
+    """A curved geometry -- the grid bent by a polynomial of its order -- and a field
+    in its own space: probing at the geometry's nodes, many of them on the curved
+    faces, finds every one and gives the field back. The
+    locator bounds a cell by its Bernstein control points and inverts its own map
+    by Newton's method; it bounded and inverted the corners before, at order 2
+    as well."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    data = {"hexahedra": lambda: _rotated(td.extract_cells(grid, np.arange(8)), seed=7),
+            "tetrahedra": lambda: td.tetrahedralize(grid),
+            "wedges": lambda: _wedges(grid)}[cells]()
+    space = td.H1(data, order=order)
+    data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _quadratic, space)
+    nodes = data.geometry.values.numpy()
+    probed = td.probe(data, nodes)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), _quadratic_at(nodes),
+                               atol=1e-8)
+
+
+@tack.func
+def _bulge(x):
+    return [x[0] + 0.3 * x[1] * (1.0 - x[1]), x[1], x[2]]
+
+
+def test_a_curved_cells_box_holds_it(backend):
+    """The box of a curved cell's Bernstein control points holds all of it, though the
+    cell bulges past the box of its nodes, and every point of it is found: a unit
+    cube bent by a quadratic (exact at order 3), positions at a lattice of
+    parametric points worked out on the host."""
+    from tack.dataset.locator import CellLocator
+
+    data = td.extract_cells(td.uniform_grid((2, 2, 2), dtype=tack.f64), np.arange(1))
+    data.geometry = td.interpolate(data, _bulge, td.H1(data, order=3),
+                                   dtype=tack.vec3(tack.f64))
+    t = np.linspace(0, 1, 9)
+    pcs = np.array([(a, b, c) for a in t for b in t for c in t])
+    x = pcs.copy()
+    x[:, 0] += 0.3 * pcs[:, 1] * (1 - pcs[:, 1])
+    nodes = data.geometry.values.numpy()
+    assert x[:, 0].max() > nodes[:, 0].max() + 1e-3          # past the nodes' box
+    locator = CellLocator(data)
+    lo, hi = locator.lo.numpy()[0], locator.hi.numpy()[0]
+    assert (x >= lo - 1e-12).all() and (x <= hi + 1e-12).all()
+    assert (locator.find(x).cells.numpy() == 0).all()
