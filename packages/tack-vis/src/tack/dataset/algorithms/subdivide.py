@@ -116,20 +116,20 @@ def _starts(order, first, starts):
 
 
 @tack.func
-def _lattice_point(n, level, dimension):
-    """Lattice node ``n``'s parametric coordinates: ``(i, j, k) / level``, the first
-    axis fastest."""
+def _lattice_point(n, level, dimension, steps):
+    """Lattice node ``n``'s parametric coordinates, ``steps[i]`` (``i / level`` in the
+    dataset's float type) along each axis, the first axis fastest."""
     q = level + 1
-    pc = tack.vec3(tack.f64(n % q), 0.0, 0.0)
+    pc = tack.vec3(steps[n % q], 0.0, 0.0)
     if dimension >= 2:
-        pc[1] = tack.f64((n // q) % q)
+        pc[1] = steps[(n // q) % q]
     if dimension == 3:
-        pc[2] = tack.f64(n // (q * q))
-    return pc / tack.f64(level)
+        pc[2] = steps[n // (q * q)]
+    return pc
 
 
 @tack.kernel
-def _positions(cells, slot_of, per_cell, level, corner_at, first, rank, out):
+def _positions(cells, slot_of, per_cell, level, steps, corner_at, first, rank, out):
     # A lattice corner is the cell's corner, its stored position to the bit.
     for c in cells:
         slot = slot_of[cells.entity_id(c)]
@@ -141,11 +141,11 @@ def _positions(cells, slot_of, per_cell, level, corner_at, first, rank, out):
                         out[rank[k]] = cells.corner_position(c, corner_at[n])
                     else:
                         out[rank[k]] = cells.position(c, _lattice_point(n, level,
-                                                                       cells.DIMENSION))
+                                                                       cells.DIMENSION, steps))
 
 
 @tack.kernel
-def _values(cells, u, slot_of, per_cell, level, corner_at, first, rank, out):
+def _values(cells, u, slot_of, per_cell, level, steps, corner_at, first, rank, out):
     for c in cells:
         slot = slot_of[cells.entity_id(c)]
         if slot >= 0:
@@ -155,7 +155,8 @@ def _values(cells, u, slot_of, per_cell, level, corner_at, first, rank, out):
                     if corner_at[n] >= 0:
                         out[rank[k]] = u.corner_value(c, corner_at[n])
                     else:
-                        out[rank[k]] = u.value(c, _lattice_point(n, level, cells.DIMENSION))
+                        out[rank[k]] = u.value(c, _lattice_point(n, level, cells.DIMENSION,
+                                                                 steps))
 
 
 @tack.kernel
@@ -266,6 +267,8 @@ def _refined(data, flags, level, fields):
     idt = ids.at_least(data.id_dtype, max(points, count * subs * sub))
     conn = tack.empty((count * subs * sub,), idt)
     parent = tack.empty((count * subs,), data.id_dtype)
+    steps = tack.empty((level + 1,), data.dtype)
+    tack.copyto(steps, (np.arange(level + 1) / level).astype(data.dtype.numpy_dtype))
     corner_at = {}
     for group in topology.groups():
         if group.count:
@@ -276,8 +279,8 @@ def _refined(data, flags, level, fields):
         for group in data.launch_groups("cells", []):
             if group.count:
                 cells = data.domain_view("cells", group)
-                _positions(cells, slot_of, per_cell, level, corner_at[group.root], first, rank,
-                           geometry)
+                _positions(cells, slot_of, per_cell, level, steps, corner_at[group.root], first,
+                           rank, geometry)
                 _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent)
     shape = {3: shapes.HEXAHEDRON, 2: shapes.QUAD, 1: shapes.LINE}[dimension]
     types, offsets = uniform_cells(int(shape), count * subs, idt)
@@ -291,7 +294,7 @@ def _refined(data, flags, level, fields):
             for group in data.launch_groups("cells", [field]):
                 if group.count:
                     _values(data.domain_view("cells", group), field.view(group), slot_of,
-                            per_cell, level, corner_at[group.root], first, rank, out)
+                            per_cell, level, steps, corner_at[group.root], first, rank, out)
         point_fields[name] = out
     from tack.dataset.dataset import DataSet
 
