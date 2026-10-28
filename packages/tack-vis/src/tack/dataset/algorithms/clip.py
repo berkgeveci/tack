@@ -11,6 +11,7 @@ from tack.dataset.algorithms._common import (
     _converted,
     _crossing,
     _field,
+    _first_end,
     _floating_dtype,
     _in_unit_of,
     _table,
@@ -201,15 +202,18 @@ def _clip_emit(cells, values, value, invert, data, cases, edges, remap, whole_ty
 
 
 @tack.kernel
-def _resolve_points(keys, order, run_offsets, slots, values, value, connectivity, members,
-                    ends, weights, count):
+def _resolve_points(keys, order, run_offsets, slots, values, positions, value, connectivity,
+                    members, ends, weights, count):
     # Each run of equal keys is one output point: a corner, or an edge crossing
-    # interpolated from its lower point id.
+    # interpolated from its end first by position, as contour's are, so every
+    # piece holding the edge computes it alike.
     for r in range(count):
         key = keys[order[run_offsets[r]]]
         a = key[0]
         b = key[1]
-        ends[r] = key
+        if a != b and not _first_end(positions[a], positions[b], a, b):
+            a, b = b, a
+        ends[r] = [a, b]
         weights[r] = 0.0
         if a != b:
             weights[r] = _crossing(value, values[a], values[b])
@@ -346,7 +350,8 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     # an integer field's crossings the same way).
     weights = tack.empty((count,), precision)
     if count:
-        _resolve_points(keys, order, point_runs, slots, values, float(value), connectivity,
+        _resolve_points(keys, order, point_runs, slots, values,
+                        arrays.materialize(data.geometry.values), float(value), connectivity,
                         members, ends, weights, count)
     if n_conn:
         _centroid_entries(connectivity, count)

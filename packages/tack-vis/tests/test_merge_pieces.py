@@ -107,6 +107,32 @@ def test_unstructured_pieces_merge_into_the_wholes_cells_and_points(layers):
     assert described(_marked(merged)) == described(reference)
 
 
+@pytest.mark.parametrize("cut", [
+    lambda d: td.contour(d, "RTData", 160.0),
+    lambda d: td.slice_plane(d, (0.3, 0.1, 0.0), (1.0, 0.5, 0.2)),
+    lambda d: td.clip(d, "RTData", 160.0),
+], ids=["contour", "slice", "clip"])
+def test_pieces_cut_a_shared_edge_to_the_same_bits(cut):
+    """Pieces cut the edges they share as the whole does: each crossing from the end
+    first by position, which every piece agrees on, not from the lower point id,
+    which is a piece's own. From the lower id a piece and its neighbour
+    interpolated an f32 field's crossing from opposite ends, the copies differed
+    in their last bits (4e-8), and merge_pieces found no owner for hundreds of
+    them; so each cut of ghosted pieces merges, exactly, into the whole's. The
+    ghosts come from ghost_cells of unstructured pieces, which appends them, so a
+    piece's ids are not in the order of its positions (split's are)."""
+    pieces = td.ghost_cells(td.PartitionedDataSet(
+        [td.tetrahedralize(p) for p in td.split(td.wavelet(8), 4)]))
+    merged = td.merge_pieces(td.PartitionedDataSet([cut(p) for p in pieces]))
+    whole = cut(td.tetrahedralize(td.wavelet(8)))
+    assert (merged.num_cells, merged.num_points) == (whole.num_cells, whole.num_points)
+
+    def rows(x):
+        return x[np.lexsort(x.T[::-1])]
+
+    np.testing.assert_array_equal(rows(merged.positions()), rows(whole.positions()))
+
+
 @needs_diy2
 def test_vtks_pieces_merge_into_the_image():
     image = vtkRTAnalyticSource(whole_extent=(-6, 6, -6, 6, -6, 6))()

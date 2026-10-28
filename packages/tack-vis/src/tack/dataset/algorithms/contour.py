@@ -13,6 +13,7 @@ from tack.dataset.algorithms._common import (
     _compact,
     _crossing,
     _field,
+    _first_end,
     _in_unit_of,
     _scalar_floating,
     _with_basis,
@@ -101,9 +102,11 @@ def _contour_points(cells, u, levels, nlevels, per_cell, starts, points, edges, 
                 e = cells.contour_edge(case, k)
                 ja = cells.edge_corner(e, 0)
                 jb = cells.edge_corner(e, 1)
-                # Always from the lower point id, so cells sharing an edge compute
-                # the same point, bit for bit, when their values agree there.
-                if cells.point_id(c, jb) < cells.point_id(c, ja):
+                # From the end first by position (_first_end), so every cell and
+                # every piece sharing the edge computes the same point, bit for bit,
+                # when their values agree there.
+                if not _first_end(cells.corner_position(c, ja), cells.corner_position(c, jb),
+                                  cells.point_id(c, ja), cells.point_id(c, jb)):
                     ja, jb = jb, ja
                 va = u.corner_value(c, ja)
                 vb = u.corner_value(c, jb)
@@ -137,7 +140,7 @@ def _contour_points(cells, u, levels, nlevels, per_cell, starts, points, edges, 
                     if per_cell == 1:
                         keys[at] = [cell * nlevels + v, e]
                     else:
-                        keys[at] = [a * nlevels + v, b]
+                        keys[at] = [min(a, b) * nlevels + v, max(a, b)]
                 at += 1
 
 
@@ -209,12 +212,16 @@ def _crosses(va, vb, iso):
 
 
 @tack.func
-def _emit_crossing(a, b, values, iso, v, nlevels, e, at, keys, ends, weights, sources, which):
+def _emit_crossing(a, b, values, positions, iso, v, nlevels, e, at, keys, ends, weights,
+                   sources, which):
     # The crossing of segment (a, b): named by its (low, high) points and the
     # level, or by the end whose value is the level, so every segment's crossing
-    # there is one point; interpolated from the lower id, as the shape paths do.
+    # there is one point; interpolated from the end first by position, as the
+    # shape paths are.
     lo = min(a, b)
     hi = max(a, b)
+    first = a if _first_end(positions[a], positions[b], a, b) else b
+    second = b if first == a else a
     if values[lo] == iso:
         keys[at] = [lo * nlevels + v, lo]
         ends[at] = [lo, lo]
@@ -225,8 +232,8 @@ def _emit_crossing(a, b, values, iso, v, nlevels, e, at, keys, ends, weights, so
         weights[at] = 0.0
     else:
         keys[at] = [lo * nlevels + v, hi]
-        ends[at] = [lo, hi]
-        weights[at] = _crossing(iso, values[lo], values[hi])
+        ends[at] = [first, second]
+        weights[at] = _crossing(iso, values[first], values[second])
     sources[at] = e
     which[at] = v
 
@@ -244,8 +251,8 @@ def _line_crossing_counts(cells, values, levels, nlevels, counts):
 
 
 @tack.kernel
-def _line_crossings(cells, values, levels, nlevels, starts, keys, ends, weights, sources,
-                    which):
+def _line_crossings(cells, values, positions, levels, nlevels, starts, keys, ends, weights,
+                    sources, which):
     for c in cells:
         e = cells.entity_id(c)
         a = cells.point_id(c, 0)
@@ -253,8 +260,8 @@ def _line_crossings(cells, values, levels, nlevels, starts, keys, ends, weights,
         at = starts[e]
         for v in range(nlevels):
             if _crosses(values[a], values[b], levels[v]):
-                _emit_crossing(a, b, values, levels[v], v, nlevels, e, at, keys, ends,
-                               weights, sources, which)
+                _emit_crossing(a, b, values, positions, levels[v], v, nlevels, e, at, keys,
+                               ends, weights, sources, which)
                 at += 1
 
 
@@ -272,8 +279,8 @@ def _chain_crossing_counts(cells, values, levels, nlevels, counts):
 
 
 @tack.kernel
-def _chain_crossings(cells, values, levels, nlevels, starts, keys, ends, weights, sources,
-                     which):
+def _chain_crossings(cells, values, positions, levels, nlevels, starts, keys, ends, weights,
+                     sources, which):
     for c in cells:
         e = cells.entity_id(c)
         at = starts[e]
@@ -282,8 +289,8 @@ def _chain_crossings(cells, values, levels, nlevels, starts, keys, ends, weights
             b = cells.line_point_id(c, j + 1)
             for v in range(nlevels):
                 if _crosses(values[a], values[b], levels[v]):
-                    _emit_crossing(a, b, values, levels[v], v, nlevels, e, at, keys, ends,
-                                   weights, sources, which)
+                    _emit_crossing(a, b, values, positions, levels[v], v, nlevels, e, at,
+                                   keys, ends, weights, sources, which)
                     at += 1
 
 
@@ -332,10 +339,11 @@ def _contour_vertices(data, field, levels, nlevels, several, merge_points, field
     weights = tack.empty((n,), arrays.dtype_of(field.values))
     sources = tack.empty((n,), idt)
     which = tack.empty((n,), tack.i32)
+    positions = arrays.materialize(data.geometry.values)
     for group in groups:
         emit = _chain_crossings if group.shape is shapes.PolyLine else _line_crossings
-        emit(data.domain_view("cells", group), values, levels, nlevels, starts, keys, ends,
-             weights, sources, which)
+        emit(data.domain_view("cells", group), values, positions, levels, nlevels, starts,
+             keys, ends, weights, sources, which)
     if merge_points and n:
         order = key_order(keys, data.num_points * nlevels, odt)
         offsets, count = run_offsets(keys, order)
@@ -344,13 +352,13 @@ def _contour_vertices(data, field, levels, nlevels, several, merge_points, field
         _first_crossings(order, offsets, ends, weights, sources, which, *merged, count)
         ends, weights, sources, which = merged
         n = count
-    positions = tack.empty((n,), tack.vec(3, data.dtype))
+    crossings = tack.empty((n,), tack.vec(3, data.dtype))
     if n:
-        _crossing_positions(arrays.materialize(data.geometry.values), ends, weights, positions)
+        _crossing_positions(positions, ends, weights, crossings)
     types, offsets = uniform_cells(shapes.VERTEX, n, odt)
     points = UnstructuredTopology(types, offsets, CountingArray(n, dtype=odt), num_points=n)
     return _with_levels(carry(data, points, points=Interpolate(ends, weights),
-                              cells=Pieces(sources), geometry=Field(H1(points), positions),
+                              cells=Pieces(sources), geometry=Field(H1(points), crossings),
                               fields=fields), levels, which, several, field.unit)
 
 
@@ -413,7 +421,7 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None):
     and corners. No cells give no lines.
 
     A 1D mesh -- lines or polylines -- gives a vertex cell at each crossing of
-    its segments, from its point values, interpolated from the lower point id;
+    its segments, from its point values, interpolated from the end first by position;
     a crossing at a point whose value is the level is that point, and with
     ``merge_points`` every crossing is one vertex, each taking the cell fields
     of the first cell to cross there.
@@ -692,13 +700,16 @@ def _crossing_names(pair_from, values, levels, nlevels, names):
 @tack.kernel
 def _iso_vertices(names, order, offsets, values, levels, nlevels, positions, weights, out,
                   ends, vertex_of_pair, count):
-    # One per run of equal crossing names, interpolated from the lower point id,
-    # as the shape path's contour interpolates, so the two agree on every point.
+    # One per run of equal crossing names, interpolated from the end first by
+    # position, as the shape path's contour interpolates, so the two agree on
+    # every point, and so do pieces.
     for r in range(count):
         key = names[order[offsets[r]]]
         v = key[0] % nlevels
         a = key[0] // nlevels
         b = key[1]
+        if a != b and not _first_end(positions[a], positions[b], a, b):
+            a, b = b, a
         if a == b:
             out[r] = positions[a]
             weights[r] = 0.0
@@ -771,7 +782,8 @@ def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
     weights, positions, count)`` -- each polygon's iso-vertices (CSR, in the
     order traced), its cell and level, and per iso-vertex the points it lies
     between (``ends``: ``(a, a)`` at a point whose value is the level, else the
-    edge's lower point id first), its weight from ``a`` and its position.
+    edge's end first by position, ``_first_end``), its weight from ``a`` and its
+    position.
     Polygons come in cell order."""
     from tack.dataset.polyhedra import SizeBuckets
 
@@ -1065,10 +1077,11 @@ def _level_cell_lines(cells, u, c, iso, v, at, line_cells, line_levels, ends, we
             jb = cells.face_corner(k, 1)
             above_a = u.corner_value(c, ja) >= iso
             if above_a != (u.corner_value(c, jb) >= iso):
-                # From the lower point id, as every contour interpolates.
+                # From the end first by position, as every contour interpolates.
                 lo = ja
                 hi = jb
-                if cells.point_id(c, jb) < cells.point_id(c, ja):
+                if not _first_end(cells.corner_position(c, ja), cells.corner_position(c, jb),
+                                  cells.point_id(c, ja), cells.point_id(c, jb)):
                     lo = jb
                     hi = ja
                 vl = u.corner_value(c, lo)

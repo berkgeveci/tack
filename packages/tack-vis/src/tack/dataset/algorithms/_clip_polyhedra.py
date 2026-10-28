@@ -8,7 +8,7 @@ from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.arrays import size_of
 from tack.dataset import ids
-from tack.dataset.algorithms._common import _close, _crossing
+from tack.dataset.algorithms._common import _close, _crossing, _first_end
 from tack.dataset.buckets import key_order, run_offsets
 from tack.dataset.carry import Interpolate, Take, carry
 
@@ -89,13 +89,15 @@ def _cell_counts(cell_offsets, cell_faces, face_offsets, face_points, values, is
 
 
 @tack.kernel
-def _point_runs(keys, order, offsets, values, iso, ends, weights, point_of, count):
+def _point_runs(keys, order, offsets, values, positions, iso, ends, weights, point_of, count):
     # One output point per run of equal names: a kept point (weight 0) or an
-    # edge's crossing, interpolated from its lower point id as contour does.
+    # edge's crossing, interpolated from its end first by position as contour's.
     for r in range(count):
         key = keys[order[offsets[r]]]
         a = key[0]
         b = key[1]
+        if a != b and not _first_end(positions[a], positions[b], a, b):
+            a, b = b, a
         ends[r] = [a, b]
         weights[r] = 0.0 if a == b else _crossing(iso, values[a], values[b])
         for i in range(offsets[r], offsets[r + 1]):
@@ -201,7 +203,7 @@ def clip_polyhedra(data, values, iso, inside, fields):
     if face_keys:
         _face_keys(t.face_offsets, t.face_points, values, iso, sizes, starts, keys)
     if cap_count:
-        _place(cap_ends, keys, face_keys, cap_count)
+        _cap_names(cap_ends, keys, face_keys, cap_count)
     total = face_keys + cap_count
     point_of = tack.empty((total,), odt)
     count = 0
@@ -211,7 +213,8 @@ def clip_polyhedra(data, values, iso, inside, fields):
     ends = tack.empty((count,), tack.vec(2, idt))
     weights = tack.empty((count,), weight_dtype)
     if count:
-        _point_runs(keys, order, runs, values, iso, ends, weights, point_of, count)
+        _point_runs(keys, order, runs, values, arrays.materialize(data.geometry.values), iso,
+                    ends, weights, point_of, count)
 
     # Cells: each kept one's faces left and caps.
     first = tack.zeros((n_cells,), odt)
@@ -270,6 +273,9 @@ def _negate(values, out, infinity):
 
 
 @tack.kernel
-def _place(src, dst, offset, n):
+def _cap_names(ends, keys, offset, n):
+    # A cap's iso-vertex named as a face's crossing is, (low id, high id): contour
+    # gives its ends first by position, which only interpolation reads.
     for i in range(n):
-        dst[offset + i] = src[i]
+        e = ends[i]
+        keys[offset + i] = [min(e[0], e[1]), max(e[0], e[1])]
