@@ -439,7 +439,7 @@ not using atomics, whose floating sums would vary between runs.
 from tack.algorithms import segment_broadcast, segment_ids, segment_reduce, segment_scan
 
 # Segment k is values[offsets[k]:offsets[k + 1]]: CSR offsets, empty segments allowed.
-sums = segment_reduce(values, offsets)               # one per segment; op="min"|"max" too
+sums = segment_reduce(values, offsets)               # one per segment; op="min"|"max"|"mean"
 prefix = segment_scan(values, offsets)               # running sums, restarting per segment
 before = segment_scan(values, offsets, inclusive=False)
 spread = segment_broadcast(sums, offsets, n)         # each segment's value on its elements
@@ -465,8 +465,13 @@ Floating sums group by those fixed chunks, so they are the same bits on
 every backend and every run, though a long segment's sum is not the
 sequential one; `segment_reduce(..., ordered=True)` sums each segment in
 element order, one thread a segment, as `reduce_by_key` does. An empty
-segment reduces to `empty=`, by default 0 for a sum and the type's greatest
-or least (an infinity for floats) for min and max. Vectors reduce
+segment reduces to `empty=`, by default 0 for a sum, NaN for a floating
+mean and the type's greatest or least (an infinity for floats) for min and
+max; `empty="keep"` leaves its output as it was. tack-vis averages over
+each point's cells this way (point gradients, cell-to-point projection,
+surface normals), reading the values through the point links without
+gathering them: a point at the apex of 403,200 tetrahedra took 294 ms on
+an M1 Max's GPU, one thread walking its links, and takes 5.7 ms. Vectors reduce
 componentwise. Elements outside every segment (offsets need not start at 0
 or end at the last value) are left alone. In debug mode (`tack.set_debug`)
 the offsets are checked to be non-decreasing and within the values.

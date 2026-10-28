@@ -45,7 +45,8 @@ __all__ = ["segment_broadcast", "segment_ids", "segment_reduce", "segment_scan"]
 
 _CHUNK = 256          # elements one thread walks
 
-_OPS = {"sum": 0, "min": 1, "max": 2}
+_OPS = {"sum": 0, "min": 1, "max": 2, "mean": 3}
+_MEAN = tack.constant(3, tack.i32)
 
 
 # ── Shared walking ──────────────────────────────────────────────────
@@ -169,18 +170,22 @@ def _all_empty(out, empty, nseg):
 
 
 @tack.kernel
-def _reduce_ordered(values, starts, s0, stops, s1, op, out, empty, nseg):
+def _reduce_ordered(values, starts, s0, stops, s1, op, out, empty, keep, nseg):
     # One thread a segment, in element order: reduce_by_key's sums, exactly.
     for k in range(nseg):
         b = tack.i64(starts[k + s0])
         e = tack.i64(stops[k + s1])
         if e <= b:
-            out[k] = empty[0]
+            if keep == 0:
+                out[k] = empty[0]
         else:
             acc = values[b]
             for i in range(b + 1, e):
                 acc = _combine(op, acc, values[i])
-            out[k] = acc
+            if op == _MEAN:
+                out[k] = acc / (e - b)
+            else:
+                out[k] = acc
 
 
 def _open_runs(open_seg, nchunks):
@@ -338,18 +343,22 @@ def _broadcast_chunks(source, starts, stops, names, nseg, n, chunk, nchunks, out
 # result is the same on every backend.
 
 @tack.kernel
-def _reduce_short(values, offsets, op, limit, out, empty, long_flags, long_count, nseg):
+def _reduce_short(values, offsets, op, limit, out, empty, keep, long_flags, long_count, nseg):
     for k in range(nseg):
-        b = tack.i64(offsets[k])
-        e = tack.i64(offsets[k + 1])
+        b = offsets[k]
+        e = offsets[k + 1]
         f = 0
         if e <= b:
-            out[k] = empty[0]
+            if keep == 0:
+                out[k] = empty[0]
         elif e - b <= limit:
             acc = values[b]
             for i in range(b + 1, e):
                 acc = _combine(op, acc, values[i])
-            out[k] = acc
+            if op == _MEAN:
+                out[k] = acc / (e - b)
+            else:
+                out[k] = acc
         else:
             f = 1
             tack.atomic_add(long_count, 0, 1)
@@ -411,9 +420,12 @@ def _long_ranges(offsets, long_flags, slots, long_starts, long_stops, long_ids, 
 
 
 @tack.kernel
-def _scatter_long(long_ids, long_out, out, nlong):
+def _scatter_long(long_ids, long_starts, long_stops, long_out, op, out, nlong):
     for r in range(nlong):
-        out[long_ids[r]] = long_out[r]
+        if op == _MEAN:
+            out[long_ids[r]] = long_out[r] / (long_stops[r] - long_starts[r])
+        else:
+            out[long_ids[r]] = long_out[r]
 
 
 def _long(offsets, long_flags, long_count, nseg):
@@ -459,14 +471,17 @@ def _check(offsets, nseg, n):
 
 
 def _identity(op, kind, empty):
-    """An empty segment's value: ``empty`` if given, else 0 for a sum and, for min and
-    max, the type's greatest and least (infinities for floating types)."""
+    """An empty segment's value: ``empty`` if given, else 0 for a sum, NaN for a mean (0
+    for integers), and for min and max the type's greatest and least
+    (infinities for floating types)."""
     if empty is not None:
         return empty
     if op == "sum":
         return 0
     numpy_dtype = np.dtype(kind.scalar_dtype.numpy_dtype if hasattr(kind, "scalar_dtype")
                            else kind.numpy_dtype)
+    if op == "mean":
+        return float("nan") if numpy_dtype.kind == "f" else 0
     if numpy_dtype.kind == "f":
         return float("inf") if op == "min" else float("-inf")
     info = np.iinfo(numpy_dtype)
@@ -475,11 +490,14 @@ def _identity(op, kind, empty):
 
 @on_inputs_device
 def segment_reduce(values, offsets, op="sum", out=None, empty=None, ordered=False):
-    """Each segment's reduction: ``out[k]`` is the sum (``op="min"``, ``"max"``: the
-    least, the greatest) of ``values[offsets[k]:offsets[k + 1]]``, for the
-    ``size(offsets) - 1`` segments, in ``values``' element type (a vector's
-    componentwise). An empty segment gets ``empty``: by default 0 for a sum, and
-    the type's greatest or least -- an infinity for floats -- for min and max.
+    """Each segment's reduction: ``out[k]`` is the sum (``op="min"``, ``"max"``,
+    ``"mean"``: the least, the greatest, the sum over the count) of
+    ``values[offsets[k]:offsets[k + 1]]``, for the ``size(offsets) - 1`` segments,
+    in ``values``' element type (a vector's componentwise). An empty segment
+    gets ``empty``: by default 0 for a sum, NaN for a floating mean, and the
+    type's greatest or least -- an infinity for floats -- for min and max;
+    ``empty="keep"`` leaves its ``out`` as it is (a point with no cells keeps
+    what the caller put there).
 
     Floating sums group by chunks of 256 elements, the same on every backend
     and run; ``ordered=True`` sums each segment in element order, one thread a
@@ -499,19 +517,22 @@ def segment_reduce(values, offsets, op="sum", out=None, empty=None, ordered=Fals
     if not nseg:
         return out
     # One element of the values' type, a vector's every component the identity.
-    identity = tack.full((1,), _identity(op, kind, empty), kind)
+    keep = 1 if isinstance(empty, str) and empty == "keep" else 0
+    identity = tack.full((1,), _identity(op, kind, None if keep else empty), kind)
     if ordered:
-        _reduce_ordered(values, offsets, 0, offsets, 1, _OPS[op], out, identity, nseg)
+        _reduce_ordered(values, offsets, 0, offsets, 1, _OPS[op], out, identity, keep, nseg)
         return out
     long_flags = tack.empty((nseg,), tack.i32)
     long_count = tack.zeros((1,), tack.i32)
-    _reduce_short(values, offsets, _OPS[op], _CHUNK, out, identity, long_flags, long_count,
-                  nseg)
+    _reduce_short(values, offsets, _OPS[op], _CHUNK, out, identity, keep, long_flags,
+                  long_count, nseg)
     starts, stops, ids, nlong = _long(offsets, long_flags, long_count, nseg)
     if nlong:
+        # The long segments' sums (a mean's too, divided as they are placed).
+        total = _OPS["sum"] if op == "mean" else _OPS[op]
         long_out = tack.empty((nlong,), kind)
-        _reduce(values, starts, 0, stops, 0, nlong, n, _OPS[op], long_out, identity)
-        _scatter_long(ids, long_out, out, nlong)
+        _reduce(values, starts, 0, stops, 0, nlong, n, total, long_out, identity)
+        _scatter_long(ids, starts, stops, long_out, _OPS[op], out, nlong)
     return out
 
 

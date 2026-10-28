@@ -143,7 +143,7 @@ def test_float_sums_are_the_same_bits_everywhere(backend):
 def test_the_arguments_are_checked():
     values = tack.array(np.arange(4, dtype=np.int32))
     with pytest.raises(ValueError, match="op is one of"):
-        segment_reduce(values, tack.array(np.array([0, 4], np.int32)), op="mean")
+        segment_reduce(values, tack.array(np.array([0, 4], np.int32)), op="median")
     with pytest.raises(ValueError, match="exclusive scan is a sum's"):
         segment_scan(values, tack.array(np.array([0, 4], np.int32)), op="min", inclusive=False)
     with pytest.raises(TypeError, match="i32 or i64"):
@@ -166,3 +166,20 @@ def test_debug_mode_checks_the_offsets():
                            tack.array(np.array([0, 3, 2, 4], np.int32)))
     finally:
         tack.set_debug(was)
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_means_and_keeping_what_empty_segments_hold(backend, shape):
+    """``op="mean"``: the sum over the count, a long segment's divided as it is placed;
+    ``empty="keep"`` leaves an empty segment's ``out`` as it was (a point with no
+    cells keeps its value), where by default a floating mean is NaN."""
+    lengths, offsets, values = _case(SHAPES[shape])
+    floats = values.astype(np.float32)                 # every backend has f32
+    expected = np.array([floats[a:b].astype(np.float64).mean() if b > a else np.nan
+                         for a, b in itertools.pairwise(offsets)])
+    got = segment_reduce(tack.array(floats), tack.array(offsets), op="mean").numpy()
+    np.testing.assert_allclose(got, expected.reshape(-1), rtol=1e-5, atol=1e-3)
+    out = tack.array(np.full(len(lengths), -7.0, np.float32))
+    segment_reduce(tack.array(floats), tack.array(offsets), op="mean", out=out, empty="keep")
+    kept = np.where(lengths > 0, expected.reshape(-1), -7.0) if len(lengths) else expected
+    np.testing.assert_allclose(out.numpy(), kept, rtol=1e-5, atol=1e-3)
