@@ -35,7 +35,9 @@
   field and geometry, and only the cells whose field's Bernstein
   coefficients can hold the value are refined. The surface has no cracks;
   its error falls as the square of the step. `subdivision=1` cuts the cells
-  linearized at their corners.
+  linearized at their corners; `tolerance=` (in the field's unit, a distance
+  for slices) chooses the fewest steps whose estimated error is within it,
+  from the Bernstein coefficients' distance from the corners' interpolation.
 
 ### Changed
 

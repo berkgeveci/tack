@@ -48,6 +48,18 @@ def _straddling(cells, u, levels, nlevels, flags):
 
 
 @tack.kernel
+def _flatness(cells, u, flags, out):
+    # What linearizing each flagged cell at its corners loses, at most.
+    for c in cells:
+        e = cells.entity_id(c)
+        out[e] = u.flatness(c) if flags[e] == 1 else u.flatness(c) - u.flatness(c)
+
+
+#: The most lattice steps a tolerance chooses: 32^3 sub-cells a hexahedron.
+MAX_LEVEL = 32
+
+
+@tack.kernel
 def _place_chosen(flags, slots, slot_of, chosen):
     for e in range(flags.shape[0]):
         if flags[e] == 1:
@@ -342,6 +354,23 @@ def subdivide(data, level=None, fields=None):
     return refined
 
 
+def level_for(data, field, flags, tolerance):
+    """The fewest lattice steps that cut ``field``'s flagged cells within ``tolerance``
+    (in the field's values): each cell's Bernstein coefficients' largest distance
+    from the corners' multilinear interpolation, ``D``, bounds what linearizing it
+    loses, and a lattice of ``s`` steps divides that by about ``s^2`` (exactly for a
+    quadratic), so ``s = ceil(sqrt(D / tolerance))``, at most ``MAX_LEVEL``."""
+    tolerance = float(tolerance)
+    if not tolerance > 0:
+        raise ValueError(f"tolerance is a positive number, not {tolerance}")
+    out = tack.empty((data.num_cells,), arrays.dtype_of(field.values))
+    for group in data.launch_groups("cells", [field]):
+        if group.count:
+            _flatness(data.domain_view("cells", group), field.view(group), flags, out)
+    worst = float(out.max()) if data.num_cells else 0.0
+    return int(min(MAX_LEVEL, max(1, np.ceil(np.sqrt(worst / tolerance)))))
+
+
 def subdivides(data, field):
     """Whether cutting ``field`` on ``data`` takes subdivision: a curved geometry or a
     field above order 1, on tensor cells (segments, quads, pixels, hexahedra,
@@ -354,19 +383,25 @@ def subdivides(data, field):
     return nonlinear and tensor and data.num_cells > 0
 
 
-def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut):
+def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, tolerance=None):
     """``cut`` (contour with its other arguments bound) of the cells whose ``field``
     may hold one of ``levels``, cut into ``subdivision`` lattice steps (by default
-    the largest order of the field and geometry): only those cells are refined, and
-    every field carried evaluated at their lattice points."""
-    level = default_level(data, field) if subdivision is None else int(subdivision)
-    if level < 1:
-        raise ValueError(f"subdivision is at least 1, not {level}")
+    the largest order of the field and geometry, or with ``tolerance`` the fewest
+    whose estimated error is within it): only those cells are refined, and every
+    field carried evaluated at their lattice points."""
+    if subdivision is not None and tolerance is not None:
+        raise ValueError("give subdivision or tolerance, not both")
     flags = tack.empty((data.num_cells,), tack.i32)
     for group in data.launch_groups("cells", [field]):
         if group.count:
             _straddling(data.domain_view("cells", group), field.view(group), levels, nlevels,
                         flags)
+    if tolerance is not None:
+        level = level_for(data, field, flags, tolerance)
+    else:
+        level = default_level(data, field) if subdivision is None else int(subdivision)
+    if level < 1:
+        raise ValueError(f"subdivision is at least 1, not {level}")
     name = next((n for n, f in data.fields.items() if f is field), "__cut__")
     carried = dict(data.fields)
     carried[name] = field

@@ -1188,6 +1188,11 @@ class _Interpolated:
         return self.dof(i, j)
 
     @tack.func
+    def flatness(self, i):
+        """What linearizing the cell at its corners loses: nothing at order 1."""
+        return abs(self.dof(i, 0) - self.dof(i, 0))
+
+    @tack.func
     def value_range(self, i):
         """``(lo, hi)`` holding the field over the cell: at order 1, its corner values
         (each shape's functions are its Bernstein basis there)."""
@@ -1209,10 +1214,14 @@ class _H1Field(_Interpolated):
 
 
 class _Order2Range:
-    """An order-2 field's bound over a cell: its corner values, each edge's Bernstein
-    coefficient ``2 m - (v0 + v1) / 2`` and each quad face's ``4 f - (its edges'
-    middles) + (its corners) / 4`` (the coefficients of a quadratic on a tetrahedron,
-    triangle or wedge; the tensor shapes take ``_TensorBasis``)."""
+    """An order-2 field's Bernstein coefficients over a cell, from its nodes: the
+    corners' values; each edge's ``2 m - (v0 + v1) / 2`` (``m`` its middle); each quad
+    face's ``4 f - (its edges' middles) + (its corners) / 4``; a hexahedron's
+    interior ``8 c - 2 (its faces' centers) + (its edges' middles) / 2 - (its corners)
+    / 8``, a quad's ``4 c - (its edges' middles) + (its corners) / 4``. The field lies
+    between the least and the greatest (``value_range``); each one's distance from
+    the corners' multilinear interpolation where it sits bounds what linearizing
+    the cell at its corners loses (``flatness``)."""
 
     @tack.func
     def _between(self, a, b):
@@ -1225,6 +1234,56 @@ class _Order2Range:
         return found
 
     @tack.func
+    def _corner_mean(self, c):
+        total = self.dof(c, 0)
+        for j in range(1, self.NUM_POINTS):
+            total += self.dof(c, j)
+        return total / self.NUM_POINTS
+
+    @tack.func
+    def _edge_sum(self, c):
+        total = self.dof(c, self.NUM_POINTS)
+        for e in range(1, self.NUM_EDGES):
+            total += self.dof(c, self.NUM_POINTS + e)
+        return total
+
+    @tack.func
+    def _interior_control(self, c):
+        """The interior's coefficient (a hexahedron's or a quad's center node)."""
+        center = self.dof(c, self.NUM_POINTS + self.NUM_EDGES + self.QUADRATIC_FACES)
+        corners = self._corner_mean(c) * self.NUM_POINTS
+        v = 4.0 * center - self._edge_sum(c) + 0.25 * corners
+        if self.DIMENSION == 3:
+            faces = self.dof(c, self.NUM_POINTS + self.NUM_EDGES)
+            for i in range(1, self.QUADRATIC_FACES):
+                faces += self.dof(c, self.NUM_POINTS + self.NUM_EDGES + i)
+            v = 8.0 * center - 2.0 * faces + 0.5 * self._edge_sum(c) - 0.125 * corners
+        return v
+
+    @tack.func
+    def _face_control(self, c, i):
+        f = self.NUM_FACES - self.QUADRATIC_FACES + i
+        v = 4.0 * self.dof(c, self.NUM_POINTS + self.NUM_EDGES + i)
+        for k in range(4):
+            ca = self.face_corner(f, k)
+            cb = self.face_corner(f, (k + 1) % 4)
+            v += 0.25 * self.dof(c, ca) - self.dof(c, self.NUM_POINTS + self._between(ca, cb))
+        return v
+
+    @tack.func
+    def _face_corner_mean(self, c, i):
+        f = self.NUM_FACES - self.QUADRATIC_FACES + i
+        total = self.dof(c, self.face_corner(f, 0))
+        for k in range(1, 4):
+            total += self.dof(c, self.face_corner(f, k))
+        return 0.25 * total
+
+    @tack.func
+    def _edge_control(self, c, e):
+        return (2.0 * self.dof(c, self.NUM_POINTS + e)
+                - 0.5 * (self.dof(c, self.edge_corner(e, 0)) + self.dof(c, self.edge_corner(e, 1))))
+
+    @tack.func
     def value_range(self, c):
         lo = self.dof(c, 0)
         hi = lo
@@ -1233,20 +1292,34 @@ class _Order2Range:
             lo = min(lo, v)
             hi = max(hi, v)
         for e in range(self.NUM_EDGES):
-            v = (2.0 * self.dof(c, self.NUM_POINTS + e)
-                 - 0.5 * (self.dof(c, self.edge_corner(e, 0)) + self.dof(c, self.edge_corner(e, 1))))
+            v = self._edge_control(c, e)
             lo = min(lo, v)
             hi = max(hi, v)
         for i in range(self.QUADRATIC_FACES):
-            f = self.NUM_FACES - self.QUADRATIC_FACES + i
-            v = 4.0 * self.dof(c, self.NUM_POINTS + self.NUM_EDGES + i)
-            for k in range(4):
-                ca = self.face_corner(f, k)
-                cb = self.face_corner(f, (k + 1) % 4)
-                v += 0.25 * self.dof(c, ca) - self.dof(c, self.NUM_POINTS + self._between(ca, cb))
+            v = self._face_control(c, i)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        if self.QUADRATIC_INTERIOR == 1:
+            v = self._interior_control(c)
             lo = min(lo, v)
             hi = max(hi, v)
         return lo, hi
+
+    @tack.func
+    def flatness(self, c):
+        """The largest distance of a coefficient from the corners' multilinear
+        interpolation at its place: an edge's from its corners' mean, a face's
+        from its four, the interior's from all."""
+        worst = abs(self.dof(c, 0) - self.dof(c, 0))
+        for e in range(self.NUM_EDGES):
+            d = self._edge_control(c, e) - 0.5 * (self.dof(c, self.edge_corner(e, 0))
+                                                   + self.dof(c, self.edge_corner(e, 1)))
+            worst = max(worst, abs(d))
+        for i in range(self.QUADRATIC_FACES):
+            worst = max(worst, abs(self._face_control(c, i) - self._face_corner_mean(c, i)))
+        if self.QUADRATIC_INTERIOR == 1:
+            worst = max(worst, abs(self._interior_control(c) - self._corner_mean(c)))
+        return worst
 
 
 class _H1Order2Field(_QuadraticDofs, _Order2Range, _Interpolated):
@@ -1312,6 +1385,10 @@ class _L2Order0Field:
     def value_range(self, i):
         v = self.dof(i, 0)                                # the cell's one value
         return v, v
+
+    @tack.func
+    def flatness(self, i):
+        return abs(self.dof(i, 0) - self.dof(i, 0))
 
 
 # ── Tensor bases of any order (tack.dataset.bases) ──────────────────
@@ -1385,16 +1462,17 @@ class _TensorPolynomials:
 
 
 class _TensorRange:
-    """A tensor field's bound over a cell: its values (less node 0's) taken to Bernstein
-    coefficients one axis at a time (``basis_bernstein``); the field lies between
-    the least and the greatest."""
+    """A tensor field's Bernstein coefficients over a cell: its values (less node 0's)
+    taken one axis at a time by ``basis_bernstein``. The field lies between the
+    least and the greatest (``value_range``); each one's distance from the corner
+    coefficients' multilinear interpolation where it sits bounds what linearizing
+    the cell at its corners loses (``flatness``)."""
 
     @tack.func
-    def value_range(self, c):
+    def _bernstein(self, c, cur, nxt):
+        """``cur``: the coefficients less node 0's value, in node order."""
         q = self.ORDER + 1
         count = (self.ORDER + 1) ** self.DIMENSION
-        cur = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
-        nxt = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
         first = self.dof(c, 0)
         for n in range(count):
             cur[n] = self.dof(c, n) - first
@@ -1410,12 +1488,46 @@ class _TensorRange:
             for n in range(count):
                 cur[n] = nxt[n]
             stride *= q
+
+    @tack.func
+    def value_range(self, c):
+        cur = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        self._bernstein(c, cur, nxt)
         lo = cur[0]
         hi = lo
-        for n in range(1, count):
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
             lo = min(lo, cur[n])
             hi = max(hi, cur[n])
+        first = self.dof(c, 0)
         return first + lo, first + hi
+
+    @tack.func
+    def flatness(self, c):
+        cur = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        self._bernstein(c, cur, nxt)
+        p = self.ORDER
+        q = self.ORDER + 1
+        worst = cur[0] - cur[0]
+        for n in range((self.ORDER + 1) ** self.DIMENSION):
+            i = n % q
+            j = (n // q) % q
+            k = n // (q * q)
+            # The corner coefficients' multilinear interpolation at (i, j, k) / p.
+            linear = cur[0] - cur[0]
+            for corner in range(2 ** self.DIMENSION):
+                a = corner & 1
+                b = (corner >> 1) & 1
+                h = (corner >> 2) & 1
+                w = (i if a == 1 else p - i) / p
+                if self.DIMENSION >= 2:
+                    w *= (j if b == 1 else p - j) / p
+                if self.DIMENSION == 3:
+                    w *= (k if h == 1 else p - k) / p
+                linear += w * cur[a * p + q * (b * p + q * h * p)]
+            worst = max(worst, abs(cur[n] - linear))
+        return worst
 
 
 class _TensorBasis(_TensorRange, _TensorPolynomials):
@@ -1687,6 +1799,10 @@ class _ConstantField:
     def value_range(self, i):
         v = self.dof(i, 0)                                # the cell's one value
         return v, v
+
+    @tack.func
+    def flatness(self, i):
+        return abs(self.dof(i, 0) - self.dof(i, 0))
 
 
 class _PolyhedralPointField:

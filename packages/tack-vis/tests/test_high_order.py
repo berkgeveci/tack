@@ -448,3 +448,35 @@ def test_vtks_own_lagrange_hexahedra(backend):
     # Within the locator's Newton tolerance.
     np.testing.assert_allclose(td.probe(data, xs).fields["u"].values.numpy(), us, atol=1e-7)
     np.testing.assert_allclose(us, _cubic_at(xs), atol=1e-7)       # VTK's own, near exact
+
+
+@pytest.mark.parametrize("order", [2, 3])
+def test_a_tolerance_chooses_the_steps(backend, order):
+    """``tolerance=``: the fewest lattice steps whose estimated error (the Bernstein
+    coefficients' distance from the corners' interpolation, over the steps
+    squared) is within it -- the field on the surface stays within it, and a
+    tighter one takes more steps."""
+    data = _ball(order)
+    counts = []
+    for tolerance in (1e-1, 1e-2, 1e-3):
+        surface = td.contour(data, "u", 0.49, tolerance=tolerance)
+        x = surface.positions()
+        assert np.abs(((x - 1.0) ** 2).sum(1) - 0.49).max() <= tolerance
+        assert _open_edges(surface) == 0
+        counts.append(surface.num_cells)
+    assert counts == sorted(counts) and counts[0] < counts[-1]
+    with pytest.raises(ValueError, match="not both"):
+        td.contour(data, "u", 0.49, subdivision=2, tolerance=1e-2)
+
+
+def test_an_order_two_bound_holds_the_interior(backend):
+    """An order-2 field on hexahedra that is zero at every node but the cells'
+    centers: only the interior's Bernstein coefficient sees it, and the cells are
+    still cut."""
+    grid = td.uniform_grid((3, 3, 3), dtype=tack.f64)
+    data = td.extract_cells(grid, np.arange(grid.num_cells))
+    space = td.H1(data, order=2)
+    values = np.zeros(space.size)
+    values[-data.num_cells:] = 1.0                     # the cells' centers come last
+    surface = td.contour(data, td.Field(space, tack.array(values)), 0.5)
+    assert surface.num_cells > 0 and _open_edges(surface) == 0

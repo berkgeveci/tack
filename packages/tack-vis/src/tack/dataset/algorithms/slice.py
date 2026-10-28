@@ -12,7 +12,8 @@ __all__ = ['slice', 'slice_plane']
 
 
 @on_inputs_device
-def slice(data, function, merge_points=True, fields=None, value=0.0, subdivision=None):
+def slice(data, function, merge_points=True, fields=None, value=0.0, subdivision=None,
+          tolerance=None):
     """Where ``function`` (``tack.dataset.implicit``) is ``value`` (zero by default):
     a contour of its values on the geometry, carrying fields as ``contour``
     does (``merge_points`` and ``fields`` are ``contour``'s). ``value`` may be
@@ -32,20 +33,23 @@ def slice(data, function, merge_points=True, fields=None, value=0.0, subdivision
         # curved dataset raised.
         values = project(data, values, H1(data))
     return contour(data, values, value, merge_points=merge_points, fields=fields,
-                   subdivision=subdivision)
+                   subdivision=subdivision, tolerance=tolerance)
 
 
 @on_inputs_device
 def slice_plane(data, origin, normal, merge_points=True, fields=None, value=0.0,
-                subdivision=None):
+                subdivision=None, tolerance=None):
     """The cut of the 3D cells by the plane through ``origin`` with ``normal`` (any
     length), as triangles: ``contour`` at zero of each position's signed distance
     to the plane along ``normal``. The distance is computed in the geometry's own
     space -- per point, or per cell corner for an ``L2`` geometry -- so the cut is
     the cells' own. ``value``, a signed distance along the unit normal, or a
     sequence of them, gives parallel planes, all in one pass. ``slice`` with a
-    ``Plane``; ``merge_points``, ``fields`` and ``subdivision`` are ``contour``'s."""
+    ``Plane``; ``merge_points``, ``fields``, ``subdivision`` and ``tolerance`` (a
+    distance) are ``contour``'s."""
     origin = _length(data, origin, "slice_plane's origin")
     value = _length(data, value, "slice_plane's distance")
+    if tolerance is not None:
+        tolerance = _length(data, tolerance, "slice_plane's tolerance")
     return slice(data, Plane(origin, normal), merge_points=merge_points, fields=fields,
-                 value=value, subdivision=subdivision)
+                 value=value, subdivision=subdivision, tolerance=tolerance)
