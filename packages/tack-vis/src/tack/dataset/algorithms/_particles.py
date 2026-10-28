@@ -46,15 +46,17 @@ from tack.dataset.spaces import Values
 
 __all__ = ["advect_pieces", "streamlines_pieces"]
 
-_FIELDS = ("time", "steps", "status", "seed", "segments")
+_FIELDS = ("time", "steps", "status", "seed", "segments", "step", "travelled")
 _DTYPES = {"time": np.float64, "steps": np.int32, "status": np.int32, "seed": np.int64,
-           "segments": np.int32}
+           "segments": np.int32, "step": np.float64, "travelled": np.float64}
 
 
 class _Particles:
     """Particles on the host: positions (f64), and per particle ``time``,
-    ``steps``, ``status``, ``seed`` (its global number) and ``segments`` (the
-    pieces' runs it has had, for ``streamlines``)."""
+    ``steps``, ``status``, ``seed`` (its global number), ``segments`` (the
+    pieces' runs it has had, for ``streamlines``), ``step`` (its current step,
+    which RK45 adapts; 0 before its first) and ``travelled`` (its path's length
+    so far, for ``max_length``)."""
 
     def __init__(self, x=None, **values):
         self.x = np.zeros((0, 3)) if x is None else np.asarray(x, np.float64).reshape(-1, 3)
@@ -81,8 +83,9 @@ class _Particles:
         """These particles (or ``rows`` of them) as arrays to send."""
         part = self if rows is None else self.take(rows)
         out = _bits(part.x, device)
-        out["time"] = tack.array(np.ascontiguousarray(part.time).view(np.uint64), tack.u64,
-                                 device=device)
+        for name in ("time", "step", "travelled"):
+            out[name] = tack.array(np.ascontiguousarray(getattr(part, name)).view(np.uint64),
+                                   tack.u64, device=device)
         for name in ("steps", "status", "segments"):
             out[name] = tack.array(getattr(part, name), tack.i32, device=device)
         out["seed"] = tack.array(part.seed, tack.i64, device=device)
@@ -91,7 +94,8 @@ class _Particles:
     @staticmethod
     def received(message):
         return _Particles(_unbits(message),
-                          time=message["time"].numpy().view(np.float64),
+                          **{n: message[n].numpy().view(np.float64)
+                             for n in ("time", "step", "travelled")},
                           **{n: message[n].numpy() for n in ("steps", "status", "seed",
                                                              "segments")})
 
@@ -107,7 +111,8 @@ def _unbits(message):
                     axis=1)
 
 
-def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighbors=False):
+def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighbors=False,
+                  **adaptive):
     """``advect`` over the pieces of ``data``: the particles where they stopped, a
     ``PartitionedDataSet`` of one vertex dataset per piece -- each particle on
     the piece it stopped in, or left from -- with ``steps``, ``time``,
@@ -116,7 +121,8 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighb
     ``seeds`` are this rank's, an ``(n, 3)`` array; across MPI ranks each rank
     passes its own, numbered after the ranks before it."""
     blocks, pieces, finished, _ = _rounds(data, field, seeds, step_size, steps, integrator,
-                                          record=False, neighbors=neighbors)
+                                          record=False, neighbors=neighbors,
+                                          adaptive=adaptive)
     out = []
     for g, piece in zip(blocks.local, pieces):
         done = finished[g]
@@ -137,7 +143,7 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighb
 
 
 def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", unit="time",
-                       neighbors=False):
+                       neighbors=False, **adaptive):
     """``streamlines`` over the pieces of ``data``: each piece's share of the
     paths, a ``PartitionedDataSet`` of polyline datasets. A particle's path is
     cut where it crosses from piece to piece: each piece holds the stretches it
@@ -148,7 +154,8 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", u
     from tack.dataset.polyhedra import PolylineTopology
 
     blocks, pieces, _, traced = _rounds(data, field, seeds, step_size, steps, integrator,
-                                        record=True, unit=unit, neighbors=neighbors)
+                                        record=True, unit=unit, neighbors=neighbors,
+                                        adaptive=adaptive)
     out = []
     for g, piece in zip(blocks.local, pieces):
         stretches = sorted(traced[g], key=lambda s: (s[0], s[1]))
@@ -189,7 +196,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", u
 
 
 def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time",
-            neighbors=False):
+            neighbors=False, adaptive=None):
     """The rounds: ``(blocks, pieces, finished, traced)``, the particles each piece
     finished with, and with ``record`` each piece's stretches ``(seed, segment,
     positions, times)``."""
@@ -217,7 +224,8 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
             finished[g].append(outside[g])
             pending[g], done = _advance(pieces[g - blocks.local.start], field,
                                         arrived[g], step_size, steps, integrator, record,
-                                        traced[g], unit, neighbors)
+                                        traced[g], unit, neighbors,
+                                        adaptive or {})
             finished[g].append(done)
     else:
         raise RuntimeError("particles were still in flight after a round per step")
@@ -293,20 +301,26 @@ def _route(blocks, pieces, locators, boxes, pending):
 
 
 def _advance(piece, field, particles, step_size, steps, integrator, record, traced,
-             unit="time", neighbors=False):
+             unit="time", neighbors=False, adaptive=None):
     """Advect a piece's particles: ``(in flight, finished)``. With ``record``, each
     particle's stretch here goes into ``traced``."""
     if not len(particles):
         return _Particles(), _Particles()
     dtype = piece.dtype.numpy_dtype
-    resume = (particles.time.astype(dtype), particles.steps, particles.status)
+    # A particle's step goes with it from piece to piece (RK45 adapts it); 0 is
+    # one that has not stepped yet.
+    step = np.where(particles.step > 0, particles.step, step_size).astype(dtype)
+    resume = (particles.time.astype(dtype), particles.steps, particles.status, step,
+              particles.travelled.astype(dtype))
     with piece.device:
-        xs, times, taken, status, (trace, trace_times), lengths, capacity = _run(
+        xs, times, taken, status, (trace, trace_times), lengths, capacity, carried = _run(
             piece, field, np.asarray(particles.x, dtype), step_size, steps, integrator,
-            None, record, resume=resume, handoff=True, unit=unit, neighbors=neighbors)
+            None, record, resume=resume, handoff=True, unit=unit, neighbors=neighbors,
+            **(adaptive or {}))
     out = _Particles(xs.numpy().reshape(-1, 3), time=times.numpy(), steps=taken.numpy(),
                      status=status.numpy(), seed=particles.seed,
-                     segments=particles.segments + 1)
+                     segments=particles.segments + 1, step=carried[0].numpy(),
+                     travelled=carried[1].numpy())
     if record:
         lengths = lengths.numpy()
         trace = trace.numpy().reshape(-1, capacity, 3)

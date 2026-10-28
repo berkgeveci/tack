@@ -1311,9 +1311,18 @@ Each shape's `nearest_point(pts, x, pc)` gives the point of a cell nearest
 tetrahedra, by clamping the parametric coordinates for the others.
 
 `advect(data, field, seeds, step_size, steps, integrator="rk4",
-locator=None)` moves each seed through a steady velocity field -- point
-data, interpolated in the cell holding the particle, or cell data -- by
-fixed RK4 (or Euler) steps, as Viskores' ParticleAdvection does. It returns
+locator=None, tolerance=None, min_step=None, max_step=None, max_length=None)`
+moves each seed through a steady velocity field -- point data, interpolated
+in the cell holding the particle, or cell data -- by fixed RK4 (or Euler)
+steps, as Viskores' ParticleAdvection does, or by RK45 steps that adapt
+(`integrator="rk45"`: Cash-Karp, VTK's `vtkRungeKutta45`, with its rules: a
+step whose error estimate passes `tolerance` is tried again smaller,
+`0.9 h (err/tol)^-0.25`, keeping its first stage; a step taken proposes the
+next, `0.9 h (err/tol)^-0.2`, within `[min_step, max_step]`; one at
+`min_step` is taken whatever its error). A particle's step goes with it
+between a GPU's launches and from piece to piece. `max_length` stops a
+particle whose path has gone that far (in the length unit its last step
+lands on it). It returns
 the particles where they stopped, one vertex cell each, with `steps`, `time`
 and `status`. `status` holds Viskores' bits, `ParticleStatus.SUCCESS`,
 `TERMINATE`, `SPATIAL_BOUNDS`, `TOOK_ANY_STEPS` and `ZERO_VELOCITY`.
