@@ -222,7 +222,10 @@ def _geometry_parts(data, group, kind):
             raise NotImplementedError(
                 f"the {kind} of an L2 geometry have no positions of their own: each cell "
                 "around an edge has its own, and edges have no sides to choose from")
-        return _space_parts(geometry, group, views._L2Geometry)
+        mixins, attributes = _space_parts(geometry, group, views._L2Geometry)
+        if group.shape not in (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine):
+            mixins = [*mixins, views._CornerBox, views._CurvedNewton]
+        return mixins, attributes
     if group.shape in (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine):
         # No reference element: the points' positions, nothing to map.
         return _space_parts(geometry, group, views._PointGeometry)
@@ -232,7 +235,7 @@ def _geometry_parts(data, group, kind):
         if group.shape.QUADRATIC_FACES:
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
-        return [*mixins, views.quadratic_faces(group.shape)], attributes
+        return [*mixins, views.quadratic_faces(group.shape), views._CurvedNewton], attributes
     if geometry.space.order >= 2 and kind == "cells":
         # Curved, on tensor shapes (order 2 too: the same layout, read as a tensor
         # basis, which bounds the cell by its Bernstein control points).
@@ -243,9 +246,12 @@ def _geometry_parts(data, group, kind):
             data.topology.faces()
         mixins, attributes = _space_parts(
             geometry, group, views.of_order(views._H1TensorGeometry, space.order))
-        return [*mixins, *views.tensor_mixins(group.shape)], attributes
+        return [*mixins, *views.tensor_mixins(group.shape), views._CurvedNewton], attributes
     # Faces and edges of a curved geometry see its corners.
-    return _space_parts(geometry, group, views._H1Geometry, corners_only=True)
+    mixins, attributes = _space_parts(geometry, group, views._H1Geometry, corners_only=True)
+    if kind == "cells":
+        mixins = [*mixins, views._CornerBox, views._CurvedNewton]
+    return mixins, attributes
 
 
 # ── Datasets ────────────────────────────────────────────────────────

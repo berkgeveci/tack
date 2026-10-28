@@ -853,8 +853,28 @@ class _Geometry:
             x += self.shape_function(j, pc) * self.corner_position(i, j)
         return x
 
+    @tack.func
+    def geometry_jacobian(self, i, pc):
+        """The 3x3 derivative of world position by parametric coordinates at ``pc``:
+        column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension. Formed from
+        the corners relative to the first (the shape's gradients sum to zero, so
+        it is the same Jacobian): a corner's difference from its neighbour is exact
+        in the geometry's precision, where sums of absolute positions lost a thin
+        cell's short edges to rounding (in f32, the ONERA M6's boundary-layer
+        wedges' gradients off by up to 93 times)."""
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        p0 = self.corner_position(i, 0)
+        for j in range(1, self.NUM_POINTS):
+            m += (self.corner_position(i, j) - p0).outer_product(self.shape_gradient(j, pc))
+        return m
+
+
+class _CornerBox:
+    """A straight geometry's cell bounds, for the cell locator: its corners' box.
+    (A curved geometry's mixin defines ``control_box`` and ``CURVED`` itself.)"""
+
     #: Whether the geometry is curved (of order 2 or more), so that locating a point
-    #: takes ``curved_to_parametric`` and a cell's bounds ``control_box``.
+    #: takes ``curved_to_parametric`` and a cell's bounds its control points.
     CURVED = 0
 
     @tack.func
@@ -867,6 +887,12 @@ class _Geometry:
             a = min(a, p)
             b = max(b, p)
         return a, b
+
+
+
+class _CurvedNewton:
+    """Locating a point in a cell of any geometry with a reference element, for the cell
+    locator: its own map inverted (cells' domain views only)."""
 
     @tack.func
     def curved_to_parametric(self, i, x):
@@ -887,21 +913,6 @@ class _Geometry:
                 converged = 1
                 break
         return pc, converged
-
-    @tack.func
-    def geometry_jacobian(self, i, pc):
-        """The 3x3 derivative of world position by parametric coordinates at ``pc``:
-        column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension. Formed from
-        the corners relative to the first (the shape's gradients sum to zero, so
-        it is the same Jacobian): a corner's difference from its neighbour is exact
-        in the geometry's precision, where sums of absolute positions lost a thin
-        cell's short edges to rounding (in f32, the ONERA M6's boundary-layer
-        wedges' gradients off by up to 93 times)."""
-        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-        p0 = self.corner_position(i, 0)
-        for j in range(1, self.NUM_POINTS):
-            m += (self.corner_position(i, j) - p0).outer_product(self.shape_gradient(j, pc))
-        return m
 
 
 class _PointGeometry:
@@ -1176,6 +1187,18 @@ class _Interpolated:
         corners', so it is value ``j`` itself."""
         return self.dof(i, j)
 
+    @tack.func
+    def value_range(self, i):
+        """``(lo, hi)`` holding the field over the cell: at order 1, its corner values
+        (each shape's functions are its Bernstein basis there)."""
+        lo = self.dof(i, 0)
+        hi = lo
+        for j in range(1, self.NUM_POINTS):
+            v = self.dof(i, j)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        return lo, hi
+
 
 class _H1Field(_Interpolated):
     """H1, order 1, Shared: one value per point, interpolated by the shape functions."""
@@ -1185,7 +1208,48 @@ class _H1Field(_Interpolated):
         return self.point_value(i, j)
 
 
-class _H1Order2Field(_QuadraticDofs, _Interpolated):
+class _Order2Range:
+    """An order-2 field's bound over a cell: its corner values, each edge's Bernstein
+    coefficient ``2 m - (v0 + v1) / 2`` and each quad face's ``4 f - (its edges'
+    middles) + (its corners) / 4`` (the coefficients of a quadratic on a tetrahedron,
+    triangle or wedge; the tensor shapes take ``_TensorBasis``)."""
+
+    @tack.func
+    def _between(self, a, b):
+        found = 0
+        for e in range(self.NUM_EDGES):
+            ea = self.edge_corner(e, 0)
+            eb = self.edge_corner(e, 1)
+            if (ea == a and eb == b) or (ea == b and eb == a):
+                found = e
+        return found
+
+    @tack.func
+    def value_range(self, c):
+        lo = self.dof(c, 0)
+        hi = lo
+        for j in range(1, self.NUM_POINTS):
+            v = self.dof(c, j)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        for e in range(self.NUM_EDGES):
+            v = (2.0 * self.dof(c, self.NUM_POINTS + e)
+                 - 0.5 * (self.dof(c, self.edge_corner(e, 0)) + self.dof(c, self.edge_corner(e, 1))))
+            lo = min(lo, v)
+            hi = max(hi, v)
+        for i in range(self.QUADRATIC_FACES):
+            f = self.NUM_FACES - self.QUADRATIC_FACES + i
+            v = 4.0 * self.dof(c, self.NUM_POINTS + self.NUM_EDGES + i)
+            for k in range(4):
+                ca = self.face_corner(f, k)
+                cb = self.face_corner(f, (k + 1) % 4)
+                v += 0.25 * self.dof(c, ca) - self.dof(c, self.NUM_POINTS + self._between(ca, cb))
+            lo = min(lo, v)
+            hi = max(hi, v)
+        return lo, hi
+
+
+class _H1Order2Field(_QuadraticDofs, _Order2Range, _Interpolated):
     """H1, order 2, Shared: values at the corners, the middles of edges and quad
     faces, and a hexahedron's center, interpolated by the shape's quadratic
     Lagrange functions."""
@@ -1243,6 +1307,11 @@ class _L2Order0Field:
     @tack.func
     def corner_value(self, i, j):
         return self.get(self.offsets[self.entity_id(i)])
+
+    @tack.func
+    def value_range(self, i):
+        v = self.dof(i, 0)                                # the cell's one value
+        return v, v
 
 
 # ── Tensor bases of any order (tack.dataset.bases) ──────────────────
@@ -1315,7 +1384,41 @@ class _TensorPolynomials:
 
 
 
-class _TensorBasis(_TensorPolynomials):
+class _TensorRange:
+    """A tensor field's bound over a cell: its values (less node 0's) taken to Bernstein
+    coefficients one axis at a time (``basis_bernstein``); the field lies between
+    the least and the greatest."""
+
+    @tack.func
+    def value_range(self, c):
+        q = self.ORDER + 1
+        count = (self.ORDER + 1) ** self.DIMENSION
+        cur = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        first = self.dof(c, 0)
+        for n in range(count):
+            cur[n] = self.dof(c, n) - first
+        stride = 1
+        for _ in range(self.DIMENSION):
+            for n in range(count):
+                i = (n // stride) % q
+                base = n - i * stride
+                total = cur[0] - cur[0]
+                for m in range(q):
+                    total += self.basis_bernstein[i * q + m] * cur[base + m * stride]
+                nxt[n] = total
+            for n in range(count):
+                cur[n] = nxt[n]
+            stride *= q
+        lo = cur[0]
+        hi = lo
+        for n in range(1, count):
+            lo = min(lo, cur[n])
+            hi = max(hi, cur[n])
+        return first + lo, first + hi
+
+
+class _TensorBasis(_TensorRange, _TensorPolynomials):
     """A field's value and parametric gradient in a tensor basis, from ``dof(c, n)``,
     the space's."""
 
@@ -1579,6 +1682,11 @@ class _ConstantField:
     @tack.func
     def corner_value(self, i, j):
         return self.get(self.entity_id(i))
+
+    @tack.func
+    def value_range(self, i):
+        v = self.dof(i, 0)                                # the cell's one value
+        return v, v
 
 
 class _PolyhedralPointField:

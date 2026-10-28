@@ -388,7 +388,8 @@ def _cells_of_dimension(data, field, dimension):
 
 
 @on_inputs_device
-def contour(data, field, value, merge_points=True, fields=None, dimension=None):
+def contour(data, field, value, merge_points=True, fields=None, dimension=None,
+            subdivision=None):
     """Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles
     (as polygons on polyhedra); lines of a 2D mesh.
 
@@ -398,9 +399,17 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None):
     are not shared between values.
 
     ``field`` is a scalar field with a basis, or its name: ``H1`` of order 1
-    (point data), or ``L2`` (DG, an order per cell too). An order-2 ``H1``
-    field is refused: its cells would need subdividing, and their corner
-    values alone are another, linear field. Each 3D cell contributes the
+    (point data), or ``L2`` (DG, an order per cell too).
+
+    On segments, quads, pixels, hexahedra and voxels, a field above order 1 or a
+    curved geometry is cut on linear sub-cells (``tack.dataset.subdivide``): each
+    cell whose field's Bernstein coefficients can hold a value is cut into
+    ``subdivision`` lattice steps along each axis -- by default the largest
+    order of the field and geometry -- and the surface is the sub-cells'; a
+    lattice point shared by cells is evaluated once, so the surface has no
+    cracks. ``subdivision=1`` is the cut of the cells linearized at their
+    corners. Elsewhere an order-2 ``H1`` field is refused: its cells would
+    need subdividing, and their corner values alone are another, linear field. Each 3D cell contributes the
     triangles of VTK's case tables for its corner values, interpolated along
     its edges; in a mesh with 3D cells, cells of lower dimension contribute
     nothing, and a cell constant has no level set inside its cells.
@@ -440,6 +449,16 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None):
     data, field = visible(data, field)
     field = _field(data, field)
     space = field.space
+    from tack.dataset.algorithms.subdivide import subdivided_contour, subdivides
+
+    if (dimension is None or dimension == data.topology.dimension) and (
+            subdivides(data, field) or (subdivision is not None and subdivision > 1)):
+        _scalar_floating("contour", field)
+        levels, nlevels, _ = _levels(value, field)
+        return subdivided_contour(
+            data, field, value, levels, nlevels, subdivision,
+            lambda refined, name: contour(refined, name, value, merge_points=merge_points,
+                                          fields=fields, dimension=dimension))
     if isinstance(space, H1) and space.order != 1:
         raise NotImplementedError(
             f"contour of an order-{space.order} H1 field is not built: it would subdivide "

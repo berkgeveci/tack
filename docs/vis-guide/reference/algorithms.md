@@ -168,6 +168,7 @@ The same points and region, in other cells.
 | [`as_polyhedra`](#tack.dataset.algorithms.as_polyhedra.as_polyhedra) | a shape-based mesh as a polyhedral one | dataset | — | — |
 | [`as_polygons`](#tack.dataset.algorithms.as_polygons.as_polygons) | 2D cells as a polygonal mesh | dataset | — | — |
 | [`shrink`](#tack.dataset.algorithms.shrink.shrink) | every cell shrunk toward its centroid | dataset | vtkShrinkFilter | Shrink |
+| [`subdivide`](#tack.dataset.algorithms.subdivide.subdivide) | curved or high-order cells as linear sub-cells on each cell's lattice, fields at the lattice points | dataset | vtkCellGridToUnstructuredGrid | — |
 
 ::: tack.dataset.algorithms.tetrahedralize.tetrahedralize
     options: {show_root_full_path: false}
@@ -182,6 +183,9 @@ The same points and region, in other cells.
     options: {show_root_full_path: false}
 
 ::: tack.dataset.algorithms.shrink.shrink
+    options: {show_root_full_path: false}
+
+::: tack.dataset.algorithms.subdivide.subdivide
     options: {show_root_full_path: false}
 
 ## Moving the geometry

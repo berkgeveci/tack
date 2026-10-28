@@ -289,3 +289,89 @@ def test_a_curved_cells_box_holds_it(backend):
     lo, hi = locator.lo.numpy()[0], locator.hi.numpy()[0]
     assert (x >= lo - 1e-12).all() and (x <= hi + 1e-12).all()
     assert (locator.find(x).cells.numpy() == 0).all()
+
+
+# ── Subdivision ─────────────────────────────────────────────────────
+
+@tack.func
+def _sphere(x):
+    return ((x[0] - 1.0) * (x[0] - 1.0) + (x[1] - 1.0) * (x[1] - 1.0)
+            + (x[2] - 1.0) * (x[2] - 1.0))
+
+
+def _ball(order, seed=11):
+    grid = td.uniform_grid((5, 5, 5), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    data = _rotated(td.extract_cells(grid, np.arange(grid.num_cells)), seed=seed)
+    data.fields["u"] = td.interpolate(data, _sphere, td.H1(data, order=order))
+    data.fields["c"] = td.Field(td.Constant(data),
+                                tack.array(np.arange(data.num_cells, dtype=np.float64)))
+    return data
+
+
+def _open_edges(surface):
+    from collections import Counter
+
+    edges = Counter()
+    for t in surface.topology.connectivity.numpy().reshape(-1, 3):
+        for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+            edges[(min(a, b), max(a, b))] += 1
+    return sum(1 for count in edges.values() if count != 2)
+
+
+@pytest.mark.parametrize("level", [1, 2, 3])
+def test_subdivide_has_each_lattice_point_once(backend, level):
+    """``subdivide`` at level ``s``: level^3 hexahedra a cell, one point per node of the
+    equispaced order-``s`` space (each shared lattice point once), fields exact at
+    the lattice points, cell fields on every sub-cell."""
+    data = _rotated(_hexes(), seed=2)
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3))
+    data.fields["c"] = td.Field(td.Constant(data),
+                                tack.array(np.arange(data.num_cells, dtype=np.float64)))
+    out = td.subdivide(data, level)
+    points = data.num_points if level == 1 else td.H1(data, order=level).size
+    assert (out.num_cells, out.num_points) == (data.num_cells * level ** 3, points)
+    x = out.positions()
+    np.testing.assert_allclose(out.fields["u"].values.numpy(), _cubic_at(x), atol=1e-12)
+    assert np.bincount(out.fields["c"].values.numpy().astype(int)).tolist() == \
+        [level ** 3] * data.num_cells
+    assert out.num_cells and td.subdivide(data).num_cells == data.num_cells * 27   # order 3
+
+
+def test_contours_of_high_order_fields_converge_and_close(backend):
+    """A sphere's field at order 3 contoured on lattices of 1 to 5 steps: no open
+    edge, so no cracks between cells turned every way; the radius error falls as
+    the square of the step; level 1 is the corners' linear contour."""
+    data = _ball(3)
+    errors = []
+    for level in (1, 2, 3, 5):
+        surface = td.contour(data, "u", 0.49, subdivision=level)
+        assert _open_edges(surface) == 0
+        assert (surface.fields["c"].values.numpy() >= 0).all()          # carried from parents
+        errors.append(np.abs(np.linalg.norm(surface.positions() - 1.0, axis=1) - 0.7).max())
+    assert errors == sorted(errors, reverse=True) and errors[-1] < 4e-3
+    linear = _ball(1)
+    corners = td.contour(linear, "u", 0.49)
+    np.testing.assert_array_equal(np.sort(td.contour(data, "u", 0.49, subdivision=1).positions(), 0),
+                                  np.sort(corners.positions(), 0))
+    assert td.contour(data, "u", 0.49).num_cells == td.contour(data, "u", 0.49,
+                                                               subdivision=3).num_cells
+
+
+def test_only_cells_that_can_hold_the_value_are_cut(backend):
+    """Culling by the Bernstein bound gives the surface subdividing every cell gives."""
+    data = _ball(3)
+    culled = td.contour(data, "u", 0.49, subdivision=3)
+    whole = td.contour(td.subdivide(data, 3), "u", 0.49)
+    np.testing.assert_allclose(np.sort(culled.positions(), 0), np.sort(whole.positions(), 0),
+                               atol=1e-12)
+
+
+def test_slices_of_a_curved_geometry_lie_on_their_plane(backend):
+    data = _ball(1)
+    data.geometry = td.interpolate(data, _bend, td.H1(data, order=3), dtype=tack.vec3(tack.f64))
+    normal = np.array([0.3, 0.4, 1.0])
+    cut = td.slice_plane(data, [1.0, 1.0, 1.0], normal)
+    assert cut.num_cells > td.slice_plane(data, [1.0, 1.0, 1.0], normal, subdivision=1).num_cells
+    np.testing.assert_allclose((cut.positions() - 1.0) @ (normal / np.linalg.norm(normal)), 0,
+                               atol=1e-12)
+    assert _open_edges(cut) > 0                      # a slice is open, where the mesh ends
