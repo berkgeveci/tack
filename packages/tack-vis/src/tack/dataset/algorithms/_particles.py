@@ -107,7 +107,7 @@ def _unbits(message):
                     axis=1)
 
 
-def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
+def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighbors=False):
     """``advect`` over the pieces of ``data``: the particles where they stopped, a
     ``PartitionedDataSet`` of one vertex dataset per piece -- each particle on
     the piece it stopped in, or left from -- with ``steps``, ``time``,
@@ -116,7 +116,7 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
     ``seeds`` are this rank's, an ``(n, 3)`` array; across MPI ranks each rank
     passes its own, numbered after the ranks before it."""
     blocks, pieces, finished, _ = _rounds(data, field, seeds, step_size, steps, integrator,
-                                          record=False)
+                                          record=False, neighbors=neighbors)
     out = []
     for g, piece in zip(blocks.local, pieces):
         done = finished[g]
@@ -136,7 +136,8 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4"):
     return PartitionedDataSet(out, world=blocks.world)
 
 
-def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", unit="time"):
+def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", unit="time",
+                       neighbors=False):
     """``streamlines`` over the pieces of ``data``: each piece's share of the
     paths, a ``PartitionedDataSet`` of polyline datasets. A particle's path is
     cut where it crosses from piece to piece: each piece holds the stretches it
@@ -147,7 +148,7 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", u
     from tack.dataset.polyhedra import PolylineTopology
 
     blocks, pieces, _, traced = _rounds(data, field, seeds, step_size, steps, integrator,
-                                        record=True, unit=unit)
+                                        record=True, unit=unit, neighbors=neighbors)
     out = []
     for g, piece in zip(blocks.local, pieces):
         stretches = sorted(traced[g], key=lambda s: (s[0], s[1]))
@@ -187,7 +188,8 @@ def streamlines_pieces(data, field, seeds, step_size, steps, integrator="rk4", u
     return PartitionedDataSet(out, world=blocks.world)
 
 
-def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time"):
+def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time",
+            neighbors=False):
     """The rounds: ``(blocks, pieces, finished, traced)``, the particles each piece
     finished with, and with ``record`` each piece's stretches ``(seed, segment,
     positions, times)``."""
@@ -215,7 +217,7 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
             finished[g].append(outside[g])
             pending[g], done = _advance(pieces[g - blocks.local.start], field,
                                         arrived[g], step_size, steps, integrator, record,
-                                        traced[g], unit)
+                                        traced[g], unit, neighbors)
             finished[g].append(done)
     else:
         raise RuntimeError("particles were still in flight after a round per step")
@@ -291,7 +293,7 @@ def _route(blocks, pieces, locators, boxes, pending):
 
 
 def _advance(piece, field, particles, step_size, steps, integrator, record, traced,
-             unit="time"):
+             unit="time", neighbors=False):
     """Advect a piece's particles: ``(in flight, finished)``. With ``record``, each
     particle's stretch here goes into ``traced``."""
     if not len(particles):
@@ -301,7 +303,7 @@ def _advance(piece, field, particles, step_size, steps, integrator, record, trac
     with piece.device:
         xs, times, taken, status, (trace, trace_times), lengths, capacity = _run(
             piece, field, np.asarray(particles.x, dtype), step_size, steps, integrator,
-            None, record, resume=resume, handoff=True, unit=unit)
+            None, record, resume=resume, handoff=True, unit=unit, neighbors=neighbors)
     out = _Particles(xs.numpy().reshape(-1, 3), time=times.numpy(), steps=taken.numpy(),
                      status=status.numpy(), seed=particles.seed,
                      segments=particles.segments + 1)

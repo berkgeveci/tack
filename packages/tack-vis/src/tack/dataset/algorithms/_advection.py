@@ -359,12 +359,13 @@ def _velocity(data, field):
 
 
 def _run(data, field, seeds, step_size, steps, integrator, locator, record, resume=None,
-         handoff=False, unit="time"):
+         handoff=False, unit="time", neighbors=False):
     """``resume``, ``(times, steps, status)`` for the seeds, goes on from there:
     ``steps`` counts the steps already taken, and a stopped particle stays.
     ``handoff`` stops a particle after a whole step ending in a ghost cell
     (``HANDOFF``). ``unit`` is what ``step_size`` measures: ``"time"``, or
-    ``"length"`` along the path."""
+    ``"length"`` along the path. ``neighbors`` walks from a particle's last cell
+    to its face neighbours before searching the bins (``CellLocator.cell_neighbors``)."""
     if int(steps) < 1:
         raise ValueError(f"steps must be at least 1, not {steps!r}")
     if integrator not in ("rk4", "euler"):
@@ -386,7 +387,7 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     if not locator.serves(data):
         raise ValueError("the locator was built for another topology or geometry, or "
                          "Tack has written the positions since: make a new one")
-    mesh = mesh_search(data, locator, positions, strict=False)
+    mesh = mesh_search(data, locator, positions, strict=False, neighbors=neighbors)
     dtype = data.dtype
     # Seeds in an array of 3-vectors are copied on the device; anything else
     # comes from the host.

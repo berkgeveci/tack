@@ -49,7 +49,7 @@ def _chains(kept, starts, lengths, line_offsets, line_points):
 
 @on_inputs_device
 def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
-                step_unit="time"):
+                step_unit="time", neighbors=False):
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
@@ -75,7 +75,8 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
 
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import streamlines_pieces
-        return streamlines_pieces(data, field, seeds, step_size, steps, integrator, step_unit)
+        return streamlines_pieces(data, field, seeds, step_size, steps, integrator, step_unit,
+                                  neighbors)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
@@ -85,7 +86,8 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     from tack.dataset.polyhedra import PolylineTopology
 
     _, _, _, _, (trace, trace_times), lengths, capacity = _run(
-        data, field, seeds, step_size, steps, integrator, locator, record=True, unit=step_unit)
+        data, field, seeds, step_size, steps, integrator, locator, record=True, unit=step_unit,
+        neighbors=neighbors)
     # Everything is chosen and numbered on the device; only counts come back.
     m = int(lengths.shape[0])
     idt = ids.for_output(data, m * capacity)

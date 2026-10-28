@@ -1366,6 +1366,20 @@ seeds and 200 steps it takes 0.27 s on 8 CPU threads and 0.33 s on Metal
 for hexahedra (0.34 s and 0.59 s for tetrahedra), against 2.1 s (1.6 s)
 for VTK's `vtkStreamTracer` on 8 threads.
 
+A stage first tries the cell the particle was last found in, taking it only
+where it holds the point well inside (`shapes.WELL_INSIDE`, a thousandth of
+the cell, so no other cell of the mesh holds it and the search would give the
+same answer). About one location in seven misses, mostly next to a face.
+`advect(..., neighbors=True)` and `streamlines(..., neighbors=True)` then try
+that cell's face neighbours, by the same rule, before the bins: a point that
+left its cell is mostly across a face (78% of the misses on the ONERA M6, 43-49%
+on the aneurysm), which a few cells' tests find where the bins test 50 to 100.
+Streamlines on the CPU take 1.5-2x less time there, the paths the same bit for
+bit. The table of neighbours (`CellLocator.cell_neighbors()`, six ids a cell)
+is built from the faces on first use and kept with the locator: 0.9 s and 210
+MB for the aneurysm's 8.7M cells, 4.1 s and 1.1 GB for the M6's 46.9M. Only
+solid cells walk: pyramids, polyhedra and surfaces search the bins as before.
+
 ## Interoperability
 
 | Function | |

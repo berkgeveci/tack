@@ -113,6 +113,77 @@ def test_trying_the_last_cell_first_changes_nothing(backend, mesh, monkeypatch):
     np.testing.assert_array_equal(traces[0][1], traces[1][1])
 
 
+@pytest.mark.parametrize("mesh", [*MESHES, "graded tetrahedra"])
+def test_walking_to_the_last_cells_neighbours_changes_nothing(backend, mesh):
+    """``neighbors=True`` tries the last cell's face neighbours before the bins
+    (``_MeshSearch.find_from``), taking one only where it holds the point well
+    inside, as the last cell is taken: the traces, times and particles are the
+    search's, bit for bit, on every shape (pyramids and polyhedra search the
+    bins as before) and on cells graded a millionfold, leaving the mesh
+    included."""
+    data = _graded() if mesh == "graded tetrahedra" else MESHES[mesh]()
+    center = (0.0, 0.0) if mesh.startswith(("structured", "graded")) else (2.0, 2.0)
+    _rotation(data, center)
+    seeds = np.array([[center[0] + 1.0, center[1], 0.1], [center[0] + 0.3, center[1] + 0.6, 0.2],
+                      [center[0] + 1.9, center[1] + 0.5, -0.45]])
+    lines = [td.streamlines(data, "v", seeds, 0.03, 200, neighbors=walk) for walk in (False, True)]
+    for name in ("positions", "time"):
+        a, b = (out.positions() if name == "positions" else out.fields["time"].values.numpy()
+                for out in lines)
+        np.testing.assert_array_equal(a, b)
+    ends = [td.advect(data, "v", seeds, 0.03, 200, neighbors=walk) for walk in (False, True)]
+    np.testing.assert_array_equal(ends[0].positions(), ends[1].positions())
+    for name in ("steps", "status", "time"):
+        np.testing.assert_array_equal(ends[0].fields[name].values.numpy(),
+                                      ends[1].fields[name].values.numpy())
+
+
+@pytest.mark.parametrize("mesh", ["structured", "tetrahedra", "hexahedra", "wedges", "pyramids"])
+def test_the_neighbour_table_holds_each_cells_face_neighbours(backend, mesh):
+    """``CellLocator.cell_neighbors``: cell c's neighbour across its local face k at
+    ``6 c + k``, -1 on the boundary and past its faces; each pair of cells that
+    share a face's points (and only those) are each other's neighbours."""
+    if mesh not in MESHES:
+        pytest.skip("needs VTK for this mesh")
+    data = MESHES[mesh]()
+    table = td.CellLocator(data).cell_neighbors().numpy().reshape(-1, 6)
+    cells = td.extract_cells(data, np.arange(data.num_cells)).topology    # the same ids
+    offsets, members = np.asarray(cells.offsets), np.asarray(cells.connectivity)
+    points = [set(members[offsets[c]:offsets[c + 1]].tolist()) for c in range(data.num_cells)]
+    faces = data.topology.faces()
+    rows = faces.rows.numpy().reshape(-1, 4)
+    expected = [set() for _ in range(data.num_cells)]
+    for row in rows:
+        face = {int(p) for p in row if p >= 0}
+        sharing = [c for c in range(data.num_cells) if face <= points[c]]
+        assert len(sharing) <= 2
+        if len(sharing) == 2:
+            expected[sharing[0]].add(sharing[1])
+            expected[sharing[1]].add(sharing[0])
+    for c in range(data.num_cells):
+        assert {int(f) for f in table[c] if f >= 0} == expected[c]
+        assert (table[c] >= 0).sum() == len(expected[c])
+
+
+def test_no_neighbour_table_where_cells_are_not_solids(backend):
+    """Surfaces and polyhedra walk nowhere: ``cell_neighbors`` is ``None``, and
+    ``neighbors=True`` searches the bins, as before."""
+    surface = td.extract_surface(_grid())
+    assert td.CellLocator(surface).cell_neighbors() is None
+    assert td.CellLocator(td.as_polyhedra(_grid())).cell_neighbors() is None
+
+
+def test_pieces_walk_to_neighbours_as_the_whole_does(backend):
+    """Over pieces, each piece walks its own cells: the paths are the pieces' paths
+    without the walk, bit for bit."""
+    data = _rotation(_grid())
+    pieces = td.split(data, 2, ghost_layers=1)
+    seeds = np.array([[1.0, 0.0, 0.1], [0.3, 0.6, 0.2]])
+    out = [td.streamlines(pieces, "v", seeds, 0.03, 100, neighbors=walk) for walk in (False, True)]
+    for a, b in zip(*out):
+        np.testing.assert_array_equal(a.positions(), b.positions())
+
+
 def test_a_step_after_a_push_out_starts_afresh(backend, monkeypatch):
     """Rotation inside a disk of cells, particles near its staircased rim: a
     step's stages leave the mesh, the step is bisected, and the particle pushed

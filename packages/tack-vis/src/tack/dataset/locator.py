@@ -418,6 +418,20 @@ def _resolve(found, none, ncells):
             found[q] = r - ncells
 
 
+#: Face neighbours kept a cell (cell_neighbors): a hexahedron's six.
+_MAX_FACES = 6
+
+
+@tack.kernel
+def _face_neighbors(sides, per_cell, neighbors):
+    # Each interior face makes its two cells neighbours, in their local faces' slots.
+    for f in range(sides.shape[0]):
+        s = sides[f]
+        if s[2] >= 0:
+            neighbors[per_cell * s[0] + s[1]] = s[2]
+            neighbors[per_cell * s[2] + s[3]] = s[0]
+
+
 class CellLocator:
     """Locates points in ``data``'s cells; build once, ``find`` many times. ``density``
     is the bins per cell of the uniform grid a search from the cells buckets
@@ -586,6 +600,26 @@ class CellLocator:
         first leaf's index."""
         self.cell_bins()
         return self._leaves
+
+    def cell_neighbors(self):
+        """Each cell's neighbours across its faces, for advection's walk from the cell
+        a particle was last found in (``advect(..., neighbors=True)``): ``_MAX_FACES``
+        ids a cell, cell ``c``'s across its local face ``k`` at ``_MAX_FACES * c +
+        k``, ``-1`` where there is none (the boundary, a face it does not have).
+        ``None`` for a topology whose cells are not solids (no walk there). Made
+        from the topology's faces on first use and kept: ``_MAX_FACES`` ids a cell
+        (1.1 GB at 46.9M cells), and the faces' derivation the first time."""
+        if "_cell_neighbors" not in self.__dict__:
+            data = self.data
+            topology = data.topology
+            neighbors = None
+            if topology.dimension == 3 and not self.polyhedral and data.num_cells:
+                neighbors = tack.full((_MAX_FACES * data.num_cells,), -1, data.id_dtype)
+                sides = topology.faces().sides
+                if sides.shape[0]:
+                    _face_neighbors(sides, _MAX_FACES, neighbors)
+            self._cell_neighbors = neighbors
+        return self._cell_neighbors
 
     @property
     def _device(self):

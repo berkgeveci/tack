@@ -281,7 +281,12 @@ class _MeshSearch:
     #: time (the tests compare the two, bit for bit).
     PREVIOUS_CELL = 1
 
-    def __init__(self, cells, present, positions, locator, tolerance):
+    #: 1 (an instance's, compiled in): ``find_from`` tries the given cell's face
+    #: neighbours (``neighbors``, ``CellLocator.cell_neighbors``) before the bins.
+    NEIGHBORS = 0
+    MAX_FACES = 6
+
+    def __init__(self, cells, present, positions, locator, tolerance, neighbors=None):
         self.cells = cells
         self.kinds = _kinds(present)
         self.tetra = shapes.Tetra()
@@ -302,6 +307,9 @@ class _MeshSearch:
         self.slack = float(locator.slack)
         self.tolerance = float(tolerance)
         self.ncells = locator.data.num_cells
+        self.neighbors = neighbors if neighbors is not None else tack.zeros((1,), tack.i32)
+        if neighbors is not None:
+            self.NEIGHBORS = 1
 
     @tack.func
     def find(self, p):
@@ -321,13 +329,25 @@ class _MeshSearch:
         holds ``p`` then, so the search would give the same cell, and the same
         coordinates, computed alike. Elsewhere, and for pyramids (whose
         coordinates collapse at the apex), surfaces and cells without a
-        reference element, the bins are searched."""
+        reference element, the bins are searched.
+
+        With ``NEIGHBORS``, the hint's face neighbours are tried next, by the same
+        rule: a point that left its cell is mostly in one across a face (78% of
+        the misses on the ONERA M6, 43-49% on the aneurysm), which a few cells'
+        tests find where the bins test 50-100."""
         e = self.ncells
         kind = 0
         pc = p - p
         tet = -1
         if self.PREVIOUS_CELL == 1 and self.cells.NO_REFERENCE == 0 and hint < self.ncells:
             e, kind, pc = self._well_inside(p, hint)
+            if self.NEIGHBORS == 1 and e == self.ncells:
+                for k in range(self.MAX_FACES):
+                    f = self.neighbors[self.MAX_FACES * hint + k]
+                    if f >= 0:
+                        e, kind, pc = self._well_inside(p, f)
+                        if e < self.ncells:
+                            break
         if e == self.ncells:
             e, kind, pc, tet = self.find(p)
         return e, kind, pc, tet
@@ -493,9 +513,11 @@ class _MeshSearch:
         return w
 
 
-def mesh_search(data, locator, positions=None, strict=True):
+def mesh_search(data, locator, positions=None, strict=True, neighbors=False):
     """A ``_MeshSearch`` over ``data`` with ``locator``'s bins, or ``None`` where
-    this module cannot serve the dataset (see the module's docstring)."""
+    this module cannot serve the dataset (see the module's docstring); with
+    ``neighbors``, walking to a hint's face neighbours too (where the locator
+    has them, ``CellLocator.cell_neighbors``)."""
     from tack.dataset.locator import _TOLERANCE
 
     geometry = data.geometry
@@ -508,7 +530,8 @@ def mesh_search(data, locator, positions=None, strict=True):
     if found is None:
         return None
     cells, present = found
-    return _MeshSearch(cells, present, positions, locator, _TOLERANCE)
+    return _MeshSearch(cells, present, positions, locator, _TOLERANCE,
+                       locator.cell_neighbors() if neighbors else None)
 
 
 # ── Fields by cell id ───────────────────────────────────────────────

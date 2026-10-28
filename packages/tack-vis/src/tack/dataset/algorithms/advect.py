@@ -15,7 +15,8 @@ __all__ = ['ParticleStatus', 'advect']
 
 
 @on_inputs_device
-def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
+def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
+           neighbors=False):
     """Seeds moved through the velocity ``field`` (a 3-vector field or its name: point
     data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as
     Viskores' ParticleAdvection: a dataset of the particles where they stopped,
@@ -23,7 +24,11 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
     bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,
     ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of
     3-vectors; ``integrator`` ``"rk4"`` or ``"euler"``; ``locator`` reuses a
-    ``CellLocator`` of ``data``.
+    ``CellLocator`` of ``data``. ``neighbors=True`` tries the face neighbours of
+    the cell a particle was last found in before searching the locator's bins:
+    the same particles, bit for bit, in about half the time on large meshes, for
+    a table of six ids a cell kept with the locator
+    (``CellLocator.cell_neighbors``).
 
     ``seeds`` may also be what ``advect`` returned: the particles go on from
     where they stopped, with their times and the steps they took (``steps``
@@ -45,7 +50,7 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
         step_size = units.magnitude(step_size, _time_unit(data, field), "advect's step size")
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import advect_pieces
-        return advect_pieces(data, field, seeds, step_size, steps, integrator)
+        return advect_pieces(data, field, seeds, step_size, steps, integrator, neighbors)
     from tack.dataset.ghosts import refuse_hidden, visible
 
     if locator is None:
@@ -55,7 +60,7 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
     seeds, resume, seed_ids = _resumed(seeds, data)
     xs, times, taken, status, _, _, _ = _run(data, field, seeds, step_size, steps,
                                              integrator, locator, record=False,
-                                             resume=resume)
+                                             resume=resume, neighbors=neighbors)
     out = _vertices(xs, data)                  # the particles stay on the device
     points = Values(out, "points")
     for name, values, unit in (("steps", taken, None), ("time", times, _time_unit(data, field)),
