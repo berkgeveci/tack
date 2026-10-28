@@ -4070,6 +4070,11 @@ threads (TBB), Tack's CPU on 28 threads, Viskores 1.2.0 and Tack on CUDA.</p>
 </tr>
 </tbody>
 </table>
+<p>A dash is a comparison not made, not a failure. VTK's Viskores filters, through
+which Viskores is timed here, have no cell gradient, cell volume or cell
+centers, so the Viskores column has none for them. VTK's side was timed against
+Tack on the CPU alone in this run, and had no point-gradient pair, so the
+VTK / Tack CUDA column has neither; the next run on this machine fills both.</p>
 <ul>
 <li><strong>On the GPU</strong>, Tack is ahead of Viskores on every filter but tetrahedra's
   cell to point (0.95×), up to 5.4× on threshold and 4.8× on slice. Warm,
@@ -4263,6 +4268,8 @@ the best each has here.</p>
 </tr>
 </tbody>
 </table>
+<p>Dashes as above: Viskores has no cell gradient, volume or centers through VTK,
+and VTK had no point-gradient pair in this run.</p>
 <ul>
 <li><strong>Tack's CPU against VTK</strong>: ahead on every filter but cell to point
   (0.84× and 0.94×, where Tack's fresh time is mostly deriving the point
@@ -4497,7 +4504,8 @@ every path runs its full length, within 3.8e-6 of Tack's, in 22.9 s.</p>
   <code>benchmarks/vtk_compare/meshes.py</code>.</li>
 </ul>
 <h2 id="running-times">Running times<a class="headerlink" href="#running-times" title="Permanent link">&para;</a></h2>
-<p>All in milliseconds. The Linux machine: jura, idle; NVIDIA driver 615.71.09;
+<p>All in milliseconds; a dash is a time not taken (see under the tables above). The
+Linux machine: jura, idle; NVIDIA driver 615.71.09;
 VTK master built with TBB; Viskores 1.2.0 (CUDA arch 89, 64-bit ids,
 double precision); Tack <code>main</code> at <code>291fcfe</code> (2026-10-26).</p>
 <table>
