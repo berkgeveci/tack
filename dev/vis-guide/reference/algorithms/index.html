@@ -2726,6 +2726,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.subdivide.subdivide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        subdivide
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5139,6 +5150,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.subdivide.subdivide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        subdivide
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -6589,6 +6611,8 @@ with only the points they use: fields carry as <code>threshold</code> carries th
     <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -6601,9 +6625,20 @@ made in one pass over the cells (each cell compared with every value),
 with each output cell's value in a cell field <code>contour_value</code>. Points
 are not shared between values.</p>
 <p><code>field</code> is a scalar field with a basis, or its name: <code>H1</code> of order 1
-(point data), or <code>L2</code> (DG, an order per cell too). An order-2 <code>H1</code>
-field is refused: its cells would need subdividing, and their corner
-values alone are another, linear field. Each 3D cell contributes the
+(point data), or <code>L2</code> (DG, an order per cell too).</p>
+<p>On segments, quads, pixels, hexahedra and voxels, a field above order 1 or a
+curved geometry is cut on linear sub-cells (<code>tack.dataset.subdivide</code>): each
+cell whose field's Bernstein coefficients can hold a value is cut into
+<code>subdivision</code> lattice steps along each axis -- by default the largest
+order of the field and geometry -- and the surface is the sub-cells'; a
+lattice point shared by cells is evaluated once, so the surface has no
+cracks. <code>subdivision=1</code> is the cut of the cells linearized at their
+corners. <code>tolerance</code> (in the field's unit) chooses the fewest steps whose
+estimated error is within it instead: what linearizing a cell loses is
+bounded by its Bernstein coefficients' distance from the corners'
+interpolation, divided by about the square of the steps; a curved
+geometry's own bend is not counted. Give one or the other. Elsewhere an order-2 <code>H1</code> field is refused: its cells would
+need subdividing, and their corner values alone are another, linear field. Each 3D cell contributes the
 triangles of VTK's case tables for its corner values, interpolated along
 its edges; in a mesh with 3D cells, cells of lower dimension contribute
 nothing, and a cell constant has no level set inside its cells.</p>
@@ -6778,8 +6813,36 @@ each came from.</p>
 <span class="normal">529</span>
 <span class="normal">530</span>
 <span class="normal">531</span>
-<span class="normal">532</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">532</span>
+<span class="normal">533</span>
+<span class="normal">534</span>
+<span class="normal">535</span>
+<span class="normal">536</span>
+<span class="normal">537</span>
+<span class="normal">538</span>
+<span class="normal">539</span>
+<span class="normal">540</span>
+<span class="normal">541</span>
+<span class="normal">542</span>
+<span class="normal">543</span>
+<span class="normal">544</span>
+<span class="normal">545</span>
+<span class="normal">546</span>
+<span class="normal">547</span>
+<span class="normal">548</span>
+<span class="normal">549</span>
+<span class="normal">550</span>
+<span class="normal">551</span>
+<span class="normal">552</span>
+<span class="normal">553</span>
+<span class="normal">554</span>
+<span class="normal">555</span>
+<span class="normal">556</span>
+<span class="normal">557</span>
+<span class="normal">558</span>
+<span class="normal">559</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles</span>
 <span class="sd">    (as polygons on polyhedra); lines of a 2D mesh.</span>
 
@@ -6789,9 +6852,21 @@ each came from.</p>
 <span class="sd">    are not shared between values.</span>
 
 <span class="sd">    ``field`` is a scalar field with a basis, or its name: ``H1`` of order 1</span>
-<span class="sd">    (point data), or ``L2`` (DG, an order per cell too). An order-2 ``H1``</span>
-<span class="sd">    field is refused: its cells would need subdividing, and their corner</span>
-<span class="sd">    values alone are another, linear field. Each 3D cell contributes the</span>
+<span class="sd">    (point data), or ``L2`` (DG, an order per cell too).</span>
+
+<span class="sd">    On segments, quads, pixels, hexahedra and voxels, a field above order 1 or a</span>
+<span class="sd">    curved geometry is cut on linear sub-cells (``tack.dataset.subdivide``): each</span>
+<span class="sd">    cell whose field&#39;s Bernstein coefficients can hold a value is cut into</span>
+<span class="sd">    ``subdivision`` lattice steps along each axis -- by default the largest</span>
+<span class="sd">    order of the field and geometry -- and the surface is the sub-cells&#39;; a</span>
+<span class="sd">    lattice point shared by cells is evaluated once, so the surface has no</span>
+<span class="sd">    cracks. ``subdivision=1`` is the cut of the cells linearized at their</span>
+<span class="sd">    corners. ``tolerance`` (in the field&#39;s unit) chooses the fewest steps whose</span>
+<span class="sd">    estimated error is within it instead: what linearizing a cell loses is</span>
+<span class="sd">    bounded by its Bernstein coefficients&#39; distance from the corners&#39;</span>
+<span class="sd">    interpolation, divided by about the square of the steps; a curved</span>
+<span class="sd">    geometry&#39;s own bend is not counted. Give one or the other. Elsewhere an order-2 ``H1`` field is refused: its cells would</span>
+<span class="sd">    need subdividing, and their corner values alone are another, linear field. Each 3D cell contributes the</span>
 <span class="sd">    triangles of VTK&#39;s case tables for its corner values, interpolated along</span>
 <span class="sd">    its edges; in a mesh with 3D cells, cells of lower dimension contribute</span>
 <span class="sd">    nothing, and a cell constant has no level set inside its cells.</span>
@@ -6831,6 +6906,20 @@ each came from.</p>
     <span class="n">data</span><span class="p">,</span> <span class="n">field</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
     <span class="n">field</span> <span class="o">=</span> <span class="n">_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
     <span class="n">space</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">subdivided_contour</span><span class="p">,</span> <span class="n">subdivides</span>
+
+    <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_in_unit_of</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;contour&#39;s tolerance&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">dimension</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">dimension</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="n">subdivides</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">subdivision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">subdivision</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">_scalar_floating</span><span class="p">(</span><span class="s2">&quot;contour&quot;</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+        <span class="n">levels</span><span class="p">,</span> <span class="n">nlevels</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_levels</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">subdivided_contour</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">levels</span><span class="p">,</span> <span class="n">nlevels</span><span class="p">,</span> <span class="n">subdivision</span><span class="p">,</span>
+            <span class="k">lambda</span> <span class="n">refined</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">contour</span><span class="p">(</span><span class="n">refined</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span>
+                                          <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">),</span>
+            <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> H1 field is not built: it would subdivide &quot;</span>
@@ -6941,6 +7030,8 @@ each came from.</p>
     <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -6951,9 +7042,10 @@ a contour of its values on the geometry, carrying fields as <code>contour</code>
 does (<code>merge_points</code> and <code>fields</code> are <code>contour</code>'s). <code>value</code> may be
 a sequence, as <code>contour</code>'s: every level in one
 pass, each output cell's in <code>contour_value</code>. <code>slice_plane</code> is this
-with a <code>Plane</code>. On a curved geometry (<code>H1</code> above order 1) the cells are cut
-linearized at their corners, as <code>contour</code> would need its cells subdivided
-for the curve inside them.</p>
+with a <code>Plane</code>. On a curved geometry (<code>H1</code> above order 1) of segments,
+quads, pixels, hexahedra or voxels the cells are cut on linear sub-cells,
+as <code>contour</code> cuts them (<code>subdivision</code>); on other cells, linearized at
+their corners.</p>
 
 
             <details class="mkdocstrings-source">
@@ -6974,23 +7066,35 @@ for the curve inside them.</p>
 <span class="normal">27</span>
 <span class="normal">28</span>
 <span class="normal">29</span>
-<span class="normal">30</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">slice</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">function</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">slice</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">function</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+          <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``function`` (``tack.dataset.implicit``) is ``value`` (zero by default):</span>
 <span class="sd">    a contour of its values on the geometry, carrying fields as ``contour``</span>
 <span class="sd">    does (``merge_points`` and ``fields`` are ``contour``&#39;s). ``value`` may be</span>
 <span class="sd">    a sequence, as ``contour``&#39;s: every level in one</span>
 <span class="sd">    pass, each output cell&#39;s in ``contour_value``. ``slice_plane`` is this</span>
-<span class="sd">    with a ``Plane``. On a curved geometry (``H1`` above order 1) the cells are cut</span>
-<span class="sd">    linearized at their corners, as ``contour`` would need its cells subdivided</span>
-<span class="sd">    for the curve inside them.&quot;&quot;&quot;</span>
+<span class="sd">    with a ``Plane``. On a curved geometry (``H1`` above order 1) of segments,</span>
+<span class="sd">    quads, pixels, hexahedra or voxels the cells are cut on linear sub-cells,</span>
+<span class="sd">    as ``contour`` cuts them (``subdivision``); on other cells, linearized at</span>
+<span class="sd">    their corners.&quot;&quot;&quot;</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">implicit_values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">function</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">values</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">subdivides</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">values</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">subdivides</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">)):</span>
         <span class="c1"># The function&#39;s values at the points: projected into order-1 H1, a</span>
         <span class="c1"># continuous field keeps them. contour refuses order 2, so slicing a</span>
         <span class="c1"># curved dataset raised.</span>
         <span class="n">values</span> <span class="o">=</span> <span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span>
+                   <span class="n">subdivision</span><span class="o">=</span><span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -7012,6 +7116,8 @@ for the curve inside them.</p>
     <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -7023,36 +7129,45 @@ to the plane along <code>normal</code>. The distance is computed in the geometry
 space -- per point, or per cell corner for an <code>L2</code> geometry -- so the cut is
 the cells' own. <code>value</code>, a signed distance along the unit normal, or a
 sequence of them, gives parallel planes, all in one pass. <code>slice</code> with a
-<code>Plane</code>; <code>merge_points</code> and <code>fields</code> are <code>contour</code>'s.</p>
+<code>Plane</code>; <code>merge_points</code>, <code>fields</code>, <code>subdivision</code> and <code>tolerance</code> (a
+distance) are <code>contour</code>'s.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/slice.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">39</span>
 <span class="normal">40</span>
 <span class="normal">41</span>
 <span class="normal">42</span>
 <span class="normal">43</span>
 <span class="normal">44</span>
-<span class="normal">45</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">slice_plane</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">slice_plane</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+                <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The cut of the 3D cells by the plane through ``origin`` with ``normal`` (any</span>
 <span class="sd">    length), as triangles: ``contour`` at zero of each position&#39;s signed distance</span>
 <span class="sd">    to the plane along ``normal``. The distance is computed in the geometry&#39;s own</span>
 <span class="sd">    space -- per point, or per cell corner for an ``L2`` geometry -- so the cut is</span>
 <span class="sd">    the cells&#39; own. ``value``, a signed distance along the unit normal, or a</span>
 <span class="sd">    sequence of them, gives parallel planes, all in one pass. ``slice`` with a</span>
-<span class="sd">    ``Plane``; ``merge_points`` and ``fields`` are ``contour``&#39;s.&quot;&quot;&quot;</span>
+<span class="sd">    ``Plane``; ``merge_points``, ``fields``, ``subdivision`` and ``tolerance`` (a</span>
+<span class="sd">    distance) are ``contour``&#39;s.&quot;&quot;&quot;</span>
     <span class="n">origin</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="s2">&quot;slice_plane&#39;s origin&quot;</span><span class="p">)</span>
     <span class="n">value</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="s2">&quot;slice_plane&#39;s distance&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;slice_plane&#39;s tolerance&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">slice</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">Plane</span><span class="p">(</span><span class="n">origin</span><span class="p">,</span> <span class="n">normal</span><span class="p">),</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span>
-                 <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+                 <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -8630,6 +8745,13 @@ makes cells drops them.</p>
 <td>vtkShrinkFilter</td>
 <td>Shrink</td>
 </tr>
+<tr>
+<td><a href="#tack.dataset.algorithms.subdivide.subdivide"><code>subdivide</code></a></td>
+<td>curved or high-order cells as linear sub-cells on each cell's lattice, fields at the lattice points</td>
+<td>dataset</td>
+<td>vtkCellGridToUnstructuredGrid</td>
+<td>—</td>
+</tr>
 </tbody>
 </table>
 
@@ -9096,6 +9218,79 @@ edges with it.</p>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">keep_marks</span>
 
     <span class="k">return</span> <span class="n">keep_marks</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">DataSet</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">corners</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">sets</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">sets</span><span class="p">)))</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.dataset.algorithms.subdivide.subdivide" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">subdivide</span>
+
+
+<a href="#tack.dataset.algorithms.subdivide.subdivide" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p><code>data</code>'s cells cut into <code>level</code> steps along each parametric axis -- linear
+hexahedra, quads or lines on each cell's lattice -- and its fields evaluated at
+the lattice points: a curved or high-order dataset as a linear one, as VTK's
+<code>vtkCellGridToUnstructuredGrid</code> gives one (for export, rendering, or a filter
+that takes only linear cells). <code>level</code> is by default the largest order of the
+geometry and fields. A lattice point shared by cells is one point, its value
+computed once. <code>H1</code> and <code>L2</code> fields become point data (an <code>L2</code> field's
+value at a shared point from one of its cells); cell fields go to every
+sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
+<span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>
+<span class="sd">    the lattice points: a curved or high-order dataset as a linear one, as VTK&#39;s</span>
+<span class="sd">    ``vtkCellGridToUnstructuredGrid`` gives one (for export, rendering, or a filter</span>
+<span class="sd">    that takes only linear cells). ``level`` is by default the largest order of the</span>
+<span class="sd">    geometry and fields. A lattice point shared by cells is one point, its value</span>
+<span class="sd">    computed once. ``H1`` and ``L2`` fields become point data (an ``L2`` field&#39;s</span>
+<span class="sd">    value at a shared point from one of its cells); cell fields go to every</span>
+<span class="sd">    sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.&quot;&quot;&quot;</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">fields</span><span class="p">)</span>
+    <span class="n">level</span> <span class="o">=</span> <span class="n">default_level</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">))</span> <span class="k">if</span> <span class="n">level</span> <span class="ow">is</span> <span class="kc">None</span> \
+        <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">level</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;subdivide&#39;s level is at least 1, not </span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">flags</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">:</span>
+        <span class="n">for_each</span><span class="p">(</span><span class="n">_all_cells</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">flags</span><span class="p">)</span>
+    <span class="n">refined</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_refined</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">flags</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">})</span>
+    <span class="k">return</span> <span class="n">refined</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -10751,29 +10946,7 @@ point, scalars or vectors.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/project.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">163</span>
-<span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span>
-<span class="normal">181</span>
-<span class="normal">182</span>
-<span class="normal">183</span>
-<span class="normal">184</span>
-<span class="normal">185</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">185</span>
 <span class="normal">186</span>
 <span class="normal">187</span>
 <span class="normal">188</span>
@@ -10821,7 +10994,30 @@ point, scalars or vectors.</p>
 <span class="normal">230</span>
 <span class="normal">231</span>
 <span class="normal">232</span>
-<span class="normal">233</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">space</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:</span>
 <span class="sd">    a new field. Values on points or cells count as order-1 ``H1`` and</span>
@@ -10889,8 +11085,9 @@ point, scalars or vectors.</p>
     <span class="n">target</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">field</span><span class="p">,</span> <span class="n">target</span><span class="p">]):</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
-            <span class="n">_cell_nodes</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">target</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span>
-                        <span class="n">space</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+            <span class="n">kernel</span> <span class="o">=</span> <span class="n">_tensor_cell_nodes</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="s2">&quot;tensor&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="k">else</span> <span class="n">_cell_nodes</span>
+            <span class="n">kernel</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">target</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span>
+                   <span class="n">space</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>

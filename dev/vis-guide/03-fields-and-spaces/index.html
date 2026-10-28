@@ -1857,6 +1857,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#higher-orders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Higher orders
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-material-interface-exposes-the-difference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3944,6 +3955,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#higher-orders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Higher orders
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-material-interface-exposes-the-difference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4088,6 +4110,16 @@ mesh and have runnable examples below.</p>
 <td>A higher-order H1 approximation; not an H2 space</td>
 </tr>
 <tr>
+<td><code>td.H1(data, order=p, nodes=...)</code></td>
+<td>From order 3, on segments, quads and hexahedra: <code>p - 1</code> per edge, <code>(p - 1)²</code> per face, <code>(p - 1)^d</code> per cell</td>
+<td>Spectral-element and MFEM fields of any order</td>
+</tr>
+<tr>
+<td><code>td.L2(data, order=p, nodes=...)</code></td>
+<td>From order 2 (or on Gauss–Legendre nodes): each cell's own <code>(p + 1)^d</code> values</td>
+<td>DG fields of any order</td>
+</tr>
+<tr>
 <td><code>td.Constant(data)</code></td>
 <td>One value per cell</td>
 <td>Cell averages, material parameters</td>
@@ -4116,7 +4148,8 @@ mesh and have runnable examples below.</p>
 </table>
 <p>For <code>L2(order=0)</code> the value is constant per cell; <code>L2(order=1)</code> uses each
 cell's own corners. <code>H1(order=2)</code> adds higher-order degrees of freedom on
-supported shapes. <code>Values</code> describes association without promising any
+supported shapes; <a href="#higher-orders">higher orders</a> add more of them on the
+tensor shapes. <code>Values</code> describes association without promising any
 interpolation between entities.</p>
 <p><code>tack.empty((field.space.size,), tack.vec3())</code> allocates one
 3-vector per DOF; <code>td.Field(field.space, values)</code> gives those values their
@@ -4325,6 +4358,60 @@ uv<span class="w"> </span>run<span class="w"> </span>--with<span class="w"> </sp
 </code></pre></div>
 <p>The optional plotting step writes standalone SVG and PNG files. The numerical
 checks run without Matplotlib.</p>
+<h2 id="higher-orders">Higher orders<a class="headerlink" href="#higher-orders" title="Permanent link">&para;</a></h2>
+<p>On segments, quads and hexahedra (pixels and voxels too) a space may have any
+order. Its nodes are the products of 1D nodes along each axis, chosen by
+<code>nodes=</code>: <code>"gauss_lobatto"</code> (the default, MFEM's for H1 and Nek5000's),
+<code>"equispaced"</code> (VTK's Lagrange cells, Exodus, gmsh) or, for <code>L2</code> alone,
+<code>"gauss_legendre"</code> (MFEM's default for DG), which has no nodes at a cell's
+ends to share. Up to order 2 the first two are the same nodes.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">blob</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="c1"># A smooth field: its level sets are curved surfaces inside every cell.</span>
+    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bend</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="c1"># A bend of the mesh: its cells&#39; faces curve.</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span><span class="p">]</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))</span>
+    <span class="n">space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>                  <span class="c1"># Gauss-Lobatto nodes by default</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">space</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">space</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s2">&quot;values on&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>An order-4 <code>H1</code> space on 64 hexahedra holds <code>17³ = 4913</code> values: each edge,
+face and cell interior has its own, and cells turned any way read a shared
+edge or face's values alike. A polynomial of degree 4 in each coordinate is
+represented exactly, so the cubic comes back anywhere it is probed. Positions
+can be a field of such a space too: a curved geometry, whose cells are located
+and evaluated as they are, not as their corners make them.</p>
+<p>Filters that cut -- <code>contour</code>, <code>slice</code>, <code>slice_plane</code> -- cut a field above
+order 1, or a curved geometry, on linear sub-cells of the cells the cut can
+reach: those whose Bernstein coefficients (which bound the field over the
+cell) straddle the value.</p>
+<div class="highlight"><pre><span></span><code>    <span class="n">coarse</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>      <span class="c1"># the cells&#39; corners</span>
+    <span class="n">fine</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span>                       <span class="c1"># 4 steps, the field&#39;s order</span>
+    <span class="n">within</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>    <span class="c1"># as many steps as that takes</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">coarse</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="n">fine</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="n">within</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;triangles&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>By default a cell is cut into as many steps along each axis as the field's
+or geometry's order; <code>subdivision=1</code> is its corners alone, and <code>tolerance=</code>
+asks for the fewest steps whose estimated error is within it. A point where
+sub-cells of neighbouring cells meet is computed once, so the surface has no
+cracks. <code>td.subdivide</code> gives the linear sub-cells of every cell, for export
+or for a filter that takes linear cells only:</p>
+<div class="highlight"><pre><span></span><code>    <span class="n">curved</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))</span>
+    <span class="n">curved</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="n">bend</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">())</span>
+    <span class="n">cut</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">slice_plane</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+    <span class="n">linear</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">subdivide</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>                        <span class="c1"># 27 hexahedra a cell</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">cut</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;triangles;&quot;</span><span class="p">,</span> <span class="n">linear</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;linear cells&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>MFEM fields of any order on quads and hexahedra come across through
+<code>tack.interop.mfem</code>, and VTK's Lagrange cells through <code>vtk_to_dataset</code>
+(<code>dataset_to_vtk(..., higher_order=True)</code> writes them). Other shapes stop at
+order 2 for now.</p>
 <h2 id="a-material-interface-exposes-the-difference">A material interface exposes the difference<a class="headerlink" href="#a-material-interface-exposes-the-difference" title="Permanent link">&para;</a></h2>
 <p>The <a href="../01-datasets/">two-cell example</a> has material 1 on the left and 3 on the
 right. Converting it to shared point data gives value 2 on the common face.

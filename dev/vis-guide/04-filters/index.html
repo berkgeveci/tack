@@ -4153,7 +4153,7 @@ carried. A volume mesh's surface comes from <code>extract_surface</code> first.<
 </tr>
 <tr>
 <td>Contour or slice</td>
-<td>Yes, of order-1 and <code>L2</code> fields (an order-2 <code>H1</code> field is refused)</td>
+<td>Yes, of order-1 and <code>L2</code> fields; above order 1, or on a curved geometry, on linear sub-cells of segments, quads and hexahedra (<code>subdivision=</code>, <code>tolerance=</code>); an order-2 <code>H1</code> field on other shapes is refused</td>
 <td>Yes</td>
 <td>Contour: vertices, of point data</td>
 </tr>

@@ -4615,9 +4615,9 @@ array accesses.</p>
 <tbody>
 <tr>
 <td><code>H1(data, order=1)</code></td>
-<td>one per point, shared by the cells around it; order 2 adds one per edge and quad face</td>
+<td>one per point, shared by the cells around it; order 2 adds one per edge and quad face; order <code>p</code> (<code>nodes=</code>) <code>p - 1</code> per edge, <code>(p - 1)^2</code> per quad face, <code>(p - 1)^d</code> per cell</td>
 <td>yes, continuous</td>
-<td>order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels</td>
+<td>order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels; any order on segments, quads, pixels, hexahedra and voxels</td>
 </tr>
 <tr>
 <td><code>L2(data, order=1)</code></td>
@@ -4727,7 +4727,7 @@ default (<code>dtype=tack.vec3()</code> for 3-vectors).</p>
 <tbody>
 <tr>
 <td><code>H1</code></td>
-<td>the points; at order 2 also edge middles, quad face centers and cell centers</td>
+<td>the points; at order 2 also edge middles, quad face centers and cell centers; at order <code>p</code> the products of the 1D nodes on each edge, quad face and cell</td>
 </tr>
 <tr>
 <td>order-1 <code>L2</code></td>
@@ -5870,7 +5870,7 @@ and "polyline" <code>PolylineTopology</code>.</p>
 </tr>
 <tr>
 <td><code>contour</code>, <code>slice</code>, <code>slice_plane</code></td>
-<td>yes (<code>dimension=</code> 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an <code>L2</code> field or geometry gives each cell its own points; an order-2 <code>H1</code> field is refused, since its corners alone would be contoured)</td>
+<td>yes (<code>dimension=</code> 3, 2 or 1 picks the cells of a mixed mesh, by default its highest; a 2D mesh's: line cells; lines': vertex cells; an <code>L2</code> field or geometry gives each cell its own points; on segments, quads and hexahedra a field above order 1 or a curved geometry is cut on linear sub-cells, <code>subdivision=</code> steps along each axis or as many as <code>tolerance=</code> needs; elsewhere an order-2 <code>H1</code> field is refused, since its corners alone would be contoured)</td>
 <td>yes (López, face-based)</td>
 <td>yes (line cells)</td>
 <td>yes (<code>contour</code>: vertex cells, of point data)</td>
@@ -5932,7 +5932,7 @@ and "polyline" <code>PolylineTopology</code>.</p>
 <td>yes</td>
 </tr>
 <tr>
-<td><code>project</code> into or from <code>L2</code>, order-2 <code>H1</code>, <code>SideTraces</code></td>
+<td><code>project</code> into or from <code>L2</code>, <code>H1</code> above order 1, <code>SideTraces</code></td>
 <td>yes</td>
 <td>no</td>
 <td>no</td>
