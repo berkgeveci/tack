@@ -70,3 +70,19 @@ def test_memory_still_short_after_collecting_raises():
     with pytest.raises(MemoryError, match="over budget"):
         tack.empty((1 << 20,), tack.f32, device=backend)
     assert backend.attempts == 2
+
+
+def test_the_retry_frees_what_a_cache_holds():
+    """Collecting returns a cycle's buffers to a backend's cache (HIP's, Metal's),
+    where they still hold device memory: the retry frees them first."""
+    class Cached(_Budget):
+        released = 0
+
+        def release_memory(self):
+            self.released += 1
+
+    backend = Cached(budget=1 << 20)
+    with pytest.raises(MemoryError):
+        tack.empty((1 << 20,), tack.f32, device=backend)
+    assert backend.released == 1
+

@@ -191,6 +191,11 @@ class Backend:
 
     # ── Optional, with honest defaults ───────────────────────────────
 
+    def release_memory(self):
+        """Free memory kept for reuse (a cache of dropped arrays' buffers), so an
+        allocation that ran out of memory can try again (``lang.array._allocate``).
+        Nothing by default."""
+
     def synchronize(self):
         """Wait until every kernel launched so far has finished.
 

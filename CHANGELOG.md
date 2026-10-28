@@ -467,6 +467,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- HIP arrays take `hipMalloc` memory through a cache of dropped arrays'
+  buffers, reused by size class in stream order, instead of the device's
+  stream-ordered pool. On ROCm 7.1.1 the pool slowed with every allocation
+  it had made (63 to 600 µs a `hipMallocAsync` over the 512 eta pieces'
+  global ids, 2.7 ms when trimmed), and that port stalled for two hours;
+  `hipMalloc` stays at 17 µs, and the cache spares the `hipFree` that waits
+  for the device. The cache holds at most a quarter of the device, never
+  memory handed outside Tack nor MPI arrays, and an allocation that runs out
+  frees what it holds first (`Backend.release_memory`, which Metal's pool
+  answers too). `TACK_HIP_ALLOCATOR=pool` still selects the pool.
 - A dropped dataset frees its device memory at once. A topology interned
   its spaces in a dict and each space holds its topology, so every dataset
   with a field was a reference cycle, freed only when Python's cycle

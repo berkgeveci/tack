@@ -347,6 +347,15 @@ def hipFreeAsync(ptr, stream):
     err = _need(streams[stream], "hipFreeAsync") or _need(_alloc(int(ptr))[2], "hipFreeAsync")
     memory.pop(int(ptr), None)
     return err
+def hipMalloc(n):
+    base = next(_ids) * 0x100
+    memory[base] = (bytearray(n), current())
+    return OK, base
+def hipFree(ptr):
+    err = _need(_alloc(int(ptr))[2], "hipFree")
+    memory.pop(int(ptr), None)
+    return err
+def hipMemGetInfo(): return OK, 1 << 30, 4 << 30
 
 
 def _write(ptr, payload, call, stream):
@@ -600,6 +609,20 @@ for dev in (first, second):
     tack.copyto(x, np.ones(8, np.float32))
     check("a copy back", x.numpy().tolist() == [1.0] * 8)
     del x, out
+
+# A dropped array's buffer goes to its device's cache (hipMalloc memory, not
+# the pool's), and the next array of its size class there takes it back.
+a = tack.empty((64,), device=first)
+kept = a._buffer.address
+del a
+b = tack.empty((64,), device=second)
+check("another device's cache is its own", b._buffer.address != kept)
+c = tack.empty((60,), device=first)
+check("a dropped buffer comes back, on its device", c._buffer.address == kept)
+del b, c
+first._backend.release_memory()
+check("released: the cache holds nothing, the memory is freed",
+      hip_backend._queue(0).cache.held == 0 and kept not in fake.memory)
 
 fake.hipSetDevice(1)
 check("bare hip follows the thread's device", tack.device("hip") is second)
