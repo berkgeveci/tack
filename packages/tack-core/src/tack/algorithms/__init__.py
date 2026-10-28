@@ -16,6 +16,12 @@ __path__ = extend_path(__path__, __name__)
 
 from tack.algorithms.copy import copy, fill_value
 from tack.algorithms.scan import exclusive_scan, inclusive_scan
+from tack.algorithms.segmented import (
+    segment_broadcast,
+    segment_ids,
+    segment_reduce,
+    segment_scan,
+)
 from tack.algorithms.sort import argsort, gather, reduce_by_key, sort_by_key, unique
 from tack.algorithms.stats import (
     absmax,
@@ -40,6 +46,10 @@ __all__ = [
     "inclusive_scan",
     "norm",
     "reduce_by_key",
+    "segment_broadcast",
+    "segment_ids",
+    "segment_reduce",
+    "segment_scan",
     "sort_by_key",
     "std",
     "unique",

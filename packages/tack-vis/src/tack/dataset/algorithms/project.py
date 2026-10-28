@@ -6,7 +6,7 @@ import tack
 from tack.arrays import dtype_of, materialize
 from tack.dataset import ids
 from tack.dataset.algorithms._common import _field, _with_basis
-from tack.dataset.algorithms._links import _average_links
+from tack.dataset.algorithms._links import _average_cell_values, _average_links
 from tack.dataset.algorithms.traces import traces
 from tack.dataset.buckets import bucket_order
 from tack.dataset.carry import _like, _take
@@ -64,20 +64,6 @@ def _corner_contributions(cells, u, start, contributions):
         first = start + cells.index(c) * cells.NUM_POINTS
         for j in range(cells.NUM_POINTS):
             contributions[first + j] = u.corner_value(c, j)
-
-
-@tack.kernel
-def _average_cell_values(offsets, entries, cells, values, out):
-    # Each point the mean of the values of the cells around it, in the links'
-    # order: an entry is a cell's index times its corners, plus the corner.
-    for p in range(out.shape[0]):
-        begin = offsets[p]
-        end = offsets[p + 1]
-        if end > begin:
-            total = values[cells.entity_id(entries[begin] // cells.NUM_POINTS)]
-            for i in range(begin + 1, end):
-                total += values[cells.entity_id(entries[i] // cells.NUM_POINTS)]
-            out[p] = total / (end - begin)
 
 
 @tack.kernel

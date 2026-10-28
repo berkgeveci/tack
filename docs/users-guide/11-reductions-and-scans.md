@@ -8,6 +8,7 @@ Tack has five ways to combine many values into a few:
 | [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the inputs' device and reduced as arrays are |
 | [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
 | [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
+| [Segmented operations](#segmented-operations) | `segment_reduce`, `segment_scan`, `segment_broadcast`, `segment_ids` in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
 
 Every family runs on all five backends except block reductions, which need
@@ -431,6 +432,49 @@ order**: integer sums are exact modulo the values' width, and floating
 results are reproducible and equal to a sequential sum of the run. The
 cost is load imbalance when a few runs are very long; that is the price of
 not using atomics, whose floating sums would vary between runs.
+
+## Segmented operations
+
+```python
+from tack.algorithms import segment_broadcast, segment_ids, segment_reduce, segment_scan
+
+# Segment k is values[offsets[k]:offsets[k + 1]]: CSR offsets, empty segments allowed.
+sums = segment_reduce(values, offsets)               # one per segment; op="min"|"max"|"mean"
+prefix = segment_scan(values, offsets)               # running sums, restarting per segment
+before = segment_scan(values, offsets, inclusive=False)
+spread = segment_broadcast(sums, offsets, n)         # each segment's value on its elements
+ids = segment_ids(offsets, n)                        # each element's segment, -1 outside
+```
+
+A collection of variable-length segments -- each cell's points, each
+point's cells, the degrees of freedom of each element, the rows of a sparse
+matrix -- is flat values and CSR offsets, `size(offsets) - 1` segments.
+These are its reductions, prefix sums and broadcasts, where `reduce_by_key`
+needs keys and gives one thread to each run.
+
+**Shapes.** A segment of up to 256 elements is one thread's, in element
+order; a longer one is cut into chunks of 256, each a thread's, and a
+segment over several chunks is combined a level up, the same way. So many
+short segments cost one pass, and one enormous segment a few launches
+rather than one thread walking it. On an M1 Max's GPU, a 10M-element
+segment reduces in 4 ms where a thread per segment takes 1.2 s; 2.5M
+segments of about 4 elements take the same 0.6-0.7 ms either way.
+
+**Results.** Integer sums wrap at the values' width; min and max are exact.
+Floating sums group by those fixed chunks, so they are the same bits on
+every backend and every run, though a long segment's sum is not the
+sequential one; `segment_reduce(..., ordered=True)` sums each segment in
+element order, one thread a segment, as `reduce_by_key` does. An empty
+segment reduces to `empty=`, by default 0 for a sum, NaN for a floating
+mean and the type's greatest or least (an infinity for floats) for min and
+max; `empty="keep"` leaves its output as it was. tack-vis averages over
+each point's cells this way (point gradients, cell-to-point projection,
+surface normals), reading the values through the point links without
+gathering them: a point at the apex of 403,200 tetrahedra took 294 ms on
+an M1 Max's GPU, one thread walking its links, and takes 5.7 ms. Vectors reduce
+componentwise. Elements outside every segment (offsets need not start at 0
+or end at the last value) are left alone. In debug mode (`tack.set_debug`)
+the offsets are checked to be non-decreasing and within the values.
 
 ## Block reductions inside kernels
 
