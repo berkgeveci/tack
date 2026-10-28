@@ -11,7 +11,7 @@ The pipeline:
       >> GhostCells()                 Tack: a layer of each neighbour's cells
       >> Contour(field="RTData")      Tack: each piece's isosurface, its ghost
                                       triangles marked as the neighbour's
-      >> MergePieces(tolerance=1e-6)  Tack: one surface, shared points once
+      >> MergePieces()                Tack: one surface, shared points once
       >> vtkXMLUnstructuredGridWriter
 
 The pieces are written first: VTK's wavelet cut into slabs (vtkExtractVOI),
@@ -104,10 +104,9 @@ print(f"wrote {pieces_path}: {len(counts)} pieces of {counts} tetrahedra")
 
 reader = vtkXMLPartitionedDataSetReader(file_name=str(pieces_path))
 ghosts, contour = GhostCells(), Contour(field="RTData", value=_args.value)
-# Within a tolerance: a crossing on an edge two pieces share is interpolated by
-# each from its edge's lower local id, and RTData is f32, so the two copies can
-# differ in their last bits (4e-8 here); 1e-6 joins them and nothing else.
-merge = MergePieces(tolerance=1e-6)
+# No tolerance: pieces sharing an edge interpolate its crossing from the same end
+# (the first by position), so the copies are the same bits and merge exactly.
+merge = MergePieces()
 surfaces = (reader >> ghosts >> contour)()
 for algorithm in (ghosts, contour):
     if algorithm.error is not None:
