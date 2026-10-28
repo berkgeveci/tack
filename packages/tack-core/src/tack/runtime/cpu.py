@@ -610,7 +610,7 @@ _CONFIRM_BAND = 4.0
 # over GRAIN a worker, and cutting them to 20 us interleaved the workers
 # through the range: on 28 threads (jura, EPYC 7453) they faulted the same
 # huge pages of new outputs at once, and threshold of 20M hexahedra took
-# 650 ms against 200, the M6's locator build 5.7 s against 2.0.
+# 650 ms against 200, the M6's locator build 5.7 s against 2.9.
 _CHUNK_WORK_NS = 20_000.0
 
 # How long a serial sample's work must last to be believed as it stands. The
