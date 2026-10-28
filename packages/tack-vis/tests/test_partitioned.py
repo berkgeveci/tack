@@ -440,6 +440,88 @@ def test_filters_give_each_piece_its_share_of_the_wholes_output(name):
         _check_shares(whole, td.split(whole, (2, 2, 2), ghost_layers=layers), _FILTERS[name])
 
 
+@tack.func
+def _bowl(x):
+    return x[0] * x[0] + 0.5 * x[1] * x[2] - x[2]
+
+
+def _of_order_two(data):
+    """``data`` with ``q``, a quadratic interpolated at order 2. On the wavelet's
+    integer coordinates every node (middles of edges, centers of faces and cells)
+    is exact, so each piece's ``q`` is the whole's to the bit, as a solver's
+    shared values are."""
+    data.fields["q"] = td.interpolate(data, _bowl, td.H1(data, order=2))
+    return data
+
+
+@pytest.mark.parametrize("level", [2, 3])
+def test_subdivided_contours_give_each_piece_its_share(level):
+    """A contour of an order-2 field cut on sub-cells: each lattice point is evaluated
+    in the cell every piece holding it chooses alike (the lowest global id, or the
+    first centroid by position), and marked as ``carry`` marks the points it makes,
+    so each piece's owned surface is its share of the whole's and the pieces merge
+    into it bit for bit. At level 3 the lattice points sit at thirds, which round:
+    the evaluating cell decides their bits."""
+    whole = _of_order_two(td.wavelet(4))
+
+    def cut(d):
+        # Not 2.0: at thirds the field is a multiple of 1/18, and a crossing at
+        # a lattice point is two crossings at one position, which matching by
+        # position cannot pair.
+        return td.contour(d, "q", 2.05, subdivision=level)
+
+    expected = cut(whole)
+    for layers in (1, 2):
+        pieces = [_of_order_two(piece)
+                  for piece in td.split(whole, (2, 2, 2), ghost_layers=layers)]
+        outputs = _check_shares(whole, pieces, cut)
+        assert all(not out._ghosts_lost for out in outputs)
+        merged = td.merge_pieces(td.PartitionedDataSet(outputs))
+        assert (merged.num_cells, merged.num_points) == (expected.num_cells,
+                                                         expected.num_points)
+        np.testing.assert_array_equal(np.sort(merged.positions(), 0),
+                                      np.sort(expected.positions(), 0))
+
+
+
+@tack.func
+def _bent(x):
+    return [x[0] + 0.05 * x[1] * x[1], x[1] + 0.07 * x[0] * x[0], x[2] + 0.03 * x[0] * x[1]]
+
+
+@tack.func
+def _cubic(x):
+    return x[0] * x[0] * x[1] - 0.7 * x[1] * x[2] * x[2] + 0.3 * x[0]
+
+
+def test_a_lattice_point_has_the_same_bits_in_every_piece_holding_it():
+    """A lattice point on an edge or face is computed from that entity's values in a
+    frame its corners' positions fix, so a piece holding any one of the cells around
+    it gives the whole's bits, of a curved geometry and a field, without the cell
+    the whole evaluated it in."""
+    grid = td.uniform_grid((5, 5, 5))
+    straight = td.extract_cells(grid, np.arange(grid.num_cells))
+
+    def curved(data):
+        # As a solver's pieces have them (carry keeps an H1 field's point values
+        # only, so a filter's piece would be straight). On integer coordinates the
+        # nodes are exact, so each piece's node values are the whole's.
+        data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3))
+        data.geometry = td.interpolate(data, _bent, td.H1(data, order=2), dtype=tack.vec3())
+        return data
+
+    whole = curved(td.extract_cells(grid, np.arange(grid.num_cells)))
+    expected = td.subdivide(whole, 3, fields=["u"])
+    at = {tuple(p): u for p, u in zip(expected.positions(), expected.fields["u"].values.numpy())}
+    for kept in (np.arange(0, 64, 2), np.arange(1, 64, 2), np.arange(32, 64), [5, 22, 41]):
+        out = td.subdivide(curved(td.extract_cells(straight, np.asarray(kept))), 3,
+                           fields=["u"])
+        positions = [tuple(p) for p in out.positions()]
+        assert all(p in at for p in positions)
+        np.testing.assert_array_equal(out.fields["u"].values.numpy(),
+                                      [at[p] for p in positions])
+
+
 def test_two_dimensional_pieces_give_their_shares():
     grid = td.uniform_grid((21, 17), spacing=(0.1, 0.1, 1.0))
     x = grid.positions()

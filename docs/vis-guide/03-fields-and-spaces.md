@@ -267,7 +267,9 @@ By default a cell is cut into as many steps along each axis as the field's
 or geometry's order; `subdivision=1` is its corners alone, and `tolerance=`
 asks for the fewest steps whose estimated error is within it. A point where
 sub-cells of neighbouring cells meet is computed once, so the surface has no
-cracks. `td.subdivide` gives the linear sub-cells of every cell, for export
+cracks, and every piece of a partitioned dataset holding it computes the same
+bits, so pieces' surfaces carry ghost marks and merge into the whole's.
+`td.subdivide` gives the linear sub-cells of every cell, for export
 or for a filter that takes linear cells only:
 
 ```python
@@ -403,7 +405,7 @@ vary its order by cell, which the dispatcher handles by launching groups of
 compatible order. This does not make every filter a higher-order geometric
 algorithm: `extract_surface` keeps a solid's order-2 fields and geometry at
 order 2 (its surface's nodes are the solid's), but other extractions carry
-corner values, and higher-order subdivision remains open work. The
+corner values. The
 [reference](reference/dataset-api.md#spaces) records the supported layouts
 and [filter propagation rules](reference/dataset-api.md#algorithms-and-filters).
 
