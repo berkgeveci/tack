@@ -369,7 +369,7 @@ _BASES = {"Gauss-Lobatto": "GaussLobatto", "closed uniform": "ClosedUniform",
     ("H1", 3, "Gauss-Lobatto"), ("H1", 4, "Gauss-Lobatto"), ("H1", 3, "closed uniform"),
     ("H1", 3, "Bernstein"), ("L2", 2, "Gauss-Legendre"), ("L2", 3, "Gauss-Legendre"),
     ("L2", 3, "Gauss-Lobatto"), ("L2", 2, "closed uniform"), ("L2", 2, "Bernstein")])
-def test_higher_order_fields_are_mfems(backend, family, order, basis):
+def test_higher_order_fields_are_mfems(f64_backend, family, order, basis):
     """Fields of orders 2 to 4 on hexahedra, in MFEM's own spaces: on nodes Tack has
     (Gauss-Lobatto, closed uniform, Gauss-Legendre) copied in Tack's numbering; on
     Bernstein evaluated at Tack's Gauss-Lobatto nodes -- the same polynomials, so
@@ -385,7 +385,7 @@ def test_higher_order_fields_are_mfems(backend, family, order, basis):
 
 
 @pytest.mark.parametrize("order", [3, 4])
-def test_curved_meshes_of_higher_order(backend, order):
+def test_curved_meshes_of_higher_order(f64_backend, order):
     """A mesh of order 3 or 4, bent: the geometry is Tack's tensor geometry of that
     order on MFEM's nodes, positions, values and gradients MFEM's."""
     mesh = _cartesian("HEXAHEDRON")
@@ -401,7 +401,7 @@ def test_curved_meshes_of_higher_order(backend, order):
 
 
 @pytest.mark.parametrize("family, order", [("H1", 3), ("L2", 2)])
-def test_fields_go_back_to_mfem(backend, family, order):
+def test_fields_go_back_to_mfem(f64_backend, family, order):
     """``mfem_grid_function`` gives a field back to MFEM in a space of its family, order
     and nodes: the same DOFs, in MFEM's numbering, so the same function."""
     from tack.interop.mfem import mfem_grid_function

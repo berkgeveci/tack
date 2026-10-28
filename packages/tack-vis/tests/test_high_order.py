@@ -150,14 +150,14 @@ def test_an_h1_space_holds_each_entitys_nodes_once():
 
 @pytest.mark.parametrize("order", [3, 4])
 @pytest.mark.parametrize("nodes", ["gauss_lobatto", "equispaced"])
-def test_h1_is_exact_on_turned_hexahedra(backend, order, nodes):
+def test_h1_is_exact_on_turned_hexahedra(f64_backend, order, nodes):
     data = _rotated(_hexes(), seed=order)
     assert _probe_error(data, td.H1(data, order=order, nodes=nodes), _points(data)) < 1e-12
 
 
 @pytest.mark.parametrize("order", [3, 5])
 @pytest.mark.parametrize("nodes", bases.FAMILIES)
-def test_l2_is_exact(backend, order, nodes):
+def test_l2_is_exact(f64_backend, order, nodes):
     data = _rotated(_hexes(), seed=1)
     assert _probe_error(data, td.L2(data, order=order, nodes=nodes), _points(data)) < 1e-12
 
@@ -168,7 +168,7 @@ def test_l2_is_exact(backend, order, nodes):
     lambda: td.extract_cells(td.uniform_grid((4, 3, 1), spacing=(0.5, 0.6, 1.0),
                                              dtype=tack.f64), np.arange(6)),
 ], ids=["structured", "structured 2D", "quads"])
-def test_grids_and_quads(backend, make):
+def test_grids_and_quads(f64_backend, make):
     data = make()
     points = _points(data)
     for order in (3, 5):
@@ -182,7 +182,7 @@ def test_f32_values_evaluate_in_f32(backend):
     assert _probe_error(data, td.H1(data, order=4), _points(data)) < 1e-5
 
 
-def test_project_places_the_geometry_at_the_nodes(backend):
+def test_project_places_the_geometry_at_the_nodes(f64_backend):
     """``project`` of the straight geometry into an order-p space evaluates it at the
     nodes, as ``interpolate`` of the identity does; each shared node once, to the
     same bits however many cells hold it."""
@@ -194,7 +194,7 @@ def test_project_places_the_geometry_at_the_nodes(backend):
         np.testing.assert_allclose(projected, interpolated.values.numpy(), atol=1e-15)
 
 
-def test_gradients_are_exact(backend):
+def test_gradients_are_exact(f64_backend):
     data = _rotated(_hexes(), seed=5)
     data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3))
     centers = td.cell_centers(data).values.numpy()
@@ -243,7 +243,7 @@ def _wedges(grid):
 
 @pytest.mark.parametrize("cells, order", [("hexahedra", 2), ("hexahedra", 3), ("hexahedra", 4),
                                           ("tetrahedra", 2), ("wedges", 2)])
-def test_curved_cells_are_located_as_they_are(backend, cells, order):
+def test_curved_cells_are_located_as_they_are(f64_backend, cells, order):
     """A curved geometry -- the grid bent by a polynomial of its order -- and a field
     in its own space: probing at the geometry's nodes, many of them on the curved
     faces, finds every one and gives the field back. The
@@ -269,7 +269,7 @@ def _bulge(x):
     return [x[0] + 0.3 * x[1] * (1.0 - x[1]), x[1], x[2]]
 
 
-def test_a_curved_cells_box_holds_it(backend):
+def test_a_curved_cells_box_holds_it(f64_backend):
     """The box of a curved cell's Bernstein control points holds all of it, though the
     cell bulges past the box of its nodes, and every point of it is found: a unit
     cube bent by a quadratic (exact at order 3), positions at a lattice of
@@ -319,7 +319,7 @@ def _open_edges(surface):
 
 
 @pytest.mark.parametrize("level", [1, 2, 3])
-def test_subdivide_has_each_lattice_point_once(backend, level):
+def test_subdivide_has_each_lattice_point_once(f64_backend, level):
     """``subdivide`` at level ``s``: level^3 hexahedra a cell, one point per node of the
     equispaced order-``s`` space (each shared lattice point once), fields exact at
     the lattice points, cell fields on every sub-cell."""
@@ -337,7 +337,7 @@ def test_subdivide_has_each_lattice_point_once(backend, level):
     assert out.num_cells and td.subdivide(data).num_cells == data.num_cells * 27   # order 3
 
 
-def test_contours_of_high_order_fields_converge_and_close(backend):
+def test_contours_of_high_order_fields_converge_and_close(f64_backend):
     """A sphere's field at order 3 contoured on lattices of 1 to 5 steps: no open
     edge, so no cracks between cells turned every way; the radius error falls as
     the square of the step; level 1 is the corners' linear contour."""
@@ -357,7 +357,7 @@ def test_contours_of_high_order_fields_converge_and_close(backend):
                                                                subdivision=3).num_cells
 
 
-def test_only_cells_that_can_hold_the_value_are_cut(backend):
+def test_only_cells_that_can_hold_the_value_are_cut(f64_backend):
     """Culling by the Bernstein bound gives the surface subdividing every cell gives."""
     data = _ball(3)
     culled = td.contour(data, "u", 0.49, subdivision=3)
@@ -366,7 +366,7 @@ def test_only_cells_that_can_hold_the_value_are_cut(backend):
                                atol=1e-12)
 
 
-def test_slices_of_a_curved_geometry_lie_on_their_plane(backend):
+def test_slices_of_a_curved_geometry_lie_on_their_plane(f64_backend):
     data = _ball(1)
     data.geometry = td.interpolate(data, _bend, td.H1(data, order=3), dtype=tack.vec3(tack.f64))
     normal = np.array([0.3, 0.4, 1.0])
@@ -400,7 +400,7 @@ def _vtk_values_at(grid, name, pcs):
 
 
 @pytest.mark.parametrize("order", [2, 3])
-def test_lagrange_cells_are_vtks(backend, order):
+def test_lagrange_cells_are_vtks(f64_backend, order):
     """``dataset_to_vtk(..., higher_order=True)`` writes VTK Lagrange hexahedra that VTK
     evaluates as Tack does (positions and values at random parametric points), each
     shared node one point; ``vtk_to_dataset`` reads them back into the same spaces."""
@@ -427,7 +427,7 @@ def test_lagrange_cells_are_vtks(backend, order):
     np.testing.assert_array_equal(back.fields["c"].values.numpy(), np.arange(data.num_cells))
 
 
-def test_vtks_own_lagrange_hexahedra(backend):
+def test_vtks_own_lagrange_hexahedra(f64_backend):
     """VTK's Lagrange hexahedra of order 3 from ``vtkCellTypeSource``, a cubic of the
     points as point data: Tack reads them as ``H1`` of order 3 on equispaced nodes
     and evaluates them as VTK does."""
@@ -451,7 +451,7 @@ def test_vtks_own_lagrange_hexahedra(backend):
 
 
 @pytest.mark.parametrize("order", [2, 3])
-def test_a_tolerance_chooses_the_steps(backend, order):
+def test_a_tolerance_chooses_the_steps(f64_backend, order):
     """``tolerance=``: the fewest lattice steps whose estimated error (the Bernstein
     coefficients' distance from the corners' interpolation, over the steps
     squared) is within it -- the field on the surface stays within it, and a
@@ -469,7 +469,7 @@ def test_a_tolerance_chooses_the_steps(backend, order):
         td.contour(data, "u", 0.49, subdivision=2, tolerance=1e-2)
 
 
-def test_an_order_two_bound_holds_the_interior(backend):
+def test_an_order_two_bound_holds_the_interior(f64_backend):
     """An order-2 field on hexahedra that is zero at every node but the cells'
     centers: only the interior's Bernstein coefficient sees it, and the cells are
     still cut."""
@@ -480,3 +480,36 @@ def test_an_order_two_bound_holds_the_interior(backend):
     values[-data.num_cells:] = 1.0                     # the cells' centers come last
     surface = td.contour(data, td.Field(space, tack.array(values)), 0.5)
     assert surface.num_cells > 0 and _open_edges(surface) == 0
+
+
+
+def test_everything_in_f32_on_every_backend(backend):
+    """The f32 path on every backend, Metal included (no f64): an order-4 field, a
+    curved order-3 geometry located at its nodes, a closed contour on sub-cells,
+    subdivide and a tolerance."""
+    grid = td.uniform_grid((4, 4, 4), spacing=(0.5, 0.5, 0.5))
+    data = td.extract_cells(grid, np.arange(grid.num_cells))
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=4))
+    points = _points(data, 50)
+    got = td.probe(data, points).fields["u"].values.numpy()
+    assert np.abs(got - _cubic_at(points)).max() < 1e-4
+    ball = td.extract_cells(td.uniform_grid((5, 5, 5), spacing=(0.5, 0.5, 0.5)),
+                            np.arange(64))
+    ball.fields["u"] = td.interpolate(ball, _sphere, td.H1(ball, order=3))
+    surface = td.contour(ball, "u", 0.49, subdivision=3)
+    assert _open_edges(surface) == 0
+    assert np.abs(np.linalg.norm(surface.positions() - 1.0, axis=1) - 0.7).max() < 1e-2
+    within = td.contour(ball, "u", 0.49, tolerance=1e-2)
+    x = within.positions()
+    assert np.abs(((x - 1.0) ** 2).sum(1) - 0.49).max() <= 1e-2
+    assert td.subdivide(ball, 2).num_cells == 8 * ball.num_cells
+    curved = td.extract_cells(td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5)),
+                              np.arange(8))
+    space = td.H1(curved, order=3)
+    curved.geometry = td.interpolate(curved, _bend, space, dtype=tack.vec3())
+    curved.fields["u"] = td.interpolate(curved, _quadratic, space)
+    nodes = curved.geometry.values.numpy()
+    probed = td.probe(curved, nodes)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), _quadratic_at(nodes),
+                               atol=1e-4)
