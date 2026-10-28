@@ -131,6 +131,15 @@ def _cell_to_point(grid, mesh, form):
                                   pass_cell_data=False)
 
 
+def _gradient_filter(grid, mesh, form):
+    """Point gradients of point data: each point's gradient from the cells around it."""
+    from vtkmodules.vtkFiltersGeneral import vtkGradientFilter
+
+    f = vtkGradientFilter(input_data=grid, result_array_name="Gradients")
+    f.SetInputArrayToProcess(0, 0, 0, 0, "p")
+    return f
+
+
 def _cell_derivatives(grid, mesh, form):
     from vtkmodules.vtkFiltersGeneral import vtkCellDerivatives
 
@@ -218,6 +227,11 @@ PAIRS = [
     Pair("cell gradient",
          vtk=_cell_derivatives, vtk_values=_cell_vectors,
          tack=lambda d, m: _tack()[1].gradients(d, d.fields["p"]),
+         tack_values=lambda r: _host(r, vectors=True),
+         point_fields=("p",), forms=("shape",)),
+    Pair("point gradient",
+         vtk=_gradient_filter, vtk_values=_point_array("Gradients"),
+         tack=lambda d, m: _tack()[1].gradients(d, d.fields["p"], at="points"),
          tack_values=lambda r: _host(r, vectors=True),
          point_fields=("p",), forms=("shape",)),
     Pair("cell centers",
