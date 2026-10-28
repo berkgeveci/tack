@@ -43,7 +43,9 @@ def _points(data, n=200):
 def test_the_parameter(f64_backend, monkeypatch):
     monkeypatch.delenv("TACK_L2_LAYOUT", raising=False)             # "auto" by device
     data = _hexes()
-    assert td.L2(data, order=3).layout == "blocks"                 # auto, on a CPU
+    gpu = data.device.type != "cpu"
+    assert td.L2(data, order=3).layout == ("cells" if gpu else "blocks")    # auto
+    assert td.L2(data, order=2).layout == "blocks"                 # auto, everywhere
     assert td.L2(data, order=3, layout="cells").layout == "cells"
     assert td.L2(data, order=3, layout="auto") is td.L2(data, order=3)
     assert repr(td.L2(data, order=3, layout="cells")) == \
