@@ -5392,6 +5392,61 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#segmented-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segmented operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_reduce" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_reduce
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_broadcast" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_broadcast
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_ids
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sorting-and-segmented-reductions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7963,6 +8018,61 @@
     <span class="md-ellipsis">
       
         inclusive_scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segmented-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segmented operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_reduce" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_reduce
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_broadcast" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_broadcast
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.algorithms.segmented.segment_ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        segment_ids
       
     </span>
   </a>
@@ -17148,6 +17258,330 @@ nothing and returns 0.</p>
     <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">return</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">total</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="k">return</span> <span class="n">_scan</span><span class="p">(</span><span class="n">input_array</span><span class="p">,</span> <span class="n">output_array</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">inclusive</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">want_total</span><span class="o">=</span><span class="n">total</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div><h3 id="segmented-operations">Segmented operations<a class="headerlink" href="#segmented-operations" title="Permanent link">&para;</a></h3>
+<p>Import these from <code>tack.algorithms</code>; they are defined in
+<code>tack.algorithms.segmented</code>.</p>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.algorithms.segmented.segment_reduce" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">tack.algorithms.segmented.segment_reduce</span>
+
+
+<a href="#tack.algorithms.segmented.segment_reduce" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">segment_reduce</span><span class="p">(</span>
+    <span class="n">values</span><span class="p">,</span>
+    <span class="n">offsets</span><span class="p">,</span>
+    <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span>
+    <span class="n">out</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">empty</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">ordered</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Each segment's reduction: <code>out[k]</code> is the sum (<code>op="min"</code>, <code>"max"</code>,
+<code>"mean"</code>: the least, the greatest, the sum over the count) of
+<code>values[offsets[k]:offsets[k + 1]]</code>, for the <code>size(offsets) - 1</code> segments,
+in <code>values</code>' element type (a vector's componentwise). An empty segment
+gets <code>empty</code>: by default 0 for a sum, NaN for a floating mean, and the
+type's greatest or least -- an infinity for floats -- for min and max;
+<code>empty="keep"</code> leaves its <code>out</code> as it is (a point with no cells keeps
+what the caller put there).</p>
+<p>Floating sums group by chunks of 256 elements, the same on every backend
+and run; <code>ordered=True</code> sums each segment in element order, one thread a
+segment, as <code>reduce_by_key</code> does (a long segment is then one thread's
+loop). Integer sums wrap at the values' width; min and max are exact either
+way. Returns <code>out</code> (made if not given).</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/algorithms/segmented.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">491</span>
+<span class="normal">492</span>
+<span class="normal">493</span>
+<span class="normal">494</span>
+<span class="normal">495</span>
+<span class="normal">496</span>
+<span class="normal">497</span>
+<span class="normal">498</span>
+<span class="normal">499</span>
+<span class="normal">500</span>
+<span class="normal">501</span>
+<span class="normal">502</span>
+<span class="normal">503</span>
+<span class="normal">504</span>
+<span class="normal">505</span>
+<span class="normal">506</span>
+<span class="normal">507</span>
+<span class="normal">508</span>
+<span class="normal">509</span>
+<span class="normal">510</span>
+<span class="normal">511</span>
+<span class="normal">512</span>
+<span class="normal">513</span>
+<span class="normal">514</span>
+<span class="normal">515</span>
+<span class="normal">516</span>
+<span class="normal">517</span>
+<span class="normal">518</span>
+<span class="normal">519</span>
+<span class="normal">520</span>
+<span class="normal">521</span>
+<span class="normal">522</span>
+<span class="normal">523</span>
+<span class="normal">524</span>
+<span class="normal">525</span>
+<span class="normal">526</span>
+<span class="normal">527</span>
+<span class="normal">528</span>
+<span class="normal">529</span>
+<span class="normal">530</span>
+<span class="normal">531</span>
+<span class="normal">532</span>
+<span class="normal">533</span>
+<span class="normal">534</span>
+<span class="normal">535</span>
+<span class="normal">536</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">segment_reduce</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">empty</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ordered</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Each segment&#39;s reduction: ``out[k]`` is the sum (``op=&quot;min&quot;``, ``&quot;max&quot;``,</span>
+<span class="sd">    ``&quot;mean&quot;``: the least, the greatest, the sum over the count) of</span>
+<span class="sd">    ``values[offsets[k]:offsets[k + 1]]``, for the ``size(offsets) - 1`` segments,</span>
+<span class="sd">    in ``values``&#39; element type (a vector&#39;s componentwise). An empty segment</span>
+<span class="sd">    gets ``empty``: by default 0 for a sum, NaN for a floating mean, and the</span>
+<span class="sd">    type&#39;s greatest or least -- an infinity for floats -- for min and max;</span>
+<span class="sd">    ``empty=&quot;keep&quot;`` leaves its ``out`` as it is (a point with no cells keeps</span>
+<span class="sd">    what the caller put there).</span>
+
+<span class="sd">    Floating sums group by chunks of 256 elements, the same on every backend</span>
+<span class="sd">    and run; ``ordered=True`` sums each segment in element order, one thread a</span>
+<span class="sd">    segment, as ``reduce_by_key`` does (a long segment is then one thread&#39;s</span>
+<span class="sd">    loop). Integer sums wrap at the values&#39; width; min and max are exact either</span>
+<span class="sd">    way. Returns ``out`` (made if not given).&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_OPS</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;op is one of </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_OPS</span><span class="p">)</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">op</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">nseg</span> <span class="o">=</span> <span class="n">_segments</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">_check</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">nseg</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="n">kind</span> <span class="o">=</span> <span class="n">element_type</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nseg</span><span class="p">,),</span> <span class="n">kind</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">size_of</span><span class="p">(</span><span class="n">out</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">nseg</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;out has </span><span class="si">{</span><span class="n">size_of</span><span class="p">(</span><span class="n">out</span><span class="p">)</span><span class="si">}</span><span class="s2"> elements for </span><span class="si">{</span><span class="n">nseg</span><span class="si">}</span><span class="s2"> segments&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">nseg</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">out</span>
+    <span class="c1"># One element of the values&#39; type, a vector&#39;s every component the identity.</span>
+    <span class="n">keep</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">empty</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">empty</span> <span class="o">==</span> <span class="s2">&quot;keep&quot;</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">identity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">_identity</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">keep</span> <span class="k">else</span> <span class="n">empty</span><span class="p">),</span> <span class="n">kind</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">ordered</span><span class="p">:</span>
+        <span class="n">_reduce_ordered</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">_OPS</span><span class="p">[</span><span class="n">op</span><span class="p">],</span> <span class="n">out</span><span class="p">,</span> <span class="n">identity</span><span class="p">,</span> <span class="n">keep</span><span class="p">,</span> <span class="n">nseg</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span>
+    <span class="n">long_flags</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nseg</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+    <span class="n">long_count</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+    <span class="n">_reduce_short</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">_OPS</span><span class="p">[</span><span class="n">op</span><span class="p">],</span> <span class="n">_CHUNK</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">identity</span><span class="p">,</span> <span class="n">keep</span><span class="p">,</span> <span class="n">long_flags</span><span class="p">,</span>
+                  <span class="n">long_count</span><span class="p">,</span> <span class="n">nseg</span><span class="p">)</span>
+    <span class="n">starts</span><span class="p">,</span> <span class="n">stops</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">nlong</span> <span class="o">=</span> <span class="n">_long</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">long_flags</span><span class="p">,</span> <span class="n">long_count</span><span class="p">,</span> <span class="n">nseg</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">nlong</span><span class="p">:</span>
+        <span class="c1"># The long segments&#39; sums (a mean&#39;s too, divided as they are placed).</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="n">_OPS</span><span class="p">[</span><span class="s2">&quot;sum&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;mean&quot;</span> <span class="k">else</span> <span class="n">_OPS</span><span class="p">[</span><span class="n">op</span><span class="p">]</span>
+        <span class="n">long_out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nlong</span><span class="p">,),</span> <span class="n">kind</span><span class="p">)</span>
+        <span class="n">_reduce</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">stops</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">nlong</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">long_out</span><span class="p">,</span> <span class="n">identity</span><span class="p">)</span>
+        <span class="n">_scatter_long</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">stops</span><span class="p">,</span> <span class="n">long_out</span><span class="p">,</span> <span class="n">_OPS</span><span class="p">[</span><span class="n">op</span><span class="p">],</span> <span class="n">out</span><span class="p">,</span> <span class="n">nlong</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.algorithms.segmented.segment_scan" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">tack.algorithms.segmented.segment_scan</span>
+
+
+<a href="#tack.algorithms.segmented.segment_scan" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">segment_scan</span><span class="p">(</span>
+    <span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span> <span class="n">inclusive</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Each segment's prefix sums (<code>op="min"</code>, <code>"max"</code>: running least or
+greatest), restarting at every segment: <code>out[i]</code> for <code>i</code> in segment <code>k</code> is
+the reduction of <code>values[offsets[k]:i + 1]</code> (<code>inclusive</code>), or of
+<code>values[offsets[k]:i]</code> with zero at the segment's first element (an
+exclusive sum; exclusive is for sums). Elements outside every segment are
+left as they are. <code>out</code> may be <code>values</code>. Floating sums group by chunks of
+256 elements, the same on every backend and run. Returns <code>out</code>.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/algorithms/segmented.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">539</span>
+<span class="normal">540</span>
+<span class="normal">541</span>
+<span class="normal">542</span>
+<span class="normal">543</span>
+<span class="normal">544</span>
+<span class="normal">545</span>
+<span class="normal">546</span>
+<span class="normal">547</span>
+<span class="normal">548</span>
+<span class="normal">549</span>
+<span class="normal">550</span>
+<span class="normal">551</span>
+<span class="normal">552</span>
+<span class="normal">553</span>
+<span class="normal">554</span>
+<span class="normal">555</span>
+<span class="normal">556</span>
+<span class="normal">557</span>
+<span class="normal">558</span>
+<span class="normal">559</span>
+<span class="normal">560</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">segment_scan</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span> <span class="n">inclusive</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Each segment&#39;s prefix sums (``op=&quot;min&quot;``, ``&quot;max&quot;``: running least or</span>
+<span class="sd">    greatest), restarting at every segment: ``out[i]`` for ``i`` in segment ``k`` is</span>
+<span class="sd">    the reduction of ``values[offsets[k]:i + 1]`` (``inclusive``), or of</span>
+<span class="sd">    ``values[offsets[k]:i]`` with zero at the segment&#39;s first element (an</span>
+<span class="sd">    exclusive sum; exclusive is for sums). Elements outside every segment are</span>
+<span class="sd">    left as they are. ``out`` may be ``values``. Floating sums group by chunks of</span>
+<span class="sd">    256 elements, the same on every backend and run. Returns ``out``.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_OPS</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;op is one of </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_OPS</span><span class="p">)</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">op</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">inclusive</span> <span class="ow">and</span> <span class="n">op</span> <span class="o">!=</span> <span class="s2">&quot;sum&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;an exclusive scan is a sum&#39;s: op=&#39;sum&#39;&quot;</span><span class="p">)</span>
+    <span class="n">nseg</span> <span class="o">=</span> <span class="n">_segments</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">_check</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">nseg</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">element_type</span><span class="p">(</span><span class="n">values</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">size_of</span><span class="p">(</span><span class="n">out</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;out has </span><span class="si">{</span><span class="n">size_of</span><span class="p">(</span><span class="n">out</span><span class="p">)</span><span class="si">}</span><span class="s2"> elements for </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> values&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">nseg</span> <span class="ow">and</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">long_flags</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nseg</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+        <span class="n">long_count</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+        <span class="n">_scan_short</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">_OPS</span><span class="p">[</span><span class="n">op</span><span class="p">],</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">inclusive</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span> <span class="n">_CHUNK</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">long_flags</span><span class="p">,</span>
+                    <span class="n">long_count</span><span class="p">,</span> <span class="n">nseg</span><span class="p">)</span>
+        <span class="n">starts</span><span class="p">,</span> <span class="n">stops</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">nlong</span> <span class="o">=</span> <span class="n">_long</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">long_flags</span><span class="p">,</span> <span class="n">long_count</span><span class="p">,</span> <span class="n">nseg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">nlong</span><span class="p">:</span>
+            <span class="n">_scan</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">stops</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">nlong</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">_OPS</span><span class="p">[</span><span class="n">op</span><span class="p">],</span> <span class="n">inclusive</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.algorithms.segmented.segment_broadcast" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">tack.algorithms.segmented.segment_broadcast</span>
+
+
+<a href="#tack.algorithms.segmented.segment_broadcast" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">segment_broadcast</span><span class="p">(</span><span class="n">segment_values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Each segment's value spread over its elements: <code>out[i] = segment_values[k]</code>
+for every <code>i</code> in segment <code>k</code>, <code>out</code> of <code>n</code> elements (elements outside
+every segment left as they are). The inverse of <code>segment_reduce</code>'s
+placement: per-segment results back to the elements. Returns <code>out</code>.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/algorithms/segmented.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">570</span>
+<span class="normal">571</span>
+<span class="normal">572</span>
+<span class="normal">573</span>
+<span class="normal">574</span>
+<span class="normal">575</span>
+<span class="normal">576</span>
+<span class="normal">577</span>
+<span class="normal">578</span>
+<span class="normal">579</span>
+<span class="normal">580</span>
+<span class="normal">581</span>
+<span class="normal">582</span>
+<span class="normal">583</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">segment_broadcast</span><span class="p">(</span><span class="n">segment_values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Each segment&#39;s value spread over its elements: ``out[i] = segment_values[k]``</span>
+<span class="sd">    for every ``i`` in segment ``k``, ``out`` of ``n`` elements (elements outside</span>
+<span class="sd">    every segment left as they are). The inverse of ``segment_reduce``&#39;s</span>
+<span class="sd">    placement: per-segment results back to the elements. Returns ``out``.&quot;&quot;&quot;</span>
+    <span class="n">nseg</span> <span class="o">=</span> <span class="n">_segments</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span>
+    <span class="n">_check</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">nseg</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">size_of</span><span class="p">(</span><span class="n">segment_values</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">nseg</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">size_of</span><span class="p">(</span><span class="n">segment_values</span><span class="p">)</span><span class="si">}</span><span class="s2"> values for </span><span class="si">{</span><span class="n">nseg</span><span class="si">}</span><span class="s2"> segments&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">element_type</span><span class="p">(</span><span class="n">segment_values</span><span class="p">))</span>
+    <span class="n">_spread</span><span class="p">(</span><span class="n">segment_values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">nseg</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.algorithms.segmented.segment_ids" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">tack.algorithms.segmented.segment_ids</span>
+
+
+<a href="#tack.algorithms.segmented.segment_ids" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">segment_ids</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Each element's segment: <code>ids[i] = k</code> for <code>i</code> in segment <code>k</code>, -1 outside
+every segment, in <code>dtype</code> (by default <code>offsets</code>' type).</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-core/src/tack/algorithms/segmented.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">586</span>
+<span class="normal">587</span>
+<span class="normal">588</span>
+<span class="normal">589</span>
+<span class="normal">590</span>
+<span class="normal">591</span>
+<span class="normal">592</span>
+<span class="normal">593</span>
+<span class="normal">594</span>
+<span class="normal">595</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">segment_ids</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Each element&#39;s segment: ``ids[i] = k`` for ``i`` in segment ``k``, -1 outside</span>
+<span class="sd">    every segment, in ``dtype`` (by default ``offsets``&#39; type).&quot;&quot;&quot;</span>
+    <span class="n">nseg</span> <span class="o">=</span> <span class="n">_segments</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span>
+    <span class="n">_check</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">nseg</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="n">ids</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">or</span> <span class="n">element_type</span><span class="p">(</span><span class="n">offsets</span><span class="p">))</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> \
+        <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span> <span class="ow">or</span> <span class="n">element_type</span><span class="p">(</span><span class="n">offsets</span><span class="p">))</span>
+    <span class="n">_spread</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">nseg</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ids</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

@@ -1198,6 +1198,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#segmented-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segmented operations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#block-reductions-inside-kernels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3905,6 +3916,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#segmented-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segmented operations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#block-reductions-inside-kernels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3964,6 +3986,11 @@
 <tr>
 <td><a href="#sorting-and-segmented-reductions">Sorting and segmented reductions</a></td>
 <td><code>argsort</code>, <code>sort_by_key</code>, <code>gather</code>, <code>unique</code>, <code>reduce_by_key</code> in <code>tack.algorithms</code></td>
+<td>Called from Python; a sequence of kernels on the inputs' device</td>
+</tr>
+<tr>
+<td><a href="#segmented-operations">Segmented operations</a></td>
+<td><code>segment_reduce</code>, <code>segment_scan</code>, <code>segment_broadcast</code>, <code>segment_ids</code> in <code>tack.algorithms</code></td>
 <td>Called from Python; a sequence of kernels on the inputs' device</td>
 </tr>
 <tr>
@@ -4491,6 +4518,43 @@ order</strong>: integer sums are exact modulo the values' width, and floating
 results are reproducible and equal to a sequential sum of the run. The
 cost is load imbalance when a few runs are very long; that is the price of
 not using atomics, whose floating sums would vary between runs.</p>
+<h2 id="segmented-operations">Segmented operations<a class="headerlink" href="#segmented-operations" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">segment_broadcast</span><span class="p">,</span> <span class="n">segment_ids</span><span class="p">,</span> <span class="n">segment_reduce</span><span class="p">,</span> <span class="n">segment_scan</span>
+
+<span class="c1"># Segment k is values[offsets[k]:offsets[k + 1]]: CSR offsets, empty segments allowed.</span>
+<span class="n">sums</span> <span class="o">=</span> <span class="n">segment_reduce</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">)</span>               <span class="c1"># one per segment; op=&quot;min&quot;|&quot;max&quot;|&quot;mean&quot;</span>
+<span class="n">prefix</span> <span class="o">=</span> <span class="n">segment_scan</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">)</span>               <span class="c1"># running sums, restarting per segment</span>
+<span class="n">before</span> <span class="o">=</span> <span class="n">segment_scan</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">inclusive</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">spread</span> <span class="o">=</span> <span class="n">segment_broadcast</span><span class="p">(</span><span class="n">sums</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>         <span class="c1"># each segment&#39;s value on its elements</span>
+<span class="n">ids</span> <span class="o">=</span> <span class="n">segment_ids</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>                        <span class="c1"># each element&#39;s segment, -1 outside</span>
+</code></pre></div>
+<p>A collection of variable-length segments -- each cell's points, each
+point's cells, the degrees of freedom of each element, the rows of a sparse
+matrix -- is flat values and CSR offsets, <code>size(offsets) - 1</code> segments.
+These are its reductions, prefix sums and broadcasts, where <code>reduce_by_key</code>
+needs keys and gives one thread to each run.</p>
+<p><strong>Shapes.</strong> A segment of up to 256 elements is one thread's, in element
+order; a longer one is cut into chunks of 256, each a thread's, and a
+segment over several chunks is combined a level up, the same way. So many
+short segments cost one pass, and one enormous segment a few launches
+rather than one thread walking it. On an M1 Max's GPU, a 10M-element
+segment reduces in 4 ms where a thread per segment takes 1.2 s; 2.5M
+segments of about 4 elements take the same 0.6-0.7 ms either way.</p>
+<p><strong>Results.</strong> Integer sums wrap at the values' width; min and max are exact.
+Floating sums group by those fixed chunks, so they are the same bits on
+every backend and every run, though a long segment's sum is not the
+sequential one; <code>segment_reduce(..., ordered=True)</code> sums each segment in
+element order, one thread a segment, as <code>reduce_by_key</code> does. An empty
+segment reduces to <code>empty=</code>, by default 0 for a sum, NaN for a floating
+mean and the type's greatest or least (an infinity for floats) for min and
+max; <code>empty="keep"</code> leaves its output as it was. tack-vis averages over
+each point's cells this way (point gradients, cell-to-point projection,
+surface normals), reading the values through the point links without
+gathering them: a point at the apex of 403,200 tetrahedra took 294 ms on
+an M1 Max's GPU, one thread walking its links, and takes 5.7 ms. Vectors reduce
+componentwise. Elements outside every segment (offsets need not start at 0
+or end at the last value) are left alone. In debug mode (<code>tack.set_debug</code>)
+the offsets are checked to be non-decreasing and within the values.</p>
 <h2 id="block-reductions-inside-kernels">Block reductions inside kernels<a class="headerlink" href="#block-reductions-inside-kernels" title="Permanent link">&para;</a></h2>
 <p><code>tack.block_sum(v)</code>, <code>tack.block_min(v)</code> and <code>tack.block_max(v)</code> combine one
 <code>f32</code> value from every lane of a 256-lane workgroup and give <strong>every lane</strong>
