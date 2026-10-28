@@ -851,10 +851,16 @@ class _Geometry:
     @tack.func
     def geometry_jacobian(self, i, pc):
         """The 3x3 derivative of world position by parametric coordinates at ``pc``:
-        column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension."""
+        column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension. Formed from
+        the corners relative to the first (the shape's gradients sum to zero, so
+        it is the same Jacobian): a corner's difference from its neighbour is exact
+        in the geometry's precision, where sums of absolute positions lost a thin
+        cell's short edges to rounding (in f32, the ONERA M6's boundary-layer
+        wedges' gradients off by up to 93 times)."""
         m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-        for j in range(self.NUM_POINTS):
-            m += self.corner_position(i, j).outer_product(self.shape_gradient(j, pc))
+        p0 = self.corner_position(i, 0)
+        for j in range(1, self.NUM_POINTS):
+            m += (self.corner_position(i, j) - p0).outer_product(self.shape_gradient(j, pc))
         return m
 
 
@@ -908,9 +914,13 @@ class _H1Order2Geometry(_QuadraticDofs, _Geometry):
 
     @tack.func
     def geometry_jacobian(self, c, pc):
+        # Relative to the first node, as the linear geometry's (the quadratic
+        # functions' gradients sum to zero too).
         m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-        for k in range(self.NUM_QUADRATIC):
-            m += self.get(self.dof_index(c, k)).outer_product(self.quadratic_gradient(k, pc))
+        p0 = self.get(self.dof_index(c, 0))
+        for k in range(1, self.NUM_QUADRATIC):
+            m += (self.get(self.dof_index(c, k)) - p0).outer_product(
+                self.quadratic_gradient(k, pc))
         return m
 
 
@@ -1068,10 +1078,13 @@ class _Interpolated:
 
     @tack.func
     def parametric_gradient(self, i, pc):
-        """The derivative by parametric coordinates at ``pc``, a 3-vector."""
+        """The derivative by parametric coordinates at ``pc``, a 3-vector: from the
+        values relative to the first (the shape's gradients sum to zero), so a
+        large value varying little across a thin cell keeps its differences."""
         g = tack.vec3(0.0, 0.0, 0.0)
-        for j in range(self.NUM_POINTS):
-            g += self.dof(i, j) * self.shape_gradient(j, pc)
+        u0 = self.dof(i, 0)
+        for j in range(1, self.NUM_POINTS):
+            g += (self.dof(i, j) - u0) * self.shape_gradient(j, pc)
         return g
 
     @tack.func
@@ -1110,8 +1123,9 @@ class _H1Order2Field(_QuadraticDofs, _Interpolated):
     @tack.func
     def parametric_gradient(self, c, pc):
         g = tack.vec3(0.0, 0.0, 0.0)
-        for k in range(self.NUM_QUADRATIC):
-            g += self.dof(c, k) * self.quadratic_gradient(k, pc)
+        u0 = self.dof(c, 0)
+        for k in range(1, self.NUM_QUADRATIC):
+            g += (self.dof(c, k) - u0) * self.quadratic_gradient(k, pc)
         return g
 
 
