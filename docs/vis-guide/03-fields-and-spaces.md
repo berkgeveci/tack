@@ -17,6 +17,8 @@ mesh and have runnable examples below.
 |---|---|---|
 | `td.H1(data, order=1)` | One shared value per corner vertex | A continuous first-order nodal temperature or velocity |
 | `td.H1(data, order=2)` | Shared corner, edge and supported face/interior nodes | A higher-order H1 approximation; not an H2 space |
+| `td.H1(data, order=p, nodes=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell | Spectral-element and MFEM fields of any order |
+| `td.L2(data, order=p, nodes=...)` | From order 2 (or on Gauss–Legendre nodes): each cell's own `(p + 1)^d` values | DG fields of any order |
 | `td.Constant(data)` | One value per cell | Cell averages, material parameters |
 | `td.L2(data)` | Each cell's own corner values | Discontinuous solution fields |
 | `td.Values(data, "faces")` | One value per face, without an interpolation basis | Face areas, labels or fluxes |
@@ -25,7 +27,8 @@ mesh and have runnable examples below.
 
 For `L2(order=0)` the value is constant per cell; `L2(order=1)` uses each
 cell's own corners. `H1(order=2)` adds higher-order degrees of freedom on
-supported shapes. `Values` describes association without promising any
+supported shapes; [higher orders](#higher-orders) add more of them on the
+tensor shapes. `Values` describes association without promising any
 interpolation between entities.
 
 `tack.empty((field.space.size,), tack.vec3())` allocates one
@@ -226,6 +229,55 @@ uv run --with matplotlib python docs/examples/data_spaces.py --check --figures /
 
 The optional plotting step writes standalone SVG and PNG files. The numerical
 checks run without Matplotlib.
+
+## Higher orders
+
+On segments, quads and hexahedra (pixels and voxels too) a space may have any
+order. Its nodes are the products of 1D nodes along each axis, chosen by
+`nodes=`: `"gauss_lobatto"` (the default, MFEM's for H1 and Nek5000's),
+`"equispaced"` (VTK's Lagrange cells, Exodus, gmsh) or, for `L2` alone,
+`"gauss_legendre"` (MFEM's default for DG), which has no nodes at a cell's
+ends to share. Up to order 2 the first two are the same nodes.
+
+```python
+--8<-- "docs/examples/data_high_order.py:functions"
+```
+
+```python
+--8<-- "docs/examples/data_high_order.py:spaces"
+```
+
+An order-4 `H1` space on 64 hexahedra holds `17³ = 4913` values: each edge,
+face and cell interior has its own, and cells turned any way read a shared
+edge or face's values alike. A polynomial of degree 4 in each coordinate is
+represented exactly, so the cubic comes back anywhere it is probed. Positions
+can be a field of such a space too: a curved geometry, whose cells are located
+and evaluated as they are, not as their corners make them.
+
+Filters that cut -- `contour`, `slice`, `slice_plane` -- cut a field above
+order 1, or a curved geometry, on linear sub-cells of the cells the cut can
+reach: those whose Bernstein coefficients (which bound the field over the
+cell) straddle the value.
+
+```python
+--8<-- "docs/examples/data_high_order.py:contour"
+```
+
+By default a cell is cut into as many steps along each axis as the field's
+or geometry's order; `subdivision=1` is its corners alone, and `tolerance=`
+asks for the fewest steps whose estimated error is within it. A point where
+sub-cells of neighbouring cells meet is computed once, so the surface has no
+cracks. `td.subdivide` gives the linear sub-cells of every cell, for export
+or for a filter that takes linear cells only:
+
+```python
+--8<-- "docs/examples/data_high_order.py:curved"
+```
+
+MFEM fields of any order on quads and hexahedra come across through
+`tack.interop.mfem`, and VTK's Lagrange cells through `vtk_to_dataset`
+(`dataset_to_vtk(..., higher_order=True)` writes them). Other shapes stop at
+order 2 for now.
 
 ## A material interface exposes the difference
 

@@ -63,6 +63,7 @@ from tack.dataset.algorithms.spherical import spherical
 from tack.dataset.algorithms.split import split
 from tack.dataset.algorithms.statistics import Statistics, statistics
 from tack.dataset.algorithms.streamlines import streamlines
+from tack.dataset.algorithms.subdivide import subdivide
 from tack.dataset.algorithms.surface_normals import surface_normals
 from tack.dataset.algorithms.tetrahedralize import tetrahedralize
 from tack.dataset.algorithms.threshold import threshold
@@ -146,6 +147,7 @@ __all__ = [
     "split",
     "statistics",
     "streamlines",
+    "subdivide",
     "surface_normals",
     "tetrahedralize",
     "threshold",

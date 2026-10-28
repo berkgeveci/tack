@@ -98,6 +98,9 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 
 ::: tack.dataset.SideTraces
 
+::: tack.dataset.bases
+    options: {members: [FAMILIES, nodes, weights, bernstein, dof_tables, tensor_shape]}
+
 ## Sets, ghost marks and global ids
 
 ::: tack.dataset.Set

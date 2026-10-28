@@ -184,7 +184,8 @@ that field's coefficient array.
 | Representation | Current scope |
 |---|---|
 | H1 order 1 | Point values; basis evaluation on shape-based cells |
-| H1 order 2 | Tetrahedra, hexahedra, voxels and wedges |
+| H1 order 2 | Tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels |
+| H1 and L2 of any order | Segments, quads, pixels, hexahedra and voxels; Gauss–Lobatto, equispaced or (L2) Gauss–Legendre nodes |
 | L2 orders 0 and 1 | Shape-based cells; order may vary by cell |
 | Constant | Cell data on the supported topology families |
 | Values | Entity-associated data, without a basis |

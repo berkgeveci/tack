@@ -475,7 +475,10 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``"<name> (cells)"``, with a warning); a ``vtkGhostType`` array becomes the ghost marks
     (``data.ghosts``), not a field; a constant or affine array (VTK's implicit
     arrays) stays implicit, as a ``ConstantArray`` or ``CountingArray``. An
-    unstructured grid's cells must all be linear shapes -- unless it holds
+    unstructured grid's cells must all be linear shapes -- or all VTK Lagrange
+    curves, quadrilaterals or hexahedra of one order ``p``, which become linear
+    cells on their corner points, with the geometry and point data in
+    ``H1(order=p, nodes="equispaced")`` (VTK's Lagrange nodes) -- unless it holds
     polyhedra (or ``polyhedral`` is true), when it becomes a
     ``PolyhedralTopology``, every cell a polyhedron of its faces, polylines,
     when it becomes a ``PolylineTopology`` (its lines two-point polylines, and
@@ -691,6 +694,22 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
                    else {int(t) for t in np.unique(types)})
         if polyhedral is None:
             polyhedral = 42 in present
+        from tack.interop.vtk import _lagrange
+
+        if present and present <= set(_lagrange.LAGRANGE):
+            if len(present) > 1:
+                raise NotImplementedError("Lagrange cells of several shapes in one grid are "
+                                          "not supported")
+
+            def float_fields(values):
+                values = values.reshape(values.shape[0]) if values.shape[1] == 1 else values
+                if np.issubdtype(values.dtype, np.floating):
+                    kind = dtype or (tack.f64 if values.dtype == np.float64 else tack.f32)
+                    values = values.astype(kind.numpy_dtype)
+                return tack.array(values) if values.ndim == 1 else _vectors_of(values)
+
+            return _lagrange.to_dataset(grid, present, dtype or tack.f64, id_dtype, shift,
+                                        _units_label, float_fields)
     if isinstance(grid, vtkUnstructuredGrid) and polyhedral:
         topology = _polyhedral_topology(grid, orient=orient, id_dtype=id_dtype)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, False)
@@ -774,6 +793,16 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
                                                                          points=points)
     return DataSet(topology, geometry, fields=fields, dtype=geometry_dtype, ghosts=ghosts,
                    global_ids=global_ids, origin=origin, unit=unit)
+
+
+def _vectors_of(values):
+    """A host ``(n, width)`` array as a device array of vectors of its type."""
+    from tack.lang.types import from_numpy_dtype
+
+    out = tack.empty((values.shape[0],), tack.vec(values.shape[1], from_numpy_dtype(values.dtype)))
+    if values.shape[0]:
+        tack.copyto(out, values)
+    return out
 
 
 def _points_geometry(grid, shift, dtype, share):
@@ -1179,7 +1208,7 @@ def _to_vtk_values(values, share=False):
     return np.array(to_host(values))            # a copy: the grid owns its values
 
 
-def dataset_to_vtk(data, copy=True):
+def dataset_to_vtk(data, copy=True, higher_order=False):
     """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
     images and rectilinear grids, its ratios the same along every axis, into a
     ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into
@@ -1216,8 +1245,19 @@ def dataset_to_vtk(data, copy=True):
     ids too), ghost marks and global ids. The VTK arrays hold Tack's, and
     writes on either side reach the other. Implicit arrays go across as VTK's
     implicit ones either way; anything else -- arrays on a GPU, a polyhedral
-    topology's faces -- is copied as before."""
-    out = _dataset_to_vtk(data, copy)
+    topology's faces -- is copied as before.
+
+    With ``higher_order``, a dataset of segments, quads or hexahedra (pixels and
+    voxels too) whose geometry or an ``H1`` field is above order 1 becomes VTK
+    Lagrange cells (``VTK_LAGRANGE_CURVE``, ``_QUADRILATERAL``,
+    ``_HEXAHEDRON``) of the largest order: points at the equispaced nodes of
+    ``H1`` of that order, each shared node once, the geometry and ``H1`` fields
+    evaluated there (exact for fields of that order or below), cell fields as
+    cell data. ``vtk_to_dataset`` reads such a grid back into those spaces."""
+    from tack.interop.vtk import _lagrange
+
+    order = _lagrange.tensor_order(data) if higher_order else 1
+    out = _lagrange.to_vtk(data, order) if order > 1 else _dataset_to_vtk(data, copy)
     time = _time_of(data)
     if time is not None:
         from vtkmodules.vtkCommonDataModel import vtkDataObject

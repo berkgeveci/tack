@@ -82,7 +82,12 @@ SHIFTED = {
     "connected_components": td.connected_components,
 }
 #: What depends on absolute position, compared with ``_world``'s.
-ABSOLUTE = {"cylindrical", "spherical", "interpolate"}
+ABSOLUTE = {"cylindrical", "spherical", "interpolate", "interpolate of order 4"}
+#: Absolute calls compared to f32's rounding, not bit for bit: Gauss-Lobatto nodes
+#: sit at irrational fractions between corners, which round one way between far
+#: world coordinates and another between near relative ones (order 2's middles
+#: are exact either way).
+ROUNDED = {"interpolate of order 4"}
 #: What moves the origin itself, checked on its own below.
 OWN = {"transform"}
 
@@ -196,11 +201,15 @@ def test_every_algorithm_keeps_the_origin_and_its_values(name):
     if name in ABSOLUTE:
         expected, origin = call(_world(far)), (0.0, 0.0, 0.0)
         got = call(far)
-        if name == "interpolate":              # a field: compare the values
+        if name.startswith("interpolate"):      # a field: compare the values
             origin = None
     else:
         expected, origin = call(zero), ORIGIN
         got = call(far)
+    if name in ROUNDED:
+        np.testing.assert_allclose(tack.arrays.to_host(got.values),
+                                   tack.arrays.to_host(expected.values), rtol=1e-6)
+        return
     _same(got, expected, origin, name)
 
 

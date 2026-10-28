@@ -528,6 +528,13 @@ class Vertex(Shape):
         # which needs a _newton_step the vertex lacks, out of its template.
         return tack.vec3(0.0, 0.0, 0.0), 1
 
+    @tack.func
+    def _newton_step(self, m, residual):
+        # A point has no parametric directions, so no step. The cell locator's
+        # kernel names a cell view's curved_to_parametric (views._CurvedNewton)
+        # for vertex cells too, and that names this.
+        return tack.vec3(0.0, 0.0, 0.0)
+
 
 @tack.device_class
 class Line(Shape):

@@ -19,7 +19,7 @@ from tack.runtime.dispatch import env_flag
 try:
     import mfem.ser as mfem
 
-    from tack.interop.mfem import mfem_to_dataset
+    from tack.interop.mfem import mfem_field, mfem_to_dataset
 except ImportError:
     if env_flag("TACK_REQUIRE_MFEM"):
         raise
@@ -236,13 +236,14 @@ def test_cell_constants_vectors_and_attributes(backend):
 
 
 def test_what_is_not_mapped_yet(backend):
-    mesh = _cartesian("HEXAHEDRON")
+    """Orders above 2 are on quads and hexahedra; pyramids' order 2 is MFEM's own."""
+    mesh = _cartesian("TETRAHEDRON")
     cubic = _projected(mesh, mfem.H1_FECollection(3, 3), _f)
     with pytest.raises(NotImplementedError, match="H1 order 3"):
         mfem_to_dataset(mesh, {"u": cubic})
-    curved = _cartesian("HEXAHEDRON")
+    curved = _cartesian("TETRAHEDRON")
     curved.SetCurvature(3)
-    with pytest.raises(NotImplementedError, match="order above 2"):
+    with pytest.raises(NotImplementedError, match="H1 order 3"):
         mfem_to_dataset(curved)
     pyramids = _cartesian("PYRAMID")
     with pytest.raises(NotImplementedError, match="Pyramid"):
@@ -352,3 +353,66 @@ def test_an_empty_mesh(backend):
     imports as an empty dataset; its vertex array could not be reshaped."""
     data = mfem_to_dataset(mfem.Mesh(3, 0, 0, 0, 3))
     assert (data.num_cells, data.num_points) == (0, 0)
+
+
+# ── Higher orders on hexahedra ──────────────────────────────────────
+
+def _smooth(x):
+    return np.sin(x[0]) * np.cos(0.7 * x[1]) + 0.3 * x[2] ** 3 - x[0] * x[2]
+
+
+_BASES = {"Gauss-Lobatto": "GaussLobatto", "closed uniform": "ClosedUniform",
+          "Bernstein": "Positive", "Gauss-Legendre": "GaussLegendre"}
+
+
+@pytest.mark.parametrize("family, order, basis", [
+    ("H1", 3, "Gauss-Lobatto"), ("H1", 4, "Gauss-Lobatto"), ("H1", 3, "closed uniform"),
+    ("H1", 3, "Bernstein"), ("L2", 2, "Gauss-Legendre"), ("L2", 3, "Gauss-Legendre"),
+    ("L2", 3, "Gauss-Lobatto"), ("L2", 2, "closed uniform"), ("L2", 2, "Bernstein")])
+def test_higher_order_fields_are_mfems(f64_backend, family, order, basis):
+    """Fields of orders 2 to 4 on hexahedra, in MFEM's own spaces: on nodes Tack has
+    (Gauss-Lobatto, closed uniform, Gauss-Legendre) copied in Tack's numbering; on
+    Bernstein evaluated at Tack's Gauss-Lobatto nodes -- the same polynomials, so
+    values and gradients at random points are MFEM's either way."""
+    mesh = _cartesian("HEXAHEDRON")
+    kind = getattr(mfem.BasisType, _BASES[basis])
+    fec = (mfem.H1_FECollection if family == "H1" else mfem.L2_FECollection)(order, 3, kind)
+    gf = _projected(mesh, fec, _smooth)
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    u = data.fields["u"]
+    assert u.space.order == order and u.space.size == gf.FESpace().GetNDofs()
+    _compare(mesh, data, u, gf, np.random.default_rng(order), 2e-5)
+
+
+@pytest.mark.parametrize("order", [3, 4])
+def test_curved_meshes_of_higher_order(f64_backend, order):
+    """A mesh of order 3 or 4, bent: the geometry is Tack's tensor geometry of that
+    order on MFEM's nodes, positions, values and gradients MFEM's."""
+    mesh = _cartesian("HEXAHEDRON")
+    mesh.SetCurvature(order)
+    mesh.Transform(_Bend(3))
+    gf = _projected(mesh, mfem.H1_FECollection(order, 3), _quadratic)
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    assert data.geometry.space is td.H1(data, order=order)
+    _compare(mesh, data, data.fields["u"], gf, np.random.default_rng(order), 3e-5)
+    out = tack.empty((data.num_cells,))
+    td.for_each(_determinants, data, "cells", out)
+    np.testing.assert_allclose(out.numpy(), _mfem_determinants(mesh), rtol=1e-4)
+
+
+@pytest.mark.parametrize("family, order", [("H1", 3), ("L2", 2)])
+def test_fields_go_back_to_mfem(f64_backend, family, order):
+    """``mfem_grid_function`` gives a field back to MFEM in a space of its family, order
+    and nodes: the same DOFs, in MFEM's numbering, so the same function."""
+    from tack.interop.mfem import mfem_grid_function
+
+    mesh = _cartesian("HEXAHEDRON")
+    fec = (mfem.H1_FECollection if family == "H1" else mfem.L2_FECollection)(order, 3)
+    gf = _projected(mesh, fec, _smooth)
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    back = mfem_grid_function(data, data.fields["u"], mesh)
+    np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())
+    vectors = _projected(mesh, mfem.H1_FECollection(order, 3), lambda x: list(x), 3, 0)
+    data.fields["x"] = mfem_field(data, mesh, vectors, dtype=tack.f64)
+    again = mfem_grid_function(data, data.fields["x"], mesh, fes=vectors.FESpace())
+    np.testing.assert_array_equal(again.GetDataArray(), vectors.GetDataArray())

@@ -161,35 +161,46 @@ def test_a_variable_order_field_contours_its_order_one_cells(backend):
     assert _oriented(*_triangles(surface)) == _oriented(points, triangles[from_order_one])
 
 
-def test_an_order_two_field_is_refused(backend):
-    """Its corner values alone are a linear field: a quadratic that rises inside
-    every cell from zero at the corners would have no surface at all."""
+def test_an_order_two_field_is_cut_on_sub_cells(backend):
+    """A quadratic that rises inside every cell from zero at the corners: its corner
+    values alone, a linear field, have no surface at all (``subdivision=1``); on
+    hexahedra the cells are cut on sub-cells, which find it. Tetrahedra have no
+    subdivision yet, and refuse it."""
     data = _grid(3, "explicit")
     space = td.H1(data, order=2)
     values = np.ones(space.size)
     values[:data.num_points] = 0.0
+    bump = td.Field(space, _scalars(values))
+    assert td.contour(data, bump, 0.5).num_cells > 0
+    assert td.contour(data, bump, 0.5, subdivision=1).num_cells == 0
+    tets = td.tetrahedralize(data)
+    tet_space = td.H1(tets, order=2)
     with pytest.raises(NotImplementedError, match="order-2 H1"):
-        td.contour(data, td.Field(space, _scalars(values)), 0.5)
+        td.contour(tets, td.Field(tet_space, _scalars(np.zeros(tet_space.size))), 0.5)
 
 
-def test_a_slice_of_an_order_two_geometry_cuts_its_cells_at_their_corners(backend):
+def test_a_slice_of_an_order_two_geometry_cuts_its_cells_on_sub_cells(backend):
     """A slice contours the implicit function's values in the geometry's space,
-    order 2 for a curved geometry, which contour refuses: slicing such a
-    dataset raised (examples/43_mfem_poisson.py). The function's values at the
-    points are a linear field of the cells' corners, as before contour
-    refused order 2: a straight-sided geometry raised to order 2 is cut as its
-    order-1 self."""
+    order 2 for a curved geometry. A straight-sided geometry raised to order 2 is
+    its order-1 self: cut at its corners (``subdivision=1``) it gives the order-1
+    slice; by default on sub-cells, still on the plane (examples/43_mfem_poisson.py
+    slices such a dataset)."""
     data = _grid(3, "explicit")
     curved = td.DataSet(data.topology, data.geometry)
     curved.geometry = td.project(curved, curved.geometry, td.H1(curved, order=2))
     assert curved.geometry.space.order == 2
     origin, normal = (0.37, 0.41, 0.29), (1.0, 0.3, 0.2)
-    ours, theirs = td.slice_plane(curved, origin, normal), td.slice_plane(data, origin, normal)
+    ours = td.slice_plane(curved, origin, normal, subdivision=1)
+    theirs = td.slice_plane(data, origin, normal)
     assert ours.num_cells == theirs.num_cells > 0
     np.testing.assert_allclose(np.sort(ours.positions(), axis=0),
                                np.sort(theirs.positions(), axis=0), atol=1e-6)
+    fine = td.slice_plane(curved, origin, normal)
+    unit = np.array(normal) / np.linalg.norm(normal)
+    np.testing.assert_allclose((fine.positions() - origin) @ unit, 0, atol=1e-5)
+    assert fine.num_cells > ours.num_cells
     many = td.slice_plane(curved, origin, normal, value=[-0.2, 0.0, 0.2])
-    assert many.num_cells > ours.num_cells
+    assert many.num_cells > fine.num_cells
 
 
 def test_fields_carried_onto_the_surface(backend):

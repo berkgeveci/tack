@@ -31,7 +31,7 @@ the cell ``c`` the loop is at.
 """
 
 import tack
-from tack.dataset.shapes import HOLD_TOLERANCE
+from tack.dataset.shapes import HOLD_TOLERANCE, NEWTON_DIVERGED, NEWTON_TOLERANCE
 
 # ── Entity kinds ────────────────────────────────────────────────────
 
@@ -822,6 +822,11 @@ def quadratic_faces(shape):
 # ── Geometry ────────────────────────────────────────────────────────
 
 
+#: Newton steps for a curved cell: more than the corners' 10, which a polynomial
+#: map of higher degree can take from the center.
+CURVED_NEWTON_ITERATIONS = tack.constant(20, tack.i32)
+
+
 class _Geometry:
     """The geometry field, read through an entity: ``corner_position(i, j)``, which a storage
     mixin below defines, and what follows from it at parametric coordinates.
@@ -864,6 +869,52 @@ class _Geometry:
         return m
 
 
+class _CornerBox:
+    """A straight geometry's cell bounds, for the cell locator: its corners' box.
+    (A curved geometry's mixin defines ``control_box`` and ``CURVED`` itself.)"""
+
+    #: Whether the geometry is curved (of order 2 or more), so that locating a point
+    #: takes ``curved_to_parametric`` and a cell's bounds its control points.
+    CURVED = 0
+
+    @tack.func
+    def control_box(self, i):
+        """``(lo, hi)``, a box holding the cell: here its corners'."""
+        a = self.corner_position(i, 0)
+        b = a
+        for j in range(1, self.NUM_POINTS):
+            p = self.corner_position(i, j)
+            a = min(a, p)
+            b = max(b, p)
+        return a, b
+
+
+
+class _CurvedNewton:
+    """Locating a point in a cell of any geometry with a reference element, for the cell
+    locator: its own map inverted (cells' domain views only)."""
+
+    @tack.func
+    def curved_to_parametric(self, i, x):
+        """``world_to_parametric`` on the geometry itself: Newton's method from the
+        parametric center on ``position`` and ``geometry_jacobian``, the shape's
+        step and VTK's stopping rules, so a curved cell is inverted as it is,
+        not as its corners make it. Returns ``(pc, converged)``."""
+        pc = self.parametric_center()
+        converged = 0
+        for _ in range(CURVED_NEWTON_ITERATIONS):
+            step = self._newton_step(self.geometry_jacobian(i, pc), x - self.position(i, pc))
+            pc += step
+            if not (abs(pc[0]) < NEWTON_DIVERGED and abs(pc[1]) < NEWTON_DIVERGED
+                    and abs(pc[2]) < NEWTON_DIVERGED):
+                break
+            if (abs(step[0]) <= NEWTON_TOLERANCE and abs(step[1]) <= NEWTON_TOLERANCE
+                    and abs(step[2]) <= NEWTON_TOLERANCE):
+                converged = 1
+                break
+        return pc, converged
+
+
 class _PointGeometry:
     """Positions of a cell or face with no reference element -- a polyhedron, a
     polygon: ``corner_position(i, j)`` only, the positions of its points. Nothing maps
@@ -899,7 +950,50 @@ class _L2Geometry(_Geometry):
 class _H1Order2Geometry(_QuadraticDofs, _Geometry):
     """Curved geometry: an order-2 H1 field of positions. ``corner_position(c, j)`` is still
     corner ``j``'s; positions and Jacobians inside go through the quadratic
-    functions. Its edge and face ids come from the domain view's incidence."""
+    functions. Its edge and face ids come from the domain view's incidence.
+    Tetrahedra, triangles and wedges (hexahedra and quads take the tensor
+    geometry, ``_H1TensorGeometry``, of order 2)."""
+
+    CURVED = 1
+
+    @tack.func
+    def _edge_between(self, a, b):
+        found = 0
+        for e in range(self.NUM_EDGES):
+            ea = self.edge_corner(e, 0)
+            eb = self.edge_corner(e, 1)
+            if (ea == a and eb == b) or (ea == b and eb == a):
+                found = e
+        return found
+
+    @tack.func
+    def control_box(self, c):
+        """The box of the cell's Bernstein control points, which hold it: its corners,
+        each edge's ``2 m - (x0 + x1) / 2`` (``m`` its middle node), and each quad
+        face's ``4 f - (its edges' middles) + (its corners) / 4``."""
+        a = self.corner_position(c, 0)
+        b = a
+        for j in range(1, self.NUM_POINTS):
+            p = self.corner_position(c, j)
+            a = min(a, p)
+            b = max(b, p)
+        for e in range(self.NUM_EDGES):
+            p = (2.0 * self.get(self.dof_index(c, self.NUM_POINTS + e))
+                 - 0.5 * (self.corner_position(c, self.edge_corner(e, 0))
+                          + self.corner_position(c, self.edge_corner(e, 1))))
+            a = min(a, p)
+            b = max(b, p)
+        for i in range(self.QUADRATIC_FACES):
+            f = self.NUM_FACES - self.QUADRATIC_FACES + i
+            p = 4.0 * self.get(self.dof_index(c, self.NUM_POINTS + self.NUM_EDGES + i))
+            for k in range(4):
+                ca = self.face_corner(f, k)
+                cb = self.face_corner(f, (k + 1) % 4)
+                p += (0.25 * self.corner_position(c, ca)
+                      - self.get(self.dof_index(c, self.NUM_POINTS + self._edge_between(ca, cb))))
+            a = min(a, p)
+            b = max(b, p)
+        return a, b
 
     @tack.func
     def corner_position(self, c, j):
@@ -1093,6 +1187,23 @@ class _Interpolated:
         corners', so it is value ``j`` itself."""
         return self.dof(i, j)
 
+    @tack.func
+    def flatness(self, i):
+        """What linearizing the cell at its corners loses: nothing at order 1."""
+        return abs(self.dof(i, 0) - self.dof(i, 0))
+
+    @tack.func
+    def value_range(self, i):
+        """``(lo, hi)`` holding the field over the cell: at order 1, its corner values
+        (each shape's functions are its Bernstein basis there)."""
+        lo = self.dof(i, 0)
+        hi = lo
+        for j in range(1, self.NUM_POINTS):
+            v = self.dof(i, j)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        return lo, hi
+
 
 class _H1Field(_Interpolated):
     """H1, order 1, Shared: one value per point, interpolated by the shape functions."""
@@ -1102,7 +1213,116 @@ class _H1Field(_Interpolated):
         return self.point_value(i, j)
 
 
-class _H1Order2Field(_QuadraticDofs, _Interpolated):
+class _Order2Range:
+    """An order-2 field's Bernstein coefficients over a cell, from its nodes: the
+    corners' values; each edge's ``2 m - (v0 + v1) / 2`` (``m`` its middle); each quad
+    face's ``4 f - (its edges' middles) + (its corners) / 4``; a hexahedron's
+    interior ``8 c - 2 (its faces' centers) + (its edges' middles) / 2 - (its corners)
+    / 8``, a quad's ``4 c - (its edges' middles) + (its corners) / 4``. The field lies
+    between the least and the greatest (``value_range``); each one's distance from
+    the corners' multilinear interpolation where it sits bounds what linearizing
+    the cell at its corners loses (``flatness``)."""
+
+    @tack.func
+    def _between(self, a, b):
+        found = 0
+        for e in range(self.NUM_EDGES):
+            ea = self.edge_corner(e, 0)
+            eb = self.edge_corner(e, 1)
+            if (ea == a and eb == b) or (ea == b and eb == a):
+                found = e
+        return found
+
+    @tack.func
+    def _corner_mean(self, c):
+        total = self.dof(c, 0)
+        for j in range(1, self.NUM_POINTS):
+            total += self.dof(c, j)
+        return total / self.NUM_POINTS
+
+    @tack.func
+    def _edge_sum(self, c):
+        total = self.dof(c, self.NUM_POINTS)
+        for e in range(1, self.NUM_EDGES):
+            total += self.dof(c, self.NUM_POINTS + e)
+        return total
+
+    @tack.func
+    def _interior_control(self, c):
+        """The interior's coefficient (a hexahedron's or a quad's center node)."""
+        center = self.dof(c, self.NUM_POINTS + self.NUM_EDGES + self.QUADRATIC_FACES)
+        corners = self._corner_mean(c) * self.NUM_POINTS
+        v = 4.0 * center - self._edge_sum(c) + 0.25 * corners
+        if self.DIMENSION == 3:
+            faces = self.dof(c, self.NUM_POINTS + self.NUM_EDGES)
+            for i in range(1, self.QUADRATIC_FACES):
+                faces += self.dof(c, self.NUM_POINTS + self.NUM_EDGES + i)
+            v = 8.0 * center - 2.0 * faces + 0.5 * self._edge_sum(c) - 0.125 * corners
+        return v
+
+    @tack.func
+    def _face_control(self, c, i):
+        f = self.NUM_FACES - self.QUADRATIC_FACES + i
+        v = 4.0 * self.dof(c, self.NUM_POINTS + self.NUM_EDGES + i)
+        for k in range(4):
+            ca = self.face_corner(f, k)
+            cb = self.face_corner(f, (k + 1) % 4)
+            v += 0.25 * self.dof(c, ca) - self.dof(c, self.NUM_POINTS + self._between(ca, cb))
+        return v
+
+    @tack.func
+    def _face_corner_mean(self, c, i):
+        f = self.NUM_FACES - self.QUADRATIC_FACES + i
+        total = self.dof(c, self.face_corner(f, 0))
+        for k in range(1, 4):
+            total += self.dof(c, self.face_corner(f, k))
+        return 0.25 * total
+
+    @tack.func
+    def _edge_control(self, c, e):
+        return (2.0 * self.dof(c, self.NUM_POINTS + e)
+                - 0.5 * (self.dof(c, self.edge_corner(e, 0)) + self.dof(c, self.edge_corner(e, 1))))
+
+    @tack.func
+    def value_range(self, c):
+        lo = self.dof(c, 0)
+        hi = lo
+        for j in range(1, self.NUM_POINTS):
+            v = self.dof(c, j)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        for e in range(self.NUM_EDGES):
+            v = self._edge_control(c, e)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        for i in range(self.QUADRATIC_FACES):
+            v = self._face_control(c, i)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        if self.QUADRATIC_INTERIOR == 1:
+            v = self._interior_control(c)
+            lo = min(lo, v)
+            hi = max(hi, v)
+        return lo, hi
+
+    @tack.func
+    def flatness(self, c):
+        """The largest distance of a coefficient from the corners' multilinear
+        interpolation at its place: an edge's from its corners' mean, a face's
+        from its four, the interior's from all."""
+        worst = abs(self.dof(c, 0) - self.dof(c, 0))
+        for e in range(self.NUM_EDGES):
+            d = self._edge_control(c, e) - 0.5 * (self.dof(c, self.edge_corner(e, 0))
+                                                   + self.dof(c, self.edge_corner(e, 1)))
+            worst = max(worst, abs(d))
+        for i in range(self.QUADRATIC_FACES):
+            worst = max(worst, abs(self._face_control(c, i) - self._face_corner_mean(c, i)))
+        if self.QUADRATIC_INTERIOR == 1:
+            worst = max(worst, abs(self._interior_control(c) - self._corner_mean(c)))
+        return worst
+
+
+class _H1Order2Field(_QuadraticDofs, _Order2Range, _Interpolated):
     """H1, order 2, Shared: values at the corners, the middles of edges and quad
     faces, and a hexahedron's center, interpolated by the shape's quadratic
     Lagrange functions."""
@@ -1161,6 +1381,400 @@ class _L2Order0Field:
     def corner_value(self, i, j):
         return self.get(self.offsets[self.entity_id(i)])
 
+    @tack.func
+    def value_range(self, i):
+        v = self.dof(i, 0)                                # the cell's one value
+        return v, v
+
+    @tack.func
+    def flatness(self, i):
+        return abs(self.dof(i, 0) - self.dof(i, 0))
+
+
+# ── Tensor bases of any order (tack.dataset.bases) ──────────────────
+
+
+class _TensorPolynomials:
+    """A Lagrange basis of order ``ORDER`` on a tensor shape: the products of the 1D
+    polynomials through ``basis_nodes``, evaluated in barycentric form with
+    ``basis_weights`` (both in the field's float type). Node ``n`` is ``(i, j, k)``,
+    ``n = i + q * (j + q * k)`` with ``q = ORDER + 1``."""
+
+    @tack.func
+    def lagrange_values(self, t, out):
+        """``out[j]``: the 1D Lagrange polynomial of node ``j`` at ``t``."""
+        for j in range(self.ORDER + 1):
+            v = self.basis_weights[j]
+            for m in range(self.ORDER + 1):
+                if m != j:
+                    v = v * (t - self.basis_nodes[m])
+            out[j] = v
+
+    @tack.func
+    def lagrange_derivatives(self, t, out):
+        """``out[j]``: its derivative at ``t``, by the product rule (no division, so
+        exact at the nodes too)."""
+        for j in range(self.ORDER + 1):
+            d = self.basis_weights[j] - self.basis_weights[j]
+            for k in range(self.ORDER + 1):
+                if k != j:
+                    v = self.basis_weights[j]
+                    for m in range(self.ORDER + 1):
+                        if m != j and m != k:
+                            v = v * (t - self.basis_nodes[m])
+                    d = d + v
+            out[j] = d
+
+    @tack.func
+    def node_parametric(self, n):
+        """Node ``n``'s parametric coordinates."""
+        q = self.ORDER + 1
+        pc = tack.vec3(self.basis_nodes[n % q], 0.0, 0.0)
+        if self.DIMENSION >= 2:
+            pc[1] = self.basis_nodes[(n // q) % q]
+        if self.DIMENSION == 3:
+            pc[2] = self.basis_nodes[n // (q * q)]
+        return pc
+
+    @tack.func
+    def node_weight(self, n, lx, ly, lz):
+        q = self.ORDER + 1
+        w = lx[n % q]
+        if self.DIMENSION >= 2:
+            w = w * ly[(n // q) % q]
+        if self.DIMENSION == 3:
+            w = w * lz[n // (q * q)]
+        return w
+
+    @tack.func
+    def node_gradient(self, n, lx, ly, lz, dx, dy, dz):
+        q = self.ORDER + 1
+        i = n % q
+        j = (n // q) % q
+        k = n // (q * q)
+        g = tack.vec3(dx[i], 0.0, 0.0)
+        if self.DIMENSION == 2:
+            g = tack.vec3(dx[i] * ly[j], lx[i] * dy[j], 0.0)
+        if self.DIMENSION == 3:
+            g = tack.vec3(dx[i] * ly[j] * lz[k], lx[i] * dy[j] * lz[k], lx[i] * ly[j] * dz[k])
+        return g
+
+
+
+class _TensorRange:
+    """A tensor field's Bernstein coefficients over a cell: its values (less node 0's)
+    taken one axis at a time by ``basis_bernstein``. The field lies between the
+    least and the greatest (``value_range``); each one's distance from the corner
+    coefficients' multilinear interpolation where it sits bounds what linearizing
+    the cell at its corners loses (``flatness``)."""
+
+    @tack.func
+    def _bernstein(self, c, cur, nxt):
+        """``cur``: the coefficients less node 0's value, in node order."""
+        q = self.ORDER + 1
+        count = (self.ORDER + 1) ** self.DIMENSION
+        first = self.dof(c, 0)
+        for n in range(count):
+            cur[n] = self.dof(c, n) - first
+        stride = 1
+        for _ in range(self.DIMENSION):
+            for n in range(count):
+                i = (n // stride) % q
+                base = n - i * stride
+                total = cur[0] - cur[0]
+                for m in range(q):
+                    total += self.basis_bernstein[i * q + m] * cur[base + m * stride]
+                nxt[n] = total
+            for n in range(count):
+                cur[n] = nxt[n]
+            stride *= q
+
+    @tack.func
+    def value_range(self, c):
+        cur = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        self._bernstein(c, cur, nxt)
+        lo = cur[0]
+        hi = lo
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            lo = min(lo, cur[n])
+            hi = max(hi, cur[n])
+        first = self.dof(c, 0)
+        return first + lo, first + hi
+
+    @tack.func
+    def flatness(self, c):
+        cur = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        self._bernstein(c, cur, nxt)
+        p = self.ORDER
+        q = self.ORDER + 1
+        worst = cur[0] - cur[0]
+        for n in range((self.ORDER + 1) ** self.DIMENSION):
+            i = n % q
+            j = (n // q) % q
+            k = n // (q * q)
+            # The corner coefficients' multilinear interpolation at (i, j, k) / p.
+            linear = cur[0] - cur[0]
+            for corner in range(2 ** self.DIMENSION):
+                a = corner & 1
+                b = (corner >> 1) & 1
+                h = (corner >> 2) & 1
+                w = (i if a == 1 else p - i) / p
+                if self.DIMENSION >= 2:
+                    w *= (j if b == 1 else p - j) / p
+                if self.DIMENSION == 3:
+                    w *= (k if h == 1 else p - k) / p
+                linear += w * cur[a * p + q * (b * p + q * h * p)]
+            worst = max(worst, abs(cur[n] - linear))
+        return worst
+
+
+class _TensorBasis(_TensorRange, _TensorPolynomials):
+    """A field's value and parametric gradient in a tensor basis, from ``dof(c, n)``,
+    the space's."""
+
+
+    @tack.func
+    def value(self, c, pc):
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        total = self.dof(c, 0) * self.node_weight(0, lx, ly, lz)
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            total += self.dof(c, n) * self.node_weight(n, lx, ly, lz)
+        return total
+
+    @tack.func
+    def parametric_gradient(self, c, pc):
+        """From differences to node 0's value (the basis' gradients sum to zero), so
+        a field of large, nearly equal values keeps its small differences."""
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        self.lagrange_derivatives(pc[0], dx)
+        self.lagrange_derivatives(pc[1], dy)
+        self.lagrange_derivatives(pc[2], dz)
+        first = self.dof(c, 0)
+        g = (self.dof(c, 1) - first) * self.node_gradient(1, lx, ly, lz, dx, dy, dz)
+        for n in range(2, (self.ORDER + 1) ** self.DIMENSION):
+            g += (self.dof(c, n) - first) * self.node_gradient(n, lx, ly, lz, dx, dy, dz)
+        return g
+
+
+class _TensorDofs:
+    """Where an ``H1`` space of order ``ORDER`` (3 or more) on tensor shapes keeps
+    cell ``c``'s node ``n`` (``bases.dof_tables``: ``node_kind``,
+    ``node_entity``, ``node_a``, ``node_b``): a corner's at its point; ``ORDER -
+    1`` per edge from ``edge_base``, in order from the edge's lower point id;
+    ``(ORDER - 1)^2`` per quad face from ``face_dofs[face]``, lexicographic in the
+    frame of the face's own row; the interior's from ``cell_dofs[cell]``,
+    lexicographic in the cell's frame. So every cell reading a shared node finds
+    the same value."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        kind = self.node_kind[n]
+        e = self.node_entity[n]
+        if kind == 0:
+            return self.point_id(c, e)
+        if kind == 1:
+            return self.tensor_edge_dof(c, e, self.node_a[n])
+        if kind == 2:
+            return self.tensor_face_dof(c, e, self.node_a[n], self.node_b[n])
+        return self.cell_dofs[self.entity_id(c)] + self.node_a[n]
+
+
+class _TensorEdges:
+    """A shape with edges: an edge node's value, in order from the edge's lower point id."""
+
+    @tack.func
+    def tensor_edge_dof(self, c, e, a):
+        s = a if self.edge_sign(c, e) > 0 else self.ORDER - a
+        return self.edge_base + self.edge_id(c, e) * (self.ORDER - 1) + (s - 1)
+
+
+class _NoTensorEdges:
+    """A segment, whose nodes are its points' and its interior's."""
+
+    @tack.func
+    def tensor_edge_dof(self, c, e, a):
+        return self.cell_dofs[self.entity_id(c)]          # not reached
+
+
+class _TensorFaces:
+    """A solid's quad face node ``(a, b)`` (from the cell's local corner 0 of the face,
+    toward its corners 1 and 3), placed in the frame of the face's own row --
+    the same for both cells sharing it -- by the face's orientation in the cell."""
+
+    @tack.func
+    def tensor_face_dof(self, c, f, a, b):
+        p = self.ORDER
+        r0 = self.face_position(c, f, 0)
+        r1 = self.face_position(c, f, 1)
+        r3 = self.face_position(c, f, 3)
+        # Row corner m sits at (p, 0) for 1, (p, p) for 2, (0, p) for 3.
+        x0 = p if (r0 == 1 or r0 == 2) else 0
+        y0 = p if (r0 == 2 or r0 == 3) else 0
+        x1 = p if (r1 == 1 or r1 == 2) else 0
+        y1 = p if (r1 == 2 or r1 == 3) else 0
+        x3 = p if (r3 == 1 or r3 == 2) else 0
+        y3 = p if (r3 == 2 or r3 == 3) else 0
+        u = x0 + a * ((x1 - x0) // p) + b * ((x3 - x0) // p)
+        v = y0 + a * ((y1 - y0) // p) + b * ((y3 - y0) // p)
+        return self.face_dofs[self.face_id(c, f)] + (v - 1) * (p - 1) + (u - 1)
+
+
+class _NoTensorFaces:
+    """A segment or a 2D cell: its edges are its sides, and it has no face nodes."""
+
+    @tack.func
+    def tensor_face_dof(self, c, f, a, b):
+        return self.cell_dofs[self.entity_id(c)]          # not reached
+
+
+class _H1TensorGeometry(_TensorDofs, _TensorPolynomials, _Geometry):
+    """Curved geometry of order 2 or more on tensor shapes: an ``H1`` field of positions
+    of that order. Positions and Jacobians are formed from differences to node 0's
+    position, as order 1's are, so f32 keeps thin cells."""
+
+    CURVED = 1
+
+    @tack.func
+    def control_box(self, c):
+        """The box of the cell's Bernstein control points, which hold it: the nodes'
+        positions (less node 0's) taken to Bernstein coefficients one axis at a
+        time by ``basis_bernstein``, the 1D matrix."""
+        q = self.ORDER + 1
+        count = (self.ORDER + 1) ** self.DIMENSION
+        cur = tack.local_array_like(self.basis_nodes, 3 * (self.ORDER + 1) ** self.DIMENSION)
+        nxt = tack.local_array_like(self.basis_nodes, 3 * (self.ORDER + 1) ** self.DIMENSION)
+        first = self.get(self.dof_index(c, 0))
+        for n in range(count):
+            v = self.get(self.dof_index(c, n)) - first
+            cur[3 * n] = v[0]
+            cur[3 * n + 1] = v[1]
+            cur[3 * n + 2] = v[2]
+        stride = 1
+        for _ in range(self.DIMENSION):
+            for n in range(count):
+                i = (n // stride) % q
+                base = n - i * stride
+                s0 = cur[0] - cur[0]
+                s1 = s0
+                s2 = s0
+                for m in range(q):
+                    w = self.basis_bernstein[i * q + m]
+                    src = 3 * (base + m * stride)
+                    s0 += w * cur[src]
+                    s1 += w * cur[src + 1]
+                    s2 += w * cur[src + 2]
+                nxt[3 * n] = s0
+                nxt[3 * n + 1] = s1
+                nxt[3 * n + 2] = s2
+            for n in range(3 * count):
+                cur[n] = nxt[n]
+            stride *= q
+        a = tack.vec3(cur[0], cur[1], cur[2])
+        b = a
+        for n in range(1, count):
+            p = tack.vec3(cur[3 * n], cur[3 * n + 1], cur[3 * n + 2])
+            a = min(a, p)
+            b = max(b, p)
+        return first + a, first + b
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+    @tack.func
+    def position(self, c, pc):
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        first = self.get(self.dof_index(c, 0))
+        x = first
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            x += (self.get(self.dof_index(c, n)) - first) * self.node_weight(n, lx, ly, lz)
+        return x
+
+    @tack.func
+    def geometry_jacobian(self, c, pc):
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        self.lagrange_derivatives(pc[0], dx)
+        self.lagrange_derivatives(pc[1], dy)
+        self.lagrange_derivatives(pc[2], dz)
+        first = self.get(self.dof_index(c, 0))
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            m += (self.get(self.dof_index(c, n)) - first).outer_product(
+                self.node_gradient(n, lx, ly, lz, dx, dy, dz))
+        return m
+
+
+class _H1TensorField(_TensorDofs, _TensorBasis):
+    """H1 of order 3 or more on tensor shapes, Shared."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.dof_index(c, n))
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.dof(c, self.corner_node[j])
+
+
+class _L2TensorField(_TensorBasis):
+    """L2 on tensor shapes at order 2 or more, or on Gauss-Legendre nodes: each cell's
+    ``(ORDER + 1)^d`` values from ``offsets[cell]``, in node order."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.offsets[self.entity_id(c)] + n)
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.value(c, self.parametric_point(j))
+
+
+def tensor_mixins(shape):
+    """The edge and face mixins a tensor ``H1`` view of ``shape`` cells needs."""
+    edges = _TensorEdges if shape.NUM_EDGES and shape.DIMENSION >= 2 else _NoTensorEdges
+    faces = _TensorFaces if shape.DIMENSION == 3 else _NoTensorFaces
+    return edges, faces
+
+
+_by_order = {}
+
+
+def of_order(mixin, order):
+    """``mixin`` with ``ORDER`` set: one class per (mixin, order), so views of one
+    order share their compiled kernels."""
+    key = (mixin, int(order))
+    if key not in _by_order:
+        _by_order[key] = type(f"{mixin.__name__}{order}", (mixin,), {"ORDER": int(order)})
+    return _by_order[key]
+
 
 class _ConstantField:
     """Constant (L2, order 0): one value per cell."""
@@ -1180,6 +1794,15 @@ class _ConstantField:
     @tack.func
     def corner_value(self, i, j):
         return self.get(self.entity_id(i))
+
+    @tack.func
+    def value_range(self, i):
+        v = self.dof(i, 0)                                # the cell's one value
+        return v, v
+
+    @tack.func
+    def flatness(self, i):
+        return abs(self.dof(i, 0) - self.dof(i, 0))
 
 
 class _PolyhedralPointField:
@@ -1414,6 +2037,112 @@ class _CenterPosition:
     @tack.func
     def node_position(self, i, j):
         return self.position(i, self.parametric_center())
+
+
+class _TensorEdgeNodes:
+    """``H1`` of order ``ORDER`` (3 or more): an edge's ``ORDER - 1`` nodes, in order from
+    its lower point id, at the space's 1D nodes (``node_points``) along it -- the
+    edge's straight line between its points, or the geometry's own value there
+    (``_GeometryAtDof``) when the geometry shares the space's layout."""
+
+    @tack.func
+    def node_count(self, i):
+        return self.ORDER - 1
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_edge_base + self.entity_id(i) * (self.ORDER - 1) + j
+
+    @tack.func
+    def node_place(self, i, j):
+        return tack.vec3(self.node_points[j + 1], 0.0, 0.0)
+
+
+class _TensorFaceNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a quad face's ``(ORDER - 1)^2`` nodes,
+    lexicographic in the frame of its own row (from its point 0, toward its points
+    1 and 3)."""
+
+    @tack.func
+    def node_count(self, i):
+        return (self.ORDER - 1) * (self.ORDER - 1)
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_face_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_place(self, i, j):
+        return tack.vec3(self.node_points[j % (self.ORDER - 1) + 1],
+                         self.node_points[j // (self.ORDER - 1) + 1], 0.0)
+
+
+class _StraightNodePosition:
+    """An edge's or quad face's node where its straight (order-1) geometry puts it:
+    linear between an edge's points, bilinear over a face's, at ``node_place``."""
+
+    @tack.func
+    def node_position(self, i, j):
+        t = self.node_place(i, j)
+        if self.NUM_POINTS == 2:
+            return self.corner_position(i, 0) + t[0] * (self.corner_position(i, 1)
+                                                        - self.corner_position(i, 0))
+        x0 = self.corner_position(i, 0)
+        return (x0 + t[0] * (1.0 - t[1]) * (self.corner_position(i, 1) - x0)
+                + t[0] * t[1] * (self.corner_position(i, 2) - x0)
+                + (1.0 - t[0]) * t[1] * (self.corner_position(i, 3) - x0))
+
+
+class _TensorInteriorNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a cell's ``(ORDER - 1)^d`` interior nodes,
+    lexicographic in its frame, where its geometry maps them."""
+
+    @tack.func
+    def node_count(self, i):
+        n = 1
+        for _ in range(self.DIMENSION):
+            n *= self.ORDER - 1
+        return n
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_cell_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        q = self.ORDER - 1
+        pc = tack.vec3(self.node_points[j % q + 1], 0.0, 0.0)
+        if self.DIMENSION >= 2:
+            pc[1] = self.node_points[(j // q) % q + 1]
+        if self.DIMENSION == 3:
+            pc[2] = self.node_points[j // (q * q) + 1]
+        return self.position(i, pc)
+
+
+class _TensorCellNodes:
+    """``L2`` on a tensor basis: a cell's ``(ORDER + 1)^d`` nodes, in node order, where
+    its geometry maps them."""
+
+    @tack.func
+    def node_count(self, i):
+        n = 1
+        for _ in range(self.DIMENSION):
+            n *= self.ORDER + 1
+        return n
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_offsets[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        q = self.ORDER + 1
+        pc = tack.vec3(self.node_points[j % q], 0.0, 0.0)
+        if self.DIMENSION >= 2:
+            pc[1] = self.node_points[(j // q) % q]
+        if self.DIMENSION == 3:
+            pc[2] = self.node_points[j // (q * q)]
+        return self.position(i, pc)
 
 
 # ── Groups and view classes ─────────────────────────────────────────

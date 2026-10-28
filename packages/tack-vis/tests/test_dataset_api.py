@@ -571,8 +571,8 @@ def test_spaces_are_one_object_per_topology_and_parameters(backend):
     assert td.Values(data, "faces") is not td.Values(data, "edges")
     assert td.L2(data) is not td.Constant(data)
     assert td.H1(data, order=2) is not td.H1(data)
-    with pytest.raises(NotImplementedError, match="order 3"):
-        td.H1(data, order=3)
+    with pytest.raises(NotImplementedError, match="order 3 on Pyramid"):
+        _ = td.H1(data, order=3).size                # orders above 2: tensor shapes
     with pytest.raises(ValueError, match="points, edges, faces or cells"):
         td.Values(data, "corners")
 
