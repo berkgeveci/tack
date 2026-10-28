@@ -233,8 +233,10 @@ def main():
                         help="l2: L2's values; h1: H1's cell interiors (orders 3 and up)")
     parser.add_argument("--json", help="write the rows here")
     args = parser.parse_args()
-    rows = run(args.arch, args.cells, [int(o) for o in args.orders.split(",")], args.runs,
-               args.family)
+    orders = [int(o) for o in args.orders.split(",")]
+    if args.family == "h1" and min(orders) < 3:
+        parser.error("--family h1 measures cell interiors, which start at order 3")
+    rows = run(args.arch, args.cells, orders, args.runs, args.family)
     print(f"{args.arch}, {args.family}, {args.cells}^3 hexahedra; ms, warm medians: per cell, "
           "cell-fastest, and their ratio")
     whats = list(dict.fromkeys(r["what"] for r in rows))
