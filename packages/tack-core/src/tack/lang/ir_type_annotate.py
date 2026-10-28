@@ -476,3 +476,36 @@ def _annotate_stmt(node, env, array_params, var_types=None, collected=None):
 
     if isinstance(node, (ir.IRBreak, ir.IRContinue, ir.IRBarrier)):
         return
+
+
+def refuse_f64(ir_func: ir.IRFunction, device: str):
+    """Refuse a typed kernel that computes anything in f64, for ``device``, which has
+    no f64 (Metal; a Level Zero device without fp64): an f64 cast, constant, local,
+    parameter or expression anywhere in it, from the kernel or a function it
+    inlines. Refused here, once types are known and before code is generated, the
+    same way on every such device -- and on a CPU posing as one, so tests find
+    what Metal's compiler would. The message names the cause where it can: a
+    parameter, a cast, a constant, a local, before the arithmetic they make f64."""
+    found = []
+    for param in ir_func.params:
+        if param.type_annotation is f64:
+            found.append((0, f"the parameter '{param.name}'"))
+    for node in walk_ir(ir_func.body):
+        if getattr(node, "_resolved_type", None) is f64:
+            found.append((3, f"the local '{node.target}'"))
+        if getattr(node, "dtype", None) is not f64:
+            continue
+        if isinstance(node, ir.IRCast):
+            found.append((1, "a cast to f64 (tack.f64)"))
+        elif isinstance(node, ir.IRConstant):
+            found.append((2, f"the f64 constant {node.value!r}"))
+        elif isinstance(node, ir.IRName):
+            found.append((4, f"'{node.name}'"))
+        elif isinstance(node, ir.IRCall):
+            found.append((5, f"{node.func_name}(...)"))
+        else:
+            found.append((6, f"an f64 {type(node).__name__[2:]}"))
+    if found:
+        what = min(found)[1]
+        raise TypeError(f"Kernel '{ir_func.name}' computes in f64 ({what}), which {device} "
+                        "does not have: keep its values and arithmetic in f32 there")
