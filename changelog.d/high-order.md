@@ -16,6 +16,12 @@
   each cell's lattice of `level` steps, fields at the lattice points (VTK's
   `vtkCellGridToUnstructuredGrid`). A lattice point shared by cells is one
   point, evaluated once, by the first cell holding it.
+- The MFEM interop takes `H1` from order 3 and `L2` from order 2 on quads and
+  hexahedra, and curved meshes of any order on them: on Gauss-Lobatto,
+  Gauss-Legendre and closed uniform nodes the values are copied in Tack's
+  numbering, on any other basis (Bernstein) evaluated at Tack's nodes,
+  exactly either way. `mfem_grid_function(data, field, mesh)` gives a field
+  back as an MFEM `GridFunction`, the same DOFs in MFEM's numbering.
 - `contour`, `slice` and `slice_plane` take `subdivision=`: on the tensor
   shapes, a field above order 1 or a curved geometry is cut on linear
   sub-cells, by default as many lattice steps as the largest order of the

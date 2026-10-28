@@ -178,21 +178,6 @@ def _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent):
 
 # ── The refined dataset ─────────────────────────────────────────────
 
-def _node_order(shape, level):
-    """Lattice node ``n``'s number in the cell order of ``H1`` of order ``level``:
-    itself above order 2; at order 2 the quadratic shapes' (corners, edges, quad
-    faces, interior: ``shapes.Shape.quadratic_node``)."""
-    kind, entity, _, _, _ = bases.dof_tables(shape, level)
-    if level != 2:
-        return np.arange(len(kind), dtype=np.int32)
-    first_face = shape.NUM_FACES - shape.QUADRATIC_FACES
-    return np.array([e if k == bases.CORNER else
-                     shape.NUM_POINTS + e if k == bases.EDGE else
-                     shape.NUM_POINTS + shape.NUM_EDGES + e - first_face if k == bases.FACE else
-                     shape.NUM_POINTS + shape.NUM_EDGES + shape.QUADRATIC_FACES
-                     for k, e in zip(kind, entity)], np.int32)
-
-
 def _tensor_cells(data, what):
     for group in data.topology.groups():
         if group.count and not bases.tensor_shape(group.shape):
@@ -251,7 +236,7 @@ def _refined(data, flags, level, fields):
             lattice = Field(space, ConstantArray(0.0, space.size, dtype=data.dtype))
             for group in data.launch_groups("cells", [lattice]):
                 if group.count:
-                    node_of = tack.array(_node_order(group.shape, level))
+                    node_of = tack.array(bases.view_order(group.shape, level))
                     _lattice_keys(data.domain_view("cells", group), lattice.view(group),
                                   slot_of, per_cell, node_of, keys)
     order = argsort(keys) if total else tack.empty((0,), tack.i64)

@@ -32,7 +32,8 @@ import numpy as np
 
 from tack.dataset import shapes
 
-__all__ = ["FAMILIES", "bernstein", "dof_tables", "nodes", "tensor_shape", "weights"]
+__all__ = ["FAMILIES", "bernstein", "dof_tables", "nodes", "tensor_shape", "view_order",
+           "weights"]
 
 FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre")
 #: The families with nodes at the ends, which shared values need.
@@ -210,3 +211,18 @@ def dof_tables(shape, order):
     for array in (kind, entity, a, b, corner_node):
         array.setflags(write=False)
     return kind, entity, a, b, corner_node
+
+
+def view_order(shape, order):
+    """Node ``n`` (lexicographic) as an ``H1`` view of ``order`` numbers its cell's nodes
+    (``dof_index``): itself above order 2; at order 2 the quadratic shapes' order --
+    corners, edges, quad faces, interior (``shapes.Shape.quadratic_node``)."""
+    kind, entity, _, _, _ = dof_tables(shape, order)
+    if order != 2:
+        return np.arange(len(kind), dtype=np.int32)
+    first_face = shape.NUM_FACES - shape.QUADRATIC_FACES
+    return np.array([e if k == CORNER else
+                     shape.NUM_POINTS + e if k == EDGE else
+                     shape.NUM_POINTS + shape.NUM_EDGES + e - first_face if k == FACE else
+                     shape.NUM_POINTS + shape.NUM_EDGES + shape.QUADRATIC_FACES
+                     for k, e in zip(kind, entity)], np.int32)
