@@ -361,8 +361,10 @@ class Shape:
         VTK's point order.
         """
         m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-        for j in range(self.NUM_POINTS):
-            m += _point(pts, j).outer_product(self.shape_gradient(j, pc))
+        p0 = _point(pts, 0)
+        for j in range(1, self.NUM_POINTS):
+            # Relative to the first point, as _newton's and geometry_jacobian's.
+            m += (_point(pts, j) - p0).outer_product(self.shape_gradient(j, pc))
         return m
 
     @tack.func

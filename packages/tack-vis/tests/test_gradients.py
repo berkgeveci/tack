@@ -103,3 +103,33 @@ def test_a_linear_field_has_its_gradient_everywhere(backend):
                                    -0.5 * np.trace(J @ J), atol=1e-5)
     with pytest.raises(ValueError, match="'cells' or 'points'"):
         td.algorithms.gradients(data, td.Field(td.H1(data), v), at="faces")
+
+
+def _thin_hexahedra(dtype):
+    """Hexahedra 2500 times wider than thick, near (1, 1, 1), and a field of about
+    1e5 varying slowly across them: positions and values stored in f32, so the
+    f32 and f64 datasets hold the same numbers."""
+    axis = np.linspace(1.0, 1.1, 6)
+    grid = td.rectilinear_grid(axis, axis, 1.0 + np.array([0.0, 2e-5, 4e-5]), dtype=tack.f64)
+    p = grid.positions()
+    u = 1e5 + 30.0 * p[:, 0] + 20.0 * p[:, 1] + 5e4 * (p[:, 2] - 1.0)
+    data = td.DataSet(grid.topology, p.astype(np.float32).astype(dtype.numpy_dtype), dtype=dtype)
+    data.fields["u"] = td.Field(td.H1(data), tack.array(
+        u.astype(np.float32).astype(dtype.numpy_dtype)))
+    return data
+
+
+@pytest.mark.parametrize("at", ["cells", "points"])
+def test_thin_cells_keep_their_gradients_in_f32(at):
+    """A cell's Jacobian and its field's parametric derivative are formed from its
+    corners' and values' differences from the first's, exact in f32, not from
+    sums of absolute positions and values: those lost a thin cell's short edge
+    and a large value's small differences to rounding, and the ONERA M6's
+    boundary-layer wedges' f32 pressure gradients were up to 93 times off
+    (6.6M cells off by over 0.1%; now 31, as in f64). Here f32 gives f64's
+    gradients from the same stored numbers, to f32's precision (cell gradients were
+    1% off; point gradients, by another path here, were not)."""
+    single = td.gradients(_thin_hexahedra(tack.f32), "u", at=at).values.numpy().astype(float)
+    double = td.gradients(_thin_hexahedra(tack.f64), "u", at=at).values.numpy()
+    error = np.linalg.norm(single - double, axis=1) / np.linalg.norm(double, axis=1)
+    assert error.max() < 1e-6
