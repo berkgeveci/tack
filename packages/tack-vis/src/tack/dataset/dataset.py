@@ -229,30 +229,35 @@ def _geometry_parts(data, group, kind):
     if group.shape in (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine):
         # No reference element: the points' positions, nothing to map.
         return _space_parts(geometry, group, views._PointGeometry)
-    if geometry.space.order == 2 and kind == "cells" and not bases.tensor_shape(group.shape):
+    bernstein = geometry.space.basis == bases.BERNSTEIN
+    high = geometry.space.order >= 3 or (geometry.space.order == 2 and bernstein)
+    if geometry.space.order == 2 and kind == "cells" and not bases.tensor_shape(group.shape) \
+            and not bernstein:
         # Curved: the domain view's incidence gives the quadratic nodes' ids.
         data.topology.edges()
         if group.shape.QUADRATIC_FACES:
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
         return [*mixins, views.quadratic_faces(group.shape), views._QuadraticNewton], attributes
-    if geometry.space.order >= 3 and kind == "cells" and bases.wedge_shape(group.shape):
-        # Curved wedges of order 3 and up.
+    if high and kind == "cells" and bases.wedge_shape(group.shape):
+        # Curved wedges of order 3 and up (2 too in a Bernstein basis).
         space = geometry.space
         data.topology.edges()
         data.topology.faces()
         mixins, attributes = _space_parts(
-            geometry, group, views.of_wedge_order(views._H1WedgeGeometry, space.order))
+            geometry, group, views.of_wedge_order(views._H1WedgeGeometry, space.order,
+                                                  bernstein))
         return [*mixins, *views.wedge_mixins(group.shape), views._WedgeNewton], attributes
-    if geometry.space.order >= 3 and kind == "cells" and bases.simplex_shape(group.shape):
-        # Curved simplices of order 3 and up: the simplex basis of the geometry's order.
+    if high and kind == "cells" and bases.simplex_shape(group.shape):
+        # Curved simplices of order 3 and up (2 too in a Bernstein basis): the simplex
+        # basis of the geometry's order.
         space = geometry.space
         data.topology.edges()
         if group.shape.DIMENSION == 3:
             data.topology.faces()
         mixins, attributes = _space_parts(
             geometry, group, views.of_simplex_order(views._H1SimplexGeometry, space.order,
-                                                    group.shape.DIMENSION))
+                                                    group.shape.DIMENSION, bernstein))
         return [*mixins, *views.simplex_mixins(group.shape), views._SimplexNewton], attributes
     if geometry.space.order >= 2 and kind == "cells":
         # Curved, on tensor shapes (order 2 too: the same layout, read as a tensor
@@ -774,7 +779,8 @@ class DataSet:
             raise TypeError(f"values on {space.on} have no nodes to visit as such; "
                             f"for_each over {space.on!r} visits them")
         reference_cells(self.topology, f"the nodes of {space!r}")
-        if isinstance(space, H1) and space.order > 2:
+        if isinstance(space, H1) and (space.order > 2 or (space.order == 2 and all(
+                space._any_order(g.shape) for g in self.topology.groups() if g.count))):
             return out + self._tensor_nodes(space)
         if isinstance(space, H1):
             face_dofs, cell_dofs, _ = space._layout()

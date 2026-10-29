@@ -175,12 +175,13 @@ def _place(counts, slots, base, out):
 @tack.kernel
 def _interior_counts(cells, order, counts):
     # Order 2 keeps the quadratic elements' interiors (a hexahedron's and a
-    # quad's); order 3 and up: (p - 1)^d a tensor cell, the nodes strictly inside
-    # a simplex ((p - 1)(p - 2) / 2 a triangle, (p - 1)(p - 2)(p - 3) / 6 a
-    # tetrahedron).
+    # quad's); order 3 and up, and 2 on a segment (no quadratic element): (p - 1)^d
+    # a tensor cell, the nodes strictly inside a simplex ((p - 1)(p - 2) / 2 a
+    # triangle, (p - 1)(p - 2)(p - 3) / 6 a tetrahedron). The two agree at order 2
+    # wherever both are defined.
     for c in cells:
         n = cells.QUADRATIC_INTERIOR
-        if order != 2:
+        if order != 2 or cells.NUM_QUADRATIC == 0:
             n = 1
             if cells.NUM_POINTS == 6:
                 # A wedge: the triangle's interior times the segment's.
@@ -234,7 +235,7 @@ def _simplex_tables(space, group, dtype):
     and Bernstein matrix (``bases.simplex_lattice``, ``simplex_bernstein``) in
     ``dtype``, the 1D nodes along its edges, and where each node's value lives
     (``bases.dof_tables``)."""
-    key = (group.shape, "simplex", dtype)
+    key = (group.shape, "simplex", space.basis, dtype)
     cache = space.__dict__.setdefault("_tables", {})
     if key not in cache:
         def device(values, kind):
@@ -246,8 +247,10 @@ def _simplex_tables(space, group, dtype):
         kind, entity, a, b, corner = bases.dof_tables(group.shape, space.order)
         cache[key] = {"simplex_ijk": device(bases.simplex_lattice(group.shape, space.order),
                                             tack.i32),
-                      "simplex_bernstein": device(bases.simplex_bernstein(group.shape,
-                                                                          space.order), dtype),
+                      "simplex_bernstein": device(
+                          np.eye(len(bases.simplex_lattice(group.shape, space.order)))
+                          if space.basis == bases.BERNSTEIN else
+                          bases.simplex_bernstein(group.shape, space.order), dtype),
                       "node_kind": device(kind, tack.i32), "node_entity": device(entity, tack.i32),
                       "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
                       "corner_node": device(corner, tack.i32)}
@@ -258,7 +261,7 @@ def _wedge_tables(space, group, dtype):
     """A wedge basis' arrays: its nodes' integer coordinates and Bernstein matrix
     (``bases.wedge_lattice``, ``wedge_bernstein``) in ``dtype``, and where each node's
     value lives (``bases.dof_tables``)."""
-    key = (group.shape, "wedge", dtype)
+    key = (group.shape, "wedge", space.basis, dtype)
     cache = space.__dict__.setdefault("_tables", {})
     if key not in cache:
         def device(values, kind):
@@ -269,7 +272,10 @@ def _wedge_tables(space, group, dtype):
 
         kind, entity, a, b, corner = bases.dof_tables(group.shape, space.order)
         cache[key] = {"wedge_ijk": device(bases.wedge_lattice(space.order), tack.i32),
-                      "wedge_bernstein": device(bases.wedge_bernstein(space.order), dtype),
+                      "wedge_bernstein": device(
+                          np.eye(len(bases.wedge_lattice(space.order)))
+                          if space.basis == bases.BERNSTEIN else
+                          bases.wedge_bernstein(space.order), dtype),
                       "node_kind": device(kind, tack.i32), "node_entity": device(entity, tack.i32),
                       "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
                       "corner_node": device(corner, tack.i32)}
@@ -281,7 +287,7 @@ def _refuse_simplex_nodes(space, shape):
     other family is refused, with the remedy."""
     _refuse_bernstein(space, shape)
     if (bases.simplex_shape(shape) or bases.wedge_shape(shape)) and space.order > 2 \
-            and space.basis != "equispaced":
+            and space.basis not in ("equispaced", bases.BERNSTEIN):
         raise NotImplementedError(
             f"{type(space).__name__} of order {space.order} on {shape.__name__} cells has "
             f"the equispaced basis only (VTK's and gmsh's), not {space.basis!r}: pass "
@@ -289,11 +295,12 @@ def _refuse_simplex_nodes(space, shape):
 
 
 def _refuse_bernstein(space, shape):
-    """Bernstein bases are on the tensor shapes so far: any other shape is refused."""
-    if space.basis == bases.BERNSTEIN and shape is not None and not bases.tensor_shape(shape):
+    """Bernstein bases are on the shapes with bases of any order: pyramids and cells
+    without a reference element are refused."""
+    if space.basis == bases.BERNSTEIN and shape is not None and not bases.has_bases(shape):
         raise NotImplementedError(
-            f"the Bernstein basis is on segments, quads, pixels, hexahedra and voxels so "
-            f"far, not {shape.__name__} cells")
+            f"the Bernstein basis is on segments, quads, pixels, hexahedra, voxels, "
+            f"triangles, tetrahedra and wedges, not {shape.__name__} cells")
 
 
 def _on_gpu(topology):
@@ -356,7 +363,8 @@ class H1(Space):
             for group in topology.groups():
                 if not group.count:
                     continue
-                if p == 2 and not group.shape.NUM_QUADRATIC:
+                _refuse_bernstein(self, group.shape)
+                if p == 2 and not self._any_order(group.shape) and not group.shape.NUM_QUADRATIC:
                     raise NotImplementedError(
                         f"H1 order 2 on {group.shape.__name__} cells is not supported yet; "
                         "it is on tetrahedra, hexahedra, voxels, wedges, triangles, quads "
@@ -424,9 +432,10 @@ class H1(Space):
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[root])
-            if self.order > 2 and bases.simplex_shape(group.shape):
+            high = self.order > 2 or self.basis == bases.BERNSTEIN
+            if high and bases.simplex_shape(group.shape):
                 attributes.update(_simplex_tables(self, group, dtype or tack.f32))
-            elif self.order > 2 and bases.wedge_shape(group.shape):
+            elif high and bases.wedge_shape(group.shape):
                 attributes.update(_wedge_tables(self, group, dtype or tack.f32))
             elif self.order > 2 or (self.order == 2 and bases.tensor_shape(group.shape)):
                 # Order 2 on tensor shapes: for a curved geometry's tensor views.
@@ -434,10 +443,18 @@ class H1(Space):
         return attributes
 
     def _has_edges(self, shape):
-        return shape.DIMENSION >= 2 if self.order > 2 else True
+        return shape.DIMENSION >= 2 if self._any_order(shape) else True
 
     def _has_faces(self, shape):
-        return shape.DIMENSION == 3 if self.order > 2 else bool(shape.QUADRATIC_FACES)
+        return shape.DIMENSION == 3 if self._any_order(shape) else bool(shape.QUADRATIC_FACES)
+
+    def _any_order(self, shape):
+        """Whether views read this space on ``shape`` cells as a basis of any order --
+        above order 2, or at 2 in a Bernstein basis or on a shape with such bases
+        but no quadratic functions (the segment) -- not as the quadratic shapes'
+        functions."""
+        return self.order > 2 or (self.order == 2 and bases.has_bases(shape) and (
+            self.basis == bases.BERNSTEIN or not shape.NUM_QUADRATIC))
 
     def mixin_for(self, key, shape=None):
         _refuse_bernstein(self, shape)
@@ -446,10 +463,14 @@ class H1(Space):
             return views._PolyhedralPointField
         if shape is shapes.PolyLine and self.order == 1:
             return views._PolylinePointField
-        if self.order > 2 and bases.simplex_shape(shape):
-            return views.of_simplex_order(views._H1SimplexField, self.order, shape.DIMENSION)
-        if self.order > 2 and bases.wedge_shape(shape):
-            return views.of_wedge_order(views._H1WedgeField, self.order)
+        bernstein = self.basis == bases.BERNSTEIN
+        if (self.order > 2 or bernstein) and bases.simplex_shape(shape):
+            return views.of_simplex_order(views._H1SimplexField, self.order, shape.DIMENSION,
+                                          bernstein)
+        if (self.order > 2 or bernstein) and bases.wedge_shape(shape):
+            return views.of_wedge_order(views._H1WedgeField, self.order, bernstein)
+        if self.order == 2 and shape is not None and self._any_order(shape):
+            return views.of_order(views._H1TensorField, 2, bernstein)
         return self.mixin
 
     def extra_mixins(self, group):
@@ -458,7 +479,7 @@ class H1(Space):
         shape = group.shape
         incidence = ((views._EdgeIncidence,) if self._has_edges(shape) else ()) + \
             ((views._FaceIncidence,) if self._has_faces(shape) else ())
-        if self.order == 2 and self.basis != bases.BERNSTEIN:
+        if self.order == 2 and not self._any_order(shape):
             return (*incidence, views.quadratic_faces(shape))
         if bases.simplex_shape(shape):
             return (*incidence, *views.simplex_mixins(shape))
@@ -621,10 +642,12 @@ class L2(Space):
 
     def mixin_for(self, key, shape=None):
         _refuse_bernstein(self, shape)
+        bernstein = self.basis == bases.BERNSTEIN
         if self.tensor and bases.simplex_shape(shape):
-            return views.of_simplex_order(views._L2SimplexField, self.order, shape.DIMENSION)
+            return views.of_simplex_order(views._L2SimplexField, self.order, shape.DIMENSION,
+                                          bernstein)
         if self.tensor and bases.wedge_shape(shape):
-            return views.of_wedge_order(views._L2WedgeField, self.order)
+            return views.of_wedge_order(views._L2WedgeField, self.order, bernstein)
         if self.tensor:
             return self.mixin
         order = key if self.varies else self.order

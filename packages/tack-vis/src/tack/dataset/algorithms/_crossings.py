@@ -33,8 +33,8 @@ from tack.dataset.algorithms.subdivide import (
     _face_steps,
     _face_weights,
     _lattice_point,
-    _silvester,
     _triangle_order,
+    _triangle_term,
     _unit,
 )
 from tack.dataset.buckets import bucket_order
@@ -186,7 +186,7 @@ class _Nodes:
             s2 = ba if k1 == 2 else (bb if k2 == 2 else bc)
             t = s2 * (p + 1) - (s2 * (s2 - 1)) // 2 + s1
             index = self.view_of[self.face_nodes[m * self.stride + t]]
-            w = _silvester(x[0], ba, p) * _silvester(x[1], bb, p) * _silvester(x[2], bc, p)
+            w = _triangle_term(x[0], x[1], x[2], ba, bb, bc, p, self.bern)
         return index, w
 
 
@@ -379,14 +379,15 @@ def _straight_rows(cells, offsets, order, na, nb, roots, on_edges, on_faces, ne,
 # ── The hook ────────────────────────────────────────────────────────
 
 def _nodes_of(space, shape, dtype, geometry=False):
-    """``_Nodes`` for an ``H1`` space of order ``p`` on ``shape`` cells (the
-    simplices' and wedges' equispaced, the tensor shapes' own family). A tensor
-    geometry's view takes lexicographic nodes, as ``_trace_curved`` reads it."""
+    """``_Nodes`` for an ``H1`` space of order ``p`` on ``shape`` cells (its basis; by
+    default the simplices' and wedges' equispaced, the tensor shapes'
+    Gauss-Lobatto). A tensor geometry's view takes lexicographic nodes, as
+    ``_trace_curved`` reads it."""
     from tack.dataset.algorithms.subdivide import _entity_tables, _face_stride, _typed
 
     order = space.order
     edge_nodes, face_nodes = _entity_tables(shape, order)
-    family = "equispaced" if not bases.tensor_shape(shape) else (space.basis or "gauss_lobatto")
+    family = space.basis or ("gauss_lobatto" if bases.tensor_shape(shape) else "equispaced")
     like = tack.empty((1,), dtype)
     view_of = np.arange((order + 1) ** shape.DIMENSION, dtype=np.int32) if (
         geometry and bases.tensor_shape(shape)) else bases.view_index(shape, order, space.basis)

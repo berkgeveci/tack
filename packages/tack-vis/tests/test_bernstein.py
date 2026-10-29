@@ -1,14 +1,17 @@
-"""Bernstein spaces (``basis="bernstein"``) on the tensor shapes: values are the
-Bernstein polynomials' coefficients, not values at nodes. Every filter sees the
-same polynomials as the equispaced Lagrange space of the order, so a Bernstein
-dataset is held to its Lagrange twin, and its coefficients to the convex hull."""
+"""Bernstein spaces (``basis="bernstein"``): values are the Bernstein polynomials'
+coefficients, not values at nodes, on segments, quads, hexahedra, triangles,
+tetrahedra and wedges. Every filter sees the same polynomials as the equispaced
+Lagrange space of the order, so a Bernstein dataset is held to its Lagrange twin,
+its coefficients to the convex hull, and VTK's Bezier cells to VTK's own
+evaluation."""
 
 import numpy as np
 import pytest
 
 import tack
 import tack.dataset as td
-from tack.dataset import _bernstein, bases
+from tack.dataset import _bernstein, bases, shapes
+from tack.dataset.topology import uniform_cells
 
 
 @pytest.fixture(autouse=True)
@@ -30,14 +33,38 @@ def _cubic_at(p):
     return p[:, 0] ** 3 - 2 * p[:, 1] * p[:, 2] + 0.5 * p[:, 1] ** 2 * p[:, 0] + 0.3 * p[:, 2]
 
 
-def _mesh(kind, dimension=3):
-    grid = td.uniform_grid((4,) * dimension, spacing=(1 / 3,) * dimension, dtype=tack.f64)
-    return grid if kind == "grid" else td.extract_cells(grid, np.arange(grid.num_cells))
+_DIMENSION = {"lines": 1, "quads": 2, "triangles": 2, "hexahedra": 3, "tetrahedra": 3,
+              "wedges": 3, "grid": 3}
+_CELLS = ["lines", "quads", "hexahedra", "triangles", "tetrahedra", "wedges"]
 
 
-def _points(dimension=3, n=150):
+def _wedges(hexes):
+    conn = []
+    for h in hexes.topology.connectivity.numpy().reshape(-1, 8):
+        conn += [[h[0], h[1], h[3], h[4], h[5], h[7]], [h[1], h[2], h[3], h[5], h[6], h[7]]]
+    types, offsets = uniform_cells(int(shapes.WEDGE), len(conn), tack.i32)
+    return td.DataSet(td.UnstructuredTopology(
+        types, offsets, tack.array(np.array(conn, np.int32).reshape(-1)),
+        num_points=hexes.num_points), hexes.geometry.values)
+
+
+def _mesh(cells, n=4):
+    """``cells`` over the unit square or cube, ``n - 1`` a side: a structured grid
+    ("grid") or cells of a shape."""
+    d = _DIMENSION[cells]
+    grid = td.uniform_grid((n,) * d, spacing=(1 / (n - 1),) * d, dtype=tack.f64)
+    if cells == "grid":
+        return grid
+    tensor = td.extract_cells(grid, np.arange(grid.num_cells))
+    data = {"tetrahedra": lambda: td.tetrahedralize(tensor),
+            "triangles": lambda: td.triangulate(tensor),
+            "wedges": lambda: _wedges(tensor)}.get(cells, lambda: tensor)()
+    return td.DataSet(data.topology, data.geometry)
+
+
+def _points(cells, n=150):
     p = np.random.default_rng(4).uniform(0.02, 0.98, (n, 3))
-    p[:, dimension:] = 0.0
+    p[:, _DIMENSION[cells]:] = 0.0
     return p
 
 
@@ -59,18 +86,18 @@ def test_the_bernstein_polynomials():
         "L2(order=3, basis='bernstein')"
 
 
-@pytest.mark.parametrize("kind", ["grid", "cells"])
-@pytest.mark.parametrize("order", [2, 3, 5])
-def test_interpolation_reproduces_polynomials(kind, order):
+@pytest.mark.parametrize("cells", ["grid", *_CELLS])
+@pytest.mark.parametrize("order", [2, 3, 4])
+def test_interpolation_reproduces_polynomials(cells, order):
     """A cubic interpolated into H1 or L2 of order 3 and up is the cubic, wherever it
-    is probed; at order 2 the quadratic part agrees with the Lagrange twin's."""
-    data = _mesh(kind)
-    points = _points()
+    is probed; at every order the Lagrange twin's polynomial, and its gradients."""
+    data = _mesh(cells)
+    points = _points(cells)
     for family in (td.H1, td.L2):
-        space = family(data, order=order, basis="bernstein")
-        twin = family(data, order=order, basis="equispaced")
-        data.fields["u"] = td.interpolate(data, _cubic, space)
-        data.fields["v"] = td.interpolate(data, _cubic, twin)
+        data.fields["u"] = td.interpolate(data, _cubic, family(data, order=order,
+                                                               basis="bernstein"))
+        data.fields["v"] = td.interpolate(data, _cubic, family(data, order=order,
+                                                               basis="equispaced"))
         probed = td.probe(data, points)
         u = probed.fields["u"].values.numpy()
         np.testing.assert_allclose(u, probed.fields["v"].values.numpy(), rtol=0, atol=1e-13)
@@ -80,19 +107,11 @@ def test_interpolation_reproduces_polynomials(kind, order):
                                    td.gradients(data, "v").values.numpy(), rtol=0, atol=1e-11)
 
 
-@pytest.mark.parametrize("dimension", [1, 2])
-def test_lines_and_quads(dimension):
-    data = _mesh("cells", dimension)
-    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3, basis="bernstein"))
-    points = _points(dimension)
-    np.testing.assert_allclose(td.probe(data, points).fields["u"].values.numpy(),
-                               _cubic_at(points), rtol=0, atol=1e-13)
-
-
-def test_coefficients_round_trip_and_bound_their_cells():
+@pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra", "wedges"])
+def test_coefficients_round_trip_and_bound_their_cells(cells):
     """``to_lagrange`` and ``from_lagrange`` invert each other; each cell's field lies
     between its least and greatest coefficients (the convex hull)."""
-    data = _mesh("cells")
+    data = _mesh(cells)
     space = td.H1(data, order=4, basis="bernstein")
     field = td.interpolate(data, _cubic, space)
     nodal = _bernstein.to_lagrange(data, field)
@@ -103,31 +122,32 @@ def test_coefficients_round_trip_and_bound_their_cells():
                                td.interpolate(data, _cubic, nodal.space).values.numpy(),
                                rtol=0, atol=1e-13)
     data.fields["u"] = field
-    # Each cell's coefficients (projected into L2's, cell by cell) bound its values
-    # at its Gauss-Lobatto nodes.
+    # Each cell's coefficients (projected into L2's, cell by cell) bound its values at
+    # its equispaced nodes.
     blocks = td.L2(data, order=4, basis="bernstein")
     per_cell = blocks.blocks(td.project(data, "u", blocks).values.numpy())
     lo, hi = per_cell.min(axis=1), per_cell.max(axis=1)
-    lobatto = td.L2(data, order=4)
-    values = lobatto.blocks(td.interpolate(data, _cubic, lobatto).values.numpy())
+    nodes = td.L2(data, order=4, basis="equispaced")
+    values = nodes.blocks(td.interpolate(data, _cubic, nodes).values.numpy())
     assert (values >= lo[:, None] - 1e-13).all() and (values <= hi[:, None] + 1e-13).all()
     assert (hi - lo > 1e-3).all()
 
 
 @pytest.mark.parametrize("curved", [False, True])
-def test_filters_see_the_lagrange_twin(curved):
+@pytest.mark.parametrize("cells", ["quads", "hexahedra", "triangles", "tetrahedra", "wedges"])
+def test_filters_see_the_lagrange_twin(cells, curved):
     """Subdividing, contouring (exact or not), clipping and carrying a Bernstein
     dataset -- a curved geometry in Bernstein form too -- give its equispaced
     Lagrange twin's results."""
     out = {}
     for basis in ("equispaced", "bernstein"):
-        data = _mesh("cells")
+        data = _mesh(cells)
         if curved:
             data.geometry = td.interpolate(data, _bend, td.H1(data, order=2, basis=basis),
                                            dtype=tack.vec3(tack.f64))
-        data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3 if not curved else 2,
+        data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=2 if curved else 3,
                                                               basis=basis))
-        whole, part = td.clip(data, "u", 0.3).partitions
+        _, part = td.clip(data, "u", 0.3).partitions
         kept = td.extract_cells(data, np.arange(0, data.num_cells, 2))
         assert kept.fields["u"].space.basis == data.fields["u"].space.basis
         out[basis] = (td.subdivide(data, 2), td.contour(data, "u", 0.3),
@@ -146,7 +166,8 @@ def test_filters_see_the_lagrange_twin(curved):
                                atol=1e-13)
 
 
-def test_pieces_share_their_coefficients_to_the_bit():
+@pytest.mark.parametrize("cells", ["grid", "tetrahedra"])
+def test_pieces_share_their_coefficients_to_the_bit(cells):
     """A coefficient on an edge or face is formed from that entity's values in its
     corners' frame: pieces with a ghost layer have the whole's coefficients, bit for
     bit, so their exact contours own the whole's vertices."""
@@ -157,6 +178,7 @@ def test_pieces_share_their_coefficients_to_the_bit():
         return {tuple(p) for p in x}
 
     def prepared(d):
+        d = d if cells == "grid" else td.tetrahedralize(d)
         d.fields["u"] = td.interpolate(d, _cubic, td.H1(d, order=3, basis="bernstein"))
         return d
 
@@ -170,13 +192,18 @@ def test_pieces_share_their_coefficients_to_the_bit():
     assert count == len(mine) and mine == whole
 
 
-def test_other_shapes_are_refused():
-    tets = td.tetrahedralize(_mesh("grid"))
-    with pytest.raises(NotImplementedError, match="Bernstein basis is on segments"):
-        td.interpolate(tets, _cubic, td.H1(tets, order=3, basis="bernstein"))
+def test_pyramids_are_refused():
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0.5, 0.5, 1.0]])
+    types, offsets = uniform_cells(int(shapes.PYRAMID), 1, tack.i32)
+    pyramid = td.DataSet(td.UnstructuredTopology(types, offsets, tack.array(np.arange(5, dtype=np.int32)),
+                                                 num_points=5), points)
+    with pytest.raises(NotImplementedError, match="Bernstein basis is on"):
+        td.interpolate(pyramid, _cubic, td.H1(pyramid, order=2, basis="bernstein"))
     with pytest.raises(ValueError, match="basis is one of"):
-        td.H1(tets, order=3, basis="bezier")
+        td.H1(pyramid, order=3, basis="bezier")
 
+
+# ── VTK's Bezier cells ─────────────────────────────────────────────
 
 def _vtk_at(grid, name, pcs):
     """VTK's own evaluation of a grid of higher-order cells: each cell's position and
@@ -199,22 +226,27 @@ def _vtk_at(grid, name, pcs):
     return np.array(xs), np.array(us)
 
 
-@pytest.mark.parametrize("dimension", [1, 2, 3])
-def test_bezier_cells_are_vtks(dimension):
+_BEZIER = {"lines": (75, 68), "quads": (77, 70), "hexahedra": (79, 72), "triangles": (76, 69),
+           "tetrahedra": (78, 71), "wedges": (80, 73)}
+
+
+@pytest.mark.parametrize("cells", _CELLS)
+def test_bezier_cells_are_vtks(cells):
     """A Bernstein dataset goes to VTK as Bezier cells (``higher_order=True`` chooses
     them), which VTK evaluates as Tack does, and comes back in the same spaces; a
     Lagrange one goes as Bezier cells when asked, the same polynomials."""
     pytest.importorskip("vtkmodules.vtkCommonDataModel")
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
-    data = _mesh("cells", dimension)
+    data = _mesh(cells, 3)
     data.geometry = td.interpolate(data, _bend, td.H1(data, order=3, basis="bernstein"),
                                    dtype=tack.vec3(tack.f64))
     data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3, basis="bernstein"))
     grid = dataset_to_vtk(data, higher_order=True)
-    assert grid.GetCellType(0) == {1: 75, 2: 77, 3: 79}[dimension]
-    pcs = np.random.default_rng(3).uniform(0.05, 0.95, (3, 3))
-    pcs[:, dimension:] = 0.0
+    bezier, lagrange_type = _BEZIER[cells]
+    assert grid.GetCellType(0) == bezier
+    pcs = np.array([[0.2, 0.3, 0.25], [0.1, 0.15, 0.6]])
+    pcs[:, _DIMENSION[cells]:] = 0.0
     xs, us = _vtk_at(grid, "u", pcs)
     # Probing curved cells inverts them by Newton's method, to about 1e-11.
     np.testing.assert_allclose(td.probe(data, xs).fields["u"].values.numpy(), us, rtol=0,
@@ -227,21 +259,19 @@ def test_bezier_cells_are_vtks(dimension):
     nodal = td.H1(data, order=3, basis="equispaced")
     lagrange = td.DataSet(data.topology, td.project(data, data.geometry, nodal))
     lagrange.fields["u"] = td.project(data, "u", nodal)
-    assert dataset_to_vtk(lagrange, higher_order=True).GetCellType(0) == \
-        {1: 68, 2: 70, 3: 72}[dimension]
-    bezier = dataset_to_vtk(lagrange, higher_order="bezier")
-    xb, ub = _vtk_at(bezier, "u", pcs)
+    assert dataset_to_vtk(lagrange, higher_order=True).GetCellType(0) == lagrange_type
+    xb, ub = _vtk_at(dataset_to_vtk(lagrange, higher_order="bezier"), "u", pcs)
     np.testing.assert_allclose(xb, xs, rtol=0, atol=1e-13)
     np.testing.assert_allclose(ub, us, rtol=0, atol=1e-13)
 
 
-def test_rational_and_simplex_bezier_cells_are_refused():
+def test_rational_bezier_cells_are_refused():
     pytest.importorskip("vtkmodules.vtkCommonDataModel")
     from vtkmodules.vtkCommonCore import vtkDoubleArray
 
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
-    data = _mesh("cells", 2)
+    data = _mesh("quads")
     data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=2, basis="bernstein"))
     grid = dataset_to_vtk(data, higher_order=True)
     weights = vtkDoubleArray(np.full(grid.number_of_points, 2.0))
@@ -249,9 +279,5 @@ def test_rational_and_simplex_bezier_cells_are_refused():
     grid.point_data.SetRationalWeights(weights)
     with pytest.raises(NotImplementedError, match="rational Bezier"):
         vtk_to_dataset(grid)
-    tets = td.tetrahedralize(_mesh("grid"))
-    tets.fields["u"] = td.interpolate(tets, _cubic, td.H1(tets, order=2))
-    with pytest.raises(NotImplementedError, match="Bezier cells are written for"):
-        dataset_to_vtk(tets, higher_order="bezier")
     with pytest.raises(ValueError, match="higher_order is"):
         dataset_to_vtk(data, higher_order="spline")

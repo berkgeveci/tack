@@ -1256,7 +1256,8 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     evaluated there (exact for fields of that order or below), cell fields as
     cell data. ``vtk_to_dataset`` reads such a grid back into those spaces.
     ``higher_order="bezier"`` writes VTK Bezier cells (``VTK_BEZIER_CURVE``,
-    ``_QUADRILATERAL``, ``_HEXAHEDRON``) instead: points and point data the
+    ``_QUADRILATERAL``, ``_HEXAHEDRON``, ``_TRIANGLE``, ``_TETRAHEDRON``,
+    ``_WEDGE``) instead: points and point data the
     coefficients of ``H1(order, basis="bernstein")``, which ``vtk_to_dataset``
     reads back as such; ``True`` chooses Bezier cells when the geometry or an
     ``H1`` field is in a Bernstein basis, ``"lagrange"`` Lagrange cells always."""

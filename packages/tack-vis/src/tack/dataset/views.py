@@ -2026,6 +2026,28 @@ class _SimplexPolynomials:
         return grad
 
 
+class _SimplexBernstein:
+    """The Bernstein basis of order ``ORDER`` on a simplex, in place of
+    ``_SimplexPolynomials``' Lagrange factors (mixed in before them): node ``alpha``'s
+    function is ``p! / alpha! * prod_m lambda_m^alpha_m``, the factors ``t^a / a!``,
+    corner 0's scaled by ``p!``. Its nodes, ``alpha / p``, are its Greville points."""
+
+    @tack.func
+    def simplex_factors(self, pc, f, g):
+        q = self.ORDER + 1
+        for m in range(self.DIMENSION + 1):
+            t = 1.0 - pc[0] - pc[1] - pc[2] if m == 0 else pc[m - 1]
+            scale = t - t + 1.0
+            if m == 0:
+                for s in range(2, q):
+                    scale = scale * s
+            f[m * q] = scale
+            g[m * q] = t - t
+            for a in range(1, q):
+                g[m * q + a] = (g[m * q + a - 1] * t + f[m * q + a - 1]) / a
+                f[m * q + a] = f[m * q + a - 1] * t / a
+
+
 class _SimplexBasis(_SimplexPolynomials):
     """A field's value, parametric gradient and Bernstein bounds on a simplex of any
     order, from ``dof(c, n)``, the space's."""
@@ -2151,8 +2173,12 @@ class _L2SimplexField(_SimplexBasis):
     ``offsets[cell]``, in node order."""
 
     @tack.func
+    def dof_index(self, c, n):
+        return self.offsets[self.entity_id(c)] + n
+
+    @tack.func
     def dof(self, c, n):
-        return self.get(self.offsets[self.entity_id(c)] + n)
+        return self.get(self.dof_index(c, n))
 
 
 class _H1SimplexGeometry(_SimplexDofs, _SimplexPolynomials, _Geometry):
@@ -2239,6 +2265,36 @@ class _SimplexNewton:
 
 
 # ── Wedges of any order: a triangle times a segment (equispaced) ────
+
+
+class _WedgeBernstein:
+    """The wedge's Bernstein basis, in place of ``_WedgePolynomials``' Lagrange factors:
+    the triangle's ``p! / (a! b! c!) x^a y^b z^c`` times the segment's ``p! / (k! (p -
+    k)!) ...``: the factors ``t^a / a!``, the triangle's first and the segment's
+    first scaled by ``p!``."""
+
+    @tack.func
+    def wedge_factors(self, pc, f, g):
+        q = self.ORDER + 1
+        for m in range(5):
+            t = 1.0 - pc[0] - pc[1]
+            if m == 1:
+                t = pc[0]
+            elif m == 2:
+                t = pc[1]
+            elif m == 3:
+                t = 1.0 - pc[2]
+            elif m == 4:
+                t = pc[2]
+            scale = t - t + 1.0
+            if m == 0 or m == 3:
+                for s in range(2, q):
+                    scale = scale * s
+            f[m * q] = scale
+            g[m * q] = t - t
+            for a in range(1, q):
+                g[m * q + a] = (g[m * q + a - 1] * t + f[m * q + a - 1]) / a
+                f[m * q + a] = f[m * q + a - 1] * t / a
 
 
 class _WedgePolynomials:
@@ -2419,8 +2475,12 @@ class _L2WedgeField(_WedgeBasis):
     ``offsets[cell]``, in node order."""
 
     @tack.func
+    def dof_index(self, c, n):
+        return self.offsets[self.entity_id(c)] + n
+
+    @tack.func
     def dof(self, c, n):
-        return self.get(self.offsets[self.entity_id(c)] + n)
+        return self.get(self.dof_index(c, n))
 
 
 class _H1WedgeGeometry(_WedgeDofs, _WedgePolynomials, _Geometry):
@@ -2526,15 +2586,17 @@ def wedge_mixins(shape):
     return _TensorEdges, _SimplexFaces, _TensorFaces
 
 
-def of_wedge_order(mixin, order):
-    """``mixin`` with ``ORDER`` and ``NODES`` (the wedge's node count) set."""
+def of_wedge_order(mixin, order, bernstein=False):
+    """``mixin`` with ``ORDER`` and ``NODES`` (the wedge's node count) set; ``bernstein``
+    the Bernstein basis (``_WedgeBernstein``)."""
     from math import comb
 
-    key = (mixin, int(order), "wedge")
+    key = (mixin, int(order), "wedge", bool(bernstein))
     if key not in _by_order:
-        _by_order[key] = type(f"{mixin.__name__}{order}w", (mixin,),
-                              {"ORDER": int(order),
-                               "NODES": comb(int(order) + 2, 2) * (int(order) + 1)})
+        parents = (_WedgeBernstein, mixin) if bernstein else (mixin,)
+        _by_order[key] = type(f"{mixin.__name__}{order}w" + ("Bernstein" if bernstein else ""),
+                              parents, {"ORDER": int(order),
+                                        "NODES": comb(int(order) + 2, 2) * (int(order) + 1)})
     return _by_order[key]
 
 
@@ -2543,13 +2605,16 @@ def simplex_mixins(shape):
     return _TensorEdges, (_SimplexFaces if shape.DIMENSION == 3 else _NoSimplexFaces)
 
 
-def of_simplex_order(mixin, order, dimension):
-    """``mixin`` with ``ORDER`` and ``NODES`` (the simplex's node count) set."""
+def of_simplex_order(mixin, order, dimension, bernstein=False):
+    """``mixin`` with ``ORDER`` and ``NODES`` (the simplex's node count) set;
+    ``bernstein`` the Bernstein basis (``_SimplexBernstein``)."""
     from math import comb
 
-    key = (mixin, int(order), int(dimension))
+    key = (mixin, int(order), int(dimension), bool(bernstein))
     if key not in _by_order:
-        _by_order[key] = type(f"{mixin.__name__}{order}d{dimension}", (mixin,),
+        parents = (_SimplexBernstein, mixin) if bernstein else (mixin,)
+        _by_order[key] = type(f"{mixin.__name__}{order}d{dimension}"
+                              + ("Bernstein" if bernstein else ""), parents,
                               {"ORDER": int(order), "NODES": comb(int(order) + dimension,
                                                                   dimension)})
     return _by_order[key]

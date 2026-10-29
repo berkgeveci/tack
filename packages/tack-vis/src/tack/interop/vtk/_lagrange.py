@@ -28,8 +28,8 @@ _LINEAR = {68: 3, 70: 9, 72: 12, 69: 5, 71: 10, 73: 13}
 _SIMPLEX = (69, 71, 73)
 #: VTK's Bezier cells: their Lagrange twin, whose points they number alike. Their
 #: points and point data are control points and coefficients, Tack's
-#: ``basis="bernstein"`` (tensor shapes so far; rational weights are refused).
-BEZIER = {75: 68, 77: 70, 79: 72}
+#: ``basis="bernstein"`` (rational weights are refused).
+BEZIER = {75: 68, 77: 70, 79: 72, 76: 69, 78: 71, 80: 73}
 
 
 def _simplex_vtk_index(vtk_type, order):
@@ -230,9 +230,6 @@ def to_vtk(data, order, bezier=False):
     wedge = bases.wedge_shape(shape)
     vtk_type = 73 if wedge else ({2: 69, 3: 71} if simplex else
                                  {1: 68, 2: 70, 3: 72})[shape.DIMENSION]
-    if bezier and vtk_type not in BEZIER.values():
-        raise NotImplementedError(f"Bezier cells are written for segments, quads and "
-                                  f"hexahedra so far, not {shape.__name__} cells")
     space = H1(data, order=order, basis="bernstein" if bezier else "equispaced")
     per_cell = (comb(order + 2, 2) * (order + 1) if wedge else
                 comb(order + shape.DIMENSION, shape.DIMENSION) if simplex
