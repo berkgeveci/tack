@@ -281,7 +281,9 @@ class H1(Space):
     hexahedra and voxels (``tack.dataset.bases``): ``order - 1`` values per edge,
     ``(order - 1)^2`` per quad face and ``(order - 1)^d`` per cell, on the 1D
     ``nodes`` ``"gauss_lobatto"`` (the default) or ``"equispaced"``, which agree
-    up to order 2."""
+    up to order 2; and on triangles and tetrahedra with ``nodes="equispaced"``
+    (VTK's and gmsh's): ``(order - 1)(order - 2) / 2`` per triangle face or
+    triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per tetrahedron."""
 
     on = "points"
     interpolated = True
@@ -452,7 +454,10 @@ class L2(Space):
     up, or ``nodes="gauss_legendre"`` at any order from 1, are on segments, quads,
     pixels, hexahedra and voxels (``tack.dataset.bases``): ``(order + 1)^d`` values
     a cell in node order, the first axis fastest, on the 1D ``nodes``
-    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``.
+    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``;
+    and from order 2 on triangles and tetrahedra with ``nodes="equispaced"``:
+    each cell's ``C(order + d, d)`` values at ``bases.simplex_lattice``'s nodes,
+    always in blocks.
 
     ``layout`` says how a tensor basis' values are stored: ``"blocks"``, each
     cell's together (value ``n`` of cell ``c`` at ``offsets[c] + n``: MFEM's and
