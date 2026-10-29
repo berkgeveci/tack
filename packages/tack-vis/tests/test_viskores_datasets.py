@@ -291,7 +291,7 @@ _REFUSALS = re.compile("|".join([
     "takes cells of the linear shapes",          # tetrahedralize, clip of polygons
     "wound the same way by both their cells",    # inside-out neighbours as polyhedra
     "cell ids lie outside",                      # extract_cells([0, 1]) of one cell
-    "hexahedra and voxels; not yet on",          # subdivide of other shapes
+    "triangles and tetrahedra; not yet on",      # subdivide of other shapes
 ]))
 
 

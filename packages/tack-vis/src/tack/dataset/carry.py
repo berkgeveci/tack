@@ -271,8 +271,14 @@ def _copy_nodes(cells, sources, per_cell, out_entry, out_index, writers, in_entr
 
 def _nodes_per_cell(space, shape):
     """The nodes an ``H1`` space of order 2 or more gives a cell of ``shape``."""
+    from math import comb
+
+    from tack.dataset import bases
+
     if space.order == 2:
         return shape.NUM_QUADRATIC
+    if bases.simplex_shape(shape):
+        return comb(space.order + shape.DIMENSION, shape.DIMENSION)
     return (space.order + 1) ** shape.DIMENSION
 
 

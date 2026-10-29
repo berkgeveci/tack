@@ -503,6 +503,10 @@ class L2(Space):
         asked = self.params.get("layout", "auto")
         if not self.tensor:
             return "blocks"
+        if asked == "cells" and any(g.count and bases.simplex_shape(g.shape)
+                                    for g in self.topology.groups()):
+            raise ValueError("a cell-fastest layout is for tensor bases; L2 on triangles and "
+                             "tetrahedra is stored in blocks")
         if asked != "auto":
             return asked
         forced = os.environ.get("TACK_L2_LAYOUT", "")
