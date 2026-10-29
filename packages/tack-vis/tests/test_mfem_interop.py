@@ -236,12 +236,13 @@ def test_cell_constants_vectors_and_attributes(backend):
 
 
 def test_what_is_not_mapped_yet(backend):
-    """Orders above 2 are on quads and hexahedra; pyramids' order 2 is MFEM's own."""
-    mesh = _cartesian("TETRAHEDRON")
+    """Orders above 2 are on quads, hexahedra, triangles and tetrahedra (simplices in
+    ``test_simplex_order.py``), not yet wedges; pyramids' order 2 is MFEM's own."""
+    mesh = _cartesian("WEDGE")
     cubic = _projected(mesh, mfem.H1_FECollection(3, 3), _f)
     with pytest.raises(NotImplementedError, match="H1 order 3"):
         mfem_to_dataset(mesh, {"u": cubic})
-    curved = _cartesian("TETRAHEDRON")
+    curved = _cartesian("WEDGE")
     curved.SetCurvature(3)
     with pytest.raises(NotImplementedError, match="H1 order 3"):
         mfem_to_dataset(curved)

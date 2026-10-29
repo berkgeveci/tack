@@ -2,9 +2,11 @@
 a field between spaces, of which ``to_points``, ``to_cells`` and ``discontinuous``
 are shortcuts."""
 
+from math import comb
+
 import tack
 from tack.arrays import dtype_of, materialize
-from tack.dataset import ids
+from tack.dataset import bases, ids
 from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.algorithms._links import _average_cell_values, _average_links
 from tack.dataset.algorithms.traces import traces
@@ -97,6 +99,17 @@ def _tensor_node_contributions(cells, u, t, start, keys, contributions):
 
 
 @tack.kernel
+def _simplex_node_contributions(cells, u, t, start, keys, contributions):
+    # The same for a simplex H1 target: its NODES nodes.
+    for c in cells:
+        count = t.NODES
+        first = start + cells.index(c) * count
+        for n in range(count):
+            keys[first + n] = t.dof_index(c, n)
+            contributions[first + n] = u.value(c, t.node_parametric(n))
+
+
+@tack.kernel
 def _cell_contributions(point_offsets, values, contributions, n_cells):
     for c in range(n_cells):
         for e in range(point_offsets[c], point_offsets[c + 1]):
@@ -161,6 +174,8 @@ def _onto_nodes(data, field, space, values):
     for group in groups:
         starts[group] = total
         per_cell = (group.shape.NUM_QUADRATIC if space.order == 2
+                    else comb(space.order + group.shape.DIMENSION, group.shape.DIMENSION)
+                    if bases.simplex_shape(group.shape)
                     else (space.order + 1) ** group.shape.DIMENSION)
         total += group.count * per_cell
     idt = ids.at_least(data.id_dtype, space.size)
@@ -169,7 +184,9 @@ def _onto_nodes(data, field, space, values):
     target = Field(space, _like(values, space.size))
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
-            kernel = _node_contributions if space.order == 2 else _tensor_node_contributions
+            kernel = (_node_contributions if space.order == 2
+                      else _simplex_node_contributions if bases.simplex_shape(group.shape)
+                      else _tensor_node_contributions)
             kernel(data.domain_view("cells", group), field.view(group), target.view(group),
                    starts[group.root], keys, contributions)
     out = target.values

@@ -247,3 +247,158 @@ def test_a_lattice_point_has_the_same_bits_in_every_piece_holding_it():
         assert all(p in at for p in positions)
         np.testing.assert_array_equal(piece.fields["u"].values.numpy(),
                                       [at[p] for p in positions])
+
+
+# ── Curved simplices ────────────────────────────────────────────────
+
+@tack.func
+def _bend(x):
+    return [x[0] + 0.1 * x[1] * x[1], x[1] + 0.12 * x[0] * x[0], x[2] + 0.05 * x[0] * x[1]]
+
+
+def _curved(order, seed=11):
+    """Tetrahedra bent at ``order`` (order 2's quadratic geometry, or the simplex basis
+    from 3), corners shuffled."""
+    data = _tetrahedra(seed=seed)
+    space = (td.H1(data, order=order, nodes="equispaced") if order > 2
+             else td.H1(data, order=2))
+    data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _bowl, space)        # at the curved nodes
+    return data
+
+
+@pytest.mark.parametrize("order", [2, 3, 4])
+def test_curved_tetrahedra_are_located_as_they_are(f64_backend, order):
+    """Probing at the geometry's own nodes, many on its curved faces, finds every one:
+    the locator bounds a curved simplex by its Bernstein control points and inverts
+    its map by Newton's method, from its nodes read once."""
+    data = _curved(order)
+    nodes = data.geometry.values.numpy()
+    probed = td.probe(data, nodes)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), _bowl_at(nodes), atol=1e-10)
+
+
+@pytest.mark.parametrize("order", [3, 4])
+def test_subdividing_curved_tetrahedra(f64_backend, order):
+    """A curved simplex's lattice points on its edges and faces come from the
+    geometry's own nodes there; at the field's own order's nodes the field is
+    exact, and its level set closes."""
+    data = _curved(order)
+    refined = td.subdivide(data, order, fields=["u"])
+    assert refined.num_cells == data.num_cells * order ** 3
+    np.testing.assert_allclose(refined.fields["u"].values.numpy(),
+                               _bowl_at(refined.positions()), atol=1e-12)
+    surface = td.contour(data, "u", 0.3, subdivision=2 * order)
+    assert surface.num_cells > 0 and _open_edges(surface) == 0
+
+
+def test_curved_pieces_have_the_wholes_bits():
+    """Pieces cut from a curved order-3 mesh by a filter (which keeps its order) give
+    the whole's lattice points to the bit."""
+    data = _curved(3, seed=13)
+    whole = td.subdivide(data, 3, fields=["u"])
+    at = {tuple(p): u for p, u in zip(whole.positions(), whole.fields["u"].values.numpy())}
+    n = data.num_cells
+    for kept in (np.arange(0, n, 2), np.arange(n - 1, -1, -3)):
+        piece = td.subdivide(td.extract_cells(data, kept), 3, fields=["u"])
+        positions = [tuple(p) for p in piece.positions()]
+        assert all(p in at for p in positions)
+        np.testing.assert_array_equal(piece.fields["u"].values.numpy(),
+                                      [at[p] for p in positions])
+
+
+# ── VTK's Lagrange simplices ────────────────────────────────────────
+
+def _vtk_values_at(grid, name, pcs):
+    """VTK's own evaluation of a Lagrange grid: each cell's position and ``name`` at
+    each of ``pcs``."""
+    vtk = pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from vtkmodules.vtkCommonCore import reference
+
+    cell = vtk.vtkGenericCell()
+    xs, us = [], []
+    array = grid.point_data[name]
+    for c in range(grid.number_of_cells):
+        grid.GetCell(c, cell)
+        for pc in pcs:
+            weights = [0.0] * cell.GetNumberOfPoints()
+            x = [0.0, 0.0, 0.0]
+            cell.EvaluateLocation(reference(0), list(pc), x, weights)
+            xs.append(x)
+            us.append(sum(w * array.GetValue(cell.GetPointId(k))
+                          for k, w in enumerate(weights)))
+    return np.array(xs), np.array(us)
+
+
+@pytest.mark.parametrize("cells, order", [("tetrahedra", 3), ("tetrahedra", 4),
+                                          ("triangles", 3)])
+def test_lagrange_simplices_are_vtks(f64_backend, cells, order):
+    """``dataset_to_vtk(..., higher_order=True)`` writes VTK Lagrange triangles and
+    tetrahedra (VTK's recursive node order, matched by parametric coordinates) that
+    VTK evaluates as Tack does, curved geometry included; ``vtk_to_dataset`` reads
+    them back into the same spaces."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+
+    if cells == "tetrahedra":
+        data, vtk_type = _curved(order), 71
+    else:
+        data, vtk_type = _triangles(), 69
+        space = td.H1(data, order=order, nodes="equispaced")
+        data.fields["u"] = td.interpolate(data, _bowl, space)
+    data.fields["c"] = td.Field(td.Constant(data),
+                                tack.array(np.arange(data.num_cells, dtype=np.float64)))
+    grid = dataset_to_vtk(data, higher_order=True)
+    assert set(np.asarray(grid.cell_types).tolist()) == {vtk_type}
+    assert grid.number_of_points == td.H1(data, order=order, nodes="equispaced").size
+    dimension = 3 if cells == "tetrahedra" else 2
+    weights = np.random.default_rng(order).dirichlet(np.ones(dimension + 1), 3)[:, 1:]
+    pcs = np.c_[weights, np.zeros((3, 3 - dimension))]
+    xs, us = _vtk_values_at(grid, "u", pcs)
+    probed = td.probe(data, xs)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), us, atol=1e-8)
+    back = vtk_to_dataset(grid, dtype=tack.f64)
+    assert back.fields["u"].space is td.H1(back, order=order, nodes="equispaced")
+    np.testing.assert_allclose(td.probe(back, xs).fields["u"].values.numpy(), us, atol=1e-8)
+    np.testing.assert_array_equal(back.fields["c"].values.numpy(), np.arange(data.num_cells))
+
+
+# ── MFEM's simplices ────────────────────────────────────────────────
+
+@pytest.mark.parametrize("collection", ["H1", "H1 uniform", "L2", "L2 uniform"])
+def test_mfem_simplices_of_any_order(f64_backend, collection):
+    """MFEM tetrahedra of order 3, on its default nodes (Gauss-Lobatto-based for H1,
+    Gauss-Legendre for L2: evaluated at Tack's equispaced lattice, the same
+    polynomials) or closed uniform ones (copied, and back unchanged); a curved
+    mesh's nodes come across as a curved geometry."""
+    mfem = pytest.importorskip("mfem.ser")
+    from tack.interop.mfem import mfem_grid_function, mfem_to_dataset
+
+    class F(mfem.PyCoefficient):
+        def EvalValue(self, x):
+            return x[0] ** 2 * x[1] - 0.7 * x[1] * x[2] ** 2 + 0.3 * x[0] + x[2] ** 3
+
+    mesh = mfem.Mesh.MakeCartesian3D(2, 2, 2, mfem.Element.TETRAHEDRON, 1.0, 1.0, 1.0)
+    family, _, kind = collection.partition(" ")
+    basis = mfem.BasisType.ClosedUniform if kind else None
+    make = mfem.H1_FECollection if family == "H1" else mfem.L2_FECollection
+    fec = make(3, 3, basis) if basis is not None else make(3, 3)
+    fes = mfem.FiniteElementSpace(mesh, fec)
+    gf = mfem.GridFunction(fes)
+    gf.ProjectCoefficient(F())
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    assert data.fields["u"].space.nodes == "equispaced"
+    points = np.random.default_rng(0).uniform(0.05, 0.95, (200, 3))
+    np.testing.assert_allclose(td.probe(data, points).fields["u"].values.numpy(),
+                               _cubic_at(points), atol=1e-12)
+    if kind:
+        back = mfem_grid_function(data, data.fields["u"], mesh, fes)
+        np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())
+    curved = mfem.Mesh.MakeCartesian3D(2, 2, 2, mfem.Element.TETRAHEDRON, 1.0, 1.0, 1.0)
+    curved.SetCurvature(3, False, 3, mfem.Ordering.byVDIM)
+    bent = mfem_to_dataset(curved, dtype=tack.f64)
+    assert bent.geometry.space.order == 3
+    nodes = bent.geometry.values.numpy()
+    assert td.probe(bent, nodes).fields["valid"].values.numpy().all()
