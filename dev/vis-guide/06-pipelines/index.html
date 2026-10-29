@@ -3898,8 +3898,14 @@ again smaller, and each step taken proposes the next, between <code>min_step</co
 <code>max_step</code> (by default a fiftieth of <code>step_size</code> and twice it, VTK's ratios).
 Smooth stretches take long steps and sharp turns short ones; on a swirl, at
 VTK's settings, it takes about half of fixed RK4's points and lies as close
-to the path as VTK's RK45. <code>max_length</code> stops a path that has gone that far,
-whatever the integrator.</p>
+to the path as VTK's RK45. Where the flow turns back at a wall, a particle
+whose step cannot get past it ends there (<code>SPATIAL_BOUNDS</code>), as in VTK. Its
+step control makes yes-or-no choices, so where paths diverge (a recirculation,
+a wall) a rounding-sized change can send two runs, or two devices, along
+paths of other lengths, each within the tolerance; a looser <code>tolerance</code> makes
+that rarer (on the aneurysm in f64, paths of other lengths from seeds 1e-13
+apart: 4,899 of 20,000 at 1e-7, 721 at 1e-6, none at 1e-5). <code>max_length</code>
+stops a path that has gone that far, whatever the integrator.</p>
 <p><code>streamlines(..., step_unit="length")</code> steps a fixed arc length instead,
 following the velocity's direction as VTK's <code>vtkStreamTracer</code> does by
 default: slow flow takes steps as long as fast flow, and <code>steps * step_size</code>

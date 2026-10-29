@@ -6391,7 +6391,9 @@ steps, as Viskores' ParticleAdvection does, or by RK45 steps that adapt
 step whose error estimate passes <code>tolerance</code> is tried again smaller,
 <code>0.9 h (err/tol)^-0.25</code>, keeping its first stage; a step taken proposes the
 next, <code>0.9 h (err/tol)^-0.2</code>, within <code>[min_step, max_step]</code>; one at
-<code>min_step</code> is taken whatever its error). A particle's step goes with it
+<code>min_step</code> is taken whatever its error; a push out at a wall that moves the
+particle less than <code>min_step</code> ends it, <code>SPATIAL_BOUNDS</code>, as VTK's RK45 ends it
+out of its domain). A particle's step goes with it
 between a GPU's launches and from piece to piece. <code>max_length</code> stops a
 particle whose path has gone that far (in the length unit its last step
 lands on it). It returns
