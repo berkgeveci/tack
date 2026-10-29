@@ -401,7 +401,8 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
     ``field`` is a scalar field with a basis, or its name: ``H1`` of order 1
     (point data), or ``L2`` (DG, an order per cell too).
 
-    On segments, quads, pixels, hexahedra and voxels, a field above order 1 or a
+    On segments, quads, pixels, hexahedra and voxels, and on triangles and
+    tetrahedra (into Freudenthal's sub-simplices), a field above order 1 or a
     curved geometry is cut on linear sub-cells (``tack.dataset.subdivide``): each
     cell whose field's Bernstein coefficients can hold a value is cut into
     ``subdivision`` lattice steps along each axis -- by default the largest

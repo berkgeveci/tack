@@ -683,10 +683,17 @@ class DataSet:
                         "faces", group, (views.of_order(views._TensorFaceNodes, space.order),
                                          where),
                         node_face_dofs=face_dofs, node_points=points))
+                elif group.count and group.shape is shapes.Triangle and space.order > 2:
+                    out.append(self.domain_view(
+                        "faces", group, (views.of_order(views._SimplexFaceNodes, space.order),
+                                         where),
+                        node_face_dofs=face_dofs, node_points=points))
         for group in topology.groups():
             if group.count:
+                interior = (views._SimplexInteriorNodes if bases.simplex_shape(group.shape)
+                            else views._TensorInteriorNodes)
                 out.append(self.domain_view(
-                    "cells", group, (views.of_order(views._TensorInteriorNodes, space.order),),
+                    "cells", group, (views.of_order(interior, space.order),),
                     node_cell_dofs=cell_dofs, node_points=points))
         return out
 
@@ -760,7 +767,17 @@ class DataSet:
         for group in groups:
             if not group.count:
                 continue
-            if isinstance(space, L2) and space.tensor:
+            if isinstance(space, L2) and space.tensor and bases.simplex_shape(group.shape):
+                lattice = bases.simplex_lattice(group.shape, space.order).reshape(-1)
+                ijk = tack.empty((len(lattice),), tack.i32)
+                tack.copyto(ijk, lattice)
+                out.append(self.domain_view(
+                    "cells", group,
+                    (views.of_simplex_order(views._SimplexCellNodes, space.order,
+                                            group.shape.DIMENSION),),
+                    node_offsets=space.offsets, node_ijk=ijk,
+                    node_points=_space_nodes(space, self.geometry)))
+            elif isinstance(space, L2) and space.tensor:
                 cells = space.layout == "cells"
                 mixin = views._TensorCellNodesCells if cells else views._TensorCellNodes
                 out.append(self.domain_view(

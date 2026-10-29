@@ -1907,6 +1907,216 @@ class _L2CellsField(_TensorBasis):
         return self.value(c, self.parametric_point(j))
 
 
+# ── Simplices of any order (equispaced nodes) ───────────────────────
+
+
+class _SimplexPolynomials:
+    """The Lagrange basis of order ``ORDER`` on a simplex's equispaced nodes
+    (``bases.simplex_lattice``, ``NODES`` of them, ``simplex_ijk`` their integer
+    coordinates), by Silvester's product formula: node ``alpha`` (its barycentric
+    multi-index, ``(p - i - j - k, i, j, k)``) has the function ``prod_m
+    F[alpha_m](lambda_m)``, ``F[a](t) = prod_{s < a} (p t - s) / (s + 1)``."""
+
+    @tack.func
+    def simplex_factors(self, pc, f, g):
+        """``f[m * (p + 1) + a]``: ``F[a]`` at barycentric coordinate ``m``; ``g`` its
+        derivative by that coordinate."""
+        q = self.ORDER + 1
+        for m in range(self.DIMENSION + 1):
+            t = 1.0 - pc[0] - pc[1] - pc[2] if m == 0 else pc[m - 1]
+            # In t's type throughout: an integer quotient would be f32.
+            order = t - t + self.ORDER
+            f[m * q] = t - t + 1.0
+            g[m * q] = t - t
+            for a in range(1, q):
+                step = (order * t - (a - 1)) / a
+                g[m * q + a] = g[m * q + a - 1] * step + f[m * q + a - 1] * (order / a)
+                f[m * q + a] = f[m * q + a - 1] * step
+
+    @tack.func
+    def simplex_alpha(self, n, m):
+        """Node ``n``'s barycentric index ``m``."""
+        a = self.ORDER
+        for k in range(self.DIMENSION):
+            a -= self.simplex_ijk[n * self.DIMENSION + k]
+        if m > 0:
+            a = self.simplex_ijk[n * self.DIMENSION + m - 1]
+        return a
+
+    @tack.func
+    def simplex_weight(self, n, f):
+        q = self.ORDER + 1
+        w = f[self.simplex_alpha(n, 0)]
+        for m in range(1, self.DIMENSION + 1):
+            w = w * f[m * q + self.simplex_alpha(n, m)]
+        return w
+
+    @tack.func
+    def simplex_gradient(self, n, f, g):
+        """Node ``n``'s function's parametric gradient: by the product rule, through
+        ``lambda_0 = 1 - sum(pc)``."""
+        q = self.ORDER + 1
+        a0 = self.simplex_alpha(n, 0)
+        grad = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(self.DIMENSION):
+            # d/d pc_k: the factor of lambda_{k+1} differentiated, less lambda_0's.
+            up = g[(k + 1) * q + self.simplex_alpha(n, k + 1)] * f[a0]
+            down = g[a0] * f[(k + 1) * q + self.simplex_alpha(n, k + 1)]
+            for m in range(1, self.DIMENSION + 1):
+                if m != k + 1:
+                    other = f[m * q + self.simplex_alpha(n, m)]
+                    up = up * other
+                    down = down * other
+            grad[k] = up - down
+        return grad
+
+
+class _SimplexBasis(_SimplexPolynomials):
+    """A field's value, parametric gradient and Bernstein bounds on a simplex of any
+    order, from ``dof(c, n)``, the space's."""
+
+    @tack.func
+    def value(self, c, pc):
+        f = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        g = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        self.simplex_factors(pc, f, g)
+        total = self.dof(c, 0) * self.simplex_weight(0, f)
+        for n in range(1, self.NODES):
+            total += self.dof(c, n) * self.simplex_weight(n, f)
+        return total
+
+    @tack.func
+    def parametric_gradient(self, c, pc):
+        """From differences to node 0's value (the basis' gradients sum to zero)."""
+        f = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        g = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        self.simplex_factors(pc, f, g)
+        first = self.dof(c, 0)
+        grad = (self.dof(c, 1) - first) * self.simplex_gradient(1, f, g)
+        for n in range(2, self.NODES):
+            grad += (self.dof(c, n) - first) * self.simplex_gradient(n, f, g)
+        return grad
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.dof(c, self.corner_node[j])
+
+    @tack.func
+    def _simplex_bernstein(self, c, out):
+        """``out``: the cell's Bernstein coefficients less node 0's value."""
+        first = self.dof(c, 0)
+        for i in range(self.NODES):
+            total = first - first
+            for n in range(1, self.NODES):
+                total += self.simplex_bernstein[i * self.NODES + n] * (self.dof(c, n) - first)
+            out[i] = total
+
+    @tack.func
+    def value_range(self, c):
+        coeff = tack.local_array_like(self.simplex_bernstein, self.NODES)
+        self._simplex_bernstein(c, coeff)
+        lo = coeff[0]
+        hi = lo
+        for i in range(1, self.NODES):
+            lo = min(lo, coeff[i])
+            hi = max(hi, coeff[i])
+        first = self.dof(c, 0)
+        return first + lo, first + hi
+
+    @tack.func
+    def flatness(self, c):
+        """The greatest distance of a Bernstein coefficient from the corner
+        coefficients' linear interpolation where it sits."""
+        coeff = tack.local_array_like(self.simplex_bernstein, self.NODES)
+        self._simplex_bernstein(c, coeff)
+        worst = coeff[0] - coeff[0]
+        for n in range(self.NODES):
+            linear = coeff[0] - coeff[0]
+            for m in range(self.DIMENSION + 1):
+                linear += coeff[self.corner_node[m]] * self.simplex_alpha(n, m) / self.ORDER
+            worst = max(worst, abs(coeff[n] - linear))
+        return worst
+
+
+class _SimplexDofs:
+    """Where an ``H1`` space of order ``ORDER`` (3 or more) on simplices keeps cell
+    ``c``'s node ``n`` (``bases.dof_tables``): a corner's at its point; ``ORDER - 1``
+    per edge (``_TensorEdges``, from the edge's lower point id); ``(ORDER - 1)
+    (ORDER - 2) / 2`` per triangle face from ``face_dofs[face]``, in the frame of
+    the face's own row; the interior's from ``cell_dofs[cell]``, in node order."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        kind = self.node_kind[n]
+        e = self.node_entity[n]
+        if kind == 0:
+            return self.point_id(c, e)
+        if kind == 1:
+            return self.tensor_edge_dof(c, e, self.node_a[n])
+        if kind == 2:
+            return self.simplex_face_dof(c, e, self.node_a[n], self.node_b[n])
+        return self.cell_dofs[self.entity_id(c)] + self.node_a[n]
+
+
+class _SimplexFaces:
+    """A tetrahedron's triangle face node ``(a, b)`` (steps from the cell's local
+    corner 0 of the face toward its corners 1 and 2), placed in the frame of the
+    face's own row -- the same for both cells sharing it -- through the face's
+    orientation in the cell, and numbered there ``U`` fastest (``U, V >= 1``)."""
+
+    @tack.func
+    def simplex_face_dof(self, c, f, a, b):
+        p = self.ORDER
+        r0 = self.face_position(c, f, 0)
+        r1 = self.face_position(c, f, 1)
+        u = (p - a - b) if r0 == 1 else (a if r1 == 1 else b)
+        v = (p - a - b) if r0 == 2 else (a if r1 == 2 else b)
+        return (self.face_dofs[self.face_id(c, f)] + (v - 1) * (p - 1) - ((v - 1) * v) // 2
+                + (u - 1))
+
+
+class _NoSimplexFaces:
+    """A triangle: its edges are its sides, and it has no face nodes."""
+
+    @tack.func
+    def simplex_face_dof(self, c, f, a, b):
+        return self.cell_dofs[self.entity_id(c)]          # not reached
+
+
+class _H1SimplexField(_SimplexDofs, _SimplexBasis):
+    """H1 of order 3 or more on simplices, Shared."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.dof_index(c, n))
+
+
+class _L2SimplexField(_SimplexBasis):
+    """L2 of order 2 or more on simplices: each cell's ``NODES`` values from
+    ``offsets[cell]``, in node order."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.offsets[self.entity_id(c)] + n)
+
+
+def simplex_mixins(shape):
+    """The edge and face mixins a simplex ``H1`` view of ``shape`` cells needs."""
+    return _TensorEdges, (_SimplexFaces if shape.DIMENSION == 3 else _NoSimplexFaces)
+
+
+def of_simplex_order(mixin, order, dimension):
+    """``mixin`` with ``ORDER`` and ``NODES`` (the simplex's node count) set."""
+    from math import comb
+
+    key = (mixin, int(order), int(dimension))
+    if key not in _by_order:
+        _by_order[key] = type(f"{mixin.__name__}{order}d{dimension}", (mixin,),
+                              {"ORDER": int(order), "NODES": comb(int(order) + dimension,
+                                                                  dimension)})
+    return _by_order[key]
+
+
 def tensor_mixins(shape):
     """The edge and face mixins a tensor ``H1`` view of ``shape`` cells needs."""
     edges = _TensorEdges if shape.NUM_EDGES and shape.DIMENSION >= 2 else _NoTensorEdges
@@ -2265,6 +2475,99 @@ class _TensorFaceNodes:
         return j % (self.ORDER - 1) + 1, j // (self.ORDER - 1) + 1
 
 
+class _SimplexFaceNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a triangle face's ``(ORDER - 1)(ORDER - 2) /
+    2`` nodes, in the frame of its own row (``U`` toward its point 1, ``V`` toward
+    its point 2, ``U`` fastest)."""
+
+    @tack.func
+    def node_count(self, i):
+        return (self.ORDER - 1) * (self.ORDER - 2) // 2
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_face_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_steps(self, i, j):
+        # Rows of V = 1, 2, ...: row V holds ORDER - 1 - V nodes.
+        v = 1
+        rest = j
+        while rest >= self.ORDER - 1 - v:
+            rest -= self.ORDER - 1 - v
+            v += 1
+        return rest + 1, v
+
+
+class _SimplexInteriorNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a triangle's or tetrahedron's nodes strictly
+    inside it, in node order (``bases.simplex_lattice``), where its geometry maps
+    them."""
+
+    @tack.func
+    def node_count(self, i):
+        n = 1
+        for k in range(self.DIMENSION):
+            n = n * (self.ORDER - 1 - k) // (k + 1)
+        return n
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_cell_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        # The j-th lattice point (i, j, k >= 1, sum <= ORDER - 1), the first axis fastest.
+        p = self.ORDER
+        found = 0
+        pc = tack.vec3(0.0, 0.0, 0.0)
+        for kk in range(1 if self.DIMENSION == 3 else 0, p if self.DIMENSION == 3 else 1):
+            for jj in range(1, p - kk):
+                for ii in range(1, p - jj - kk):
+                    if found == j:
+                        pc = tack.vec3(self.node_points[ii], self.node_points[jj],
+                                       self.node_points[kk] if self.DIMENSION == 3 else 0.0)
+                    found += 1
+        return self.position(i, pc)
+
+
+class _SimplexCellNodes:
+    """``L2`` on a simplex of order ``ORDER``: a cell's ``NODES`` nodes, in node order
+    (``node_ijk``, ``bases.simplex_lattice``), where its geometry maps them."""
+
+    @tack.func
+    def node_count(self, i):
+        return self.NODES
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_offsets[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        pc = tack.vec3(self.node_points[self.node_ijk[j * self.DIMENSION]],
+                       self.node_points[self.node_ijk[j * self.DIMENSION + 1]], 0.0)
+        if self.DIMENSION == 3:
+            pc[2] = self.node_points[self.node_ijk[j * self.DIMENSION + 2]]
+        return self.position(i, pc)
+
+
+@tack.func
+def _triangle_frame(view, i):
+    # A triangle's corners ordered by position (_before), the same in every piece
+    # whatever its stored order: (first, second, third).
+    a = 0
+    b = 1
+    c = 2
+    if _before(view.corner_position(i, b), view.corner_position(i, a)):
+        a, b = b, a
+    if _before(view.corner_position(i, c), view.corner_position(i, b)):
+        b, c = c, b
+        if _before(view.corner_position(i, b), view.corner_position(i, a)):
+            a, b = b, a
+    return a, b, c
+
+
 class _StraightNodePosition:
     """An edge's or quad face's node where its straight (order-1) geometry puts it:
     linear between an edge's points, bilinear over a face's. Computed from the edge's
@@ -2275,6 +2578,16 @@ class _StraightNodePosition:
     @tack.func
     def node_position(self, i, j):
         sa, sb = self.node_steps(i, j)
+        if self.NUM_POINTS == 3:
+            # A triangle face: the node's barycentric steps over its row's points,
+            # from the first point by position toward the other two.
+            a, b, c = _triangle_frame(self, i)
+            w0 = self.ORDER - sa - sb
+            wb = sa if b == 1 else (sb if b == 2 else w0)
+            wc = sa if c == 1 else (sb if c == 2 else w0)
+            xa = self.corner_position(i, a)
+            return (xa + self.node_points[wb] * (self.corner_position(i, b) - xa)
+                    + self.node_points[wc] * (self.corner_position(i, c) - xa))
         if self.NUM_POINTS == 2:
             x0 = self.corner_position(i, 0)
             x1 = self.corner_position(i, 1)

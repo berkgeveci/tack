@@ -17,8 +17,8 @@ mesh and have runnable examples below.
 |---|---|---|
 | `td.H1(data, order=1)` | One shared value per corner vertex | A continuous first-order nodal temperature or velocity |
 | `td.H1(data, order=2)` | Shared corner, edge and supported face/interior nodes | A higher-order H1 approximation; not an H2 space |
-| `td.H1(data, order=p, nodes=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell | Spectral-element and MFEM fields of any order |
-| `td.L2(data, order=p, nodes=...)` | From order 2 (or on Gauss–Legendre nodes): each cell's own `(p + 1)^d` values | DG fields of any order |
+| `td.H1(data, order=p, nodes=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell; on triangles and tetrahedra with `nodes="equispaced"` | Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices |
+| `td.L2(data, order=p, nodes=...)` | From order 2 (or on Gauss–Legendre nodes): each cell's own `(p + 1)^d` values (`C(p + d, d)` on a simplex, equispaced) | DG fields of any order |
 | `td.Constant(data)` | One value per cell | Cell averages, material parameters |
 | `td.L2(data)` | Each cell's own corner values | Discontinuous solution fields |
 | `td.Values(data, "faces")` | One value per face, without an interpolation basis | Face areas, labels or fluxes |
