@@ -4944,8 +4944,13 @@ quarter of the way from the old value toward the mean of the two slices.</p>
 </tr>
 <tr>
 <td><strong>A short range of dear elements.</strong> 17 streamlines of a quarter second each ran whole on one thread twice: unmeasured, then in a recheck whose guard believes no rate above the reference kernel's until a fan-out measured one. Fanned out, the pool cut 17 elements into chunks of 3 over 8 threads, so the three dearest ran on one.</td>
-<td>One element timed on first sight, slices up to a trusted sample, the rest fanned out; a trusted sample's rate believed by the recheck guard; chunks capped at <code>_CHUNK_WORK_NS</code> (20 µs) of estimated work (<code>CPool.run</code>'s <code>most</code>).</td>
+<td>One element timed on first sight, slices up to a trusted sample, the rest fanned out; a trusted sample's rate believed by the recheck guard; chunks capped at <code>_CHUNK_WORK_NS</code> (20 µs) of estimated work (<code>CPool.run</code>'s <code>most</code>) where the pool's own chunks are at most <code>MIN_CHUNK</code> elements.</td>
 <td><code>_short_range</code>, <code>_TRUSTED_SAMPLE_NS</code>, <code>_sample_elems</code>, <code>_chunk_limit</code></td>
+</tr>
+<tr>
+<td><strong>Interleaved chunks on a long range.</strong> Capped at 20 µs on any range, a fan-out over 20M cells claimed 15,000 chunks where the pool made 112, so the 28 workers ran interleaved through the range and faulted the same huge pages of new outputs at once: threshold of 20M hexahedra 650 ms against 200, point to cell 120 against 30, the M6's locator build 5.7 s against 2.0 (jura, 28 threads, 2026-10-28).</td>
+<td>The cap applies only where <code>CPool.chunk_size</code> is at most <code>MIN_CHUNK</code>, the short ranges it was for; a longer range keeps GRAIN chunks a worker.</td>
+<td><code>_chunk_limit</code></td>
 </tr>
 <tr>
 <td><strong>Fixed cost dominating short samples.</strong> For a cheap kernel the call is most of a sample; for a short chunk the GIL hand-back is most of a span.</td>
