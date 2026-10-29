@@ -235,7 +235,7 @@ def _geometry_parts(data, group, kind):
         if group.shape.QUADRATIC_FACES:
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
-        return [*mixins, views.quadratic_faces(group.shape), views._CurvedNewton], attributes
+        return [*mixins, views.quadratic_faces(group.shape), views._QuadraticNewton], attributes
     if geometry.space.order >= 2 and kind == "cells":
         # Curved, on tensor shapes (order 2 too: the same layout, read as a tensor
         # basis, which bounds the cell by its Bernstein control points).
@@ -246,7 +246,7 @@ def _geometry_parts(data, group, kind):
             data.topology.faces()
         mixins, attributes = _space_parts(
             geometry, group, views.of_order(views._H1TensorGeometry, space.order))
-        return [*mixins, *views.tensor_mixins(group.shape), views._CurvedNewton], attributes
+        return [*mixins, *views.tensor_mixins(group.shape), views._TensorNewton], attributes
     # Faces and edges of a curved geometry see its corners.
     mixins, attributes = _space_parts(geometry, group, views._H1Geometry, corners_only=True)
     if kind == "cells":
