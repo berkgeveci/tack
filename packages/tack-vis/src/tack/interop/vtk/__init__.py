@@ -818,6 +818,13 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             # copied goes there, the device being the default meanwhile.
             with device:
                 return _vtk_to_dataset(grid, **options, _device=device)
+        cpu = tack.device("cpu")
+        if tack.get_default_device() != cpu:
+            # All on the host, so shared as CPU arrays: what is copied beside them
+            # (implicit types and offsets, converted values) is made on the CPU too,
+            # not on a GPU default (as init_level_zero sets one).
+            with cpu:
+                return _vtk_to_dataset(grid, **options)
     if isinstance(grid, vtkUnstructuredGrid):
         # VTK's constant and affine arrays come across as Tack's implicit ones.
         types = _from_vtk(grid.cell_types, tack.u8)

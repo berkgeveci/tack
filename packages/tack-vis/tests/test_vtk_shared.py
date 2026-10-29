@@ -11,6 +11,8 @@ import pytest
 
 import tack
 import tack.dataset as td
+from tack.runtime import dispatch
+from tack.runtime.cpu import CPUBackend
 
 vtk = pytest.importorskip("vtkmodules.all")
 from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
@@ -122,6 +124,33 @@ def test_a_conversion_that_must_convert_copies():
     moved = vtk_to_dataset(grid, dtype=None, copy=False, origin=(1.0, 0.0, 0.0))
     assert not _shares(moved.geometry.values, grid.points.data)
     np.testing.assert_allclose(moved.world_positions(), np.asarray(grid.points.data), atol=1e-6)
+
+
+class _SecondCPU(CPUBackend):
+    """A CPU backend posing as a GPU's (as test_dataset_devices.py's): its arrays are
+    not the CPU's."""
+
+    display_name = "second device"
+
+    @property
+    def memory_domain(self):
+        return ("cpu", 1)
+
+
+def test_a_host_grid_is_made_on_the_cpu_whatever_the_default():
+    """Shared host memory is the CPU's, so what is copied beside it -- here VTK's
+    implicit types and offsets, as Tack's filters write one-shape outputs -- is made
+    there too, not on a GPU default (init_level_zero sets one)."""
+    grid = vtk.vtkUnstructuredGrid()
+    grid.points = vtk.vtkPoints(data=[[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]])
+    grid.cells = (vtk.VTK_TETRA, vtk.vtkCellArray(
+        offsets=vtk.vtkAffineArray[np.int64](3, 4, 0),
+        connectivity=np.array([0, 1, 2, 3, 1, 2, 3, 4], np.int64)))
+    tack.set_default_device(dispatch.as_device(_SecondCPU()))
+    data = vtk_to_dataset(grid, dtype=None, copy=False)
+    assert data.device == tack.device("cpu")
+    assert type(data.topology.types).__name__ == "ConstantArray"
+    assert _shares(data.topology.connectivity, grid.cells.connectivity_array)
 
 
 def test_polydata_of_one_kind_shares_its_cells():
