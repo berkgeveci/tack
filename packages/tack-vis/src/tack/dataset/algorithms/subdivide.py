@@ -476,8 +476,8 @@ def _face_weights(ka, kb, kc, a, b, level):
 
 @tack.kernel
 def _trace_simplex_values(cells, u, slot_of, per_cell, level, steps, node_kind, node_entity,
-                          node_a, node_b, first, rank, edge_nodes, face_nodes, view_of, nodes,
-                          weights, q, out):
+                          node_a, node_b, first, rank, edge_nodes, face_nodes, stride, view_of,
+                          nodes, weights, q, out):
     # An H1 field at the lattice points on a simplex's edges and triangle faces, from
     # their own values: an edge as _trace_values does it, a face in its corners'
     # order by position, the sum in that order.
@@ -500,9 +500,31 @@ def _trace_simplex_values(cells, u, slot_of, per_cell, level, steps, node_kind, 
                             total += u.dof(c, view_of[edge_nodes[m * q + j]]) * \
                                 _lagrange(t, jp, nodes, weights, q)
                         out[rank[k]] = total
+                    elif cells.face_num_points(m) == 4:
+                        # A wedge's quad face, as _trace_values evaluates one.
+                        sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
+                                                         level)
+                        ta = steps[sa]
+                        tb = steps[sb]
+                        ax, ay = _unit(ka)
+                        bx, by = _unit(kb)
+                        dx, dy = _unit(kd)
+                        p = q - 1
+                        total = u.dof(c, view_of[face_nodes[m * stride + ax * p + q * (ay * p)]]) \
+                            * (_lagrange(ta, 0, nodes, weights, q)
+                               * _lagrange(tb, 0, nodes, weights, q))
+                        for i in range(1, q * q):
+                            jp = i % q
+                            kp = i // q
+                            fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
+                            fb = ay * p + jp * (by - ay) + kp * (dy - ay)
+                            total += u.dof(c, view_of[face_nodes[m * stride + fa + q * fb]]) \
+                                * (_lagrange(ta, jp, nodes, weights, q)
+                                   * _lagrange(tb, kp, nodes, weights, q))
+                        out[rank[k]] = total
                     else:
                         p = q - 1
-                        per_face = q * (q + 1) // 2
+                        per_face = stride
                         ka, kb, kc = _triangle_order(cells, c, m)
                         wa, wb, wc = _face_weights(ka, kb, kc, node_a[n], node_b[n], level)
                         la = steps[wa]
@@ -531,8 +553,8 @@ def _trace_simplex_values(cells, u, slot_of, per_cell, level, steps, node_kind, 
 
 @tack.kernel
 def _trace_simplex_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity,
-                          node_a, node_b, first, rank, edge_nodes, face_nodes, view_of, nodes,
-                          weights, q, out):
+                          node_a, node_b, first, rank, edge_nodes, face_nodes, stride, view_of,
+                          nodes, weights, q, out):
     # A curved simplex geometry (order 2's quadratic, or 3 and up) at the lattice
     # points on edges and triangle faces, from its own nodes there, as
     # _trace_simplex_values evaluates a field.
@@ -555,9 +577,31 @@ def _trace_simplex_curved(cells, slot_of, per_cell, level, steps, node_kind, nod
                             x += cells.get(cells.dof_index(c, view_of[edge_nodes[m * q + j]])) * \
                                 _lagrange(t, jp, nodes, weights, q)
                         out[rank[k]] = x
+                    elif cells.face_num_points(m) == 4:
+                        sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
+                                                         level)
+                        ta = steps[sa]
+                        tb = steps[sb]
+                        ax, ay = _unit(ka)
+                        bx, by = _unit(kb)
+                        dx, dy = _unit(kd)
+                        p = q - 1
+                        x = cells.get(cells.dof_index(c, view_of[face_nodes[
+                            m * stride + ax * p + q * (ay * p)]])) * (
+                            _lagrange(ta, 0, nodes, weights, q) * _lagrange(tb, 0, nodes, weights, q))
+                        for i in range(1, q * q):
+                            jp = i % q
+                            kp = i // q
+                            fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
+                            fb = ay * p + jp * (by - ay) + kp * (dy - ay)
+                            x += cells.get(cells.dof_index(c, view_of[face_nodes[
+                                m * stride + fa + q * fb]])) * (
+                                _lagrange(ta, jp, nodes, weights, q)
+                                * _lagrange(tb, kp, nodes, weights, q))
+                        out[rank[k]] = x
                     else:
                         p = q - 1
-                        per_face = q * (q + 1) // 2
+                        per_face = stride
                         ka, kb, kc = _triangle_order(cells, c, m)
                         wa, wb, wc = _face_weights(ka, kb, kc, node_a[n], node_b[n], level)
                         la = steps[wa]
@@ -601,6 +645,17 @@ def _trace_simplex_straight(cells, slot_of, per_cell, level, steps, node_kind, n
                         xa = cells.corner_position(c, cells.edge_corner(m, 1 if flip == 1 else 0))
                         xb = cells.corner_position(c, cells.edge_corner(m, 0 if flip == 1 else 1))
                         out[rank[k]] = xa + steps[s] * (xb - xa)
+                    elif cells.face_num_points(m) == 4:
+                        sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
+                                                         level)
+                        ta = steps[sa]
+                        tb = steps[sb]
+                        xa = cells.corner_position(c, cells.face_corner(m, ka))
+                        xb = cells.corner_position(c, cells.face_corner(m, kb))
+                        xc = cells.corner_position(c, cells.face_corner(m, (ka + 2) % 4))
+                        xd = cells.corner_position(c, cells.face_corner(m, kd))
+                        out[rank[k]] = (xa + ta * (1.0 - tb) * (xb - xa) + ta * tb * (xc - xa)
+                                        + (1.0 - ta) * tb * (xd - xa))
                     else:
                         ka, kb, kc = _triangle_order(cells, c, m)
                         wa, wb, wc = _face_weights(ka, kb, kc, node_a[n], node_b[n], level)
@@ -689,6 +744,12 @@ def _entity_tables(shape, order):
                  for x in (edges, faces))
 
 
+def _face_stride(shape, order):
+    """The length of each face's row in ``bases.entity_nodes``' faces (1 for none)."""
+    faces = bases.entity_nodes(shape, order)[1]
+    return max(int(faces.shape[1]) if faces.ndim == 2 else 0, 1)
+
+
 def _typed(values, like):
     """A host table as a device array of ``like``'s type."""
     out = tack.empty((len(values),), like.dtype)
@@ -714,21 +775,27 @@ def _cell_ranks(data, slot_of, chosen, count):
 
 
 def _cell_family(data, what):
-    """``(dimension, simplex)``: the cells' dimension, and whether they are simplices
-    (triangles, tetrahedra) rather than tensor shapes (segments, quads, pixels,
-    hexahedra, voxels). One family and one dimension per mesh."""
+    """``(dimension, family)``: the cells' dimension and family, ``"tensor"``
+    (segments, quads, pixels, hexahedra, voxels), ``"simplex"`` (triangles,
+    tetrahedra) or ``"wedge"``. One family and one dimension per mesh."""
     groups = [g for g in data.topology.groups() if g.count]
     for group in groups:
         if not bases.has_bases(group.shape):
             raise NotImplementedError(
-                f"{what} is on segments, quads, pixels, hexahedra, voxels, triangles and "
-                f"tetrahedra; not yet on {group.shape.__name__} cells")
-    families = {bases.simplex_shape(g.shape) for g in groups}
+                f"{what} is on segments, quads, pixels, hexahedra, voxels, triangles, "
+                f"tetrahedra and wedges; not yet on {group.shape.__name__} cells")
+    families = {_family(g.shape) for g in groups}
     dims = {g.shape.DIMENSION for g in groups}
     if len(dims) > 1 or len(families) > 1:
-        raise NotImplementedError(f"{what} takes cells of one dimension, all simplices or all "
-                                  "tensor shapes")
-    return (dims.pop() if dims else 3), (families.pop() if families else False)
+        raise NotImplementedError(f"{what} takes cells of one dimension, all simplices, all "
+                                  "wedges or all tensor shapes")
+    return (dims.pop() if dims else 3), (families.pop() if families else "tensor")
+
+
+def _family(shape):
+    if bases.simplex_shape(shape):
+        return "simplex"
+    return "wedge" if bases.wedge_shape(shape) else "tensor"
 
 
 def _order(field):
@@ -753,7 +820,8 @@ def _refined(data, flags, level, fields):
     Returns ``(refined, parent)``, ``parent`` each sub-cell's cell."""
     from math import comb
 
-    dimension, simplex = _cell_family(data, "subdivision")
+    dimension, cell_family = _cell_family(data, "subdivision")
+    simplex = cell_family != "tensor"       # simplices and wedges: table-driven sub-cells
     topology = data.topology
     n = data.num_cells
     slots = tack.empty((n,), tack.i64)
@@ -762,9 +830,11 @@ def _refined(data, flags, level, fields):
     chosen = tack.empty((max(count, 1),), tack.i64)
     if n:
         _place_chosen(flags, slots, slot_of, chosen)
-    per_cell = comb(level + dimension, dimension) if simplex else (level + 1) ** dimension
+    per_cell = {"simplex": comb(level + dimension, dimension),
+                "wedge": comb(level + 2, 2) * (level + 1)}.get(cell_family,
+                                                               (level + 1) ** dimension)
     subs = level ** dimension
-    sub = dimension + 1 if simplex else 2 ** dimension
+    sub = {"simplex": dimension + 1, "wedge": 6}.get(cell_family, 2 ** dimension)
     total = count * per_cell
     keys = tack.empty((total,), tack.i64)
     if count:
@@ -823,12 +893,13 @@ def _refined(data, flags, level, fields):
                         edge_nodes, face_nodes = _entity_tables(group.shape, order)
                         _trace_simplex_curved(
                             cells, slot_of, per_cell, level, steps, *lattice, first, rank,
-                            edge_nodes, face_nodes,
+                            edge_nodes, face_nodes, _face_stride(group.shape, order),
                             tack.array(bases.view_index(group.shape, order)),
                             _typed(bases.nodes("equispaced", order), steps),
                             _typed(bases.weights("equispaced", order), steps), order + 1,
                             geometry)
                     table = tack.array(np.ascontiguousarray(
+                        bases.wedge_subdivision(level) if cell_family == "wedge" else
                         bases.simplex_subdivision(group.shape, level)).reshape(-1))
                     _sub_simplices(cells, slot_of, per_cell, subs, sub, table, rank, conn,
                                    parent)
@@ -841,7 +912,8 @@ def _refined(data, flags, level, fields):
                     _trace_curved(cells, slot_of, per_cell, level, steps, *lattice, first, rank,
                                   edge_nodes, face_nodes, order + 1, geometry)
                 _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent)
-    shape = ({3: shapes.TETRA, 2: shapes.TRIANGLE}[dimension] if simplex else
+    shape = (shapes.WEDGE if cell_family == "wedge" else
+             {3: shapes.TETRA, 2: shapes.TRIANGLE}[dimension] if simplex else
              {3: shapes.HEXAHEDRON, 2: shapes.QUAD, 1: shapes.LINE}[dimension])
     types, offsets = uniform_cells(int(shape), count * subs, idt)
     linear = UnstructuredTopology(types, offsets, conn, num_points=points, id_dtype=idt)
@@ -867,7 +939,8 @@ def _refined(data, flags, level, fields):
                         _trace_simplex_values(
                             cells, u, slot_of, per_cell, level, steps,
                             *_lattice_tables(group.shape, level), first, rank, edge_nodes,
-                            face_nodes, tack.array(bases.view_index(group.shape, order)),
+                            face_nodes, _face_stride(group.shape, order),
+                            tack.array(bases.view_index(group.shape, order)),
                             _typed(bases.nodes("equispaced", order), steps),
                             _typed(bases.weights("equispaced", order), steps), order + 1, out)
                     elif isinstance(field.space, H1):
@@ -994,9 +1067,8 @@ def subdivides(data, field):
                                               and (field.space.order > 1
                                                    or getattr(field.space, "tensor", False)))
     groups = [g for g in data.topology.groups() if g.count]
-    tensor = all(bases.tensor_shape(g.shape) for g in groups)
-    simplex = all(bases.simplex_shape(g.shape) for g in groups)
-    return nonlinear and (tensor or simplex)
+    families = {_family(g.shape) for g in groups if bases.has_bases(g.shape)}
+    return nonlinear and len(families) <= 1 and all(bases.has_bases(g.shape) for g in groups)
 
 
 def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, tolerance=None):

@@ -402,3 +402,134 @@ def test_mfem_simplices_of_any_order(f64_backend, collection):
     assert bent.geometry.space.order == 3
     nodes = bent.geometry.values.numpy()
     assert td.probe(bent, nodes).fields["valid"].values.numpy().all()
+
+
+# ── Wedges: a triangle times a segment ──────────────────────────────
+
+def _wedge_mesh():
+    """A grid's hexahedra each split into two wedges, in f64."""
+    grid = td.uniform_grid((4, 4, 4), spacing=(0.4, 0.4, 0.4), dtype=tack.f64)
+    hexes = td.extract_cells(grid, np.arange(grid.num_cells)).topology.connectivity.numpy()
+    conn = []
+    for h in hexes.reshape(-1, 8):
+        conn += [[h[0], h[1], h[3], h[4], h[5], h[7]], [h[1], h[2], h[3], h[5], h[6], h[7]]]
+    types, offsets = uniform_cells(int(shapes.WEDGE), len(conn), tack.i32)
+    topology = td.UnstructuredTopology(types, offsets,
+                                       tack.array(np.array(conn, np.int32).reshape(-1)),
+                                       num_points=grid.num_points)
+    return td.DataSet(topology, grid.positions().astype(np.float64), dtype=tack.f64)
+
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_wedge_bases_reproduce_polynomials_of_their_order(order):
+    lattice = bases.wedge_lattice(order)
+    p = order
+    assert len(lattice) == comb(p + 2, 2) * (p + 1)
+    np.testing.assert_allclose(bases.wedge_basis(order, lattice / p), np.eye(len(lattice)),
+                               atol=1e-12)
+    rng = np.random.default_rng(order)
+    points = np.c_[rng.dirichlet(np.ones(3), 100)[:, 1:], rng.uniform(0, 1, 100)]
+    f = lambda x: (1 + 0.7 * x[:, 0] - 0.4 * x[:, 1]) ** p * (1 + 0.5 * x[:, 2]) ** p
+    values = f(lattice / p)
+    np.testing.assert_allclose(bases.wedge_basis(order, points) @ values, f(points), atol=1e-12)
+    coefficients = bases.wedge_bernstein(order) @ values
+    assert coefficients.min() <= f(points).min() + 1e-12
+    assert coefficients.max() >= f(points).max() - 1e-12
+    kind = bases.dof_tables(shapes.Wedge, order)[0]
+    assert np.bincount(kind, minlength=4).tolist() == [
+        6, 9 * (p - 1), 2 * (p - 1) * max(p - 2, 0) // 2 + 3 * (p - 1) ** 2,
+        (p - 1) ** 2 * max(p - 2, 0) // 2]
+    rows = bases.wedge_subdivision(order)
+    assert len(rows) == p ** 3
+
+
+@pytest.mark.parametrize("order", [3, 4])
+def test_h1_and_l2_are_exact_on_wedges(f64_backend, order):
+    data = _wedge_mesh()
+    points = np.random.default_rng(order).uniform(0.02, 1.18, (300, 3))
+    centers = td.cell_centers(data).values.numpy()
+    for space in (td.H1(data, order=order, nodes="equispaced"),
+                  td.L2(data, order=order, nodes="equispaced")):
+        data.fields["u"] = td.interpolate(data, _cubic, space)
+        np.testing.assert_allclose(td.probe(data, points).fields["u"].values.numpy(),
+                                   _cubic_at(points), atol=1e-12)
+        np.testing.assert_allclose(td.gradients(data, "u").values.numpy(),
+                                   _cubic_gradient(centers), atol=1e-11)
+
+
+def test_subdividing_and_cutting_wedges(f64_backend):
+    """``level^3`` sub-wedges a cell, the field exact at the lattice points (a quad
+    face's from its own values, as a triangle face's); contours close and converge."""
+    data = _wedge_mesh()
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, nodes="equispaced"))
+    for level in (2, 3, 5):
+        refined = td.subdivide(data, level, fields=["u"])
+        assert refined.num_cells == data.num_cells * level ** 3
+        np.testing.assert_allclose(refined.fields["u"].values.numpy(),
+                                   _bowl_at(refined.positions()), atol=1e-12)
+    errors = []
+    for steps in (3, 6, 12):
+        surface = td.contour(data, "u", 0.25, subdivision=steps)
+        assert _open_edges(surface) == 0
+        errors.append(np.abs(_bowl_at(surface.positions()) - 0.25).max())
+    assert errors[1] < errors[0] / 3 and errors[2] < errors[1] / 3
+
+
+def test_curved_wedges(f64_backend):
+    """A wedge geometry of order 3: located at its nodes, subdivided exactly at the
+    field's nodes."""
+    data = _wedge_mesh()
+    space = td.H1(data, order=3, nodes="equispaced")
+    data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _bowl, space)
+    nodes = data.geometry.values.numpy()
+    probed = td.probe(data, nodes)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), _bowl_at(nodes), atol=1e-10)
+    refined = td.subdivide(data, 3, fields=["u"])
+    np.testing.assert_allclose(refined.fields["u"].values.numpy(),
+                               _bowl_at(refined.positions()), atol=1e-12)
+
+
+def test_lagrange_wedges_are_vtks(f64_backend):
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+
+    data = _wedge_mesh()
+    space = td.H1(data, order=3, nodes="equispaced")
+    data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _bowl, space)
+    grid = dataset_to_vtk(data, higher_order=True)
+    assert set(np.asarray(grid.cell_types).tolist()) == {73}
+    rng = np.random.default_rng(2)
+    pcs = np.c_[rng.dirichlet(np.ones(3), 3)[:, 1:], rng.uniform(0.1, 0.9, 3)]
+    xs, us = _vtk_values_at(grid, "u", pcs)
+    probed = td.probe(data, xs)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), us, atol=1e-8)
+    back = vtk_to_dataset(grid, dtype=tack.f64)
+    np.testing.assert_allclose(td.probe(back, xs).fields["u"].values.numpy(), us, atol=1e-8)
+
+
+@pytest.mark.parametrize("uniform", [False, True])
+def test_mfem_wedges_of_any_order(f64_backend, uniform):
+    mfem = pytest.importorskip("mfem.ser")
+    from tack.interop.mfem import mfem_grid_function, mfem_to_dataset
+
+    class F(mfem.PyCoefficient):
+        def EvalValue(self, x):
+            return x[0] ** 2 * x[1] - 0.7 * x[1] * x[2] ** 2 + 0.3 * x[0] + x[2] ** 3
+
+    mesh = mfem.Mesh.MakeCartesian3D(2, 2, 2, mfem.Element.WEDGE, 1.0, 1.0, 1.0)
+    fec = mfem.H1_FECollection(3, 3, mfem.BasisType.ClosedUniform) if uniform \
+        else mfem.H1_FECollection(3, 3)
+    fes = mfem.FiniteElementSpace(mesh, fec)
+    gf = mfem.GridFunction(fes)
+    gf.ProjectCoefficient(F())
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    points = np.random.default_rng(0).uniform(0.05, 0.95, (200, 3))
+    np.testing.assert_allclose(td.probe(data, points).fields["u"].values.numpy(),
+                               _cubic_at(points), atol=1e-12)
+    if uniform:
+        back = mfem_grid_function(data, data.fields["u"], mesh, fes)
+        np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())

@@ -226,7 +226,7 @@ also needs a shared allocation context. See [Sharing Arrays](../users-guide/16-i
 MFEM meshes and grid functions enter through `tack.interop.mfem`; supported
 spaces include H1 orders 1 and 2 and L2 orders 0 and 1 on every shape it
 maps, and H1 and L2 of any order with curved geometry of any order on quads,
-hexahedra, triangles and tetrahedra; `mfem_grid_function` gives a field back. Check the [interop reference](reference/dataset-api.md#interoperability)
+hexahedra, triangles, tetrahedra and wedges; `mfem_grid_function` gives a field back. Check the [interop reference](reference/dataset-api.md#interoperability)
 for signatures and the current mapping limits.
 
 ## Measure the boundaries you actually use

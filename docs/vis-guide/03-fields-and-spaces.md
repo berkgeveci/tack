@@ -17,7 +17,7 @@ mesh and have runnable examples below.
 |---|---|---|
 | `td.H1(data, order=1)` | One shared value per corner vertex | A continuous first-order nodal temperature or velocity |
 | `td.H1(data, order=2)` | Shared corner, edge and supported face/interior nodes | A higher-order H1 approximation; not an H2 space |
-| `td.H1(data, order=p, nodes=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell; on triangles and tetrahedra with `nodes="equispaced"` | Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices |
+| `td.H1(data, order=p, nodes=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell; on triangles, tetrahedra and wedges with `nodes="equispaced"` | Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices and wedges |
 | `td.L2(data, order=p, nodes=...)` | From order 2 (or on Gauss–Legendre nodes): each cell's own `(p + 1)^d` values (`C(p + d, d)` on a simplex, equispaced) | DG fields of any order |
 | `td.Constant(data)` | One value per cell | Cell averages, material parameters |
 | `td.L2(data)` | Each cell's own corner values | Discontinuous solution fields |
@@ -276,11 +276,11 @@ or for a filter that takes linear cells only:
 --8<-- "docs/examples/data_high_order.py:curved"
 ```
 
-MFEM fields of any order on quads, hexahedra, triangles and tetrahedra come
-across through `tack.interop.mfem`, and VTK's Lagrange cells (curves, quads,
-hexahedra, triangles, tetrahedra) through `vtk_to_dataset`
-(`dataset_to_vtk(..., higher_order=True)` writes them). Wedges and pyramids stop
-at order 2 for now.
+MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges
+come across through `tack.interop.mfem`, and VTK's Lagrange cells (curves,
+quads, hexahedra, triangles, tetrahedra, wedges) through `vtk_to_dataset`
+(`dataset_to_vtk(..., higher_order=True)` writes them). Pyramids stop at order 2
+for now.
 
 ### Where a cell's values sit
 

@@ -279,6 +279,8 @@ def _nodes_per_cell(space, shape):
         return shape.NUM_QUADRATIC
     if bases.simplex_shape(shape):
         return comb(space.order + shape.DIMENSION, shape.DIMENSION)
+    if bases.wedge_shape(shape):
+        return comb(space.order + 2, 2) * (space.order + 1)
     return (space.order + 1) ** shape.DIMENSION
 
 

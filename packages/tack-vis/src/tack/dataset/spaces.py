@@ -182,7 +182,10 @@ def _interior_counts(cells, order, counts):
         n = cells.QUADRATIC_INTERIOR
         if order != 2:
             n = 1
-            if cells.NUM_POINTS == cells.DIMENSION + 1 and cells.DIMENSION >= 2:
+            if cells.NUM_POINTS == 6:
+                # A wedge: the triangle's interior times the segment's.
+                n = (order - 1) * (order - 1) * (order - 2) // 2
+            elif cells.NUM_POINTS == cells.DIMENSION + 1 and cells.DIMENSION >= 2:
                 for k in range(cells.DIMENSION):
                     n = n * (order - 1 - k) // (k + 1)
             else:
@@ -248,10 +251,33 @@ def _simplex_tables(space, group, dtype):
     return cache[key]
 
 
+def _wedge_tables(space, group, dtype):
+    """A wedge basis' arrays: its nodes' integer coordinates and Bernstein matrix
+    (``bases.wedge_lattice``, ``wedge_bernstein``) in ``dtype``, and where each node's
+    value lives (``bases.dof_tables``)."""
+    key = (group.shape, "wedge", dtype)
+    cache = space.__dict__.setdefault("_tables", {})
+    if key not in cache:
+        def device(values, kind):
+            values = np.asarray(values).reshape(-1)
+            out = tack.empty((len(values),), kind)
+            tack.copyto(out, values.astype(kind.numpy_dtype))
+            return out
+
+        kind, entity, a, b, corner = bases.dof_tables(group.shape, space.order)
+        cache[key] = {"wedge_ijk": device(bases.wedge_lattice(space.order), tack.i32),
+                      "wedge_bernstein": device(bases.wedge_bernstein(space.order), dtype),
+                      "node_kind": device(kind, tack.i32), "node_entity": device(entity, tack.i32),
+                      "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
+                      "corner_node": device(corner, tack.i32)}
+    return cache[key]
+
+
 def _refuse_simplex_nodes(space, shape):
-    """Simplices above order 2 have equispaced nodes only (round 2): any other
-    family is refused, with the remedy."""
-    if bases.simplex_shape(shape) and space.order > 2 and space.nodes != "equispaced":
+    """Simplices and wedges above order 2 have equispaced nodes only (round 2): any
+    other family is refused, with the remedy."""
+    if (bases.simplex_shape(shape) or bases.wedge_shape(shape)) and space.order > 2 \
+            and space.nodes != "equispaced":
         raise NotImplementedError(
             f"{type(space).__name__} of order {space.order} on {shape.__name__} cells has "
             f"equispaced nodes only (VTK's and gmsh's), not {space.nodes!r}: pass "
@@ -281,9 +307,10 @@ class H1(Space):
     hexahedra and voxels (``tack.dataset.bases``): ``order - 1`` values per edge,
     ``(order - 1)^2`` per quad face and ``(order - 1)^d`` per cell, on the 1D
     ``nodes`` ``"gauss_lobatto"`` (the default) or ``"equispaced"``, which agree
-    up to order 2; and on triangles and tetrahedra with ``nodes="equispaced"``
-    (VTK's and gmsh's): ``(order - 1)(order - 2) / 2`` per triangle face or
-    triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per tetrahedron."""
+    up to order 2; and on triangles, tetrahedra and wedges with
+    ``nodes="equispaced"`` (VTK's and gmsh's): ``(order - 1)(order - 2) / 2`` per
+    triangle face or triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per
+    tetrahedron, ``(order - 1)^2 (order - 2) / 2`` per wedge."""
 
     on = "points"
     interpolated = True
@@ -324,7 +351,7 @@ class H1(Space):
                     raise NotImplementedError(
                         f"H1 order {p} on {group.shape.__name__} cells is not supported "
                         "yet; orders above 2 are on segments, quads, pixels, hexahedra, "
-                        "voxels, triangles and tetrahedra")
+                        "voxels, triangles, tetrahedra and wedges")
                 _refuse_simplex_nodes(self, group.shape)
             dims = {g.shape.DIMENSION for g in topology.groups() if g.count}
             edges = topology.edges() if dims - {1} else None
@@ -385,6 +412,8 @@ class H1(Space):
                                   face_start=faces.group_starts[root])
             if self.order > 2 and bases.simplex_shape(group.shape):
                 attributes.update(_simplex_tables(self, group, dtype or tack.f32))
+            elif self.order > 2 and bases.wedge_shape(group.shape):
+                attributes.update(_wedge_tables(self, group, dtype or tack.f32))
             elif self.order > 2 or (self.order == 2 and bases.tensor_shape(group.shape)):
                 # Order 2 on tensor shapes: for a curved geometry's tensor views.
                 attributes.update(_basis_tables(self, group, dtype or tack.f32))
@@ -404,6 +433,8 @@ class H1(Space):
             return views._PolylinePointField
         if self.order > 2 and bases.simplex_shape(shape):
             return views.of_simplex_order(views._H1SimplexField, self.order, shape.DIMENSION)
+        if self.order > 2 and bases.wedge_shape(shape):
+            return views.of_wedge_order(views._H1WedgeField, self.order)
         return self.mixin
 
     def extra_mixins(self, group):
@@ -416,6 +447,8 @@ class H1(Space):
             return (*incidence, views.quadratic_faces(shape))
         if bases.simplex_shape(shape):
             return (*incidence, *views.simplex_mixins(shape))
+        if bases.wedge_shape(shape):
+            return (*incidence, *views.wedge_mixins(shape))
         return (*incidence, *views.tensor_mixins(shape))
 
 
@@ -431,7 +464,9 @@ def _tensor_counts(cells, order, counts):
     # (p + 1)^d a tensor cell's nodes, C(p + d, d) a simplex's.
     for c in cells:
         n = 1
-        if cells.NUM_POINTS == cells.DIMENSION + 1 and cells.DIMENSION >= 2:
+        if cells.NUM_POINTS == 6:
+            n = (order + 1) * (order + 2) // 2 * (order + 1)       # a wedge
+        elif cells.NUM_POINTS == cells.DIMENSION + 1 and cells.DIMENSION >= 2:
             for k in range(cells.DIMENSION):
                 n = n * (order + 1 + k) // (k + 1)
         else:
@@ -455,9 +490,9 @@ class L2(Space):
     pixels, hexahedra and voxels (``tack.dataset.bases``): ``(order + 1)^d`` values
     a cell in node order, the first axis fastest, on the 1D ``nodes``
     ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``;
-    and from order 2 on triangles and tetrahedra with ``nodes="equispaced"``:
-    each cell's ``C(order + d, d)`` values at ``bases.simplex_lattice``'s nodes,
-    always in blocks.
+    and from order 2 on triangles, tetrahedra and wedges with
+    ``nodes="equispaced"``: each cell's values at its lattice's nodes
+    (``bases.lattice_ijk``), always in blocks.
 
     ``layout`` says how a tensor basis' values are stored: ``"blocks"``, each
     cell's together (value ``n`` of cell ``c`` at ``offsets[c] + n``: MFEM's and
@@ -508,10 +543,11 @@ class L2(Space):
         asked = self.params.get("layout", "auto")
         if not self.tensor:
             return "blocks"
-        if asked == "cells" and any(g.count and bases.simplex_shape(g.shape)
+        if asked == "cells" and any(g.count and (bases.simplex_shape(g.shape)
+                                                 or bases.wedge_shape(g.shape))
                                     for g in self.topology.groups()):
-            raise ValueError("a cell-fastest layout is for tensor bases; L2 on triangles and "
-                             "tetrahedra is stored in blocks")
+            raise ValueError("a cell-fastest layout is for tensor bases; L2 on triangles, "
+                             "tetrahedra and wedges is stored in blocks")
         if asked != "auto":
             return asked
         forced = os.environ.get("TACK_L2_LAYOUT", "")
@@ -527,7 +563,8 @@ class L2(Space):
         dimension, none a simplex (cell-fastest is for tensor bases)."""
         groups = [g for g in self.topology.groups() if g.count]
         return (len({g.shape.DIMENSION for g in groups}) <= 1
-                and not any(bases.simplex_shape(g.shape) for g in groups))
+                and not any(bases.simplex_shape(g.shape) or bases.wedge_shape(g.shape)
+                            for g in groups))
 
     def indices(self):
         """A host ``(num_cells, values a cell)`` array: where each cell's value ``n`` is
@@ -570,6 +607,8 @@ class L2(Space):
     def mixin_for(self, key, shape=None):
         if self.tensor and bases.simplex_shape(shape):
             return views.of_simplex_order(views._L2SimplexField, self.order, shape.DIMENSION)
+        if self.tensor and bases.wedge_shape(shape):
+            return views.of_wedge_order(views._L2WedgeField, self.order)
         if self.tensor:
             return self.mixin
         order = key if self.varies else self.order
@@ -616,11 +655,12 @@ class L2(Space):
             elif self.tensor:
                 for group in topology.groups():
                     if group.count and not (bases.tensor_shape(group.shape) or (
-                            bases.simplex_shape(group.shape) and self.order >= 2)):
+                            (bases.simplex_shape(group.shape) or bases.wedge_shape(group.shape))
+                            and self.order >= 2)):
                         raise NotImplementedError(
                             f"{self!r} on {group.shape.__name__} cells is not supported "
                             "yet; it is on segments, quads, pixels, hexahedra and voxels, "
-                            "and from order 2 on triangles and tetrahedra")
+                            "and from order 2 on triangles, tetrahedra and wedges")
                     if group.count:
                         _refuse_simplex_nodes(self, group.shape)
                 counts = tack.empty((n,), tack.i32)
@@ -660,6 +700,8 @@ class L2(Space):
         attributes = {"offsets": self.offsets}
         if self.tensor and group is not None and bases.simplex_shape(group.shape):
             attributes.update(_simplex_tables(self, group, dtype or tack.f32))
+        elif self.tensor and group is not None and bases.wedge_shape(group.shape):
+            attributes.update(_wedge_tables(self, group, dtype or tack.f32))
         elif self.tensor and group is not None:
             attributes.update(_basis_tables(self, group, dtype or tack.f32))
         if self.layout == "cells":

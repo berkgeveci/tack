@@ -22,3 +22,6 @@
   triangles and tetrahedra of any order: closed-uniform values copied, MFEM's
   default bases evaluated at Tack's equispaced nodes, exactly; curved MFEM
   simplex meshes come across as curved geometry.
+- Wedges of any order (equispaced): `H1` and `L2`, curved wedge geometry,
+  subdivision for `contour`, `slice` and `subdivide` (Freudenthal's triangles
+  in layers), VTK's Lagrange wedges both ways, and MFEM's wedges.

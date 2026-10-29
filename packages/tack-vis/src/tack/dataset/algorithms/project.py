@@ -176,6 +176,8 @@ def _onto_nodes(data, field, space, values):
         per_cell = (group.shape.NUM_QUADRATIC if space.order == 2
                     else comb(space.order + group.shape.DIMENSION, group.shape.DIMENSION)
                     if bases.simplex_shape(group.shape)
+                    else comb(space.order + 2, 2) * (space.order + 1)
+                    if bases.wedge_shape(group.shape)
                     else (space.order + 1) ** group.shape.DIMENSION)
         total += group.count * per_cell
     idt = ids.at_least(data.id_dtype, space.size)
@@ -185,7 +187,8 @@ def _onto_nodes(data, field, space, values):
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
             kernel = (_node_contributions if space.order == 2
-                      else _simplex_node_contributions if bases.simplex_shape(group.shape)
+                      else _simplex_node_contributions
+                      if bases.simplex_shape(group.shape) or bases.wedge_shape(group.shape)
                       else _tensor_node_contributions)
             kernel(data.domain_view("cells", group), field.view(group), target.view(group),
                    starts[group.root], keys, contributions)
