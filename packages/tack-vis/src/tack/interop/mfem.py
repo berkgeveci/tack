@@ -34,6 +34,10 @@ Each grid function becomes a field in the space its collection matches:
   reference cell, and a shared node is every element's, which is checked. On
   any other basis (Bernstein, open uniform) the function is evaluated at Tack's
   Gauss-Lobatto nodes, the same polynomials, so exactly.
+- The same on triangles and tetrahedra, whose Tack nodes are equispaced: MFEM's
+  closed uniform values are copied (matched by reference coordinates), and any
+  other basis -- MFEM's default Gauss-Lobatto-based simplex nodes for ``H1``,
+  Gauss-Legendre for ``L2`` -- is evaluated at Tack's equispaced lattice.
 
 A curved mesh gets a geometry of its nodes' order the same way. Vector grid
 functions (``vdim > 1``) become fields of vectors, in either ordering.
@@ -235,6 +239,19 @@ def _lexicographic(fes, element, nodes, order):
     fe = fes.GetFE(element)
     rule = fe.GetNodes()
     dim = fe.GetDim()
+    simplex = _simplex_lattice_of(fe, order)
+    if simplex is not None:
+        # A triangle's or tetrahedron's nodes: equispaced, matched to Tack's lattice.
+        number = {tuple(row): n for n, row in enumerate(simplex.tolist())}
+        lex = np.empty(rule.GetNPoints(), np.int64)
+        for k in range(rule.GetNPoints()):
+            point = rule.IntPoint(k)
+            at = np.array([point.x, point.y, point.z][:dim]) * order
+            steps = tuple(int(v) for v in np.rint(at))
+            if np.abs(at - steps).max() > 1e-9 or steps not in number:
+                raise AssertionError("MFEM's simplex nodes are not equispaced")
+            lex[k] = number[steps]
+        return lex
     q = order + 1
     lex = np.empty(rule.GetNPoints(), np.int64)
     for k in range(rule.GetNPoints()):
@@ -247,11 +264,21 @@ def _lexicographic(fes, element, nodes, order):
     return lex
 
 
+def _simplex_lattice_of(fe, order):
+    """Tack's lattice of ``order`` for an MFEM triangle or tetrahedron element, else
+    ``None``: MFEM's reference simplices are Tack's (corners at the origin and the
+    unit points)."""
+    from tack.dataset import bases, shapes
+
+    shape = {2: shapes.Triangle, 4: shapes.Tetra}.get(fe.GetGeomType())
+    return bases.simplex_lattice(shape, order) if shape is not None else None
+
+
 def _element_dofs(fes, nodes, order):
-    """``(ne, (p + 1)^d)``: each element's MFEM DOF at each of Tack's nodes."""
+    """``(ne, nodes a cell)``: each element's MFEM DOF at each of Tack's nodes."""
     m = _mfem()
     ne = fes.GetNE()
-    q = (order + 1) ** fes.GetFE(0).GetDim() if ne else 0
+    q = fes.GetFE(0).GetDof() if ne else 0
     out = np.empty((ne, q), np.int64)
     lex = {}
     dofs = m.intArray()
@@ -265,12 +292,19 @@ def _element_dofs(fes, nodes, order):
 
 
 def _check_tensor(data, what):
+    """Cells of one family Tack has bases of any order on: tensor shapes, or
+    triangles and tetrahedra. Returns whether they are simplices."""
     from tack.dataset import bases
 
-    for group in data.topology.groups():
-        if group.count and not bases.tensor_shape(group.shape):
-            raise NotImplementedError(f"{what} is on segments, quads and hexahedra here, "
-                                      f"not {group.shape.__name__} cells")
+    groups = [g for g in data.topology.groups() if g.count]
+    for group in groups:
+        if not bases.has_bases(group.shape):
+            raise NotImplementedError(f"{what} is on segments, quads, hexahedra, triangles "
+                                      f"and tetrahedra here, not {group.shape.__name__} cells")
+    families = {bases.simplex_shape(g.shape) for g in groups}
+    if len(families) > 1:
+        raise NotImplementedError(f"{what} takes simplices or tensor shapes, not both")
+    return families.pop() if families else False
 
 
 def _tensor_values(data, mesh, gf, family, order):
@@ -281,14 +315,18 @@ def _tensor_values(data, mesh, gf, family, order):
     polynomials, so exactly)."""
     from tack.dataset import H1, L2, bases
 
-    _check_tensor(data, f"MFEM {family} order {order}")
+    simplex = _check_tensor(data, f"MFEM {family} order {order}")
     fes = gf.FESpace()
     nodes = _nodes_of(fes)
-    space = (H1 if family == "H1" else L2)(data, order=order,
-                                           nodes=nodes or "gauss_lobatto")
+    if simplex and nodes != "equispaced":
+        nodes = None                  # Tack's simplices are equispaced: evaluate there
+    space = (H1 if family == "H1" else L2)(
+        data, order=order, nodes=nodes or ("equispaced" if simplex else "gauss_lobatto"))
     n = data.num_cells
     dim = data.topology.dimension
-    per_cell = (order + 1) ** dim
+    from math import comb
+
+    per_cell = comb(order + dim, dim) if simplex else (order + 1) ** dim
     if family == "H1":
         indices = _h1_indices(data, space, per_cell)
     else:
@@ -304,15 +342,21 @@ def _tensor_values(data, mesh, gf, family, order):
             raise AssertionError("MFEM's and Tack's numberings of a shared node disagree")
         return space, out
     m = _mfem()
-    x = bases.nodes("gauss_lobatto", order)
-    q = order + 1
+    if simplex:
+        lattice = bases.lattice_ijk(next(g.shape for g in data.topology.groups() if g.count),
+                                    order) / order
+        points = np.c_[lattice, np.zeros((len(lattice), 3 - dim))]
+    else:
+        x = bases.nodes("gauss_lobatto", order)
+        q = order + 1
+        points = [[x[k % q], x[(k // q) % q] if dim >= 2 else 0.0,
+                   x[k // (q * q)] if dim == 3 else 0.0] for k in range(per_cell)]
     out = np.zeros((space.size, vdim))
     vector = m.Vector(vdim)
     ip = m.IntegrationPoint()
     for e in range(n):
         for k in range(per_cell):
-            at = [x[k % q], x[(k // q) % q] if dim >= 2 else 0.0,
-                  x[k // (q * q)] if dim == 3 else 0.0]
+            at = [float(v) for v in points[k]]
             ip.Set3(*at)
             if vdim == 1:
                 out[indices[e, k], 0] = gf.GetValue(e, ip)
@@ -337,9 +381,9 @@ def mfem_grid_function(data, field, mesh, fes=None):
     space = field.space
     if not isinstance(space, (H1, L2)) or space.varies:
         raise NotImplementedError(f"an MFEM grid function of {space!r} is not supported")
-    _check_tensor(data, "mfem_grid_function")
+    simplex = _check_tensor(data, "mfem_grid_function")
     order = space.order
-    family = space.nodes or "gauss_lobatto"
+    family = space.nodes or ("equispaced" if simplex else "gauss_lobatto")
     if isinstance(space, L2) and order <= 1 and not space.tensor:
         raise NotImplementedError("L2 of corner values (order 0 and 1) has no MFEM basis "
                                   "of its own: project it into L2 on Gauss-Legendre nodes")
@@ -357,7 +401,9 @@ def mfem_grid_function(data, field, mesh, fes=None):
     if _nodes_of(fes) != family:
         raise ValueError(f"the MFEM space's nodes are not the field's ({family})")
     n = data.num_cells
-    per_cell = (order + 1) ** dim
+    from math import comb
+
+    per_cell = comb(order + dim, dim) if simplex else (order + 1) ** dim
     if isinstance(space, H1):
         indices = _h1_indices(data, space, per_cell).reshape(-1)
     else:

@@ -276,10 +276,11 @@ or for a filter that takes linear cells only:
 --8<-- "docs/examples/data_high_order.py:curved"
 ```
 
-MFEM fields of any order on quads and hexahedra come across through
-`tack.interop.mfem`, and VTK's Lagrange cells through `vtk_to_dataset`
-(`dataset_to_vtk(..., higher_order=True)` writes them). Other shapes stop at
-order 2 for now.
+MFEM fields of any order on quads, hexahedra, triangles and tetrahedra come
+across through `tack.interop.mfem`, and VTK's Lagrange cells (curves, quads,
+hexahedra, triangles, tetrahedra) through `vtk_to_dataset`
+(`dataset_to_vtk(..., higher_order=True)` writes them). Wedges and pyramids stop
+at order 2 for now.
 
 ### Where a cell's values sit
 

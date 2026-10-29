@@ -1,6 +1,10 @@
-"""VTK's Lagrange cells -- ``VTK_LAGRANGE_CURVE``, ``VTK_LAGRANGE_QUADRILATERAL`` and
-``VTK_LAGRANGE_HEXAHEDRON`` -- as Tack's tensor bases on equispaced nodes, both
-ways.
+"""VTK's Lagrange cells -- ``VTK_LAGRANGE_CURVE``, ``VTK_LAGRANGE_QUADRILATERAL``,
+``VTK_LAGRANGE_HEXAHEDRON``, ``VTK_LAGRANGE_TRIANGLE`` and ``VTK_LAGRANGE_TETRAHEDRON``
+-- as Tack's bases on equispaced nodes, both ways. A triangle's or tetrahedron's
+``C(p + d, d)`` nodes are VTK's in its recursive order (corners, edges, faces,
+interior), matched to Tack's simplex lattice (``bases.simplex_lattice``) by the
+parametric coordinates VTK gives each (``GetParametricCoords``), on the same
+reference cell.
 
 A Lagrange cell of order ``p`` lists its ``(p + 1)^d`` nodes in VTK's order
 (corners, then edge, face and interior nodes; ``vtkLagrangeHexahedron
@@ -16,8 +20,36 @@ import numpy as np
 import tack
 
 #: VTK type: (Tack's linear shape, dimension).
-LAGRANGE = {68: ("Line", 1), 70: ("Quad", 2), 72: ("Hexahedron", 3)}
-_LINEAR = {68: 3, 70: 9, 72: 12}
+LAGRANGE = {68: ("Line", 1), 70: ("Quad", 2), 72: ("Hexahedron", 3),
+            69: ("Triangle", 2), 71: ("Tetra", 3)}
+_LINEAR = {68: 3, 70: 9, 72: 12, 69: 5, 71: 10}
+_SIMPLEX = (69, 71)
+
+
+def _simplex_vtk_index(vtk_type, order):
+    """For each of Tack's simplex nodes (``bases.simplex_lattice``), its place in a VTK
+    Lagrange triangle or tetrahedron of ``order``: matched by VTK's own parametric
+    coordinates for each of its points."""
+    from math import comb
+
+    from vtkmodules.vtkCommonDataModel import vtkLagrangeTetra, vtkLagrangeTriangle
+
+    from tack.dataset import bases, shapes
+
+    dimension = LAGRANGE[vtk_type][1]
+    count = comb(order + dimension, dimension)
+    cell = vtkLagrangeTetra() if vtk_type == 71 else vtkLagrangeTriangle()
+    cell.GetPointIds().SetNumberOfIds(count)
+    cell.GetPoints().SetNumberOfPoints(count)
+    cell.Initialize()
+    pcoords = np.asarray(cell.GetParametricCoords(), np.float64).reshape(-1, 3)[:, :dimension]
+    steps = np.rint(pcoords * order).astype(np.int64)
+    lattice = bases.simplex_lattice(shapes.Triangle if vtk_type == 69 else shapes.Tetra, order)
+    place = {tuple(row): k for k, row in enumerate(steps.tolist())}
+    out = np.array([place[tuple(row)] for row in lattice.tolist()], np.int64)
+    if sorted(out.tolist()) != list(range(count)):
+        raise AssertionError(f"VTK's Lagrange nodes of order {order} are not the lattice's")
+    return out
 
 
 def _vtk_index(vtk_type, order):
@@ -25,6 +57,8 @@ def _vtk_index(vtk_type, order):
     Lagrange cell of ``order``."""
     from vtkmodules.vtkCommonDataModel import vtkLagrangeHexahedron, vtkLagrangeQuadrilateral
 
+    if vtk_type in _SIMPLEX:
+        return _simplex_vtk_index(vtk_type, order)
     q = order + 1
     if vtk_type == 72:
         return np.array([vtkLagrangeHexahedron.PointIndexFromIJK(i, j, k, [order] * 3)
@@ -39,7 +73,15 @@ def _vtk_index(vtk_type, order):
 
 def lagrange_order(vtk_type, count):
     """The order of a ``vtk_type`` Lagrange cell of ``count`` nodes."""
+    from math import comb
+
     dimension = LAGRANGE[vtk_type][1]
+    if vtk_type in _SIMPLEX:
+        order = next((p for p in range(64) if comb(p + dimension, dimension) >= count), -1)
+        if comb(order + dimension, dimension) != count:
+            raise ValueError(f"a Lagrange simplex of {count} nodes has no order in "
+                             f"{dimension}D")
+        return order
     order = round(count ** (1.0 / dimension)) - 1
     if (order + 1) ** dimension != count:
         raise ValueError(f"a Lagrange cell of {count} nodes has no order in {dimension}D")
@@ -66,7 +108,8 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
     order = lagrange_order(vtk_type, int(counts[0]))
     per_cell = int(counts[0])
     rows = connectivity.reshape(n, per_cell)
-    corners_of = 2 ** LAGRANGE[vtk_type][1]
+    corners_of = (LAGRANGE[vtk_type][1] + 1 if vtk_type in _SIMPLEX
+                  else 2 ** LAGRANGE[vtk_type][1])
     corner_ids, compact = np.unique(rows[:, :corners_of], return_inverse=True)
     points = np.asarray(grid.points.data, np.float64)
     types_, cell_offsets = uniform_cells(_LINEAR[vtk_type], n, tack.i64)
@@ -120,9 +163,11 @@ def tensor_order(data):
     above order 1 or other cells."""
     from tack.dataset import H1, shapes
 
-    allowed = {shapes.Line, shapes.Quad, shapes.Hexahedron, shapes.Pixel, shapes.Voxel}
+    tensor = {shapes.Line, shapes.Quad, shapes.Hexahedron, shapes.Pixel, shapes.Voxel}
+    simplex = {shapes.Triangle, shapes.Tetra}
     groups = [g for g in data.topology.groups() if g.count]
-    if not groups or any(g.shape not in allowed for g in groups) or \
+    kinds = {g.shape for g in groups}
+    if not groups or not (kinds <= tensor or kinds <= simplex) or \
             len({g.shape.DIMENSION for g in groups}) != 1:
         return 1
     orders = [f.space.order for f in [data.geometry, *data.fields.values()]
@@ -135,16 +180,20 @@ def to_vtk(data, order):
     nodes of ``H1(order)`` (each shared node once), the geometry and ``H1``
     fields evaluated there (exact for a field of that order or below), cell
     fields as cell data."""
+    from math import comb
+
     from vtkmodules.vtkCommonCore import vtkPoints
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
 
-    from tack.dataset import H1, Constant, Values, project
+    from tack.dataset import H1, Constant, Values, bases, project
     from tack.interop.mfem import _h1_indices
 
     shape = next(g.shape for g in data.topology.groups() if g.count)
-    vtk_type = {1: 68, 2: 70, 3: 72}[shape.DIMENSION]
+    simplex = bases.simplex_shape(shape)
+    vtk_type = ({2: 69, 3: 71} if simplex else {1: 68, 2: 70, 3: 72})[shape.DIMENSION]
     space = H1(data, order=order, nodes="equispaced")
-    per_cell = (order + 1) ** shape.DIMENSION
+    per_cell = (comb(order + shape.DIMENSION, shape.DIMENSION) if simplex
+                else (order + 1) ** shape.DIMENSION)
     indices = _h1_indices(data, space, per_cell)
     vtk_to_lex = np.argsort(_vtk_index(vtk_type, order))
     connectivity = indices[:, vtk_to_lex].reshape(-1)

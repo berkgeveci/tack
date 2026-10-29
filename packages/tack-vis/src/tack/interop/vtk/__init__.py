@@ -1248,9 +1248,10 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     topology's faces -- is copied as before.
 
     With ``higher_order``, a dataset of segments, quads or hexahedra (pixels and
-    voxels too) whose geometry or an ``H1`` field is above order 1 becomes VTK
-    Lagrange cells (``VTK_LAGRANGE_CURVE``, ``_QUADRILATERAL``,
-    ``_HEXAHEDRON``) of the largest order: points at the equispaced nodes of
+    voxels too), or of triangles or tetrahedra, whose geometry or an ``H1`` field
+    is above order 1 becomes VTK Lagrange cells (``VTK_LAGRANGE_CURVE``,
+    ``_QUADRILATERAL``, ``_HEXAHEDRON``, ``_TRIANGLE``, ``_TETRAHEDRON``) of the
+    largest order: points at the equispaced nodes of
     ``H1`` of that order, each shared node once, the geometry and ``H1`` fields
     evaluated there (exact for fields of that order or below), cell fields as
     cell data. ``vtk_to_dataset`` reads such a grid back into those spaces."""

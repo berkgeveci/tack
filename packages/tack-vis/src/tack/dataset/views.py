@@ -1944,6 +1944,16 @@ class _SimplexPolynomials:
         return a
 
     @tack.func
+    def node_parametric(self, n):
+        """Node ``n``'s parametric coordinates, ``(i, j, k) / ORDER`` in the basis' float
+        type."""
+        zero = self.simplex_bernstein[0] - self.simplex_bernstein[0]
+        pc = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(self.DIMENSION):
+            pc[k] = (zero + self.simplex_ijk[n * self.DIMENSION + k]) / self.ORDER
+        return pc
+
+    @tack.func
     def simplex_weight(self, n, f):
         q = self.ORDER + 1
         w = f[self.simplex_alpha(n, 0)]

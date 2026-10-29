@@ -17,3 +17,8 @@
   advection, and subdivided by `subdivide`, `contour` and `slice` (order 2's
   curved simplices too), each shared lattice point from its edge's or face's
   own nodes.
+- VTK's Lagrange triangles and tetrahedra, both ways
+  (`dataset_to_vtk(..., higher_order=True)`, `vtk_to_dataset`), and MFEM's
+  triangles and tetrahedra of any order: closed-uniform values copied, MFEM's
+  default bases evaluated at Tack's equispaced nodes, exactly; curved MFEM
+  simplex meshes come across as curved geometry.
