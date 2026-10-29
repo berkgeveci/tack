@@ -32,8 +32,8 @@ import numpy as np
 
 from tack.dataset import shapes
 
-__all__ = ["FAMILIES", "bernstein", "dof_tables", "nodes", "tensor_shape", "view_order",
-           "weights"]
+__all__ = ["FAMILIES", "bernstein", "dof_tables", "entity_nodes", "nodes", "tensor_shape",
+           "view_index", "view_order", "weights"]
 
 FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre")
 #: The families with nodes at the ends, which shared values need.
@@ -226,3 +226,51 @@ def view_order(shape, order):
                      shape.NUM_POINTS + shape.NUM_EDGES + e - first_face if k == FACE else
                      shape.NUM_POINTS + shape.NUM_EDGES + shape.QUADRATIC_FACES
                      for k, e in zip(kind, entity)], np.int32)
+
+
+@functools.cache
+def entity_nodes(shape, order):
+    """A ``shape`` cell's nodes of ``order`` on each of its edges and quad faces, as
+    lexicographic node numbers: ``(edges, faces)``, ``edges[e, j]`` the ``j``-th node
+    from local edge ``e``'s corner 0 to its corner 1, ``faces[f, a + (order + 1) *
+    b]`` node ``(a, b)`` of local face ``f`` from its corner 0, ``a`` toward its corner 1
+    and ``b`` toward its corner 3. A field's values on an edge or face are its trace
+    there, which these name."""
+    if shape not in _SHAPES:
+        raise NotImplementedError(f"no tensor nodes on {shape.__name__}")
+    corners, edge_table, face_table = _SHAPES[shape]
+    p = int(order)
+    q = p + 1
+    d = len(corners[0])
+
+    def number(coordinates):
+        return sum(int(c) * q ** axis for axis, c in enumerate(coordinates))
+
+    def at(c0, toward, step):
+        return [corners[c0][i] * p + (corners[toward][i] - corners[c0][i]) * step
+                for i in range(d)]
+
+    edges = np.array([[number(at(c0, c1, j)) for j in range(q)]
+                      for c0, c1 in (_pairs(edge_table, 2) if len(edge_table) else [])],
+                     np.int32).reshape(-1, q)
+    faces = []
+    for row in (_pairs(face_table, 4) if len(face_table) else []):
+        nodes = []
+        for b in range(q):
+            for a in range(q):
+                c = [corners[row[0]][i] * p + (corners[row[1]][i] - corners[row[0]][i]) * a
+                     + (corners[row[3]][i] - corners[row[0]][i]) * b for i in range(d)]
+                nodes.append(number(c))
+        faces.append(nodes)
+    faces = np.array(faces, np.int32).reshape(-1, q * q)
+    edges.setflags(write=False)
+    faces.setflags(write=False)
+    return edges, faces
+
+
+def view_index(shape, order):
+    """Lexicographic node ``n``'s number in an ``H1`` view of ``order``'s ``dof(c, k)``:
+    at order 1 the corner it is (point data reads corners), else ``view_order``."""
+    if order == 1:
+        return np.asarray(dof_tables(shape, 1)[1], np.int32)
+    return view_order(shape, order)

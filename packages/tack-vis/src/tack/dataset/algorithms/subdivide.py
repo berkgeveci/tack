@@ -5,10 +5,19 @@ only the cells that can hold the cut (``_refined``).
 
 A lattice point on a cell's edge, face or corner is shared with the cells around
 it: its id is a node of the equispaced ``H1`` space of order ``level``, numbered
-by entity, so every cell names it alike. Each is evaluated once, by the first of
-the cells refined that holds it (a stable sort of the ids), so a continuous
-field and the geometry have one value there, to the bit, and cuts through
-neighbouring cells meet without cracks. No atomics, no tolerance.
+by entity, so every cell names it alike. Each is evaluated once (a stable sort of
+the ids), so a continuous field and the geometry have one value there, to the
+bit, and cuts through neighbouring cells meet without cracks. No atomics, no
+tolerance.
+
+The same holds across pieces. A point on an edge or face is computed from that
+entity's own values (a continuous field's trace there), in a frame its corners'
+positions fix, so every piece holding any cell around it gets the same bits; a
+corner is the stored corner; the rest (an interior point, an ``L2`` field) by the
+cell every piece chooses alike, the lowest global id or the first centroid by
+position. With ghost marks, each lattice point is marked as ``carry`` marks a
+point it makes (``_lattice_marks``) and each sub-cell takes its parent's, so each
+piece's cut is its share of the whole's.
 """
 
 import numpy as np
@@ -20,6 +29,7 @@ from tack.algorithms.sort import argsort
 from tack.arrays import ConstantArray, size_of
 from tack.dataset import bases, ids, shapes
 from tack.dataset.dataset import Field, for_each
+from tack.dataset.ghosts import _before
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import UnstructuredTopology, uniform_cells
 from tack.runtime.dispatch import on_inputs_device
@@ -94,12 +104,10 @@ def _corner_keys(cells, slot_of, corner_of, keys):
 
 
 @tack.kernel
-def _runs(keys, order, first):
-    # first[k]: whether element k comes first among those of its id (in the
-    # stable order: the lowest slot).
+def _run_starts(keys, order, starts):
+    # starts[i]: whether sorted position i begins a run of one lattice point's ids.
     for i in range(order.shape[0]):
-        k = order[i]
-        first[k] = 1 if i == 0 or keys[order[i - 1]] != keys[k] else 0
+        starts[i] = 1 if i == 0 or keys[order[i - 1]] != keys[order[i]] else 0
 
 
 @tack.kernel
@@ -109,10 +117,86 @@ def _ranks(order, starts, numbers, rank):
         rank[order[i]] = numbers[i] + starts[i] - 1
 
 
+@tack.func
+def _ahead(a, b):
+    # Whether cell rank a comes before b: by x, then y, then z of a cell's
+    # centroid (or a global id in x alone), the same in every piece.
+    return a[0] < b[0] or (a[0] == b[0] and (a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])))
+
+
 @tack.kernel
-def _starts(order, first, starts):
-    for i in range(order.shape[0]):
-        starts[i] = first[order[i]]
+def _evaluators(order, starts, per_cell, cell_rank, first):
+    # Each lattice point's evaluating cell: among the refined cells holding it,
+    # the first by cell_rank (a global id, or the centroid by position), which
+    # every piece holding those cells chooses alike -- so a shared point, and a
+    # cut through it, are the same bits in every piece.
+    total = order.shape[0]
+    for i in range(total):
+        if starts[i] == 1:
+            best = order[i]
+            j = i + 1
+            while j < total and starts[j] == 0:
+                k = order[j]
+                if _ahead(cell_rank[k // per_cell], cell_rank[best // per_cell]):
+                    best = k
+                j += 1
+            first[best] = 1
+
+
+@tack.kernel
+def _centroid_ranks(cells, slot_of, out):
+    # A refined cell's rank: its centroid, the sum of its corners in its own
+    # order, which every copy of the cell holds alike.
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            x = cells.corner_position(c, 0)
+            for j in range(1, cells.NUM_POINTS):
+                x += cells.corner_position(c, j)
+            out[slot] = x
+
+
+@tack.kernel
+def _id_ranks(gids, chosen, out):
+    # A global id as two parts below 2^20 each, exact in f32 too (Metal has no f64).
+    for slot in range(out.shape[0]):
+        gid = gids[chosen[slot]]
+        high = gid // 1048576
+        out[slot] = [high, gid - high * 1048576, 0]
+
+
+@tack.kernel
+def _lattice_marks(cells, slot_of, per_cell, node_kind, node_entity, first, rank,
+                   point_marks, cell_marks, out):
+    # A lattice point's ghost mark, as carry gives a point it makes: a corner its
+    # point's; inside an input edge or quad face, its first corner by position's
+    # (DUPLICATEPOINT alone); inside a cell, the cell's (DUPLICATECELL as
+    # DUPLICATEPOINT, HIDDENCELL as HIDDENPOINT).
+    for c in cells:
+        e = cells.entity_id(c)
+        slot = slot_of[e]
+        if slot >= 0:
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                if first[k] == 1:
+                    kind = node_kind[n]
+                    m = node_entity[n]
+                    if kind == 0:
+                        out[rank[k]] = point_marks[cells.point_id(c, m)]
+                    elif kind == 3:
+                        cm = cell_marks[e]
+                        out[rank[k]] = (cm & 1) | (2 if (cm & 32) != 0 else 0)
+                    else:
+                        s = cells.edge_corner(m, 0)
+                        count = 2
+                        if kind == 2:
+                            s = cells.face_corner(m, 0)
+                            count = 4
+                        for j in range(1, count):
+                            t = cells.edge_corner(m, j) if kind == 1 else cells.face_corner(m, j)
+                            if _before(cells.corner_position(c, t), cells.corner_position(c, s)):
+                                s = t
+                        out[rank[k]] = point_marks[cells.point_id(c, s)] & 1
 
 
 @tack.func
@@ -159,6 +243,196 @@ def _values(cells, u, slot_of, per_cell, level, steps, corner_at, first, rank, o
                                                                  steps))
 
 
+# ── Shared lattice points from their edge's or face's own data ───────
+#
+# A continuous field's trace on an edge depends on that edge's values alone, and on
+# a face on the face's: so a lattice point on an edge or face is computed from
+# them, in a frame its corners' positions fix (an edge from its first corner by
+# position; a face from its first corner, toward the first of that corner's two
+# neighbours), the same in every cell and every piece holding it, whatever cells
+# a piece holds -- as a linear contour's crossings are since #188.
+
+
+@tack.func
+def _lagrange(t, j, nodes, weights, q):
+    # The 1D Lagrange polynomial of node j (of q, at nodes) at t, barycentric.
+    v = weights[j]
+    for m in range(q):
+        if m != j:
+            v = v * (t - nodes[m])
+    return v
+
+
+@tack.func
+def _unit(k):
+    # Face corner k (in the face's own order) on the unit square.
+    return (1 if k == 1 or k == 2 else 0), (1 if k == 2 or k == 3 else 0)
+
+
+@tack.func
+def _face_frame(cells, c, f):
+    # (A, B, D): the face's first corner by position, the first of its two
+    # neighbours (the frame's first axis), the other (its second).
+    a = 0
+    for k in range(1, 4):
+        if _before(cells.corner_position(c, cells.face_corner(f, k)),
+                   cells.corner_position(c, cells.face_corner(f, a))):
+            a = k
+    b = (a + 1) % 4
+    d = (a + 3) % 4
+    if _before(cells.corner_position(c, cells.face_corner(f, d)),
+               cells.corner_position(c, cells.face_corner(f, b))):
+        b, d = d, b
+    return a, b, d
+
+
+@tack.func
+def _edge_step(cells, c, e, a, level):
+    # The lattice point's step from its edge's first corner by position, and
+    # whether that corner is the edge's corner 1 (its order reversed).
+    reversed_ = 0
+    if _before(cells.corner_position(c, cells.edge_corner(e, 1)),
+               cells.corner_position(c, cells.edge_corner(e, 0))):
+        reversed_ = 1
+    return (level - a if reversed_ == 1 else a), reversed_
+
+
+@tack.func
+def _face_steps(cells, c, f, a, b, level):
+    # The lattice point (a, b), from the face's corner 0, in the face's frame.
+    ka, kb, kd = _face_frame(cells, c, f)
+    ax, ay = _unit(ka)
+    bx, by = _unit(kb)
+    dx, dy = _unit(kd)
+    ua = a - ax * level
+    ub = b - ay * level
+    return ua * (bx - ax) + ub * (by - ay), ua * (dx - ax) + ub * (dy - ay), ka, kb, kd
+
+
+@tack.kernel
+def _trace_values(cells, u, slot_of, per_cell, level, steps, node_kind, node_entity, node_a,
+                  node_b, first, rank, edge_nodes, face_nodes, view_of, nodes, weights, q, out):
+    # An H1 field at the lattice points on edges and faces, from their own values.
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                kind = node_kind[n]
+                if first[k] == 1 and (kind == 1 or kind == 2):
+                    m = node_entity[n]
+                    if kind == 1:
+                        s, flip = _edge_step(cells, c, m, node_a[n], level)
+                        t = steps[s]
+                        j0 = q - 1 if flip == 1 else 0
+                        total = u.dof(c, view_of[edge_nodes[m * q + j0]]) * \
+                            _lagrange(t, 0, nodes, weights, q)
+                        for jp in range(1, q):
+                            j = q - 1 - jp if flip == 1 else jp
+                            total += u.dof(c, view_of[edge_nodes[m * q + j]]) * \
+                                _lagrange(t, jp, nodes, weights, q)
+                        out[rank[k]] = total
+                    else:
+                        sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
+                                                         level)
+                        ta = steps[sa]
+                        tb = steps[sb]
+                        ax, ay = _unit(ka)
+                        bx, by = _unit(kb)
+                        dx, dy = _unit(kd)
+                        p = q - 1
+                        total = u.dof(c, view_of[face_nodes[m * q * q + ax * p + q * (ay * p)]]) \
+                            * (_lagrange(ta, 0, nodes, weights, q)
+                               * _lagrange(tb, 0, nodes, weights, q))
+                        for i in range(1, q * q):
+                            jp = i % q
+                            kp = i // q
+                            fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
+                            fb = ay * p + jp * (by - ay) + kp * (dy - ay)
+                            total += u.dof(c, view_of[face_nodes[m * q * q + fa + q * fb]]) \
+                                * (_lagrange(ta, jp, nodes, weights, q)
+                                   * _lagrange(tb, kp, nodes, weights, q))
+                        out[rank[k]] = total
+
+
+@tack.kernel
+def _trace_straight(cells, slot_of, per_cell, level, steps, node_kind, node_entity, node_a,
+                    node_b, first, rank, out):
+    # A straight geometry at the lattice points on edges and faces: along the edge
+    # from its first corner, bilinear over the face in its frame.
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                kind = node_kind[n]
+                if first[k] == 1 and (kind == 1 or kind == 2):
+                    m = node_entity[n]
+                    if kind == 1:
+                        s, flip = _edge_step(cells, c, m, node_a[n], level)
+                        xa = cells.corner_position(c, cells.edge_corner(m, 1 if flip == 1 else 0))
+                        xb = cells.corner_position(c, cells.edge_corner(m, 0 if flip == 1 else 1))
+                        out[rank[k]] = xa + steps[s] * (xb - xa)
+                    else:
+                        sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
+                                                         level)
+                        ta = steps[sa]
+                        tb = steps[sb]
+                        xa = cells.corner_position(c, cells.face_corner(m, ka))
+                        xb = cells.corner_position(c, cells.face_corner(m, kb))
+                        xc = cells.corner_position(c, cells.face_corner(m, (ka + 2) % 4))
+                        xd = cells.corner_position(c, cells.face_corner(m, kd))
+                        out[rank[k]] = (xa + ta * (1.0 - tb) * (xb - xa) + ta * tb * (xc - xa)
+                                        + (1.0 - ta) * tb * (xd - xa))
+
+
+@tack.kernel
+def _trace_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity, node_a,
+                  node_b, first, rank, edge_nodes, face_nodes, q, out):
+    # A curved (tensor) geometry the same way, from its own nodes on the entity.
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                kind = node_kind[n]
+                if first[k] == 1 and (kind == 1 or kind == 2):
+                    m = node_entity[n]
+                    if kind == 1:
+                        s, flip = _edge_step(cells, c, m, node_a[n], level)
+                        t = steps[s]
+                        j0 = q - 1 if flip == 1 else 0
+                        x = cells.get(cells.dof_index(c, edge_nodes[m * q + j0])) * \
+                            _lagrange(t, 0, cells.basis_nodes, cells.basis_weights, q)
+                        for jp in range(1, q):
+                            j = q - 1 - jp if flip == 1 else jp
+                            x += cells.get(cells.dof_index(c, edge_nodes[m * q + j])) * \
+                                _lagrange(t, jp, cells.basis_nodes, cells.basis_weights, q)
+                        out[rank[k]] = x
+                    else:
+                        sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
+                                                         level)
+                        ta = steps[sa]
+                        tb = steps[sb]
+                        ax, ay = _unit(ka)
+                        bx, by = _unit(kb)
+                        dx, dy = _unit(kd)
+                        p = q - 1
+                        x = cells.get(cells.dof_index(c, face_nodes[m * q * q + ax * p
+                                                                    + q * (ay * p)])) \
+                            * (_lagrange(ta, 0, cells.basis_nodes, cells.basis_weights, q)
+                               * _lagrange(tb, 0, cells.basis_nodes, cells.basis_weights, q))
+                        for i in range(1, q * q):
+                            jp = i % q
+                            kp = i // q
+                            fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
+                            fb = ay * p + jp * (by - ay) + kp * (dy - ay)
+                            x += cells.get(cells.dof_index(c, face_nodes[m * q * q + fa + q * fb])) \
+                                * (_lagrange(ta, jp, cells.basis_nodes, cells.basis_weights, q)
+                                   * _lagrange(tb, kp, cells.basis_nodes, cells.basis_weights, q))
+                        out[rank[k]] = x
+
+
 @tack.kernel
 def _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent):
     # Each refined cell's level^d sub-cells, in its frame: corners in VTK's order
@@ -191,6 +465,45 @@ def _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent):
 
 # ── The refined dataset ─────────────────────────────────────────────
 
+def _lattice_tables(shape, level):
+    """The lattice's nodes: kind, entity and place there (``bases.dof_tables``) as device
+    arrays."""
+    kind, entity, a, b, _ = bases.dof_tables(shape, level)
+    return tuple(tack.array(np.asarray(x, np.int32)) for x in (kind, entity, a, b))
+
+
+def _entity_tables(shape, order):
+    """Each edge's and quad face's nodes of ``order`` (``bases.entity_nodes``), flat, as
+    device arrays (a placeholder where the shape has none)."""
+    edges, faces = bases.entity_nodes(shape, order)
+    return tuple(tack.array(x.reshape(-1) if x.size else np.zeros(1, np.int32))
+                 for x in (edges, faces))
+
+
+def _typed(values, like):
+    """A host table as a device array of ``like``'s type."""
+    out = tack.empty((len(values),), like.dtype)
+    tack.copyto(out, np.asarray(values).astype(like.dtype.numpy_dtype))
+    return out
+
+
+def _cell_ranks(data, slot_of, chosen, count):
+    """Each refined cell's rank for choosing evaluators: its global id where the data
+    has them, else its centroid; either the same in every piece."""
+    from tack.runtime.dispatch import backend_of
+
+    wide = backend_of(data.device).supports_f64
+    out = tack.empty((count,), tack.vec(3, tack.f64 if wide else tack.f32))
+    gids = data.global_ids.cells if data.global_ids is not None else None
+    if gids is not None:
+        _id_ranks(gids, chosen, out)
+    else:
+        for group in data.launch_groups("cells", []):
+            if group.count:
+                _centroid_ranks(data.domain_view("cells", group), slot_of, out)
+    return out
+
+
 def _tensor_cells(data, what):
     for group in data.topology.groups():
         if group.count and not bases.tensor_shape(group.shape):
@@ -220,8 +533,8 @@ def _refined(data, flags, level, fields):
     """The cells ``flags`` marks, cut into ``level`` steps along each axis: an
     unstructured linear dataset of their sub-cells, its geometry and ``fields`` (a
     dict of names to fields) evaluated at the lattice points (``H1`` and ``L2`` fields of any order;
-    an ``L2`` field is evaluated from the first refined cell at a shared point,
-    so its jumps are not kept), cell fields taken from each sub-cell's parent.
+    an ``L2`` field is evaluated from one cell at a shared point, the one every piece
+    chooses alike, so its jumps are not kept), cell fields taken from each sub-cell's parent.
     Returns ``(refined, parent)``, ``parent`` each sub-cell's cell."""
     dimension = _tensor_cells(data, "subdivision")
     topology = data.topology
@@ -253,16 +566,16 @@ def _refined(data, flags, level, fields):
                     _lattice_keys(data.domain_view("cells", group), lattice.view(group),
                                   slot_of, per_cell, node_of, keys)
     order = argsort(keys) if total else tack.empty((0,), tack.i64)
-    first = tack.empty((total,), tack.i32)
+    first = tack.zeros((total,), tack.i32)
     numbers = tack.empty((total,), tack.i64)
     rank = tack.empty((total,), tack.i64)
     points = 0
     if total:
-        _runs(keys, order, first)
         starts = tack.empty((total,), tack.i32)
-        _starts(order, first, starts)
+        _run_starts(keys, order, starts)
         points = exclusive_scan(starts, numbers, total)
         _ranks(order, starts, numbers, rank)
+        _evaluators(order, starts, per_cell, _cell_ranks(data, slot_of, chosen, count), first)
     geometry = tack.empty((points,), tack.vec(3, data.dtype))
     idt = ids.at_least(data.id_dtype, max(points, count * subs * sub))
     conn = tack.empty((count * subs * sub,), idt)
@@ -281,6 +594,15 @@ def _refined(data, flags, level, fields):
                 cells = data.domain_view("cells", group)
                 _positions(cells, slot_of, per_cell, level, steps, corner_at[group.root], first,
                            rank, geometry)
+                lattice = _lattice_tables(group.shape, level)
+                order = data.geometry.space.order if isinstance(data.geometry.space, H1) else 0
+                if order == 1:
+                    _trace_straight(cells, slot_of, per_cell, level, steps, *lattice, first, rank,
+                                    geometry)
+                elif order >= 2:
+                    edge_nodes, face_nodes = _entity_tables(group.shape, order)
+                    _trace_curved(cells, slot_of, per_cell, level, steps, *lattice, first, rank,
+                                  edge_nodes, face_nodes, order + 1, geometry)
                 _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent)
     shape = {3: shapes.HEXAHEDRON, 2: shapes.QUAD, 1: shapes.LINE}[dimension]
     types, offsets = uniform_cells(int(shape), count * subs, idt)
@@ -293,15 +615,29 @@ def _refined(data, flags, level, fields):
         if count:
             for group in data.launch_groups("cells", [field]):
                 if group.count:
-                    _values(data.domain_view("cells", group), field.view(group), slot_of,
-                            per_cell, level, steps, corner_at[group.root], first, rank, out)
+                    cells, u = data.domain_view("cells", group), field.view(group)
+                    _values(cells, u, slot_of, per_cell, level, steps, corner_at[group.root],
+                            first, rank, out)
+                    if isinstance(field.space, H1):
+                        # A continuous field's shared points from their entities' values.
+                        order = field.space.order
+                        edge_nodes, face_nodes = _entity_tables(group.shape, order)
+                        family = field.space.nodes or "gauss_lobatto"
+                        _trace_values(cells, u, slot_of, per_cell, level, steps,
+                                      *_lattice_tables(group.shape, level), first, rank,
+                                      edge_nodes, face_nodes,
+                                      tack.array(bases.view_index(group.shape, order)),
+                                      _typed(bases.nodes(family, order), steps),
+                                      _typed(bases.weights(family, order), steps), order + 1, out)
         point_fields[name] = out
     from tack.dataset.dataset import DataSet
 
     refined = DataSet(linear, geometry, **data._frame())
-    if data.ghosts is not None or data._ghosts_lost:
-        refined._ghosts_lost = (data._ghosts_lost or "subdivided cells' lattice points have "
-                                "no owners among the pieces yet")
+    if data._ghosts_lost:
+        refined._ghosts_lost = data._ghosts_lost
+    elif data.ghosts is not None:
+        refined.ghosts = _refined_marks(data, slot_of, per_cell, level, first, rank, parent,
+                                        points)
     for name, values in point_fields.items():
         refined.fields[name] = Field(H1(refined), values, fields[name].unit)
     for name, field in fields.items():
@@ -316,6 +652,29 @@ def _element(values):
     width = arrays.width_of(values)
     dtype = arrays.dtype_of(values)
     return dtype if not width or width == 1 else tack.vec(width, dtype)
+
+
+def _refined_marks(data, slot_of, per_cell, level, first, rank, parent, points):
+    """The refined dataset's ghost marks: a sub-cell its parent's, a lattice point by
+    the rules ``carry`` gives points it makes (``_lattice_marks``)."""
+    from tack.dataset.ghosts import Ghosts
+
+    ghosts = data.ghosts
+    cell_marks = ghosts.cells if ghosts.cells is not None else \
+        tack.zeros((data.num_cells,), tack.u8)
+    cells_out = tack.empty((size_of(parent),), tack.u8)
+    if size_of(parent):
+        _take_values(cell_marks, parent, cells_out)
+    points_out = None
+    if ghosts.points is not None:
+        points_out = tack.zeros((points,), tack.u8)
+        for group in data.launch_groups("cells", []):
+            if group.count:
+                kind, entity, _, _, _ = bases.dof_tables(group.shape, level)
+                _lattice_marks(data.domain_view("cells", group), slot_of, per_cell,
+                               tack.array(kind), tack.array(entity), first, rank,
+                               ghosts.points, cell_marks, points_out)
+    return Ghosts(cells=cells_out, points=points_out)
 
 
 @tack.kernel
