@@ -97,7 +97,8 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
     # adapts: a whole step's error estimate over tol shrinks it and tries again,
     # and an accepted step proposes the next, within [min_step, max_step], by
     # VTK's rules (0.9 * h * ratio ** -0.25 down, ** -0.2 up; a step at
-    # min_step is taken whatever its error). hs[q] is a particle's current step
+    # min_step is taken whatever its error; a push out at the end of a bisection
+    # that moves an RK45 particle less than min_step ends it, SPATIAL_BOUNDS). hs[q] is a particle's current step
     # (h for Euler and RK4), kept between launches and pieces; travelled[q] its
     # path's length so far (its steps in the length unit, the distances moved in
     # the time unit), for max_length (0: none), whose last step lands on it in
@@ -364,6 +365,17 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     length += 1
                 if found == 0:
                     st = st | SPATIAL_BOUNDS
+                elif method == _RK45 and (out - x).norm() < min_step * (
+                        1.0 if by_length == 1 else vel.norm()):
+                    # Moved less than RK45's shortest step: at a wall the flow
+                    # turns back from, a stage point swings out of the mesh at
+                    # every trial size, or the stages' directions cancel, and the
+                    # push out lands a hair (an ulp) away, still inside; every
+                    # later step would do the same until the steps ran out (1920
+                    # steps of about 1e-6 within 1.9e-4 on the aneurysm, on every
+                    # device). As vtkStreamTracer's RK45 ends it, the particle
+                    # has left.
+                    st = st | SPATIAL_BOUNDS
                 if vel.dot(vel) <= eps:
                     st = st | ZERO_VELOCITY | TERMINATE
                 if n == max_steps or (max_length > 0.0 and gone >= max_length - 0.001 * hc):
@@ -457,8 +469,8 @@ def _velocity(data, field):
     velocity = Field(field.space, _as_vectors(arrays.materialize(field.values), data.dtype))
     by_id = field_by_id(data, velocity)
     if by_id is None:
-        raise TypeError(f"advection takes point data (H1 order 1, values on points) or "
-                        f"cell data, not {field.space!r}")
+        raise TypeError(f"advection takes point data, cell data or an interpolated field "
+                        f"of one order per shape, not {field.space!r}")
     return by_id
 
 
@@ -534,8 +546,8 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     if unit not in ("time", "length"):
         raise ValueError(f"step_unit is 'time' or 'length', not {unit!r}")
     geometry = data.geometry
-    if not isinstance(geometry.space, H1) or geometry.space.order != 1:
-        raise TypeError("advection needs an order-1 H1 geometry: one position per point")
+    if not isinstance(geometry.space, H1):
+        raise TypeError("advection needs an H1 geometry: positions at its nodes")
     velocity = _velocity(data, field)
     positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
     from tack.dataset.polyhedra import PolylineTopology

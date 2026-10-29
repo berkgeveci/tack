@@ -286,6 +286,35 @@ def test_rk45_follows_a_rotation_to_its_tolerance(backend):
     assert all(a < b for a, b in zip(counts[1e-4], counts[1e-6]))
 
 
+
+_WALL_GAP = tack.constant(0.0005)
+
+
+@tack.func
+def _back_from_the_wall(x):
+    # Toward the wall at x = 1, turning back just inside it.
+    return [(1.0 - _WALL_GAP - x[0]) * 50.0, 0.0 * x[1], 0.0 * x[2]]
+
+
+def test_rk45_ends_at_a_wall_it_cannot_get_past(backend):
+    """Where the flow turns back just inside a wall, RK45's stage points swing past it
+    at every step size, or its stages' directions cancel: each step's bisection
+    pushed the particle out by about an ulp, still inside, and it crawled there
+    until its steps ran out (the aneurysm's wall, on every device, mustafar-linux
+    2026-10-28: 1920 steps within 1.9e-4; GPUs paid for the whole launch). A push
+    out that moves an RK45 particle less than min_step ends it, as
+    vtkStreamTracer's RK45 ends such a particle out of its domain."""
+    grid = td.uniform_grid((11, 11, 3), spacing=(0.1, 0.1, 0.1))
+    grid.fields["v"] = td.interpolate(grid, _back_from_the_wall, td.H1(grid),
+                                      dtype=tack.vec3())
+    seeds = np.array([[0.5, 0.2, 0.1], [0.7, 0.3, 0.1], [0.9, 0.1, 0.1], [0.95, 0.5, 0.1]])
+    for unit in ("length", "time"):
+        out = td.streamlines(grid, "v", seeds, 0.02, 400, integrator="rk45", step_unit=unit)
+        offsets = tack.arrays.to_host(out.topology.line_offsets)
+        assert (np.diff(offsets) < 60).all(), np.diff(offsets)      # 401 each before
+        last = out.positions()[offsets[1:] - 1].astype(float)
+        assert (last[:, 0] > 0.95).all()                            # at the wall
+
 def test_rk45_in_the_length_unit_keeps_its_step_bounds(backend):
     """In the length unit a step is an arc length: every step lies within
     [min_step, max_step], the path's last step short of it where max_length

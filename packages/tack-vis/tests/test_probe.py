@@ -576,18 +576,20 @@ def test_a_first_query_of_few_points_runs_from_the_cells():
 
 
 def test_what_by_id_cannot_serve_is_searched_from_the_cells():
-    """A curved (order-2) geometry and line cells have no search from the points:
-    find and probe run from the cells, as before."""
+    """Line cells have no search from the points: find and probe run from the
+    cells, as before. A curved (order-2) geometry has one now, through each shape
+    group's view (``by_id._CurvedCells``; ``test_curved_advection.py``)."""
     tack.set_default_device("cpu")
     curved = td.uniform_grid((3, 3, 3))
     curved.geometry = td.project(curved, curved.geometry, td.H1(curved, order=2))
     lines = td.DataSet(td.UnstructuredTopology(np.array([3, 3], np.uint8), [0, 2, 4],
                                                [0, 1, 1, 2]),
                        np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], np.float32))
-    for data, point in ((curved, [0.6, 0.6, 0.6]), (lines, [1.5, 0.0, 0.0])):
+    for data, point, searched in ((curved, [0.6, 0.6, 0.6], True),
+                                  (lines, [1.5, 0.0, 0.0], False)):
         locator = td.CellLocator(data)
         locator._found_before = True
-        assert locator._search() is None
+        assert (locator._search() is not None) == searched
         found = locator.find([point])
         assert found.cells.numpy()[0] >= 0
 

@@ -31,6 +31,7 @@ the cell ``c`` the loop is at.
 """
 
 import tack
+from tack.dataset.ghosts import _before
 from tack.dataset.shapes import HOLD_TOLERANCE, NEWTON_DIVERGED, NEWTON_TOLERANCE
 
 # ── Entity kinds ────────────────────────────────────────────────────
@@ -2032,13 +2033,41 @@ class _CellDof:
         return self.entity_id(i)
 
 
+@tack.func
+def _square_corner(k):
+    # Corner k of a quad's loop on the unit square.
+    return (1 if k == 1 or k == 2 else 0), (1 if k == 2 or k == 3 else 0)
+
+
+@tack.func
+def _square_frame(view, i):
+    # A quad's frame fixed by its corners' positions, the same in every piece
+    # whatever its stored order (which follows the piece's point ids): its first
+    # corner by position, the first by position of that corner's two neighbours
+    # (the first axis), and the other (the second).
+    a = 0
+    for k in range(1, 4):
+        if _before(view.corner_position(i, k), view.corner_position(i, a)):
+            a = k
+    b = (a + 1) % 4
+    d = (a + 3) % 4
+    if _before(view.corner_position(i, d), view.corner_position(i, b)):
+        b, d = d, b
+    return a, b, d
+
+
 class _MeanPosition:
     """A shared node of a straight (order-1) geometry: the mean of its entity's
     points -- a point itself, an edge's middle, the bilinear center of a quad,
-    the trilinear center of a hexahedron."""
+    the trilinear center of a hexahedron. A quad's points are summed in its frame
+    (``_square_frame``), so every piece holding it gets the same bits."""
 
     @tack.func
     def node_position(self, i, j):
+        if self.NUM_POINTS == 4:
+            a, b, d = _square_frame(self, i)
+            return (((self.corner_position(i, a) + self.corner_position(i, b))
+                     + self.corner_position(i, (a + 2) % 4)) + self.corner_position(i, d)) / 4
         x = self.corner_position(i, 0)
         for k in range(1, self.NUM_POINTS):
             x += self.corner_position(i, k)
@@ -2088,6 +2117,11 @@ class _TensorEdgeNodes:
     def node_place(self, i, j):
         return tack.vec3(self.node_points[j + 1], 0.0, 0.0)
 
+    @tack.func
+    def node_steps(self, i, j):
+        # The node's place in steps of the 1D nodes, from the edge's point 0.
+        return j + 1, 0
+
 
 class _TensorFaceNodes:
     """``H1`` of order ``ORDER`` (3 or more): a quad face's ``(ORDER - 1)^2`` nodes,
@@ -2107,21 +2141,40 @@ class _TensorFaceNodes:
         return tack.vec3(self.node_points[j % (self.ORDER - 1) + 1],
                          self.node_points[j // (self.ORDER - 1) + 1], 0.0)
 
+    @tack.func
+    def node_steps(self, i, j):
+        # The node's place in steps of the 1D nodes, from the face's point 0.
+        return j % (self.ORDER - 1) + 1, j // (self.ORDER - 1) + 1
+
 
 class _StraightNodePosition:
     """An edge's or quad face's node where its straight (order-1) geometry puts it:
-    linear between an edge's points, bilinear over a face's, at ``node_place``."""
+    linear between an edge's points, bilinear over a face's. Computed from the edge's
+    first point by position, or in the face's frame (``_square_frame``), with the
+    1D nodes read there, so every piece holding the entity gets the same bits
+    whatever order its point ids store it in."""
 
     @tack.func
     def node_position(self, i, j):
-        t = self.node_place(i, j)
+        sa, sb = self.node_steps(i, j)
         if self.NUM_POINTS == 2:
-            return self.corner_position(i, 0) + t[0] * (self.corner_position(i, 1)
-                                                        - self.corner_position(i, 0))
-        x0 = self.corner_position(i, 0)
-        return (x0 + t[0] * (1.0 - t[1]) * (self.corner_position(i, 1) - x0)
-                + t[0] * t[1] * (self.corner_position(i, 2) - x0)
-                + (1.0 - t[0]) * t[1] * (self.corner_position(i, 3) - x0))
+            x0 = self.corner_position(i, 0)
+            x1 = self.corner_position(i, 1)
+            if _before(x1, x0):
+                return x1 + self.node_points[self.ORDER - sa] * (x0 - x1)
+            return x0 + self.node_points[sa] * (x1 - x0)
+        a, b, d = _square_frame(self, i)
+        ax, ay = _square_corner(a)
+        bx, by = _square_corner(b)
+        dx, dy = _square_corner(d)
+        ua = sa - ax * self.ORDER
+        ub = sb - ay * self.ORDER
+        tu = self.node_points[ua * (bx - ax) + ub * (by - ay)]
+        tv = self.node_points[ua * (dx - ax) + ub * (dy - ay)]
+        xa = self.corner_position(i, a)
+        return (xa + tu * (1.0 - tv) * (self.corner_position(i, b) - xa)
+                + tu * tv * (self.corner_position(i, (a + 2) % 4) - xa)
+                + (1.0 - tu) * tv * (self.corner_position(i, d) - xa))
 
 
 class _TensorInteriorNodes:
