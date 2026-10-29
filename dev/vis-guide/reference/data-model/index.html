@@ -16108,7 +16108,9 @@ sized by its count (<code>leaves</code>); with one, the uniform grid of about
 <span class="normal">592</span>
 <span class="normal">593</span>
 <span class="normal">594</span>
-<span class="normal">595</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cell_bins</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">595</span>
+<span class="normal">596</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cell_bins</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The cells each leaf may hold, for queries that run from the points (a</span>
 <span class="sd">    particle asking for its cell): ``(offsets, cells)``, CSR by leaf, the</span>
 <span class="sd">    cells whose boxes, widened by their tolerance, overlap the leaf. With</span>
@@ -16182,12 +16184,14 @@ first leaf's index.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/locator.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">597</span>
-<span class="normal">598</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">598</span>
 <span class="normal">599</span>
 <span class="normal">600</span>
 <span class="normal">601</span>
-<span class="normal">602</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">leaves</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">602</span>
+<span class="normal">603</span>
+<span class="normal">604</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">leaves</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The two-level grid&#39;s leaves (``cell_bins``): ``(dims, starts)``, each</span>
 <span class="sd">    coarse bin&#39;s leaves along x, y and z (``dims[3 * b + axis]``) and its</span>
 <span class="sd">    first leaf&#39;s index.&quot;&quot;&quot;</span>
@@ -16223,9 +16227,7 @@ from the topology's faces on first use and kept: <code>_MAX_FACES</code> ids a c
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/locator.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">604</span>
-<span class="normal">605</span>
-<span class="normal">606</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">606</span>
 <span class="normal">607</span>
 <span class="normal">608</span>
 <span class="normal">609</span>
@@ -16241,7 +16243,11 @@ from the topology's faces on first use and kept: <code>_MAX_FACES</code> ids a c
 <span class="normal">619</span>
 <span class="normal">620</span>
 <span class="normal">621</span>
-<span class="normal">622</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cell_neighbors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">622</span>
+<span class="normal">623</span>
+<span class="normal">624</span>
+<span class="normal">625</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cell_neighbors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s neighbours across its faces, for advection&#39;s walk from the cell</span>
 <span class="sd">    a particle was last found in (``advect(..., neighbors=True)``): ``_MAX_FACES``</span>
 <span class="sd">    ids a cell, cell ``c``&#39;s across its local face ``k`` at ``_MAX_FACES * c +</span>
@@ -16287,13 +16293,13 @@ coordinates there, and in polyhedra its sub-tetrahedron (<code>tets</code> is
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/locator.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">639</span>
-<span class="normal">640</span>
-<span class="normal">641</span>
-<span class="normal">642</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">642</span>
 <span class="normal">643</span>
 <span class="normal">644</span>
-<span class="normal">645</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">645</span>
+<span class="normal">646</span>
+<span class="normal">647</span>
+<span class="normal">648</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">find</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">points</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``Locations(cells, pcs, tets)`` for ``points`` (an ``(n, 3)`` host array or</span>
 <span class="sd">    a field of 3-vectors): each point&#39;s cell (-1 for none) and its</span>
