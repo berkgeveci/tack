@@ -28,10 +28,10 @@ from tack import arrays
 from tack.dataset import bases
 from tack.dataset.algorithms.subdivide import (
     _ahead,
+    _axis,
     _edge_step,
     _face_steps,
     _face_weights,
-    _lagrange,
     _lattice_point,
     _silvester,
     _triangle_order,
@@ -131,9 +131,9 @@ def _oriented(cells, c, na, nb, on_edges, on_faces, ne, nf, level, steps, ijk):
 class _Nodes:
     """One basis's nodes on a shape's edges and faces (``bases.entity_nodes``,
     through ``view_of`` to the view's numbering), and its 1D nodes and barycentric
-    weights, for evaluating a trace."""
+    weights (Bernstein's binomials, with ``bern``), for evaluating a trace."""
 
-    def __init__(self, edge_nodes, face_nodes, view_of, nodes, weights, q, stride):
+    def __init__(self, edge_nodes, face_nodes, view_of, nodes, weights, q, stride, bern):
         self.edge_nodes = edge_nodes
         self.face_nodes = face_nodes
         self.view_of = view_of
@@ -141,6 +141,7 @@ class _Nodes:
         self.weights = weights
         self.q = q
         self.stride = stride
+        self.bern = bern
 
     @tack.func
     def count(self, kind, corners):
@@ -161,7 +162,7 @@ class _Nodes:
         if kind == 0:
             j = q - 1 - i if k1 == 1 else i
             index = self.view_of[self.edge_nodes[m * q + j]]
-            w = _lagrange(x[0], i, self.nodes, self.weights, q)
+            w = _axis(x[0], i, self.nodes, self.weights, q, self.bern)
         elif corners == 4:
             jp = i % q
             kp = i // q
@@ -171,8 +172,8 @@ class _Nodes:
             fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
             fb = ay * p + jp * (by - ay) + kp * (dy - ay)
             index = self.view_of[self.face_nodes[m * self.stride + fa + q * fb]]
-            w = _lagrange(x[0], jp, self.nodes, self.weights, q) * \
-                _lagrange(x[1], kp, self.nodes, self.weights, q)
+            w = _axis(x[0], jp, self.nodes, self.weights, q, self.bern) * \
+                _axis(x[1], kp, self.nodes, self.weights, q, self.bern)
         else:
             bc = 0
             r = i
@@ -388,11 +389,11 @@ def _nodes_of(space, shape, dtype, geometry=False):
     family = "equispaced" if not bases.tensor_shape(shape) else (space.basis or "gauss_lobatto")
     like = tack.empty((1,), dtype)
     view_of = np.arange((order + 1) ** shape.DIMENSION, dtype=np.int32) if (
-        geometry and bases.tensor_shape(shape)) else bases.view_index(shape, order)
+        geometry and bases.tensor_shape(shape)) else bases.view_index(shape, order, space.basis)
     return _Nodes(edge_nodes, face_nodes, tack.array(np.asarray(view_of, np.int32)),
                   _typed(bases.nodes(family, order), like),
                   _typed(bases.weights(family, order), like), order + 1,
-                  _face_stride(shape, order))
+                  _face_stride(shape, order), int(family == bases.BERNSTEIN))
 
 
 class Crossings:

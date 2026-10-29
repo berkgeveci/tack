@@ -196,10 +196,13 @@ def _interior_counts(cells, order, counts):
 
 def _basis_param(family, order, families, space):
     """``basis`` as a space keeps it: ``None`` where the order makes the families
-    agree (at most 2 for closed ones), so equal spaces are one."""
+    agree (at most 2 for the closed node sets, at most 1 for Bernstein's), so equal
+    spaces are one."""
     if family not in families:
         raise ValueError(f"{space}'s basis is one of {', '.join(families)}, not {family!r}")
-    return None if family in bases.CLOSED and order <= 2 else family
+    if family in bases.CLOSED and order <= (1 if family == bases.BERNSTEIN else 2):
+        return None
+    return family
 
 
 def _basis_tables(space, group, dtype):
@@ -276,12 +279,21 @@ def _wedge_tables(space, group, dtype):
 def _refuse_simplex_nodes(space, shape):
     """Simplices and wedges above order 2 have equispaced nodes only (round 2): any
     other family is refused, with the remedy."""
+    _refuse_bernstein(space, shape)
     if (bases.simplex_shape(shape) or bases.wedge_shape(shape)) and space.order > 2 \
             and space.basis != "equispaced":
         raise NotImplementedError(
             f"{type(space).__name__} of order {space.order} on {shape.__name__} cells has "
             f"the equispaced basis only (VTK's and gmsh's), not {space.basis!r}: pass "
             "basis=\"equispaced\"")
+
+
+def _refuse_bernstein(space, shape):
+    """Bernstein bases are on the tensor shapes so far: any other shape is refused."""
+    if space.basis == bases.BERNSTEIN and shape is not None and not bases.tensor_shape(shape):
+        raise NotImplementedError(
+            f"the Bernstein basis is on segments, quads, pixels, hexahedra and voxels so "
+            f"far, not {shape.__name__} cells")
 
 
 def _on_gpu(topology):
@@ -329,9 +341,10 @@ class H1(Space):
     def mixin(self):
         if self.order == 1:
             return views._H1Field
-        if self.order == 2:
+        if self.order == 2 and self.basis != bases.BERNSTEIN:
             return views._H1Order2Field
-        return views.of_order(views._H1TensorField, self.order)
+        return views.of_order(views._H1TensorField, self.order,
+                              self.basis == bases.BERNSTEIN)
 
     @on_inputs_device
     def _layout(self):
@@ -427,6 +440,7 @@ class H1(Space):
         return shape.DIMENSION == 3 if self.order > 2 else bool(shape.QUADRATIC_FACES)
 
     def mixin_for(self, key, shape=None):
+        _refuse_bernstein(self, shape)
         # Polyhedra evaluate in their sub-tetrahedra.
         if shape in (shapes.Polyhedron, shapes.Polygon) and self.order == 1:
             return views._PolyhedralPointField
@@ -444,7 +458,7 @@ class H1(Space):
         shape = group.shape
         incidence = ((views._EdgeIncidence,) if self._has_edges(shape) else ()) + \
             ((views._FaceIncidence,) if self._has_faces(shape) else ())
-        if self.order == 2:
+        if self.order == 2 and self.basis != bases.BERNSTEIN:
             return (*incidence, views.quadratic_faces(shape))
         if bases.simplex_shape(shape):
             return (*incidence, *views.simplex_mixins(shape))
@@ -602,10 +616,11 @@ class L2(Space):
         if self.tensor:
             cells = self.layout == "cells"
             return views.of_order(views._L2CellsField if cells else views._L2TensorField,
-                                  self.order)
+                                  self.order, self.basis == bases.BERNSTEIN)
         return views._L2Field
 
     def mixin_for(self, key, shape=None):
+        _refuse_bernstein(self, shape)
         if self.tensor and bases.simplex_shape(shape):
             return views.of_simplex_order(views._L2SimplexField, self.order, shape.DIMENSION)
         if self.tensor and bases.wedge_shape(shape):

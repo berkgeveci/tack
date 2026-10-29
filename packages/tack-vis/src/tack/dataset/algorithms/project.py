@@ -248,6 +248,12 @@ def project(data, field, space):
                         f"{dtype_of(values).name}")
     if isinstance(space, SideTraces):
         return traces(data, field)
+    from tack.dataset import _bernstein
+
+    if _bernstein.is_bernstein(space):
+        # Into the equispaced nodes, then their Bernstein coefficients.
+        nodal = project(data, field, _bernstein.lagrange_companion(space))
+        return _bernstein.from_lagrange(data, nodal, space)
     if not getattr(data.topology, "reference_cells", True):
         if isinstance(space, H1) and space.order == 1 and isinstance(source, Constant):
             return Field(space, _onto_points(data, field, values), field.unit)

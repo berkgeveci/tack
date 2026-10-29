@@ -303,6 +303,21 @@ def _lagrange(t, j, nodes, weights, q):
 
 
 @tack.func
+def _axis(t, j, nodes, weights, q, bern):
+    # The 1D basis polynomial j (of q) at t: Bernstein's, weights[j] t^j (1 - t)^(q-1-j),
+    # with bern, else the Lagrange polynomial through nodes.
+    if bern == 1:
+        v = weights[j]
+        s = 1.0 - t
+        for _ in range(j):
+            v = v * t
+        for _ in range(q - 1 - j):
+            v = v * s
+        return v
+    return _lagrange(t, j, nodes, weights, q)
+
+
+@tack.func
 def _unit(k):
     # Face corner k (in the face's own order) on the unit square.
     return (1 if k == 1 or k == 2 else 0), (1 if k == 2 or k == 3 else 0)
@@ -350,7 +365,8 @@ def _face_steps(cells, c, f, a, b, level):
 
 @tack.kernel
 def _trace_values(cells, u, slot_of, per_cell, level, steps, node_kind, node_entity, node_a,
-                  node_b, first, rank, edge_nodes, face_nodes, view_of, nodes, weights, q, out):
+                  node_b, first, rank, edge_nodes, face_nodes, view_of, nodes, weights, q, bern,
+                  out):
     # An H1 field at the lattice points on edges and faces, from their own values.
     for c in cells:
         slot = slot_of[cells.entity_id(c)]
@@ -365,11 +381,11 @@ def _trace_values(cells, u, slot_of, per_cell, level, steps, node_kind, node_ent
                         t = steps[s]
                         j0 = q - 1 if flip == 1 else 0
                         total = u.dof(c, view_of[edge_nodes[m * q + j0]]) * \
-                            _lagrange(t, 0, nodes, weights, q)
+                            _axis(t, 0, nodes, weights, q, bern)
                         for jp in range(1, q):
                             j = q - 1 - jp if flip == 1 else jp
                             total += u.dof(c, view_of[edge_nodes[m * q + j]]) * \
-                                _lagrange(t, jp, nodes, weights, q)
+                                _axis(t, jp, nodes, weights, q, bern)
                         out[rank[k]] = total
                     else:
                         sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
@@ -381,16 +397,16 @@ def _trace_values(cells, u, slot_of, per_cell, level, steps, node_kind, node_ent
                         dx, dy = _unit(kd)
                         p = q - 1
                         total = u.dof(c, view_of[face_nodes[m * q * q + ax * p + q * (ay * p)]]) \
-                            * (_lagrange(ta, 0, nodes, weights, q)
-                               * _lagrange(tb, 0, nodes, weights, q))
+                            * (_axis(ta, 0, nodes, weights, q, bern)
+                               * _axis(tb, 0, nodes, weights, q, bern))
                         for i in range(1, q * q):
                             jp = i % q
                             kp = i // q
                             fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
                             fb = ay * p + jp * (by - ay) + kp * (dy - ay)
                             total += u.dof(c, view_of[face_nodes[m * q * q + fa + q * fb]]) \
-                                * (_lagrange(ta, jp, nodes, weights, q)
-                                   * _lagrange(tb, kp, nodes, weights, q))
+                                * (_axis(ta, jp, nodes, weights, q, bern)
+                                   * _axis(tb, kp, nodes, weights, q, bern))
                         out[rank[k]] = total
 
 
@@ -427,7 +443,7 @@ def _trace_straight(cells, slot_of, per_cell, level, steps, node_kind, node_enti
 
 @tack.kernel
 def _trace_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity, node_a,
-                  node_b, first, rank, edge_nodes, face_nodes, q, out):
+                  node_b, first, rank, edge_nodes, face_nodes, q, bern, out):
     # A curved (tensor) geometry the same way, from its own nodes on the entity.
     for c in cells:
         slot = slot_of[cells.entity_id(c)]
@@ -442,11 +458,11 @@ def _trace_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity
                         t = steps[s]
                         j0 = q - 1 if flip == 1 else 0
                         x = cells.get(cells.dof_index(c, edge_nodes[m * q + j0])) * \
-                            _lagrange(t, 0, cells.basis_nodes, cells.basis_weights, q)
+                            _axis(t, 0, cells.basis_nodes, cells.basis_weights, q, bern)
                         for jp in range(1, q):
                             j = q - 1 - jp if flip == 1 else jp
                             x += cells.get(cells.dof_index(c, edge_nodes[m * q + j])) * \
-                                _lagrange(t, jp, cells.basis_nodes, cells.basis_weights, q)
+                                _axis(t, jp, cells.basis_nodes, cells.basis_weights, q, bern)
                         out[rank[k]] = x
                     else:
                         sa, sb, ka, kb, kd = _face_steps(cells, c, m, node_a[n], node_b[n],
@@ -459,16 +475,16 @@ def _trace_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity
                         p = q - 1
                         x = cells.get(cells.dof_index(c, face_nodes[m * q * q + ax * p
                                                                     + q * (ay * p)])) \
-                            * (_lagrange(ta, 0, cells.basis_nodes, cells.basis_weights, q)
-                               * _lagrange(tb, 0, cells.basis_nodes, cells.basis_weights, q))
+                            * (_axis(ta, 0, cells.basis_nodes, cells.basis_weights, q, bern)
+                               * _axis(tb, 0, cells.basis_nodes, cells.basis_weights, q, bern))
                         for i in range(1, q * q):
                             jp = i % q
                             kp = i // q
                             fa = ax * p + jp * (bx - ax) + kp * (dx - ax)
                             fb = ay * p + jp * (by - ay) + kp * (dy - ay)
                             x += cells.get(cells.dof_index(c, face_nodes[m * q * q + fa + q * fb])) \
-                                * (_lagrange(ta, jp, cells.basis_nodes, cells.basis_weights, q)
-                                   * _lagrange(tb, kp, cells.basis_nodes, cells.basis_weights, q))
+                                * (_axis(ta, jp, cells.basis_nodes, cells.basis_weights, q, bern)
+                                   * _axis(tb, kp, cells.basis_nodes, cells.basis_weights, q, bern))
                         out[rank[k]] = x
 
 
@@ -956,7 +972,8 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                 elif order >= 2:
                     edge_nodes, face_nodes = _entity_tables(group.shape, order)
                     _trace_curved(cells, slot_of, per_cell, level, steps, *lattice, first, rank,
-                                  edge_nodes, face_nodes, order + 1, geometry)
+                                  edge_nodes, face_nodes, order + 1,
+                                  int(data.geometry.space.basis == bases.BERNSTEIN), geometry)
                 _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent)
     shape = (shapes.WEDGE if cell_family == "wedge" else
              {3: shapes.TETRA, 2: shapes.TRIANGLE}[dimension] if simplex else
@@ -997,9 +1014,10 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                         _trace_values(cells, u, slot_of, per_cell, level, steps,
                                       *_lattice_tables(group.shape, level), first, rank,
                                       edge_nodes, face_nodes,
-                                      tack.array(bases.view_index(group.shape, order)),
+                                      tack.array(bases.view_index(group.shape, order, family)),
                                       _typed(bases.nodes(family, order), steps),
-                                      _typed(bases.weights(family, order), steps), order + 1, out)
+                                      _typed(bases.weights(family, order), steps), order + 1,
+                                      int(family == bases.BERNSTEIN), out)
         point_fields[name] = out
     from tack.dataset.dataset import DataSet
 

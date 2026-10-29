@@ -90,7 +90,7 @@ def _points(data, n=200, seed=0):
 
 # ── Nodes and tables ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("family", bases.FAMILIES)
+@pytest.mark.parametrize("family", [f for f in bases.FAMILIES if f != bases.BERNSTEIN])
 @pytest.mark.parametrize("order", [1, 2, 3, 4, 5, 8])
 def test_nodes_are_symmetric_and_their_polynomials_reproduce(family, order):
     x = bases.nodes(family, order)

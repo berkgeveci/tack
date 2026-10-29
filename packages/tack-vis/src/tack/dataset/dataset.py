@@ -263,7 +263,8 @@ def _geometry_parts(data, group, kind):
         if space._has_faces(group.shape):
             data.topology.faces()
         mixins, attributes = _space_parts(
-            geometry, group, views.of_order(views._H1TensorGeometry, space.order))
+            geometry, group, views.of_order(views._H1TensorGeometry, space.order,
+                                            space.basis == bases.BERNSTEIN))
         return [*mixins, *views.tensor_mixins(group.shape), views._TensorNewton], attributes
     # Faces and edges of a curved geometry see its corners.
     mixins, attributes = _space_parts(geometry, group, views._H1Geometry, corners_only=True)

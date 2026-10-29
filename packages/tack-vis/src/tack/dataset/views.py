@@ -1564,6 +1564,51 @@ class _TensorPolynomials:
 
 
 
+class _BernsteinPolynomials:
+    """The Bernstein basis of order ``ORDER`` on a tensor shape, in place of
+    ``_TensorPolynomials``' Lagrange polynomials (mixed in before them): the 1D
+    polynomial ``j`` is ``basis_weights[j] t^j (1 - t)^(p - j)``, ``basis_weights``
+    the binomial coefficients, and a field's values are its coefficients. Its
+    ``basis_nodes`` are the Greville points ``j / p``, which ``node_parametric``
+    gives; its ``basis_bernstein`` is the identity, so its bounds are its
+    coefficients'."""
+
+    @tack.func
+    def lagrange_values(self, t, out):
+        """``out[j]``: Bernstein polynomial ``j`` at ``t``."""
+        s = 1.0 - t
+        for j in range(self.ORDER + 1):
+            v = self.basis_weights[j]
+            for _ in range(j):
+                v = v * t
+            for _ in range(self.ORDER - j):
+                v = v * s
+            out[j] = v
+
+    @tack.func
+    def lagrange_derivatives(self, t, out):
+        """``out[j]``: its derivative at ``t``, ``C(p, j) (j t^(j-1) (1-t)^(p-j) - (p-j)
+        t^j (1-t)^(p-j-1))``, each term a product (exact at the ends too)."""
+        s = 1.0 - t
+        p = self.ORDER
+        for j in range(p + 1):
+            up = self.basis_weights[j] - self.basis_weights[j]
+            down = up
+            if j > 0:
+                up = self.basis_weights[j] * j
+                for _ in range(j - 1):
+                    up = up * t
+                for _ in range(p - j):
+                    up = up * s
+            if j < p:
+                down = self.basis_weights[j] * (p - j)
+                for _ in range(j):
+                    down = down * t
+                for _ in range(p - j - 1):
+                    down = down * s
+            out[j] = up - down
+
+
 class _TensorRange:
     """A tensor field's Bernstein coefficients over a cell: its values (less node 0's)
     taken one axis at a time by ``basis_bernstein``. The field lies between the
@@ -2520,12 +2565,15 @@ def tensor_mixins(shape):
 _by_order = {}
 
 
-def of_order(mixin, order):
+def of_order(mixin, order, bernstein=False):
     """``mixin`` with ``ORDER`` set: one class per (mixin, order), so views of one
-    order share their compiled kernels."""
-    key = (mixin, int(order))
+    order share their compiled kernels. ``bernstein`` puts the Bernstein
+    polynomials in place of the Lagrange ones (``_BernsteinPolynomials``)."""
+    key = (mixin, int(order), bool(bernstein))
     if key not in _by_order:
-        _by_order[key] = type(f"{mixin.__name__}{order}", (mixin,), {"ORDER": int(order)})
+        name = f"{mixin.__name__}{order}" + ("Bernstein" if bernstein else "")
+        parents = (_BernsteinPolynomials, mixin) if bernstein else (mixin,)
+        _by_order[key] = type(name, parents, {"ORDER": int(order)})
     return _by_order[key]
 
 
