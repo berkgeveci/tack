@@ -164,8 +164,7 @@ def test_a_variable_order_field_contours_its_order_one_cells(backend):
 def test_an_order_two_field_is_cut_on_sub_cells(backend):
     """A quadratic that rises inside every cell from zero at the corners: its corner
     values alone, a linear field, have no surface at all (``subdivision=1``); on
-    hexahedra the cells are cut on sub-cells, which find it. Tetrahedra have no
-    subdivision yet, and refuse it."""
+    hexahedra and tetrahedra the cells are cut on sub-cells, which find it."""
     data = _grid(3, "explicit")
     space = td.H1(data, order=2)
     values = np.ones(space.size)
@@ -175,8 +174,11 @@ def test_an_order_two_field_is_cut_on_sub_cells(backend):
     assert td.contour(data, bump, 0.5, subdivision=1).num_cells == 0
     tets = td.tetrahedralize(data)
     tet_space = td.H1(tets, order=2)
-    with pytest.raises(NotImplementedError, match="order-2 H1"):
-        td.contour(tets, td.Field(tet_space, _scalars(np.zeros(tet_space.size))), 0.5)
+    tet_values = np.ones(tet_space.size)
+    tet_values[:tets.num_points] = 0.0
+    tet_bump = td.Field(tet_space, _scalars(tet_values))
+    assert td.contour(tets, tet_bump, 0.5).num_cells > 0
+    assert td.contour(tets, tet_bump, 0.5, subdivision=1).num_cells == 0
 
 
 def test_a_slice_of_an_order_two_geometry_cuts_its_cells_on_sub_cells(backend):
