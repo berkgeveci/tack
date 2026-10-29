@@ -4444,6 +4444,20 @@ or for a filter that takes linear cells only:</p>
     <span class="n">linear</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">subdivide</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>                        <span class="c1"># 27 hexahedra a cell</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">cut</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;triangles;&quot;</span><span class="p">,</span> <span class="n">linear</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;linear cells&quot;</span><span class="p">)</span>
 </code></pre></div>
+<p><code>clip</code> and <code>threshold</code> cut the same way, but keep what they need not cut: the
+cells whose Bernstein coefficients lie wholly on the kept side stay as they are,
+curved and of their order, and only the cells the bound cannot decide go to
+linear sub-cells. The result is a <code>PartitionedDataSet</code> of the two parts, whole
+cells first:</p>
+<div class="highlight"><pre><span></span><code>    <span class="n">whole</span><span class="p">,</span> <span class="n">part</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span><span class="o">.</span><span class="n">partitions</span>         <span class="c1"># a PartitionedDataSet</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">whole</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;whole cells at order&quot;</span><span class="p">,</span> <span class="n">whole</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="p">,</span> <span class="s2">&quot;and&quot;</span><span class="p">,</span>
+          <span class="n">part</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;linear pieces&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>The parts share the lattice points of the faces between them, where a linear
+sub-face lies against a curved face. The whole cells' corners there are the
+whole part's: the cut part's copies are marked <code>DUPLICATEPOINT</code>, so reductions
+over the two (<code>owned_values</code>, <code>statistics</code>) count each once. A dataset of straight cells and order-1
+fields clips and thresholds as before, into one <code>DataSet</code>.</p>
 <p>MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges
 come across through <code>tack.interop.mfem</code>, and VTK's Lagrange cells (curves,
 quads, hexahedra, triangles, tetrahedra, wedges) through <code>vtk_to_dataset</code>

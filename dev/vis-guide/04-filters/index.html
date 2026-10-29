@@ -4153,13 +4153,13 @@ carried. A volume mesh's surface comes from <code>extract_surface</code> first.<
 </tr>
 <tr>
 <td>Contour or slice</td>
-<td>Yes, of order-1 and <code>L2</code> fields; above order 1, or on a curved geometry, on linear sub-cells of segments, quads and hexahedra (<code>subdivision=</code>, <code>tolerance=</code>); an order-2 <code>H1</code> field on other shapes is refused</td>
+<td>Yes, of order-1 and <code>L2</code> fields; above order 1, or on a curved geometry, on linear sub-cells of segments, quads, hexahedra, triangles, tetrahedra and wedges (<code>subdivision=</code>, <code>tolerance=</code>); an order-2 <code>H1</code> field on pyramids is refused</td>
 <td>Yes</td>
 <td>Contour: vertices, of point data</td>
 </tr>
 <tr>
 <td>Clip cells</td>
-<td>H1 geometry required</td>
+<td>H1 geometry required; above order 1, or on a curved geometry, whole cells kept as they are and the others cut on linear sub-cells (a <code>PartitionedDataSet</code>; threshold too)</td>
 <td>Polyhedra: yes, into polyhedra (faces clipped, iso-polygons as caps); polygons not yet</td>
 <td>Currently unsupported</td>
 </tr>
