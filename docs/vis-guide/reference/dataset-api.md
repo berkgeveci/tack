@@ -1052,7 +1052,8 @@ of input cell `ids[i]` (`Pieces`), or a point between two input points
 
 | Input field | On the output |
 |---|---|
-| point data (`H1`, values on points) | through the point map; an order-2 field brings its corner values, except on a solid's surface (`extract_surface`), whose nodes are the solid's, gathered at order 2; interpolated only if floating point |
+| point data (`H1`, values on points) | through the point map; interpolated only if floating point |
+| `H1` above order 1, a curved geometry | at its order and nodes when whole cells are kept or taken (not pieces): each output cell's nodes are its source cell's; elsewhere its corner values, except on a solid's surface (`extract_surface`), whose nodes are the solid's, gathered at order 2 |
 | cell data (`Constant`, values on cells) | through the cell map, keeping its kind |
 | `L2` (DG) data | copied cell by cell, each cell keeping its order, when whole cells are kept (not pieces) and the output has reference cells |
 | values on faces | through the face map, oriented values negated where a face is turned; or onto the output's cells when they are input faces (a surface) |

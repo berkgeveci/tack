@@ -545,6 +545,7 @@ class CellLocator:
         return (*map(float, self.origin), *map(float, self.coarse_inverse),
                 *map(int, self.coarse_dims))
 
+    @on_inputs_device
     def cell_bins(self):
         """The cells each leaf may hold, for queries that run from the points (a
         particle asking for its cell): ``(offsets, cells)``, CSR by leaf, the
@@ -594,6 +595,7 @@ class CellLocator:
             self._cell_bins = (offsets, gather(cells, order) if total else cells)
         return self._cell_bins
 
+    @on_inputs_device
     def leaves(self):
         """The two-level grid's leaves (``cell_bins``): ``(dims, starts)``, each
         coarse bin's leaves along x, y and z (``dims[3 * b + axis]``) and its
@@ -601,6 +603,7 @@ class CellLocator:
         self.cell_bins()
         return self._leaves
 
+    @on_inputs_device
     def cell_neighbors(self):
         """Each cell's neighbours across its faces, for advection's walk from the cell
         a particle was last found in (``advect(..., neighbors=True)``): ``_MAX_FACES``

@@ -161,7 +161,8 @@ jobs:
   tests:
     name: tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Up to ~24 min by 2026-10-29: 25 cancelled #201's py3.13 run.
+    timeout-minutes: 35
     env:
       TACK_REQUIRE_CLANG: "1"
     strategy:
@@ -234,7 +235,8 @@ jobs:
   ids-i64:
     name: dataset tests with 64-bit ids
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 17.5-20 min by 2026-10-29: 20 cancelled #197 and #202 mid-run.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -479,7 +481,8 @@ jobs:
   metal:
     name: metal
     runs-on: macos-latest
-    timeout-minutes: 30
+    # 21-25 min on a free arm64 runner, more when macOS runners are short (2026-10-29).
+    timeout-minutes: 45
     env:
       TACK_REQUIRE_CLANG: "1"
 
