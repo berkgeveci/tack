@@ -1032,7 +1032,7 @@ and "polyline" `PolylineTopology`.
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
 | `CellLocator`, `probe` | yes | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point; star-shaped too) | yes (on segments) |
-| `advect`, `streamlines` | yes (2D and 3D cells) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point) | no |
+| `advect`, `streamlines` | yes (2D and 3D cells; a curved geometry, a velocity of any order or `L2`) | yes (in sub-tetrahedra; cells star-shaped from their cell point) | yes (in triangles fanned from the cell point) | no |
 | `cell_centers`, `values_at_centers` | yes | yes (at the cell point, the mean of its points; point and cell data) | yes (likewise) | yes (likewise) |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | yes (Green–Gauss over each cell's faces, fanned from their points' means: exact for linear fields) | yes (in the polygon's plane, Green–Gauss over its edges; 2D cells on shapes in their plane too) | yes (zero) |
 | `project` between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
@@ -1267,10 +1267,12 @@ all of them and goes to the smallest id: without the margin which cells
 held it was rounding noise, and the searches from the points and from the
 cells disagreed there. Advection ranks its cells the same way.
 The search runs from the points: one launch, each point testing the cells
-its bin may hold (`cell_bins()`, cells reached by id), and `probe` reads point
-and cell data the same way, one launch per field. Where cells cannot be read
-by id -- an order-2 or `L2` geometry, line or vertex cells -- it runs from the
-cells instead, each cell testing the points in the bins its box overlaps
+its bin may hold (`cell_bins()`, cells reached by id), and `probe` reads fields
+the same way, one launch per field. A curved geometry (`H1` above order 1) and
+fields above order 1 or in `L2` are read by id through each shape's own view,
+so a curved cell is inverted by its own map there as from the cells. Where
+cells cannot be read by id -- an `L2` geometry, line or vertex cells -- it runs
+from the cells instead, each cell testing the points in the bins its box overlaps
 through its own view; so does a fresh locator's first query of fewer points
 than a quarter of its cells, sparing the cell bins until it is used again.
 Both rank candidates alike and give the same answer. The bins follow the

@@ -18,7 +18,8 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
            tolerance=None, min_step=None, max_step=None, max_length=None,
            neighbors=False):
     """Seeds moved through the velocity ``field`` (a 3-vector field or its name: point
-    data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as
+    data, cell data, or a field of any order or ``L2``, on a straight or curved
+    geometry) by up to ``steps`` fixed steps of ``step_size``, as
     Viskores' ParticleAdvection: a dataset of the particles where they stopped,
     one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the
     bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,

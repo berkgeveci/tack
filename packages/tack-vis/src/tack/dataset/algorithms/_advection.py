@@ -469,8 +469,8 @@ def _velocity(data, field):
     velocity = Field(field.space, _as_vectors(arrays.materialize(field.values), data.dtype))
     by_id = field_by_id(data, velocity)
     if by_id is None:
-        raise TypeError(f"advection takes point data (H1 order 1, values on points) or "
-                        f"cell data, not {field.space!r}")
+        raise TypeError(f"advection takes point data, cell data or an interpolated field "
+                        f"of one order per shape, not {field.space!r}")
     return by_id
 
 
@@ -546,8 +546,8 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     if unit not in ("time", "length"):
         raise ValueError(f"step_unit is 'time' or 'length', not {unit!r}")
     geometry = data.geometry
-    if not isinstance(geometry.space, H1) or geometry.space.order != 1:
-        raise TypeError("advection needs an order-1 H1 geometry: one position per point")
+    if not isinstance(geometry.space, H1):
+        raise TypeError("advection needs an H1 geometry: positions at its nodes")
     velocity = _velocity(data, field)
     positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
     from tack.dataset.polyhedra import PolylineTopology
