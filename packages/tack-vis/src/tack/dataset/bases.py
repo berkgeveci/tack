@@ -34,7 +34,8 @@ from tack.dataset import shapes
 
 __all__ = ["FAMILIES", "bernstein", "dof_tables", "entity_nodes", "has_bases",
            "lattice_ijk", "nodes", "simplex_bernstein", "simplex_lattice", "simplex_shape",
-           "simplex_subdivision", "tensor_shape", "view_index", "view_order", "weights"]
+           "simplex_subdivision", "tensor_shape", "view_index", "view_order", "wedge_bernstein",
+           "wedge_lattice", "wedge_shape", "wedge_subdivision", "weights"]
 
 FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre")
 #: The families with nodes at the ends, which shared values need.
@@ -143,19 +144,146 @@ def tensor_shape(shape):
 #: its faces (triangles, going round outward).
 _SIMPLICES = {
     shapes.Triangle: ([(0, 0), (1, 0), (0, 1)], shapes._TRIANGLE_EDGES, ()),
+    "segment": ([(0,), (1,)], (0, 1), ()),
     shapes.Tetra: ([(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)], shapes._TETRA_EDGES,
                    ((0, 1, 3), (1, 2, 3), (2, 0, 3), (0, 2, 1))),
 }
 
 
+#: A segment as a 1D simplex, for the wedge's ``z`` factor (host only).
+_SEGMENT = "segment"
+
+
 def simplex_shape(shape):
     """Whether ``shape`` has simplex bases of any order here (equispaced nodes)."""
-    return shape in _SIMPLICES
+    return shape in _SIMPLICES and shape != _SEGMENT
 
 
 def has_bases(shape):
-    """Whether ``shape`` has bases of any order here, tensor or simplex."""
-    return tensor_shape(shape) or simplex_shape(shape)
+    """Whether ``shape`` has bases of any order here: tensor, simplex or wedge."""
+    return tensor_shape(shape) or simplex_shape(shape) or wedge_shape(shape)
+
+
+# ── Wedges: a triangle times a segment ──────────────────────────────
+
+#: The wedge's corners (its triangle at z = 0, then at z = 1), edges and faces
+#: (two triangles, three quads), as ``shapes.Wedge`` numbers them.
+_WEDGE = ([(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1)],
+          shapes._WEDGE_EDGES,
+          ((0, 2, 1), (3, 4, 5), (0, 1, 4, 3), (1, 2, 5, 4), (2, 0, 3, 5)))
+
+
+def wedge_shape(shape):
+    """Whether ``shape`` is the wedge, whose bases of any order here are a triangle's
+    (equispaced) times a segment's."""
+    return shape is shapes.Wedge
+
+
+@functools.cache
+def wedge_lattice(order):
+    """A wedge's nodes of ``order``: ``(i, j, k)``, the triangle's lattice node ``(i, j)``
+    (``simplex_lattice``) in layer ``k`` (``0`` to ``order``), node ``t + T * k`` with
+    ``T`` the triangle's node count: the triangle fastest."""
+    tri = simplex_lattice(shapes.Triangle, order)
+    out = np.array([(i, j, k) for k in range(int(order) + 1) for i, j in tri], np.int32)
+    out.setflags(write=False)
+    return out
+
+
+def wedge_basis(order, pc):
+    """The wedge's Lagrange basis at parametric points ``pc``: the triangle's
+    (``simplex_basis``) times the segment's equispaced polynomials in ``z``."""
+    pc = np.atleast_2d(np.asarray(pc, np.float64))
+    tri = simplex_basis(shapes.Triangle, order, pc[:, :2])
+    segment = simplex_basis(_SEGMENT, order, pc[:, 2:3])
+    return np.einsum("pt,pk->pkt", tri, segment).reshape(len(pc), -1)
+
+
+@functools.cache
+def wedge_bernstein(order):
+    """The matrix taking a wedge's nodal values to its Bernstein coefficients: the
+    triangle's and the segment's, one per factor (node ``t + T * k``)."""
+    m = np.kron(simplex_bernstein(_SEGMENT, order), simplex_bernstein(shapes.Triangle, order))
+    m.setflags(write=False)
+    return m
+
+
+@functools.cache
+def wedge_subdivision(level):
+    """A wedge's order-``level`` lattice as ``level^3`` sub-wedges: each of Freudenthal's
+    triangles (``simplex_subdivision``) in each layer, corners as the wedge's own
+    (the triangle at the layer's bottom, then at its top)."""
+    tri = simplex_subdivision(shapes.Triangle, level)
+    count = len(simplex_lattice(shapes.Triangle, level))
+    rows = np.array([[*(t + count * k), *(t + count * (k + 1))]
+                     for k in range(int(level)) for t in tri], np.int32).reshape(-1, 6)
+    rows.setflags(write=False)
+    return rows
+
+
+def _classify(corners, edges, faces, lattice, p):
+    """``dof_tables`` by geometry, for a shape whose nodes are ``lattice / p``: each
+    node a corner, inside an edge (``a`` steps from its corner 0), inside a face
+    (a triangle's ``(a, b)`` toward its corners 1 and 2, a quad's toward 1 and 3),
+    or interior (numbered in node order)."""
+    corners = np.array(corners, np.int64) * p
+    count = len(lattice)
+    kind = np.zeros(count, np.int32)
+    entity = np.zeros(count, np.int32)
+    a = np.zeros(count, np.int32)
+    b = np.zeros(count, np.int32)
+    corner_node = np.zeros(len(corners), np.int32)
+    interior = 0
+
+    def along(x, c0, c1):
+        # x = c0 + s (c1 - c0), 0 < s < 1, in steps of 1/p: s * p, or None.
+        d = corners[c1] - corners[c0]
+        r = x - corners[c0]
+        steps = int(r @ d) * p // int(d @ d) if (d @ d) else 0
+        return steps if 0 < steps < p and np.array_equal(r * p, d * steps) else None
+
+    def on_face(x, row):
+        # In the face's plane and inside it: its steps toward corners 1 and 2
+        # (triangle) or 1 and 3 (quad), or None.
+        o = corners[row[0]]
+        u = corners[row[1]] - o
+        v = corners[row[2] if len(row) == 3 else row[3]] - o
+        r = x - o
+        m = np.c_[u, v].astype(np.float64)
+        st, *_ = np.linalg.lstsq(m, r.astype(np.float64), rcond=None)
+        if not np.allclose(m @ st, r):
+            return None
+        sa, sb = (round(float(t) * p) for t in st)
+        inside = (sa > 0 and sb > 0 and sa + sb < p) if len(row) == 3 else \
+            (0 < sa < p and 0 < sb < p)
+        return (sa, sb) if inside else None
+
+    edge_rows = _pairs(edges, 2)
+    for n in range(count):
+        x = np.asarray(lattice[n], np.int64)
+        hit = [c for c in range(len(corners)) if np.array_equal(corners[c], x)]
+        if hit:
+            kind[n], entity[n] = CORNER, hit[0]
+            corner_node[hit[0]] = n
+            continue
+        for e, (c0, c1) in enumerate(edge_rows):
+            steps = along(x, c0, c1)
+            if steps is not None:
+                kind[n], entity[n], a[n] = EDGE, e, steps
+                break
+        else:
+            for f, row in enumerate(faces):
+                place = on_face(x, row)
+                if place is not None:
+                    kind[n], entity[n] = FACE, f
+                    a[n], b[n] = place
+                    break
+            else:
+                kind[n], a[n] = INTERIOR, interior
+                interior += 1
+    for array in (kind, entity, a, b, corner_node):
+        array.setflags(write=False)
+    return kind, entity, a, b, corner_node
 
 
 @functools.cache
@@ -168,7 +296,7 @@ def simplex_lattice(shape, order):
     d = len(_SIMPLICES[shape][0][0])
     rows = []
     for k in range(p + 1 if d == 3 else 1):
-        for j in range(p + 1 - k):
+        for j in range(p + 1 - k if d >= 2 else 1):
             for i in range(p + 1 - j - k):
                 rows.append((i, j, k)[:d])
     out = np.array(rows, np.int32).reshape(-1, d)
@@ -277,6 +405,8 @@ def lattice_ijk(shape, level):
     axis fastest, or the simplex's (``simplex_lattice``)."""
     if shape in _SIMPLICES:
         return simplex_lattice(shape, level)
+    if shape is shapes.Wedge:
+        return wedge_lattice(level)
     corners = _SHAPES[shape][0]
     d = len(corners[0])
     q = int(level) + 1
@@ -310,6 +440,35 @@ def _simplex_entity_nodes(shape, order):
     faces_out = np.array(face_rows, np.int32).reshape(len(faces), -1) if faces else \
         np.zeros((0, len(tri)), np.int32)
     return edges, faces_out
+
+
+def _wedge_entity_nodes(order):
+    """``entity_nodes`` for a wedge: each edge's ``order + 1`` nodes from its corner 0;
+    each face's nodes, a row of ``(order + 1)^2`` (a triangle's
+    ``(order + 1)(order + 2) / 2`` first, in its lattice order from its corner 0
+    toward 1 and 2; a quad's from its corner 0 toward 1 fastest, then 3)."""
+    corners, edge_table, faces = _WEDGE
+    p = int(order)
+    lattice = wedge_lattice(order)
+    number = {tuple(map(int, row)): n for n, row in enumerate(lattice)}
+    c = np.array(corners, np.int64) * p
+
+    def node(x):
+        return number[tuple(int(v) for v in x)]
+
+    edges = np.array([[node(c[c0] + (c[c1] - c[c0]) * j // p) for j in range(p + 1)]
+                      for c0, c1 in _pairs(edge_table, 2)], np.int32)
+    rows = np.zeros((len(faces), (p + 1) ** 2), np.int32)
+    tri = simplex_lattice(shapes.Triangle, order)
+    for f, row in enumerate(faces):
+        if len(row) == 3:
+            nodes = [node(c[row[0]] + ((c[row[1]] - c[row[0]]) * a + (c[row[2]] - c[row[0]]) * b)
+                          // p) for a, b in tri]
+        else:
+            nodes = [node(c[row[0]] + ((c[row[1]] - c[row[0]]) * a + (c[row[3]] - c[row[0]]) * b)
+                          // p) for b in range(p + 1) for a in range(p + 1)]
+        rows[f, :len(nodes)] = nodes
+    return edges, rows
 
 
 def _simplex_dof_tables(shape, order):
@@ -379,6 +538,9 @@ def dof_tables(shape, order):
     and 2 (see ``_simplex_dof_tables``)."""
     if shape in _SIMPLICES:
         return _simplex_dof_tables(shape, order)
+    if shape is shapes.Wedge:
+        corners, edges, faces = _WEDGE
+        return _classify(corners, edges, faces, wedge_lattice(order), int(order))
     if shape not in _SHAPES:
         raise NotImplementedError(f"bases of any order are on segments, quads, pixels, "
                                   f"hexahedra and voxels, not {shape.__name__}")
@@ -461,6 +623,8 @@ def entity_nodes(shape, order):
     there, which these name."""
     if shape in _SIMPLICES:
         return _simplex_entity_nodes(shape, order)
+    if shape is shapes.Wedge:
+        return _wedge_entity_nodes(order)
     if shape not in _SHAPES:
         raise NotImplementedError(f"no tensor nodes on {shape.__name__}")
     corners, edge_table, face_table = _SHAPES[shape]

@@ -236,6 +236,14 @@ def _geometry_parts(data, group, kind):
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
         return [*mixins, views.quadratic_faces(group.shape), views._QuadraticNewton], attributes
+    if geometry.space.order >= 3 and kind == "cells" and bases.wedge_shape(group.shape):
+        # Curved wedges of order 3 and up.
+        space = geometry.space
+        data.topology.edges()
+        data.topology.faces()
+        mixins, attributes = _space_parts(
+            geometry, group, views.of_wedge_order(views._H1WedgeGeometry, space.order))
+        return [*mixins, *views.wedge_mixins(group.shape), views._WedgeNewton], attributes
     if geometry.space.order >= 3 and kind == "cells" and bases.simplex_shape(group.shape):
         # Curved simplices of order 3 and up: the simplex basis of the geometry's order.
         space = geometry.space
@@ -699,12 +707,25 @@ class DataSet:
                                          where),
                         node_face_dofs=face_dofs, node_points=points))
         for group in topology.groups():
-            if group.count:
-                interior = (views._SimplexInteriorNodes if bases.simplex_shape(group.shape)
-                            else views._TensorInteriorNodes)
+            if not group.count:
+                continue
+            if bases.wedge_shape(group.shape):
+                kind = bases.dof_tables(group.shape, space.order)[0]
+                lattice = bases.wedge_lattice(space.order)[kind == bases.INTERIOR]
+                table = tack.empty((max(lattice.size, 3),), tack.i32)
+                tack.copyto(table, np.r_[lattice.reshape(-1), np.zeros(max(0, 3 - lattice.size),
+                                                                        np.int32)])
+                if not lattice.size:
+                    continue                          # order 3: no interior nodes
                 out.append(self.domain_view(
-                    "cells", group, (views.of_order(interior, space.order),),
-                    node_cell_dofs=cell_dofs, node_points=points))
+                    "cells", group, (views.of_order(views._TableInteriorNodes, space.order),),
+                    node_cell_dofs=cell_dofs, node_points=points, node_interior=table))
+                continue
+            interior = (views._SimplexInteriorNodes if bases.simplex_shape(group.shape)
+                        else views._TensorInteriorNodes)
+            out.append(self.domain_view(
+                "cells", group, (views.of_order(interior, space.order),),
+                node_cell_dofs=cell_dofs, node_points=points))
         return out
 
     @on_inputs_device
@@ -777,14 +798,18 @@ class DataSet:
         for group in groups:
             if not group.count:
                 continue
-            if isinstance(space, L2) and space.tensor and bases.simplex_shape(group.shape):
-                lattice = bases.simplex_lattice(group.shape, space.order).reshape(-1)
+            if isinstance(space, L2) and space.tensor and (bases.simplex_shape(group.shape)
+                                                           or bases.wedge_shape(group.shape)):
+                lattice = bases.lattice_ijk(group.shape, space.order).reshape(-1)
                 ijk = tack.empty((len(lattice),), tack.i32)
                 tack.copyto(ijk, lattice)
+                nodes_of = (views.of_wedge_order(views._SimplexCellNodes, space.order)
+                            if bases.wedge_shape(group.shape) else
+                            views.of_simplex_order(views._SimplexCellNodes, space.order,
+                                                   group.shape.DIMENSION))
                 out.append(self.domain_view(
                     "cells", group,
-                    (views.of_simplex_order(views._SimplexCellNodes, space.order,
-                                            group.shape.DIMENSION),),
+                    (nodes_of,),
                     node_offsets=space.offsets, node_ijk=ijk,
                     node_points=_space_nodes(space, self.geometry)))
             elif isinstance(space, L2) and space.tensor:

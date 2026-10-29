@@ -2193,6 +2193,306 @@ class _SimplexNewton:
         return m, at
 
 
+# ── Wedges of any order: a triangle times a segment (equispaced) ────
+
+
+class _WedgePolynomials:
+    """The wedge's Lagrange basis of order ``ORDER`` (``bases.wedge_lattice``: node ``(i, j,
+    k)``, ``wedge_ijk``): Silvester's product over five barycentric coordinates, the
+    triangle's ``1 - x - y``, ``x``, ``y`` with indices ``(p - i - j, i, j)`` and the
+    segment's ``1 - z``, ``z`` with ``(p - k, k)``."""
+
+    @tack.func
+    def wedge_factors(self, pc, f, g):
+        """``f[m * (p + 1) + a]``: ``F[a]`` at barycentric coordinate ``m`` (0-2 the
+        triangle's, 3-4 the segment's); ``g`` its derivative by it."""
+        q = self.ORDER + 1
+        for m in range(5):
+            t = 1.0 - pc[0] - pc[1]
+            if m == 1:
+                t = pc[0]
+            elif m == 2:
+                t = pc[1]
+            elif m == 3:
+                t = 1.0 - pc[2]
+            elif m == 4:
+                t = pc[2]
+            order = t - t + self.ORDER
+            f[m * q] = t - t + 1.0
+            g[m * q] = t - t
+            for a in range(1, q):
+                step = (order * t - (a - 1)) / a
+                g[m * q + a] = g[m * q + a - 1] * step + f[m * q + a - 1] * (order / a)
+                f[m * q + a] = f[m * q + a - 1] * step
+
+    @tack.func
+    def wedge_alpha(self, n, m):
+        """Node ``n``'s barycentric index ``m`` (0-4)."""
+        i = self.wedge_ijk[3 * n]
+        j = self.wedge_ijk[3 * n + 1]
+        k = self.wedge_ijk[3 * n + 2]
+        a = self.ORDER - i - j
+        if m == 1:
+            a = i
+        elif m == 2:
+            a = j
+        elif m == 3:
+            a = self.ORDER - k
+        elif m == 4:
+            a = k
+        return a
+
+    @tack.func
+    def wedge_weight(self, n, f):
+        q = self.ORDER + 1
+        w = f[self.wedge_alpha(n, 0)]
+        for m in range(1, 5):
+            w = w * f[m * q + self.wedge_alpha(n, m)]
+        return w
+
+    @tack.func
+    def wedge_gradient(self, n, f, g):
+        q = self.ORDER + 1
+        f0 = f[self.wedge_alpha(n, 0)]
+        f1 = f[q + self.wedge_alpha(n, 1)]
+        f2 = f[2 * q + self.wedge_alpha(n, 2)]
+        f3 = f[3 * q + self.wedge_alpha(n, 3)]
+        f4 = f[4 * q + self.wedge_alpha(n, 4)]
+        g0 = g[self.wedge_alpha(n, 0)]
+        g1 = g[q + self.wedge_alpha(n, 1)]
+        g2 = g[2 * q + self.wedge_alpha(n, 2)]
+        g3 = g[3 * q + self.wedge_alpha(n, 3)]
+        g4 = g[4 * q + self.wedge_alpha(n, 4)]
+        return tack.vec3((g1 * f0 - g0 * f1) * f2 * f3 * f4, (g2 * f0 - g0 * f2) * f1 * f3 * f4,
+                         (g4 * f3 - g3 * f4) * f0 * f1 * f2)
+
+    @tack.func
+    def node_parametric(self, n):
+        zero = self.wedge_bernstein[0] - self.wedge_bernstein[0]
+        return tack.vec3((zero + self.wedge_ijk[3 * n]) / self.ORDER,
+                         (zero + self.wedge_ijk[3 * n + 1]) / self.ORDER,
+                         (zero + self.wedge_ijk[3 * n + 2]) / self.ORDER)
+
+
+class _WedgeBasis(_WedgePolynomials):
+    """A field's value, parametric gradient and Bernstein bounds on a wedge of any order,
+    from ``dof(c, n)``, the space's."""
+
+    @tack.func
+    def value(self, c, pc):
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors(pc, f, g)
+        total = self.dof(c, 0) * self.wedge_weight(0, f)
+        for n in range(1, self.NODES):
+            total += self.dof(c, n) * self.wedge_weight(n, f)
+        return total
+
+    @tack.func
+    def parametric_gradient(self, c, pc):
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors(pc, f, g)
+        first = self.dof(c, 0)
+        grad = (self.dof(c, 1) - first) * self.wedge_gradient(1, f, g)
+        for n in range(2, self.NODES):
+            grad += (self.dof(c, n) - first) * self.wedge_gradient(n, f, g)
+        return grad
+
+    @tack.func
+    def corner_value(self, c, j):
+        return self.dof(c, self.corner_node[j])
+
+    @tack.func
+    def _wedge_bernstein(self, c, out):
+        first = self.dof(c, 0)
+        for i in range(self.NODES):
+            total = first - first
+            for n in range(1, self.NODES):
+                total += self.wedge_bernstein[i * self.NODES + n] * (self.dof(c, n) - first)
+            out[i] = total
+
+    @tack.func
+    def value_range(self, c):
+        coeff = tack.local_array_like(self.wedge_bernstein, self.NODES)
+        self._wedge_bernstein(c, coeff)
+        lo = coeff[0]
+        hi = lo
+        for i in range(1, self.NODES):
+            lo = min(lo, coeff[i])
+            hi = max(hi, coeff[i])
+        first = self.dof(c, 0)
+        return first + lo, first + hi
+
+    @tack.func
+    def flatness(self, c):
+        """The greatest distance of a Bernstein coefficient from the corner coefficients'
+        interpolation (the wedge's linear functions) where it sits."""
+        coeff = tack.local_array_like(self.wedge_bernstein, self.NODES)
+        self._wedge_bernstein(c, coeff)
+        worst = coeff[0] - coeff[0]
+        for n in range(self.NODES):
+            linear = coeff[0] - coeff[0]
+            for m in range(6):
+                layer = self.wedge_alpha(n, 4) if m >= 3 else self.wedge_alpha(n, 3)
+                linear += (coeff[self.corner_node[m]] * self.wedge_alpha(n, m % 3) * layer
+                           / (self.ORDER * self.ORDER))
+            worst = max(worst, abs(coeff[n] - linear))
+        return worst
+
+
+class _WedgeDofs:
+    """Where an ``H1`` space of order ``ORDER`` (3 or more) on wedges keeps cell ``c``'s
+    node ``n``: as on simplices, a triangle face's through ``_SimplexFaces``, a quad
+    face's through ``_TensorFaces``."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        kind = self.node_kind[n]
+        e = self.node_entity[n]
+        if kind == 0:
+            return self.point_id(c, e)
+        if kind == 1:
+            return self.tensor_edge_dof(c, e, self.node_a[n])
+        if kind == 2:
+            if self.face_num_points(e) == 3:
+                return self.simplex_face_dof(c, e, self.node_a[n], self.node_b[n])
+            return self.tensor_face_dof(c, e, self.node_a[n], self.node_b[n])
+        return self.cell_dofs[self.entity_id(c)] + self.node_a[n]
+
+
+class _H1WedgeField(_WedgeDofs, _WedgeBasis):
+    """H1 of order 3 or more on wedges, Shared."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.dof_index(c, n))
+
+
+class _L2WedgeField(_WedgeBasis):
+    """L2 of order 2 or more on wedges: each cell's ``NODES`` values from
+    ``offsets[cell]``, in node order."""
+
+    @tack.func
+    def dof(self, c, n):
+        return self.get(self.offsets[self.entity_id(c)] + n)
+
+
+class _H1WedgeGeometry(_WedgeDofs, _WedgePolynomials, _Geometry):
+    """Curved geometry of order 3 or more on wedges, from differences to node 0."""
+
+    CURVED = 1
+
+    @tack.func
+    def control_box(self, c):
+        first = self.get(self.dof_index(c, 0))
+        a = first - first
+        b = a
+        for i in range(self.NODES):
+            s = first - first
+            for n in range(1, self.NODES):
+                s += self.wedge_bernstein[i * self.NODES + n] * (
+                    self.get(self.dof_index(c, n)) - first)
+            a = min(a, s)
+            b = max(b, s)
+        return first + a, first + b
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+    @tack.func
+    def position(self, c, pc):
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors(pc, f, g)
+        first = self.get(self.dof_index(c, 0))
+        x = first
+        for n in range(1, self.NODES):
+            x += (self.get(self.dof_index(c, n)) - first) * self.wedge_weight(n, f)
+        return x
+
+    @tack.func
+    def geometry_jacobian(self, c, pc):
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors(pc, f, g)
+        first = self.get(self.dof_index(c, 0))
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        for n in range(1, self.NODES):
+            m += (self.get(self.dof_index(c, n)) - first).outer_product(
+                self.wedge_gradient(n, f, g))
+        return m
+
+
+class _WedgeNewton:
+    """``_CurvedNewton`` for a curved wedge geometry: its nodes read once."""
+
+    @tack.func
+    def curved_to_parametric(self, i, x):
+        rx = tack.local_array_like(self.wedge_bernstein, self.NODES)
+        ry = tack.local_array_like(self.wedge_bernstein, self.NODES)
+        rz = tack.local_array_like(self.wedge_bernstein, self.NODES)
+        first = self.get(self.dof_index(i, 0))
+        for n in range(1, self.NODES):
+            d = self.get(self.dof_index(i, n)) - first
+            rx[n] = d[0]
+            ry[n] = d[1]
+            rz[n] = d[2]
+        return _newton_from(self, x, rx, ry, rz, first)
+
+    @tack.func
+    def gathered_map(self, rx, ry, rz, first, pc):
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors(pc, f, g)
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        at = first
+        for n in range(1, self.NODES):
+            d = tack.vec3(rx[n], ry[n], rz[n])
+            at += d * self.wedge_weight(n, f)
+            m += d.outer_product(self.wedge_gradient(n, f, g))
+        return m, at
+
+
+class _TableInteriorNodes:
+    """``H1`` of order ``ORDER`` (3 or more): a cell's interior nodes from a table of their
+    lattice coordinates (``node_interior``, three a node), where its geometry maps
+    them (wedges)."""
+
+    @tack.func
+    def node_count(self, i):
+        return self.node_interior.shape[0] // 3
+
+    @tack.func
+    def node_dof(self, i, j):
+        return self.node_cell_dofs[self.entity_id(i)] + j
+
+    @tack.func
+    def node_position(self, i, j):
+        pc = tack.vec3(self.node_points[self.node_interior[3 * j]],
+                       self.node_points[self.node_interior[3 * j + 1]],
+                       self.node_points[self.node_interior[3 * j + 2]])
+        return self.position(i, pc)
+
+
+def wedge_mixins(shape):
+    """The edge and face mixins a wedge ``H1`` view needs: both face kinds'."""
+    return _TensorEdges, _SimplexFaces, _TensorFaces
+
+
+def of_wedge_order(mixin, order):
+    """``mixin`` with ``ORDER`` and ``NODES`` (the wedge's node count) set."""
+    from math import comb
+
+    key = (mixin, int(order), "wedge")
+    if key not in _by_order:
+        _by_order[key] = type(f"{mixin.__name__}{order}w", (mixin,),
+                              {"ORDER": int(order),
+                               "NODES": comb(int(order) + 2, 2) * (int(order) + 1)})
+    return _by_order[key]
+
+
 def simplex_mixins(shape):
     """The edge and face mixins a simplex ``H1`` view of ``shape`` cells needs."""
     return _TensorEdges, (_SimplexFaces if shape.DIMENSION == 3 else _NoSimplexFaces)
