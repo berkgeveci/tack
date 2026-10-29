@@ -4,7 +4,9 @@
   every shape `contour` subdivides: the cells whose field's Bernstein bound
   lies wholly on the kept side stay as they are (curved, their fields of any
   order), and only the others are cut, on linear sub-cells of their lattice
-  (`subdivision=`, `tolerance=`, as `contour` takes them).
+  (`subdivision=`, `tolerance=`, as `contour` takes them). The whole part owns
+  the corners on the seam and the cut part's copies are `DUPLICATEPOINT`, so
+  reductions over the two count each point once, with or without ghost layers.
 
 ### Changed
 

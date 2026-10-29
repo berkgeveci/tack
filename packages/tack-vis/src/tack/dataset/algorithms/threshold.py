@@ -84,7 +84,8 @@ def threshold(data, field, lower, upper, all_points=True, fields=None, subdivisi
             tolerance = _in_unit_of(field, tolerance, "threshold's tolerance")
         return split_by_range(
             data, field, lower, upper, subdivision, tolerance, fields,
-            lambda refined, name: threshold(refined, name, lower, upper, all_points, fields))
+            lambda refined, name, carried: threshold(refined, name, lower, upper, all_points,
+                                                      carried))
     return _keep_cells(data, _threshold_flags(data, field, lower, upper, all_points), fields)
 
 

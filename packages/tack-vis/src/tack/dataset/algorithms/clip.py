@@ -296,7 +296,8 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
         bound = float("inf")
         lower, upper = (-bound, value) if inside else (value, bound)
         return split_by_range(data, field, lower, upper, subdivision, tolerance, fields,
-                              lambda refined, name: clip(refined, name, value, inside, fields))
+                              lambda refined, name, carried: clip(refined, name, value, inside,
+                                                                    carried))
     if not isinstance(data.geometry.space, H1):
         # Clip's points are merged across cells, so each needs one position.
         raise TypeError("clip needs an H1 geometry: one position per point")

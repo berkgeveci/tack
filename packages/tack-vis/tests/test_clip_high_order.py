@@ -162,3 +162,57 @@ def test_a_cell_field_thresholds_whole_curved_cells():
     out = td.threshold(data, "c", 10, 40)
     assert isinstance(out, td.DataSet) and out.num_cells == 31
     assert out.geometry.space.order == 2
+
+
+def _owned_positions(parts):
+    """The positions of every partition's points not marked a copy, and how many."""
+    owned = []
+    for part in parts:
+        p = part.positions()
+        marks = part.ghosts.points if part.ghosts is not None else None
+        if marks is not None:
+            p = p[(marks.numpy() & td.Ghosts.SKIPPED_POINTS) == 0]
+        owned.append(p)
+    owned = np.concatenate(owned)
+    return {tuple(x) for x in owned}, len(owned)
+
+
+@pytest.mark.parametrize("filter", ["clip", "threshold"])
+@pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra", "wedges"])
+def test_the_seams_points_are_owned_once(filter, cells):
+    """The whole cells' corners on the seam are in both parts; the whole part owns
+    them and the cut part's copies are ``DUPLICATEPOINT``, so ``owned_values``
+    over the two counts every point once."""
+    data = _mesh(cells)
+    run = {"clip": lambda d: td.clip(d, "u", 0.35),
+           "threshold": lambda d: td.threshold(d, "u", 0.15, 0.55)}[filter]
+    whole, part = _split(run(data))
+    shared = {tuple(x) for x in whole.positions()} & {tuple(x) for x in part.positions()}
+    assert shared
+    positions, count = _owned_positions([whole, part])
+    assert count == len(positions)
+    assert positions == {tuple(x) for x in np.concatenate([whole.positions(),
+                                                           part.positions()])}
+    assert part.ghosts.cells is None
+    assert td.owned_values(part, part.geometry).shape[0] == part.num_points - len(shared)
+
+
+def test_the_seams_points_are_owned_once_over_pieces():
+    """With ghost layers, each piece's parts own their share: over every piece and
+    part, the owned points are the whole dataset's, each once."""
+    def grid():
+        return td.uniform_grid((5, 5, 5), spacing=(0.25, 0.25, 0.25), dtype=tack.f64)
+
+    def prepared(d):
+        d.geometry = td.interpolate(d, _bend, td.H1(d, order=2), dtype=tack.vec3(tack.f64))
+        d.fields["u"] = td.interpolate(d, _square, td.H1(d, order=2), dtype=tack.f64)
+        return d
+
+    expected, count = _owned_positions(_split(td.clip(prepared(grid()), "u", 0.35)))
+    assert count == len(expected)
+    parts = []
+    for piece in td.split(grid(), (2, 2, 1), ghost_layers=1):
+        parts += list(td.clip(prepared(piece), "u", 0.35).partitions)
+    positions, count = _owned_positions(parts)
+    assert count == len(positions)
+    assert positions == expected

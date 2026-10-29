@@ -287,7 +287,9 @@ cells first:
 ```
 
 The parts share the lattice points of the faces between them, where a linear
-sub-face lies against a curved face. A dataset of straight cells and order-1
+sub-face lies against a curved face. The whole cells' corners there are the
+whole part's: the cut part's copies are marked `DUPLICATEPOINT`, so reductions
+over the two (`owned_values`, `statistics`) count each once. A dataset of straight cells and order-1
 fields clips and thresholds as before, into one `DataSet`.
 
 MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges

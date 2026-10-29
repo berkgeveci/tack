@@ -216,6 +216,29 @@ def _lattice_marks(cells, slot_of, per_cell, node_kind, node_entity, first, rank
                         out[rank[k]] = point_marks[cells.point_id(c, s)] & 1
 
 
+@tack.kernel
+def _seam_marks(cells, slot_of, per_cell, node_kind, node_entity, first, rank, elsewhere,
+                out):
+    # A lattice corner on a point another part owns: 1.
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                if first[k] == 1 and node_kind[n] == 0:
+                    if elsewhere[cells.point_id(c, node_entity[n])] == 1:
+                        out[rank[k]] = 1
+
+
+@tack.kernel
+def _corners_of(cells, flags, out):
+    # Each flagged cell's corners: 1 (cells sharing a point write the same 1).
+    for c in cells:
+        if flags[cells.entity_id(c)] == 1:
+            for j in range(cells.NUM_POINTS):
+                out[cells.point_id(c, j)] = 1
+
+
 @tack.func
 def _lattice_point(n, dimension, steps, ijk):
     """Lattice node ``n``'s parametric coordinates: ``steps[i]`` (``i / level`` in the
@@ -828,12 +851,15 @@ def default_level(data, *fields):
     return max([_order(data.geometry)] + [_order(f) for f in fields])
 
 
-def _refined(data, flags, level, fields):
+def _refined(data, flags, level, fields, elsewhere=None):
     """The cells ``flags`` marks, cut into ``level`` steps along each axis: an
     unstructured linear dataset of their sub-cells, its geometry and ``fields`` (a
     dict of names to fields) evaluated at the lattice points (``H1`` and ``L2`` fields of any order;
     an ``L2`` field is evaluated from one cell at a shared point, the one every piece
     chooses alike, so its jumps are not kept), cell fields taken from each sub-cell's parent.
+    ``elsewhere`` (i32 per point, optional) flags points another part owns: the
+    refined dataset's point field ``SEAM`` is 1 at the lattice corners on them, 0
+    elsewhere.
     Returns ``(refined, parent)``, ``parent`` each sub-cell's cell."""
     from math import comb
 
@@ -980,6 +1006,9 @@ def _refined(data, flags, level, fields):
     elif data.ghosts is not None:
         refined.ghosts = _refined_marks(data, slot_of, per_cell, level, first, rank, parent,
                                         points)
+    if elsewhere is not None:
+        refined.fields[SEAM] = _seam(data, refined, elsewhere, slot_of, per_cell, level,
+                                     first, rank)
     for name, values in point_fields.items():
         refined.fields[name] = Field(H1(refined), values, fields[name].unit)
     for name, field in fields.items():
@@ -1017,6 +1046,48 @@ def _refined_marks(data, slot_of, per_cell, level, first, rank, parent, points):
                                tack.array(kind), tack.array(entity), first, rank,
                                ghosts.points, cell_marks, points_out)
     return Ghosts(cells=cells_out, points=points_out)
+
+
+#: The refined dataset's field of corners another part owns (``_refined``'s ``elsewhere``).
+SEAM = "__seam__"
+
+
+def _seam(data, refined, elsewhere, slot_of, per_cell, level, first, rank):
+    """A point field of ``refined``: 1 at the lattice corners on points ``elsewhere``
+    flags, 0 elsewhere (in the geometry's type, so a filter carries it)."""
+    out = tack.zeros((refined.num_points,), data.dtype)
+    for group in data.launch_groups("cells", []):
+        if group.count:
+            kind, entity, _, _, _ = bases.dof_tables(group.shape, level)
+            _seam_marks(data.domain_view("cells", group), slot_of, per_cell,
+                        tack.array(np.asarray(kind, np.int32)),
+                        tack.array(np.asarray(entity, np.int32)), first, rank, elsewhere, out)
+    return Field(H1(refined), out)
+
+
+@tack.kernel
+def _duplicates(seam, marks):
+    # A point the seam field gives 1, a corner of a whole cell: DUPLICATEPOINT.
+    for i in range(marks.shape[0]):
+        if seam[i] == 1:
+            marks[i] = marks[i] | 1
+
+
+def _seam_marked(part):
+    """``part`` without its ``SEAM`` field, the points it gives 1 marked
+    ``DUPLICATEPOINT`` (beside any marks it has)."""
+    from tack.dataset.ghosts import Ghosts
+
+    seam = part.fields.pop(SEAM)
+    if part._ghosts_lost or not part.num_points:
+        return part
+    ghosts = part.ghosts
+    marks = tack.zeros((part.num_points,), tack.u8)
+    if ghosts is not None and ghosts.points is not None:
+        tack.copyto(marks, ghosts.points)
+    _duplicates(arrays.materialize(seam.values), marks)
+    part.ghosts = Ghosts(cells=ghosts.cells if ghosts is not None else None, points=marks)
+    return part
 
 
 @tack.kernel
@@ -1126,7 +1197,9 @@ def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cu
     range's ends, cut into ``subdivision`` lattice steps (by default the largest
     order of the field and geometry; with ``tolerance``, the fewest whose
     estimated error is within it). ``fields`` names the fields carried (``None``
-    every one)."""
+    every one). The two share the whole cells' corners on the seam, which the whole
+    part owns: the cut part's copies are marked ``DUPLICATEPOINT``, so reductions
+    over the two count each once."""
     from tack.dataset.algorithms._extract import _keep_cells
     from tack.dataset.partitioned import PartitionedDataSet
 
@@ -1149,8 +1222,14 @@ def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cu
     names = list(data.fields) if fields is None else list(fields)
     carried = {k: data.fields[k] for k in names}
     carried[name] = field
-    refined, _ = _refined(data, flags, level, carried)
-    part = cut(refined, name)
+    # The whole cells' corners are the whole part's: the cut part's copies are ghosts.
+    elsewhere = tack.zeros((data.num_points,), tack.i32)
+    for group in data.launch_groups("cells", []):
+        if group.count:
+            _corners_of(data.domain_view("cells", group), whole, elsewhere)
+    refined, _ = _refined(data, flags, level, carried, elsewhere)
+    part = cut(refined, name, None if fields is None else [*names, SEAM])
     if name not in names:
         part.fields.pop(name, None)
+    part = _seam_marked(part)
     return PartitionedDataSet([_keep_cells(data, whole, fields), part])
