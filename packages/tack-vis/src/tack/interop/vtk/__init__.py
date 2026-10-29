@@ -696,7 +696,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             polyhedral = 42 in present
         from tack.interop.vtk import _lagrange
 
-        if present and present <= set(_lagrange.LAGRANGE):
+        if present and present <= set(_lagrange.LAGRANGE) | set(_lagrange.BEZIER):
             if len(present) > 1:
                 raise NotImplementedError("Lagrange cells of several shapes in one grid are "
                                           "not supported")
@@ -1254,11 +1254,20 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     ``_WEDGE``) of the largest order: points at the equispaced nodes of
     ``H1`` of that order, each shared node once, the geometry and ``H1`` fields
     evaluated there (exact for fields of that order or below), cell fields as
-    cell data. ``vtk_to_dataset`` reads such a grid back into those spaces."""
+    cell data. ``vtk_to_dataset`` reads such a grid back into those spaces.
+    ``higher_order="bezier"`` writes VTK Bezier cells (``VTK_BEZIER_CURVE``,
+    ``_QUADRILATERAL``, ``_HEXAHEDRON``) instead: points and point data the
+    coefficients of ``H1(order, basis="bernstein")``, which ``vtk_to_dataset``
+    reads back as such; ``True`` chooses Bezier cells when the geometry or an
+    ``H1`` field is in a Bernstein basis, ``"lagrange"`` Lagrange cells always."""
     from tack.interop.vtk import _lagrange
 
+    if higher_order not in (False, True, "lagrange", "bezier"):
+        raise ValueError(f"higher_order is False, True, \"lagrange\" or \"bezier\", not "
+                         f"{higher_order!r}")
     order = _lagrange.tensor_order(data) if higher_order else 1
-    out = _lagrange.to_vtk(data, order) if order > 1 else _dataset_to_vtk(data, copy)
+    bezier = higher_order == "bezier" or (higher_order is True and _lagrange.bernstein(data))
+    out = _lagrange.to_vtk(data, order, bezier) if order > 1 else _dataset_to_vtk(data, copy)
     time = _time_of(data)
     if time is not None:
         from vtkmodules.vtkCommonDataModel import vtkDataObject

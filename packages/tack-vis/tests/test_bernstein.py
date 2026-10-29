@@ -176,3 +176,82 @@ def test_other_shapes_are_refused():
         td.interpolate(tets, _cubic, td.H1(tets, order=3, basis="bernstein"))
     with pytest.raises(ValueError, match="basis is one of"):
         td.H1(tets, order=3, basis="bezier")
+
+
+def _vtk_at(grid, name, pcs):
+    """VTK's own evaluation of a grid of higher-order cells: each cell's position and
+    ``name`` at each of ``pcs`` (Bezier cells weigh their points by Bernstein's
+    polynomials)."""
+    vtk = pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from vtkmodules.vtkCommonCore import reference
+
+    cell = vtk.vtkGenericCell()
+    xs, us = [], []
+    array = grid.point_data[name]
+    for c in range(grid.number_of_cells):
+        grid.GetCell(c, cell)
+        for pc in pcs:
+            weights = [0.0] * cell.GetNumberOfPoints()
+            x = [0.0, 0.0, 0.0]
+            cell.EvaluateLocation(reference(0), list(pc), x, weights)
+            xs.append(x)
+            us.append(sum(w * array.GetValue(cell.GetPointId(k)) for k, w in enumerate(weights)))
+    return np.array(xs), np.array(us)
+
+
+@pytest.mark.parametrize("dimension", [1, 2, 3])
+def test_bezier_cells_are_vtks(dimension):
+    """A Bernstein dataset goes to VTK as Bezier cells (``higher_order=True`` chooses
+    them), which VTK evaluates as Tack does, and comes back in the same spaces; a
+    Lagrange one goes as Bezier cells when asked, the same polynomials."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+
+    data = _mesh("cells", dimension)
+    data.geometry = td.interpolate(data, _bend, td.H1(data, order=3, basis="bernstein"),
+                                   dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3, basis="bernstein"))
+    grid = dataset_to_vtk(data, higher_order=True)
+    assert grid.GetCellType(0) == {1: 75, 2: 77, 3: 79}[dimension]
+    pcs = np.random.default_rng(3).uniform(0.05, 0.95, (3, 3))
+    pcs[:, dimension:] = 0.0
+    xs, us = _vtk_at(grid, "u", pcs)
+    # Probing curved cells inverts them by Newton's method, to about 1e-11.
+    np.testing.assert_allclose(td.probe(data, xs).fields["u"].values.numpy(), us, rtol=0,
+                               atol=1e-10)
+    back = vtk_to_dataset(grid, dtype=tack.f64)
+    assert back.fields["u"].space is td.H1(back, order=3, basis="bernstein")
+    assert back.geometry.space is td.H1(back, order=3, basis="bernstein")
+    np.testing.assert_allclose(td.probe(back, xs).fields["u"].values.numpy(), us, rtol=0,
+                               atol=1e-10)
+    nodal = td.H1(data, order=3, basis="equispaced")
+    lagrange = td.DataSet(data.topology, td.project(data, data.geometry, nodal))
+    lagrange.fields["u"] = td.project(data, "u", nodal)
+    assert dataset_to_vtk(lagrange, higher_order=True).GetCellType(0) == \
+        {1: 68, 2: 70, 3: 72}[dimension]
+    bezier = dataset_to_vtk(lagrange, higher_order="bezier")
+    xb, ub = _vtk_at(bezier, "u", pcs)
+    np.testing.assert_allclose(xb, xs, rtol=0, atol=1e-13)
+    np.testing.assert_allclose(ub, us, rtol=0, atol=1e-13)
+
+
+def test_rational_and_simplex_bezier_cells_are_refused():
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from vtkmodules.vtkCommonCore import vtkDoubleArray
+
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+
+    data = _mesh("cells", 2)
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=2, basis="bernstein"))
+    grid = dataset_to_vtk(data, higher_order=True)
+    weights = vtkDoubleArray(np.full(grid.number_of_points, 2.0))
+    weights.SetName("RationalWeights")
+    grid.point_data.SetRationalWeights(weights)
+    with pytest.raises(NotImplementedError, match="rational Bezier"):
+        vtk_to_dataset(grid)
+    tets = td.tetrahedralize(_mesh("grid"))
+    tets.fields["u"] = td.interpolate(tets, _cubic, td.H1(tets, order=2))
+    with pytest.raises(NotImplementedError, match="Bezier cells are written for"):
+        dataset_to_vtk(tets, higher_order="bezier")
+    with pytest.raises(ValueError, match="higher_order is"):
+        dataset_to_vtk(data, higher_order="spline")
