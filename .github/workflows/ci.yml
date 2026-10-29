@@ -159,10 +159,11 @@ jobs:
 
   # ── The main gate ──────────────────────────────────────────────────
   tests:
-    name: tests (py${{ matrix.python-version }})
+    name: tests (py${{ matrix.python-version }}, ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    # Up to ~24 min by 2026-10-29: 25 cancelled #201's py3.13 run.
-    timeout-minutes: 35
+    # The suite in two shares (conftest's --shard), each serial: whole, it took
+    # 25-35+ min by 2026-10-29, and 35 cancelled #212's py3.11 run.
+    timeout-minutes: 30
     env:
       TACK_REQUIRE_CLANG: "1"
     strategy:
@@ -171,6 +172,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@v7
@@ -223,7 +225,7 @@ jobs:
           EOF
 
       - name: Run the suite
-        run: uv run pytest -q
+        run: uv run pytest -q --shard ${{ matrix.shard }}/2
 
   # ── 64-bit ids ─────────────────────────────────────────────────────
   # tack.dataset keeps a topology's ids in i32 unless it is too large or asked
@@ -233,10 +235,15 @@ jobs:
   # with VTK and MFEM present so the comparisons run too. Its own job: it
   # repeats the whole dataset suite, which would crowd the main gate.
   ids-i64:
-    name: dataset tests with 64-bit ids
+    name: dataset tests with 64-bit ids (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    # 17.5-20 min by 2026-10-29: 20 cancelled #197 and #202 mid-run.
-    timeout-minutes: 30
+    # In two shares (conftest's --shard): whole, 17.5-26 min by 2026-10-29, and 30
+    # cancelled #212's run.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@v7
@@ -257,7 +264,7 @@ jobs:
           echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
 
       - name: Run the dataset tests with i64 ids
-        run: uv run pytest -q --ids=i64 packages/tack-vis/tests
+        run: uv run pytest -q --ids=i64 --shard ${{ matrix.shard }}/2 packages/tack-vis/tests
 
   # ── The dataset tests with L2 cell-fastest ─────────────────────────
   #
@@ -512,10 +519,15 @@ jobs:
   # Metal is required: an unavailable GPU must fail the job before pytest can
   # quietly omit the hardware cases.
   metal:
-    name: metal
+    name: metal (${{ matrix.shard }}/3)
     runs-on: macos-latest
-    # 21-25 min on a free arm64 runner, more when macOS runners are short (2026-10-29).
-    timeout-minutes: 45
+    # The suite in three shares (conftest's --shard), one process each: whole, it
+    # took 42 min of a 45 min limit when macOS runners were short (2026-10-29).
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     env:
       TACK_REQUIRE_CLANG: "1"
 
@@ -553,6 +565,8 @@ jobs:
           EOF
 
       - name: Run the suite with Metal required
+        env:
+          SHARD: ${{ matrix.shard }}/3
         run: |
           uv run python - <<'EOF'
           import os
@@ -563,5 +577,5 @@ jobs:
           tack.set_default_device("metal")
           assert get_backend().name == "metal"
           print("Required hardware backend: metal", flush=True)
-          raise SystemExit(pytest.main(["-q", "-rs"]))
+          raise SystemExit(pytest.main(["-q", "-rs", "--shard", os.environ["SHARD"]]))
           EOF

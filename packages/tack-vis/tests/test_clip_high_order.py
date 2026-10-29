@@ -90,7 +90,7 @@ def test_clip_keeps_whole_cells_and_cuts_the_rest_on_sub_cells(cells, inside):
     the others are the clip of their sub-cells, as clipping the whole subdivided
     dataset gives them."""
     data = _mesh(cells)
-    whole, part = _split(td.clip(data, "u", 0.35, inside=inside))
+    whole, part = _split(td.clip(data, "u", 0.35, inside=inside, exact=False))
     assert whole.num_cells and part.num_cells
     assert whole.geometry.space.order == 2 and whole.fields["u"].space.order == 2
     assert part.geometry.space.order == 1
@@ -98,6 +98,12 @@ def test_clip_keeps_whole_cells_and_cuts_the_rest_on_sub_cells(cells, inside):
     assert (values <= 0.35).all() if inside else (values >= 0.35).all()
     _check_against_subdivided(whole, part, td.clip(td.subdivide(data, 2), "u", 0.35,
                                                    inside=inside))
+    # At the field's roots (the default): the same cells, the cut through the
+    # contour's vertices, to the bit (the same sub-edges, the same roots).
+    exact = _split(td.clip(data, "u", 0.35, inside=inside))[1]
+    assert exact.num_cells == part.num_cells
+    surface = td.contour(data, "u", 0.35)
+    assert {tuple(x) for x in surface.positions()} <= {tuple(x) for x in exact.positions()}
     kept = set(whole.fields["c"].values.numpy()) | set(part.fields["c"].values.numpy())
     assert kept <= set(range(data.num_cells))
 
@@ -118,7 +124,7 @@ def test_threshold_keeps_whole_cells_and_cuts_the_rest_on_sub_cells(cells, all_p
 def test_an_order_two_field_on_straight_cells_and_finer_sub_cells():
     """A field above order 1 alone takes the path; ``subdivision`` cuts finer."""
     data = _mesh("hexahedra", curved=False)
-    whole, part = _split(td.clip(data, "u", 0.35, subdivision=3))
+    whole, part = _split(td.clip(data, "u", 0.35, subdivision=3, exact=False))
     assert whole.geometry.space.order == 1
     _check_against_subdivided(whole, part, td.clip(td.subdivide(data, 3), "u", 0.35), level=3)
 

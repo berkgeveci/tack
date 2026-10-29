@@ -85,13 +85,16 @@ class Interpolate:
     at ``weights[i]`` from the first. ``averages``, ``(offsets, members)``: further
     output points after those, each the average of earlier output points
     ``members[offsets[k]:offsets[k + 1]]`` (clip's centroid points), and inside
-    input cell ``average_cells[k]``, whose ghost mark it takes."""
+    input cell ``average_cells[k]``, whose ghost mark it takes. ``exact``, when
+    given, puts a field's values at the first points where they truly are rather
+    than between their ends (``_crossings``: ``exact(field, values)``)."""
 
-    def __init__(self, ends, weights, averages=None, average_cells=None):
+    def __init__(self, ends, weights, averages=None, average_cells=None, exact=None):
         self.ends = ends
         self.weights = weights
         self.averages = averages
         self.average_cells = average_cells
+        self.exact = exact
 
 
 # ── Values ──────────────────────────────────────────────────────────
@@ -174,8 +177,9 @@ def _copy_laid_out(values, sources, src_offsets, src_cells, src_count, dst_offse
             out[b] = values[a]
 
 
-def _apply(values, how, oriented=False):
-    """The values through one map, or ``None`` if they cannot go through it."""
+def _apply(values, how, oriented=False, field=None):
+    """The values through one map, or ``None`` if they cannot go through it. An
+    ``Interpolate`` with ``exact`` places ``field``'s values exactly."""
     if isinstance(how, Same):
         return values
     if isinstance(how, Take):
@@ -191,6 +195,8 @@ def _apply(values, how, oriented=False):
         out = _like(values, n + extra)
         if n:
             _interpolate_rows(materialize(values), how.ends, how.weights, out)
+            if how.exact is not None and field is not None:
+                how.exact(field, out)
         if extra:
             _average_rows(out, how.averages[0], how.averages[1], n)
         return out
@@ -364,7 +370,7 @@ def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=N
         values = field.values
         if isinstance(space, H1):
             values = _point_values(values, data.num_points)
-        values = _apply(values, points)
+        values = _apply(values, points, field=field)
         if values is None:
             return None
         return Field(H1(out) if isinstance(space, H1) else Values(out, "points"), values,
@@ -457,6 +463,17 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     entities (``Interpolate``), is left behind; ``sets``, if given, replaces
     them.
     """
+    crossings = getattr(data, "_crossings", None)
+    if crossings is not None and isinstance(points, Interpolate) and points.exact is None:
+        # A refined dataset's cut: its crossings at the field's roots, the positions
+        # the filter computed between lattice points too (and the averages of them).
+        points = crossings.located(points)
+        if geometry is not None and points.weights.shape[0]:
+            values = geometry.values
+            points.exact(data.geometry, values)
+            if points.averages is not None and points.averages[0].shape[0] > 1:
+                _average_rows(values, points.averages[0], points.averages[1],
+                              points.weights.shape[0])
     if geometry is None:
         geometry = _carry_field(data.geometry, data, out, points, cells, faces,
                                 faces_to_cells)

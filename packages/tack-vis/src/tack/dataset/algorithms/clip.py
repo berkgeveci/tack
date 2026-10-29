@@ -1,6 +1,8 @@
 """``clip``: the part of ``data`` where ``by`` -- point data (a field or its name) or an implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or with ``inside`` below it (inside an implicit function's region): Viskores' ClipWithField and (``value`` 0) ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their shape; cut cells become the pieces their case lists. Points are the kept corners, the crossings on cut edges (merged across cells) and centroid points; point data is interpolated onto them, cell data goes to each piece."""
 
 
+import numpy as np
+
 import tack
 from tack import arrays
 from tack.algorithms.scan import exclusive_scan
@@ -245,7 +247,8 @@ def _join_starts(s0, s1, s2, s3, s4, out):
 
 
 @on_inputs_device
-def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, tolerance=None):
+def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, tolerance=None,
+         exact=True):
     """The part of ``data`` where ``by`` -- point data (a field or its name) or an
     implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or
     with ``inside`` below it: Viskores' ClipWithField and (``value`` 0)
@@ -270,7 +273,10 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
     ``subdivision`` lattice steps (by default the largest order of the field and the
     geometry; with ``tolerance``, in the field's unit, the fewest whose estimated
     error is within it). The two meet at the lattice points of the faces between
-    them, where a linear sub-face lies against a curved face."""
+    them, where a linear sub-face lies against a curved face. The cut's points
+    on sub-cells' edges are where the field takes the value along them
+    (``exact``, as ``contour``'s), or with ``exact=False`` where the line
+    between the lattice values does."""
     from tack.dataset.ghosts import visible
 
     data, by = visible(data, by)
@@ -295,9 +301,11 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
             tolerance = _in_unit_of(field, tolerance, "clip's tolerance")
         bound = float("inf")
         lower, upper = (-bound, value) if inside else (value, bound)
+        levels = tack.array(np.asarray([value], arrays.dtype_of(field.values).numpy_dtype))
         return split_by_range(data, field, lower, upper, subdivision, tolerance, fields,
                               lambda refined, name, carried: clip(refined, name, value, inside,
-                                                                    carried))
+                                                                    carried),
+                              levels if exact else None)
     if not isinstance(data.geometry.space, H1):
         # Clip's points are merged across cells, so each needs one position.
         raise TypeError("clip needs an H1 geometry: one position per point")

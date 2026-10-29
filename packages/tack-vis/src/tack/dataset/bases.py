@@ -518,6 +518,61 @@ def _pairs(table, k):
 
 
 @functools.cache
+def _entities(shape):
+    """A shape's corners (integer parametric coordinates), edges (corner pairs) and
+    faces (rows of corners, triangles and quads), as ``dof_tables`` reads them."""
+    if shape in _SIMPLICES:
+        corners, edge_table, faces = _SIMPLICES[shape]
+        return corners, _pairs(edge_table, 2), [tuple(f) for f in faces]
+    if shape is shapes.Wedge:
+        corners, edge_table, faces = _WEDGE
+        return corners, _pairs(edge_table, 2), [tuple(f) for f in faces]
+    corners, edge_table, face_table = _SHAPES[shape]
+    return (corners, _pairs(edge_table, 2) if len(edge_table) else [],
+            _pairs(face_table, 4) if len(face_table) else [])
+
+
+@functools.cache
+def entity_coordinates(shape, level):
+    """Where each node of a ``shape`` cell's order-``level`` lattice (``lattice_ijk``)
+    lies on the cell's closed edges and faces: ``(edges, faces)``, i32 arrays of
+    ``(n, E)`` steps from each edge's corner 0 (-1 off it) and ``(n, F, 2)`` steps
+    from each face's corner 0 toward its corners 1 and 2 (a triangle) or 1 and 3
+    (a quad) (-1 off it). Two nodes on one edge are joined along it, and two on
+    one face across it, which is how a sub-edge finds its entity."""
+    corners, edges, faces = _entities(shape)
+    p = int(level)
+    lattice = np.asarray(lattice_ijk(shape, level), np.int64)
+    corners = np.array(corners, np.int64) * p
+    count = len(lattice)
+    on_edges = np.full((count, max(len(edges), 1)), -1, np.int32)
+    on_faces = np.full((count, max(len(faces), 1), 2), -1, np.int32)
+    for n in range(count):
+        x = lattice[n]
+        for e, (c0, c1) in enumerate(edges):
+            d = corners[c1] - corners[c0]
+            r = x - corners[c0]
+            steps = int(r @ d) * p // int(d @ d)
+            if 0 <= steps <= p and np.array_equal(r * p, d * steps):
+                on_edges[n, e] = steps
+        for f, row in enumerate(faces):
+            o = corners[row[0]]
+            u = corners[row[1]] - o
+            v = corners[row[2] if len(row) == 3 else row[3]] - o
+            m = np.c_[u, v].astype(np.float64)
+            st, *_ = np.linalg.lstsq(m, (x - o).astype(np.float64), rcond=None)
+            if not np.allclose(m @ st, x - o):
+                continue
+            sa, sb = (round(float(t) * p) for t in st)
+            inside = (sa >= 0 and sb >= 0 and sa + sb <= p) if len(row) == 3 else \
+                (0 <= sa <= p and 0 <= sb <= p)
+            if inside:
+                on_faces[n, f] = sa, sb
+    for array in (on_edges, on_faces):
+        array.setflags(write=False)
+    return on_edges, on_faces
+
+
 def dof_tables(shape, order):
     """For each of a ``shape`` cell's ``(order + 1)^d`` nodes, in node order, where its
     value lives: four i32 arrays ``(kind, entity, a, b)``.

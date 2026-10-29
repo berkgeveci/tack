@@ -30,6 +30,14 @@ Options
 --ids=i64
     Every ``tack.dataset`` topology takes 64-bit ids, however small, so the
     dataset tests run each path in i64 as well as (by default) i32.
+--shard=K/N
+    Run the K-th (from 1) of N shares of the collected test files, the files
+    dealt by their time (``test-durations.json``; a file missing there by its
+    test count at the table's mean per test), longest first, each to the share
+    with the least so far: every share collects the same suite, so the shares
+    are disjoint and together the whole. For CI's long jobs, which run each
+    share serially on its own machine. ``tools/test_durations.py`` refreshes
+    the table.
 
 A test that names one of these runs once per matching backend, so which
 backends exist is a property of the machine and never of the test file.
@@ -94,6 +102,50 @@ if "cpu" in available_backends:
 def pytest_addoption(parser):
     parser.addoption("--ids", choices=("i32", "i64"), default="i32",
                      help="the narrowest id type tack.dataset topologies take")
+    parser.addoption("--shard", default=None, metavar="K/N",
+                     help="run the K-th (from 1) of N shares of the test files")
+
+
+def _shard(value):
+    k, n = (int(x) for x in value.split("/"))
+    if not 1 <= k <= n:
+        raise pytest.UsageError(f"--shard is K/N with 1 <= K <= N, not {value!r}")
+    return k, n
+
+
+def pytest_collection_modifyitems(config, items):
+    value = config.getoption("--shard")
+    if value is None:
+        return
+    k, n = _shard(value)
+    counts = {}
+    for item in items:
+        path = item.nodeid.split("::")[0]
+        counts[path] = counts.get(path, 0) + 1
+    seconds = _durations()
+    known = [p for p in counts if p in seconds]
+    per_test = sum(seconds[p] for p in known) / max(sum(counts[p] for p in known), 1)
+    weight = {p: seconds.get(p, counts[p] * per_test) for p in counts}
+    loads = [0.0] * n
+    share = {}
+    for path in sorted(counts, key=lambda p: (-weight[p], p)):
+        share[path] = loads.index(min(loads))
+        loads[share[path]] += weight[path]
+    mine = [share[i.nodeid.split("::")[0]] == k - 1 for i in items]
+    config.hook.pytest_deselected(items=[i for i, m in zip(items, mine) if not m])
+    items[:] = [i for i, m in zip(items, mine) if m]
+
+
+def _durations():
+    """Seconds per test file, ``test-durations.json``'s (empty without it)."""
+    import json
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test-durations.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
 
 
 def pytest_configure(config):

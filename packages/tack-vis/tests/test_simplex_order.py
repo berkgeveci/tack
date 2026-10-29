@@ -207,9 +207,11 @@ def test_contours_of_simplices_converge_and_close(f64_backend):
     data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, nodes="equispaced"))
     errors = []
     for steps in (3, 6, 12):
-        surface = td.contour(data, "u", 0.25, subdivision=steps)
+        surface = td.contour(data, "u", 0.25, subdivision=steps, exact=False)
         assert _open_edges(surface) == 0
         errors.append(np.abs(_bowl_at(surface.positions()) - 0.25).max())
+        exact = td.contour(data, "u", 0.25, subdivision=steps)       # on the field's roots
+        assert np.abs(_bowl_at(exact.positions()) - 0.25).max() < 1e-12
     assert errors[1] < errors[0] / 3 and errors[2] < errors[1] / 3
     triangles = _triangles()
     triangles.fields["u"] = td.interpolate(triangles, _bowl,
@@ -469,9 +471,11 @@ def test_subdividing_and_cutting_wedges(f64_backend):
                                    _bowl_at(refined.positions()), atol=1e-12)
     errors = []
     for steps in (3, 6, 12):
-        surface = td.contour(data, "u", 0.25, subdivision=steps)
+        surface = td.contour(data, "u", 0.25, subdivision=steps, exact=False)
         assert _open_edges(surface) == 0
         errors.append(np.abs(_bowl_at(surface.positions()) - 0.25).max())
+        exact = td.contour(data, "u", 0.25, subdivision=steps)       # on the field's roots
+        assert np.abs(_bowl_at(exact.positions()) - 0.25).max() < 1e-12
     assert errors[1] < errors[0] / 3 and errors[2] < errors[1] / 3
 
 

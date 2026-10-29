@@ -264,8 +264,13 @@ cell) straddle the value.
 ```
 
 By default a cell is cut into as many steps along each axis as the field's
-or geometry's order; `subdivision=1` is its corners alone, and `tolerance=`
-asks for the fewest steps whose estimated error is within it. A point where
+or geometry's order, and `tolerance=` asks for the fewest steps whose
+estimated error is within it. Each crossing of a sub-cell's edge is where the
+field itself takes the value along that edge, found from the field's own
+values, so every vertex lies on the true surface (to rounding) at any number
+of steps; the steps decide only how finely the surface is faceted.
+`exact=False` puts it where the straight line between the lattice values does,
+and `subdivision=1, exact=False` is the cells' corners alone. A point where
 sub-cells of neighbouring cells meet is computed once, so the surface has no
 cracks, and every piece of a partitioned dataset holding it computes the same
 bits, so pieces' surfaces carry ghost marks and merge into the whole's.

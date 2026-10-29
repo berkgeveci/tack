@@ -389,7 +389,7 @@ def _cells_of_dimension(data, field, dimension):
 
 @on_inputs_device
 def contour(data, field, value, merge_points=True, fields=None, dimension=None,
-            subdivision=None, tolerance=None):
+            subdivision=None, tolerance=None, exact=True):
     """Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles
     (as polygons on polyhedra); lines of a 2D mesh.
 
@@ -409,8 +409,14 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
     ``subdivision`` lattice steps along each axis -- by default the largest
     order of the field and geometry -- and the surface is the sub-cells'; a
     lattice point shared by cells is evaluated once, so the surface has no
-    cracks. ``subdivision=1`` is the cut of the cells linearized at their
-    corners. ``tolerance`` (in the field's unit) chooses the fewest steps whose
+    cracks. Each crossing of a sub-cell's edge is where the field itself takes
+    the value along it (``exact``, the default), found from the field's own
+    values on the edge, face or cell holding it, so a vertex lies on the true
+    surface (to rounding) whatever the steps, and neighbouring cells and pieces
+    put it at the same bits; with ``exact=False``, where the line between the
+    lattice values does, as a linear contour of the sub-cells.
+    ``subdivision=1`` with ``exact=False`` is the cut of the cells linearized at
+    their corners. ``tolerance`` (in the field's unit) chooses the fewest steps whose
     estimated error is within it instead: what linearizing a cell loses is
     bounded by its Bernstein coefficients' distance from the corners'
     interpolation, divided by about the square of the steps; a curved
@@ -468,7 +474,7 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
             data, field, value, levels, nlevels, subdivision,
             lambda refined, name: contour(refined, name, value, merge_points=merge_points,
                                           fields=fields, dimension=dimension),
-            tolerance=tolerance)
+            tolerance=tolerance, exact=exact)
     if isinstance(space, H1) and space.order != 1:
         raise NotImplementedError(
             f"contour of an order-{space.order} H1 field is not built: it would subdivide "
