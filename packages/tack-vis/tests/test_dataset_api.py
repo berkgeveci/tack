@@ -1084,6 +1084,27 @@ def test_vtk_char_arrays_come_across_as_i8():
 
 
 @needs_vtk
+@pytest.mark.parametrize("copy", [True, False])
+def test_vtk_bit_arrays_come_across_as_u8(copy):
+    """NumPy reads a vtkBitArray as its packed bytes, eight values to one; its
+    values arrive one to a point, as 0 and 1 (kitchen.vtk's ``SCALARS hpor bit``
+    once came as 1428 values for its 11424 points)."""
+    from vtkmodules.vtkCommonCore import vtkBitArray
+
+    bits = [1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0]
+    image = vtk.vtkImageData(dimensions=(4, 3, 1))
+    flags = vtkBitArray()
+    flags.SetNumberOfTuples(len(bits))
+    for i, v in enumerate(bits):
+        flags.SetValue(i, v)
+    flags.SetName("flags")
+    image.GetPointData().AddArray(flags)
+    data = vtk_to_dataset(image, copy=copy)
+    assert data.fields["flags"].values.dtype == tack.u8
+    np.testing.assert_array_equal(data.fields["flags"].values.numpy(), bits)
+
+
+@needs_vtk
 def test_vtk_constant_and_affine_fields_stay_implicit():
     """VTK's implicit arrays in point and cell data are Tack's implicit arrays, and
     back: nothing stored on either side."""

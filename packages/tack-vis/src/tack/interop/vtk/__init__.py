@@ -280,15 +280,20 @@ def _from_vtk(array, dtype=None):
 
 def _array_to_field(array, float_dtype, share=False):
     """A VTK data array's values as a field's: floating point in ``float_dtype`` (in
-    its own type when that is ``None``), integers in their own type; a constant or
-    affine array stays implicit. With ``share``, VTK's memory where it can be
-    (``_shared``)."""
+    its own type when that is ``None``), integers in their own type, bits as u8 0
+    and 1; a constant or affine array stays implicit. With ``share``, VTK's memory
+    where it can be (``_shared``)."""
     import numpy as np
+    from vtkmodules.vtkCommonCore import vtkBitArray
 
     from tack.arrays import ConstantArray, CountingArray
     from tack.lang.types import from_numpy_dtype
 
-    host = np.asarray(array)
+    if isinstance(array, vtkBitArray):
+        # NumPy reads a vtkBitArray as its packed bytes, eight values to a byte.
+        host = _bits(array).reshape(array.number_of_tuples, -1)
+    else:
+        host = np.asarray(array)
     if host.dtype.kind == "S":
         # A vtkCharArray has no numpy-compatible wrapper in 9.7.1, and NumPy reads
         # it as bytes; its values are signed 8-bit integers, as vtk_to_numpy gave.

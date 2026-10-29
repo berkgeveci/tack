@@ -55,8 +55,6 @@ _NOT_READ = {
     "disc_quads": _QUADRATIC,
     "quadratic_pyramid": _QUADRATIC,
     "tri_quadratic_hexahedron": _QUADRATIC,
-    "kitchen": "a vtkBitArray (kitchen.vtk's 'hpor') arrives as its packed bytes, 1428 "
-               "values for 11424 points",
 }
 
 #: Refusals of an algorithm beyond the Viskores datasets' (their ``_REFUSALS``).
@@ -78,7 +76,8 @@ _HIDDEN = ("faces are derived over hidden cells, and the reservoir's inactive ce
 #: Known failures, by (dataset, call).
 _BUGS = {
     **{(name, "shrink"): _INTEGERS
-       for name in ("can_crushed_vtu", "angular_sector", "blood_vessels", "stars_cloud_hyg")},
+       for name in ("can_crushed_vtu", "angular_sector", "blood_vessels", "stars_cloud_hyg",
+                    "kitchen")},
     **{("cylinder_crossflow", call): _MIXED
        for call in ("surface_normals", "face_geometry", "upwind_flux", "net_flux",
                     "divergence", "perot")},
