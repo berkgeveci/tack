@@ -276,6 +276,20 @@ or for a filter that takes linear cells only:
 --8<-- "docs/examples/data_high_order.py:curved"
 ```
 
+`clip` and `threshold` cut the same way, but keep what they need not cut: the
+cells whose Bernstein coefficients lie wholly on the kept side stay as they are,
+curved and of their order, and only the cells the bound cannot decide go to
+linear sub-cells. The result is a `PartitionedDataSet` of the two parts, whole
+cells first:
+
+```python
+--8<-- "docs/examples/data_high_order.py:clip"
+```
+
+The parts share the lattice points of the faces between them, where a linear
+sub-face lies against a curved face. A dataset of straight cells and order-1
+fields clips and thresholds as before, into one `DataSet`.
+
 MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges
 come across through `tack.interop.mfem`, and VTK's Lagrange cells (curves,
 quads, hexahedra, triangles, tetrahedra, wedges) through `vtk_to_dataset`

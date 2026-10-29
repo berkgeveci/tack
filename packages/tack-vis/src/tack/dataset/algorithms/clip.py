@@ -245,7 +245,7 @@ def _join_starts(s0, s1, s2, s3, s4, out):
 
 
 @on_inputs_device
-def clip(data, by, value=0.0, inside=False, fields=None):
+def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, tolerance=None):
     """The part of ``data`` where ``by`` -- point data (a field or its name) or an
     implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or
     with ``inside`` below it: Viskores' ClipWithField and (``value`` 0)
@@ -260,7 +260,17 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     ``contour`` traces them, by López's method -- as caps wound out of it; the
     output is a ``PolyhedralTopology``. A point at exactly ``value`` is kept on
     either side (``inside`` keeps at or below). Polygons and polylines are not
-    clipped yet."""
+    clipped yet.
+
+    A curved geometry or a field above order 1 (or ``subdivision`` above 1, or a
+    ``tolerance``) is clipped through subdivision, as ``contour`` cuts it, and the
+    result is ``PartitionedDataSet([whole, part])``: ``whole`` the cells the field's
+    Bernstein bound keeps entirely, as they are (curved, their fields of any order),
+    and ``part`` the clip of the others that the bound does not drop, cut into
+    ``subdivision`` lattice steps (by default the largest order of the field and the
+    geometry; with ``tolerance``, in the field's unit, the fewest whose estimated
+    error is within it). The two meet at the lattice points of the faces between
+    them, where a linear sub-face lies against a curved face."""
     from tack.dataset.ghosts import visible
 
     data, by = visible(data, by)
@@ -271,20 +281,29 @@ def clip(data, by, value=0.0, inside=False, fields=None):
     if not polyhedral and not getattr(data.topology, "reference_cells", True):
         raise NotImplementedError("clip takes cells of the linear shapes or polyhedra, not "
                                   "polygons or polylines")
-    if not isinstance(data.geometry.space, H1):
-        # Clip's points are merged across cells, so each needs one position.
-        raise TypeError("clip needs an H1 geometry: one position per point")
-    if hasattr(by, "value") and not isinstance(by, (str, Field)):
-        field = implicit_values(data, by)
-    else:
-        field = _field(data, by)
-        space = field.space
-        if not (isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")):
-            raise TypeError(f"clip takes point data or an implicit function, not {space!r}")
+    implicit = hasattr(by, "value") and not isinstance(by, (str, Field))
+    field = implicit_values(data, by) if implicit else _field(data, by)
     # In the field's unit; an implicit function's values have none.
     value = _in_unit_of(field, value, "clip's value")
     if arrays.width_of(field.values):
         raise TypeError("clip needs a scalar field")
+    from tack.dataset.algorithms.subdivide import split_by_range, subdivides
+
+    if not polyhedral and (subdivides(data, field) or tolerance is not None
+                           or (subdivision is not None and subdivision > 1)):
+        if tolerance is not None:
+            tolerance = _in_unit_of(field, tolerance, "clip's tolerance")
+        bound = float("inf")
+        lower, upper = (-bound, value) if inside else (value, bound)
+        return split_by_range(data, field, lower, upper, subdivision, tolerance, fields,
+                              lambda refined, name: clip(refined, name, value, inside, fields))
+    if not isinstance(data.geometry.space, H1):
+        # Clip's points are merged across cells, so each needs one position.
+        raise TypeError("clip needs an H1 geometry: one position per point")
+    space = field.space
+    if not implicit and not (isinstance(space, H1)
+                             or (isinstance(space, Values) and space.on == "points")):
+        raise TypeError(f"clip takes point data or an implicit function, not {space!r}")
     precision = _floating_dtype(field.values)
     values = _converted(_point_values(field.values, data.num_points), precision)
     if polyhedral:

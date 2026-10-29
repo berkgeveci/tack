@@ -58,6 +58,23 @@ def _straddling(cells, u, levels, nlevels, flags):
 
 
 @tack.kernel
+def _by_range(cells, u, lower, upper, whole, cut):
+    # A cell whose field's Bernstein bound lies in [lower, upper] is kept whole, one
+    # whose bound misses it dropped, and the rest may be cut.
+    for c in cells:
+        lo, hi = u.value_range(c)
+        e = cells.entity_id(c)
+        w = 0
+        k = 0
+        if lower <= lo and hi <= upper:
+            w = 1
+        elif not (hi < lower or upper < lo):
+            k = 1
+        whole[e] = w
+        cut[e] = k
+
+
+@tack.kernel
 def _flatness(cells, u, flags, out):
     # What linearizing each flagged cell at its corners loses, at most.
     for c in cells:
@@ -1098,3 +1115,42 @@ def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, to
     if name == "__cut__":
         out.fields.pop(name, None)
     return out
+
+
+def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cut):
+    """``clip``'s and ``threshold``'s high-order path: ``PartitionedDataSet([whole,
+    part])``. ``whole`` is the cells whose ``field`` lies in ``[lower, upper]``
+    over the whole cell by its Bernstein bound, kept as they are (curved, their
+    fields of any order); ``part`` is ``cut`` (the linear filter, given the refined
+    dataset and the field's name there) of the cells whose bound overlaps the
+    range's ends, cut into ``subdivision`` lattice steps (by default the largest
+    order of the field and geometry; with ``tolerance``, the fewest whose
+    estimated error is within it). ``fields`` names the fields carried (``None``
+    every one)."""
+    from tack.dataset.algorithms._extract import _keep_cells
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    if subdivision is not None and tolerance is not None:
+        raise ValueError("give subdivision or tolerance, not both")
+    n = data.num_cells
+    whole = tack.empty((n,), tack.i32)
+    flags = tack.empty((n,), tack.i32)
+    for group in data.launch_groups("cells", [field]):
+        if group.count:
+            _by_range(data.domain_view("cells", group), field.view(group), float(lower),
+                      float(upper), whole, flags)
+    if tolerance is not None:
+        level = level_for(data, field, flags, tolerance)
+    else:
+        level = default_level(data, field) if subdivision is None else int(subdivision)
+    if level < 1:
+        raise ValueError(f"subdivision is at least 1, not {level}")
+    name = next((k for k, f in data.fields.items() if f is field), "__cut__")
+    names = list(data.fields) if fields is None else list(fields)
+    carried = {k: data.fields[k] for k in names}
+    carried[name] = field
+    refined, _ = _refined(data, flags, level, carried)
+    part = cut(refined, name)
+    if name not in names:
+        part.fields.pop(name, None)
+    return PartitionedDataSet([_keep_cells(data, whole, fields), part])
