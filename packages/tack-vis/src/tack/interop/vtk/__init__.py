@@ -245,6 +245,99 @@ def _shared(host, element):
     return tack.array_from_ptr(host, (host.shape[0],), element, device="cpu")
 
 
+# VTK's memory spaces (vtkDataArray::MemorySpace) by the Tack device type that
+# addresses them.
+_DEVICE_SPACES = {"cuda": "CudaDeviceMemory", "hip": "HipDeviceMemory",
+                  "level_zero": "LevelZeroDeviceMemory"}
+
+
+def _device_type(array):
+    """The type of the device whose memory ``array`` (a vtkDataArray) holds its values
+    in -- ``"cuda"``, ``"hip"`` or ``"level_zero"`` -- or ``None`` for host memory, and
+    for a VTK whose arrays do not say (before ``GetMemorySpace``)."""
+    from vtkmodules.vtkCommonCore import vtkDataArray
+
+    if not isinstance(array, vtkDataArray) or not hasattr(array, "GetMemorySpace"):
+        return None
+    space = array.GetMemorySpace()
+    for kind, name in _DEVICE_SPACES.items():
+        if space == getattr(vtkDataArray, name, None):
+            return kind
+    return None
+
+
+def _shared_device(grid):
+    """The device a ``copy=False`` conversion of ``grid`` shares memory on: where its
+    points, cells or data arrays are in GPU memory, that device (the default device if
+    it is of that type, as ``vtk_to_array`` places them), so the whole dataset is made
+    there; ``None`` where they are all on the host. Arrays on two kinds of device are
+    refused: a dataset lives on one."""
+    from vtkmodules.vtkCommonDataModel import vtkDataSet, vtkPointSet, vtkUnstructuredGrid
+
+    arrays = []
+    if isinstance(grid, vtkPointSet) and grid.GetPoints() is not None:
+        arrays.append(grid.GetPoints().GetData())
+    if isinstance(grid, vtkUnstructuredGrid) and grid.GetCells() is not None:
+        arrays += [grid.GetCells().GetOffsetsArray(), grid.GetCells().GetConnectivityArray()]
+    if isinstance(grid, vtkDataSet):
+        for attributes in (grid.GetPointData(), grid.GetCellData()):
+            arrays += [attributes.GetAbstractArray(i)
+                       for i in range(attributes.GetNumberOfArrays())]
+    kinds = {kind for kind in map(_device_type, arrays) if kind is not None}
+    if not kinds:
+        return None
+    if len(kinds) > 1:
+        raise ValueError(f"the grid's arrays are on devices of {len(kinds)} kinds "
+                         f"({', '.join(sorted(kinds))}); a dataset lives on one")
+    kind, = kinds
+    default = tack.get_default_device()
+    return default if default.type == kind else tack.device(kind)
+
+
+def _shared_on_device(array, element, device):
+    """``array``, a vtkDataArray in ``device``'s memory, as a read-only Tack array of
+    ``element``s there, sharing that memory and holding the VTK array alive; ``None``
+    where it cannot be shared -- host memory, values of another type, or a VTK without
+    DLPack -- for the caller to copy (onto ``device``, the default during the
+    conversion)."""
+    from tack.lang.array import _array_view
+    from tack.lang.dlpack import dlpack_to_array
+
+    if device is None or _device_type(array) != device.type:
+        return None
+    try:
+        dlpack_support = _dlpack_support()
+    except RuntimeError:
+        return None
+    scalar = element.scalar_dtype if hasattr(element, "scalar_dtype") else element
+    width = element.size if hasattr(element, "scalar_dtype") else 1
+    if array.GetNumberOfComponents() != width:
+        return None
+    imported = dlpack_to_array(dlpack_support.vtk_to_dlpack(array), writable=False,
+                               device=device)
+    _require_shared_level_zero_context(dlpack_support, imported._backend)
+    if imported.dtype != scalar:
+        return None
+    shared = _array_view(element, (array.GetNumberOfTuples(),), imported._buffer,
+                         writable=False, device=imported._backend)
+    shared._dlpack_hold = imported
+    return shared
+
+
+def _own_type(array):
+    """A vtkDataArray's value type as Tack's, from VTK's type alone (no values read,
+    so none move off a device); ``None`` for one Tack has no type for."""
+    import numpy as np
+    from vtkmodules.util.numpy_support import get_numpy_array_type
+
+    from tack.lang.types import from_numpy_dtype
+
+    try:
+        return from_numpy_dtype(np.dtype(get_numpy_array_type(array.GetDataType())))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _host_values(array):
     """A Tack array's values as a NumPy array: a view of its memory where the array
     is on the CPU (DLPack), a copy otherwise. VTK arrays made from it share the
@@ -278,16 +371,24 @@ def _from_vtk(array, dtype=None):
     return np.asarray(array)
 
 
-def _array_to_field(array, float_dtype, share=False):
+def _array_to_field(array, float_dtype, share=False, device=None):
     """A VTK data array's values as a field's: floating point in ``float_dtype`` (in
     its own type when that is ``None``), integers in their own type; a constant or
-    affine array stays implicit. With ``share``, VTK's memory where it can be
-    (``_shared``)."""
+    affine array stays implicit. With ``share``, VTK's memory where it can be:
+    ``device``'s (``_shared_on_device``) when the conversion is on one, else the
+    host's (``_shared``)."""
     import numpy as np
 
     from tack.arrays import ConstantArray, CountingArray
     from tack.lang.types import from_numpy_dtype
 
+    own = _own_type(array) if share and device is not None else None
+    if own is not None:
+        kind = float_dtype if own in (tack.f32, tack.f64) and float_dtype is not None else own
+        n = array.number_of_components
+        shared = _shared_on_device(array, kind if n == 1 else tack.vec(n, kind), device)
+        if shared is not None:
+            return shared
     host = np.asarray(array)
     if host.dtype.kind == "S":
         # A vtkCharArray has no numpy-compatible wrapper in 9.7.1, and NumPy reads
@@ -299,7 +400,7 @@ def _array_to_field(array, float_dtype, share=False):
     if isinstance(values, (ConstantArray, CountingArray)):
         return values
     n = array.number_of_components
-    if share:
+    if share and device is None:
         shared = _shared(host, dtype if n == 1 else tack.vec(n, dtype))
         if shared is not None:
             return shared
@@ -351,7 +452,7 @@ def _label(array, unit):
 _GHOST_ARRAY = "vtkGhostType"
 
 
-def _attributes_to_fields(attributes, space, float_dtype, share=False):
+def _attributes_to_fields(attributes, space, float_dtype, share=False, device=None):
     from vtkmodules.vtkCommonCore import vtkDataArray
 
     from tack.dataset import Field
@@ -364,7 +465,7 @@ def _attributes_to_fields(attributes, space, float_dtype, share=False):
         # Named data arrays: string and other abstract arrays have no values to compute on,
         # the ghost array becomes the ghost marks and the global ids the global ids.
         if name and name not in skipped and isinstance(array, vtkDataArray):
-            fields[name] = Field(space, _array_to_field(array, float_dtype, share),
+            fields[name] = Field(space, _array_to_field(array, float_dtype, share, device),
                                  _units_label(array))
     return fields
 
@@ -383,30 +484,37 @@ def _cell_field_name(name, fields):
     return renamed
 
 
-def _global_ids(attributes, share=False):
+def _global_ids(attributes, share=False, device=None):
     """An attributes object's ``GlobalIds`` array as i64 ids, or ``None``; with
-    ``share``, VTK's memory where it is i64 already."""
+    ``share``, VTK's memory where it is i64 already (``device``'s, or the host's)."""
     import numpy as np
 
     array = attributes.GetGlobalIds()               # no pythonic form in 9.7.1
     if array is None:
         return None
+    shared = _shared_on_device(array, tack.i64, device) if share else None
+    if shared is not None:
+        return shared
     host = np.asarray(array).reshape(-1)
-    shared = _shared(host, tack.i64) if share else None
+    shared = _shared(host, tack.i64) if share and device is None else None
     if shared is not None:
         return shared
     return tack.array(np.ascontiguousarray(host, np.int64), tack.i64)
 
 
-def _ghost_marks(attributes, share=False):
+def _ghost_marks(attributes, share=False, device=None):
     """An attributes object's ``vtkGhostType`` array as u8 marks, or ``None``; with
-    ``share``, VTK's memory."""
+    ``share``, VTK's memory (``device``'s, or the host's)."""
     import numpy as np
 
     if _GHOST_ARRAY not in attributes.keys():
         return None
+    shared = (_shared_on_device(attributes[_GHOST_ARRAY], tack.u8, device) if share
+              else None)
+    if shared is not None:
+        return shared
     host = np.asarray(attributes[_GHOST_ARRAY]).reshape(-1)
-    shared = _shared(host, tack.u8) if share else None
+    shared = _shared(host, tack.u8) if share and device is None else None
     if shared is not None:
         return shared
     return tack.array(np.ascontiguousarray(host, np.uint8), tack.u8)
@@ -531,7 +639,15 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``dtype=None``. The shared arrays are read-only to Tack and hold VTK's
     arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
     be shared -- an origin to subtract, a type to convert, triangle strips,
-    polyhedra -- is copied as before."""
+    polyhedra -- is copied as before.
+
+    A grid whose points, offsets, connectivity or data arrays are in a GPU's
+    memory (Viskores arrays in a VTK built with them, as ``array_to_vtk``
+    makes) is made on that device instead, whatever the default device (the
+    default if it is of that type): those arrays are shared there, through
+    DLPack, and everything else -- host arrays beside them, the cell types,
+    which VTK keeps on the host -- is copied there. A grid with arrays on
+    devices of two kinds is refused."""
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
                           id_dtype=id_dtype, origin=origin, copy=copy)
     if grid.GetInformation().Has(_time_key()):
@@ -636,8 +752,9 @@ def _polydata_as_grid(polydata):
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None, copy=True):
-    """``vtk_to_dataset`` before the time is stamped."""
+                   origin=None, copy=True, _device=None):
+    """``vtk_to_dataset`` before the time is stamped. ``_device`` is the device a
+    ``copy=False`` conversion shares memory on (``_shared_device``), once chosen."""
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
         vtkImageData,
@@ -687,6 +804,14 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         pieces = (grid.GetPartition(i) for i in range(grid.number_of_partitions))
         return PartitionedDataSet(vtk_to_dataset(piece, **options)
                                   for piece in pieces if piece is not None)
+    device = _device
+    if share and device is None:
+        device = _shared_device(grid)
+        if device is not None:
+            # On that device throughout: what is shared is there, and what is
+            # copied goes there, the device being the default meanwhile.
+            with device:
+                return _vtk_to_dataset(grid, **options, _device=device)
     if isinstance(grid, vtkUnstructuredGrid):
         # VTK's constant and affine arrays come across as Tack's implicit ones.
         types = _from_vtk(grid.cell_types, tack.u8)
@@ -715,12 +840,16 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, False)
     elif isinstance(grid, vtkUnstructuredGrid):
         cells = grid.cells
-        offsets = _from_vtk(cells.offsets_array)
-        connectivity = _from_vtk(cells.connectivity_array)
-        if share:
+        offsets, connectivity = (_device_ids(a, device) if share else None
+                                 for a in (cells.offsets_array, cells.connectivity_array))
+        offsets = _from_vtk(cells.offsets_array) if offsets is None else offsets
+        connectivity = (_from_vtk(cells.connectivity_array) if connectivity is None
+                        else connectivity)
+        if share and device is None:
             offsets, connectivity = _shared_ids(offsets), _shared_ids(connectivity)
             shared = _shared(types, tack.u8)
             types = types if shared is None else shared
+        if share:
             widths = {a.dtype for a in (offsets, connectivity) if isinstance(a, tack.Array)}
             if id_dtype is None and len(widths) == 1:
                 id_dtype, = widths                  # VTK's width, so nothing converts
@@ -743,7 +872,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         else:
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
-        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
+        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share, device)
     elif isinstance(grid, vtkImageData):
         dims = list(grid.dimensions)
         matrix = grid.direction_matrix              # a vtkMatrix3x3: no indexing in 9.7.1
@@ -771,14 +900,14 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         dims = [0, 0, 0]
         grid.GetDimensions(dims)        # not a readable property on a structured grid in 9.7.1
         topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
-        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
+        geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share, device)
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkPolyData, vtkStructuredGrid, "
                         f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
-    fields = _attributes_to_fields(grid.point_data, H1(topology), dtype, share)
+    fields = _attributes_to_fields(grid.point_data, H1(topology), dtype, share, device)
     for name, field in _attributes_to_fields(grid.cell_data, Constant(topology), dtype,
-                                             share).items():
+                                             share, device).items():
         fields[_cell_field_name(name, fields)] = field
     if isinstance(grid, vtkRectilinearGrid):
         unit = _units_label(grid.x_coordinates)
@@ -786,9 +915,11 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         unit = None                     # VTK 9.7.1 has nowhere to keep an image's
     else:
         unit = _units_label(grid.points.data) if grid.points is not None else None
-    cells, points = _ghost_marks(grid.cell_data, share), _ghost_marks(grid.point_data, share)
+    cells, points = (_ghost_marks(grid.cell_data, share, device),
+                     _ghost_marks(grid.point_data, share, device))
     ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
-    cells, points = _global_ids(grid.cell_data, share), _global_ids(grid.point_data, share)
+    cells, points = (_global_ids(grid.cell_data, share, device),
+                     _global_ids(grid.point_data, share, device))
     global_ids = None if cells is None and points is None else GlobalIds(cells=cells,
                                                                          points=points)
     return DataSet(topology, geometry, fields=fields, dtype=geometry_dtype, ghosts=ghosts,
@@ -805,19 +936,26 @@ def _vectors_of(values):
     return out
 
 
-def _points_geometry(grid, shift, dtype, share):
+def _points_geometry(grid, shift, dtype, share, device=None):
     """``(geometry, its type)``: a point set's positions relative to the origin, as a
     NumPy array the dataset converts to ``dtype`` (the points' own floating type
     when ``None``); with ``share``, VTK's points themselves, where no origin
-    moves them and their type is that one (``_shared``)."""
+    moves them and their type is that one (``_shared_on_device`` on ``device``,
+    else ``_shared``)."""
     import numpy as np
 
     from tack.lang.types import from_numpy_dtype
 
+    if share and device is not None and not np.any(shift) and grid.points is not None:
+        own = _own_type(grid.points.data)
+        kind = dtype or (own if own in (tack.f32, tack.f64) else tack.f64)
+        shared = _shared_on_device(grid.points.data, tack.vec(3, kind), device)
+        if shared is not None:
+            return shared, kind
     host = _vtk_points(grid)
     if dtype is None:
         dtype = from_numpy_dtype(host.dtype) if host.dtype.kind == "f" else tack.f64
-    if share and not np.any(shift):
+    if share and device is None and not np.any(shift):
         shared = _shared(host, tack.vec(3, dtype))
         if shared is not None:
             return shared, dtype
@@ -833,6 +971,13 @@ def _shared_ids(values):
         shared = _shared(values, tack.i32 if values.dtype == np.int32 else tack.i64)
         return values if shared is None else shared
     return values
+
+
+def _device_ids(array, device):
+    """Offsets or connectivity in ``device``'s memory, shared where they are i32 or
+    i64 values; ``None`` otherwise (``_shared_on_device``)."""
+    own = _own_type(array) if device is not None else None
+    return _shared_on_device(array, own, device) if own in (tack.i32, tack.i64) else None
 
 
 def _ids(values):
@@ -1154,6 +1299,10 @@ def _vtk_points_of(data, share=False):
     from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkFloatArray, vtkPoints
 
     values = data.geometry.values
+    if share and not any(data.origin) and _stored_on_device(values):
+        points = vtkPoints(data=array_to_vtk(values))
+        _label(points.data, data.unit)
+        return points
     if share and not any(data.origin) and _stored_on_cpu(values):
         positions = _host_values(values)
     else:
@@ -1171,13 +1320,32 @@ def _stored_on_cpu(values):
             and getattr(values, "layout", "aos") == "aos")
 
 
+def _stored_on_device(values):
+    """Whether ``values`` is a stored interleaved array in a GPU's memory that VTK can
+    share: through DLPack, as a Viskores array (``array_to_vtk``), where this VTK
+    has it."""
+    if not (isinstance(values, tack.Array) and values.device.type in _DEVICE_SPACES
+            and getattr(values, "layout", "aos") == "aos"):
+        return False
+    try:
+        _dlpack_support()
+    except RuntimeError:
+        return False
+    return True
+
+
 def _vtk_cells(offsets, connectivity, share=False):
     """A ``vtkCellArray`` of ``offsets`` and ``connectivity``: implicit ones as VTK's
     affine arrays, stored ones as int64 copies -- or, with ``share``, both stored
-    on the CPU in one width, their own memory."""
+    on the CPU or both on a GPU in one width, their own memory."""
     from vtkmodules.vtkCommonCore import vtkTypeInt32Array, vtkTypeInt64Array
     from vtkmodules.vtkCommonDataModel import vtkCellArray
 
+    if (share and _stored_on_device(offsets) and _stored_on_device(connectivity)
+            and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
+        # Viskores arrays, which vtkCellArray keeps as they are (its generic storage).
+        return vtkCellArray(offsets=array_to_vtk(offsets, n_components=1),
+                            connectivity=array_to_vtk(connectivity, n_components=1))
     if (share and _stored_on_cpu(offsets) and _stored_on_cpu(connectivity)
             and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
         # As typed VTK arrays: given NumPy arrays, the constructor converts them to
@@ -1192,7 +1360,8 @@ def _to_vtk_values(values, share=False):
     """A field's values for ``point_data``/``cell_data``: a scalar ``ConstantArray``
     as a vtkConstantArray and a ``CountingArray`` as a vtkAffineArray (nothing
     stored), anything else copied to the host -- or, with ``share``, a stored
-    array on the CPU as a view of its memory."""
+    array on the CPU as a view of its memory, and one on a GPU as a Viskores array
+    over it (``array_to_vtk``)."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkAffineArray, vtkConstantArray
 
@@ -1203,9 +1372,23 @@ def _to_vtk_values(values, share=False):
         return vtkConstantArray[dtype](values.size, values.value.numpy().reshape(-1)[0])
     if isinstance(values, CountingArray):
         return vtkAffineArray[values.dtype.numpy_dtype](values.size, values.step, values.start)
+    if share and _stored_on_device(values):
+        return array_to_vtk(values)
     if share and _stored_on_cpu(values):
         return _host_values(values)
     return np.array(to_host(values))            # a copy: the grid owns its values
+
+
+def _set_values(attributes, name, values):
+    """``attributes[name] = values``, but a VTK array kept as it is, not copied: the
+    pythonic assignment copies one."""
+    from vtkmodules.vtkCommonCore import vtkDataArray
+
+    if isinstance(values, vtkDataArray):
+        values.SetName(name)
+        attributes.AddArray(values)
+    else:
+        attributes[name] = values
 
 
 def dataset_to_vtk(data, copy=True, higher_order=False):
@@ -1243,9 +1426,15 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     are stored on the CPU: the points (with no origin), the field values, the
     cell types, offsets and connectivity (ids of one width, as VTK keeps 32-bit
     ids too), ghost marks and global ids. The VTK arrays hold Tack's, and
-    writes on either side reach the other. Implicit arrays go across as VTK's
-    implicit ones either way; anything else -- arrays on a GPU, a polyhedral
-    topology's faces -- is copied as before.
+    writes on either side reach the other. Arrays stored on a GPU -- the
+    points, field values, offsets and connectivity -- are shared as Viskores
+    arrays over the same memory (``array_to_vtk``), in a VTK that has them
+    through DLPack: VTK filters read them on the host, copying them there
+    once, and the device memory stays where it is. Cell types, ghost marks and
+    global ids on a GPU are copied to the host, VTK reading them as its own
+    concrete arrays. Implicit arrays go across as VTK's implicit ones either
+    way; anything else -- a polyhedral topology's faces, GPU arrays in a VTK
+    without DLPack -- is copied as before.
 
     With ``higher_order``, a dataset of segments, quads or hexahedra (pixels and
     voxels too) whose geometry or an ``H1`` field is above order 1 becomes VTK
@@ -1389,11 +1578,11 @@ def _dataset_to_vtk(data, copy=True):
         if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
             # An order-2 field's values at the points, its first ones: the grid
             # is linear, as the filters read order-2 data.
-            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
-                                                   share)
+            _set_values(grid.point_data, name,
+                        _to_vtk_values(_point_values(field.values, data.num_points), share))
             _label(grid.point_data[name], field.unit)
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
-            grid.cell_data[name] = _to_vtk_values(field.values, share)
+            _set_values(grid.cell_data, name, _to_vtk_values(field.values, share))
             _label(grid.cell_data[name], field.unit)
     if data.ghosts is not None:
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
