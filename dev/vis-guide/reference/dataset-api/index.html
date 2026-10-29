@@ -5966,7 +5966,11 @@ of input cell <code>ids[i]</code> (<code>Pieces</code>), or a point between two 
 <tbody>
 <tr>
 <td>point data (<code>H1</code>, values on points)</td>
-<td>through the point map; an order-2 field brings its corner values, except on a solid's surface (<code>extract_surface</code>), whose nodes are the solid's, gathered at order 2; interpolated only if floating point</td>
+<td>through the point map; interpolated only if floating point</td>
+</tr>
+<tr>
+<td><code>H1</code> above order 1, a curved geometry</td>
+<td>at its order and nodes when whole cells are kept or taken (not pieces): each output cell's nodes are its source cell's; elsewhere its corner values, except on a solid's surface (<code>extract_surface</code>), whose nodes are the solid's, gathered at order 2</td>
 </tr>
 <tr>
 <td>cell data (<code>Constant</code>, values on cells)</td>
