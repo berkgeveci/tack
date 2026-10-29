@@ -4145,8 +4145,8 @@ mesh and have runnable examples below.</p>
 </tr>
 <tr>
 <td><code>td.H1(data, order=p, nodes=...)</code></td>
-<td>From order 3, on segments, quads and hexahedra: <code>p - 1</code> per edge, <code>(p - 1)²</code> per face, <code>(p - 1)^d</code> per cell; on triangles and tetrahedra with <code>nodes="equispaced"</code></td>
-<td>Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices</td>
+<td>From order 3, on segments, quads and hexahedra: <code>p - 1</code> per edge, <code>(p - 1)²</code> per face, <code>(p - 1)^d</code> per cell; on triangles, tetrahedra and wedges with <code>nodes="equispaced"</code></td>
+<td>Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices and wedges</td>
 </tr>
 <tr>
 <td><code>td.L2(data, order=p, nodes=...)</code></td>
@@ -4444,11 +4444,11 @@ or for a filter that takes linear cells only:</p>
     <span class="n">linear</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">subdivide</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>                        <span class="c1"># 27 hexahedra a cell</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">cut</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;triangles;&quot;</span><span class="p">,</span> <span class="n">linear</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;linear cells&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p>MFEM fields of any order on quads, hexahedra, triangles and tetrahedra come
-across through <code>tack.interop.mfem</code>, and VTK's Lagrange cells (curves, quads,
-hexahedra, triangles, tetrahedra) through <code>vtk_to_dataset</code>
-(<code>dataset_to_vtk(..., higher_order=True)</code> writes them). Wedges and pyramids stop
-at order 2 for now.</p>
+<p>MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges
+come across through <code>tack.interop.mfem</code>, and VTK's Lagrange cells (curves,
+quads, hexahedra, triangles, tetrahedra, wedges) through <code>vtk_to_dataset</code>
+(<code>dataset_to_vtk(..., higher_order=True)</code> writes them). Pyramids stop at order 2
+for now.</p>
 <h3 id="where-a-cells-values-sit">Where a cell's values sit<a class="headerlink" href="#where-a-cells-values-sit" title="Permanent link">&para;</a></h3>
 <p>An <code>L2</code> field of a tensor basis has a layout. <code>"blocks"</code> keeps each cell's
 values together, as MFEM and VTK store them; <code>"cells"</code> stores value <code>n</code> of
