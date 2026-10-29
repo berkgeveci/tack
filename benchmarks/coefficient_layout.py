@@ -31,33 +31,65 @@ import tack.dataset as td
 from tack.dataset import views
 
 
-class _L2CellsField(views._TensorBasis):
-    """``L2`` on a tensor basis, cell-fastest: value ``n`` of cell ``c`` at
-    ``n * layout_cells + c``."""
+class _H1InteriorCellsField(views._H1TensorField):
+    """``H1`` of a tensor basis with its cell interiors cell-fastest (the proposal's D3,
+    prototyped): interior value ``a`` of cell ``c`` at ``interior_base + a *
+    interior_cells + c``; points, edges and faces as ``H1`` keeps them."""
 
     @tack.func
-    def dof(self, c, n):
-        return self.get(n * self.layout_cells + self.entity_id(c))
+    def dof_index(self, c, n):
+        kind = self.node_kind[n]
+        e = self.node_entity[n]
+        out = self.interior_base + self.node_a[n] * self.interior_cells + self.entity_id(c)
+        if kind == 0:
+            out = self.point_id(c, e)
+        if kind == 1:
+            out = self.tensor_edge_dof(c, e, self.node_a[n])
+        if kind == 2:
+            out = self.tensor_face_dof(c, e, self.node_a[n], self.node_b[n])
+        return out
 
-    @tack.func
-    def corner_value(self, c, j):
-        return self.value(c, self.parametric_point(j))
 
-
-class L2Cells(td.L2):
-    """The prototype space: ``L2`` of a tensor basis, its values cell-fastest."""
+class H1Cells(td.H1):
+    """The prototype space: ``H1`` of a tensor basis, its cell interiors cell-fastest
+    (every cell has an interior here: one shape)."""
 
     @property
     def mixin(self):
-        return views.of_order(_L2CellsField, self.order)
+        return views.of_order(_H1InteriorCellsField, self.order)
 
     def mixin_for(self, key, shape=None):
         return self.mixin
 
     def attributes(self, group=None, dtype=None):
         out = super().attributes(group, dtype)
-        out["layout_cells"] = self.topology.num_cells
+        out["interior_base"] = int(self._layout()[1].numpy()[0])
+        out["interior_cells"] = self.topology.num_cells
         return out
+
+
+def _spaces(data, family, order):
+    """The two layouts' spaces and a map from the blocks field's values to the other's."""
+    n = data.num_cells
+    if family == "l2":
+        blocks = td.L2(data, order=order, nodes="gauss_legendre", layout="blocks")
+        cells = td.L2(data, order=order, nodes="gauss_legendre", layout="cells")
+        per_cell = (order + 1) ** 3
+        where = np.arange(per_cell)[None, :] * n + np.arange(n)[:, None]   # [c, k]
+        return blocks, cells, lambda v: _scatter(v, where.reshape(-1), per_cell * n)
+    blocks = td.H1(data, order=order)
+    cells = H1Cells(data, order=order)
+    base = int(blocks._layout()[1].numpy()[0])
+    m = (order - 1) ** 3
+    new = np.arange(blocks.size)
+    new[base:] = base + (np.arange(m)[None, :] * n + np.arange(n)[:, None]).reshape(-1)
+    return blocks, cells, lambda v: _scatter(v, new, blocks.size)
+
+
+def _scatter(values, where, size):
+    out = np.empty(size, values.dtype)
+    out[where] = values
+    return out
 
 
 @tack.kernel
@@ -118,7 +150,18 @@ def _timed(f, runs):
     return r, float(np.median(times))
 
 
-def run(arch, cells, orders, runs):
+@tack.kernel
+def _write_interiors(cells, base, count, per_cell, cell_fastest, out):
+    # Each cell writes its own values (an L2 field's, or an H1 field's interior):
+    # blocks from base + c * per_cell, or cell-fastest at base + n * cells + c.
+    for c in cells:
+        e = cells.entity_id(c)
+        for n in range(per_cell):
+            at = base + n * count + e if cell_fastest == 1 else base + e * per_cell + n
+            out[at] = tack.f32(e + n)
+
+
+def run(arch, cells, orders, runs, family="l2"):
     tack.set_default_device(arch)
     grid = td.uniform_grid((cells + 1,) * 3, spacing=(1.0 / cells,) * 3)
     data = td.extract_cells(grid, np.arange(grid.num_cells))
@@ -130,26 +173,26 @@ def run(arch, cells, orders, runs):
     points = rng.uniform(0.0, 1.0, (100_000, 3)).astype(np.float32)
     rows = []
     for order in orders:
-        blocks_space = td.L2(data, order=order, nodes="gauss_legendre")
-        cells_space = L2Cells(data, order=order, nodes="gauss_legendre")
-        per_cell = (order + 1) ** 3
+        blocks_space, cells_space, relaid = _spaces(data, family, order)
         blocks = td.interpolate(data, _smooth, blocks_space)
-        host = blocks.values.numpy().reshape(n, per_cell)
-        transposed = tack.empty((n * per_cell,), tack.f32)
-        tack.copyto(transposed, np.ascontiguousarray(host.T).reshape(-1))
-        fields = {"blocks": blocks, "cells": td.Field(cells_space, transposed)}
+        moved = tack.empty((blocks_space.size,), tack.f32)
+        tack.copyto(moved, relaid(blocks.values.numpy()))
+        fields = {"blocks": blocks, "cells": td.Field(cells_space, moved)}
+        if family == "l2":
+            base, per_cell = 0, (order + 1) ** 3
+        else:
+            base, per_cell = int(blocks_space._layout()[1].numpy()[0]), (order - 1) ** 3
         results = {}
         for layout, field in fields.items():
             def each(kernel, *outputs):
                 for group in data.launch_groups("cells", [field]):
                     if group.count:
                         kernel(data.domain_view("cells", group), field.view(group), *outputs)
-                return outputs
 
             out = tack.empty((n,), tack.f32)
             grad = tack.empty((n,), tack.vec3())
             lo, hi = tack.empty((n,), tack.f32), tack.empty((n,), tack.f32)
-            written = tack.empty((n * per_cell,), tack.f32)
+            written = tack.empty((blocks_space.size,), tack.f32)
             timings = {}
             _, timings["value"] = _timed(lambda: each(_value, pcs, out), runs)
             _, timings["gradient"] = _timed(lambda: each(_gradient, pcs, grad), runs)
@@ -158,11 +201,8 @@ def run(arch, cells, orders, runs):
             def write():
                 for group in data.launch_groups("cells", []):
                     if group.count:
-                        view = data.domain_view("cells", group)
-                        if layout == "blocks":
-                            _write_blocks(view, per_cell, written)
-                        else:
-                            _write_cells(view, per_cell, n, written)
+                        _write_interiors(data.domain_view("cells", group), base, n, per_cell,
+                                         int(layout == "cells"), written)
 
             _, timings["write"] = _timed(write, runs)
             data.fields["u"] = field
@@ -170,15 +210,15 @@ def run(arch, cells, orders, runs):
             refined, timings["subdivide"] = _timed(
                 lambda: td.subdivide(data, 2, fields=["u"]), runs)
             del data.fields["u"]
-            results[layout] = (out.numpy(), grad.numpy(), lo.numpy(),
-                               hi.numpy(), probed.fields["u"].values.numpy(),
+            results[layout] = (out.numpy(), grad.numpy(), lo.numpy(), hi.numpy(),
+                               probed.fields["u"].values.numpy(),
                                refined.fields["u"].values.numpy())
             for what, t in timings.items():
-                rows.append({"arch": arch, "order": order, "layout": layout, "what": what,
-                             "ms": t})
+                rows.append({"arch": arch, "family": family, "order": order,
+                             "layout": layout, "what": what, "ms": t})
         same = all(np.array_equal(a, b) for a, b in zip(results["blocks"], results["cells"]))
         if not same:
-            raise AssertionError(f"order {order}: the two layouts' results differ")
+            raise AssertionError(f"{family} order {order}: the two layouts' results differ")
     return rows
 
 
@@ -189,11 +229,16 @@ def main():
     parser.add_argument("--cells", type=int, default=48, help="cells a side")
     parser.add_argument("--orders", default="2,3,4,6")
     parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--family", default="l2", choices=["l2", "h1"],
+                        help="l2: L2's values; h1: H1's cell interiors (orders 3 and up)")
     parser.add_argument("--json", help="write the rows here")
     args = parser.parse_args()
-    rows = run(args.arch, args.cells, [int(o) for o in args.orders.split(",")], args.runs)
-    print(f"{args.arch}, {args.cells}^3 hexahedra; ms, warm medians: per cell, cell-fastest, "
-          "and their ratio")
+    orders = [int(o) for o in args.orders.split(",")]
+    if args.family == "h1" and min(orders) < 3:
+        parser.error("--family h1 measures cell interiors, which start at order 3")
+    rows = run(args.arch, args.cells, orders, args.runs, args.family)
+    print(f"{args.arch}, {args.family}, {args.cells}^3 hexahedra; ms, warm medians: per cell, "
+          "cell-fastest, and their ratio")
     whats = list(dict.fromkeys(r["what"] for r in rows))
     print(f"{'order':>5} " + " ".join(f"{w:>22}" for w in whats))
     for order in dict.fromkeys(r["order"] for r in rows):

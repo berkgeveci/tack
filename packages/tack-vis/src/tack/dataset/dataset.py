@@ -256,6 +256,25 @@ def _geometry_parts(data, group, kind):
 
 # ── Datasets ────────────────────────────────────────────────────────
 
+@tack.kernel
+def _transposed(values, rows, cols, out):
+    # values as rows x cols, row-major, into out as cols x rows.
+    for i in range(values.shape[0]):
+        out[(i % cols) * rows + i // cols] = values[i]
+
+
+def _relaid(values, source, space):
+    """``values`` of ``source`` laid out as ``space`` lays them out: blocks of one size
+    to cell-fastest, or back -- a transpose."""
+    n = space.topology.num_cells
+    per_cell = space.size // max(n, 1)
+    out = tack.empty_like(values)
+    if arrays.size_of(values):
+        rows, cols = (n, per_cell) if source.layout == "blocks" else (per_cell, n)
+        _transposed(arrays.materialize(values), rows, cols, out)
+    return out
+
+
 def _space_nodes(space, geometry):
     """``space``'s 1D nodes as a device array in the geometry's float type, where
     node views place its nodes."""
@@ -355,8 +374,11 @@ class DataSet:
         topology = self.topology.to_device(target)
 
         def moved(field):
-            return Field(field.space._rebuilt_on(topology), field.values.to_device(target),
-                         field.unit)
+            space = field.space._rebuilt_on(topology)
+            values = field.values.to_device(target)
+            if isinstance(space, L2) and space.layout != field.space.layout:
+                values = _relaid(values, field.space, space)      # "auto" chose another
+            return Field(space, values, field.unit)
 
         sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
                 for name, s in self.sets.items()}
@@ -739,9 +761,11 @@ class DataSet:
             if not group.count:
                 continue
             if isinstance(space, L2) and space.tensor:
+                cells = space.layout == "cells"
+                mixin = views._TensorCellNodesCells if cells else views._TensorCellNodes
                 out.append(self.domain_view(
-                    "cells", group, (views.of_order(views._TensorCellNodes, space.order),),
-                    node_offsets=space.offsets,
+                    "cells", group, (views.of_order(mixin, space.order),),
+                    node_offsets=space.offsets, node_cells=self.num_cells,
                     node_points=_space_nodes(space, self.geometry)))
             elif isinstance(space, L2):
                 order = group.keys[space] if space.varies else space.order

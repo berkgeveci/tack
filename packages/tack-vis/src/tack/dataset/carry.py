@@ -161,6 +161,19 @@ def _copy_blocks(values, src_offsets, sources, dst_offsets, out, count):
             out[b + k] = values[a + k]
 
 
+@tack.kernel
+def _copy_laid_out(values, sources, src_offsets, src_cells, src_count, dst_offsets,
+                   dst_cells, per_cell, out, count):
+    # Each kept cell's values, each side in its layout: cell-fastest (value k of
+    # cell c at k * cells + c) or blocks (from offsets[c]).
+    for i in range(count):
+        s = sources[i]
+        for k in range(per_cell):
+            a = k * src_count + s if src_cells == 1 else src_offsets[s] + k
+            b = k * count + i if dst_cells == 1 else dst_offsets[i] + k
+            out[b] = values[a]
+
+
 def _apply(values, how, oriented=False):
     """The values through one map, or ``None`` if they cannot go through it."""
     if isinstance(how, Same):
@@ -207,11 +220,20 @@ def _carry_l2(field, out, cells):
         orders = np.asarray(arrays.to_host(space.cell_keys()))
         out_space = L2(out, order=orders[sources.numpy()] if count else np.zeros(0, int))
     else:
-        out_space = L2(out, order=space.order)
+        # The same basis: order, nodes and the layout asked for ("auto" resolves on
+        # the output's device).
+        out_space = L2(out, order=space.order, nodes=space.nodes or "gauss_lobatto",
+                       layout=space.params.get("layout", "auto"))
     values = _like(field.values, out_space.size)
-    if count:
+    if count and space.layout == out_space.layout == "blocks":
         _copy_blocks(materialize(field.values), space.offsets, sources, out_space.offsets,
                      values, count)
+    elif count:
+        per_cell = space.size // max(space.topology.num_cells, 1)
+        _copy_laid_out(materialize(field.values), sources, space.offsets,
+                       int(space.layout == "cells"), space.topology.num_cells,
+                       out_space.offsets, int(out_space.layout == "cells"), per_cell, values,
+                       count)
     return Field(out_space, values, field.unit)
 
 

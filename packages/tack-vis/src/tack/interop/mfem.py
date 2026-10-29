@@ -292,7 +292,7 @@ def _tensor_values(data, mesh, gf, family, order):
     if family == "H1":
         indices = _h1_indices(data, space, per_cell)
     else:
-        indices = np.arange(n * per_cell).reshape(n, per_cell)
+        indices = space.indices()                        # either layout
     vdim = fes.GetVDim()
     if nodes is not None:
         values = _by_dof(fes, gf.GetDataArray())
@@ -361,7 +361,7 @@ def mfem_grid_function(data, field, mesh, fes=None):
     if isinstance(space, H1):
         indices = _h1_indices(data, space, per_cell).reshape(-1)
     else:
-        indices = np.arange(n * per_cell)
+        indices = space.indices().reshape(-1)            # either layout
     mfem_dofs = _element_dofs(fes, bases.nodes(family, order), order).reshape(-1)
     by_dof = np.zeros((fes.GetNDofs(), vdim))
     by_dof[mfem_dofs] = values[indices]
