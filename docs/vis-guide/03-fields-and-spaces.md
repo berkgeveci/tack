@@ -401,9 +401,12 @@ Order-2 H1 is supported on tetrahedra, hexahedra, voxels and wedges, and on
 their faces' shapes: triangles, quads and pixels. L2 can
 vary its order by cell, which the dispatcher handles by launching groups of
 compatible order. This does not make every filter a higher-order geometric
-algorithm: `extract_surface` keeps a solid's order-2 fields and geometry at
-order 2 (its surface's nodes are the solid's), but other extractions carry
-corner values, and higher-order subdivision remains open work. The
+algorithm: filters that keep whole cells (`extract_cells`, `threshold`,
+`split`, `remove_ghosts`) keep higher-order fields and a curved geometry at
+their order, and `extract_surface` keeps a solid's order-2 fields and geometry
+at order 2 (its surface's nodes are the solid's), but filters that make new
+cells (a contour, a clip) carry corner values, and higher-order subdivision
+remains open work. The
 [reference](reference/dataset-api.md#spaces) records the supported layouts
 and [filter propagation rules](reference/dataset-api.md#algorithms-and-filters).
 
