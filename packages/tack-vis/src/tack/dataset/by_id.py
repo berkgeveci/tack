@@ -11,10 +11,15 @@ evaluated by cell id (``_PointValues``, ``_CellValues``: ``value(mesh, e, kind,
 pc, tet)``). Each shape's code is compiled in only when the mesh has that
 shape (``_kinds``).
 
-What it serves: an order-1 ``H1`` geometry over unstructured cells of the
-shapes in ``_SHAPES``, 2D and 3D structured grids, and polyhedra; point data
-(``H1`` order 1, values on points) and cell data (``Constant``, values on
-cells). Anything else keeps the cell-side path.
+What it serves: an ``H1`` geometry over unstructured cells of the shapes in
+``_SHAPES``, 2D and 3D structured grids, and polyhedra (order 1 there); point
+data (``H1`` order 1, values on points), cell data (``Constant``, values on
+cells), and any other interpolated space of one layout per shape. A curved
+geometry (``H1`` above order 1) and the fields of other spaces are read
+through each shape group's own view (``_ByShape``: a cell's place in its group,
+``local``), so curved cells are inverted (``curved_to_parametric``) and
+high-order fields evaluated as the cell-side path does it. Anything else keeps
+the cell-side path.
 """
 
 import tack
@@ -269,6 +274,142 @@ def cells_by_id(data, positions, strict=True):
     return None
 
 
+# ── Cells and fields through each shape group's view ─────────────────
+
+@tack.kernel
+def _group_places(cells, local):
+    # Each cell's index in its group (a structured grid's (i, j, k)), by cell id.
+    for c in cells:
+        local[cells.entity_id(c)] = c
+
+
+def _by_shape(data, groups, view_of):
+    """``(views, local, present)``: a view for each of ``_SHAPES`` (``view_of(group)``,
+    the first group's standing in for a shape the mesh lacks, which a kernel never
+    compiles), each cell's index in its group by id, and the shapes' bits; or
+    ``None`` where a shape has two groups (an order per cell) or is not one of
+    ``_SHAPES``, or there are no cells."""
+    groups = [g for g in groups if g.count]
+    kinds = [g.shape for g in groups]
+    if not groups or len(set(kinds)) != len(kinds) or any(k not in _SHAPES for k in kinds):
+        return None
+    from tack.dataset.topology import StructuredTopology
+
+    t = data.topology
+    # A structured grid's views take a cell as its index vector.
+    local = tack.empty((data.num_cells,), tack.vec(len(t.point_dims), tack.i64)
+                       if isinstance(t, StructuredTopology) else tack.i64)
+    views = [None] * len(_SHAPES)
+    present = 0
+    for group in groups:
+        _group_places(group.view(), local)
+        i = _SHAPES.index(group.shape)
+        views[i] = view_of(group)
+        present |= 1 << i
+    first = next(v for v in views if v is not None)
+    return [v if v is not None else first for v in views], local, present
+
+
+class _ByShape:
+    """A view per shape (``_SHAPES``' order), and each cell's index in its group, so a
+    method of the view a cell's group has can be called by cell id."""
+
+    def __init__(self, views, local, present):
+        (self.tetra, self.hexa, self.wedge, self.pyramid, self.voxel, self.triangle,
+         self.quad, self.pixel) = views
+        self.local = local
+        self.kinds = _kinds(present)
+
+
+@tack.func
+def _locate_curved(view, c, p, tolerance):
+    # A curved cell inverted as it is (round 1's Newton on its own map), whether
+    # it holds the point within ``tolerance``, and its nearest point there.
+    pc, ok = view.curved_to_parametric(c, p)
+    inside = 0
+    near = p
+    if ok == 1:
+        inside = view.is_inside(pc, tolerance)
+        near = view.position(c, view._clamp(pc))
+    return pc, ok, inside, near
+
+
+@tack.device_class
+class _CurvedCells(_ByShape):
+    """A curved geometry's cells by id, through their groups' domain views."""
+
+    @tack.func
+    def locate(self, e, kind, p, tolerance):
+        """``(pc, converged, inside, near)`` of ``p`` in cell ``e`` of type ``kind``."""
+        c = self.local[e]
+        pc = p - p
+        ok = 0
+        inside = 0
+        near = p
+        if (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
+            pc, ok, inside, near = _locate_curved(self.tetra, c, p, tolerance)
+        elif (self.kinds.PRESENT & 2) != 0 and kind == shapes.HEXAHEDRON:
+            pc, ok, inside, near = _locate_curved(self.hexa, c, p, tolerance)
+        elif (self.kinds.PRESENT & 4) != 0 and kind == shapes.WEDGE:
+            pc, ok, inside, near = _locate_curved(self.wedge, c, p, tolerance)
+        elif (self.kinds.PRESENT & 8) != 0 and kind == shapes.PYRAMID:
+            pc, ok, inside, near = _locate_curved(self.pyramid, c, p, tolerance)
+        elif (self.kinds.PRESENT & 16) != 0 and kind == shapes.VOXEL:
+            pc, ok, inside, near = _locate_curved(self.voxel, c, p, tolerance)
+        elif (self.kinds.PRESENT & 32) != 0 and kind == shapes.TRIANGLE:
+            pc, ok, inside, near = _locate_curved(self.triangle, c, p, tolerance)
+        elif (self.kinds.PRESENT & 64) != 0 and kind == shapes.QUAD:
+            pc, ok, inside, near = _locate_curved(self.quad, c, p, tolerance)
+        elif (self.kinds.PRESENT & 128) != 0 and kind == shapes.PIXEL:
+            pc, ok, inside, near = _locate_curved(self.pixel, c, p, tolerance)
+        return pc, ok, inside, near
+
+
+@tack.device_class
+class _OneCurvedShape:
+    """``_CurvedCells`` for a mesh of one shape (most are), its one view called
+    directly: the eight-way dispatch, every branch a curved cell's Newton and
+    basis, took minutes to compile even with all but one never reached."""
+
+    def __init__(self, view, local):
+        self.view = view
+        self.local = local
+
+    @tack.func
+    def locate(self, e, kind, p, tolerance):
+        return _locate_curved(self.view, self.local[e], p, tolerance)
+
+
+@tack.device_class
+class _NoCurves:
+    """A straight geometry: ``_MeshSearch`` never calls this (``CURVED`` 0)."""
+
+    @tack.func
+    def locate(self, e, kind, p, tolerance):
+        return p - p, 0, 0, p
+
+
+def curved_cells(data):
+    """A curved geometry's ``_CurvedCells``, or ``None`` where ``_by_shape`` cannot
+    serve the topology."""
+    found = _by_shape(data, data.launch_groups("cells", []),
+                      lambda group: data.domain_view("cells", group))
+    if found is None:
+        return None
+    return _OneCurvedShape(*_one_shape(found)) if _single(found) else _CurvedCells(*found)
+
+
+def _single(found):
+    """Whether ``_by_shape``'s mesh has one shape."""
+    return bin(found[2]).count("1") == 1
+
+
+def _one_shape(found):
+    """``(view, local)`` of a one-shape mesh's ``_by_shape``."""
+    views, local, present = found
+    return views[present.bit_length() - 1], local
+
+
 # ── The search ──────────────────────────────────────────────────────
 
 @tack.device_class
@@ -286,8 +427,16 @@ class _MeshSearch:
     NEIGHBORS = 0
     MAX_FACES = 6
 
-    def __init__(self, cells, present, positions, locator, tolerance, neighbors=None):
+    #: 1 (an instance's, compiled in): a curved geometry, whose cells ``curved``
+    #: locates through their groups' views (``_CurvedCells``).
+    CURVED = 0
+
+    def __init__(self, cells, present, positions, locator, tolerance, neighbors=None,
+                 curved=None):
         self.cells = cells
+        self.curved = curved if curved is not None else _NoCurves()
+        if curved is not None:
+            self.CURVED = 1
         self.kinds = _kinds(present)
         self.tetra = shapes.Tetra()
         self.hexa = shapes.Hexahedron()
@@ -358,15 +507,23 @@ class _MeshSearch:
         else ``(ncells, 0, 0)``."""
         pts = tack.local_array_like(self.lo, 24)
         kind = self.cells.cell_type(e)
-        for j in range(self.cells.num_points(e)):
-            y = self.positions[self.cells.point_id(e, j)]
-            pts[3 * j] = y[0]
-            pts[3 * j + 1] = y[1]
-            pts[3 * j + 2] = y[2]
         pc = p - p
         converged = 0
         inside = 0
-        if (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
+        if self.CURVED == 1:
+            if (kind == shapes.TETRA or kind == shapes.HEXAHEDRON or kind == shapes.WEDGE
+                    or kind == shapes.VOXEL):
+                pc, converged, inside, near = self.curved.locate(e, kind, p,
+                                                                 -shapes.WELL_INSIDE)
+        else:
+            for j in range(self.cells.num_points(e)):
+                y = self.positions[self.cells.point_id(e, j)]
+                pts[3 * j] = y[0]
+                pts[3 * j + 1] = y[1]
+                pts[3 * j + 2] = y[2]
+        if self.CURVED == 1:
+            pass
+        elif (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
             pc, converged = self.tetra.world_to_parametric(pts, p)
             inside = self.tetra.is_inside(pc, -shapes.WELL_INSIDE)
         elif (self.kinds.PRESENT & 2) != 0 and kind == shapes.HEXAHEDRON:
@@ -431,17 +588,26 @@ class _MeshSearch:
                                 best_tet = tet
                                 best_pc = tpc
                         continue
-                    for j in range(self.cells.num_points(e)):
-                        y = self.positions[self.cells.point_id(e, j)]
-                        pts[3 * j] = y[0]
-                        pts[3 * j + 1] = y[1]
-                        pts[3 * j + 2] = y[2]
                     pc = p - p
                     converged = 0
                     inside = 0
                     near = p - p
                     surface = 0
-                    if (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
+                    if self.CURVED == 1:
+                        # As the cell-side search inverts a curved cell.
+                        pc, converged, inside, near = self.curved.locate(
+                            e, kind, p, shapes.HOLD_TOLERANCE)
+                        if kind == shapes.TRIANGLE or kind == shapes.QUAD or kind == shapes.PIXEL:
+                            surface = 1
+                    else:
+                        for j in range(self.cells.num_points(e)):
+                            y = self.positions[self.cells.point_id(e, j)]
+                            pts[3 * j] = y[0]
+                            pts[3 * j + 1] = y[1]
+                            pts[3 * j + 2] = y[2]
+                    if self.CURVED == 1:
+                        pass
+                    elif (self.kinds.PRESENT & 1) != 0 and kind == shapes.TETRA:
                         pc, converged = self.tetra.world_to_parametric(pts, p)
                         inside = self.tetra.is_inside(pc, shapes.HOLD_TOLERANCE)
                         near = self.tetra.nearest_point(pts, p, pc)
@@ -522,16 +688,23 @@ def mesh_search(data, locator, positions=None, strict=True, neighbors=False):
 
     geometry = data.geometry
     # No cells is served too: every point is outside.
-    if not isinstance(geometry.space, H1) or geometry.space.order != 1:
+    if not isinstance(geometry.space, H1):
         return None
+    curved = None
+    if geometry.space.order != 1 and data.num_cells:
+        curved = curved_cells(data)
+        if curved is None:
+            return None
     if positions is None:
+        # A curved geometry's points come first among its values: the corners.
         positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
     found = cells_by_id(data, positions, strict=strict)
-    if found is None:
+    if found is None or (curved is not None and not isinstance(found[0], (_FlatCells,
+                                                                          _GridCells))):
         return None
     cells, present = found
     return _MeshSearch(cells, present, positions, locator, _TOLERANCE,
-                       locator.cell_neighbors() if neighbors else None)
+                       locator.cell_neighbors() if neighbors else None, curved)
 
 
 # ── Fields by cell id ───────────────────────────────────────────────
@@ -568,13 +741,61 @@ class _CellValues:
         return self.values[e]
 
 
+@tack.device_class
+class _OneShapeValues:
+    """``_ViewValues`` for a mesh of one shape: its one field view, called directly."""
+
+    def __init__(self, view, local):
+        self.view = view
+        self.local = local
+
+    @tack.func
+    def value(self, mesh, e, kind, pc, tet):
+        return self.view.value(self.local[e], pc)
+
+
+@tack.device_class
+class _ViewValues(_ByShape):
+    """A field of any interpolated space by cell id, through its groups' field views:
+    ``value`` as the cell-side path evaluates it."""
+
+    @tack.func
+    def value(self, mesh, e, kind, pc, tet):
+        c = self.local[e]
+        v = self.tetra.value(c, pc)
+        if (self.kinds.PRESENT & 2) != 0 and kind == shapes.HEXAHEDRON:
+            v = self.hexa.value(c, pc)
+        elif (self.kinds.PRESENT & 4) != 0 and kind == shapes.WEDGE:
+            v = self.wedge.value(c, pc)
+        elif (self.kinds.PRESENT & 8) != 0 and kind == shapes.PYRAMID:
+            v = self.pyramid.value(c, pc)
+        elif (self.kinds.PRESENT & 16) != 0 and kind == shapes.VOXEL:
+            v = self.voxel.value(c, pc)
+        elif (self.kinds.PRESENT & 32) != 0 and kind == shapes.TRIANGLE:
+            v = self.triangle.value(c, pc)
+        elif (self.kinds.PRESENT & 64) != 0 and kind == shapes.QUAD:
+            v = self.quad.value(c, pc)
+        elif (self.kinds.PRESENT & 128) != 0 and kind == shapes.PIXEL:
+            v = self.pixel.value(c, pc)
+        return v
+
+
 def field_by_id(data, field):
     """``field`` read by cell id (``_PointValues`` or ``_CellValues`` over its
-    materialized values), or ``None`` for a space this module does not serve."""
+    materialized values; ``_ViewValues`` for another interpolated space of one
+    layout per shape), or ``None`` for a space this module does not serve."""
     space = field.space
     if (isinstance(space, H1) and space.order == 1) or space is Values(data, "points"):
         return _PointValues(arrays.materialize(field.values))
     if isinstance(space, Constant) or space is Values(data, "cells"):
         return _CellValues(arrays.materialize(field.values))
+    if getattr(space, "interpolated", False) and not space.varies and data.num_cells:
+        from tack.dataset.topology import StructuredTopology, UnstructuredTopology
+
+        if isinstance(data.topology, (UnstructuredTopology, StructuredTopology)):
+            found = _by_shape(data, data.launch_groups("cells", [field]), field.view)
+            if found is not None:
+                return (_OneShapeValues(*_one_shape(found)) if _single(found)
+                        else _ViewValues(*found))
     return None
 
