@@ -349,6 +349,17 @@ def test_sources_take_a_device(second):
     assert _on(second, td.rectilinear_grid(axes, [0, 1], [0, 1]))   # the axes' device
 
 
+def test_a_cell_locators_tables_are_on_its_datasets_device(second):
+    """Found on cuda (2026-10-28): called directly, not from a search or an
+    algorithm that made the dataset's device the default, ``cell_bins``,
+    ``leaves`` and ``cell_neighbors`` built their tables on the default device
+    and met the dataset's arrays on another ("arrays on two devices")."""
+    data = _hexes(second)
+    for name in ("cell_bins", "leaves", "cell_neighbors"):
+        built = getattr(td.CellLocator(data), name)()
+        assert all(_on(second, a) for a in (built if isinstance(built, tuple) else (built,)))
+
+
 def test_a_point_locator_searches_on_its_datasets_device(second):
     """Found on every GPU (2026-10-25): with no Tack array among its arguments (its
     own points as the queries, or host positions), a search ran on the default
