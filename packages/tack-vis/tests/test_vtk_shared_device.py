@@ -207,6 +207,28 @@ def test_a_round_trip_shares_both_ways(device):
     assert _shares(back.fields["v"].values, data.fields["v"].values)
 
 
+def test_a_chain_of_tack_algorithms_stays_on_the_device(device):
+    from tack.interop.vtk.algorithms import Clip, Contour
+
+    space = getattr(vtk.vtkDataArray, _SPACES[device.type])
+    grid, host = _device_tetrahedra(device)
+    outputs = []
+    for source in (grid, host):
+        clip, contour = Clip(by="s", value=0.0), Contour(field="s", value=0.3)
+        clip.SetInputDataObject(source)
+        contour.SetInputConnection(clip.GetOutputPort())
+        contour.Update()
+        outputs.append((clip.GetOutputDataObject(0), contour.GetOutputDataObject(0)))
+    (clipped, surface), (_, host_surface) = outputs
+    assert clipped.points.data.GetMemorySpace() == space
+    assert clipped.point_data.GetArray("s").GetMemorySpace() == space
+    assert surface.points.data.GetMemorySpace() == space
+    assert surface.number_of_cells == host_surface.number_of_cells > 0
+    # The filters ran on the GPU in one and the CPU in the other: f32 rounding apart.
+    np.testing.assert_allclose(np.asarray(surface.points.data),
+                               np.asarray(host_surface.points.data), atol=1e-6)
+
+
 def test_marks_and_ids_go_to_the_host(device):
     """VTK reads ghost marks and global ids as its own concrete arrays."""
     data = _device_dataset(device)

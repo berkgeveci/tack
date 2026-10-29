@@ -9,9 +9,11 @@ a VTK pipeline beside VTK's own.
 
 Each takes a ``vtkDataSet`` or a ``vtkPartitionedDataSet``. Its input becomes a
 Tack dataset sharing VTK's memory (``vtk_to_dataset(..., copy=False)``), the
-filter runs on the CPU, and its result goes back to VTK sharing Tack's
-(``dataset_to_vtk(..., copy=False)``): no array is copied either way where its
-values are stored as Tack keeps them. A partitioned input runs the filter on each
+filter runs where that memory is -- on the CPU, or on the GPU holding an input of
+Viskores arrays -- and its result goes back to VTK sharing Tack's
+(``dataset_to_vtk(..., copy=False)``, a GPU's as Viskores arrays): no array is
+copied either way where its values are stored as Tack keeps them, so a chain of
+these filters on a GPU stays there. A partitioned input runs the filter on each
 piece and gives a ``vtkPartitionedDataSet``; the filters whose answer needs every
 piece (``GhostCells``, ``GenerateGlobalIds``, ``MergePieces``) take them together.
 
