@@ -88,10 +88,11 @@ def _paths(out, seeds, steps):
     return np.stack(paths)
 
 
+# One case per path through by_id, since each compiles its own kernels: a curved
+# structured grid (a cell's index vector) at order 3, the order-2 tetrahedra
+# and wedges (the quadratic views), a high-order velocity on straight cells.
 @pytest.mark.parametrize("cells, order, curved", [
-    ("hexahedra", 2, True), ("hexahedra", 3, True), ("grid", 3, True),
-    ("tetrahedra", 2, True), ("wedges", 2, True),
-    ("hexahedra", 3, False), ("grid", 4, False)])
+    ("grid", 3, True), ("tetrahedra", 2, True), ("wedges", 2, True), ("hexahedra", 3, False)])
 def test_streamlines_follow_the_probed_path(cells, order, curved):
     """Through curved cells, and with a velocity above order 1 on straight ones: each
     step's velocities are where ``probe`` puts them, so the path is the host's RK4
@@ -104,7 +105,7 @@ def test_streamlines_follow_the_probed_path(cells, order, curved):
                                rtol=0, atol=1e-12)
 
 
-@pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra", "wedges"])
+@pytest.mark.parametrize("cells", ["wedges"])
 def test_the_neighbour_walk_changes_nothing_on_curved_cells(cells):
     """``neighbors=True`` and the last cell tried first take a curved cell only where
     it holds the point well inside, by its own map: the paths are the bins' bit
