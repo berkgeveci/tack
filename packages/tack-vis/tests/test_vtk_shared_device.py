@@ -229,6 +229,33 @@ def test_a_chain_of_tack_algorithms_stays_on_the_device(device):
                                np.asarray(host_surface.points.data), atol=1e-6)
 
 
+def test_a_filter_given_a_device_moves_its_input_there_once(device):
+    """A reader's output is on the host: device= puts the filter on the GPU, and
+    the filters after it find their input there."""
+    from tack.interop.vtk import algorithms as ta
+
+    space = getattr(vtk.vtkDataArray, _SPACES[device.type])
+    host = _host_tetrahedra()
+    contour = ta.Contour(field="s", value=0.3, device=device.type)
+    contour.SetInputDataObject(host)
+    contour.Update()
+    surface = contour.GetOutputDataObject(0)
+    assert contour.error is None and surface.points.data.GetMemorySpace() == space
+    moved = ta._as_dataset(host, device)
+    assert moved.device == device and ta._as_dataset(host, device) is moved
+    on_cpu = ta.Contour(field="s", value=0.3)(host)
+    assert surface.number_of_cells == on_cpu.number_of_cells > 0
+    np.testing.assert_allclose(np.asarray(surface.points.data),
+                               np.asarray(on_cpu.points.data), atol=1e-6)
+    probe = ta.Probe(fields=["v"])
+    probe.SetInputConnection(contour.GetOutputPort())
+    probe.SetSourceData(host)
+    probe.device = device.type
+    probe.Update()
+    assert probe.error is None
+    assert probe.GetOutputDataObject(0).point_data.GetArray("v").GetMemorySpace() == space
+
+
 def test_marks_and_ids_go_to_the_host(device):
     """VTK reads ghost marks and global ids as its own concrete arrays."""
     data = _device_dataset(device)

@@ -321,6 +321,8 @@ def _shared_on_device(array, element, device):
     shared = _array_view(element, (array.GetNumberOfTuples(),), imported._buffer,
                          writable=False, device=imported._backend)
     shared._dlpack_hold = imported
+    # What dataset_to_vtk hands back to VTK for it (_device_vtk_array).
+    shared._vtk_source = array
     return shared
 
 
@@ -1300,7 +1302,7 @@ def _vtk_points_of(data, share=False):
 
     values = data.geometry.values
     if share and not any(data.origin) and _stored_on_device(values):
-        points = vtkPoints(data=array_to_vtk(values))
+        points = vtkPoints(data=_device_vtk_array(values))
         _label(points.data, data.unit)
         return points
     if share and not any(data.origin) and _stored_on_cpu(values):
@@ -1344,8 +1346,8 @@ def _vtk_cells(offsets, connectivity, share=False):
     if (share and _stored_on_device(offsets) and _stored_on_device(connectivity)
             and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
         # Viskores arrays, which vtkCellArray keeps as they are (its generic storage).
-        return vtkCellArray(offsets=array_to_vtk(offsets, n_components=1),
-                            connectivity=array_to_vtk(connectivity, n_components=1))
+        return vtkCellArray(offsets=_device_vtk_array(offsets, n_components=1),
+                            connectivity=_device_vtk_array(connectivity, n_components=1))
     if (share and _stored_on_cpu(offsets) and _stored_on_cpu(connectivity)
             and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
         # As typed VTK arrays: given NumPy arrays, the constructor converts them to
@@ -1356,12 +1358,12 @@ def _vtk_cells(offsets, connectivity, share=False):
     return vtkCellArray(offsets=_to_vtk_ids(offsets), connectivity=_to_vtk_ids(connectivity))
 
 
-def _to_vtk_values(values, share=False):
+def _to_vtk_values(values, share=False, name=None):
     """A field's values for ``point_data``/``cell_data``: a scalar ``ConstantArray``
     as a vtkConstantArray and a ``CountingArray`` as a vtkAffineArray (nothing
     stored), anything else copied to the host -- or, with ``share``, a stored
     array on the CPU as a view of its memory, and one on a GPU as a Viskores array
-    over it (``array_to_vtk``)."""
+    over it (``_device_vtk_array``, of that ``name``)."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkAffineArray, vtkConstantArray
 
@@ -1373,10 +1375,23 @@ def _to_vtk_values(values, share=False):
     if isinstance(values, CountingArray):
         return vtkAffineArray[values.dtype.numpy_dtype](values.size, values.step, values.start)
     if share and _stored_on_device(values):
-        return array_to_vtk(values)
+        return _device_vtk_array(values, name=name)
     if share and _stored_on_cpu(values):
         return _host_values(values)
     return np.array(to_host(values))            # a copy: the grid owns its values
+
+
+def _device_vtk_array(values, n_components=None, name=None):
+    """A Viskores array over ``values``' device memory (``_stored_on_device``): the VTK
+    array ``values`` was shared from where there is one (of that name, if one is
+    asked), else ``array_to_vtk`` -- of a copy, if ``values`` is read-only, which
+    a VTK array cannot be."""
+    source = getattr(values, "_vtk_source", None)
+    if source is not None and (name is None or source.GetName() == name):
+        return source
+    if not values._writable:
+        values = values.copy()
+    return array_to_vtk(values, n_components=n_components, name=name)
 
 
 def _set_values(attributes, name, values):
@@ -1579,10 +1594,11 @@ def _dataset_to_vtk(data, copy=True):
             # An order-2 field's values at the points, its first ones: the grid
             # is linear, as the filters read order-2 data.
             _set_values(grid.point_data, name,
-                        _to_vtk_values(_point_values(field.values, data.num_points), share))
+                        _to_vtk_values(_point_values(field.values, data.num_points), share,
+                                       name))
             _label(grid.point_data[name], field.unit)
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
-            _set_values(grid.cell_data, name, _to_vtk_values(field.values, share))
+            _set_values(grid.cell_data, name, _to_vtk_values(field.values, share, name))
             _label(grid.cell_data[name], field.unit)
     if data.ghosts is not None:
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray

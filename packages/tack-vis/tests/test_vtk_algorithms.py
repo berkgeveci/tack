@@ -251,3 +251,34 @@ def test_a_field_filters_output_keeps_its_inputs_topology():
     for name in fresh.fields:
         np.testing.assert_array_equal(kept.fields[name].values.numpy(),
                                       fresh.fields[name].values.numpy())
+
+
+def test_probe_gives_vtks_values():
+    source = _wavelet()()
+    points = vtk.vtkPointSource(number_of_points=60, radius=6.0)()
+    probe = ta.Probe()
+    probe.SetInputDataObject(points)
+    probe.SetSourceData(source)
+    probe.Update()
+    out = probe.GetOutputDataObject(0)
+    assert probe.error is None and isinstance(out, vtk.vtkUnstructuredGrid)
+    reference = vtk.vtkProbeFilter()
+    reference.SetInputData(points)
+    reference.SetSourceData(source)
+    reference.Update()
+    np.testing.assert_allclose(out.point_data["RTData"],
+                               reference.GetOutput().point_data["RTData"], rtol=1e-5)
+    np.testing.assert_array_equal(out.point_data["valid"], 1)
+
+
+def test_probe_in_a_pipeline_keeps_an_images_structure():
+    source = _wavelet()
+    image = vtk.vtkImageData(dimensions=(5, 5, 5), origin=(-4.0, -4.0, -4.0),
+                             spacing=(2.0, 2.0, 2.0))
+    probe = ta.Probe(fields=["RTData"])
+    probe.SetInputDataObject(image)
+    probe.SetSourceConnection(source.GetOutputPort())
+    probe.Update()
+    out = probe.GetOutputDataObject(0)
+    assert isinstance(out, vtk.vtkImageData) and out.dimensions == (5, 5, 5)
+    assert set(out.point_data.keys()) == {"RTData", "valid"}
