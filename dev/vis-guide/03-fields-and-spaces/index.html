@@ -1865,6 +1865,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Higher orders">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-a-cells-values-sit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where a cell's values sit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3963,6 +3980,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Higher orders">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-a-cells-values-sit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where a cell's values sit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4414,6 +4448,26 @@ or for a filter that takes linear cells only:</p>
 <code>tack.interop.mfem</code>, and VTK's Lagrange cells through <code>vtk_to_dataset</code>
 (<code>dataset_to_vtk(..., higher_order=True)</code> writes them). Other shapes stop at
 order 2 for now.</p>
+<h3 id="where-a-cells-values-sit">Where a cell's values sit<a class="headerlink" href="#where-a-cells-values-sit" title="Permanent link">&para;</a></h3>
+<p>An <code>L2</code> field of a tensor basis has a layout. <code>"blocks"</code> keeps each cell's
+values together, as MFEM and VTK store them; <code>"cells"</code> stores value <code>n</code> of
+every cell together, so that GPU threads working on neighbouring cells read
+neighbouring memory. The default, <code>"auto"</code>, picks <code>"cells"</code> for order 3 and up
+on a GPU and <code>"blocks"</code> everywhere else, because each is the faster one where
+it is picked: at order 6 cell-fastest reads 2.3 times and writes 3.6 times
+faster on an RTX 4060 Ti, and blocks read about 1.6 times and write about twice
+as fast on a CPU.</p>
+<div class="highlight"><pre><span></span><code>    <span class="n">dg</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">nodes</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">)</span>             <span class="c1"># &quot;auto&quot;: by device</span>
+    <span class="n">across</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">nodes</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">)</span>
+    <span class="n">p</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">(</span><span class="n">dg</span><span class="p">,</span> <span class="n">across</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">dg</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span> <span class="n">across</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span> <span class="n">dg</span><span class="o">.</span><span class="n">blocks</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+</code></pre></div>
+<p>Every operation gives the same answer in either layout; only the order of
+<code>field.values</code> differs. <code>space.blocks(values)</code> reads them per cell, <code>(cells,
+values a cell)</code>, whatever the layout, and <code>space.indices()</code> says where each is.
+Moving a dataset to another device may change an <code>"auto"</code> layout, and
+<code>to_device</code> reorders the values. MFEM and the VTK interop take and give either.
+Set <code>TACK_L2_LAYOUT=cells</code> (or <code>blocks</code>) to run everything one way.</p>
 <h2 id="a-material-interface-exposes-the-difference">A material interface exposes the difference<a class="headerlink" href="#a-material-interface-exposes-the-difference" title="Permanent link">&para;</a></h2>
 <p>The <a href="../01-datasets/">two-cell example</a> has material 1 on the left and 3 on the
 right. Converting it to shared point data gives value 2 on the common face.
