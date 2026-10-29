@@ -387,19 +387,25 @@ def test_subdivide_has_each_lattice_point_once(f64_backend, level):
 def test_contours_of_high_order_fields_converge_and_close(f64_backend):
     """A sphere's field at order 3 contoured on lattices of 1 to 5 steps: no open
     edge, so no cracks between cells turned every way; the radius error falls as
-    the square of the step; level 1 is the corners' linear contour."""
+    the square of the step between lattice values (``exact=False``); level 1 is
+    then the corners' linear contour. At the field's roots (the default) every
+    vertex is on the sphere, at every level."""
     data = _ball(3)
     errors = []
     for level in (1, 2, 3, 5):
-        surface = td.contour(data, "u", 0.49, subdivision=level)
+        surface = td.contour(data, "u", 0.49, subdivision=level, exact=False)
         assert _open_edges(surface) == 0
         assert (surface.fields["c"].values.numpy() >= 0).all()          # carried from parents
         errors.append(np.abs(np.linalg.norm(surface.positions() - 1.0, axis=1) - 0.7).max())
+        exact = td.contour(data, "u", 0.49, subdivision=level)
+        assert _open_edges(exact) == 0 and exact.num_cells == surface.num_cells
+        assert np.abs(np.linalg.norm(exact.positions() - 1.0, axis=1) - 0.7).max() < 1e-12
     assert errors == sorted(errors, reverse=True) and errors[-1] < 4e-3
     linear = _ball(1)
     corners = td.contour(linear, "u", 0.49)
-    np.testing.assert_array_equal(np.sort(td.contour(data, "u", 0.49, subdivision=1).positions(), 0),
-                                  np.sort(corners.positions(), 0))
+    np.testing.assert_array_equal(
+        np.sort(td.contour(data, "u", 0.49, subdivision=1, exact=False).positions(), 0),
+        np.sort(corners.positions(), 0))
     assert td.contour(data, "u", 0.49).num_cells == td.contour(data, "u", 0.49,
                                                                subdivision=3).num_cells
 
@@ -407,7 +413,7 @@ def test_contours_of_high_order_fields_converge_and_close(f64_backend):
 def test_only_cells_that_can_hold_the_value_are_cut(f64_backend):
     """Culling by the Bernstein bound gives the surface subdividing every cell gives."""
     data = _ball(3)
-    culled = td.contour(data, "u", 0.49, subdivision=3)
+    culled = td.contour(data, "u", 0.49, subdivision=3, exact=False)
     whole = td.contour(td.subdivide(data, 3), "u", 0.49)
     np.testing.assert_allclose(np.sort(culled.positions(), 0), np.sort(whole.positions(), 0),
                                atol=1e-12)

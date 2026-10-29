@@ -851,7 +851,7 @@ def default_level(data, *fields):
     return max([_order(data.geometry)] + [_order(f) for f in fields])
 
 
-def _refined(data, flags, level, fields, elsewhere=None):
+def _refined(data, flags, level, fields, elsewhere=None, cut=None):
     """The cells ``flags`` marks, cut into ``level`` steps along each axis: an
     unstructured linear dataset of their sub-cells, its geometry and ``fields`` (a
     dict of names to fields) evaluated at the lattice points (``H1`` and ``L2`` fields of any order;
@@ -859,7 +859,8 @@ def _refined(data, flags, level, fields, elsewhere=None):
     chooses alike, so its jumps are not kept), cell fields taken from each sub-cell's parent.
     ``elsewhere`` (i32 per point, optional) flags points another part owns: the
     refined dataset's point field ``SEAM`` is 1 at the lattice corners on them, 0
-    elsewhere.
+    elsewhere. ``cut``, ``(name, levels)``, makes a cut of field ``name`` at
+    ``levels`` put its crossings at the field's roots (``_crossings``).
     Returns ``(refined, parent)``, ``parent`` each sub-cell's cell."""
     from math import comb
 
@@ -895,17 +896,19 @@ def _refined(data, flags, level, fields, elsewhere=None):
                     node_of = tack.array(bases.view_order(group.shape, level))
                     _lattice_keys(data.domain_view("cells", group), lattice.view(group),
                                   slot_of, per_cell, node_of, keys)
-    order = argsort(keys) if total else tack.empty((0,), tack.i64)
+    by_key = argsort(keys) if total else tack.empty((0,), tack.i64)
     first = tack.zeros((total,), tack.i32)
     numbers = tack.empty((total,), tack.i64)
     rank = tack.empty((total,), tack.i64)
+    starts = tack.empty((total,), tack.i32)
+    ranks = None
     points = 0
     if total:
-        starts = tack.empty((total,), tack.i32)
-        _run_starts(keys, order, starts)
+        _run_starts(keys, by_key, starts)
         points = exclusive_scan(starts, numbers, total)
-        _ranks(order, starts, numbers, rank)
-        _evaluators(order, starts, per_cell, _cell_ranks(data, slot_of, chosen, count), first)
+        _ranks(by_key, starts, numbers, rank)
+        ranks = _cell_ranks(data, slot_of, chosen, count)
+        _evaluators(by_key, starts, per_cell, ranks, first)
     geometry = tack.empty((points,), tack.vec(3, data.dtype))
     idt = ids.at_least(data.id_dtype, max(points, count * subs * sub))
     conn = tack.empty((count * subs * sub,), idt)
@@ -1015,6 +1018,15 @@ def _refined(data, flags, level, fields, elsewhere=None):
         if isinstance(field.space, Constant) or (isinstance(field.space, Values)
                                                  and field.space.on == "cells"):
             refined.fields[name] = _taken(field, parent, refined)
+    if cut is not None and total and cut[0] in point_fields:
+        from tack.dataset.algorithms._crossings import Crossings
+
+        name, levels = cut
+        sources = {id(refined.geometry): data.geometry}
+        sources.update({id(refined.fields[k]): fields[k] for k in point_fields})
+        refined._crossings = Crossings(data, level, by_key, starts, numbers, points,
+                                       per_cell, chosen, ranks, fields[name],
+                                       refined.fields[name].values, levels, sources)
     return refined, parent
 
 
@@ -1159,12 +1171,14 @@ def subdivides(data, field):
     return nonlinear and len(families) <= 1 and all(bases.has_bases(g.shape) for g in groups)
 
 
-def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, tolerance=None):
+def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, tolerance=None,
+                       exact=True):
     """``cut`` (contour with its other arguments bound) of the cells whose ``field``
     may hold one of ``levels``, cut into ``subdivision`` lattice steps (by default
     the largest order of the field and geometry, or with ``tolerance`` the fewest
     whose estimated error is within it): only those cells are refined, and every
-    field carried evaluated at their lattice points."""
+    field carried evaluated at their lattice points; with ``exact``, at the field's
+    roots along the sub-edges where it crosses (``_crossings``)."""
     if subdivision is not None and tolerance is not None:
         raise ValueError("give subdivision or tolerance, not both")
     flags = tack.empty((data.num_cells,), tack.i32)
@@ -1181,14 +1195,15 @@ def subdivided_contour(data, field, value, levels, nlevels, subdivision, cut, to
     name = next((n for n, f in data.fields.items() if f is field), "__cut__")
     carried = dict(data.fields)
     carried[name] = field
-    refined, _ = _refined(data, flags, level, carried)
+    refined, _ = _refined(data, flags, level, carried, cut=(name, levels) if exact else None)
     out = cut(refined, name)
     if name == "__cut__":
         out.fields.pop(name, None)
     return out
 
 
-def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cut):
+def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cut,
+                   levels=None):
     """``clip``'s and ``threshold``'s high-order path: ``PartitionedDataSet([whole,
     part])``. ``whole`` is the cells whose ``field`` lies in ``[lower, upper]``
     over the whole cell by its Bernstein bound, kept as they are (curved, their
@@ -1197,7 +1212,8 @@ def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cu
     range's ends, cut into ``subdivision`` lattice steps (by default the largest
     order of the field and geometry; with ``tolerance``, the fewest whose
     estimated error is within it). ``fields`` names the fields carried (``None``
-    every one). The two share the whole cells' corners on the seam, which the whole
+    every one). With ``levels`` (the values a clip cuts at, an array of the field's
+    type), the cut's crossings are at the field's roots (``_crossings``). The two share the whole cells' corners on the seam, which the whole
     part owns: the cut part's copies are marked ``DUPLICATEPOINT``, so reductions
     over the two count each once."""
     from tack.dataset.algorithms._extract import _keep_cells
@@ -1227,7 +1243,8 @@ def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cu
     for group in data.launch_groups("cells", []):
         if group.count:
             _corners_of(data.domain_view("cells", group), whole, elsewhere)
-    refined, _ = _refined(data, flags, level, carried, elsewhere)
+    refined, _ = _refined(data, flags, level, carried, elsewhere,
+                          cut=None if levels is None else (name, levels))
     part = cut(refined, name, None if fields is None else [*names, SEAM])
     if name not in names:
         part.fields.pop(name, None)
