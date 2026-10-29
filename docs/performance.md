@@ -18,45 +18,48 @@ threads (TBB), Tack's CPU on 28 threads, Viskores 1.2.0 and Tack on CUDA.
 
 | mesh | filter | VTK / Tack CPU | Viskores CUDA / Tack CUDA | VTK / Tack CUDA |
 |---|---|---|---|---|
-| hexahedra | contour | 1.15× | 1.49× | 10.4× |
-| hexahedra | slice | 1.26× | 3.4× | 11.8× |
-| hexahedra | threshold | 3.5× | 5.4× | 88.3× |
-| hexahedra | external faces | 1.66× | 1.63× | 25.2× |
-| hexahedra | point to cell | 2.4× | 1.96× | 40.4× |
-| hexahedra | cell to point | 2.3× | 2.1× | 51.9× |
-| hexahedra | point gradient | – | 1.27× | – |
-| hexahedra | cell gradient | 13.0× | – | – |
-| hexahedra | cell volume | 25.7× | – | – |
-| hexahedra | cell centers | 20.6× | – | – |
-| tetrahedra | contour | 1.24× | 2.3× | 11.2× |
-| tetrahedra | slice | 1.28× | 4.8× | 13.0× |
-| tetrahedra | threshold | 3.0× | 4.9× | 69.3× |
-| tetrahedra | external faces | 1.92× | 1.64× | 16.9× |
-| tetrahedra | point to cell | 2.9× | 2.3× | 45.9× |
-| tetrahedra | cell to point | 1.66× | 0.95× | 16.3× |
-| tetrahedra | point gradient | – | 1.02× | – |
-| tetrahedra | cell gradient | 17.8× | – | – |
-| tetrahedra | cell volume | 24.9× | – | – |
-| tetrahedra | cell centers | 32.2× | – | – |
+| hexahedra | contour | 1.02× | 1.49× | 12.3× |
+| hexahedra | slice | 1.19× | 3.4× | 16.4× |
+| hexahedra | threshold | 3.16× | 5.4× | 84.8× |
+| hexahedra | external faces | 1.38× | 1.63× | 23.3× |
+| hexahedra | point to cell | 2.23× | 1.96× | 39.2× |
+| hexahedra | cell to point | 1.84× | 2.1× | 48.8× |
+| hexahedra | point gradient | 5.56× | 1.27× | 181× |
+| hexahedra | cell gradient | 13.1× | – | 283× |
+| hexahedra | cell volume | 30.3× | – | 2,269× |
+| hexahedra | cell centers | 19.4× | – | 377× |
+| tetrahedra | contour | 1.26× | 2.3× | 12.4× |
+| tetrahedra | slice | 1.10× | 4.8× | 11.2× |
+| tetrahedra | threshold | 3.37× | 4.9× | 72.7× |
+| tetrahedra | external faces | 1.66× | 1.64× | 16.2× |
+| tetrahedra | point to cell | 2.57× | 2.3× | 40.1× |
+| tetrahedra | cell to point | 1.59× | 0.95× | 16.2× |
+| tetrahedra | point gradient | 7.76× | 1.02× | 127× |
+| tetrahedra | cell gradient | 16.6× | – | 351× |
+| tetrahedra | cell volume | 23.6× | – | 1,406× |
+| tetrahedra | cell centers | 28.4× | – | 502× |
 
-A dash is a comparison not made, not a failure. VTK's Viskores filters, through
-which Viskores is timed here, have no cell gradient, cell volume or cell
-centers, so the Viskores column has none for them. VTK's side was timed against
-Tack on the CPU alone in this run, and had no point-gradient pair, so the
-VTK / Tack CUDA column has neither; the next run on this machine fills both.
+A dash is a comparison not made, not a failure: VTK's Viskores filters,
+through which Viskores is timed here, have no cell gradient, cell volume or
+cell centers.
 
 - **On the GPU**, Tack is ahead of Viskores on every filter but tetrahedra's
   cell to point (0.95×), up to 5.4× on threshold and 4.8× on slice. Warm,
   it is ahead on every filter, by 1.04–12×.
-- **On the CPU**, Tack is ahead of VTK on every filter, by 13–32× on cell
-  gradients, volumes and centers. At 5M cells, contour of hexahedra is the one
-  filter where VTK is faster (0.74×).
-- **Tack on the GPU against VTK on the CPU**: 10–88×.
+- **On the CPU**, Tack is ahead of VTK on every filter at 20M cells, by
+  13–30× on cell gradients, volumes and centers and 5.6–7.8× on point
+  gradients; contour of hexahedra is even (1.02×). At 5M cells, contour of
+  hexahedra is the one filter where VTK is faster (0.55×).
+- **Tack on the GPU against VTK on the CPU**: 11–2,269×.
 
-Contour and slice of hexahedra on CUDA were 1.3–1.5× slower in this run than
-a week earlier (5M hexahedra's contour 5.4 → 7.8 ms): merging their
-crossings now sorts by radix where, on CUDA, buckets are 1.3–1.7× faster
-(jura, 2026-10-27). The choice is being made per device.
+**Measured again for 0.6.1.** Tack 0.6.0 capped every CPU fan-out's chunks
+at 20 µs of work, which on 28 threads made every CPU filter 2–5× slower than
+this page reported (threshold of 20M hexahedra 712 ms against 199; behind
+VTK on six filters of each mesh); 0.6.1 fixes it. The VTK and Tack columns
+are jura's run of 2026-10-28, two passes, the best of each: Tack `main` at
+`a9031fe2` (0.6.0 and the pull requests after it) with the fix, on the CPU
+and CUDA. The Viskores column is the run of 2026-10-26 (Tack `main` at
+`291fcfe`), which this one did not repeat (see [running times](#running-times)).
 
 ## macOS: Apple M1 Max
 
@@ -180,65 +183,71 @@ every path runs its full length, within 3.8e-6 of Tack's, in 22.9 s.
   keeps from an earlier filter on the same mesh; a fresh one derives it.
 - **Timing.** Repeated runs for a fixed budget, the median taken; Tack's
   timing ends with `tack.sync()`, since GPU launches are queued. On the
-  Linux machine, two passes, the second in reverse order, and their mean;
-  on the Mac, one.
+  Linux machine, two passes: the VTK and Tack columns take the better of
+  the two, the Viskores column their mean (the second pass in reverse
+  order); on the Mac, one.
 - **Harness**: `benchmarks/vtk_compare` (VTK and Tack) and
   `benchmarks/viskores_compare` (Viskores and Tack), on the meshes of
-  `benchmarks/vtk_compare/meshes.py`.
+  `benchmarks/vtk_compare/meshes.py`. Point gradients against VTK
+  (`vtkGradientFilter`) are a pair of `vtk_compare` since 0.6.1's run (#195).
 
 ## Running times
 
 All in milliseconds; a dash is a time not taken (see under the tables above). The
 Linux machine: jura, idle; NVIDIA driver 615.71.09;
-VTK master built with TBB; Viskores 1.2.0 (CUDA arch 89, 64-bit ids,
-double precision); Tack `main` at `291fcfe` (2026-10-26).
+VTK master (`cc6c421507`) built with TBB; Viskores 1.2.0 (CUDA arch 89,
+64-bit ids, double precision). VTK and Tack: Tack `main` at `a9031fe2` with
+0.6.1's fix (2026-10-28), the best of two passes. Viskores: the run of
+2026-10-26 (Tack `main` at `291fcfe`), whose Tack CUDA times were within 3%
+of these but for contour and slice of hexahedra, 1.2–1.7× slower then (5M
+contour 7.87 ms against 4.77 here), when merging their crossings sorted by
+radix; the Viskores column's ratios for those two understate Tack's lead.
 
 | mesh | cells | filter | VTK | Tack CPU | Tack CPU, fresh | Viskores CUDA | Tack CUDA | Tack CUDA, fresh |
 |---|---|---|---|---|---|---|---|---|
-| hexahedra | 5M | contour | 28.6 | 45.6 | 38.9 | 8.14 | 7.84 | 7.87 |
-| hexahedra | 5M | slice | 35.4 | 34.0 | 31.8 | 14.1 | 7.55 | 7.50 |
-| hexahedra | 5M | threshold | 174 | 76.7 | 66.5 | 16.4 | 3.62 | 3.73 |
-| hexahedra | 5M | external faces | 184 | 124 | 123 | 19.5 | 9.22 | 9.75 |
-| hexahedra | 5M | point to cell | 13.6 | 7.40 | 7.39 | 1.90 | 0.97 | 0.98 |
-| hexahedra | 5M | cell to point | 89.2 | 10.1 | 68.3 | 7.22 | 0.93 | 4.23 |
-| hexahedra | 5M | point gradient | – | – | – | 9.32 | 3.73 | 7.45 |
-| hexahedra | 5M | cell gradient | 175 | 17.3 | 18.1 | – | – | – |
-| hexahedra | 5M | cell volume | 1170 | 48.7 | 46.4 | – | – | – |
-| hexahedra | 5M | cell centers | 173 | 14.6 | 17.9 | – | – | – |
-| tetrahedra | 5M | contour | 25.4 | 20.0 | 20.4 | 7.59 | 4.86 | 4.85 |
-| tetrahedra | 5M | slice | 22.7 | 19.5 | 19.9 | 13.1 | 4.87 | 4.86 |
-| tetrahedra | 5M | threshold | 77.4 | 29.6 | 29.0 | 11.5 | 3.30 | 3.33 |
-| tetrahedra | 5M | external faces | 111 | 70.6 | 71.8 | 17.5 | 9.11 | 9.08 |
-| tetrahedra | 5M | point to cell | 11.3 | 5.50 | 5.04 | 1.74 | 0.80 | 0.83 |
-| tetrahedra | 5M | cell to point | 48.5 | 8.73 | 36.6 | 4.46 | 0.80 | 4.11 |
-| tetrahedra | 5M | point gradient | – | – | – | 5.72 | 2.09 | 5.32 |
-| tetrahedra | 5M | cell gradient | 166 | 12.7 | 11.3 | – | – | – |
-| tetrahedra | 5M | cell volume | 588 | 28.5 | 29.9 | – | – | – |
-| tetrahedra | 5M | cell centers | 179 | 10.9 | 8.86 | – | – | – |
-| hexahedra | 20M | contour | 98.3 | 87.9 | 85.5 | 14.1 | 9.53 | 9.46 |
-| hexahedra | 20M | slice | 118 | 95.9 | 94.0 | 33.7 | 10.1 | 10.0 |
-| hexahedra | 20M | threshold | 696 | 204 | 198 | 42.3 | 7.75 | 7.88 |
-| hexahedra | 20M | external faces | 758 | 446 | 455 | 49.2 | 27.8 | 30.1 |
-| hexahedra | 20M | point to cell | 69.0 | 28.9 | 28.6 | 3.35 | 1.73 | 1.71 |
-| hexahedra | 20M | cell to point | 524 | 36.0 | 224 | 21.0 | 1.81 | 10.1 |
-| hexahedra | 20M | point gradient | – | – | – | 30.0 | 13.7 | 23.6 |
-| hexahedra | 20M | cell gradient | 642 | 49.9 | 49.5 | – | – | – |
-| hexahedra | 20M | cell volume | 4772 | 194 | 186 | – | – | – |
-| hexahedra | 20M | cell centers | 792 | 40.2 | 38.5 | – | – | – |
-| tetrahedra | 20M | contour | 66.5 | 57.6 | 53.6 | 13.7 | 5.95 | 5.95 |
-| tetrahedra | 20M | slice | 74.7 | 60.8 | 58.3 | 27.5 | 5.75 | 5.73 |
-| tetrahedra | 20M | threshold | 369 | 126 | 121 | 26.0 | 5.43 | 5.33 |
-| tetrahedra | 20M | external faces | 456 | 240 | 238 | 44.2 | 27.0 | 27.0 |
-| tetrahedra | 20M | point to cell | 57.4 | 21.6 | 19.9 | 2.89 | 1.28 | 1.25 |
-| tetrahedra | 20M | cell to point | 176 | 20.3 | 106 | 10.3 | 1.30 | 10.8 |
-| tetrahedra | 20M | point gradient | – | – | – | 15.5 | 5.90 | 15.2 |
-| tetrahedra | 20M | cell gradient | 567 | 33.9 | 31.9 | – | – | – |
-| tetrahedra | 20M | cell volume | 2398 | 97.6 | 96.5 | – | – | – |
-| tetrahedra | 20M | cell centers | 841 | 28.0 | 26.1 | – | – | – |
+| hexahedra | 5M | contour | 26.8 | 53.4 | 49.1 | 8.14 | 4.91 | 4.77 |
+| hexahedra | 5M | slice | 35.0 | 34.4 | 31.7 | 14.1 | 5.01 | 5.00 |
+| hexahedra | 5M | threshold | 143 | 72.7 | 62.2 | 16.4 | 3.53 | 3.55 |
+| hexahedra | 5M | external faces | 171 | 0.35 | 131 | 19.5 | 0.38 | 9.72 |
+| hexahedra | 5M | point to cell | 14.9 | 7.20 | 7.73 | 1.90 | 0.87 | 0.87 |
+| hexahedra | 5M | cell to point | 88.9 | 9.09 | 58.3 | 7.22 | 1.27 | 3.81 |
+| hexahedra | 5M | point gradient | 1184 | 145 | 192 | 9.32 | 3.78 | 6.65 |
+| hexahedra | 5M | cell gradient | 167 | 21.1 | 19.2 | – | 1.05 | 1.07 |
+| hexahedra | 5M | cell volume | 1166 | 48.9 | 43.9 | – | 0.99 | 0.89 |
+| hexahedra | 5M | cell centers | 200 | 18.3 | 17.4 | – | 0.84 | 0.96 |
+| tetrahedra | 5M | contour | 23.5 | 22.0 | 19.6 | 7.59 | 4.59 | 4.60 |
+| tetrahedra | 5M | slice | 24.9 | 22.0 | 19.9 | 13.1 | 4.89 | 4.91 |
+| tetrahedra | 5M | threshold | 82.6 | 30.9 | 29.7 | 11.5 | 3.32 | 3.29 |
+| tetrahedra | 5M | external faces | 99.5 | 0.38 | 81.3 | 17.5 | 0.40 | 9.15 |
+| tetrahedra | 5M | point to cell | 12.8 | 5.35 | 4.96 | 1.74 | 0.76 | 0.80 |
+| tetrahedra | 5M | cell to point | 49.1 | 7.74 | 37.0 | 4.46 | 1.14 | 3.96 |
+| tetrahedra | 5M | point gradient | 512 | 34.4 | 58.6 | 5.72 | 2.05 | 4.88 |
+| tetrahedra | 5M | cell gradient | 152 | 8.48 | 14.8 | – | 0.85 | 0.88 |
+| tetrahedra | 5M | cell volume | 529 | 30.4 | 30.3 | – | 0.81 | 0.82 |
+| tetrahedra | 5M | cell centers | 156 | 6.79 | 13.0 | – | 0.75 | 0.78 |
+| hexahedra | 20M | contour | 94.1 | 91.5 | 92.5 | 14.1 | 7.22 | 7.65 |
+| hexahedra | 20M | slice | 122 | 109 | 102 | 33.7 | 7.50 | 7.43 |
+| hexahedra | 20M | threshold | 630 | 200 | 199 | 42.3 | 7.41 | 7.43 |
+| hexahedra | 20M | external faces | 721 | 0.39 | 522 | 49.2 | 0.39 | 30.9 |
+| hexahedra | 20M | point to cell | 67.6 | 31.4 | 30.4 | 3.35 | 1.66 | 1.73 |
+| hexahedra | 20M | cell to point | 488 | 47.3 | 264 | 21.0 | 2.24 | 10.0 |
+| hexahedra | 20M | point gradient | 4228 | 481 | 760 | 30.0 | 14.1 | 23.3 |
+| hexahedra | 20M | cell gradient | 625 | 47.8 | 47.8 | – | 2.19 | 2.21 |
+| hexahedra | 20M | cell volume | 4834 | 158 | 160 | – | 2.14 | 2.13 |
+| hexahedra | 20M | cell centers | 762 | 39.6 | 39.2 | – | 2.00 | 2.02 |
+| tetrahedra | 20M | contour | 68.5 | 59.1 | 54.4 | 13.7 | 5.52 | 5.55 |
+| tetrahedra | 20M | slice | 65.5 | 59.6 | 59.5 | 27.5 | 5.79 | 5.86 |
+| tetrahedra | 20M | threshold | 363 | 119 | 108 | 26.0 | 5.01 | 4.98 |
+| tetrahedra | 20M | external faces | 448 | 0.39 | 269 | 44.2 | 0.41 | 27.7 |
+| tetrahedra | 20M | point to cell | 50.4 | 20.9 | 19.6 | 2.89 | 1.25 | 1.26 |
+| tetrahedra | 20M | cell to point | 170 | 21.2 | 107 | 10.3 | 1.61 | 10.5 |
+| tetrahedra | 20M | point gradient | 1869 | 117 | 241 | 15.5 | 5.85 | 14.7 |
+| tetrahedra | 20M | cell gradient | 544 | 34.6 | 32.7 | – | 1.53 | 1.55 |
+| tetrahedra | 20M | cell volume | 2164 | 96.7 | 91.5 | – | 1.55 | 1.54 |
+| tetrahedra | 20M | cell centers | 720 | 26.1 | 25.4 | – | 1.41 | 1.43 |
 
-Warm external faces were as slow as fresh in this run: the surface was
-recomputed on every call. Since then (#167) the topology keeps it, and a
-repeated call only carries the fields.
+Warm external faces are well under a millisecond: the topology keeps the
+surface (#167), and a repeated call only carries the fields.
 
 The Mac: Apple M1 Max (8 performance and 2 efficiency cores, 64 GB), macOS
 26; VTK master (`5d3a65f159`) built with TBB, and the Viskores 1.2.0 it

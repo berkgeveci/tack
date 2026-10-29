@@ -264,6 +264,47 @@ def test_curved_cells_are_located_as_they_are(f64_backend, cells, order):
                                atol=1e-8)
 
 
+
+@pytest.mark.parametrize("cells, order", [("hexahedra", 2), ("hexahedra", 3), ("hexahedra", 4),
+                                          ("tetrahedra", 2), ("wedges", 2)])
+def test_filters_keep_curved_geometry_and_high_order_fields(f64_backend, cells, order):
+    """A filter that keeps whole cells carries an ``H1`` field above order 1, and a
+    curved geometry, at its order and nodes: each output cell's nodes are its
+    source cell's, placed through the output's own edges and faces (which a
+    reversed subset numbers and orients differently). They kept their corner
+    values only: every filter's piece of a curved mesh came out straight. At
+    each kept cell's center, which only it holds, the output gives the input's
+    value to the bit."""
+    grid = td.uniform_grid((4, 4, 4), spacing=(0.4, 0.4, 0.4), dtype=tack.f64)
+    data = {"hexahedra": lambda: _rotated(td.extract_cells(grid, np.arange(27)), seed=7),
+            "tetrahedra": lambda: td.tetrahedralize(grid),
+            "wedges": lambda: _wedges(grid)}[cells]()
+    space = td.H1(data, order=order, nodes="equispaced") if order > 2 else td.H1(data, order=2)
+    data.fields["u"] = td.interpolate(data, _quadratic, space)
+    data.geometry = td.interpolate(data, _bend, td.H1(data, order=2), dtype=tack.vec3(tack.f64))
+    n = data.num_cells
+    for out in (td.extract_cells(data, np.arange(n - 1, -1, -2)),       # reversed: new frames
+                td.threshold(data, "u", 0.5, 1.5),
+                td.extract_cells(data, np.arange(n))):
+        assert out.geometry.space == td.H1(out, order=2)
+        assert out.fields["u"].space == td.H1(out, **space.params)
+        centers = td.cell_centers(out).values.numpy()
+        a, b = td.probe(data, centers), td.probe(out, centers)
+        assert b.fields["valid"].values.numpy().all()
+        np.testing.assert_array_equal(b.fields["u"].values.numpy(), a.fields["u"].values.numpy())
+
+
+def test_pieces_of_a_curved_grid_stay_curved(f64_backend):
+    """``split`` carries an order-3 field onto each structured piece, ghost layers
+    included, and the pieces give the whole's values."""
+    grid = td.uniform_grid((5, 5, 5), spacing=(0.3, 0.3, 0.3), dtype=tack.f64)
+    grid.fields["u"] = td.interpolate(grid, _quadratic, td.H1(grid, order=3))
+    for piece in td.split(grid, (2, 2, 1), ghost_layers=1):
+        assert piece.fields["u"].space.order == 3
+        centers = td.cell_centers(piece).values.numpy()
+        np.testing.assert_array_equal(td.probe(piece, centers).fields["u"].values.numpy(),
+                                      td.probe(grid, centers).fields["u"].values.numpy())
+
 @tack.func
 def _bulge(x):
     return [x[0] + 0.3 * x[1] * (1.0 - x[1]), x[1], x[2]]

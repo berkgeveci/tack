@@ -505,8 +505,8 @@ def test_shared_nodes_and_lattice_points_have_the_same_bits_in_every_piece():
     straight = td.extract_cells(grid, np.arange(grid.num_cells))
 
     def curved(data):
-        # As a solver's pieces have them (carry keeps an H1 field's point values
-        # only, so a filter's piece would be straight).
+        # Interpolated on each piece, as a solver's pieces have them; pieces cut
+        # from the whole by a filter carry its nodes (below).
         data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=3))
         data.geometry = td.interpolate(data, _bent, td.H1(data, order=2), dtype=tack.vec3())
         return data
@@ -520,11 +520,13 @@ def test_shared_nodes_and_lattice_points_have_the_same_bits_in_every_piece():
         piece = curved(td.extract_cells(straight, np.asarray(kept)))
         assert all(tuple(x) in nodes for x in piece.geometry.values.numpy())
         assert set(piece.fields["u"].values.numpy().tolist()) <= values
-        out = td.subdivide(piece, 3, fields=["u"])
-        positions = [tuple(p) for p in out.positions()]
-        assert all(p in at for p in positions)
-        np.testing.assert_array_equal(out.fields["u"].values.numpy(),
-                                      [at[p] for p in positions])
+        for cut in (piece, td.extract_cells(whole, np.asarray(kept))):
+            out = td.subdivide(cut, 3, fields=["u"])
+            positions = [tuple(p) for p in out.positions()]
+            assert all(p in at for p in positions)
+            np.testing.assert_array_equal(out.fields["u"].values.numpy(),
+                                          [at[p] for p in positions])
+
 
 def test_two_dimensional_pieces_give_their_shares():
     grid = td.uniform_grid((21, 17), spacing=(0.1, 0.1, 1.0))

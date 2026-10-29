@@ -189,7 +189,9 @@ def test_a_chunk_holds_at_most_its_limit(monkeypatch):
     """`most` caps a chunk, so a short range of dear elements -- 17 streamlines
     on 8 threads went in chunks of 3 -- goes one element a claim; the backend
     asks for about `_CHUNK_WORK_NS` of a kernel's estimated work, so a cheap
-    kernel keeps the pool's chunks."""
+    kernel keeps the pool's chunks. A long range keeps them too, however dear
+    its elements: cut to 20 us, 28 threads interleaved through 20M cells and
+    faulted the same huge pages at once (threshold 650 ms against 200)."""
     assert cpu_pool.CPool.chunk_size(17, 8) == 3
     assert cpu_pool.CPool.chunk_size(17, 8, most=1) == 1
     assert cpu_pool.CPool.chunk_size(1_000_000, 4, most=10**9) == \
@@ -198,11 +200,19 @@ def test_a_chunk_holds_at_most_its_limit(monkeypatch):
     class Estimate:
         ns_per_elem = 0.0
     kernel = Estimate()
-    assert cpu_mod._chunk_limit(kernel) is None
+    assert cpu_mod._chunk_limit(kernel, 17, 8) is None
     kernel.ns_per_elem = 250e6                      # a quarter-second streamline
-    assert cpu_mod._chunk_limit(kernel) == 1
+    assert cpu_mod._chunk_limit(kernel, 17, 8) == 1
     kernel.ns_per_elem = 1.0
-    assert cpu_mod._chunk_limit(kernel) >= cpu_pool.MIN_CHUNK
+    assert cpu_mod._chunk_limit(kernel, 17, 8) >= cpu_pool.MIN_CHUNK
+    kernel.ns_per_elem = 20.0                       # threshold's _kept_uniform_cells
+    assert cpu_mod._chunk_limit(kernel, 20_000_000, 28) is None
+    kernel.ns_per_elem = 6000.0                     # the sort's _count_digits, a tile an element
+    assert cpu_mod._chunk_limit(kernel, 78_125, 28) is None
+    longest = 28 * cpu_pool.GRAIN * cpu_pool.MIN_CHUNK     # the last range the limit applies to
+    assert cpu_pool.CPool.chunk_size(longest, 28) == cpu_pool.MIN_CHUNK
+    assert cpu_mod._chunk_limit(kernel, longest, 28) == 3
+    assert cpu_mod._chunk_limit(kernel, longest + 1, 28) is None
 
     backend = _fresh_backend(4, monkeypatch)
     n = 17
