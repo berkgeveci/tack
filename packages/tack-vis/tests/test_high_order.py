@@ -290,7 +290,7 @@ def test_filters_keep_curved_geometry_and_high_order_fields(f64_backend, cells, 
     data.geometry = td.interpolate(data, _bend, td.H1(data, order=2), dtype=tack.vec3(tack.f64))
     n = data.num_cells
     for out in (td.extract_cells(data, np.arange(n - 1, -1, -2)),       # reversed: new frames
-                td.threshold(data, "u", 0.5, 1.5),
+                td.threshold(data, "u", 0.5, 1.5).partitions[0],      # whole cells
                 td.extract_cells(data, np.arange(n))):
         assert out.geometry.space == td.H1(out, order=2)
         assert out.fields["u"].space == td.H1(out, **space.params)

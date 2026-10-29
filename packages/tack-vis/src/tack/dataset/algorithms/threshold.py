@@ -4,7 +4,7 @@ import tack
 from tack import arrays
 from tack.dataset.algorithms._common import _field, _in_unit_of, _with_basis
 from tack.dataset.algorithms._extract import _keep_cells
-from tack.dataset.spaces import Constant
+from tack.dataset.spaces import H1, L2, Constant
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['threshold']
@@ -28,12 +28,14 @@ def _keep_by_corners(cells, u, lower, upper, all_points, keep):
 
 
 @on_inputs_device
-def threshold(data, field, lower, upper, all_points=True, fields=None):
+def threshold(data, field, lower, upper, all_points=True, fields=None, subdivision=None,
+              tolerance=None):
     """The cells whose ``field`` lies in ``[lower, upper]``, with only the points they use.
 
     ``field`` is a scalar field or its name. A cell field (``Constant``, values
-    on cells) keeps a cell by its value; a field with a basis (``H1``, ``L2``
-    of any orders) or values on points by its values at the cell's corners:
+    on cells) keeps a cell by its value; a field with a basis (``H1``, ``L2``;
+    above order 1 or on curved cells, see below) or values on points by its
+    values at the cell's corners:
     all of them in range, or with ``all_points=False`` any (VTK's
     ``AllScalars``). The result's cells keep their shapes and order; its points
     are the used ones, renumbered in order. Every field it can carry comes
@@ -49,6 +51,15 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
     polygonal topology's kept polygons keep their loops, and a polyline
     topology's polylines their chains; their facets' values, whose numbering is
     derived afresh, are left behind.
+
+    A curved geometry or a field above order 1 (or ``subdivision`` above 1, or a
+    ``tolerance``) is thresholded through subdivision, and the result is
+    ``PartitionedDataSet([whole, part])``: ``whole`` the cells whose field's
+    Bernstein bound lies in the range, as they are (curved, their fields of any
+    order), and ``part`` the threshold of the sub-cells of the others whose bound
+    meets it, each cut into ``subdivision`` lattice steps (by default the largest
+    order of the field and the geometry; with ``tolerance``, in the field's unit,
+    the fewest whose estimated error is within it).
     """
     lower, upper = (_in_unit_of(_field(data, field), v, "threshold's bounds")
                     for v in (lower, upper))
@@ -59,6 +70,22 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
     space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"threshold needs a field on the points or cells, not {space!r}")
+    from tack.dataset.algorithms.subdivide import split_by_range, subdivides
+
+    by_cells = isinstance(space, Constant) or (space.on == "cells"
+                                               and not isinstance(space, (H1, L2)))
+    if not by_cells and getattr(data.topology, "reference_cells", True) and (
+            subdivides(data, field) or tolerance is not None
+            or (subdivision is not None and subdivision > 1)):
+        from tack.dataset.ghosts import visible
+
+        data, field = visible(data, field)
+        if tolerance is not None:
+            tolerance = _in_unit_of(field, tolerance, "threshold's tolerance")
+        return split_by_range(
+            data, field, lower, upper, subdivision, tolerance, fields,
+            lambda refined, name, carried: threshold(refined, name, lower, upper, all_points,
+                                                      carried))
     return _keep_cells(data, _threshold_flags(data, field, lower, upper, all_points), fields)
 
 

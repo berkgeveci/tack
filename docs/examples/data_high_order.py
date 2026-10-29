@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Kitware, Inc.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Fields of high order and a curved geometry on hexahedra; contour them on sub-cells."""
+"""Fields of high order and a curved geometry on hexahedra; contour and clip them on sub-cells."""
 
 import argparse
 
@@ -50,6 +50,11 @@ def run(arch, check):
     linear = td.subdivide(curved, 3)                        # 27 hexahedra a cell
     print(cut.num_cells, "triangles;", linear.num_cells, "linear cells")
     # --8<-- [end:curved]
+    # --8<-- [start:clip]
+    whole, part = td.clip(data, "u", 0.2).partitions         # a PartitionedDataSet
+    print(whole.num_cells, "whole cells at order", whole.fields["u"].space.order, "and",
+          part.num_cells, "linear pieces")
+    # --8<-- [end:clip]
     # --8<-- [start:layout]
     dg = td.L2(data, order=3, nodes="gauss_legendre")             # "auto": by device
     across = td.L2(data, order=3, nodes="gauss_legendre", layout="cells")
@@ -69,6 +74,9 @@ def run(arch, check):
         assert np.allclose(cut.positions()[:, 2], 0.5, atol=1e-6)
         assert linear.num_cells == 27 * curved.num_cells
         assert linear.num_points == td.H1(curved, order=3).size
+        assert whole.num_cells and part.num_cells
+        assert whole.fields["u"].space == td.H1(whole, order=4)
+        assert whole.fields["u"].values.numpy().min() >= 0.2
     return data
 
 

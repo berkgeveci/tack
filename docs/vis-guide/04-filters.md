@@ -199,8 +199,8 @@ assert td.feature_edges(open_top).num_cells == 12           # its boundary
 |---|---|---|---|
 | Select whole cells; measure cells | Yes | Yes | Yes |
 | Extract boundaries | Yes, subject to line-cell limitations | Yes | Chain ends |
-| Contour or slice | Yes, of order-1 and `L2` fields; above order 1, or on a curved geometry, on linear sub-cells of segments, quads and hexahedra (`subdivision=`, `tolerance=`); an order-2 `H1` field on other shapes is refused | Yes | Contour: vertices, of point data |
-| Clip cells | H1 geometry required | Polyhedra: yes, into polyhedra (faces clipped, iso-polygons as caps); polygons not yet | Currently unsupported |
+| Contour or slice | Yes, of order-1 and `L2` fields; above order 1, or on a curved geometry, on linear sub-cells of segments, quads, hexahedra, triangles, tetrahedra and wedges (`subdivision=`, `tolerance=`); an order-2 `H1` field on pyramids is refused | Yes | Contour: vertices, of point data |
+| Clip cells | H1 geometry required; above order 1, or on a curved geometry, whole cells kept as they are and the others cut on linear sub-cells (a `PartitionedDataSet`; threshold too) | Polyhedra: yes, into polyhedra (faces clipped, iso-polygons as caps); polygons not yet | Currently unsupported |
 | Project between point and cell data | Yes | Yes | Yes |
 | Gradients and flow quantities | Yes (2D cells in their plane) | Yes: Green–Gauss over each polyhedron's faces, and over each polygon's edges in its plane (exact for linear fields) | Yes (zero) |
 | Locate cells and probe | Yes | Yes: in sub-tetrahedra or fanned triangles; cells must be star-shaped from their points' mean | Yes, on segments |
