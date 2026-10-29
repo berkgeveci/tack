@@ -3931,142 +3931,142 @@ threads (TBB), Tack's CPU on 28 threads, Viskores 1.2.0 and Tack on CUDA.</p>
 <tr>
 <td>hexahedra</td>
 <td>contour</td>
-<td>1.15×</td>
+<td>1.02×</td>
 <td>1.49×</td>
-<td>10.4×</td>
+<td>12.3×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>slice</td>
-<td>1.26×</td>
+<td>1.19×</td>
 <td>3.4×</td>
-<td>11.8×</td>
+<td>16.4×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>threshold</td>
-<td>3.5×</td>
+<td>3.16×</td>
 <td>5.4×</td>
-<td>88.3×</td>
+<td>84.8×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>external faces</td>
-<td>1.66×</td>
+<td>1.38×</td>
 <td>1.63×</td>
-<td>25.2×</td>
+<td>23.3×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>point to cell</td>
-<td>2.4×</td>
+<td>2.23×</td>
 <td>1.96×</td>
-<td>40.4×</td>
+<td>39.2×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>cell to point</td>
-<td>2.3×</td>
+<td>1.84×</td>
 <td>2.1×</td>
-<td>51.9×</td>
+<td>48.8×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>point gradient</td>
-<td>–</td>
+<td>5.56×</td>
 <td>1.27×</td>
-<td>–</td>
+<td>181×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>cell gradient</td>
-<td>13.0×</td>
+<td>13.1×</td>
 <td>–</td>
-<td>–</td>
+<td>283×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>cell volume</td>
-<td>25.7×</td>
+<td>30.3×</td>
 <td>–</td>
-<td>–</td>
+<td>2,269×</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>cell centers</td>
-<td>20.6×</td>
+<td>19.4×</td>
 <td>–</td>
-<td>–</td>
+<td>377×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>contour</td>
-<td>1.24×</td>
+<td>1.26×</td>
 <td>2.3×</td>
-<td>11.2×</td>
+<td>12.4×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>slice</td>
-<td>1.28×</td>
+<td>1.10×</td>
 <td>4.8×</td>
-<td>13.0×</td>
+<td>11.2×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>threshold</td>
-<td>3.0×</td>
+<td>3.37×</td>
 <td>4.9×</td>
-<td>69.3×</td>
+<td>72.7×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>external faces</td>
-<td>1.92×</td>
+<td>1.66×</td>
 <td>1.64×</td>
-<td>16.9×</td>
+<td>16.2×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>point to cell</td>
-<td>2.9×</td>
+<td>2.57×</td>
 <td>2.3×</td>
-<td>45.9×</td>
+<td>40.1×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>cell to point</td>
-<td>1.66×</td>
+<td>1.59×</td>
 <td>0.95×</td>
-<td>16.3×</td>
+<td>16.2×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>point gradient</td>
-<td>–</td>
+<td>7.76×</td>
 <td>1.02×</td>
-<td>–</td>
+<td>127×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>cell gradient</td>
-<td>17.8×</td>
+<td>16.6×</td>
 <td>–</td>
-<td>–</td>
+<td>351×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>cell volume</td>
-<td>24.9×</td>
+<td>23.6×</td>
 <td>–</td>
-<td>–</td>
+<td>1,406×</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>cell centers</td>
-<td>32.2×</td>
+<td>28.4×</td>
 <td>–</td>
-<td>–</td>
+<td>502×</td>
 </tr>
 </tbody>
 </table>
@@ -4074,15 +4074,20 @@ threads (TBB), Tack's CPU on 28 threads, Viskores 1.2.0 and Tack on CUDA.</p>
 <li><strong>On the GPU</strong>, Tack is ahead of Viskores on every filter but tetrahedra's
   cell to point (0.95×), up to 5.4× on threshold and 4.8× on slice. Warm,
   it is ahead on every filter, by 1.04–12×.</li>
-<li><strong>On the CPU</strong>, Tack is ahead of VTK on every filter, by 13–32× on cell
-  gradients, volumes and centers. At 5M cells, contour of hexahedra is the one
-  filter where VTK is faster (0.74×).</li>
-<li><strong>Tack on the GPU against VTK on the CPU</strong>: 10–88×.</li>
+<li><strong>On the CPU</strong>, Tack is ahead of VTK on every filter at 20M cells, by
+  13–30× on cell gradients, volumes and centers and 5.6–7.8× on point
+  gradients; contour of hexahedra is even (1.02×). At 5M cells, contour of
+  hexahedra is the one filter where VTK is faster (0.55×).</li>
+<li><strong>Tack on the GPU against VTK on the CPU</strong>: 11–2,269×.</li>
 </ul>
-<p>Contour and slice of hexahedra on CUDA were 1.3–1.5× slower in this run than
-a week earlier (5M hexahedra's contour 5.4 → 7.8 ms): merging their
-crossings now sorts by radix where, on CUDA, buckets are 1.3–1.7× faster
-(jura, 2026-10-27). The choice is being made per device.</p>
+<p><strong>Measured again for 0.6.1.</strong> Tack 0.6.0 capped every CPU fan-out's chunks
+at 20 µs of work, which on 28 threads made every CPU filter 2–5× slower than
+this page reported (threshold of 20M hexahedra 712 ms against 199; behind
+VTK on six filters of each mesh); 0.6.1 fixes it. The VTK and Tack columns
+are jura's run of 2026-10-28, two passes, the best of each: Tack <code>main</code> at
+<code>a9031fe2</code> (0.6.0 and the pull requests after it) with the fix, on the CPU
+and CUDA. The Viskores column is the run of 2026-10-26 (Tack <code>main</code> at
+<code>291fcfe</code>), which this one did not repeat (see <a href="#running-times">running times</a>).</p>
 <h2 id="macos-apple-m1-max">macOS: Apple M1 Max<a class="headerlink" href="#macos-apple-m1-max" title="Permanent link">&para;</a></h2>
 <p>Unstructured grids of 20M hexahedra and of 20M tetrahedra. VTK on 8 CPU
 threads (TBB), Tack's CPU on 8 threads, Viskores 1.2.0 on 8 TBB threads,
@@ -4490,16 +4495,24 @@ every path runs its full length, within 3.8e-6 of Tack's, in 22.9 s.</p>
   keeps from an earlier filter on the same mesh; a fresh one derives it.</li>
 <li><strong>Timing.</strong> Repeated runs for a fixed budget, the median taken; Tack's
   timing ends with <code>tack.sync()</code>, since GPU launches are queued. On the
-  Linux machine, two passes, the second in reverse order, and their mean;
-  on the Mac, one.</li>
+  Linux machine, two passes: the VTK and Tack columns take the better of
+  the two, the Viskores column their mean (the second pass in reverse
+  order); on the Mac, one.</li>
 <li><strong>Harness</strong>: <code>benchmarks/vtk_compare</code> (VTK and Tack) and
   <code>benchmarks/viskores_compare</code> (Viskores and Tack), on the meshes of
-  <code>benchmarks/vtk_compare/meshes.py</code>.</li>
+  <code>benchmarks/vtk_compare/meshes.py</code>. Point gradients against VTK
+  (<code>vtkGradientFilter</code>) are a pair added to <code>vtk_compare</code> after 0.6.0, on
+  <code>main</code>.</li>
 </ul>
 <h2 id="running-times">Running times<a class="headerlink" href="#running-times" title="Permanent link">&para;</a></h2>
 <p>All in milliseconds. The Linux machine: jura, idle; NVIDIA driver 615.71.09;
-VTK master built with TBB; Viskores 1.2.0 (CUDA arch 89, 64-bit ids,
-double precision); Tack <code>main</code> at <code>291fcfe</code> (2026-10-26).</p>
+VTK master (<code>cc6c421507</code>) built with TBB; Viskores 1.2.0 (CUDA arch 89,
+64-bit ids, double precision). VTK and Tack: Tack <code>main</code> at <code>a9031fe2</code> with
+0.6.1's fix (2026-10-28), the best of two passes. Viskores: the run of
+2026-10-26 (Tack <code>main</code> at <code>291fcfe</code>), whose Tack CUDA times were within 3%
+of these but for contour and slice of hexahedra, 1.2–1.7× slower then (5M
+contour 7.87 ms against 4.77 here), when merging their crossings sorted by
+radix; the Viskores column's ratios for those two understate Tack's lead.</p>
 <table>
 <thead>
 <tr>
@@ -4519,447 +4532,446 @@ double precision); Tack <code>main</code> at <code>291fcfe</code> (2026-10-26).<
 <td>hexahedra</td>
 <td>5M</td>
 <td>contour</td>
-<td>28.6</td>
-<td>45.6</td>
-<td>38.9</td>
+<td>26.8</td>
+<td>53.4</td>
+<td>49.1</td>
 <td>8.14</td>
-<td>7.84</td>
-<td>7.87</td>
+<td>4.91</td>
+<td>4.77</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>slice</td>
-<td>35.4</td>
-<td>34.0</td>
-<td>31.8</td>
+<td>35.0</td>
+<td>34.4</td>
+<td>31.7</td>
 <td>14.1</td>
-<td>7.55</td>
-<td>7.50</td>
+<td>5.01</td>
+<td>5.00</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>threshold</td>
-<td>174</td>
-<td>76.7</td>
-<td>66.5</td>
+<td>143</td>
+<td>72.7</td>
+<td>62.2</td>
 <td>16.4</td>
-<td>3.62</td>
-<td>3.73</td>
+<td>3.53</td>
+<td>3.55</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>external faces</td>
-<td>184</td>
-<td>124</td>
-<td>123</td>
+<td>171</td>
+<td>0.35</td>
+<td>131</td>
 <td>19.5</td>
-<td>9.22</td>
-<td>9.75</td>
+<td>0.38</td>
+<td>9.72</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>point to cell</td>
-<td>13.6</td>
-<td>7.40</td>
-<td>7.39</td>
+<td>14.9</td>
+<td>7.20</td>
+<td>7.73</td>
 <td>1.90</td>
-<td>0.97</td>
-<td>0.98</td>
+<td>0.87</td>
+<td>0.87</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>cell to point</td>
-<td>89.2</td>
-<td>10.1</td>
-<td>68.3</td>
+<td>88.9</td>
+<td>9.09</td>
+<td>58.3</td>
 <td>7.22</td>
-<td>0.93</td>
-<td>4.23</td>
+<td>1.27</td>
+<td>3.81</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>point gradient</td>
-<td>–</td>
-<td>–</td>
-<td>–</td>
+<td>1184</td>
+<td>145</td>
+<td>192</td>
 <td>9.32</td>
-<td>3.73</td>
-<td>7.45</td>
+<td>3.78</td>
+<td>6.65</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>cell gradient</td>
-<td>175</td>
-<td>17.3</td>
-<td>18.1</td>
+<td>167</td>
+<td>21.1</td>
+<td>19.2</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>1.05</td>
+<td>1.07</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>cell volume</td>
-<td>1170</td>
-<td>48.7</td>
-<td>46.4</td>
+<td>1166</td>
+<td>48.9</td>
+<td>43.9</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>0.99</td>
+<td>0.89</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>5M</td>
 <td>cell centers</td>
-<td>173</td>
-<td>14.6</td>
-<td>17.9</td>
+<td>200</td>
+<td>18.3</td>
+<td>17.4</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>0.84</td>
+<td>0.96</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>contour</td>
-<td>25.4</td>
-<td>20.0</td>
-<td>20.4</td>
+<td>23.5</td>
+<td>22.0</td>
+<td>19.6</td>
 <td>7.59</td>
-<td>4.86</td>
-<td>4.85</td>
+<td>4.59</td>
+<td>4.60</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>slice</td>
-<td>22.7</td>
-<td>19.5</td>
+<td>24.9</td>
+<td>22.0</td>
 <td>19.9</td>
 <td>13.1</td>
-<td>4.87</td>
-<td>4.86</td>
+<td>4.89</td>
+<td>4.91</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>threshold</td>
-<td>77.4</td>
-<td>29.6</td>
-<td>29.0</td>
+<td>82.6</td>
+<td>30.9</td>
+<td>29.7</td>
 <td>11.5</td>
-<td>3.30</td>
-<td>3.33</td>
+<td>3.32</td>
+<td>3.29</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>external faces</td>
-<td>111</td>
-<td>70.6</td>
-<td>71.8</td>
+<td>99.5</td>
+<td>0.38</td>
+<td>81.3</td>
 <td>17.5</td>
-<td>9.11</td>
-<td>9.08</td>
+<td>0.40</td>
+<td>9.15</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>point to cell</td>
-<td>11.3</td>
-<td>5.50</td>
-<td>5.04</td>
+<td>12.8</td>
+<td>5.35</td>
+<td>4.96</td>
 <td>1.74</td>
+<td>0.76</td>
 <td>0.80</td>
-<td>0.83</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>cell to point</td>
-<td>48.5</td>
-<td>8.73</td>
-<td>36.6</td>
+<td>49.1</td>
+<td>7.74</td>
+<td>37.0</td>
 <td>4.46</td>
-<td>0.80</td>
-<td>4.11</td>
+<td>1.14</td>
+<td>3.96</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>point gradient</td>
-<td>–</td>
-<td>–</td>
-<td>–</td>
+<td>512</td>
+<td>34.4</td>
+<td>58.6</td>
 <td>5.72</td>
-<td>2.09</td>
-<td>5.32</td>
+<td>2.05</td>
+<td>4.88</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>cell gradient</td>
-<td>166</td>
-<td>12.7</td>
-<td>11.3</td>
+<td>152</td>
+<td>8.48</td>
+<td>14.8</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>0.85</td>
+<td>0.88</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>cell volume</td>
-<td>588</td>
-<td>28.5</td>
-<td>29.9</td>
+<td>529</td>
+<td>30.4</td>
+<td>30.3</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>0.81</td>
+<td>0.82</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>5M</td>
 <td>cell centers</td>
-<td>179</td>
-<td>10.9</td>
-<td>8.86</td>
+<td>156</td>
+<td>6.79</td>
+<td>13.0</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>0.75</td>
+<td>0.78</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>20M</td>
 <td>contour</td>
-<td>98.3</td>
-<td>87.9</td>
-<td>85.5</td>
+<td>94.1</td>
+<td>91.5</td>
+<td>92.5</td>
 <td>14.1</td>
-<td>9.53</td>
-<td>9.46</td>
+<td>7.22</td>
+<td>7.65</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>20M</td>
 <td>slice</td>
-<td>118</td>
-<td>95.9</td>
-<td>94.0</td>
+<td>122</td>
+<td>109</td>
+<td>102</td>
 <td>33.7</td>
-<td>10.1</td>
+<td>7.50</td>
+<td>7.43</td>
+</tr>
+<tr>
+<td>hexahedra</td>
+<td>20M</td>
+<td>threshold</td>
+<td>630</td>
+<td>200</td>
+<td>199</td>
+<td>42.3</td>
+<td>7.41</td>
+<td>7.43</td>
+</tr>
+<tr>
+<td>hexahedra</td>
+<td>20M</td>
+<td>external faces</td>
+<td>721</td>
+<td>0.39</td>
+<td>522</td>
+<td>49.2</td>
+<td>0.39</td>
+<td>30.9</td>
+</tr>
+<tr>
+<td>hexahedra</td>
+<td>20M</td>
+<td>point to cell</td>
+<td>67.6</td>
+<td>31.4</td>
+<td>30.4</td>
+<td>3.35</td>
+<td>1.66</td>
+<td>1.73</td>
+</tr>
+<tr>
+<td>hexahedra</td>
+<td>20M</td>
+<td>cell to point</td>
+<td>488</td>
+<td>47.3</td>
+<td>264</td>
+<td>21.0</td>
+<td>2.24</td>
 <td>10.0</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>20M</td>
-<td>threshold</td>
-<td>696</td>
-<td>204</td>
-<td>198</td>
-<td>42.3</td>
-<td>7.75</td>
-<td>7.88</td>
-</tr>
-<tr>
-<td>hexahedra</td>
-<td>20M</td>
-<td>external faces</td>
-<td>758</td>
-<td>446</td>
-<td>455</td>
-<td>49.2</td>
-<td>27.8</td>
-<td>30.1</td>
-</tr>
-<tr>
-<td>hexahedra</td>
-<td>20M</td>
-<td>point to cell</td>
-<td>69.0</td>
-<td>28.9</td>
-<td>28.6</td>
-<td>3.35</td>
-<td>1.73</td>
-<td>1.71</td>
-</tr>
-<tr>
-<td>hexahedra</td>
-<td>20M</td>
-<td>cell to point</td>
-<td>524</td>
-<td>36.0</td>
-<td>224</td>
-<td>21.0</td>
-<td>1.81</td>
-<td>10.1</td>
-</tr>
-<tr>
-<td>hexahedra</td>
-<td>20M</td>
 <td>point gradient</td>
-<td>–</td>
-<td>–</td>
-<td>–</td>
+<td>4228</td>
+<td>481</td>
+<td>760</td>
 <td>30.0</td>
-<td>13.7</td>
-<td>23.6</td>
+<td>14.1</td>
+<td>23.3</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>20M</td>
 <td>cell gradient</td>
-<td>642</td>
-<td>49.9</td>
-<td>49.5</td>
+<td>625</td>
+<td>47.8</td>
+<td>47.8</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>2.19</td>
+<td>2.21</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>20M</td>
 <td>cell volume</td>
-<td>4772</td>
-<td>194</td>
-<td>186</td>
+<td>4834</td>
+<td>158</td>
+<td>160</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>2.14</td>
+<td>2.13</td>
 </tr>
 <tr>
 <td>hexahedra</td>
 <td>20M</td>
 <td>cell centers</td>
-<td>792</td>
-<td>40.2</td>
-<td>38.5</td>
+<td>762</td>
+<td>39.6</td>
+<td>39.2</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>2.00</td>
+<td>2.02</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>contour</td>
-<td>66.5</td>
-<td>57.6</td>
-<td>53.6</td>
+<td>68.5</td>
+<td>59.1</td>
+<td>54.4</td>
 <td>13.7</td>
-<td>5.95</td>
-<td>5.95</td>
+<td>5.52</td>
+<td>5.55</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>slice</td>
-<td>74.7</td>
-<td>60.8</td>
-<td>58.3</td>
+<td>65.5</td>
+<td>59.6</td>
+<td>59.5</td>
 <td>27.5</td>
-<td>5.75</td>
-<td>5.73</td>
+<td>5.79</td>
+<td>5.86</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>threshold</td>
-<td>369</td>
-<td>126</td>
-<td>121</td>
+<td>363</td>
+<td>119</td>
+<td>108</td>
 <td>26.0</td>
-<td>5.43</td>
-<td>5.33</td>
+<td>5.01</td>
+<td>4.98</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>external faces</td>
-<td>456</td>
-<td>240</td>
-<td>238</td>
+<td>448</td>
+<td>0.39</td>
+<td>269</td>
 <td>44.2</td>
-<td>27.0</td>
-<td>27.0</td>
+<td>0.41</td>
+<td>27.7</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>point to cell</td>
-<td>57.4</td>
-<td>21.6</td>
-<td>19.9</td>
+<td>50.4</td>
+<td>20.9</td>
+<td>19.6</td>
 <td>2.89</td>
-<td>1.28</td>
 <td>1.25</td>
+<td>1.26</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>cell to point</td>
-<td>176</td>
-<td>20.3</td>
-<td>106</td>
+<td>170</td>
+<td>21.2</td>
+<td>107</td>
 <td>10.3</td>
-<td>1.30</td>
-<td>10.8</td>
+<td>1.61</td>
+<td>10.5</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>point gradient</td>
-<td>–</td>
-<td>–</td>
-<td>–</td>
+<td>1869</td>
+<td>117</td>
+<td>241</td>
 <td>15.5</td>
-<td>5.90</td>
-<td>15.2</td>
+<td>5.85</td>
+<td>14.7</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>cell gradient</td>
-<td>567</td>
-<td>33.9</td>
-<td>31.9</td>
+<td>544</td>
+<td>34.6</td>
+<td>32.7</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>1.53</td>
+<td>1.55</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>cell volume</td>
-<td>2398</td>
-<td>97.6</td>
-<td>96.5</td>
+<td>2164</td>
+<td>96.7</td>
+<td>91.5</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>1.55</td>
+<td>1.54</td>
 </tr>
 <tr>
 <td>tetrahedra</td>
 <td>20M</td>
 <td>cell centers</td>
-<td>841</td>
-<td>28.0</td>
+<td>720</td>
 <td>26.1</td>
+<td>25.4</td>
 <td>–</td>
-<td>–</td>
-<td>–</td>
+<td>1.41</td>
+<td>1.43</td>
 </tr>
 </tbody>
 </table>
-<p>Warm external faces were as slow as fresh in this run: the surface was
-recomputed on every call. Since then (#167) the topology keeps it, and a
-repeated call only carries the fields.</p>
+<p>Warm external faces are well under a millisecond: the topology keeps the
+surface (#167), and a repeated call only carries the fields.</p>
 <p>The Mac: Apple M1 Max (8 performance and 2 efficiency cores, 64 GB), macOS
 26; VTK master (<code>5d3a65f159</code>) built with TBB, and the Viskores 1.2.0 it
 bundles, with its TBB device (<code>VISKORES_NUM_THREADS=8</code>); Tack <code>main</code> at
