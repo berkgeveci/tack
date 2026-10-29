@@ -132,8 +132,8 @@ def test_h1_and_l2_are_exact_on_tetrahedra_in_any_orientation(f64_backend, order
     data = _tetrahedra(seed=order)
     points = np.random.default_rng(order).uniform(0.02, 1.18, (300, 3))
     centers = td.cell_centers(data).values.numpy()
-    for space in (td.H1(data, order=order, nodes="equispaced"),
-                  td.L2(data, order=order, nodes="equispaced")):
+    for space in (td.H1(data, order=order, basis="equispaced"),
+                  td.L2(data, order=order, basis="equispaced")):
         data.fields["u"] = td.interpolate(data, _cubic, space)
         probed = td.probe(data, points)
         assert probed.fields["valid"].values.numpy().all()
@@ -147,8 +147,8 @@ def test_h1_and_l2_are_exact_on_tetrahedra_in_any_orientation(f64_backend, order
 def test_triangles_of_any_order(f64_backend, order):
     data = _triangles()
     points = np.c_[np.random.default_rng(1).uniform(0.01, 1.19, (200, 2)), np.zeros(200)]
-    for space in (td.H1(data, order=order, nodes="equispaced"),
-                  td.L2(data, order=order, nodes="equispaced")):
+    for space in (td.H1(data, order=order, basis="equispaced"),
+                  td.L2(data, order=order, basis="equispaced")):
         data.fields["u"] = td.interpolate(data, _cubic, space)
         probed = td.probe(data, points)
         np.testing.assert_allclose(probed.fields["u"].values.numpy(), _cubic_at(points),
@@ -159,13 +159,13 @@ def test_other_simplex_nodes_and_layouts_are_refused(f64_backend):
     """Simplices above order 2 have equispaced nodes this round: Gauss-Lobatto (the
     default) is refused with the remedy, and so is a cell-fastest L2."""
     data = _tetrahedra()
-    with pytest.raises(NotImplementedError, match='nodes="equispaced"'):
+    with pytest.raises(NotImplementedError, match='basis="equispaced"'):
         _ = td.H1(data, order=3).size
-    with pytest.raises(NotImplementedError, match='nodes="equispaced"'):
+    with pytest.raises(NotImplementedError, match='basis="equispaced"'):
         _ = td.L2(data, order=4).size
     with pytest.raises(ValueError, match="stored in blocks"):
-        _ = td.L2(data, order=3, nodes="equispaced", layout="cells").layout
-    assert td.L2(data, order=3, nodes="equispaced").layout == "blocks"
+        _ = td.L2(data, order=3, basis="equispaced", layout="cells").layout
+    assert td.L2(data, order=3, basis="equispaced").layout == "blocks"
 
 
 # ── Subdivision and the cut filters ─────────────────────────────────
@@ -175,7 +175,7 @@ def test_subdividing_tetrahedra(f64_backend, level):
     """``level^3`` sub-tetrahedra a cell, the field exact at every lattice point
     (shared ones on edges and faces from their entity's own values)."""
     data = _tetrahedra(seed=3)
-    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, nodes="equispaced"))
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, basis="equispaced"))
     refined = td.subdivide(data, level, fields=["u"])
     assert refined.num_cells == data.num_cells * level ** 3
     np.testing.assert_allclose(refined.fields["u"].values.numpy(),
@@ -204,7 +204,7 @@ def test_contours_of_simplices_converge_and_close(f64_backend):
     (a lattice point shared by cells is computed once), the error falling as the
     steps' square; on triangles, lines."""
     data = _tetrahedra(seed=5)
-    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, nodes="equispaced"))
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, basis="equispaced"))
     errors = []
     for steps in (3, 6, 12):
         surface = td.contour(data, "u", 0.25, subdivision=steps, exact=False)
@@ -215,7 +215,7 @@ def test_contours_of_simplices_converge_and_close(f64_backend):
     assert errors[1] < errors[0] / 3 and errors[2] < errors[1] / 3
     triangles = _triangles()
     triangles.fields["u"] = td.interpolate(triangles, _bowl,
-                                           td.H1(triangles, order=4, nodes="equispaced"))
+                                           td.H1(triangles, order=4, basis="equispaced"))
     lines = td.contour(triangles, "u", 0.5, subdivision=8)
     assert lines.num_cells > 0
     assert np.abs(_bowl_at(lines.positions()) - 0.5).max() < 2e-3
@@ -226,7 +226,7 @@ def test_slices_of_tetrahedra_carry_high_order_fields(f64_backend):
     plane, and the field carried onto it is the field there (each slice point
     interpolated in a sub-tetrahedron, so within the linearization's error)."""
     data = _tetrahedra(seed=9)
-    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, nodes="equispaced"))
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, basis="equispaced"))
     cut = td.slice(data, td.implicit.Plane([0.6, 0.6, 0.6], [0.3, -0.5, 1.0]), subdivision=6)
     p = cut.positions()
     assert cut.num_cells > 0
@@ -239,7 +239,7 @@ def test_a_lattice_point_has_the_same_bits_in_every_piece_holding_it():
     values in a frame its corners' positions fix, so pieces cut from the whole
     (keeping the field's order) give the whole's bits."""
     data = _tetrahedra(seed=7)
-    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=4, nodes="equispaced"))
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=4, basis="equispaced"))
     whole = td.subdivide(data, 3, fields=["u"])
     at = {tuple(p): u for p, u in zip(whole.positions(), whole.fields["u"].values.numpy())}
     n = data.num_cells
@@ -262,7 +262,7 @@ def _curved(order, seed=11):
     """Tetrahedra bent at ``order`` (order 2's quadratic geometry, or the simplex basis
     from 3), corners shuffled."""
     data = _tetrahedra(seed=seed)
-    space = (td.H1(data, order=order, nodes="equispaced") if order > 2
+    space = (td.H1(data, order=order, basis="equispaced") if order > 2
              else td.H1(data, order=2))
     data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
     data.fields["u"] = td.interpolate(data, _bowl, space)        # at the curved nodes
@@ -347,13 +347,13 @@ def test_lagrange_simplices_are_vtks(f64_backend, cells, order):
         data, vtk_type = _curved(order), 71
     else:
         data, vtk_type = _triangles(), 69
-        space = td.H1(data, order=order, nodes="equispaced")
+        space = td.H1(data, order=order, basis="equispaced")
         data.fields["u"] = td.interpolate(data, _bowl, space)
     data.fields["c"] = td.Field(td.Constant(data),
                                 tack.array(np.arange(data.num_cells, dtype=np.float64)))
     grid = dataset_to_vtk(data, higher_order=True)
     assert set(np.asarray(grid.cell_types).tolist()) == {vtk_type}
-    assert grid.number_of_points == td.H1(data, order=order, nodes="equispaced").size
+    assert grid.number_of_points == td.H1(data, order=order, basis="equispaced").size
     dimension = 3 if cells == "tetrahedra" else 2
     weights = np.random.default_rng(order).dirichlet(np.ones(dimension + 1), 3)[:, 1:]
     pcs = np.c_[weights, np.zeros((3, 3 - dimension))]
@@ -362,7 +362,7 @@ def test_lagrange_simplices_are_vtks(f64_backend, cells, order):
     assert probed.fields["valid"].values.numpy().all()
     np.testing.assert_allclose(probed.fields["u"].values.numpy(), us, atol=1e-8)
     back = vtk_to_dataset(grid, dtype=tack.f64)
-    assert back.fields["u"].space is td.H1(back, order=order, nodes="equispaced")
+    assert back.fields["u"].space is td.H1(back, order=order, basis="equispaced")
     np.testing.assert_allclose(td.probe(back, xs).fields["u"].values.numpy(), us, atol=1e-8)
     np.testing.assert_array_equal(back.fields["c"].values.numpy(), np.arange(data.num_cells))
 
@@ -391,7 +391,7 @@ def test_mfem_simplices_of_any_order(f64_backend, collection):
     gf = mfem.GridFunction(fes)
     gf.ProjectCoefficient(F())
     data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
-    assert data.fields["u"].space.nodes == "equispaced"
+    assert data.fields["u"].space.basis == "equispaced"
     points = np.random.default_rng(0).uniform(0.05, 0.95, (200, 3))
     np.testing.assert_allclose(td.probe(data, points).fields["u"].values.numpy(),
                                _cubic_at(points), atol=1e-12)
@@ -450,8 +450,8 @@ def test_h1_and_l2_are_exact_on_wedges(f64_backend, order):
     data = _wedge_mesh()
     points = np.random.default_rng(order).uniform(0.02, 1.18, (300, 3))
     centers = td.cell_centers(data).values.numpy()
-    for space in (td.H1(data, order=order, nodes="equispaced"),
-                  td.L2(data, order=order, nodes="equispaced")):
+    for space in (td.H1(data, order=order, basis="equispaced"),
+                  td.L2(data, order=order, basis="equispaced")):
         data.fields["u"] = td.interpolate(data, _cubic, space)
         np.testing.assert_allclose(td.probe(data, points).fields["u"].values.numpy(),
                                    _cubic_at(points), atol=1e-12)
@@ -463,7 +463,7 @@ def test_subdividing_and_cutting_wedges(f64_backend):
     """``level^3`` sub-wedges a cell, the field exact at the lattice points (a quad
     face's from its own values, as a triangle face's); contours close and converge."""
     data = _wedge_mesh()
-    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, nodes="equispaced"))
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, basis="equispaced"))
     for level in (2, 3, 5):
         refined = td.subdivide(data, level, fields=["u"])
         assert refined.num_cells == data.num_cells * level ** 3
@@ -483,7 +483,7 @@ def test_curved_wedges(f64_backend):
     """A wedge geometry of order 3: located at its nodes, subdivided exactly at the
     field's nodes."""
     data = _wedge_mesh()
-    space = td.H1(data, order=3, nodes="equispaced")
+    space = td.H1(data, order=3, basis="equispaced")
     data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
     data.fields["u"] = td.interpolate(data, _bowl, space)
     nodes = data.geometry.values.numpy()
@@ -500,7 +500,7 @@ def test_lagrange_wedges_are_vtks(f64_backend):
     from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
     data = _wedge_mesh()
-    space = td.H1(data, order=3, nodes="equispaced")
+    space = td.H1(data, order=3, basis="equispaced")
     data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
     data.fields["u"] = td.interpolate(data, _bowl, space)
     grid = dataset_to_vtk(data, higher_order=True)

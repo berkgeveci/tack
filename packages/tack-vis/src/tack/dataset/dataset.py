@@ -299,7 +299,7 @@ def _space_nodes(space, geometry):
     from tack.dataset import bases
 
     dtype = _basis_type(geometry)
-    key = ("_node_points", space.nodes or "gauss_lobatto", space.order, dtype)
+    key = ("_node_points", space.basis or "gauss_lobatto", space.order, dtype)
     cache = space.__dict__.setdefault("_tables", {})
     if key not in cache:
         values = bases.nodes(key[1], space.order)

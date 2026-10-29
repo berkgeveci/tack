@@ -478,7 +478,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     unstructured grid's cells must all be linear shapes -- or all VTK Lagrange
     curves, quadrilaterals or hexahedra of one order ``p``, which become linear
     cells on their corner points, with the geometry and point data in
-    ``H1(order=p, nodes="equispaced")`` (VTK's Lagrange nodes) -- unless it holds
+    ``H1(order=p, basis="equispaced")`` (VTK's Lagrange nodes) -- unless it holds
     polyhedra (or ``polyhedral`` is true), when it becomes a
     ``PolyhedralTopology``, every cell a polyhedron of its faces, polylines,
     when it becomes a ``PolylineTopology`` (its lines two-point polylines, and

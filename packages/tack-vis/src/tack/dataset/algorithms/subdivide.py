@@ -889,7 +889,7 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                 if group.count:
                     _corner_keys(group.view(), slot_of, corner_of, keys)
         else:
-            space = H1(data, order=level, nodes="equispaced")
+            space = H1(data, order=level, basis="equispaced")
             lattice = Field(space, ConstantArray(0.0, space.size, dtype=data.dtype))
             for group in data.launch_groups("cells", [lattice]):
                 if group.count:
@@ -993,7 +993,7 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                         # A continuous field's shared points from their entities' values.
                         order = field.space.order
                         edge_nodes, face_nodes = _entity_tables(group.shape, order)
-                        family = field.space.nodes or "gauss_lobatto"
+                        family = field.space.basis or "gauss_lobatto"
                         _trace_values(cells, u, slot_of, per_cell, level, steps,
                                       *_lattice_tables(group.shape, level), first, rank,
                                       edge_nodes, face_nodes,

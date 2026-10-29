@@ -385,7 +385,7 @@ def _nodes_of(space, shape, dtype, geometry=False):
 
     order = space.order
     edge_nodes, face_nodes = _entity_tables(shape, order)
-    family = "equispaced" if not bases.tensor_shape(shape) else (space.nodes or "gauss_lobatto")
+    family = "equispaced" if not bases.tensor_shape(shape) else (space.basis or "gauss_lobatto")
     like = tack.empty((1,), dtype)
     view_of = np.arange((order + 1) ** shape.DIMENSION, dtype=np.int32) if (
         geometry and bases.tensor_shape(shape)) else bases.view_index(shape, order)

@@ -53,7 +53,7 @@ def _mesh(cells, order=3, curved=True):
             "triangles": lambda: td.triangulate(hexes),
             "wedges": lambda: _wedges(hexes)}[cells]()
     data = td.DataSet(data.topology, data.geometry)
-    nodes = {} if cells in ("hexahedra", "quads") else {"nodes": "equispaced"}
+    nodes = {} if cells in ("hexahedra", "quads") else {"basis": "equispaced"}
     space = td.H1(data, order=order, **nodes)
     data.fields["u"] = td.interpolate(data, _cubic, space, dtype=tack.f64)
     data.fields["v"] = td.interpolate(data, _other, space, dtype=tack.f64)
@@ -144,7 +144,7 @@ def test_pieces_cross_their_shared_edges_alike(cells):
     in its frame and from its first end, whichever cell computes it."""
 
     def bent(d):
-        nodes = {} if cells == "grid" else {"nodes": "equispaced"}
+        nodes = {} if cells == "grid" else {"basis": "equispaced"}
         d.fields["u"] = td.interpolate(d, _cubic, td.H1(d, order=3, **nodes), dtype=tack.f64)
         d.geometry = td.interpolate(d, _bend, td.H1(d, order=2), dtype=tack.vec3(tack.f64))
         return d

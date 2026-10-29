@@ -56,8 +56,8 @@ def run(arch, check):
           part.num_cells, "linear pieces")
     # --8<-- [end:clip]
     # --8<-- [start:layout]
-    dg = td.L2(data, order=3, nodes="gauss_legendre")             # "auto": by device
-    across = td.L2(data, order=3, nodes="gauss_legendre", layout="cells")
+    dg = td.L2(data, order=3, basis="gauss_legendre")             # "auto": by device
+    across = td.L2(data, order=3, basis="gauss_legendre", layout="cells")
     p, q = (td.interpolate(data, blob, s) for s in (dg, across))
     print(dg.layout, across.layout, dg.blocks(p.values.numpy()).shape)
     # --8<-- [end:layout]

@@ -292,7 +292,7 @@ _REFUSALS = re.compile("|".join([
     "wound the same way by both their cells",    # inside-out neighbours as polyhedra
     "cell ids lie outside",                      # extract_cells([0, 1]) of one cell
     "tetrahedra and wedges; not yet on",         # subdivide of other shapes
-    "has equispaced nodes only",                 # simplices above order 2, other nodes
+    "has the equispaced basis only",             # simplices above order 2, another basis
     "or all tensor shapes",                      # subdivide of a mix of families
 ]))
 

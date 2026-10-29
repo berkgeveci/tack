@@ -12,7 +12,7 @@ A Lagrange cell of order ``p`` lists its ``(p + 1)^d`` nodes in VTK's order
 ``"equispaced"`` family on the same reference cell, the corners in the linear
 cell's order. Its points are shared with the cells around it, as an ``H1``
 space's nodes are, so a grid of such cells is a linear topology of their corners
-and fields in ``H1(order=p, nodes="equispaced")``.
+and fields in ``H1(order=p, basis="equispaced")``.
 """
 
 import numpy as np
@@ -105,7 +105,7 @@ def lagrange_order(vtk_type, count):
 def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
     """A ``vtkUnstructuredGrid`` of one kind of Lagrange cell, all of one order, as a
     dataset: linear cells on the corner points, the geometry and point data in
-    ``H1(order=p, nodes="equispaced")``, cell data ``Constant``."""
+    ``H1(order=p, basis="equispaced")``, cell data ``Constant``."""
     from tack.dataset import H1, Constant, DataSet, Field, UnstructuredTopology
     from tack.dataset.topology import uniform_cells
     from tack.interop.mfem import _h1_indices
@@ -135,7 +135,7 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
         space = H1(data)
         vtk_of_dof = corner_ids
     else:
-        space = H1(data, order=order, nodes="equispaced")
+        space = H1(data, order=order, basis="equispaced")
         indices = _h1_indices(data, space, per_cell)
         lex_to_vtk = _vtk_index(vtk_type, order)
         vtk_points = rows[:, lex_to_vtk]
@@ -207,7 +207,7 @@ def to_vtk(data, order):
     wedge = bases.wedge_shape(shape)
     vtk_type = 73 if wedge else ({2: 69, 3: 71} if simplex else
                                  {1: 68, 2: 70, 3: 72})[shape.DIMENSION]
-    space = H1(data, order=order, nodes="equispaced")
+    space = H1(data, order=order, basis="equispaced")
     per_cell = (comb(order + 2, 2) * (order + 1) if wedge else
                 comb(order + shape.DIMENSION, shape.DIMENSION) if simplex
                 else (order + 1) ** shape.DIMENSION)

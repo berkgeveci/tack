@@ -194,11 +194,11 @@ def _interior_counts(cells, order, counts):
         counts[cells.entity_id(c)] = n
 
 
-def _nodes_param(family, order, families, space):
-    """``nodes`` as a space keeps it: ``None`` where the order makes the families
+def _basis_param(family, order, families, space):
+    """``basis`` as a space keeps it: ``None`` where the order makes the families
     agree (at most 2 for closed ones), so equal spaces are one."""
     if family not in families:
-        raise ValueError(f"{space} nodes are one of {', '.join(families)}, not {family!r}")
+        raise ValueError(f"{space}'s basis is one of {', '.join(families)}, not {family!r}")
     return None if family in bases.CLOSED and order <= 2 else family
 
 
@@ -206,7 +206,7 @@ def _basis_tables(space, group, dtype):
     """A tensor basis' arrays for ``group``'s shape: its 1D nodes and weights in
     ``dtype`` (the field's float type) and, for ``H1``, where each node's value
     lives (``bases.dof_tables``)."""
-    family = space.nodes or "gauss_lobatto"
+    family = space.basis or "gauss_lobatto"
     key = (group.shape, family, dtype)
     cache = space.__dict__.setdefault("_tables", {})
     if key not in cache:
@@ -277,11 +277,11 @@ def _refuse_simplex_nodes(space, shape):
     """Simplices and wedges above order 2 have equispaced nodes only (round 2): any
     other family is refused, with the remedy."""
     if (bases.simplex_shape(shape) or bases.wedge_shape(shape)) and space.order > 2 \
-            and space.nodes != "equispaced":
+            and space.basis != "equispaced":
         raise NotImplementedError(
             f"{type(space).__name__} of order {space.order} on {shape.__name__} cells has "
-            f"equispaced nodes only (VTK's and gmsh's), not {space.nodes!r}: pass "
-            "nodes=\"equispaced\"")
+            f"the equispaced basis only (VTK's and gmsh's), not {space.basis!r}: pass "
+            "basis=\"equispaced\"")
 
 
 def _on_gpu(topology):
@@ -305,24 +305,25 @@ class H1(Space):
     quadratic Lagrange functions (tetrahedra, hexahedra, voxels, wedges,
     triangles, quads and pixels). Order 3 and up are on segments, quads, pixels,
     hexahedra and voxels (``tack.dataset.bases``): ``order - 1`` values per edge,
-    ``(order - 1)^2`` per quad face and ``(order - 1)^d`` per cell, on the 1D
-    ``nodes`` ``"gauss_lobatto"`` (the default) or ``"equispaced"``, which agree
+    ``(order - 1)^2`` per quad face and ``(order - 1)^d`` per cell, in the
+    ``basis`` ``"gauss_lobatto"`` (the default: Lagrange polynomials on
+    Gauss-Lobatto nodes) or ``"equispaced"`` (on equispaced nodes), which agree
     up to order 2; and on triangles, tetrahedra and wedges with
-    ``nodes="equispaced"`` (VTK's and gmsh's): ``(order - 1)(order - 2) / 2`` per
+    ``basis="equispaced"`` (VTK's and gmsh's): ``(order - 1)(order - 2) / 2`` per
     triangle face or triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per
     tetrahedron, ``(order - 1)^2 (order - 2) / 2`` per wedge."""
 
     on = "points"
     interpolated = True
-    nodes = None
+    basis = None
 
     @classmethod
-    def _params(cls, order=1, nodes="gauss_lobatto"):
+    def _params(cls, order=1, basis="gauss_lobatto"):
         order = int(order)
         if order < 1:
             raise ValueError(f"H1's order is at least 1, not {order}")
-        family = _nodes_param(nodes, order, bases.CLOSED, "H1")
-        return {"order": order} if family is None else {"order": order, "nodes": family}
+        family = _basis_param(basis, order, bases.CLOSED, "H1")
+        return {"order": order} if family is None else {"order": order, "basis": family}
 
     @property
     def mixin(self):
@@ -486,12 +487,12 @@ class L2(Space):
     value at each of the cell's corners -- a linear DG field -- and order 0 one
     value per cell. ``order`` is one order for every cell, or an array of one per
     cell (p-adaptive, orders 0 and 1), read when the space is made. Order 2 and
-    up, or ``nodes="gauss_legendre"`` at any order from 1, are on segments, quads,
+    up, or ``basis="gauss_legendre"`` at any order from 1, are on segments, quads,
     pixels, hexahedra and voxels (``tack.dataset.bases``): ``(order + 1)^d`` values
-    a cell in node order, the first axis fastest, on the 1D ``nodes``
-    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``;
-    and from order 2 on triangles, tetrahedra and wedges with
-    ``nodes="equispaced"``: each cell's values at its lattice's nodes
+    a cell in node order, the first axis fastest, in the ``basis``
+    ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``
+    (Lagrange polynomials on those nodes); and from order 2 on triangles,
+    tetrahedra and wedges with ``basis="equispaced"``: each cell's values at its lattice's nodes
     (``bases.lattice_ijk``), always in blocks.
 
     ``layout`` says how a tensor basis' values are stored: ``"blocks"``, each
@@ -507,17 +508,17 @@ class L2(Space):
     0 and 1) and an order per cell are always blocks."""
 
     interpolated = True
-    nodes = None
+    basis = None
     LAYOUTS = ("auto", "blocks", "cells")
 
     @classmethod
-    def _params(cls, order=1, nodes="gauss_lobatto", layout="auto"):
+    def _params(cls, order=1, basis="gauss_lobatto", layout="auto"):
         if layout not in cls.LAYOUTS:
             raise ValueError(f"L2's layout is one of {', '.join(cls.LAYOUTS)}, not {layout!r}")
         if _is_array(order):
-            if nodes != "gauss_lobatto":
+            if basis != "gauss_lobatto":
                 raise NotImplementedError("an order per cell is on corner values, the "
-                                          "default nodes")
+                                          "default basis")
             if layout == "cells":
                 raise ValueError("an order per cell has no common stride: its layout is "
                                  "blocks")
@@ -525,14 +526,14 @@ class L2(Space):
         order = int(order)
         if order < 0:
             raise ValueError(f"L2's order is at least 0, not {order}")
-        family = _nodes_param(nodes, order, bases.FAMILIES, "L2")
+        family = _basis_param(basis, order, bases.FAMILIES, "L2")
         if order == 0:
-            family = None                   # one value at the center, whatever the nodes
+            family = None                   # one value at the center, whatever the basis
         tensor = order >= 2 or family == "gauss_legendre"
         if layout == "cells" and not tensor:
             raise ValueError("corner values (order 0 and 1) are stored in blocks; a "
                              "cell-fastest layout is for tensor bases")
-        out = {"order": order} if family is None else {"order": order, "nodes": family}
+        out = {"order": order} if family is None else {"order": order, "basis": family}
         if layout != "auto" and tensor:
             out["layout"] = layout
         return out
@@ -594,7 +595,7 @@ class L2(Space):
     @property
     def tensor(self):
         """Whether the cells' values are a tensor basis' nodes, not their corners."""
-        return not self.varies and (self.order >= 2 or self.nodes == "gauss_legendre")
+        return not self.varies and (self.order >= 2 or self.basis == "gauss_legendre")
 
     @property
     def mixin(self):

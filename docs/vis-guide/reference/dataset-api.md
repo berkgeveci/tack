@@ -192,7 +192,7 @@ array accesses.
 
 | Space | Values | Interpolated | Topologies |
 |---|---|---|---|
-| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face; order `p` (`nodes=`) `p - 1` per edge, `(p - 1)^2` per quad face, `(p - 1)^d` per cell | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels; any order on segments, quads, pixels, hexahedra and voxels, and on triangles, tetrahedra and wedges with `nodes="equispaced"` (`(p - 1)(p - 2)/2` per triangle face, `(p - 1)(p - 2)(p - 3)/6` per tetrahedron, `(p - 1)^2 (p - 2)/2` per wedge) |
+| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face; order `p` (`basis=`) `p - 1` per edge, `(p - 1)^2` per quad face, `(p - 1)^d` per cell | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels; any order on segments, quads, pixels, hexahedra and voxels, and on triangles, tetrahedra and wedges with `nodes="equispaced"` (`(p - 1)(p - 2)/2` per triangle face, `(p - 1)(p - 2)(p - 3)/6` per tetrahedron, `(p - 1)^2 (p - 2)/2` per wedge) |
 | `L2(data, order=1)` | each cell's own copies: order 1 one per corner, order 0 one per cell; `order` may be an array, one order per cell; a tensor basis' values in blocks or cell-fastest (`layout=`, by device by default) | yes, discontinuous | shape-based |
 | `Constant(data)` | one per cell | yes, constant in the cell | all |
 | `Values(data, on, oriented=False)` | one per point, edge, face or cell: data about the entity, with no basis | no | all |
