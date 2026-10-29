@@ -1550,6 +1550,30 @@ class _TensorBasis(_TensorRange, _TensorPolynomials):
         return total
 
     @tack.func
+    def dofs_into(self, c, coeffs):
+        """Cell ``c``'s values, in node order, into ``coeffs``: for work that evaluates
+        a cell at many points (``value_from``), which then reads them once, not
+        once a point (an order-6 ``H1`` value's ``dof_index`` per node was most of
+        a subdivided contour's time)."""
+        for n in range((self.ORDER + 1) ** self.DIMENSION):
+            coeffs[n] = self.dof(c, n)
+
+    @tack.func
+    def value_from(self, coeffs, pc):
+        """``value`` from a cell's values gathered by ``dofs_into``: the same sum in the
+        same order, so the same bits."""
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        total = coeffs[0] * self.node_weight(0, lx, ly, lz)
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            total += coeffs[n] * self.node_weight(n, lx, ly, lz)
+        return total
+
+    @tack.func
     def parametric_gradient(self, c, pc):
         """From differences to node 0's value (the basis' gradients sum to zero), so
         a field of large, nearly equal values keeps its small differences."""
