@@ -6683,6 +6683,7 @@ with only the points they use: fields carry as <code>threshold</code> carries th
     <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -6704,8 +6705,14 @@ cell whose field's Bernstein coefficients can hold a value is cut into
 <code>subdivision</code> lattice steps along each axis -- by default the largest
 order of the field and geometry -- and the surface is the sub-cells'; a
 lattice point shared by cells is evaluated once, so the surface has no
-cracks. <code>subdivision=1</code> is the cut of the cells linearized at their
-corners. <code>tolerance</code> (in the field's unit) chooses the fewest steps whose
+cracks. Each crossing of a sub-cell's edge is where the field itself takes
+the value along it (<code>exact</code>, the default), found from the field's own
+values on the edge, face or cell holding it, so a vertex lies on the true
+surface (to rounding) whatever the steps, and neighbouring cells and pieces
+put it at the same bits; with <code>exact=False</code>, where the line between the
+lattice values does, as a linear contour of the sub-cells.
+<code>subdivision=1</code> with <code>exact=False</code> is the cut of the cells linearized at
+their corners. <code>tolerance</code> (in the field's unit) chooses the fewest steps whose
 estimated error is within it instead: what linearizing a cell loses is
 bounded by its Bernstein coefficients' distance from the corners'
 interpolation, divided by about the square of the steps; a curved
@@ -6914,9 +6921,15 @@ each came from.</p>
 <span class="normal">558</span>
 <span class="normal">559</span>
 <span class="normal">560</span>
-<span class="normal">561</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-            <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles</span>
 <span class="sd">    (as polygons on polyhedra); lines of a 2D mesh.</span>
 
@@ -6936,8 +6949,14 @@ each came from.</p>
 <span class="sd">    ``subdivision`` lattice steps along each axis -- by default the largest</span>
 <span class="sd">    order of the field and geometry -- and the surface is the sub-cells&#39;; a</span>
 <span class="sd">    lattice point shared by cells is evaluated once, so the surface has no</span>
-<span class="sd">    cracks. ``subdivision=1`` is the cut of the cells linearized at their</span>
-<span class="sd">    corners. ``tolerance`` (in the field&#39;s unit) chooses the fewest steps whose</span>
+<span class="sd">    cracks. Each crossing of a sub-cell&#39;s edge is where the field itself takes</span>
+<span class="sd">    the value along it (``exact``, the default), found from the field&#39;s own</span>
+<span class="sd">    values on the edge, face or cell holding it, so a vertex lies on the true</span>
+<span class="sd">    surface (to rounding) whatever the steps, and neighbouring cells and pieces</span>
+<span class="sd">    put it at the same bits; with ``exact=False``, where the line between the</span>
+<span class="sd">    lattice values does, as a linear contour of the sub-cells.</span>
+<span class="sd">    ``subdivision=1`` with ``exact=False`` is the cut of the cells linearized at</span>
+<span class="sd">    their corners. ``tolerance`` (in the field&#39;s unit) chooses the fewest steps whose</span>
 <span class="sd">    estimated error is within it instead: what linearizing a cell loses is</span>
 <span class="sd">    bounded by its Bernstein coefficients&#39; distance from the corners&#39;</span>
 <span class="sd">    interpolation, divided by about the square of the steps; a curved</span>
@@ -6995,7 +7014,7 @@ each came from.</p>
             <span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">levels</span><span class="p">,</span> <span class="n">nlevels</span><span class="p">,</span> <span class="n">subdivision</span><span class="p">,</span>
             <span class="k">lambda</span> <span class="n">refined</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">contour</span><span class="p">(</span><span class="n">refined</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span>
                                           <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">),</span>
-            <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+            <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="n">exact</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> H1 field is not built: it would subdivide &quot;</span>
@@ -7108,6 +7127,7 @@ each came from.</p>
     <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
     <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -7120,8 +7140,8 @@ a sequence, as <code>contour</code>'s: every level in one
 pass, each output cell's in <code>contour_value</code>. <code>slice_plane</code> is this
 with a <code>Plane</code>. On a curved geometry (<code>H1</code> above order 1) of segments,
 quads, pixels, hexahedra or voxels the cells are cut on linear sub-cells,
-as <code>contour</code> cuts them (<code>subdivision</code>); on other cells, linearized at
-their corners.</p>
+as <code>contour</code> cuts them (<code>subdivision</code>, <code>tolerance</code>, <code>exact</code>); on
+other cells, linearized at their corners.</p>
 
 
             <details class="mkdocstrings-source">
@@ -7150,7 +7170,7 @@ their corners.</p>
 <span class="normal">35</span>
 <span class="normal">36</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">slice</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">function</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-          <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+          <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``function`` (``tack.dataset.implicit``) is ``value`` (zero by default):</span>
 <span class="sd">    a contour of its values on the geometry, carrying fields as ``contour``</span>
 <span class="sd">    does (``merge_points`` and ``fields`` are ``contour``&#39;s). ``value`` may be</span>
@@ -7158,8 +7178,8 @@ their corners.</p>
 <span class="sd">    pass, each output cell&#39;s in ``contour_value``. ``slice_plane`` is this</span>
 <span class="sd">    with a ``Plane``. On a curved geometry (``H1`` above order 1) of segments,</span>
 <span class="sd">    quads, pixels, hexahedra or voxels the cells are cut on linear sub-cells,</span>
-<span class="sd">    as ``contour`` cuts them (``subdivision``); on other cells, linearized at</span>
-<span class="sd">    their corners.&quot;&quot;&quot;</span>
+<span class="sd">    as ``contour`` cuts them (``subdivision``, ``tolerance``, ``exact``); on</span>
+<span class="sd">    other cells, linearized at their corners.&quot;&quot;&quot;</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">implicit_values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">function</span><span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">subdivides</span>
 
@@ -7170,7 +7190,7 @@ their corners.</p>
         <span class="c1"># curved dataset raised.</span>
         <span class="n">values</span> <span class="o">=</span> <span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span>
-                   <span class="n">subdivision</span><span class="o">=</span><span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+                   <span class="n">subdivision</span><span class="o">=</span><span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="n">exact</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -7194,6 +7214,7 @@ their corners.</p>
     <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
     <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -7205,8 +7226,8 @@ to the plane along <code>normal</code>. The distance is computed in the geometry
 space -- per point, or per cell corner for an <code>L2</code> geometry -- so the cut is
 the cells' own. <code>value</code>, a signed distance along the unit normal, or a
 sequence of them, gives parallel planes, all in one pass. <code>slice</code> with a
-<code>Plane</code>; <code>merge_points</code>, <code>fields</code>, <code>subdivision</code> and <code>tolerance</code> (a
-distance) are <code>contour</code>'s.</p>
+<code>Plane</code>; <code>merge_points</code>, <code>fields</code>, <code>subdivision</code>, <code>tolerance</code> (a
+distance) and <code>exact</code> are <code>contour</code>'s.</p>
 
 
             <details class="mkdocstrings-source">
@@ -7229,21 +7250,21 @@ distance) are <code>contour</code>'s.</p>
 <span class="normal">54</span>
 <span class="normal">55</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">slice_plane</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-                <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+                <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The cut of the 3D cells by the plane through ``origin`` with ``normal`` (any</span>
 <span class="sd">    length), as triangles: ``contour`` at zero of each position&#39;s signed distance</span>
 <span class="sd">    to the plane along ``normal``. The distance is computed in the geometry&#39;s own</span>
 <span class="sd">    space -- per point, or per cell corner for an ``L2`` geometry -- so the cut is</span>
 <span class="sd">    the cells&#39; own. ``value``, a signed distance along the unit normal, or a</span>
 <span class="sd">    sequence of them, gives parallel planes, all in one pass. ``slice`` with a</span>
-<span class="sd">    ``Plane``; ``merge_points``, ``fields``, ``subdivision`` and ``tolerance`` (a</span>
-<span class="sd">    distance) are ``contour``&#39;s.&quot;&quot;&quot;</span>
+<span class="sd">    ``Plane``; ``merge_points``, ``fields``, ``subdivision``, ``tolerance`` (a</span>
+<span class="sd">    distance) and ``exact`` are ``contour``&#39;s.&quot;&quot;&quot;</span>
     <span class="n">origin</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="s2">&quot;slice_plane&#39;s origin&quot;</span><span class="p">)</span>
     <span class="n">value</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="s2">&quot;slice_plane&#39;s distance&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_length</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;slice_plane&#39;s tolerance&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">slice</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">Plane</span><span class="p">(</span><span class="n">origin</span><span class="p">,</span> <span class="n">normal</span><span class="p">),</span> <span class="n">merge_points</span><span class="o">=</span><span class="n">merge_points</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span>
-                 <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+                 <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="n">exact</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -7266,6 +7287,7 @@ distance) are <code>contour</code>'s.</p>
     <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -7293,14 +7315,15 @@ and <code>part</code> the clip of the others that the bound does not drop, cut i
 <code>subdivision</code> lattice steps (by default the largest order of the field and the
 geometry; with <code>tolerance</code>, in the field's unit, the fewest whose estimated
 error is within it). The two meet at the lattice points of the faces between
-them, where a linear sub-face lies against a curved face.</p>
+them, where a linear sub-face lies against a curved face. The cut's points
+on sub-cells' edges are where the field takes the value along them
+(<code>exact</code>, as <code>contour</code>'s), or with <code>exact=False</code> where the line
+between the lattice values does.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/clip.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">249</span>
 <span class="normal">250</span>
 <span class="normal">251</span>
 <span class="normal">252</span>
@@ -7432,8 +7455,17 @@ them, where a linear sub-face lies against a curved face.</p>
 <span class="normal">378</span>
 <span class="normal">379</span>
 <span class="normal">380</span>
-<span class="normal">381</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">by</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">inside</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">by</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">inside</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+         <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The part of ``data`` where ``by`` -- point data (a field or its name) or an</span>
 <span class="sd">    implicit function (``tack.dataset.implicit``) -- is at or above ``value``, or</span>
 <span class="sd">    with ``inside`` below it: Viskores&#39; ClipWithField and (``value`` 0)</span>
@@ -7458,7 +7490,10 @@ them, where a linear sub-face lies against a curved face.</p>
 <span class="sd">    ``subdivision`` lattice steps (by default the largest order of the field and the</span>
 <span class="sd">    geometry; with ``tolerance``, in the field&#39;s unit, the fewest whose estimated</span>
 <span class="sd">    error is within it). The two meet at the lattice points of the faces between</span>
-<span class="sd">    them, where a linear sub-face lies against a curved face.&quot;&quot;&quot;</span>
+<span class="sd">    them, where a linear sub-face lies against a curved face. The cut&#39;s points</span>
+<span class="sd">    on sub-cells&#39; edges are where the field takes the value along them</span>
+<span class="sd">    (``exact``, as ``contour``&#39;s), or with ``exact=False`` where the line</span>
+<span class="sd">    between the lattice values does.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">visible</span>
 
     <span class="n">data</span><span class="p">,</span> <span class="n">by</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">by</span><span class="p">)</span>
@@ -7483,9 +7518,11 @@ them, where a linear sub-face lies against a curved face.</p>
             <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_in_unit_of</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;clip&#39;s tolerance&quot;</span><span class="p">)</span>
         <span class="n">bound</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
         <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="n">bound</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="k">if</span> <span class="n">inside</span> <span class="k">else</span> <span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">bound</span><span class="p">)</span>
+        <span class="n">levels</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">value</span><span class="p">],</span> <span class="n">arrays</span><span class="o">.</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">numpy_dtype</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">split_by_range</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="n">subdivision</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span>
                               <span class="k">lambda</span> <span class="n">refined</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">carried</span><span class="p">:</span> <span class="n">clip</span><span class="p">(</span><span class="n">refined</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">inside</span><span class="p">,</span>
-                                                                    <span class="n">carried</span><span class="p">))</span>
+                                                                    <span class="n">carried</span><span class="p">),</span>
+                              <span class="n">levels</span> <span class="k">if</span> <span class="n">exact</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">):</span>
         <span class="c1"># Clip&#39;s points are merged across cells, so each needs one position.</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;clip needs an H1 geometry: one position per point&quot;</span><span class="p">)</span>
@@ -9383,19 +9420,7 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1109</span>
-<span class="normal">1110</span>
-<span class="normal">1111</span>
-<span class="normal">1112</span>
-<span class="normal">1113</span>
-<span class="normal">1114</span>
-<span class="normal">1115</span>
-<span class="normal">1116</span>
-<span class="normal">1117</span>
-<span class="normal">1118</span>
-<span class="normal">1119</span>
-<span class="normal">1120</span>
-<span class="normal">1121</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1121</span>
 <span class="normal">1122</span>
 <span class="normal">1123</span>
 <span class="normal">1124</span>
@@ -9403,7 +9428,19 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 <span class="normal">1126</span>
 <span class="normal">1127</span>
 <span class="normal">1128</span>
-<span class="normal">1129</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">1129</span>
+<span class="normal">1130</span>
+<span class="normal">1131</span>
+<span class="normal">1132</span>
+<span class="normal">1133</span>
+<span class="normal">1134</span>
+<span class="normal">1135</span>
+<span class="normal">1136</span>
+<span class="normal">1137</span>
+<span class="normal">1138</span>
+<span class="normal">1139</span>
+<span class="normal">1140</span>
+<span class="normal">1141</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
 <span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>

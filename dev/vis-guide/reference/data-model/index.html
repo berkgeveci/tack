@@ -14543,10 +14543,6 @@ tensor product of these bounds a cell's geometry, or a field over the cell.</p>
             <span class="doc doc-object-name doc-function-name">dof_tables</span>
 
 
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-cached"><code>cached</code></small>
-  </span>
-
 <a href="#tack.dataset.bases.dof_tables" class="headerlink" title="Permanent link">&para;</a></h4>
 <div class="doc-signature highlight"><pre><span></span><code><span class="nf">dof_tables</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
 </code></pre></div>
@@ -14573,63 +14569,7 @@ and 2 (see <code>_simplex_dof_tables</code>).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/bases.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">520</span>
-<span class="normal">521</span>
-<span class="normal">522</span>
-<span class="normal">523</span>
-<span class="normal">524</span>
-<span class="normal">525</span>
-<span class="normal">526</span>
-<span class="normal">527</span>
-<span class="normal">528</span>
-<span class="normal">529</span>
-<span class="normal">530</span>
-<span class="normal">531</span>
-<span class="normal">532</span>
-<span class="normal">533</span>
-<span class="normal">534</span>
-<span class="normal">535</span>
-<span class="normal">536</span>
-<span class="normal">537</span>
-<span class="normal">538</span>
-<span class="normal">539</span>
-<span class="normal">540</span>
-<span class="normal">541</span>
-<span class="normal">542</span>
-<span class="normal">543</span>
-<span class="normal">544</span>
-<span class="normal">545</span>
-<span class="normal">546</span>
-<span class="normal">547</span>
-<span class="normal">548</span>
-<span class="normal">549</span>
-<span class="normal">550</span>
-<span class="normal">551</span>
-<span class="normal">552</span>
-<span class="normal">553</span>
-<span class="normal">554</span>
-<span class="normal">555</span>
-<span class="normal">556</span>
-<span class="normal">557</span>
-<span class="normal">558</span>
-<span class="normal">559</span>
-<span class="normal">560</span>
-<span class="normal">561</span>
-<span class="normal">562</span>
-<span class="normal">563</span>
-<span class="normal">564</span>
-<span class="normal">565</span>
-<span class="normal">566</span>
-<span class="normal">567</span>
-<span class="normal">568</span>
-<span class="normal">569</span>
-<span class="normal">570</span>
-<span class="normal">571</span>
-<span class="normal">572</span>
-<span class="normal">573</span>
-<span class="normal">574</span>
-<span class="normal">575</span>
-<span class="normal">576</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">576</span>
 <span class="normal">577</span>
 <span class="normal">578</span>
 <span class="normal">579</span>
@@ -14651,8 +14591,62 @@ and 2 (see <code>_simplex_dof_tables</code>).</p>
 <span class="normal">595</span>
 <span class="normal">596</span>
 <span class="normal">597</span>
-<span class="normal">598</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">dof_tables</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
+<span class="normal">598</span>
+<span class="normal">599</span>
+<span class="normal">600</span>
+<span class="normal">601</span>
+<span class="normal">602</span>
+<span class="normal">603</span>
+<span class="normal">604</span>
+<span class="normal">605</span>
+<span class="normal">606</span>
+<span class="normal">607</span>
+<span class="normal">608</span>
+<span class="normal">609</span>
+<span class="normal">610</span>
+<span class="normal">611</span>
+<span class="normal">612</span>
+<span class="normal">613</span>
+<span class="normal">614</span>
+<span class="normal">615</span>
+<span class="normal">616</span>
+<span class="normal">617</span>
+<span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span>
+<span class="normal">621</span>
+<span class="normal">622</span>
+<span class="normal">623</span>
+<span class="normal">624</span>
+<span class="normal">625</span>
+<span class="normal">626</span>
+<span class="normal">627</span>
+<span class="normal">628</span>
+<span class="normal">629</span>
+<span class="normal">630</span>
+<span class="normal">631</span>
+<span class="normal">632</span>
+<span class="normal">633</span>
+<span class="normal">634</span>
+<span class="normal">635</span>
+<span class="normal">636</span>
+<span class="normal">637</span>
+<span class="normal">638</span>
+<span class="normal">639</span>
+<span class="normal">640</span>
+<span class="normal">641</span>
+<span class="normal">642</span>
+<span class="normal">643</span>
+<span class="normal">644</span>
+<span class="normal">645</span>
+<span class="normal">646</span>
+<span class="normal">647</span>
+<span class="normal">648</span>
+<span class="normal">649</span>
+<span class="normal">650</span>
+<span class="normal">651</span>
+<span class="normal">652</span>
+<span class="normal">653</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dof_tables</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;For each of a ``shape`` cell&#39;s ``(order + 1)^d`` nodes, in node order, where its</span>
 <span class="sd">    value lives: four i32 arrays ``(kind, entity, a, b)``.</span>
 
@@ -17851,13 +17845,7 @@ them.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/carry.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">437</span>
-<span class="normal">438</span>
-<span class="normal">439</span>
-<span class="normal">440</span>
-<span class="normal">441</span>
-<span class="normal">442</span>
-<span class="normal">443</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">443</span>
 <span class="normal">444</span>
 <span class="normal">445</span>
 <span class="normal">446</span>
@@ -17900,7 +17888,24 @@ them.</p>
 <span class="normal">483</span>
 <span class="normal">484</span>
 <span class="normal">485</span>
-<span class="normal">486</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">486</span>
+<span class="normal">487</span>
+<span class="normal">488</span>
+<span class="normal">489</span>
+<span class="normal">490</span>
+<span class="normal">491</span>
+<span class="normal">492</span>
+<span class="normal">493</span>
+<span class="normal">494</span>
+<span class="normal">495</span>
+<span class="normal">496</span>
+<span class="normal">497</span>
+<span class="normal">498</span>
+<span class="normal">499</span>
+<span class="normal">500</span>
+<span class="normal">501</span>
+<span class="normal">502</span>
+<span class="normal">503</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">faces</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">faces_to_cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
           <span class="n">edges</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">edges_to_cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A dataset on topology ``out`` with ``data``&#39;s fields, by the maps given.</span>
@@ -17923,6 +17928,17 @@ them.</p>
 <span class="sd">    entities (``Interpolate``), is left behind; ``sets``, if given, replaces</span>
 <span class="sd">    them.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">crossings</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;_crossings&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">crossings</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">Interpolate</span><span class="p">)</span> <span class="ow">and</span> <span class="n">points</span><span class="o">.</span><span class="n">exact</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># A refined dataset&#39;s cut: its crossings at the field&#39;s roots, the positions</span>
+        <span class="c1"># the filter computed between lattice points too (and the averages of them).</span>
+        <span class="n">points</span> <span class="o">=</span> <span class="n">crossings</span><span class="o">.</span><span class="n">located</span><span class="p">(</span><span class="n">points</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">geometry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">points</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">geometry</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">points</span><span class="o">.</span><span class="n">exact</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">points</span><span class="o">.</span><span class="n">averages</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">points</span><span class="o">.</span><span class="n">averages</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">_average_rows</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">points</span><span class="o">.</span><span class="n">averages</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">points</span><span class="o">.</span><span class="n">averages</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                              <span class="n">points</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
     <span class="k">if</span> <span class="n">geometry</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">geometry</span> <span class="o">=</span> <span class="n">_carry_field</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">points</span><span class="p">,</span> <span class="n">cells</span><span class="p">,</span> <span class="n">faces</span><span class="p">,</span>
                                 <span class="n">faces_to_cells</span><span class="p">)</span>
@@ -18112,7 +18128,11 @@ values, but not its L2 data, which belongs to the whole cell's shape.</p>
 
 <a href="#tack.dataset.Interpolate" class="headerlink" title="Permanent link">&para;</a></h3>
 <div class="doc-signature highlight"><pre><span></span><code><span class="nf">Interpolate</span><span class="p">(</span>
-    <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">averages</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">average_cells</span><span class="o">=</span><span class="kc">None</span>
+    <span class="n">ends</span><span class="p">,</span>
+    <span class="n">weights</span><span class="p">,</span>
+    <span class="n">averages</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">average_cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">exact</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -18124,7 +18144,9 @@ values, but not its L2 data, which belongs to the whole cell's shape.</p>
 at <code>weights[i]</code> from the first. <code>averages</code>, <code>(offsets, members)</code>: further
 output points after those, each the average of earlier output points
 <code>members[offsets[k]:offsets[k + 1]]</code> (clip's centroid points), and inside
-input cell <code>average_cells[k]</code>, whose ghost mark it takes.</p>
+input cell <code>average_cells[k]</code>, whose ghost mark it takes. <code>exact</code>, when
+given, puts a field's values at the first points where they truly are rather
+than between their ends (<code>_crossings</code>: <code>exact(field, values)</code>).</p>
 
 
 
@@ -18135,15 +18157,17 @@ input cell <code>average_cells[k]</code>, whose ghost mark it takes.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/carry.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">90</span>
-<span class="normal">91</span>
-<span class="normal">92</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">92</span>
 <span class="normal">93</span>
-<span class="normal">94</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">averages</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">average_cells</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">94</span>
+<span class="normal">95</span>
+<span class="normal">96</span>
+<span class="normal">97</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">averages</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">average_cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">ends</span> <span class="o">=</span> <span class="n">ends</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="o">=</span> <span class="n">weights</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">averages</span> <span class="o">=</span> <span class="n">averages</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">average_cells</span> <span class="o">=</span> <span class="n">average_cells</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">exact</span> <span class="o">=</span> <span class="n">exact</span>
 </code></pre></div></td></tr></table></div>
                   </details>
 
