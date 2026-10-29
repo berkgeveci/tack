@@ -818,7 +818,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         # VTK's constant and affine arrays come across as Tack's implicit ones.
         types = _from_vtk(grid.cell_types, tack.u8)
         present = ({int(types.value.numpy().reshape(-1)[0])} if isinstance(types, ConstantArray)
-                   else {int(t) for t in np.unique(types)})
+                   else _present_types(np.asarray(types)))
         if polyhedral is None:
             polyhedral = 42 in present
         from tack.interop.vtk import _lagrange
@@ -926,6 +926,19 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
                                                                          points=points)
     return DataSet(topology, geometry, fields=fields, dtype=geometry_dtype, ghosts=ghosts,
                    global_ids=global_ids, origin=origin, unit=unit)
+
+
+def _present_types(types):
+    """The cell types in ``types`` (a NumPy array), as a set: the lowest and highest
+    left, then the rest without them, which for the one or two types most grids
+    hold is a pass or two over the array -- ``np.unique`` sorts it, which was most
+    of a GPU pipeline's hand-off (8 ms for 1.3M cells)."""
+    present = set()
+    while types.size:
+        low, high = int(types.min()), int(types.max())
+        present |= {low, high}
+        types = types[(types != low) & (types != high)]
+    return present
 
 
 def _vectors_of(values):
@@ -1553,8 +1566,15 @@ def _dataset_to_vtk(data, copy=True):
         # and affine arrays: a cell type given as a number is a vtkConstantArray.
         grid = vtkUnstructuredGrid()
         grid.points = _vtk_points_of(data, share)
-        grid.cells = (_to_vtk_types(topology.types, share),
-                      _vtk_cells(topology.offsets, topology.connectivity, share))
+        types = _to_vtk_types(topology.types, share)
+        cells = _vtk_cells(topology.offsets, topology.connectivity, share)
+        if isinstance(types, int):
+            grid.cells = (types, cells)
+        else:
+            # What SetCells (the pythonic ``cells``) does after it has looked through
+            # every type, one virtual call each, for a polyhedron -- which this
+            # topology cannot hold: 4 ms of a GPU pipeline's hand-off for 1.3M cells.
+            grid.SetPolyhedralCells(types, cells, None, None)
     elif isinstance(topology, (PolygonalTopology, PolylineTopology)):
         polygons = isinstance(topology, PolygonalTopology)
         offsets, loops = topology.loops() if polygons else topology.lines()

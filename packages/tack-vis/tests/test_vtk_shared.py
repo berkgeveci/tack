@@ -216,3 +216,13 @@ def test_a_round_trip_through_a_filter_shares_both_ways():
     assert _shares(surface.geometry.values, out.points.data)
     reference = vtk.vtkGeometryFilter()(grid)
     assert out.number_of_cells == reference.number_of_cells
+
+
+def test_the_types_a_grid_holds_are_found():
+    from tack.interop.vtk import _present_types
+
+    rng = np.random.default_rng(3)
+    for kinds in ([10], [10, 12], [3, 5, 9, 10, 12, 13, 14], list(range(0, 80, 3))):
+        types = rng.choice(np.array(kinds, np.uint8), 5000)
+        assert _present_types(types) == {int(t) for t in np.unique(types)}
+    assert _present_types(np.zeros(0, np.uint8)) == set()
