@@ -236,6 +236,16 @@ def _geometry_parts(data, group, kind):
             data.topology.faces()
         mixins, attributes = _space_parts(geometry, group, views._H1Order2Geometry)
         return [*mixins, views.quadratic_faces(group.shape), views._QuadraticNewton], attributes
+    if geometry.space.order >= 3 and kind == "cells" and bases.simplex_shape(group.shape):
+        # Curved simplices of order 3 and up: the simplex basis of the geometry's order.
+        space = geometry.space
+        data.topology.edges()
+        if group.shape.DIMENSION == 3:
+            data.topology.faces()
+        mixins, attributes = _space_parts(
+            geometry, group, views.of_simplex_order(views._H1SimplexGeometry, space.order,
+                                                    group.shape.DIMENSION))
+        return [*mixins, *views.simplex_mixins(group.shape), views._SimplexNewton], attributes
     if geometry.space.order >= 2 and kind == "cells":
         # Curved, on tensor shapes (order 2 too: the same layout, read as a tensor
         # basis, which bounds the cell by its Bernstein control points).

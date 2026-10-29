@@ -2100,6 +2100,89 @@ class _L2SimplexField(_SimplexBasis):
         return self.get(self.offsets[self.entity_id(c)] + n)
 
 
+class _H1SimplexGeometry(_SimplexDofs, _SimplexPolynomials, _Geometry):
+    """Curved geometry of order 3 or more on simplices: an ``H1`` field of positions of
+    that order (equispaced). Positions and Jacobians from differences to node 0's
+    position, as the tensor geometry's, so f32 keeps thin cells."""
+
+    CURVED = 1
+
+    @tack.func
+    def control_box(self, c):
+        """The box of the cell's Bernstein control points (``simplex_bernstein`` taking
+        the nodes' positions, less node 0's, to them), which hold it."""
+        first = self.get(self.dof_index(c, 0))
+        a = first - first
+        b = a
+        for i in range(self.NODES):
+            s = first - first
+            for n in range(1, self.NODES):
+                s += self.simplex_bernstein[i * self.NODES + n] * (
+                    self.get(self.dof_index(c, n)) - first)
+            a = min(a, s)
+            b = max(b, s)
+        return first + a, first + b
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+    @tack.func
+    def position(self, c, pc):
+        f = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        g = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        self.simplex_factors(pc, f, g)
+        first = self.get(self.dof_index(c, 0))
+        x = first
+        for n in range(1, self.NODES):
+            x += (self.get(self.dof_index(c, n)) - first) * self.simplex_weight(n, f)
+        return x
+
+    @tack.func
+    def geometry_jacobian(self, c, pc):
+        f = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        g = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        self.simplex_factors(pc, f, g)
+        first = self.get(self.dof_index(c, 0))
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        for n in range(1, self.NODES):
+            m += (self.get(self.dof_index(c, n)) - first).outer_product(
+                self.simplex_gradient(n, f, g))
+        return m
+
+
+class _SimplexNewton:
+    """``_CurvedNewton`` for a curved simplex geometry (``_H1SimplexGeometry``): the
+    cell's nodes read once, the map formed from them as ``position`` and
+    ``geometry_jacobian`` form it."""
+
+    @tack.func
+    def curved_to_parametric(self, i, x):
+        rx = tack.local_array_like(self.simplex_bernstein, self.NODES)
+        ry = tack.local_array_like(self.simplex_bernstein, self.NODES)
+        rz = tack.local_array_like(self.simplex_bernstein, self.NODES)
+        first = self.get(self.dof_index(i, 0))
+        for n in range(1, self.NODES):
+            d = self.get(self.dof_index(i, n)) - first
+            rx[n] = d[0]
+            ry[n] = d[1]
+            rz[n] = d[2]
+        return _newton_from(self, x, rx, ry, rz, first)
+
+    @tack.func
+    def gathered_map(self, rx, ry, rz, first, pc):
+        f = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        g = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        self.simplex_factors(pc, f, g)
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        at = first
+        for n in range(1, self.NODES):
+            d = tack.vec3(rx[n], ry[n], rz[n])
+            at += d * self.simplex_weight(n, f)
+            m += d.outer_product(self.simplex_gradient(n, f, g))
+        return m, at
+
+
 def simplex_mixins(shape):
     """The edge and face mixins a simplex ``H1`` view of ``shape`` cells needs."""
     return _TensorEdges, (_SimplexFaces if shape.DIMENSION == 3 else _NoSimplexFaces)

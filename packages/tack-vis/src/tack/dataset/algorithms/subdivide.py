@@ -530,6 +530,60 @@ def _trace_simplex_values(cells, u, slot_of, per_cell, level, steps, node_kind, 
 
 
 @tack.kernel
+def _trace_simplex_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity,
+                          node_a, node_b, first, rank, edge_nodes, face_nodes, view_of, nodes,
+                          weights, q, out):
+    # A curved simplex geometry (order 2's quadratic, or 3 and up) at the lattice
+    # points on edges and triangle faces, from its own nodes there, as
+    # _trace_simplex_values evaluates a field.
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                kind = node_kind[n]
+                if first[k] == 1 and (kind == 1 or kind == 2):
+                    m = node_entity[n]
+                    if kind == 1:
+                        s, flip = _edge_step(cells, c, m, node_a[n], level)
+                        t = steps[s]
+                        j0 = q - 1 if flip == 1 else 0
+                        x = cells.get(cells.dof_index(c, view_of[edge_nodes[m * q + j0]])) * \
+                            _lagrange(t, 0, nodes, weights, q)
+                        for jp in range(1, q):
+                            j = q - 1 - jp if flip == 1 else jp
+                            x += cells.get(cells.dof_index(c, view_of[edge_nodes[m * q + j]])) * \
+                                _lagrange(t, jp, nodes, weights, q)
+                        out[rank[k]] = x
+                    else:
+                        p = q - 1
+                        per_face = q * (q + 1) // 2
+                        ka, kb, kc = _triangle_order(cells, c, m)
+                        wa, wb, wc = _face_weights(ka, kb, kc, node_a[n], node_b[n], level)
+                        la = steps[wa]
+                        lb = steps[wb]
+                        lc = steps[wc]
+                        x = cells.corner_position(c, 0)
+                        started = 0
+                        for bc in range(q):
+                            for bb in range(q - bc):
+                                ba = p - bb - bc
+                                s1 = ba if ka == 1 else (bb if kb == 1 else bc)
+                                s2 = ba if ka == 2 else (bb if kb == 2 else bc)
+                                t = s2 * (p + 1) - (s2 * (s2 - 1)) // 2 + s1
+                                term = cells.get(cells.dof_index(
+                                    c, view_of[face_nodes[m * per_face + t]])) * (
+                                    _silvester(la, ba, p) * _silvester(lb, bb, p)
+                                    * _silvester(lc, bc, p))
+                                if started == 0:
+                                    x = term
+                                    started = 1
+                                else:
+                                    x += term
+                        out[rank[k]] = x
+
+
+@tack.kernel
 def _trace_simplex_straight(cells, slot_of, per_cell, level, steps, node_kind, node_entity,
                             node_a, node_b, first, rank, out):
     # A straight geometry at the lattice points on a simplex's edges and triangle faces:
@@ -762,13 +816,18 @@ def _refined(data, flags, level, fields):
                 lattice = _lattice_tables(group.shape, level)
                 order = data.geometry.space.order if isinstance(data.geometry.space, H1) else 0
                 if simplex:
-                    if order > 1:
-                        raise NotImplementedError(
-                            "subdividing curved simplices (a geometry above order 1 on "
-                            "triangles or tetrahedra) is not built yet")
                     if order == 1:
                         _trace_simplex_straight(cells, slot_of, per_cell, level, steps,
                                                 *lattice, first, rank, geometry)
+                    elif order >= 2:
+                        edge_nodes, face_nodes = _entity_tables(group.shape, order)
+                        _trace_simplex_curved(
+                            cells, slot_of, per_cell, level, steps, *lattice, first, rank,
+                            edge_nodes, face_nodes,
+                            tack.array(bases.view_index(group.shape, order)),
+                            _typed(bases.nodes("equispaced", order), steps),
+                            _typed(bases.weights("equispaced", order), steps), order + 1,
+                            geometry)
                     table = tack.array(np.ascontiguousarray(
                         bases.simplex_subdivision(group.shape, level)).reshape(-1))
                     _sub_simplices(cells, slot_of, per_cell, subs, sub, table, rank, conn,

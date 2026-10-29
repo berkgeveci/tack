@@ -247,3 +247,62 @@ def test_a_lattice_point_has_the_same_bits_in_every_piece_holding_it():
         assert all(p in at for p in positions)
         np.testing.assert_array_equal(piece.fields["u"].values.numpy(),
                                       [at[p] for p in positions])
+
+
+# ── Curved simplices ────────────────────────────────────────────────
+
+@tack.func
+def _bend(x):
+    return [x[0] + 0.1 * x[1] * x[1], x[1] + 0.12 * x[0] * x[0], x[2] + 0.05 * x[0] * x[1]]
+
+
+def _curved(order, seed=11):
+    """Tetrahedra bent at ``order`` (order 2's quadratic geometry, or the simplex basis
+    from 3), corners shuffled."""
+    data = _tetrahedra(seed=seed)
+    space = (td.H1(data, order=order, nodes="equispaced") if order > 2
+             else td.H1(data, order=2))
+    data.geometry = td.interpolate(data, _bend, space, dtype=tack.vec3(tack.f64))
+    data.fields["u"] = td.interpolate(data, _bowl, space)        # at the curved nodes
+    return data
+
+
+@pytest.mark.parametrize("order", [2, 3, 4])
+def test_curved_tetrahedra_are_located_as_they_are(f64_backend, order):
+    """Probing at the geometry's own nodes, many on its curved faces, finds every one:
+    the locator bounds a curved simplex by its Bernstein control points and inverts
+    its map by Newton's method, from its nodes read once."""
+    data = _curved(order)
+    nodes = data.geometry.values.numpy()
+    probed = td.probe(data, nodes)
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), _bowl_at(nodes), atol=1e-10)
+
+
+@pytest.mark.parametrize("order", [3, 4])
+def test_subdividing_curved_tetrahedra(f64_backend, order):
+    """A curved simplex's lattice points on its edges and faces come from the
+    geometry's own nodes there; at the field's own order's nodes the field is
+    exact, and its level set closes."""
+    data = _curved(order)
+    refined = td.subdivide(data, order, fields=["u"])
+    assert refined.num_cells == data.num_cells * order ** 3
+    np.testing.assert_allclose(refined.fields["u"].values.numpy(),
+                               _bowl_at(refined.positions()), atol=1e-12)
+    surface = td.contour(data, "u", 0.3, subdivision=2 * order)
+    assert surface.num_cells > 0 and _open_edges(surface) == 0
+
+
+def test_curved_pieces_have_the_wholes_bits():
+    """Pieces cut from a curved order-3 mesh by a filter (which keeps its order) give
+    the whole's lattice points to the bit."""
+    data = _curved(3, seed=13)
+    whole = td.subdivide(data, 3, fields=["u"])
+    at = {tuple(p): u for p, u in zip(whole.positions(), whole.fields["u"].values.numpy())}
+    n = data.num_cells
+    for kept in (np.arange(0, n, 2), np.arange(n - 1, -1, -3)):
+        piece = td.subdivide(td.extract_cells(data, kept), 3, fields=["u"])
+        positions = [tuple(p) for p in piece.positions()]
+        assert all(p in at for p in positions)
+        np.testing.assert_array_equal(piece.fields["u"].values.numpy(),
+                                      [at[p] for p in positions])
