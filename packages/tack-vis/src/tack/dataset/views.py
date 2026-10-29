@@ -916,6 +916,100 @@ class _CurvedNewton:
         return pc, converged
 
 
+@tack.func
+def _newton_from(view, x, rx, ry, rz, first):
+    """``_CurvedNewton``'s loop on a map the view evaluates from gathered nodes
+    (``view.gathered_map``): the same steps and stopping rules."""
+    pc = view.parametric_center()
+    converged = 0
+    for _ in range(CURVED_NEWTON_ITERATIONS):
+        jac, at = view.gathered_map(rx, ry, rz, first, pc)
+        step = view._newton_step(jac, x - at)
+        pc += step
+        if not (abs(pc[0]) < NEWTON_DIVERGED and abs(pc[1]) < NEWTON_DIVERGED
+                and abs(pc[2]) < NEWTON_DIVERGED):
+            break
+        if (abs(step[0]) <= NEWTON_TOLERANCE and abs(step[1]) <= NEWTON_TOLERANCE
+                and abs(step[2]) <= NEWTON_TOLERANCE):
+            converged = 1
+            break
+    return pc, converged
+
+
+class _TensorNewton:
+    """``_CurvedNewton`` for a curved tensor geometry (``_H1TensorGeometry``): the
+    cell's nodes read once, not at every step through ``dof_index`` (twice a step,
+    for ``position`` and ``geometry_jacobian``: on Metal most of a curved probe's
+    time); the map formed from them as those two form it, so the same bits."""
+
+    @tack.func
+    def curved_to_parametric(self, i, x):
+        count = (self.ORDER + 1) ** self.DIMENSION
+        rx = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        ry = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        rz = tack.local_array_like(self.basis_nodes, (self.ORDER + 1) ** self.DIMENSION)
+        first = self.get(self.dof_index(i, 0))
+        for n in range(1, count):
+            d = self.get(self.dof_index(i, n)) - first
+            rx[n] = d[0]
+            ry[n] = d[1]
+            rz[n] = d[2]
+        return _newton_from(self, x, rx, ry, rz, first)
+
+    @tack.func
+    def gathered_map(self, rx, ry, rz, first, pc):
+        """``(geometry_jacobian, position)`` at ``pc`` from the gathered differences."""
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        self.lagrange_derivatives(pc[0], dx)
+        self.lagrange_derivatives(pc[1], dy)
+        self.lagrange_derivatives(pc[2], dz)
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        at = first
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            d = tack.vec3(rx[n], ry[n], rz[n])
+            at += d * self.node_weight(n, lx, ly, lz)
+            m += d.outer_product(self.node_gradient(n, lx, ly, lz, dx, dy, dz))
+        return m, at
+
+
+class _QuadraticNewton:
+    """``_CurvedNewton`` for an order-2 geometry on simplices and wedges
+    (``_H1Order2Geometry``): its nodes read once, the map formed as ``position``
+    and ``geometry_jacobian`` form it."""
+
+    @tack.func
+    def curved_to_parametric(self, i, x):
+        px = tack.local_array_like(self.values, 27)
+        py = tack.local_array_like(self.values, 27)
+        pz = tack.local_array_like(self.values, 27)
+        for k in range(self.NUM_QUADRATIC):
+            p = self.get(self.dof_index(i, k))
+            px[k] = p[0]
+            py[k] = p[1]
+            pz[k] = p[2]
+        return _newton_from(self, x, px, py, pz, x - x)
+
+    @tack.func
+    def gathered_map(self, px, py, pz, first, pc):
+        at = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(self.NUM_QUADRATIC):
+            at += self.quadratic_function(k, pc) * tack.vec3(px[k], py[k], pz[k])
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        p0 = tack.vec3(px[0], py[0], pz[0])
+        for k in range(1, self.NUM_QUADRATIC):
+            m += (tack.vec3(px[k], py[k], pz[k]) - p0).outer_product(
+                self.quadratic_gradient(k, pc))
+        return m, at
+
+
 class _PointGeometry:
     """Positions of a cell or face with no reference element -- a polyhedron, a
     polygon: ``corner_position(i, j)`` only, the positions of its points. Nothing maps
@@ -1555,6 +1649,30 @@ class _TensorBasis(_TensorRange, _TensorPolynomials):
         total = self.dof(c, 0) * self.node_weight(0, lx, ly, lz)
         for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
             total += self.dof(c, n) * self.node_weight(n, lx, ly, lz)
+        return total
+
+    @tack.func
+    def dofs_into(self, c, coeffs):
+        """Cell ``c``'s values, in node order, into ``coeffs``: for work that evaluates
+        a cell at many points (``value_from``), which then reads them once, not
+        once a point (an order-6 ``H1`` value's ``dof_index`` per node was most of
+        a subdivided contour's time)."""
+        for n in range((self.ORDER + 1) ** self.DIMENSION):
+            coeffs[n] = self.dof(c, n)
+
+    @tack.func
+    def value_from(self, coeffs, pc):
+        """``value`` from a cell's values gathered by ``dofs_into``: the same sum in the
+        same order, so the same bits."""
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.lagrange_values(pc[0], lx)
+        self.lagrange_values(pc[1], ly)
+        self.lagrange_values(pc[2], lz)
+        total = coeffs[0] * self.node_weight(0, lx, ly, lz)
+        for n in range(1, (self.ORDER + 1) ** self.DIMENSION):
+            total += coeffs[n] * self.node_weight(n, lx, ly, lz)
         return total
 
     @tack.func

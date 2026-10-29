@@ -27,7 +27,7 @@ from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import argsort
 from tack.arrays import ConstantArray, size_of
-from tack.dataset import bases, ids, shapes
+from tack.dataset import bases, ids, shapes, views
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.ghosts import _before
 from tack.dataset.spaces import H1, L2, Constant, Values
@@ -434,6 +434,25 @@ def _trace_curved(cells, slot_of, per_cell, level, steps, node_kind, node_entity
 
 
 @tack.kernel
+def _tensor_values(cells, u, slot_of, per_cell, level, steps, corner_at, first, rank, out):
+    # _values for a scalar field in a tensor basis: the cell's values gathered once,
+    # not once a lattice point, then the same sum (the same bits).
+    for c in cells:
+        slot = slot_of[cells.entity_id(c)]
+        if slot >= 0:
+            coeffs = tack.local_array_like(u.basis_nodes, (u.ORDER + 1) ** u.DIMENSION)
+            u.dofs_into(c, coeffs)
+            for n in range(per_cell):
+                k = slot * per_cell + n
+                if first[k] == 1:
+                    if corner_at[n] >= 0:
+                        out[rank[k]] = u.corner_value(c, corner_at[n])
+                    else:
+                        out[rank[k]] = u.value_from(coeffs, _lattice_point(
+                            n, level, cells.DIMENSION, steps))
+
+
+@tack.kernel
 def _sub_cells(cells, slot_of, per_cell, level, rank, sub, conn, parent):
     # Each refined cell's level^d sub-cells, in its frame: corners in VTK's order
     # of the cell's shape (a hexahedron's, a quad's, a line's).
@@ -616,8 +635,12 @@ def _refined(data, flags, level, fields):
             for group in data.launch_groups("cells", [field]):
                 if group.count:
                     cells, u = data.domain_view("cells", group), field.view(group)
-                    _values(cells, u, slot_of, per_cell, level, steps, corner_at[group.root],
-                            first, rank, out)
+                    # A scalar in a tensor basis gathers each cell's values once.
+                    kernel = (_tensor_values if isinstance(u, views._TensorBasis)
+                              and not arrays.width_of(field.values)
+                              and out.dtype == u.basis_nodes.dtype else _values)
+                    kernel(cells, u, slot_of, per_cell, level, steps, corner_at[group.root],
+                           first, rank, out)
                     if isinstance(field.space, H1):
                         # A continuous field's shared points from their entities' values.
                         order = field.space.order
