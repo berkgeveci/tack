@@ -66,7 +66,6 @@ _REFUSALS = re.compile("|".join([
 #: Refusals of one dataset's own: its voxels meet three at nine faces.
 _REFUSALS_OF = {"blood_vessels": "faces are shared by more than two cells"}
 
-_INTEGERS = "shrink averages integer point fields ('project ... not i64')"
 _MIXED = ("a surface with lines: the face kernels resolve methods line cells lack "
           "('side_position', 'num_faces')")
 _VERTICES = "vertices alone: the face kernels resolve 'num_faces', which vertices lack"
@@ -75,9 +74,6 @@ _HIDDEN = ("faces are derived over hidden cells, and the reservoir's inactive ce
 
 #: Known failures, by (dataset, call).
 _BUGS = {
-    **{(name, "shrink"): _INTEGERS
-       for name in ("can_crushed_vtu", "angular_sector", "blood_vessels", "stars_cloud_hyg",
-                    "kitchen")},
     **{("cylinder_crossflow", call): _MIXED
        for call in ("surface_normals", "face_geometry", "upwind_flux", "net_flux",
                     "divergence", "perot")},

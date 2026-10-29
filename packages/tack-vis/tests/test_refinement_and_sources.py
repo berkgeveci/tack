@@ -171,6 +171,8 @@ def _plane():
 @pytest.mark.parametrize("cell_type", [12, 10, 13, 14])
 def test_shrink_is_vtks(backend, cell_type):
     grid = _blocks(cell_type)
+    # Integers are copied, not averaged (they were refused); these lose bits in f64.
+    grid.point_data["n"] = np.arange(grid.number_of_points, dtype=np.int64) * 2**54 + 1
     reference = vtk.vtkShrinkFilter(shrink_factor=0.7)(grid)
     data = vtk_to_dataset(grid)
     x = data.positions()
@@ -183,6 +185,9 @@ def test_shrink_is_vtks(backend, cell_type):
     expected = np.asarray(reference.points.data)[
         np.asarray(reference.cells.connectivity_array)]
     np.testing.assert_allclose(corners, expected, rtol=1e-5, atol=1e-5)
+    assert out.fields["n"].values.dtype == tack.i64
+    np.testing.assert_array_equal(out.fields["n"].values.numpy(), np.asarray(
+        reference.point_data["n"])[np.asarray(reference.cells.connectivity_array)])
     assert isinstance(out.fields["x"].space, td.L2)
     assert out.fields["id"].space is td.Values(data, "cells")
 
