@@ -13,9 +13,15 @@ filter runs where that memory is -- on the CPU, or on the GPU holding an input o
 Viskores arrays -- and its result goes back to VTK sharing Tack's
 (``dataset_to_vtk(..., copy=False)``, a GPU's as Viskores arrays): no array is
 copied either way where its values are stored as Tack keeps them, so a chain of
-these filters on a GPU stays there. A partitioned input runs the filter on each
-piece and gives a ``vtkPartitionedDataSet``; the filters whose answer needs every
-piece (``GhostCells``, ``GenerateGlobalIds``, ``MergePieces``) take them together.
+these filters on a GPU stays there. One VTK dataset, unchanged, is one Tack
+dataset to every filter that reads it, so what Tack derives from its topology
+(locators, faces, point links) is built once: by several filters on one input, or
+by one run again after a parameter changes. A field filter's output is its
+input's Tack dataset with the new fields, on the same topology.
+
+A partitioned input runs the filter on each piece and gives a
+``vtkPartitionedDataSet``; the filters whose answer needs every piece
+(``GhostCells``, ``GenerateGlobalIds``, ``MergePieces``) take them together.
 
 Filters that make a dataset give a ``vtkUnstructuredGrid`` (or keep a structured
 grid's type where the Tack filter does); filters that compute a field (``Gradients``,
@@ -54,6 +60,56 @@ __all__ = [
 from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
 from vtkmodules.vtkCommonDataModel import vtkDataObject, vtkPartitionedDataSet
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithm
+
+# ── Tack datasets kept per VTK dataset ──────────────────────────────
+#
+# A Tack dataset keeps what it derives from its topology -- locators, faces, point
+# links, groups -- on the topology, so filters that read one VTK dataset (several
+# on one input, or one run again after a parameter changed) build that once when
+# they share one Tack dataset. Kept by the VTK object's address, modification time
+# and time step: the modification time is a global counter, so the same object
+# modified, or a later one at the same address, does not match. An entry goes when
+# its VTK object is deleted, and holds nothing that keeps that object alive.
+
+_datasets = {}          # address -> ((modification time, time step), DataSet)
+
+
+def _key(vtk_data):
+    from tack.interop.vtk import _time_key
+
+    info = vtk_data.GetInformation()
+    return vtk_data.GetMTime(), (info.Get(_time_key()) if info.Has(_time_key()) else None)
+
+
+def _remember(vtk_data, data):
+    """Keep ``data`` as the Tack dataset of ``vtk_data`` as it is now."""
+    address = vtk_data.GetAddressAsString("vtkObject")
+    if address not in _datasets:
+        # The address, not the caller: a DeleteEvent's caller is None.
+        vtk_data.AddObserver("DeleteEvent", lambda caller, event: _datasets.pop(address, None))
+    _datasets[address] = (_key(vtk_data), data)
+
+
+def _as_dataset(vtk_data):
+    """``vtk_to_dataset(vtk_data, dtype=None, copy=False)``, the same Tack dataset for
+    the same VTK dataset unchanged (each piece of a ``vtkPartitionedDataSet``)."""
+    from tack.dataset import PartitionedDataSet
+    from tack.interop.vtk import _time_key, vtk_to_dataset
+
+    if isinstance(vtk_data, vtkPartitionedDataSet):
+        pieces = [vtk_data.GetPartition(i) for i in range(vtk_data.number_of_partitions)]
+        data = PartitionedDataSet(_as_dataset(piece) for piece in pieces if piece is not None)
+        if vtk_data.GetInformation().Has(_time_key()) and any(
+                piece.time is None for piece in data):
+            # Stamping the pieces with the whole's time would change kept ones.
+            return vtk_to_dataset(vtk_data, dtype=None, copy=False)
+        return data
+    entry = _datasets.get(vtk_data.GetAddressAsString("vtkObject"))
+    if entry is not None and entry[0] == _key(vtk_data):
+        return entry[1]
+    data = vtk_to_dataset(vtk_data, dtype=None, copy=False)
+    _remember(vtk_data, data)
+    return data
 
 
 class Parameter:
@@ -148,12 +204,11 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             raise
 
     def RequestData(self, request, inInfo, outInfo):
-        from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+        from tack.interop.vtk import dataset_to_vtk
 
         input = self.GetInputData(inInfo, 0, 0)
         output = self.GetOutputData(outInfo, 0)
-        result = dataset_to_vtk(self.execute(vtk_to_dataset(input, dtype=None, copy=False)),
-                                copy=False)
+        result = dataset_to_vtk(self.execute(_as_dataset(input)), copy=False)
         if not result.IsA(output.GetClassName()):
             # ShallowCopy between types copies nothing, silently.
             raise TypeError(f"{type(self).__name__} made a {result.GetClassName()}, where its "
@@ -185,30 +240,39 @@ class _FieldAlgorithm(TackAlgorithm):
     OUTPUT = None
 
     def RequestData(self, request, inInfo, outInfo):
-        from tack.interop.vtk import vtk_to_dataset
-
         input = self.GetInputData(inInfo, 0, 0)
         output = self.GetOutputData(outInfo, 0)
-        data = vtk_to_dataset(input, dtype=None, copy=False)
+        data = _as_dataset(input)
         if isinstance(input, vtkPartitionedDataSet):
             # Iterating a partitioned dataset gives its non-empty partitions, the
             # pieces vtk_to_dataset made, in order.
             output.Initialize()
             for block, piece in zip(input, data):
-                output.append(self._with_fields(block, piece))
+                out, kept = self._with_fields(block, piece)
+                output.append(out)
+                # Appended as it is: the output's partition is this object.
+                if kept is not None:
+                    _remember(out, kept)
         else:
-            output.ShallowCopy(self._with_fields(input, data))
+            out, kept = self._with_fields(input, data)
+            output.ShallowCopy(out)
+            if kept is not None:
+                _remember(output, kept)
         return 1
 
     def _with_fields(self, block, piece):
         """A new VTK dataset of ``block``'s structure and arrays, and the fields
-        computed on ``piece``, its Tack dataset, added to it."""
-        from tack.dataset import H1, Constant, Values
-        from tack.interop.vtk import _label, _to_vtk_values
+        computed on ``piece``, its Tack dataset, added to it; and the Tack dataset
+        of that, ``piece`` with the fields on the same topology (and so what was
+        derived from it), or ``None`` where a fresh conversion would differ: a new
+        name a field of ``piece`` already has."""
+        from tack.dataset import H1, Constant, DataSet, Values
+        from tack.interop.vtk import _label, _set_values, _to_vtk_values
 
         out = block.NewInstance()
         out.ShallowCopy(block)
-        for name, field in self.fields(piece).items():
+        fields = self.fields(piece)
+        for name, field in fields.items():
             space = field.space
             on_points = isinstance(space, H1) or (isinstance(space, Values)
                                                   and space.on == "points")
@@ -216,9 +280,14 @@ class _FieldAlgorithm(TackAlgorithm):
                                       or (isinstance(space, Values) and space.on == "cells")):
                 raise TypeError(f"{name!r} is on {space!r}, which VTK keeps nowhere")
             attributes = out.point_data if on_points else out.cell_data
-            attributes[name] = _to_vtk_values(field.values, share=True)
+            _set_values(attributes, name, _to_vtk_values(field.values, share=True))
             _label(attributes[name], field.unit)
-        return out
+        if any(name in piece.fields for name in fields):
+            return out, None
+        kept = DataSet(piece.topology, piece.geometry, fields={**piece.fields, **fields},
+                       sets=piece.sets, ghosts=piece.ghosts, global_ids=piece.global_ids,
+                       **piece._frame())
+        return out, kept
 
     def fields(self, data):
         raise NotImplementedError(f"{type(self).__name__} gives no fields()")
