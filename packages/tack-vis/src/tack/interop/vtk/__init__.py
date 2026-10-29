@@ -747,6 +747,18 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             topology = PolygonalTopology(_ids(offsets), _ids(connectivity),
                                          num_points=num_points, id_dtype=id_dtype)
         else:
+            from tack.dataset.shapes import _BY_ID
+
+            # Refused here, by VTK's names, rather than by the first algorithm.
+            unknown = sorted(present - set(_BY_ID))
+            if unknown:
+                from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities
+
+                names = ", ".join(vtkCellTypeUtilities.GetClassNameFromTypeId(t)
+                                  for t in unknown)
+                raise ValueError(f"VTK cell types {unknown} ({names}) are not linear shapes: "
+                                 "of the higher-order cells, VTK's Lagrange curves, "
+                                 "quadrilaterals and hexahedra convert")
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)

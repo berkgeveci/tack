@@ -1105,6 +1105,21 @@ def test_vtk_bit_arrays_come_across_as_u8(copy):
 
 
 @needs_vtk
+def test_vtk_quadratic_cells_are_refused_when_read():
+    """VTK's quadratic cells are no shapes of Tack's: refused by VTK's names when
+    the grid is read. They came across as cells no algorithm took, every one
+    failing ('are not linear shapes'); PyVista's FEA brackets are such grids."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [.5, 0, 0], [.5, .5, 0],
+                       [0, .5, 0], [0, 0, .5], [.5, 0, .5], [0, .5, .5]], np.float32)
+    grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=points))
+    grid.cells = (24, vtk.vtkCellArray(offsets=np.array([0, 10]),
+                                       connectivity=np.arange(10)))
+    with pytest.raises(ValueError, match=r"VTK cell types \[24\] \(vtkQuadraticTetra\) are "
+                                         "not linear shapes"):
+        vtk_to_dataset(grid)
+
+
+@needs_vtk
 def test_vtk_constant_and_affine_fields_stay_implicit():
     """VTK's implicit arrays in point and cell data are Tack's implicit arrays, and
     back: nothing stored on either side."""

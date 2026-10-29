@@ -37,24 +37,14 @@ def on_each_f64_backend(f64_backend):
     tack.set_default_device("cpu")
 
 
-#: Refused when read, as they should be.
+#: Refused when read, as they should be: VTK's quadratic cells (types 21-29)
+#: are no shapes of Tack's, which reads VTK's Lagrange cells instead.
 _REFUSED = {
     "unstructured_grid": "may hold only triangles, quads and polygons",   # polygons and more
     "prostar": "is not 3D: a polyhedral topology",                       # polyhedra and lines
-}
-
-_QUADRATIC = ("vtk_to_dataset keeps VTK's quadratic cells (types 21-29), which its "
-              "docstring refuses and no algorithm takes ('are not linear shapes')")
-
-#: Read wrongly: no algorithm runs on these.
-_NOT_READ = {
-    "aero_bracket": _QUADRATIC,
-    "fea_bracket": _QUADRATIC,
-    "pump_bracket": _QUADRATIC,
-    "notch_displacement": _QUADRATIC,
-    "disc_quads": _QUADRATIC,
-    "quadratic_pyramid": _QUADRATIC,
-    "tri_quadratic_hexahedron": _QUADRATIC,
+    **dict.fromkeys(("aero_bracket", "fea_bracket", "pump_bracket", "notch_displacement",
+                     "disc_quads", "quadratic_pyramid", "tri_quadratic_hexahedron"),
+                    r"VTK cell types \[.*\] \(vtk.*Quad.*\) are not linear shapes"),
 }
 
 #: Refusals of an algorithm beyond the Viskores datasets' (their ``_REFUSALS``).
@@ -140,12 +130,7 @@ def _prepared(name, device):
     return data, spacing
 
 
-def _marked(names):
-    return [pytest.param(name, marks=pytest.mark.xfail(reason=_NOT_READ[name], strict=True))
-            if name in _NOT_READ else name for name in names]
-
-
-@pytest.mark.parametrize("name", _marked(pv.DATASETS))
+@pytest.mark.parametrize("name", pv.DATASETS)
 def test_each_dataset_is_read_or_refused(name):
     """Every file converts to a dataset of the cells Tack takes, or is refused
     saying why."""
@@ -162,7 +147,7 @@ def test_each_dataset_is_read_or_refused(name):
 
 def _cases():
     for name in pv.DATASETS:
-        if name in _REFUSED or name in _NOT_READ:
+        if name in _REFUSED:
             continue
         for call in test_dataset_devices.CALLS:
             reason = _BUGS.get((name, call))
