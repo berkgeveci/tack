@@ -30,6 +30,12 @@ Options
 --ids=i64
     Every ``tack.dataset`` topology takes 64-bit ids, however small, so the
     dataset tests run each path in i64 as well as (by default) i32.
+--shard=K/N
+    Run the K-th (from 1) of N shares of the collected test files, the files
+    dealt by their test counts, heaviest first, each to the share with the
+    fewest tests so far: every share collects the same suite, so the shares
+    are disjoint and together the whole. For a job that cannot run its tests
+    across processes (CI's Metal job, one GPU) but can across machines.
 
 A test that names one of these runs once per matching backend, so which
 backends exist is a property of the machine and never of the test file.
@@ -94,6 +100,32 @@ if "cpu" in available_backends:
 def pytest_addoption(parser):
     parser.addoption("--ids", choices=("i32", "i64"), default="i32",
                      help="the narrowest id type tack.dataset topologies take")
+    parser.addoption("--shard", default=None, metavar="K/N",
+                     help="run the K-th (from 1) of N shares of the test files")
+
+
+def _shard(value):
+    k, n = (int(x) for x in value.split("/"))
+    if not 1 <= k <= n:
+        raise pytest.UsageError(f"--shard is K/N with 1 <= K <= N, not {value!r}")
+    return k, n
+
+
+def pytest_collection_modifyitems(config, items):
+    value = config.getoption("--shard")
+    if value is None:
+        return
+    k, n = _shard(value)
+    counts = {}
+    for item in items:
+        counts[item.path] = counts.get(item.path, 0) + 1
+    loads = [0] * n
+    share = {}
+    for path in sorted(counts, key=lambda p: (-counts[p], str(p))):
+        share[path] = loads.index(min(loads))
+        loads[share[path]] += counts[path]
+    config.hook.pytest_deselected(items=[i for i in items if share[i.path] != k - 1])
+    items[:] = [i for i in items if share[i.path] == k - 1]
 
 
 def pytest_configure(config):

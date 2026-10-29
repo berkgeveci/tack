@@ -78,6 +78,8 @@ validation round or a merge gate, once per machine, not for iteration.
    calls the root conftest's `require_idle` fixture, or better, asserts
    with a tolerance a loaded host passes.
 
+CI's Metal job runs the suite in three shares across three macOS runners (`--shard K/N`, the root conftest's: test files dealt by their test counts, heaviest first, so every share collects the same suite and they are disjoint), one process each, since Metal tests never run under xdist; whole, it reached 42 of its 45 minutes when macOS runners were short.
+
 A test module that compares in f64 (against VTK, say) takes conftest's `f64_backend` as an autouse fixture, so it runs on every backend with f64 (the CPU, CUDA, HIP, Level Zero) whatever the run's default device, never on Metal, which has none; pinning it to the CPU would lose the GPUs. Metal is covered by `test_dataset_devices`' device without f64 (`test_cell_quality.py`, `test_feature_edges.py`).
 
 Do not edit a `.py` file while a run that imported it is still going:
