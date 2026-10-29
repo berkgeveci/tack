@@ -537,3 +537,19 @@ def test_mfem_wedges_of_any_order(f64_backend, uniform):
     if uniform:
         back = mfem_grid_function(data, data.fields["u"], mesh, fes)
         np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())
+
+
+@pytest.mark.parametrize("cells", ["tetrahedra", "triangles", "wedges"])
+def test_projecting_into_l2_writes_each_cells_own_nodes(f64_backend, cells):
+    """``project`` into an L2 space of order 2 and up on simplices and wedges takes
+    each cell's own lattice nodes: it took the tensor count, ``(p + 1)^d``, and ran
+    past them (a debug run's bounds checks caught it, and parallel runs crashed)."""
+    data = {"tetrahedra": _tetrahedra, "triangles": _triangles, "wedges": _wedge_mesh}[cells]()
+    data.fields["u"] = td.interpolate(data, _bowl, td.H1(data, order=3, basis="equispaced"))
+    for order in (2, 3):
+        projected = td.project(data, "u", td.L2(data, order=order, basis="equispaced"))
+        direct = td.interpolate(data, _bowl, td.L2(data, order=order, basis="equispaced"))
+        if order == 3:
+            np.testing.assert_allclose(projected.values.numpy(), direct.values.numpy(),
+                                       rtol=0, atol=1e-13)
+        assert projected.values.numpy().shape == direct.values.numpy().shape

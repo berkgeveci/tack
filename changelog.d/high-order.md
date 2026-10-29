@@ -1,8 +1,8 @@
 ### Added
 
 - Bases of any order on segments, quads, pixels, hexahedra and voxels
-  (`tack.dataset.bases`): `H1(data, order=p, nodes=...)` from order 3 and
-  `L2(data, order=p, nodes=...)` from order 2 (or on Gauss-Legendre nodes from
+  (`tack.dataset.bases`): `H1(data, order=p, basis=...)` from order 3 and
+  `L2(data, order=p, basis=...)` from order 2 (or on Gauss-Legendre nodes from
   order 1), on Gauss-Lobatto nodes (the default, MFEM's for `H1`),
   equispaced ones (VTK's Lagrange cells) or, for `L2`, Gauss-Legendre ones
   (MFEM's default for `L2`). `H1` holds `p - 1` values per edge, `(p - 1)^2`
@@ -25,7 +25,7 @@
 - VTK's Lagrange cells: `vtk_to_dataset` reads a grid of
   `VTK_LAGRANGE_CURVE`, `_QUADRILATERAL` or `_HEXAHEDRON` cells of one order
   `p` as linear cells on their corners with the geometry and point data in
-  `H1(order=p, nodes="equispaced")`, VTK's nodes; `dataset_to_vtk(...,
+  `H1(order=p, basis="equispaced")`, VTK's nodes; `dataset_to_vtk(...,
   higher_order=True)` writes a high-order or curved dataset of those shapes as
   Lagrange cells of its largest order, each shared node one point, which VTK
   evaluates as Tack does.

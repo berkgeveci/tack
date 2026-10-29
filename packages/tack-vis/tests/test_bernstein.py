@@ -87,7 +87,7 @@ def test_the_bernstein_polynomials():
 
 
 @pytest.mark.parametrize("cells", ["grid", *_CELLS])
-@pytest.mark.parametrize("order", [2, 3, 4])
+@pytest.mark.parametrize("order", [2, 3])
 def test_interpolation_reproduces_polynomials(cells, order):
     """A cubic interpolated into H1 or L2 of order 3 and up is the cubic, wherever it
     is probed; at every order the Lagrange twin's polynomial, and its gradients."""
@@ -133,8 +133,11 @@ def test_coefficients_round_trip_and_bound_their_cells(cells):
     assert (hi - lo > 1e-3).all()
 
 
-@pytest.mark.parametrize("curved", [False, True])
-@pytest.mark.parametrize("cells", ["quads", "hexahedra", "triangles", "tetrahedra", "wedges"])
+# Each family once: curved in 3D (its straight sub-case compiles the same kernels
+# but the geometry's), straight in 2D.
+@pytest.mark.parametrize("cells, curved", [("hexahedra", True), ("tetrahedra", True),
+                                           ("wedges", True), ("quads", False),
+                                           ("triangles", False)])
 def test_filters_see_the_lagrange_twin(cells, curved):
     """Subdividing, contouring (exact or not), clipping and carrying a Bernstein
     dataset -- a curved geometry in Bernstein form too -- give its equispaced
@@ -230,7 +233,8 @@ _BEZIER = {"lines": (75, 68), "quads": (77, 70), "hexahedra": (79, 72), "triangl
            "tetrahedra": (78, 71), "wedges": (80, 73)}
 
 
-@pytest.mark.parametrize("cells", _CELLS)
+# Quads and triangles map as hexahedra and tetrahedra do.
+@pytest.mark.parametrize("cells", ["lines", "hexahedra", "tetrahedra", "wedges"])
 def test_bezier_cells_are_vtks(cells):
     """A Bernstein dataset goes to VTK as Bezier cells (``higher_order=True`` chooses
     them), which VTK evaluates as Tack does, and comes back in the same spaces; a

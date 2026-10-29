@@ -327,8 +327,10 @@ class H1(Space):
     ``(order - 1)^2`` per quad face and ``(order - 1)^d`` per cell, in the
     ``basis`` ``"gauss_lobatto"`` (the default: Lagrange polynomials on
     Gauss-Lobatto nodes) or ``"equispaced"`` (on equispaced nodes), which agree
-    up to order 2; and on triangles, tetrahedra and wedges with
-    ``basis="equispaced"`` (VTK's and gmsh's): ``(order - 1)(order - 2) / 2`` per
+    up to order 2; or ``"bernstein"``: the Bernstein polynomials' coefficients,
+    not values at nodes (VTK's Bezier cells; from order 2, on every shape here).
+    On triangles, tetrahedra and wedges with ``basis="equispaced"`` (VTK's and
+    gmsh's) or ``"bernstein"``: ``(order - 1)(order - 2) / 2`` per
     triangle face or triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per
     tetrahedron, ``(order - 1)^2 (order - 2) / 2`` per wedge."""
 
@@ -526,8 +528,9 @@ class L2(Space):
     pixels, hexahedra and voxels (``tack.dataset.bases``): ``(order + 1)^d`` values
     a cell in node order, the first axis fastest, in the ``basis``
     ``"gauss_lobatto"`` (the default), ``"equispaced"`` or ``"gauss_legendre"``
-    (Lagrange polynomials on those nodes); and from order 2 on triangles,
-    tetrahedra and wedges with ``basis="equispaced"``: each cell's values at its lattice's nodes
+    (Lagrange polynomials on those nodes) or ``"bernstein"`` (the Bernstein
+    polynomials' coefficients); and from order 2 on triangles, tetrahedra and
+    wedges with ``basis="equispaced"`` or ``"bernstein"``: each cell's values at its lattice's nodes
     (``bases.lattice_ijk``), always in blocks.
 
     ``layout`` says how a tensor basis' values are stored: ``"blocks"``, each

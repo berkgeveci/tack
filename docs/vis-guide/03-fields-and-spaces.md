@@ -17,7 +17,7 @@ mesh and have runnable examples below.
 |---|---|---|
 | `td.H1(data, order=1)` | One shared value per corner vertex | A continuous first-order nodal temperature or velocity |
 | `td.H1(data, order=2)` | Shared corner, edge and supported face/interior nodes | A higher-order H1 approximation; not an H2 space |
-| `td.H1(data, order=p, basis=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell; on triangles, tetrahedra and wedges with `basis="equispaced"` | Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices and wedges |
+| `td.H1(data, order=p, basis=...)` | From order 3, on segments, quads and hexahedra: `p - 1` per edge, `(p - 1)²` per face, `(p - 1)^d` per cell; on triangles, tetrahedra and wedges with `basis="equispaced"` or `"bernstein"` (Bernstein coefficients, from order 2) | Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices and wedges |
 | `td.L2(data, order=p, basis=...)` | From order 2 (or on Gauss–Legendre nodes): each cell's own `(p + 1)^d` values (`C(p + d, d)` on a simplex, equispaced) | DG fields of any order |
 | `td.Constant(data)` | One value per cell | Cell averages, material parameters |
 | `td.L2(data)` | Each cell's own corner values | Discontinuous solution fields |
@@ -238,6 +238,21 @@ of 1D nodes along each axis, `"gauss_lobatto"` (the default, MFEM's for H1 and
 Nek5000's), `"equispaced"` (VTK's Lagrange cells, Exodus, gmsh) or, for `L2`
 alone, `"gauss_legendre"` (MFEM's default for DG), which has no nodes at a
 cell's ends to share. Up to order 2 the first two are the same nodes.
+
+`basis="bernstein"` holds the Bernstein polynomials' coefficients instead of
+values at nodes: control points, for a geometry. They bound the cell's field or
+shape (it lies within their convex hull) and are what VTK's Bezier cells store.
+A corner's coefficient is its value, and an edge's or a face's depends on that
+entity alone, so they are shared as nodal values are. `interpolate` and
+`project` fill a Bernstein space from values at the equispaced nodes, and every
+filter sees the same polynomials as the equispaced Lagrange space of the order.
+Bernstein spaces are on segments, quads, hexahedra, triangles, tetrahedra and
+wedges. `dataset_to_vtk(..., higher_order=True)` writes a dataset with them as
+VTK Bezier cells, and `vtk_to_dataset` reads Bezier cells back into them.
+
+```python
+--8<-- "docs/examples/data_high_order.py:bernstein"
+```
 
 ```python
 --8<-- "docs/examples/data_high_order.py:functions"

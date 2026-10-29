@@ -2,14 +2,19 @@
 
 A Bernstein space's values are coefficients, not values at nodes, so what fills a
 space at its nodes (``interpolate``, ``project``) fills the equispaced Lagrange
-space of the same order -- the same layout, value for value -- and converts: each
-coefficient is the 1D Lagrange-to-Bernstein matrix (``bases.bernstein``) applied
-along each axis. A corner's coefficient is its value. An edge's or face's depends
-on that entity's values alone (the trace of a polynomial on it), so it is formed
-from them in a frame their corners' positions fix (``subdivide._edge_step``,
-``_face_frame``), the same in every cell and every piece holding the entity, whose
-writes then agree to the bit; the inside of a cell, and an ``L2`` cell's values,
-in the cell's own frame.
+space of the same order -- the same layout, value for value -- and converts: on
+tensor shapes the 1D Lagrange-to-Bernstein matrix (``bases.bernstein``) applied
+along each axis; on simplices and wedges a triangle's (``bases.simplex_bernstein``)
+on triangle faces and the cell's (``simplex_bernstein``, ``wedge_bernstein``) on
+the inside. A corner's coefficient is its value. An edge's or face's depends on
+that entity's values alone (the trace of a polynomial on it), so it is formed from
+them in a frame their corners' positions fix (``subdivide._edge_step``,
+``_face_frame``, ``_triangle_order``; the matrices do not depend on what the
+corners are called), the same in every cell and every piece holding the entity,
+whose writes then agree to the bit; the inside of a cell, and an ``L2`` cell's
+values, in the cell's own frame. ``to_lagrange`` goes back, by the inverses: a
+curved Bernstein geometry's values at the equispaced nodes, where ``interpolate``
+places nodes (``with_lagrange_geometry``).
 """
 
 import numpy as np
