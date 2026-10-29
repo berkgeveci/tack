@@ -9250,27 +9250,27 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">337</span>
-<span class="normal">338</span>
-<span class="normal">339</span>
-<span class="normal">340</span>
-<span class="normal">341</span>
-<span class="normal">342</span>
-<span class="normal">343</span>
-<span class="normal">344</span>
-<span class="normal">345</span>
-<span class="normal">346</span>
-<span class="normal">347</span>
-<span class="normal">348</span>
-<span class="normal">349</span>
-<span class="normal">350</span>
-<span class="normal">351</span>
-<span class="normal">352</span>
-<span class="normal">353</span>
-<span class="normal">354</span>
-<span class="normal">355</span>
-<span class="normal">356</span>
-<span class="normal">357</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">696</span>
+<span class="normal">697</span>
+<span class="normal">698</span>
+<span class="normal">699</span>
+<span class="normal">700</span>
+<span class="normal">701</span>
+<span class="normal">702</span>
+<span class="normal">703</span>
+<span class="normal">704</span>
+<span class="normal">705</span>
+<span class="normal">706</span>
+<span class="normal">707</span>
+<span class="normal">708</span>
+<span class="normal">709</span>
+<span class="normal">710</span>
+<span class="normal">711</span>
+<span class="normal">712</span>
+<span class="normal">713</span>
+<span class="normal">714</span>
+<span class="normal">715</span>
+<span class="normal">716</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
 <span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>
@@ -13180,7 +13180,8 @@ its origin and time. <code>data</code>'s and <code>grid</code>'s spatial units m
     <div class="doc doc-contents first">
 
         <p>Seeds moved through the velocity <code>field</code> (a 3-vector field or its name: point
-data, or cell data) by up to <code>steps</code> fixed steps of <code>step_size</code>, as
+data, cell data, or a field of any order or <code>L2</code>, on a straight or curved
+geometry) by up to <code>steps</code> fixed steps of <code>step_size</code>, as
 Viskores' ParticleAdvection: a dataset of the particles where they stopped,
 one vertex cell each, with <code>steps</code> (taken), <code>time</code> and <code>status</code> (the
 bits <code>SUCCESS</code>, <code>TERMINATE</code>, <code>SPATIAL_BOUNDS</code>, <code>TOOK_ANY_STEPS</code>,
@@ -13271,12 +13272,14 @@ a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
 <span class="normal">74</span>
 <span class="normal">75</span>
 <span class="normal">76</span>
-<span class="normal">77</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">77</span>
+<span class="normal">78</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">advect</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">steps</span><span class="p">,</span> <span class="n">integrator</span><span class="o">=</span><span class="s2">&quot;rk4&quot;</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
            <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">min_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
            <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Seeds moved through the velocity ``field`` (a 3-vector field or its name: point</span>
-<span class="sd">    data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as</span>
+<span class="sd">    data, cell data, or a field of any order or ``L2``, on a straight or curved</span>
+<span class="sd">    geometry) by up to ``steps`` fixed steps of ``step_size``, as</span>
 <span class="sd">    Viskores&#39; ParticleAdvection: a dataset of the particles where they stopped,</span>
 <span class="sd">    one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the</span>
 <span class="sd">    bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,</span>

@@ -4400,7 +4400,9 @@ cell) straddle the value.</p>
 or geometry's order; <code>subdivision=1</code> is its corners alone, and <code>tolerance=</code>
 asks for the fewest steps whose estimated error is within it. A point where
 sub-cells of neighbouring cells meet is computed once, so the surface has no
-cracks. <code>td.subdivide</code> gives the linear sub-cells of every cell, for export
+cracks, and every piece of a partitioned dataset holding it computes the same
+bits, so pieces' surfaces carry ghost marks and merge into the whole's.
+<code>td.subdivide</code> gives the linear sub-cells of every cell, for export
 or for a filter that takes linear cells only:</p>
 <div class="highlight"><pre><span></span><code>    <span class="n">curved</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))</span>
     <span class="n">curved</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="n">bend</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">())</span>
@@ -4586,8 +4588,7 @@ algorithm: filters that keep whole cells (<code>extract_cells</code>, <code>thre
 <code>split</code>, <code>remove_ghosts</code>) keep higher-order fields and a curved geometry at
 their order, and <code>extract_surface</code> keeps a solid's order-2 fields and geometry
 at order 2 (its surface's nodes are the solid's), but filters that make new
-cells (a contour, a clip) carry corner values, and higher-order subdivision
-remains open work. The
+cells (a contour, a clip) carry corner values. The
 <a href="../reference/dataset-api/#spaces">reference</a> records the supported layouts
 and <a href="../reference/dataset-api/#algorithms-and-filters">filter propagation rules</a>.</p>
 <h2 id="run-and-reproduce-the-figure">Run and reproduce the figure<a class="headerlink" href="#run-and-reproduce-the-figure" title="Permanent link">&para;</a></h2>

@@ -5905,7 +5905,7 @@ and "polyline" <code>PolylineTopology</code>.</p>
 </tr>
 <tr>
 <td><code>advect</code>, <code>streamlines</code></td>
-<td>yes (2D and 3D cells)</td>
+<td>yes (2D and 3D cells; a curved geometry, a velocity of any order or <code>L2</code>)</td>
 <td>yes (in sub-tetrahedra; cells star-shaped from their cell point)</td>
 <td>yes (in triangles fanned from the cell point)</td>
 <td>no</td>
@@ -6343,10 +6343,12 @@ all of them and goes to the smallest id: without the margin which cells
 held it was rounding noise, and the searches from the points and from the
 cells disagreed there. Advection ranks its cells the same way.
 The search runs from the points: one launch, each point testing the cells
-its bin may hold (<code>cell_bins()</code>, cells reached by id), and <code>probe</code> reads point
-and cell data the same way, one launch per field. Where cells cannot be read
-by id -- an order-2 or <code>L2</code> geometry, line or vertex cells -- it runs from the
-cells instead, each cell testing the points in the bins its box overlaps
+its bin may hold (<code>cell_bins()</code>, cells reached by id), and <code>probe</code> reads fields
+the same way, one launch per field. A curved geometry (<code>H1</code> above order 1) and
+fields above order 1 or in <code>L2</code> are read by id through each shape's own view,
+so a curved cell is inverted by its own map there as from the cells. Where
+cells cannot be read by id -- an <code>L2</code> geometry, line or vertex cells -- it runs
+from the cells instead, each cell testing the points in the bins its box overlaps
 through its own view; so does a fresh locator's first query of fewer points
 than a quarter of its cells, sparing the cell bins until it is used again.
 Both rank candidates alike and give the same answer. The bins follow the
