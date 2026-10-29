@@ -29,8 +29,9 @@ flat form explicitly:
 Requirements
 ------------
 VTK with ``vtkmodules.util.dlpack_support``. Device arrays additionally
-need VTK built with Viskores; host arrays work with any VTK that has the
-DLPack module.
+need a VTK that holds device memory: its own device arrays (CUDA, needing only
+the driver) or Viskores' (VTK built with them); host arrays work with any VTK
+that has the DLPack module.
 
 Level Zero
 ----------
@@ -644,8 +645,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     polyhedra -- is copied as before.
 
     A grid whose points, offsets, connectivity or data arrays are in a GPU's
-    memory (Viskores arrays in a VTK built with them, as ``array_to_vtk``
-    makes) is made on that device instead, whatever the default device (the
+    memory (VTK's device arrays, as ``array_to_vtk`` makes) is made on that device instead, whatever the default device (the
     default if it is of that type): those arrays are shared there, through
     DLPack, and everything else -- host arrays beside them, the cell types,
     which VTK keeps on the host -- is copied there. A grid with arrays on

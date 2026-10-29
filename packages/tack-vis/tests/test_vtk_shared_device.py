@@ -1,10 +1,11 @@
 """``vtk_to_dataset(..., copy=False)`` and ``dataset_to_vtk(..., copy=False)`` with the
-data on a GPU: Tack's device arrays and VTK's Viskores arrays sharing one
+data on a GPU: Tack's device arrays and VTK's device arrays sharing one
 allocation each way -- the points, data arrays, offsets and connectivity -- with the
 dataset made on the device that holds them, and giving what the copies give.
 
-Needs a VTK with DLPack and Viskores' arrays on a device Tack has (the arrays-only
-build of VTK's Viskores is enough), so it skips with the VTK wheel."""
+Needs a VTK with DLPack that holds device memory of a GPU Tack has -- its own
+device arrays (CUDA, needing only the driver) or Viskores' (the arrays-only build is
+enough) -- so it skips with the VTK wheel."""
 
 import gc
 
@@ -31,11 +32,10 @@ def _start(arch):
 
 
 def _arches():
-    """Devices whose memory this VTK holds in Viskores arrays."""
+    """Devices whose memory this VTK holds in device arrays."""
     found = []
     try:
         from vtkmodules.util import dlpack_support  # noqa: F401
-        from vtkmodules.vtkAcceleratorsVTKmCore import vtkmDataArrayFactory  # noqa: F401
     except ImportError:
         return found
     for arch, space in _SPACES.items():
@@ -52,7 +52,7 @@ def _arches():
 
 
 @pytest.fixture(params=_arches() or [pytest.param(None, marks=pytest.mark.skip(
-    reason="needs a VTK with DLPack and Viskores arrays on a GPU Tack has"))])
+    reason="needs a VTK with DLPack holding device memory of a GPU Tack has"))])
 def device(request):
     """The device, with the CPU the default -- but for Level Zero, whose device is
     the default throughout: a conversion that is not given it finds it there, as
