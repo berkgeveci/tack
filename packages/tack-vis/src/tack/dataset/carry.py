@@ -6,10 +6,13 @@ from the input -- the same entity (``Same``), entity ``ids[i]`` of the input
 triangles, a surface's faces), or a point between two input points
 (``Interpolate``) -- and ``carry`` applies one set of rules to every field:
 
-- **point data** (``H1``, values on points) goes through the point map. An
-  order-2 field brings its corner values, as the filters read it. A field
-  is interpolated only if its values are floating point; an integer field
-  meets an ``Interpolate`` map and is left behind.
+- **point data** (``H1``, values on points) goes through the point map. A
+  field is interpolated only if its values are floating point; an integer
+  field meets an ``Interpolate`` map and is left behind.
+- **an H1 field above order 1** (or a curved geometry) keeps its order where
+  the cell map keeps or takes whole cells: each output cell's nodes are its
+  source cell's (``_carry_h1``). Elsewhere (a contour, a surface's pieces) it
+  brings its corner values, as the filters read it.
 - **cell data** (``Constant``, values on cells) goes through the cell map
   and keeps its kind.
 - **L2 (DG) data** is copied cell by cell, keeping each cell's order, when
@@ -37,6 +40,7 @@ import tack
 from tack import arrays
 from tack.arrays import materialize, size_of, width_of
 from tack.dataset import ids
+from tack.dataset.buckets import bucket_order
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.lang.array import Array as _DeviceArray
@@ -233,10 +237,119 @@ def _carry_l2(field, out, cells):
     return Field(out_space, values, field.unit)
 
 
+@tack.kernel
+def _node_indices(cells, u, per_cell, start, entry, out):
+    # Each cell's nodes' places in its space, entries a cell's nodes together.
+    for c in cells:
+        first = start + cells.index(c) * per_cell
+        entry[cells.entity_id(c)] = first
+        for n in range(per_cell):
+            out[first + n] = u.dof_index(c, n)
+
+
+@tack.kernel
+def _first_of_each(order, starts, writers, n):
+    # The first (cell, node) entry of each node, in entry order, writes it.
+    for d in range(n):
+        if starts[d + 1] > starts[d]:
+            writers[order[starts[d]]] = 1
+
+
+@tack.kernel
+def _copy_nodes(cells, sources, per_cell, out_entry, out_index, writers, in_entry, in_index,
+                values, out):
+    # An output cell's node n is its source cell's node n: the same shape, the
+    # same corners, each space placing it through its own edges and faces.
+    for c in cells:
+        o = cells.entity_id(c)
+        a = out_entry[o]
+        b = in_entry[sources[o]]
+        for n in range(per_cell):
+            if writers[a + n] == 1:
+                out[out_index[a + n]] = values[in_index[b + n]]
+
+
+def _nodes_per_cell(space, shape):
+    """The nodes an ``H1`` space of order 2 or more gives a cell of ``shape``."""
+    if space.order == 2:
+        return shape.NUM_QUADRATIC
+    return (space.order + 1) ** shape.DIMENSION
+
+
+def _node_entries(space, values):
+    """Every cell's nodes' places in ``space`` (a field of it on ``values``' type):
+    ``(index, entry, groups)``, ``entry[cell]`` where its nodes start in
+    ``index``, ``groups`` each group with its start and nodes a cell."""
+    topology = space.topology
+    groups, total = [], 0
+    for group in topology.groups():
+        if group.count:
+            per_cell = _nodes_per_cell(space, group.shape)
+            groups.append((group, total, per_cell))
+            total += group.count * per_cell
+    index = tack.empty((max(total, 1),), ids.at_least(topology.id_dtype, space.size))
+    entry = tack.empty((max(topology.num_cells, 1),), ids.at_least(topology.id_dtype, total))
+    view_of = Field(space, values)
+    for group, start, per_cell in groups:
+        _node_indices(group.view(), view_of.view(group), per_cell, start, entry, index)
+    return index, entry, groups, total
+
+
+def _carry_h1(field, out, points, cells):
+    """An ``H1`` field of order 2 or more onto the kept or taken whole cells, keeping
+    its order and nodes; ``None`` where the cell map is not one of whole cells."""
+    space = field.space
+    if not getattr(out, "reference_cells", True) or isinstance(points, Interpolate):
+        return None
+    if isinstance(cells, Same):
+        topology = space.topology
+        sources = tack.arange(topology.num_cells, dtype=topology.id_dtype)
+    elif isinstance(cells, Take) and not isinstance(cells, Pieces):
+        sources = cells.ids
+    else:
+        return None
+    out_space = H1(out, **space.params)
+    values = _like(field.values, out_space.size)
+    if points is not None and out.num_points:
+        # Points no cell uses still take their values.
+        corners = _apply(_point_values(field.values, space.topology.num_points), points)
+        if corners is not None:
+            _copy_prefix(corners, values)
+    if sources.shape[0]:
+        held = materialize(field.values)
+        in_index, in_entry, _, _ = _node_entries(space, held)
+        out_index, out_entry, groups, total = _node_entries(out_space, values)
+        writers = tack.zeros((max(total, 1),), tack.i32)
+        if total:
+            order, starts = bucket_order(out_index, out_space.size,
+                                         ids.at_least(out.id_dtype, total))
+            _first_of_each(order, starts, writers, out_space.size)
+        for group, _, per_cell in groups:
+            _copy_nodes(group.view(), sources, per_cell, out_entry, out_index, writers,
+                        in_entry, in_index, held, values)
+    return Field(out_space, values, field.unit)
+
+
+@tack.kernel
+def _copy_rows(values, out):
+    for i in range(values.shape[0]):
+        out[i] = values[i]
+
+
+def _copy_prefix(values, out):
+    """``values`` into the first of ``out``'s rows."""
+    if values.shape[0]:
+        _copy_rows(materialize(values), out)
+
+
 def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=None,
                  edges_to_cells=None):
     """``field`` on ``out``, or ``None`` when no map applies to it."""
     space = field.space
+    if isinstance(space, H1) and space.order > 1:
+        kept = _carry_h1(field, out, points, cells)
+        if kept is not None:
+            return kept
     if isinstance(space, H1) or _on(space, "points"):
         if points is None:
             return None
