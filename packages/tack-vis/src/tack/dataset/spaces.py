@@ -160,9 +160,10 @@ def _only_order_one(family, order):
 
 
 @tack.kernel
-def _face_counts(kinds, per_quad, counts):
+def _face_counts(kinds, per_quad, per_triangle, counts):
     for f in range(kinds.shape[0]):
-        counts[f] = per_quad if kinds[f] == shapes.QUAD else 0
+        counts[f] = per_quad if kinds[f] == shapes.QUAD else (
+            per_triangle if kinds[f] == shapes.TRIANGLE else 0)
 
 
 @tack.kernel
@@ -174,13 +175,19 @@ def _place(counts, slots, base, out):
 @tack.kernel
 def _interior_counts(cells, order, counts):
     # Order 2 keeps the quadratic elements' interiors (a hexahedron's and a
-    # quad's); order 3 and up are on tensor shapes, (p - 1)^d a cell.
+    # quad's); order 3 and up: (p - 1)^d a tensor cell, the nodes strictly inside
+    # a simplex ((p - 1)(p - 2) / 2 a triangle, (p - 1)(p - 2)(p - 3) / 6 a
+    # tetrahedron).
     for c in cells:
         n = cells.QUADRATIC_INTERIOR
         if order != 2:
             n = 1
-            for _ in range(cells.DIMENSION):
-                n *= order - 1
+            if cells.NUM_POINTS == cells.DIMENSION + 1 and cells.DIMENSION >= 2:
+                for k in range(cells.DIMENSION):
+                    n = n * (order - 1 - k) // (k + 1)
+            else:
+                for _ in range(cells.DIMENSION):
+                    n *= order - 1
         counts[cells.entity_id(c)] = n
 
 
@@ -214,6 +221,41 @@ def _basis_tables(space, group, dtype):
                       "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
                       "corner_node": device(corner, tack.i32)}
     return cache[key]
+
+
+def _simplex_tables(space, group, dtype):
+    """A simplex basis' arrays for ``group``'s shape: its nodes' integer coordinates
+    and Bernstein matrix (``bases.simplex_lattice``, ``simplex_bernstein``) in
+    ``dtype``, the 1D nodes along its edges, and where each node's value lives
+    (``bases.dof_tables``)."""
+    key = (group.shape, "simplex", dtype)
+    cache = space.__dict__.setdefault("_tables", {})
+    if key not in cache:
+        def device(values, kind):
+            values = np.asarray(values).reshape(-1)
+            out = tack.empty((len(values),), kind)
+            tack.copyto(out, values.astype(kind.numpy_dtype))
+            return out
+
+        kind, entity, a, b, corner = bases.dof_tables(group.shape, space.order)
+        cache[key] = {"simplex_ijk": device(bases.simplex_lattice(group.shape, space.order),
+                                            tack.i32),
+                      "simplex_bernstein": device(bases.simplex_bernstein(group.shape,
+                                                                          space.order), dtype),
+                      "node_kind": device(kind, tack.i32), "node_entity": device(entity, tack.i32),
+                      "node_a": device(a, tack.i32), "node_b": device(b, tack.i32),
+                      "corner_node": device(corner, tack.i32)}
+    return cache[key]
+
+
+def _refuse_simplex_nodes(space, shape):
+    """Simplices above order 2 have equispaced nodes only (round 2): any other
+    family is refused, with the remedy."""
+    if bases.simplex_shape(shape) and space.order > 2 and space.nodes != "equispaced":
+        raise NotImplementedError(
+            f"{type(space).__name__} of order {space.order} on {shape.__name__} cells has "
+            f"equispaced nodes only (VTK's and gmsh's), not {space.nodes!r}: pass "
+            "nodes=\"equispaced\"")
 
 
 def _on_gpu(topology):
@@ -276,11 +318,12 @@ class H1(Space):
                         f"H1 order 2 on {group.shape.__name__} cells is not supported yet; "
                         "it is on tetrahedra, hexahedra, voxels, wedges, triangles, quads "
                         "and pixels")
-                if p > 2 and not bases.tensor_shape(group.shape):
+                if p > 2 and not bases.has_bases(group.shape):
                     raise NotImplementedError(
                         f"H1 order {p} on {group.shape.__name__} cells is not supported "
-                        "yet; orders above 2 are on segments, quads, pixels, hexahedra and "
-                        "voxels")
+                        "yet; orders above 2 are on segments, quads, pixels, hexahedra, "
+                        "voxels, triangles and tetrahedra")
+                _refuse_simplex_nodes(self, group.shape)
             dims = {g.shape.DIMENSION for g in topology.groups() if g.count}
             edges = topology.edges() if dims - {1} else None
             ne = edges.num_edges if edges is not None else 0
@@ -298,7 +341,8 @@ class H1(Space):
             face_dofs = tack.empty((nf,), idt)
             on_faces = 0
             if nf:
-                _face_counts(faces.kinds, (p - 1) ** 2, counts)
+                _face_counts(faces.kinds, (p - 1) ** 2,
+                             (p - 1) * (p - 2) // 2 if p > 2 else 0, counts)
                 on_faces = exclusive_scan(counts, slots, nf)
                 _place(counts, slots, base, face_dofs)
             counts = tack.zeros((n,), tack.i32)
@@ -337,7 +381,9 @@ class H1(Space):
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[root])
-            if self.order > 2 or (self.order == 2 and bases.tensor_shape(group.shape)):
+            if self.order > 2 and bases.simplex_shape(group.shape):
+                attributes.update(_simplex_tables(self, group, dtype or tack.f32))
+            elif self.order > 2 or (self.order == 2 and bases.tensor_shape(group.shape)):
                 # Order 2 on tensor shapes: for a curved geometry's tensor views.
                 attributes.update(_basis_tables(self, group, dtype or tack.f32))
         return attributes
@@ -354,6 +400,8 @@ class H1(Space):
             return views._PolyhedralPointField
         if shape is shapes.PolyLine and self.order == 1:
             return views._PolylinePointField
+        if self.order > 2 and bases.simplex_shape(shape):
+            return views.of_simplex_order(views._H1SimplexField, self.order, shape.DIMENSION)
         return self.mixin
 
     def extra_mixins(self, group):
@@ -364,6 +412,8 @@ class H1(Space):
             ((views._FaceIncidence,) if self._has_faces(shape) else ())
         if self.order == 2:
             return (*incidence, views.quadratic_faces(shape))
+        if bases.simplex_shape(shape):
+            return (*incidence, *views.simplex_mixins(shape))
         return (*incidence, *views.tensor_mixins(shape))
 
 
@@ -376,10 +426,15 @@ def _l2_counts(cells, orders, counts):
 
 @tack.kernel
 def _tensor_counts(cells, order, counts):
+    # (p + 1)^d a tensor cell's nodes, C(p + d, d) a simplex's.
     for c in cells:
         n = 1
-        for _ in range(cells.DIMENSION):
-            n *= order + 1
+        if cells.NUM_POINTS == cells.DIMENSION + 1 and cells.DIMENSION >= 2:
+            for k in range(cells.DIMENSION):
+                n = n * (order + 1 + k) // (k + 1)
+        else:
+            for _ in range(cells.DIMENSION):
+                n *= order + 1
         counts[cells.entity_id(c)] = n
 
 
@@ -459,8 +514,11 @@ class L2(Space):
             else "blocks"
 
     def _uniform(self):
-        """Whether every cell holds as many values: cells of one dimension."""
-        return len({g.shape.DIMENSION for g in self.topology.groups() if g.count}) <= 1
+        """Whether every cell holds as many values of a tensor basis: cells of one
+        dimension, none a simplex (cell-fastest is for tensor bases)."""
+        groups = [g for g in self.topology.groups() if g.count]
+        return (len({g.shape.DIMENSION for g in groups}) <= 1
+                and not any(bases.simplex_shape(g.shape) for g in groups))
 
     def indices(self):
         """A host ``(num_cells, values a cell)`` array: where each cell's value ``n`` is
@@ -501,6 +559,8 @@ class L2(Space):
         return views._L2Field
 
     def mixin_for(self, key, shape=None):
+        if self.tensor and bases.simplex_shape(shape):
+            return views.of_simplex_order(views._L2SimplexField, self.order, shape.DIMENSION)
         if self.tensor:
             return self.mixin
         order = key if self.varies else self.order
@@ -546,10 +606,14 @@ class L2(Space):
                 self._offsets, self._size = offsets, int(size)
             elif self.tensor:
                 for group in topology.groups():
-                    if group.count and not bases.tensor_shape(group.shape):
+                    if group.count and not (bases.tensor_shape(group.shape) or (
+                            bases.simplex_shape(group.shape) and self.order >= 2)):
                         raise NotImplementedError(
                             f"{self!r} on {group.shape.__name__} cells is not supported "
-                            "yet; it is on segments, quads, pixels, hexahedra and voxels")
+                            "yet; it is on segments, quads, pixels, hexahedra and voxels, "
+                            "and from order 2 on triangles and tetrahedra")
+                    if group.count:
+                        _refuse_simplex_nodes(self, group.shape)
                 counts = tack.empty((n,), tack.i32)
                 for group in topology.groups():
                     if group.count:
@@ -585,7 +649,9 @@ class L2(Space):
 
     def attributes(self, group=None, dtype=None):
         attributes = {"offsets": self.offsets}
-        if self.tensor and group is not None:
+        if self.tensor and group is not None and bases.simplex_shape(group.shape):
+            attributes.update(_simplex_tables(self, group, dtype or tack.f32))
+        elif self.tensor and group is not None:
             attributes.update(_basis_tables(self, group, dtype or tack.f32))
         if self.layout == "cells":
             attributes["layout_cells"] = self.topology.num_cells
