@@ -20,7 +20,14 @@ from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
 pytestmark = pytest.mark.quick
 
-_SPACES = {"cuda": "CudaDeviceMemory", "hip": "HipDeviceMemory"}
+_SPACES = {"cuda": "CudaDeviceMemory", "hip": "HipDeviceMemory",
+           "level_zero": "LevelZeroDeviceMemory"}
+
+
+def _start(arch):
+    """The device of ``arch`` VTK can share memory with: Level Zero's in VTK's
+    context (``init_level_zero``, which also makes it the default)."""
+    return interop.init_level_zero() if arch == "level_zero" else tack.device(arch)
 
 
 def _arches():
@@ -33,10 +40,12 @@ def _arches():
         return found
     for arch, space in _SPACES.items():
         try:
-            device = tack.device(arch)
+            device = _start(arch)
             probe = interop.array_to_vtk(tack.zeros((4,), device=device))
         except (ImportError, RuntimeError, OSError, ValueError):
             continue
+        finally:
+            tack.set_default_device("cpu")
         if probe.GetMemorySpace() == getattr(vtk.vtkDataArray, space):
             found.append(arch)
     return found
@@ -45,8 +54,14 @@ def _arches():
 @pytest.fixture(params=_arches() or [pytest.param(None, marks=pytest.mark.skip(
     reason="needs a VTK with DLPack and Viskores arrays on a GPU Tack has"))])
 def device(request):
+    """The device, with the CPU the default -- but for Level Zero, whose device is
+    the default throughout: a conversion that is not given it finds it there, as
+    ``tack.device("level_zero")`` is another context."""
     tack.set_default_device("cpu")
-    yield tack.device(request.param)
+    device = _start(request.param)
+    if request.param != "level_zero":
+        tack.set_default_device("cpu")
+    yield device
     tack.set_default_device("cpu")
 
 
@@ -99,7 +114,7 @@ def test_a_device_grid_is_shared_on_its_device(device):
     grid, _ = _device_tetrahedra(device)
     data = vtk_to_dataset(grid, dtype=None, copy=False)
     topology = data.topology
-    assert data.device == device                # though the default is the CPU
+    assert data.device == device                # the default is the CPU, but on Level Zero
     assert _shares(data.geometry.values, grid.points.data)
     assert _shares(topology.offsets, grid.cells.offsets_array)
     assert _shares(topology.connectivity, grid.cells.connectivity_array)
@@ -236,7 +251,7 @@ def test_a_filter_given_a_device_moves_its_input_there_once(device):
 
     space = getattr(vtk.vtkDataArray, _SPACES[device.type])
     host = _host_tetrahedra()
-    contour = ta.Contour(field="s", value=0.3, device=device.type)
+    contour = ta.Contour(field="s", value=0.3, device=device)
     contour.SetInputDataObject(host)
     contour.Update()
     surface = contour.GetOutputDataObject(0)
@@ -250,7 +265,7 @@ def test_a_filter_given_a_device_moves_its_input_there_once(device):
     probe = ta.Probe(fields=["v"])
     probe.SetInputConnection(contour.GetOutputPort())
     probe.SetSourceData(host)
-    probe.device = device.type
+    probe.device = device
     probe.Update()
     assert probe.error is None
     assert probe.GetOutputDataObject(0).point_data.GetArray("v").GetMemorySpace() == space
