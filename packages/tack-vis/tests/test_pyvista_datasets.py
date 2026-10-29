@@ -66,20 +66,11 @@ _REFUSALS = re.compile("|".join([
 #: Refusals of one dataset's own: its voxels meet three at nine faces.
 _REFUSALS_OF = {"blood_vessels": "faces are shared by more than two cells"}
 
-_MIXED = ("a surface with lines: the face kernels resolve methods line cells lack "
-          "('side_position', 'num_faces')")
-_VERTICES = "vertices alone: the face kernels resolve 'num_faces', which vertices lack"
 _HIDDEN = ("faces are derived over hidden cells, and the reservoir's inactive cells "
            "overlap ('969 faces are shared by more than two cells')")
 
 #: Known failures, by (dataset, call).
 _BUGS = {
-    **{("cylinder_crossflow", call): _MIXED
-       for call in ("surface_normals", "face_geometry", "upwind_flux", "net_flux",
-                    "divergence", "perot")},
-    **{(name, call): _VERTICES
-       for name in ("particles_lethe", "stars_cloud_hyg")
-       for call in ("net_flux", "divergence", "perot")},
     **{("reservoir", call): _HIDDEN
        for call in ("clip_polyhedra", "extract_surface", "boundary_faces", "feature_edges",
                     "as_polyhedra", "interpolate", "interpolate of order 4", "subdivide",
