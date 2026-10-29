@@ -4051,8 +4051,8 @@ wheel sufficient for file I/O may not expose that route. Level Zero sharing
 also needs a shared allocation context. See <a href="../../users-guide/16-interoperability/">Sharing Arrays</a>.</p>
 <p>MFEM meshes and grid functions enter through <code>tack.interop.mfem</code>; supported
 spaces include H1 orders 1 and 2 and L2 orders 0 and 1 on every shape it
-maps, and H1 and L2 of any order with curved geometry of any order on quads
-and hexahedra; <code>mfem_grid_function</code> gives a field back. Check the <a href="../reference/dataset-api/#interoperability">interop reference</a>
+maps, and H1 and L2 of any order with curved geometry of any order on quads,
+hexahedra, triangles and tetrahedra; <code>mfem_grid_function</code> gives a field back. Check the <a href="../reference/dataset-api/#interoperability">interop reference</a>
 for signatures and the current mapping limits.</p>
 <h2 id="measure-the-boundaries-you-actually-use">Measure the boundaries you actually use<a class="headerlink" href="#measure-the-boundaries-you-actually-use" title="Permanent link">&para;</a></h2>
 <table>
