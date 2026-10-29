@@ -32,9 +32,9 @@ import numpy as np
 
 from tack.dataset import shapes
 
-__all__ = ["FAMILIES", "bernstein", "dof_tables", "entity_nodes", "has_bases", "nodes",
-           "simplex_bernstein", "simplex_lattice", "simplex_shape", "tensor_shape",
-           "view_index", "view_order", "weights"]
+__all__ = ["FAMILIES", "bernstein", "dof_tables", "entity_nodes", "has_bases",
+           "lattice_ijk", "nodes", "simplex_bernstein", "simplex_lattice", "simplex_shape",
+           "simplex_subdivision", "tensor_shape", "view_index", "view_order", "weights"]
 
 FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre")
 #: The families with nodes at the ends, which shared values need.
@@ -227,6 +227,91 @@ def simplex_bernstein(shape, order):
     return m
 
 
+@functools.cache
+def simplex_subdivision(shape, level):
+    """Freudenthal's subdivision of a simplex's order-``level`` lattice: ``level^d``
+    sub-simplices, each a row of ``d + 1`` lattice node numbers (``simplex_lattice``'s),
+    corner 0 first, wound as the shape's own corners (positive volume). They are
+    the Kuhn simplices of a cube lattice in the ordered coordinates ``(i + j + k,
+    j + k, k)``: every cube's six (a square's two) paths from its low corner to its
+    high one, kept where the path stays in the simplex."""
+    import itertools
+
+    p = int(level)
+    lattice = simplex_lattice(shape, level)
+    d = lattice.shape[1]
+    number = {tuple(map(int, row)): n for n, row in enumerate(lattice)}
+
+    def back(u):
+        # ordered (u1 >= u2 >= u3) to lattice (i, j, k)
+        u = [*u, 0]
+        return tuple(u[m] - u[m + 1] for m in range(d))
+
+    rows = []
+    for low in itertools.product(range(p), repeat=d):
+        for axes in itertools.permutations(range(d)):
+            path = [list(low)]
+            for axis in axes:
+                step = list(path[-1])
+                step[axis] += 1
+                path.append(step)
+            if all(all(u[m] >= u[m + 1] for m in range(d - 1)) and u[0] <= p for u in path):
+                rows.append([number[back(u)] for u in path])
+    rows = np.array(rows, np.int32).reshape(-1, d + 1)
+    # Wind each as the shape's corners: positive (signed) measure.
+    corners = np.array(_SIMPLICES[shape][0], np.float64)
+    for r in rows:
+        x = lattice[r].astype(np.float64)
+        if np.linalg.det(x[1:] - x[0]) < 0:
+            r[1], r[2] = r[2], r[1]
+    assert len(rows) == p ** d, (shape, level, len(rows))
+    assert np.linalg.det(corners[1:] - corners[0]) > 0
+    rows.setflags(write=False)
+    return rows
+
+
+@functools.cache
+def lattice_ijk(shape, level):
+    """Each node of a ``shape`` cell's order-``level`` lattice as integer coordinates,
+    in node order: ``(n, d)`` i32, the tensor lattice's ``(i, j, k)`` with the first
+    axis fastest, or the simplex's (``simplex_lattice``)."""
+    if shape in _SIMPLICES:
+        return simplex_lattice(shape, level)
+    corners = _SHAPES[shape][0]
+    d = len(corners[0])
+    q = int(level) + 1
+    out = np.array([[(n // q ** axis) % q for axis in range(d)] for n in range(q ** d)],
+                   np.int32).reshape(-1, d)
+    out.setflags(write=False)
+    return out
+
+
+def _simplex_entity_nodes(shape, order):
+    """``entity_nodes`` for a simplex: each edge's ``order + 1`` nodes from its corner 0,
+    and each triangle face's ``(order + 1)(order + 2) / 2`` in its own lattice order
+    (``a`` steps toward its corner 1 fastest, ``b`` toward its corner 2)."""
+    corners, edge_table, faces = _SIMPLICES[shape]
+    p = int(order)
+    alphas = _multi_indices(shape, order)
+    number = {tuple(map(int, alpha)): n for n, alpha in enumerate(alphas)}
+    d = len(corners[0])
+
+    def node(weights):
+        alpha = [0] * (d + 1)
+        for corner, w in weights.items():
+            alpha[corner] += w
+        return number[tuple(alpha)]
+
+    edges = np.array([[node({c0: p - j, c1: j}) for j in range(p + 1)]
+                      for c0, c1 in _pairs(edge_table, 2)], np.int32).reshape(-1, p + 1)
+    tri = simplex_lattice(shapes.Triangle, order)
+    face_rows = [[node({row[0]: p - a - b, row[1]: a, row[2]: b}) for a, b in tri]
+                 for row in faces]
+    faces_out = np.array(face_rows, np.int32).reshape(len(faces), -1) if faces else \
+        np.zeros((0, len(tri)), np.int32)
+    return edges, faces_out
+
+
 def _simplex_dof_tables(shape, order):
     """``dof_tables`` for a simplex (see there): a face's ``(a, b)`` from its corner 0
     toward its corners 1 and 2; interior nodes numbered in node order."""
@@ -374,6 +459,8 @@ def entity_nodes(shape, order):
     b]`` node ``(a, b)`` of local face ``f`` from its corner 0, ``a`` toward its corner 1
     and ``b`` toward its corner 3. A field's values on an edge or face are its trace
     there, which these name."""
+    if shape in _SIMPLICES:
+        return _simplex_entity_nodes(shape, order)
     if shape not in _SHAPES:
         raise NotImplementedError(f"no tensor nodes on {shape.__name__}")
     corners, edge_table, face_table = _SHAPES[shape]
