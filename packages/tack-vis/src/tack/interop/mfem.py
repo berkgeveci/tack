@@ -270,8 +270,8 @@ def _simplex_lattice_of(fe, order):
     unit points)."""
     from tack.dataset import bases, shapes
 
-    shape = {2: shapes.Triangle, 4: shapes.Tetra}.get(fe.GetGeomType())
-    return bases.simplex_lattice(shape, order) if shape is not None else None
+    shape = {2: shapes.Triangle, 4: shapes.Tetra, 6: shapes.Wedge}.get(fe.GetGeomType())
+    return bases.lattice_ijk(shape, order) if shape is not None else None
 
 
 def _element_dofs(fes, nodes, order):
@@ -291,6 +291,14 @@ def _element_dofs(fes, nodes, order):
     return out
 
 
+def _per_cell(data, order):
+    """A simplex's or wedge's node count at ``order`` (``bases.lattice_ijk``'s)."""
+    from tack.dataset import bases
+
+    shape = next(g.shape for g in data.topology.groups() if g.count)
+    return len(bases.lattice_ijk(shape, order))
+
+
 def _check_tensor(data, what):
     """Cells of one family Tack has bases of any order on: tensor shapes, or
     triangles and tetrahedra. Returns whether they are simplices."""
@@ -301,9 +309,10 @@ def _check_tensor(data, what):
         if not bases.has_bases(group.shape):
             raise NotImplementedError(f"{what} is on segments, quads, hexahedra, triangles "
                                       f"and tetrahedra here, not {group.shape.__name__} cells")
-    families = {bases.simplex_shape(g.shape) for g in groups}
+    families = {bases.simplex_shape(g.shape) or bases.wedge_shape(g.shape) for g in groups}
     if len(families) > 1:
-        raise NotImplementedError(f"{what} takes simplices or tensor shapes, not both")
+        raise NotImplementedError(f"{what} takes simplices or wedges, or tensor shapes, not "
+                                  "both")
     return families.pop() if families else False
 
 
@@ -324,9 +333,8 @@ def _tensor_values(data, mesh, gf, family, order):
         data, order=order, nodes=nodes or ("equispaced" if simplex else "gauss_lobatto"))
     n = data.num_cells
     dim = data.topology.dimension
-    from math import comb
 
-    per_cell = comb(order + dim, dim) if simplex else (order + 1) ** dim
+    per_cell = _per_cell(data, order) if simplex else (order + 1) ** dim
     if family == "H1":
         indices = _h1_indices(data, space, per_cell)
     else:
@@ -401,9 +409,8 @@ def mfem_grid_function(data, field, mesh, fes=None):
     if _nodes_of(fes) != family:
         raise ValueError(f"the MFEM space's nodes are not the field's ({family})")
     n = data.num_cells
-    from math import comb
 
-    per_cell = comb(order + dim, dim) if simplex else (order + 1) ** dim
+    per_cell = _per_cell(data, order) if simplex else (order + 1) ** dim
     if isinstance(space, H1):
         indices = _h1_indices(data, space, per_cell).reshape(-1)
     else:

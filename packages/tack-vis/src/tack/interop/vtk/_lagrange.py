@@ -21,9 +21,11 @@ import tack
 
 #: VTK type: (Tack's linear shape, dimension).
 LAGRANGE = {68: ("Line", 1), 70: ("Quad", 2), 72: ("Hexahedron", 3),
-            69: ("Triangle", 2), 71: ("Tetra", 3)}
-_LINEAR = {68: 3, 70: 9, 72: 12, 69: 5, 71: 10}
-_SIMPLEX = (69, 71)
+            69: ("Triangle", 2), 71: ("Tetra", 3), 73: ("Wedge", 3)}
+_LINEAR = {68: 3, 70: 9, 72: 12, 69: 5, 71: 10, 73: 13}
+#: The types whose nodes are matched by VTK's parametric coordinates: the
+#: simplices and the wedge.
+_SIMPLEX = (69, 71, 73)
 
 
 def _simplex_vtk_index(vtk_type, order):
@@ -32,19 +34,29 @@ def _simplex_vtk_index(vtk_type, order):
     coordinates for each of its points."""
     from math import comb
 
-    from vtkmodules.vtkCommonDataModel import vtkLagrangeTetra, vtkLagrangeTriangle
+    from vtkmodules.vtkCommonDataModel import (
+        vtkLagrangeTetra,
+        vtkLagrangeTriangle,
+        vtkLagrangeWedge,
+    )
 
     from tack.dataset import bases, shapes
 
     dimension = LAGRANGE[vtk_type][1]
-    count = comb(order + dimension, dimension)
-    cell = vtkLagrangeTetra() if vtk_type == 71 else vtkLagrangeTriangle()
+    count = (comb(order + 2, 2) * (order + 1) if vtk_type == 73
+             else comb(order + dimension, dimension))
+    cell = {71: vtkLagrangeTetra, 69: vtkLagrangeTriangle, 73: vtkLagrangeWedge}[vtk_type]()
     cell.GetPointIds().SetNumberOfIds(count)
     cell.GetPoints().SetNumberOfPoints(count)
-    cell.Initialize()
+    if vtk_type == 73:
+        # A wedge's degrees may differ by direction; VTK wants them set first.
+        cell.SetUniformOrderFromNumPoints(count)
+    else:
+        cell.Initialize()
     pcoords = np.asarray(cell.GetParametricCoords(), np.float64).reshape(-1, 3)[:, :dimension]
     steps = np.rint(pcoords * order).astype(np.int64)
-    lattice = bases.simplex_lattice(shapes.Triangle if vtk_type == 69 else shapes.Tetra, order)
+    lattice = bases.lattice_ijk({69: shapes.Triangle, 71: shapes.Tetra,
+                                 73: shapes.Wedge}[vtk_type], order)
     place = {tuple(row): k for k, row in enumerate(steps.tolist())}
     out = np.array([place[tuple(row)] for row in lattice.tolist()], np.int64)
     if sorted(out.tolist()) != list(range(count)):
@@ -77,8 +89,10 @@ def lagrange_order(vtk_type, count):
 
     dimension = LAGRANGE[vtk_type][1]
     if vtk_type in _SIMPLEX:
-        order = next((p for p in range(64) if comb(p + dimension, dimension) >= count), -1)
-        if comb(order + dimension, dimension) != count:
+        size = ((lambda p: comb(p + 2, 2) * (p + 1)) if vtk_type == 73
+                else (lambda p: comb(p + dimension, dimension)))
+        order = next((p for p in range(64) if size(p) >= count), -1)
+        if size(order) != count:
             raise ValueError(f"a Lagrange simplex of {count} nodes has no order in "
                              f"{dimension}D")
         return order
@@ -108,7 +122,7 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
     order = lagrange_order(vtk_type, int(counts[0]))
     per_cell = int(counts[0])
     rows = connectivity.reshape(n, per_cell)
-    corners_of = (LAGRANGE[vtk_type][1] + 1 if vtk_type in _SIMPLEX
+    corners_of = (6 if vtk_type == 73 else LAGRANGE[vtk_type][1] + 1 if vtk_type in _SIMPLEX
                   else 2 ** LAGRANGE[vtk_type][1])
     corner_ids, compact = np.unique(rows[:, :corners_of], return_inverse=True)
     points = np.asarray(grid.points.data, np.float64)
@@ -167,7 +181,7 @@ def tensor_order(data):
     simplex = {shapes.Triangle, shapes.Tetra}
     groups = [g for g in data.topology.groups() if g.count]
     kinds = {g.shape for g in groups}
-    if not groups or not (kinds <= tensor or kinds <= simplex) or \
+    if not groups or not (kinds <= tensor or kinds <= simplex or kinds == {shapes.Wedge}) or \
             len({g.shape.DIMENSION for g in groups}) != 1:
         return 1
     orders = [f.space.order for f in [data.geometry, *data.fields.values()]
@@ -190,9 +204,12 @@ def to_vtk(data, order):
 
     shape = next(g.shape for g in data.topology.groups() if g.count)
     simplex = bases.simplex_shape(shape)
-    vtk_type = ({2: 69, 3: 71} if simplex else {1: 68, 2: 70, 3: 72})[shape.DIMENSION]
+    wedge = bases.wedge_shape(shape)
+    vtk_type = 73 if wedge else ({2: 69, 3: 71} if simplex else
+                                 {1: 68, 2: 70, 3: 72})[shape.DIMENSION]
     space = H1(data, order=order, nodes="equispaced")
-    per_cell = (comb(order + shape.DIMENSION, shape.DIMENSION) if simplex
+    per_cell = (comb(order + 2, 2) * (order + 1) if wedge else
+                comb(order + shape.DIMENSION, shape.DIMENSION) if simplex
                 else (order + 1) ** shape.DIMENSION)
     indices = _h1_indices(data, space, per_cell)
     vtk_to_lex = np.argsort(_vtk_index(vtk_type, order))
