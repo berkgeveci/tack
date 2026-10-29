@@ -56,8 +56,11 @@ _REFUSALS = re.compile("|".join([
 #: Refusals of one dataset's own: its voxels meet three at nine faces.
 _REFUSALS_OF = {"blood_vessels": "faces are shared by more than two cells"}
 
-_HIDDEN = ("faces are derived over hidden cells, and the reservoir's inactive cells "
-           "overlap ('969 faces are shared by more than two cells')")
+#: Faces are the topology's, derived over hidden cells too; the reservoir's
+#: hidden pinch-out (layer 8, zero thickness) gives each of its faces four
+#: claims. The vault's "Hidden cells and faces": faces of the visible cells.
+_HIDDEN = ("faces are derived over hidden cells, and the reservoir's collapsed hidden "
+           "cells claim theirs twice ('969 faces are shared by more than two cells')")
 
 #: Known failures, by (dataset, call).
 _BUGS = {
