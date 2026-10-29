@@ -275,9 +275,16 @@ jobs:
   # tensor L2 field cell-fastest, so any code still assuming blocks fails here
   # (the vault's coefficient-layout proposal, D7).
   l2-cells:
-    name: dataset tests with L2 cell-fastest
+    name: dataset tests with L2 cell-fastest (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
+    # In two shares (conftest's --shard): whole, on four workers, it ran 13 min by
+    # 2026-10-29, and #213's run (more compiled kernels a worker) lost its runner
+    # twice at 15-17 min, with no test failing.
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@v7
@@ -298,7 +305,9 @@ jobs:
           echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
 
       - name: Run the dataset tests with every tensor L2 field cell-fastest
-        run: TACK_L2_LAYOUT=cells uv run pytest -q -n 4 packages/tack-vis/tests
+        run: >-
+          TACK_L2_LAYOUT=cells uv run pytest -q -n 4 --shard ${{ matrix.shard }}/2
+          packages/tack-vis/tests
 
   # ── Warp ───────────────────────────────────────────────────────────
   # The prototype Warp backend (tack.device("warp")) and tack.interop.warp,
