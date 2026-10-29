@@ -39,7 +39,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.arrays import materialize, size_of, width_of
-from tack.dataset import ids
+from tack.dataset import bases, ids
 from tack.dataset.buckets import bucket_order
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import H1, L2, Constant, Values
@@ -244,13 +244,15 @@ def _carry_l2(field, out, cells):
 
 
 @tack.kernel
-def _node_indices(cells, u, per_cell, start, entry, out):
-    # Each cell's nodes' places in its space, entries a cell's nodes together.
+def _node_indices(cells, u, per_cell, node_of, start, entry, out):
+    # Each cell's nodes' places in its space, entries a cell's nodes together, in
+    # lexicographic node order (node_of: to the view's numbering), so two spaces
+    # whose views number a cell's nodes differently list them alike.
     for c in cells:
         first = start + cells.index(c) * per_cell
         entry[cells.entity_id(c)] = first
         for n in range(per_cell):
-            out[first + n] = u.dof_index(c, n)
+            out[first + n] = u.dof_index(c, node_of[n])
 
 
 @tack.kernel
@@ -281,7 +283,7 @@ def _nodes_per_cell(space, shape):
 
     from tack.dataset import bases
 
-    if space.order == 2:
+    if space.order == 2 and not space._any_order(shape):
         return shape.NUM_QUADRATIC
     if bases.simplex_shape(shape):
         return comb(space.order + shape.DIMENSION, shape.DIMENSION)
@@ -305,7 +307,10 @@ def _node_entries(space, values):
     entry = tack.empty((max(topology.num_cells, 1),), ids.at_least(topology.id_dtype, total))
     view_of = Field(space, values)
     for group, start, per_cell in groups:
-        _node_indices(group.view(), view_of.view(group), per_cell, start, entry, index)
+        node_of = (bases.view_index(group.shape, space.order, space._any_order(group.shape))
+                   if bases.has_bases(group.shape) else np.arange(per_cell))
+        _node_indices(group.view(), view_of.view(group), per_cell,
+                      tack.array(np.asarray(node_of, np.int32)), start, entry, index)
     return index, entry, groups, total
 
 
@@ -322,7 +327,8 @@ def _carry_h1(field, out, points, cells):
         sources = cells.ids
     else:
         return None
-    out_space = H1(out, **space.params)
+    # A table numbers the source's cells; the output numbers by entity.
+    out_space = H1(out, **{k: v for k, v in space.params.items() if k != "dofs"})
     values = _like(field.values, out_space.size)
     if points is not None and out.num_points:
         # Points no cell uses still take their values.

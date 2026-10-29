@@ -254,6 +254,15 @@ VTK Bezier cells, and `vtk_to_dataset` reads Bezier cells back into them.
 --8<-- "docs/examples/data_high_order.py:bernstein"
 ```
 
+A space numbers its values by entity -- points, then each edge's, face's and
+cell's -- so cells sharing an edge or face share its values. `dofs=` numbers
+them by an element-to-DOF table instead, as MFEM and VTK's cell grids store
+them: a row per cell giving each of its nodes' value index, in Tack's node order
+for the shape, the corners at the cell's points. `H1(data, order=3,
+dofs=table)` holds the same polynomials as `H1(data, order=3)`, numbered as the
+table says, so data numbered that way is used as it comes; every filter reads it,
+and a filter's output numbers its values by entity again.
+
 ```python
 --8<-- "docs/examples/data_high_order.py:functions"
 ```

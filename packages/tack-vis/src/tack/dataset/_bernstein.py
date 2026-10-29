@@ -36,7 +36,8 @@ def lagrange_companion(space):
         if group.count:
             _refuse_bernstein(space, group.shape)
     if isinstance(space, H1):
-        return H1(space.topology, order=space.order, basis="equispaced")
+        table = {} if space.dofs is None else {"dofs": space.dofs}
+        return H1(space.topology, order=space.order, basis="equispaced", **table)
     return L2(space.topology, order=space.order, basis="equispaced",
               layout=space.params.get("layout", "auto"))
 
@@ -238,15 +239,24 @@ def to_lagrange(data, field):
 
 
 def with_lagrange_geometry(data):
-    """``data``, or a stand-in on its topology whose geometry is a curved Bernstein
-    one's values at the equispaced nodes, the same cells: where a filter places
-    nodes by the geometry's values there (``interpolate``), control points are no
-    positions."""
-    if not (is_bernstein(data.geometry.space) and data.geometry.space.order > 1):
+    """``data``, or a stand-in on its topology whose curved geometry is numbered by
+    entity in a Lagrange basis, the same cells: where a filter places nodes by the
+    geometry's values there (``interpolate``), a Bernstein geometry's control points
+    are no positions (its values at the equispaced nodes stand in), and a geometry
+    numbered by a table does not share the nodes' numbering (it is renumbered)."""
+    space = data.geometry.space
+    if not (isinstance(space, H1) and space.order > 1
+            and (is_bernstein(space) or space.dofs is not None)):
         return data
+    from tack.dataset.algorithms.project import project
     from tack.dataset.dataset import DataSet
 
-    return DataSet(data.topology, to_lagrange(data, data.geometry), **data._frame())
+    geometry = to_lagrange(data, data.geometry) if is_bernstein(space) else data.geometry
+    if geometry.space.dofs is not None:
+        basis = geometry.space.basis
+        entity = H1(data.topology, order=space.order, **({"basis": basis} if basis else {}))
+        geometry = project(data, geometry, entity)
+    return DataSet(data.topology, geometry, **data._frame())
 
 
 def _converted(data, values, space, forward):

@@ -2630,6 +2630,26 @@ def tensor_mixins(shape):
 _by_order = {}
 
 
+class _TableDofs:
+    """An ``H1`` space numbered by an element-to-DOF table (``H1(..., dofs=table)``):
+    cell ``c``'s node ``n``, in Tack's node order for its shape (``bases.lattice_ijk``),
+    is value ``dof_table[c * dof_count + n]``. Mixed in before the space's view,
+    it stands in for numbering by entity: each cell lists its shared values in its
+    own local order, so no orientation is applied."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return self.dof_table[self.entity_id(c) * self.dof_count + n]
+
+
+def with_table(mixin):
+    """``mixin`` read through an element-to-DOF table (``_TableDofs``)."""
+    key = (mixin, "table")
+    if key not in _by_order:
+        _by_order[key] = type(f"{mixin.__name__}Table", (_TableDofs, mixin), {})
+    return _by_order[key]
+
+
 def of_order(mixin, order, bernstein=False):
     """``mixin`` with ``ORDER`` set: one class per (mixin, order), so views of one
     order share their compiled kernels. ``bernstein`` puts the Bernstein
