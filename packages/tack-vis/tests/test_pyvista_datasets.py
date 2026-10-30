@@ -69,8 +69,6 @@ _REFUSALS = re.compile("|".join([
     "surface_normals takes 2D cells .* not a mesh of dimension 0",
     # An order-2 geometry (VTK's quadratic cells, read as order-2 spaces):
     "needs an order-1 H1 geometry",
-    # ... of simplices, and a field of another order on it (the roadmap's round 3):
-    "on a curved geometry of another order",
     # An integer field of order 2 (disc_quads' node numbers), which shrink projects:
     "project averages and interpolates floating-point values",
     "glyphs places arrows at the points: an H1 order-1 geometry",

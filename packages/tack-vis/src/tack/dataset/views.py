@@ -3266,6 +3266,71 @@ def _axis(t, j, nodes, weights, q, bern):
     return _lagrange(t, j, nodes, weights, q)
 
 
+@tack.func
+def _sorted_corners(p0, p1, p2):
+    """Three corners' order by position (``_before``): the canonical frame of a
+    triangle face, the same from every cell holding it."""
+    # Each corner's rank: how many corners come before it.
+    r0 = tack.i32(_before(p1, p0)) + tack.i32(_before(p2, p0))
+    r1 = tack.i32(_before(p0, p1)) + tack.i32(_before(p2, p1))
+    s0 = 0 if r0 == 0 else (1 if r1 == 0 else 2)
+    s1 = 0 if r0 == 1 else (1 if r1 == 1 else 2)
+    s2 = 0 if r0 == 2 else (1 if r1 == 2 else 2)
+    return s0, s1, s2
+
+
+class _CurvedTriangleNodePosition:
+    """A triangle face's node where a curved geometry of another order puts it: the
+    geometry's trace on the face (``trace``, copied by ``dataset._entity_traces`` in
+    the face's canonical frame, its corners by position), evaluated at the node's
+    barycentric coordinates in that frame -- Lagrange on equispaced nodes in
+    Silvester's form, or Bernstein -- so every piece holding the face gets the same
+    bits. The field's nodes are equispaced (``node_points``)."""
+
+    @tack.func
+    def node_position(self, i, j):
+        sa, sb = self.node_steps(i, j)
+        p = self.NODE_ORDER
+        s0, s1, s2 = _sorted_corners(self.corner_position(i, 0), self.corner_position(i, 1),
+                                     self.corner_position(i, 2))
+        # The node's steps toward the row's corners 0, 1 and 2, then in the frame.
+        w0 = p - sa - sb
+        k0 = w0 if s0 == 0 else (sa if s0 == 1 else sb)
+        k1 = w0 if s1 == 0 else (sa if s1 == 1 else sb)
+        k2 = w0 if s2 == 0 else (sa if s2 == 1 else sb)
+        l0 = self.node_points[k0]
+        l1 = self.node_points[k1]
+        l2 = self.node_points[k2]
+        q = self.trace_q
+        g = q - 1
+        base = self.entity_id(i) * q * q
+        x = self.trace[base] * 0.0
+        for jj in range(q):
+            for ii in range(q - jj):
+                w = (_triangle_factor(ii, g, l1, self.trace_bernstein)
+                     * _triangle_factor(jj, g, l2, self.trace_bernstein)
+                     * _triangle_factor(g - ii - jj, g, l0, self.trace_bernstein))
+                if self.trace_bernstein == 1:
+                    for s in range(2, g + 1):
+                        w = w * s                     # g! / (i! j! k!): the factors hold 1/m!
+                x += self.trace[base + ii + q * jj] * w
+        return x
+
+
+@tack.func
+def _triangle_factor(m, g, x, bernstein):
+    """One barycentric factor of a triangle basis of order ``g``: Silvester's
+    ``prod_{s < m} (g x - s) / (s + 1)`` (Lagrange, equispaced), or ``x^m / m!``
+    (Bernstein, the ``g!`` applied by the caller)."""
+    out = x - x + 1.0
+    for s in range(m):
+        if bernstein == 1:
+            out = out * x / (s + 1)
+        else:
+            out = out * (g * x - s) / (s + 1)
+    return out
+
+
 class _CurvedNodePosition:
     """An edge's or quad face's node where a curved geometry of another order puts
     it: the geometry's trace on the entity at the node, from the geometry's values
