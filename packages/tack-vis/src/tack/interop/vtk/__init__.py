@@ -490,11 +490,15 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     no other cells allowed), or polygons (``VTK_POLYGON``), when it becomes a
     ``PolygonalTopology`` (its triangles and quads polygons too, and no other
     cells allowed). Its types, offsets and connectivity stay implicit where
-    VTK's are (a cell type given as a number, affine offsets).
+    VTK's are (a cell type given as a number, affine offsets). Hexahedra with
+    corners repeated as finite-element files write other shapes (Tecplot's
+    bricks, degenerate Exodus and Patran hexahedra) become those shapes: a
+    wedge ``[a, b, c, c, d, e, f, f]`` (in any rotation), a pyramid ``[a, b, c,
+    d, e, e, e, e]``, a tetrahedron ``[a, b, c, c, d, d, d, d]``.
     A ``vtkPolyData`` is taken as the unstructured grid of its cells in VTK's
-    order -- verts, lines, polygons (of three or four points triangles and
-    quads), and triangle strips, each strip as its triangles, which take its
-    cell data -- so the same rules hold: a surface of triangles and quads is
+    order -- verts (a poly vertex as its vertices), lines, polygons (of three or
+    four points triangles and quads), and triangle strips, each strip as its
+    triangles, which take its cell data -- so the same rules hold: a surface of triangles and quads is
     an ``UnstructuredTopology``, one with larger polygons a ``PolygonalTopology``,
     lines a ``PolylineTopology``, and polylines or polygons beside other cells
     are refused.
@@ -536,7 +540,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``dtype=None``. The shared arrays are read-only to Tack and hold VTK's
     arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
     be shared -- an origin to subtract, a type to convert, triangle strips,
-    polyhedra -- is copied as before."""
+    collapsed hexahedra, polyhedra -- is copied as before."""
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
                           id_dtype=id_dtype, origin=origin, copy=copy)
     if grid.GetInformation().Has(_time_key()):
@@ -558,6 +562,64 @@ def _strip_triangles(offsets, connectivity):
     rows = np.stack([connectivity[first], connectivity[first + 1], connectivity[first + 2]], 1)
     rows[odd, 0], rows[odd, 1] = rows[odd, 1], rows[odd, 0].copy()
     return rows, strip
+
+
+def _collapsed_hexahedra(types, offsets, connectivity):
+    """Hexahedra with corners repeated as finite-element files write other shapes
+    (Tecplot's bricks, Patran's and Exodus' degenerate hexahedra) as those
+    shapes: ``[a, b, c, c, d, e, f, f]`` (any rotation of the quads) a wedge
+    ``[a, b, c, d, e, f]``, ``[a, b, c, d, e, e, e, e]`` a pyramid,
+    ``[a, b, c, c, d, d, d, d]`` a tetrahedron, VTK's corner orders keeping the
+    volume's sign. ``(types, offsets, connectivity)`` as NumPy arrays, or None
+    where there is none; any other collapse stays a hexahedron."""
+    import numpy as np
+
+    from tack.arrays import to_host
+
+    def host(values):
+        return np.asarray(values if isinstance(values, np.ndarray) else to_host(values))
+
+    t = host(types).reshape(-1)
+    hexes = np.flatnonzero(t == 12)
+    if not len(hexes):
+        return None
+    o = host(offsets).astype(np.int64)
+    c = host(connectivity)
+    rows = c[o[hexes][:, None] + np.arange(8)]
+    ordered = np.sort(rows, axis=1)
+    distinct = 1 + (np.diff(ordered, axis=1) != 0).sum(axis=1)
+    if (distinct == 8).all():
+        return None
+    # Each converted hexahedron's new type and its corners' places in its row.
+    kinds = np.full(len(hexes), 12, np.uint8)
+    places = np.tile(np.arange(8), (len(hexes), 1))
+    top = (rows[:, 4] == rows[:, 5]) & (rows[:, 5] == rows[:, 6]) & (rows[:, 6] == rows[:, 7])
+    tetra = top & (rows[:, 2] == rows[:, 3]) & (distinct == 4)
+    pyramid = top & (distinct == 5)
+    kinds[tetra], places[tetra, :4] = 10, [0, 1, 2, 4]
+    kinds[pyramid], places[pyramid, :5] = 14, [0, 1, 2, 3, 4]
+    for turn in range(4):
+        bottom = [(turn + i) % 4 for i in range(4)]
+        wedge = ((kinds == 12) & (distinct == 6)
+                 & (rows[:, bottom[2]] == rows[:, bottom[3]])
+                 & (rows[:, 4 + bottom[2]] == rows[:, 4 + bottom[3]]))
+        kinds[wedge] = 13
+        places[wedge, :6] = bottom[:3] + [4 + b for b in bottom[:3]]
+    if (kinds == 12).all():
+        return None
+    t = t.copy()
+    t[hexes] = kinds
+    sizes = np.diff(o)
+    sizes[hexes] = np.select([kinds == 13, kinds == 14, kinds == 10], [6, 5, 4], 8)
+    starts = np.concatenate([[0], np.cumsum(sizes)])
+    within = np.arange(starts[-1]) - np.repeat(starts[:-1], sizes)
+    local = within.copy()
+    rank = np.full(len(t), -1)
+    rank[hexes] = np.arange(len(hexes))
+    entry_rank = np.repeat(rank, sizes)
+    moved = entry_rank >= 0
+    local[moved] = places[entry_rank[moved], within[moved]]
+    return t, starts, c[np.repeat(o[:-1], sizes) + local]
 
 
 def _polydata_as_grid(polydata):
@@ -770,6 +832,10 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
                           if any(t >= 21 for t in unknown) else "")
                 raise ValueError(f"VTK cell types {unknown} ({names}) are not shapes Tack "
                                  f"has{higher}")
+            if 12 in present:
+                collapsed = _collapsed_hexahedra(types, offsets, connectivity)
+                if collapsed is not None:
+                    types, offsets, connectivity = collapsed
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)

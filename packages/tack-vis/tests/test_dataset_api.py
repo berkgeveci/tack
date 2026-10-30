@@ -1120,6 +1120,35 @@ def test_vtk_quadratic_cells_are_refused_when_read():
 
 
 @needs_vtk
+def test_collapsed_hexahedra_are_the_shapes_they_collapse_to():
+    """Finite-element files write wedges, pyramids and tetrahedra as hexahedra with
+    corners repeated; they come across as those shapes, of the same volume as
+    VTK measures the hexahedra, beside a hexahedron that stays one."""
+    cube = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1],
+                     [1, 1, 1], [0, 1, 1]], np.float64)
+    rows = [[0, 1, 2, 3, 4, 5, 6, 7],                     # a hexahedron
+            [0, 1, 2, 2, 4, 5, 6, 6],                     # wedges, the pair in each place
+            [1, 2, 3, 3, 5, 6, 7, 7], [0, 1, 1, 3, 4, 5, 5, 7], [0, 0, 2, 3, 4, 4, 6, 7],
+            [0, 1, 2, 3, 6, 6, 6, 6],                     # a pyramid
+            [0, 1, 2, 2, 6, 6, 6, 6],                     # a tetrahedron
+            [0, 1, 2, 3, 4, 4, 6, 6]]                     # some other collapse: kept
+    grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=cube))
+    grid.cells = (12, vtk.vtkCellArray(offsets=np.arange(0, 8 * len(rows) + 1, 8),
+                                       connectivity=np.ravel(rows)))
+    grid.cell_data["c"] = np.arange(len(rows), dtype=np.float64)
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    np.testing.assert_array_equal(data.topology.types.numpy(),
+                                  [12, 13, 13, 13, 13, 14, 10, 12])
+    np.testing.assert_array_equal(data.topology.connectivity.numpy()[8:14], [0, 1, 2, 4, 5, 6])
+    np.testing.assert_array_equal(data.fields["c"].values.numpy(), np.arange(len(rows)))
+    from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
+
+    sizes = np.asarray(vtkCellSizeFilter()(grid).cell_data["Volume"])
+    np.testing.assert_allclose(td.cell_geometry(data).measure.values.numpy()[:7], sizes[:7],
+                               rtol=1e-12)
+
+
+@needs_vtk
 def test_a_polydatas_poly_vertices_are_its_vertices():
     """A vert cell of several points (vtkTableToPolyData's, vtkParticleReader's) is
     one vertex per point, each taking the poly vertex's cell data, as strips

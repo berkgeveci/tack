@@ -74,22 +74,8 @@ _REFUSALS_OF = dict.fromkeys(("blood_vessels", "action_figure", "room_surface_me
 _HIDDEN = ("faces are derived over hidden cells, and the reservoir's collapsed hidden "
            "cells claim theirs twice ('969 faces are shared by more than two cells')")
 
-#: tecplot_ascii.dat writes its 56 wedges as hexahedra with two pairs of
-#: corners equal (Tecplot's FEBRICK zones, and Exodus, write wedges so). They
-#: convert as hexahedra; each one's collapsed face is an edge, which every
-#: such cell around that edge claims.
-_COLLAPSED = ("wedges written as collapsed hexahedra stay hexahedra, whose collapsed "
-              "faces (an edge) are claimed by every cell around it ('1 faces are "
-              "shared by more than two cells')")
-
 #: Known failures, by (dataset, call).
 _BUGS = {
-    **{("tecplot_ascii", call): _COLLAPSED
-       for call in ("as_polyhedra", "boundary_faces", "clip_polyhedra", "contour by tolerance",
-                    "contour of order 3", "contour_2d", "divergence", "extract_surface",
-                    "face_centers", "face_geometry", "feature_edges", "interpolate",
-                    "interpolate of order 4", "jump", "net_flux", "perot", "subdivide",
-                    "surface_normals", "traces", "upwind_flux")},
     **{("reservoir", call): _HIDDEN
        for call in ("clip_polyhedra", "extract_surface", "boundary_faces", "feature_edges",
                     "as_polyhedra", "interpolate", "interpolate of order 4", "subdivide",
