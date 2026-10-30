@@ -36,6 +36,7 @@ from tack.dataset.algorithms.flow_quantities import FlowQuantities, flow_quantit
 from tack.dataset.algorithms.generate_global_ids import generate_global_ids
 from tack.dataset.algorithms.ghost_cells import ghost_cells, update_ghosts
 from tack.dataset.algorithms.ghost_points import ghost_points
+from tack.dataset.algorithms.glyphs import glyphs
 from tack.dataset.algorithms.gradients import gradients
 from tack.dataset.algorithms.halo_catalog import halo_catalog
 from tack.dataset.algorithms.implicit_values import implicit_values
@@ -70,6 +71,7 @@ from tack.dataset.algorithms.threshold import threshold
 from tack.dataset.algorithms.threshold_points import threshold_points
 from tack.dataset.algorithms.transform import transform
 from tack.dataset.algorithms.triangulate import triangulate
+from tack.dataset.algorithms.tubes import tubes
 from tack.dataset.algorithms.upwind_flux import upwind_flux
 from tack.dataset.algorithms.values_at_centers import values_at_centers
 from tack.dataset.algorithms.voxel_downsample import voxel_downsample
@@ -118,6 +120,7 @@ __all__ = [
     "generate_global_ids",
     "ghost_cells",
     "ghost_points",
+    "glyphs",
     "gradients",
     "halo_catalog",
     "implicit_values",
@@ -154,6 +157,7 @@ __all__ = [
     "threshold_points",
     "transform",
     "triangulate",
+    "tubes",
     "update_ghosts",
     "upwind_flux",
     "values_at_centers",
