@@ -6551,7 +6551,9 @@ clip. Points are compacted and fields carried, as by <code>threshold</code>.</p>
 count them, from the topology's <code>offset</code>), clipped to the grid -- every
 <code>rate</code>-th along each axis (a number, or one per axis): a structured grid
 of the same kind, an image's coordinates still uniform, a rectilinear
-grid's axes cut, explicit points taken. VTK's <code>vtkExtractGrid</code>.</p>
+grid's axes cut, explicit points taken. VTK's <code>vtkExtractGrid</code>. A flat
+image or rectilinear grid also takes VTK's three axes' extent and rates,
+the flat axis's pair and rate ignored.</p>
 <p>An axis of one point is dropped: a k-plane of a 3D grid is a 2D grid,
 whose cells are faces of the 3D grid's. Point fields come along at the
 points kept; each cell takes the cell fields, marks and ids of the input
@@ -6562,33 +6564,7 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/extract_extent.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 46</span>
-<span class="normal"> 47</span>
-<span class="normal"> 48</span>
-<span class="normal"> 49</span>
-<span class="normal"> 50</span>
-<span class="normal"> 51</span>
-<span class="normal"> 52</span>
-<span class="normal"> 53</span>
-<span class="normal"> 54</span>
-<span class="normal"> 55</span>
-<span class="normal"> 56</span>
-<span class="normal"> 57</span>
-<span class="normal"> 58</span>
-<span class="normal"> 59</span>
-<span class="normal"> 60</span>
-<span class="normal"> 61</span>
-<span class="normal"> 62</span>
-<span class="normal"> 63</span>
-<span class="normal"> 64</span>
-<span class="normal"> 65</span>
-<span class="normal"> 66</span>
-<span class="normal"> 67</span>
-<span class="normal"> 68</span>
-<span class="normal"> 69</span>
-<span class="normal"> 70</span>
-<span class="normal"> 71</span>
-<span class="normal"> 72</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 72</span>
 <span class="normal"> 73</span>
 <span class="normal"> 74</span>
 <span class="normal"> 75</span>
@@ -6619,7 +6595,36 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
 <span class="normal">100</span>
 <span class="normal">101</span>
 <span class="normal">102</span>
-<span class="normal">103</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_extent</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">extent</span><span class="p">,</span> <span class="n">rate</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The points of ``data``, a structured grid, in the box ``extent`` -- one</span>
 <span class="sd">    (low, high) pair of point indices per axis, both included, or VTK&#39;s flat</span>
@@ -6627,7 +6632,9 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
 <span class="sd">    count them, from the topology&#39;s ``offset``), clipped to the grid -- every</span>
 <span class="sd">    ``rate``-th along each axis (a number, or one per axis): a structured grid</span>
 <span class="sd">    of the same kind, an image&#39;s coordinates still uniform, a rectilinear</span>
-<span class="sd">    grid&#39;s axes cut, explicit points taken. VTK&#39;s ``vtkExtractGrid``.</span>
+<span class="sd">    grid&#39;s axes cut, explicit points taken. VTK&#39;s ``vtkExtractGrid``. A flat</span>
+<span class="sd">    image or rectilinear grid also takes VTK&#39;s three axes&#39; extent and rates,</span>
+<span class="sd">    the flat axis&#39;s pair and rate ignored.</span>
 
 <span class="sd">    An axis of one point is dropped: a k-plane of a 3D grid is a 2D grid,</span>
 <span class="sd">    whose cells are faces of the 3D grid&#39;s. Point fields come along at the</span>
@@ -6641,6 +6648,7 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
                         <span class="s2">&quot;or a curvilinear grid); extract_cells selects any mesh&#39;s cells&quot;</span><span class="p">)</span>
     <span class="n">dims</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">point_dims</span><span class="p">)</span>
     <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span>
+    <span class="n">extent</span><span class="p">,</span> <span class="n">rate</span> <span class="o">=</span> <span class="n">_vtk_form</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">extent</span><span class="p">,</span> <span class="n">rate</span><span class="p">)</span>
     <span class="n">rates</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">rate</span><span class="p">)]</span> <span class="o">*</span> <span class="n">n</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">ndim</span><span class="p">(</span><span class="n">rate</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rate</span><span class="p">]</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rates</span><span class="p">)</span> <span class="o">!=</span> <span class="n">n</span> <span class="ow">or</span> <span class="nb">min</span><span class="p">(</span><span class="n">rates</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;rate is a step of at least 1, or one per axis, not </span><span class="si">{</span><span class="n">rate</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -6846,6 +6854,9 @@ its segments, from its point values, interpolated from the end first by position
 a crossing at a point whose value is the level is that point, and with
 <code>merge_points</code> every crossing is one vertex, each taking the cell fields
 of the first cell to cross there.</p>
+<p>A cell with a NaN among its values gives no surface (nor lines, nor
+vertices): the surface stops at the cells that hold numbers, and no point
+is placed on an edge to a missing value.</p>
 <p>With <code>merge_points</code>, triangles share their points: by global edge when
 the field and the geometry are both continuous, so the surface is
 watertight; otherwise only within each cell, so a DG field's surface
@@ -6857,13 +6868,7 @@ each came from.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/contour.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">390</span>
-<span class="normal">391</span>
-<span class="normal">392</span>
-<span class="normal">393</span>
-<span class="normal">394</span>
-<span class="normal">395</span>
-<span class="normal">396</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">396</span>
 <span class="normal">397</span>
 <span class="normal">398</span>
 <span class="normal">399</span>
@@ -7037,7 +7042,23 @@ each came from.</p>
 <span class="normal">567</span>
 <span class="normal">568</span>
 <span class="normal">569</span>
-<span class="normal">570</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">570</span>
+<span class="normal">571</span>
+<span class="normal">572</span>
+<span class="normal">573</span>
+<span class="normal">574</span>
+<span class="normal">575</span>
+<span class="normal">576</span>
+<span class="normal">577</span>
+<span class="normal">578</span>
+<span class="normal">579</span>
+<span class="normal">580</span>
+<span class="normal">581</span>
+<span class="normal">582</span>
+<span class="normal">583</span>
+<span class="normal">584</span>
+<span class="normal">585</span>
+<span class="normal">586</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles</span>
@@ -7096,6 +7117,10 @@ each came from.</p>
 <span class="sd">    a crossing at a point whose value is the level is that point, and with</span>
 <span class="sd">    ``merge_points`` every crossing is one vertex, each taking the cell fields</span>
 <span class="sd">    of the first cell to cross there.</span>
+
+<span class="sd">    A cell with a NaN among its values gives no surface (nor lines, nor</span>
+<span class="sd">    vertices): the surface stops at the cells that hold numbers, and no point</span>
+<span class="sd">    is placed on an edge to a missing value.</span>
 
 <span class="sd">    With ``merge_points``, triangles share their points: by global edge when</span>
 <span class="sd">    the field and the geometry are both continuous, so the surface is</span>
@@ -7177,6 +7202,7 @@ each came from.</p>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">groups</span><span class="p">:</span>
         <span class="n">_contour_points</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">levels</span><span class="p">,</span> <span class="n">nlevels</span><span class="p">,</span>
                         <span class="n">per_cell</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">points</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">which</span><span class="p">)</span>
+    <span class="k">del</span> <span class="n">counts</span><span class="p">,</span> <span class="n">starts</span>                    <span class="c1"># the cells&#39; bookkeeping, before the merge</span>
     <span class="k">if</span> <span class="n">triangles</span><span class="p">:</span>
         <span class="n">keep</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">triangles</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
         <span class="n">_distinct_triangles</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">keep</span><span class="p">)</span>
@@ -7186,8 +7212,13 @@ each came from.</p>
             <span class="n">arrays_in</span> <span class="o">=</span> <span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">which</span><span class="p">)</span>
             <span class="n">arrays_out</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_like</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">kept</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">arrays_in</span><span class="p">)</span>
             <span class="n">_kept_triangles</span><span class="p">(</span><span class="n">keep</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="o">*</span><span class="n">arrays_in</span><span class="p">,</span> <span class="o">*</span><span class="n">arrays_out</span><span class="p">)</span>
+            <span class="c1"># The copies alone from here: the tuple held the originals through</span>
+            <span class="c1"># the merge.</span>
+            <span class="k">del</span> <span class="n">arrays_in</span>
             <span class="n">points</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">which</span> <span class="o">=</span> <span class="n">arrays_out</span>
+            <span class="k">del</span> <span class="n">arrays_out</span>
             <span class="n">triangles</span><span class="p">,</span> <span class="n">n</span> <span class="o">=</span> <span class="n">kept</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">kept</span>
+        <span class="k">del</span> <span class="n">keep</span><span class="p">,</span> <span class="n">slots</span>
     <span class="n">triangle_cells</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">triangles</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
     <span class="n">triangle_levels</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">triangles</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">triangles</span><span class="p">:</span>
@@ -7576,7 +7607,10 @@ between the lattice values does.</p>
 <span class="normal">386</span>
 <span class="normal">387</span>
 <span class="normal">388</span>
-<span class="normal">389</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">by</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">inside</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
          <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The part of ``data`` where ``by`` -- point data (a field or its name) or an</span>
@@ -7675,14 +7709,16 @@ between the lattice values does.</p>
             <span class="n">_scan_kinds</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">sums</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
         <span class="n">totals</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">sums</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)]</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">_KINDS</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">totals</span><span class="p">,</span> <span class="n">parts</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="c1"># One kind at a time through one buffer, scanned in place: the kinds&#39;</span>
+        <span class="c1"># scans kept apart until joined held five more arrays of the cells.</span>
+        <span class="n">totals</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">scanned</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">odt</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">kind</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">_KINDS</span><span class="p">):</span>
-            <span class="n">part</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
-            <span class="n">kind_starts</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">odt</span><span class="p">)</span>
-            <span class="n">_split_counts</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
-            <span class="n">totals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">exclusive_scan</span><span class="p">(</span><span class="n">part</span><span class="p">,</span> <span class="n">kind_starts</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
-            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">kind_starts</span><span class="p">)</span>
-        <span class="n">_join_starts</span><span class="p">(</span><span class="o">*</span><span class="n">parts</span><span class="p">,</span> <span class="n">starts</span><span class="p">)</span>
+            <span class="n">_split_counts</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">scanned</span><span class="p">)</span>
+            <span class="n">totals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">exclusive_scan</span><span class="p">(</span><span class="n">scanned</span><span class="p">,</span> <span class="n">scanned</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+            <span class="n">_set_kind</span><span class="p">(</span><span class="n">scanned</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">starts</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">scanned</span>
+    <span class="k">del</span> <span class="n">counts</span>
     <span class="n">n_cells</span><span class="p">,</span> <span class="n">n_conn</span><span class="p">,</span> <span class="n">n_records</span><span class="p">,</span> <span class="n">n_centroids</span><span class="p">,</span> <span class="n">n_members</span> <span class="o">=</span> <span class="n">totals</span>
 
     <span class="n">types</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n_cells</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">)</span>
@@ -7697,6 +7733,7 @@ between the lattice values does.</p>
         <span class="n">_clip_emit</span><span class="p">(</span><span class="n">group</span><span class="o">.</span><span class="n">view</span><span class="p">(),</span> <span class="n">values</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">invert</span><span class="p">,</span> <span class="n">table</span><span class="p">,</span> <span class="n">cases</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">remap</span><span class="p">,</span>
                    <span class="n">whole_type</span><span class="p">,</span> <span class="n">whole_order</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span>
                    <span class="n">keys</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">centroid_offsets</span><span class="p">,</span> <span class="n">centroid_cells</span><span class="p">)</span>
+    <span class="k">del</span> <span class="n">starts</span>                            <span class="c1"># before the merge, the clip&#39;s peak</span>
     <span class="n">_close</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">n_cells</span><span class="p">,</span> <span class="n">n_conn</span><span class="p">)</span>
     <span class="n">_close</span><span class="p">(</span><span class="n">centroid_offsets</span><span class="p">,</span> <span class="n">n_centroids</span><span class="p">,</span> <span class="n">n_members</span><span class="p">)</span>
 
@@ -8405,8 +8442,10 @@ corners reversed from the first), so their normals agree -- VTK's
 consistency, which is on by default there too. A surface no winding makes
 consistent (a Moebius strip) is refused, as is an edge of three or more
 polygons (the mesh's faces refuse it). A polygonal topology is consistent
-already (it refuses to be made otherwise), so it is left as it is. The
-result keeps every field; the normals are dimensionless.</p>
+already (it refuses to be made otherwise), so it is left as it is. Lines
+and vertices among the polygons are kept as they are, with a zero normal
+that adds nothing at their points. The result keeps every field; the
+normals are dimensionless.</p>
 
 
             <details class="mkdocstrings-source">
@@ -8484,7 +8523,11 @@ result keeps every field; the normals are dimensionless.</p>
 <span class="normal">264</span>
 <span class="normal">265</span>
 <span class="normal">266</span>
-<span class="normal">267</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A surface -- triangles, quads, pixels or polygons -- with its normals: the</span>
 <span class="sd">    unit normal of each cell (Newell&#39;s, round its corners) as the cell field</span>
@@ -8502,8 +8545,10 @@ result keeps every field; the normals are dimensionless.</p>
 <span class="sd">    consistency, which is on by default there too. A surface no winding makes</span>
 <span class="sd">    consistent (a Moebius strip) is refused, as is an edge of three or more</span>
 <span class="sd">    polygons (the mesh&#39;s faces refuse it). A polygonal topology is consistent</span>
-<span class="sd">    already (it refuses to be made otherwise), so it is left as it is. The</span>
-<span class="sd">    result keeps every field; the normals are dimensionless.&quot;&quot;&quot;</span>
+<span class="sd">    already (it refuses to be made otherwise), so it is left as it is. Lines</span>
+<span class="sd">    and vertices among the polygons are kept as they are, with a zero normal</span>
+<span class="sd">    that adds nothing at their points. The result keeps every field; the</span>
+<span class="sd">    normals are dimensionless.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">visible</span>
 
     <span class="k">if</span> <span class="n">weights</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;area&quot;</span><span class="p">):</span>
@@ -8520,10 +8565,12 @@ result keeps every field; the normals are dimensionless.</p>
     <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span>
     <span class="n">cell_normals</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="n">areas</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">cell_normals</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                           <span class="c1"># lines and vertices: none,</span>
+    <span class="n">areas</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                  <span class="c1"># nor any area to weigh by</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
         <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>                      <span class="c1"># a polygon&#39;s walk</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">or</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">continue</span>
         <span class="n">view</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="n">_ROUND</span><span class="p">:</span>
@@ -10104,7 +10151,8 @@ positions themselves.</p>
         <p>The geometry moved along <code>direction</code> -- a 3-vector field in the geometry's
 space (or its name), or one 3-vector for every point -- times <code>scale</code>
 and, if given, a scalar field <code>scale_by</code> in the same space (Viskores'
-Warp; VTK's vtkWarpVector and vtkWarpScalar).</p>
+Warp; VTK's vtkWarpVector and vtkWarpScalar). Values on points are that
+space when the geometry is order-1 <code>H1</code> (<code>surface_normals</code>' normals).</p>
 
 
             <details class="mkdocstrings-source">
@@ -10140,12 +10188,16 @@ Warp; VTK's vtkWarpVector and vtkWarpScalar).</p>
 <span class="normal">57</span>
 <span class="normal">58</span>
 <span class="normal">59</span>
-<span class="normal">60</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">warp</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">direction</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">scale_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The geometry moved along ``direction`` -- a 3-vector field in the geometry&#39;s</span>
 <span class="sd">    space (or its name), or one 3-vector for every point -- times ``scale``</span>
 <span class="sd">    and, if given, a scalar field ``scale_by`` in the same space (Viskores&#39;</span>
-<span class="sd">    Warp; VTK&#39;s vtkWarpVector and vtkWarpScalar).&quot;&quot;&quot;</span>
+<span class="sd">    Warp; VTK&#39;s vtkWarpVector and vtkWarpScalar). Values on points are that</span>
+<span class="sd">    space when the geometry is order-1 ``H1`` (``surface_normals``&#39; normals).&quot;&quot;&quot;</span>
     <span class="n">geometry</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span>
@@ -10153,12 +10205,14 @@ Warp; VTK's vtkWarpVector and vtkWarpScalar).</p>
     <span class="k">if</span> <span class="n">factors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">factors</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
+        <span class="n">factors</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">factors</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">factors</span><span class="o">.</span><span class="n">space</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">geometry</span><span class="o">.</span><span class="n">space</span> <span class="ow">or</span> <span class="n">width_of</span><span class="p">(</span><span class="n">factors</span><span class="o">.</span><span class="n">values</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;scale_by must be a scalar field in the geometry&#39;s space&quot;</span><span class="p">)</span>
         <span class="n">factors</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">factors</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">)):</span>
         <span class="n">direction</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">direction</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">direction</span>
+        <span class="n">direction</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">direction</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">direction</span><span class="o">.</span><span class="n">space</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">geometry</span><span class="o">.</span><span class="n">space</span> <span class="ow">or</span> <span class="n">width_of</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;direction must be a 3-vector field in the geometry&#39;s space&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
@@ -10512,29 +10566,33 @@ the "area" 1.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/face_geometry.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">75</span>
-<span class="normal">76</span>
-<span class="normal">77</span>
-<span class="normal">78</span>
-<span class="normal">79</span>
-<span class="normal">80</span>
-<span class="normal">81</span>
-<span class="normal">82</span>
-<span class="normal">83</span>
-<span class="normal">84</span>
-<span class="normal">85</span>
-<span class="normal">86</span>
-<span class="normal">87</span>
-<span class="normal">88</span>
-<span class="normal">89</span>
-<span class="normal">90</span>
-<span class="normal">91</span>
-<span class="normal">92</span>
-<span class="normal">93</span>
-<span class="normal">94</span>
-<span class="normal">95</span>
-<span class="normal">96</span>
-<span class="normal">97</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">face_geometry</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``FaceGeometry(normal, area)``: fields on faces. A face&#39;s normal points out of</span>
 <span class="sd">    its side 0. A 3D mesh&#39;s faces are polygons of any size, the normal the mean</span>
@@ -10546,10 +10604,14 @@ the "area" 1.</p>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span>
     <span class="n">normals</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span>
     <span class="n">areas</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="n">for_each</span><span class="p">(</span><span class="n">_edge_geometry</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">for_each</span><span class="p">(</span><span class="n">_end_geometry</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
+    <span class="n">dimension</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span>
+    <span class="k">if</span> <span class="n">dimension</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="c1"># Faces of a 2D or 1D mesh are its cells&#39; sides; cells of a lower</span>
+        <span class="c1"># dimension (a surface&#39;s lines, a line mesh&#39;s vertices) have none.</span>
+        <span class="n">kernel</span> <span class="o">=</span> <span class="n">_edge_geometry</span> <span class="k">if</span> <span class="n">dimension</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">_end_geometry</span>
+        <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">dimension</span><span class="p">:</span>
+                <span class="n">kernel</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">for_each</span><span class="p">(</span><span class="n">_face_geometry</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
     <span class="c1"># A face of a k-dimensional mesh measures k - 1 dimensions; a polyline end&#39;s</span>
@@ -10784,10 +10846,12 @@ pyramid), as Verdict (VTK's <code>vtkMeshQuality</code>) defines it where it doe
 <ul>
 <li><code>scaled_jacobian</code>: the least, over the cell's corners (and a hexahedron's
   center), of the determinant of its edges there, each scaled to unit length,
-  relative to the ideal cell's: 1 ideal, 0 degenerate, negative inverted.</li>
+  relative to the ideal cell's: 1 ideal, 0 degenerate (an edge of no length
+  at a corner, or a flat cell; Verdict gives its largest value for such a
+  hexahedron), negative inverted.</li>
 <li><code>jacobian_ratio</code>: the least corner determinant over the greatest; 1 for a
-  cell whose Jacobian is constant (every simplex), negative where one corner
-  is inverted.</li>
+  cell whose Jacobian is constant (every simplex), 0 where every corner is
+  degenerate, negative where one corner is inverted.</li>
 <li><code>condition</code>: the greatest, over the corners, condition number of the
   corner's edges against the ideal cell's (<code>|T| |T^-1| / d</code>, <code>T = A W^-1</code>,
   Frobenius norms): 1 ideal, growing as the cell distorts, infinite (the
@@ -10802,16 +10866,18 @@ curved edges at its corners. A pyramid, which has no Jacobian at its apex, is
 measured as Verdict does, by its four tetrahedra over both base diagonals.
 Polyhedra and polygons, which have no reference cell, are measured by the fan
 tetrahedra and triangles Tack evaluates them in, each against the regular
-tetrahedron or equilateral triangle. Their Jacobian measures (scaled
-Jacobian, Jacobian ratio, condition) are therefore on the fan's scale, not
-the shapes': a cube as a polyhedron has a scaled Jacobian of 0.58 and a
-condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron has an
-ideal to score 1 against. Read them as a validity check -- a positive scaled
-Jacobian when every fan tetrahedron is upright (the cell star-shaped from its
-points' mean), zero or negative when one is flat or inverted -- and compare
-polyhedra with each other, not with shaped cells. The edge measures mean the
-same on every cell. Lines and vertices have no Jacobian measures (NaN); a
-line's edges are its segments. Hidden cells are measured like the rest.</p>
+tetrahedron or equilateral triangle, except that a polygon of three or four
+points is measured as the triangle or quad it is. Their Jacobian measures
+(scaled Jacobian, Jacobian ratio, condition) are therefore on the fan's
+scale, not the shapes': a cube as a polyhedron has a scaled Jacobian of 0.58
+and a condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron
+has an ideal to score 1 against. Read them as a validity check -- a positive
+scaled Jacobian when every fan tetrahedron is upright (the cell star-shaped
+from its points' mean), zero or negative when one is flat or inverted -- and
+compare polyhedra with each other, not with shaped cells. The edge measures
+mean the same on every cell. Lines and vertices have no Jacobian measures
+(NaN); a line's edges are its segments. Hidden cells are measured like the
+rest.</p>
 <p>Matched to VTK 9.7.1's <code>vtkMeshQuality</code> to rounding for the scaled Jacobian
 of every linear shape, the condition number of triangles, quads, tetrahedra
 and hexahedra, and the edge ratio of triangles, quads, tetrahedra and wedges.
@@ -10821,63 +10887,7 @@ tests).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/cell_quality.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">466</span>
-<span class="normal">467</span>
-<span class="normal">468</span>
-<span class="normal">469</span>
-<span class="normal">470</span>
-<span class="normal">471</span>
-<span class="normal">472</span>
-<span class="normal">473</span>
-<span class="normal">474</span>
-<span class="normal">475</span>
-<span class="normal">476</span>
-<span class="normal">477</span>
-<span class="normal">478</span>
-<span class="normal">479</span>
-<span class="normal">480</span>
-<span class="normal">481</span>
-<span class="normal">482</span>
-<span class="normal">483</span>
-<span class="normal">484</span>
-<span class="normal">485</span>
-<span class="normal">486</span>
-<span class="normal">487</span>
-<span class="normal">488</span>
-<span class="normal">489</span>
-<span class="normal">490</span>
-<span class="normal">491</span>
-<span class="normal">492</span>
-<span class="normal">493</span>
-<span class="normal">494</span>
-<span class="normal">495</span>
-<span class="normal">496</span>
-<span class="normal">497</span>
-<span class="normal">498</span>
-<span class="normal">499</span>
-<span class="normal">500</span>
-<span class="normal">501</span>
-<span class="normal">502</span>
-<span class="normal">503</span>
-<span class="normal">504</span>
-<span class="normal">505</span>
-<span class="normal">506</span>
-<span class="normal">507</span>
-<span class="normal">508</span>
-<span class="normal">509</span>
-<span class="normal">510</span>
-<span class="normal">511</span>
-<span class="normal">512</span>
-<span class="normal">513</span>
-<span class="normal">514</span>
-<span class="normal">515</span>
-<span class="normal">516</span>
-<span class="normal">517</span>
-<span class="normal">518</span>
-<span class="normal">519</span>
-<span class="normal">520</span>
-<span class="normal">521</span>
-<span class="normal">522</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">522</span>
 <span class="normal">523</span>
 <span class="normal">524</span>
 <span class="normal">525</span>
@@ -10920,7 +10930,67 @@ tests).</p>
 <span class="normal">562</span>
 <span class="normal">563</span>
 <span class="normal">564</span>
-<span class="normal">565</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span>
+<span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span>
+<span class="normal">571</span>
+<span class="normal">572</span>
+<span class="normal">573</span>
+<span class="normal">574</span>
+<span class="normal">575</span>
+<span class="normal">576</span>
+<span class="normal">577</span>
+<span class="normal">578</span>
+<span class="normal">579</span>
+<span class="normal">580</span>
+<span class="normal">581</span>
+<span class="normal">582</span>
+<span class="normal">583</span>
+<span class="normal">584</span>
+<span class="normal">585</span>
+<span class="normal">586</span>
+<span class="normal">587</span>
+<span class="normal">588</span>
+<span class="normal">589</span>
+<span class="normal">590</span>
+<span class="normal">591</span>
+<span class="normal">592</span>
+<span class="normal">593</span>
+<span class="normal">594</span>
+<span class="normal">595</span>
+<span class="normal">596</span>
+<span class="normal">597</span>
+<span class="normal">598</span>
+<span class="normal">599</span>
+<span class="normal">600</span>
+<span class="normal">601</span>
+<span class="normal">602</span>
+<span class="normal">603</span>
+<span class="normal">604</span>
+<span class="normal">605</span>
+<span class="normal">606</span>
+<span class="normal">607</span>
+<span class="normal">608</span>
+<span class="normal">609</span>
+<span class="normal">610</span>
+<span class="normal">611</span>
+<span class="normal">612</span>
+<span class="normal">613</span>
+<span class="normal">614</span>
+<span class="normal">615</span>
+<span class="normal">616</span>
+<span class="normal">617</span>
+<span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span>
+<span class="normal">621</span>
+<span class="normal">622</span>
+<span class="normal">623</span>
+<span class="normal">624</span>
+<span class="normal">625</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_quality</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">measures</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;How well shaped each cell is: a dict of cell fields, one per measure named in</span>
 <span class="sd">    ``measures`` (all of ``MEASURES`` by default). Each is 1 on the ideal cell of its</span>
@@ -10929,10 +10999,12 @@ tests).</p>
 
 <span class="sd">    - ``scaled_jacobian``: the least, over the cell&#39;s corners (and a hexahedron&#39;s</span>
 <span class="sd">      center), of the determinant of its edges there, each scaled to unit length,</span>
-<span class="sd">      relative to the ideal cell&#39;s: 1 ideal, 0 degenerate, negative inverted.</span>
+<span class="sd">      relative to the ideal cell&#39;s: 1 ideal, 0 degenerate (an edge of no length</span>
+<span class="sd">      at a corner, or a flat cell; Verdict gives its largest value for such a</span>
+<span class="sd">      hexahedron), negative inverted.</span>
 <span class="sd">    - ``jacobian_ratio``: the least corner determinant over the greatest; 1 for a</span>
-<span class="sd">      cell whose Jacobian is constant (every simplex), negative where one corner</span>
-<span class="sd">      is inverted.</span>
+<span class="sd">      cell whose Jacobian is constant (every simplex), 0 where every corner is</span>
+<span class="sd">      degenerate, negative where one corner is inverted.</span>
 <span class="sd">    - ``condition``: the greatest, over the corners, condition number of the</span>
 <span class="sd">      corner&#39;s edges against the ideal cell&#39;s (``|T| |T^-1| / d``, ``T = A W^-1``,</span>
 <span class="sd">      Frobenius norms): 1 ideal, growing as the cell distorts, infinite (the</span>
@@ -10947,16 +11019,18 @@ tests).</p>
 <span class="sd">    measured as Verdict does, by its four tetrahedra over both base diagonals.</span>
 <span class="sd">    Polyhedra and polygons, which have no reference cell, are measured by the fan</span>
 <span class="sd">    tetrahedra and triangles Tack evaluates them in, each against the regular</span>
-<span class="sd">    tetrahedron or equilateral triangle. Their Jacobian measures (scaled</span>
-<span class="sd">    Jacobian, Jacobian ratio, condition) are therefore on the fan&#39;s scale, not</span>
-<span class="sd">    the shapes&#39;: a cube as a polyhedron has a scaled Jacobian of 0.58 and a</span>
-<span class="sd">    condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron has an</span>
-<span class="sd">    ideal to score 1 against. Read them as a validity check -- a positive scaled</span>
-<span class="sd">    Jacobian when every fan tetrahedron is upright (the cell star-shaped from its</span>
-<span class="sd">    points&#39; mean), zero or negative when one is flat or inverted -- and compare</span>
-<span class="sd">    polyhedra with each other, not with shaped cells. The edge measures mean the</span>
-<span class="sd">    same on every cell. Lines and vertices have no Jacobian measures (NaN); a</span>
-<span class="sd">    line&#39;s edges are its segments. Hidden cells are measured like the rest.</span>
+<span class="sd">    tetrahedron or equilateral triangle, except that a polygon of three or four</span>
+<span class="sd">    points is measured as the triangle or quad it is. Their Jacobian measures</span>
+<span class="sd">    (scaled Jacobian, Jacobian ratio, condition) are therefore on the fan&#39;s</span>
+<span class="sd">    scale, not the shapes&#39;: a cube as a polyhedron has a scaled Jacobian of 0.58</span>
+<span class="sd">    and a condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron</span>
+<span class="sd">    has an ideal to score 1 against. Read them as a validity check -- a positive</span>
+<span class="sd">    scaled Jacobian when every fan tetrahedron is upright (the cell star-shaped</span>
+<span class="sd">    from its points&#39; mean), zero or negative when one is flat or inverted -- and</span>
+<span class="sd">    compare polyhedra with each other, not with shaped cells. The edge measures</span>
+<span class="sd">    mean the same on every cell. Lines and vertices have no Jacobian measures</span>
+<span class="sd">    (NaN); a line&#39;s edges are its segments. Hidden cells are measured like the</span>
+<span class="sd">    rest.</span>
 
 <span class="sd">    Matched to VTK 9.7.1&#39;s ``vtkMeshQuality`` to rounding for the scaled Jacobian</span>
 <span class="sd">    of every linear shape, the condition number of triangles, quads, tetrahedra</span>
@@ -11660,22 +11734,13 @@ results do not vary from run to run.</p>
 source or target. On polyhedra, polygons and polylines -- no reference
 element -- only cell values and point values project, one into the other,
 each cell averaging over its distinct points. The values must be floating
-point, scalars or vectors.</p>
+point, scalars or vectors, except from order-1 <code>H1</code> into order-1 <code>L2</code>,
+which copies them and takes integers too.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/project.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">214</span>
-<span class="normal">215</span>
-<span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
-<span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">224</span>
 <span class="normal">225</span>
 <span class="normal">226</span>
 <span class="normal">227</span>
@@ -11745,7 +11810,27 @@ point, scalars or vectors.</p>
 <span class="normal">291</span>
 <span class="normal">292</span>
 <span class="normal">293</span>
-<span class="normal">294</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">space</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:</span>
 <span class="sd">    a new field. Values on points or cells count as order-1 ``H1`` and</span>
@@ -11766,7 +11851,8 @@ point, scalars or vectors.</p>
 <span class="sd">    source or target. On polyhedra, polygons and polylines -- no reference</span>
 <span class="sd">    element -- only cell values and point values project, one into the other,</span>
 <span class="sd">    each cell averaging over its distinct points. The values must be floating</span>
-<span class="sd">    point, scalars or vectors.</span>
+<span class="sd">    point, scalars or vectors, except from order-1 ``H1`` into order-1 ``L2``,</span>
+<span class="sd">    which copies them and takes integers too.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">field</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">))</span>
     <span class="n">source</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span>
@@ -11787,6 +11873,15 @@ point, scalars or vectors.</p>
         <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">_take</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">space</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">)),</span>
                      <span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">dtype_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">f64</span><span class="p">):</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">L2</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">space</span><span class="o">.</span><span class="n">varies</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">==</span> <span class="mi">1</span>
+                <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">source</span><span class="o">.</span><span class="n">order</span> <span class="o">==</span> <span class="mi">1</span>
+                <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)):</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">space</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">field</span><span class="p">]):</span>
+                <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
+                    <span class="n">_corner_copies</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span>
+                                   <span class="n">space</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;project averages and interpolates floating-point values, not &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">SideTraces</span><span class="p">):</span>
@@ -12770,10 +12865,10 @@ cell. Cells of a lower dimension than the mesh's have no faces: zero.</p>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">flux</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">)</span>
     <span class="n">out</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="c1"># Cells of a lower dimension (a surface&#39;s triangles among tetrahedra) have</span>
-    <span class="c1"># no faces of the mesh&#39;s, so no flux: zero.</span>
+    <span class="c1"># no faces of the mesh&#39;s, so no flux: zero. Nor has a mesh of vertices any.</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">flux</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
-        <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">_outward_sums</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">flux</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -12908,9 +13003,9 @@ than the mesh's (no faces of it) zero.</p>
     <span class="n">centers</span> <span class="o">=</span> <span class="n">face_centers</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="n">volumes</span><span class="p">,</span> <span class="n">centroids</span> <span class="o">=</span> <span class="n">cell_geometry</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-    <span class="n">out</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                    <span class="c1"># cells of a lower dimension: no faces</span>
+    <span class="n">out</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                       <span class="c1"># cells of a lower dimension, and vertices: no faces</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
-        <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">_perot</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">materialize</span><span class="p">(</span><span class="n">flux</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">areas</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
                    <span class="n">centers</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">centroids</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">volumes</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="c1"># Areas times offsets over volumes cancel: the components&#39; unit.</span>
@@ -13427,7 +13522,9 @@ vtkProbeFilter: the result is <code>where</code> with each field as point data, 
 field with a basis (<code>H1</code>, <code>L2</code>, <code>Constant</code>, values on points)
 evaluated through it in the cell holding the point, values on cells taken
 from that cell, and <code>valid</code> (1, or 0 where no cell holds the point and the
-values are 0). <code>locator</code> reuses a <code>CellLocator</code> of <code>data</code>.</p>
+values are 0). <code>locator</code> reuses a <code>CellLocator</code> of <code>data</code>. An integer
+field evaluated through a basis is rounded to the nearest integer, halves away
+from zero, as VTK's probe rounds; values on cells are copied.</p>
 <p><code>data</code> may be an <code>AMRDataSet</code>: each point goes to the finest level whose
 cell holds it (refined cells hold nothing), so a probe onto an image
 resamples the hierarchy, as VTK's <code>vtkAMRResampleFilter</code> does.</p>
@@ -13452,16 +13549,7 @@ origin in double precision before they are located (the pieces of a
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/probe.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 59</span>
-<span class="normal"> 60</span>
-<span class="normal"> 61</span>
-<span class="normal"> 62</span>
-<span class="normal"> 63</span>
-<span class="normal"> 64</span>
-<span class="normal"> 65</span>
-<span class="normal"> 66</span>
-<span class="normal"> 67</span>
-<span class="normal"> 68</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 68</span>
 <span class="normal"> 69</span>
 <span class="normal"> 70</span>
 <span class="normal"> 71</span>
@@ -13584,7 +13672,25 @@ origin in double precision before they are located (the pieces of a
 <span class="normal">188</span>
 <span class="normal">189</span>
 <span class="normal">190</span>
-<span class="normal">191</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span>
+<span class="normal">207</span>
+<span class="normal">208</span>
+<span class="normal">209</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">probe</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">where</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s fields at the points of ``where`` -- a dataset, or an ``(n, 3)``</span>
 <span class="sd">    array of points, which becomes vertex cells -- as Viskores&#39; Probe and VTK&#39;s</span>
@@ -13592,7 +13698,9 @@ origin in double precision before they are located (the pieces of a
 <span class="sd">    field with a basis (``H1``, ``L2``, ``Constant``, values on points)</span>
 <span class="sd">    evaluated through it in the cell holding the point, values on cells taken</span>
 <span class="sd">    from that cell, and ``valid`` (1, or 0 where no cell holds the point and the</span>
-<span class="sd">    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``.</span>
+<span class="sd">    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``. An integer</span>
+<span class="sd">    field evaluated through a basis is rounded to the nearest integer, halves away</span>
+<span class="sd">    from zero, as VTK&#39;s probe rounds; values on cells are copied.</span>
 
 <span class="sd">    ``data`` may be an ``AMRDataSet``: each point goes to the finest level whose</span>
 <span class="sd">    cell holds it (refined cells hold nothing), so a probe onto an image</span>
@@ -13688,8 +13796,13 @@ origin in double precision before they are located (the pieces of a
             <span class="k">continue</span>
         <span class="n">width</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">width_of</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
-        <span class="n">values</span> <span class="o">=</span> <span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">m</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="n">dtype</span><span class="p">))</span> <span class="k">if</span> <span class="n">width</span>
-                  <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">m</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">))</span>
+        <span class="c1"># An interpolated integer field is evaluated in the geometry&#39;s float</span>
+        <span class="c1"># type and rounded, as VTK&#39;s probe does; cell values are copied.</span>
+        <span class="n">rounds</span> <span class="o">=</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Constant</span><span class="p">)</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">dtype</span><span class="o">.</span><span class="n">numpy_dtype</span><span class="p">,</span>
+                                                                   <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span>
+        <span class="n">evaluated</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span> <span class="k">if</span> <span class="n">rounds</span> <span class="k">else</span> <span class="n">dtype</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">m</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="n">evaluated</span><span class="p">))</span> <span class="k">if</span> <span class="n">width</span>
+                  <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">m</span><span class="p">,),</span> <span class="n">evaluated</span><span class="p">))</span>
         <span class="n">by_id</span> <span class="o">=</span> <span class="n">field_by_id</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span> <span class="k">if</span> <span class="n">search</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">m</span> <span class="ow">and</span> <span class="n">by_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">values</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
@@ -13706,6 +13819,8 @@ origin in double precision before they are located (the pieces of a
                 <span class="k">elif</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
                     <span class="n">_evaluate</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">links</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
                               <span class="n">pcs</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rounds</span><span class="p">:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">_to_integers</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
         <span class="n">out</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">H1</span><span class="p">(</span><span class="n">where</span><span class="p">),</span> <span class="n">values</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
     <span class="n">valid</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">m</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
@@ -13935,6 +14050,7 @@ its origin and time. <code>data</code>'s and <code>grid</code>'s spatial units m
     <span class="n">max_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">max_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">terminal_speed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -13946,11 +14062,13 @@ geometry) by up to <code>steps</code> fixed steps of <code>step_size</code>, as
 Viskores' ParticleAdvection: a dataset of the particles where they stopped,
 one vertex cell each, with <code>steps</code> (taken), <code>time</code> and <code>status</code> (the
 bits <code>SUCCESS</code>, <code>TERMINATE</code>, <code>SPATIAL_BOUNDS</code>, <code>TOOK_ANY_STEPS</code>,
-<code>ZERO_VELOCITY</code>). <code>seeds</code> is an <code>(n, 3)</code> array or a field of
+<code>ZERO_VELOCITY</code>, <code>SLOW_SPEED</code>). <code>seeds</code> is an <code>(n, 3)</code> array or a field of
 3-vectors; <code>integrator</code> <code>"rk4"</code>, <code>"euler"</code> or <code>"rk45"</code> (adaptive steps,
 with <code>tolerance</code>, <code>min_step</code> and <code>max_step</code>: see <code>streamlines</code>);
-<code>max_length</code> stops a particle whose path has gone that far; <code>locator</code>
-reuses a <code>CellLocator</code> of <code>data</code>.
+<code>max_length</code> stops a particle whose path has gone that far, and
+<code>terminal_speed</code> (in the velocity's unit; vtkStreamTracer's) one where the
+velocity's speed is at or below it, before another step, the seed included
+(<code>SLOW_SPEED</code>); <code>locator</code> reuses a <code>CellLocator</code> of <code>data</code>.
 <code>neighbors=True</code> tries the face neighbours of the cell a particle was last
 found in before searching the locator's bins: the same particles, bit for
 bit, in about half the time on large meshes, for a table of six ids a cell
@@ -14034,21 +14152,26 @@ a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
 <span class="normal">75</span>
 <span class="normal">76</span>
 <span class="normal">77</span>
-<span class="normal">78</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">advect</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">steps</span><span class="p">,</span> <span class="n">integrator</span><span class="o">=</span><span class="s2">&quot;rk4&quot;</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
            <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">min_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-           <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+           <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">terminal_speed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Seeds moved through the velocity ``field`` (a 3-vector field or its name: point</span>
 <span class="sd">    data, cell data, or a field of any order or ``L2``, on a straight or curved</span>
 <span class="sd">    geometry) by up to ``steps`` fixed steps of ``step_size``, as</span>
 <span class="sd">    Viskores&#39; ParticleAdvection: a dataset of the particles where they stopped,</span>
 <span class="sd">    one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the</span>
 <span class="sd">    bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,</span>
-<span class="sd">    ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of</span>
+<span class="sd">    ``ZERO_VELOCITY``, ``SLOW_SPEED``). ``seeds`` is an ``(n, 3)`` array or a field of</span>
 <span class="sd">    3-vectors; ``integrator`` ``&quot;rk4&quot;``, ``&quot;euler&quot;`` or ``&quot;rk45&quot;`` (adaptive steps,</span>
 <span class="sd">    with ``tolerance``, ``min_step`` and ``max_step``: see ``streamlines``);</span>
-<span class="sd">    ``max_length`` stops a particle whose path has gone that far; ``locator``</span>
-<span class="sd">    reuses a ``CellLocator`` of ``data``.</span>
+<span class="sd">    ``max_length`` stops a particle whose path has gone that far, and</span>
+<span class="sd">    ``terminal_speed`` (in the velocity&#39;s unit; vtkStreamTracer&#39;s) one where the</span>
+<span class="sd">    velocity&#39;s speed is at or below it, before another step, the seed included</span>
+<span class="sd">    (``SLOW_SPEED``); ``locator`` reuses a ``CellLocator`` of ``data``.</span>
 <span class="sd">    ``neighbors=True`` tries the face neighbours of the cell a particle was last</span>
 <span class="sd">    found in before searching the locator&#39;s bins: the same particles, bit for</span>
 <span class="sd">    bit, in about half the time on large meshes, for a table of six ids a cell</span>
@@ -14070,10 +14193,11 @@ a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
 <span class="sd">    a CPU core: below a few thousand seeds a CPU copy of the mesh is faster</span>
 <span class="sd">    (the Visualization Guide&#39;s &quot;Integrate a steady velocity field&quot;).&quot;&quot;&quot;</span>
     <span class="c1"># A step as a time (&quot;0.5 s&quot;) is in the spatial unit over the velocity&#39;s.</span>
-    <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span> <span class="n">max_length</span> <span class="o">=</span> <span class="n">_parameters</span><span class="p">(</span>
-        <span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;advect&quot;</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span> <span class="n">max_length</span><span class="p">)</span>
+    <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span> <span class="n">terminal_speed</span> <span class="o">=</span> <span class="n">_parameters</span><span class="p">(</span>
+        <span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;advect&quot;</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span>
+        <span class="n">terminal_speed</span><span class="p">)</span>
     <span class="n">adaptive</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tolerance&quot;</span><span class="p">:</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;min_step&quot;</span><span class="p">:</span> <span class="n">min_step</span><span class="p">,</span> <span class="s2">&quot;max_step&quot;</span><span class="p">:</span> <span class="n">max_step</span><span class="p">,</span>
-                <span class="s2">&quot;max_length&quot;</span><span class="p">:</span> <span class="n">max_length</span><span class="p">}</span>
+                <span class="s2">&quot;max_length&quot;</span><span class="p">:</span> <span class="n">max_length</span><span class="p">,</span> <span class="s2">&quot;terminal_speed&quot;</span><span class="p">:</span> <span class="n">terminal_speed</span><span class="p">}</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">PartitionedDataSet</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms._particles</span><span class="w"> </span><span class="kn">import</span> <span class="n">advect_pieces</span>
         <span class="k">return</span> <span class="n">advect_pieces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">steps</span><span class="p">,</span> <span class="n">integrator</span><span class="p">,</span> <span class="n">neighbors</span><span class="p">,</span>
@@ -14122,8 +14246,10 @@ a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
 
         <p>The bits of <code>advect</code>'s <code>status</code> field, Viskores' ParticleStatus:
 <code>SUCCESS</code> (cleared when the seed was outside the mesh), <code>TERMINATE</code> (it
-stopped after its steps or at zero velocity), <code>SPATIAL_BOUNDS</code> (it left
-the mesh), <code>TOOK_ANY_STEPS</code>, <code>ZERO_VELOCITY</code>.</p>
+stopped after its steps, at zero velocity, at its path's <code>max_length</code> or
+below the terminal speed), <code>SPATIAL_BOUNDS</code> (it left the mesh),
+<code>TOOK_ANY_STEPS</code>, <code>ZERO_VELOCITY</code>; and, not Viskores', <code>SLOW_SPEED</code>
+(it stopped where the speed was at or below <code>terminal_speed</code>).</p>
 
 
 
@@ -14176,6 +14302,7 @@ the mesh), <code>TOOK_ANY_STEPS</code>, <code>ZERO_VELOCITY</code>.</p>
     <span class="n">max_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">max_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">terminal_speed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -14200,7 +14327,10 @@ proposes the next, between <code>min_step</code> and <code>max_step</code> (by d
 fiftieth of <code>step_size</code> and twice it, VTK's ratios), in <code>step_unit</code>. A
 step at <code>min_step</code> is taken whatever its error. <code>max_length</code> (any
 integrator) stops a path that has gone that far, its last step landing on
-it in the length unit.</p>
+it in the length unit; <code>terminal_speed</code> (in the velocity's unit, as
+<code>vtkStreamTracer</code>'s) ends a path at its first point where the speed is at
+or below it, so a path stops where the flow does instead of wandering
+through near-still fluid.</p>
 <p>Over a <code>PartitionedDataSet</code> (<code>field</code> by name), paths cross from piece to
 piece, each piece holding the stretches it traced.</p>
 
@@ -14291,10 +14421,13 @@ piece, each piece holding the stretches it traced.</p>
 <span class="normal">131</span>
 <span class="normal">132</span>
 <span class="normal">133</span>
-<span class="normal">134</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">streamlines</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">seeds</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">steps</span><span class="p">,</span> <span class="n">integrator</span><span class="o">=</span><span class="s2">&quot;rk4&quot;</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                 <span class="n">step_unit</span><span class="o">=</span><span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">min_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_step</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                <span class="n">max_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+                <span class="n">max_length</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">neighbors</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">terminal_speed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The paths of ``advect``&#39;s particles, as Viskores&#39; Streamline: each seed&#39;s</span>
 <span class="sd">    positions after every step, the seed first, as one polyline per seed</span>
 <span class="sd">    (a ``PolylineTopology``), with ``seed`` (which seed&#39;s path) on the cells and</span>
@@ -14316,7 +14449,10 @@ piece, each piece holding the stretches it traced.</p>
 <span class="sd">    fiftieth of ``step_size`` and twice it, VTK&#39;s ratios), in ``step_unit``. A</span>
 <span class="sd">    step at ``min_step`` is taken whatever its error. ``max_length`` (any</span>
 <span class="sd">    integrator) stops a path that has gone that far, its last step landing on</span>
-<span class="sd">    it in the length unit.</span>
+<span class="sd">    it in the length unit; ``terminal_speed`` (in the velocity&#39;s unit, as</span>
+<span class="sd">    ``vtkStreamTracer``&#39;s) ends a path at its first point where the speed is at</span>
+<span class="sd">    or below it, so a path stops where the flow does instead of wandering</span>
+<span class="sd">    through near-still fluid.</span>
 
 <span class="sd">    Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to</span>
 <span class="sd">    piece, each piece holding the stretches it traced.&quot;&quot;&quot;</span>
@@ -14324,11 +14460,11 @@ piece, each piece holding the stretches it traced.</p>
     <span class="c1"># a length (&quot;1 mm&quot;), in the spatial unit.</span>
     <span class="k">if</span> <span class="n">step_unit</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;length&quot;</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step_unit is &#39;time&#39; or &#39;length&#39;, not </span><span class="si">{</span><span class="n">step_unit</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span> <span class="n">max_length</span> <span class="o">=</span> <span class="n">_parameters</span><span class="p">(</span>
+    <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span> <span class="n">terminal_speed</span> <span class="o">=</span> <span class="n">_parameters</span><span class="p">(</span>
         <span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">step_unit</span><span class="p">,</span> <span class="s2">&quot;streamlines&quot;</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="n">min_step</span><span class="p">,</span> <span class="n">max_step</span><span class="p">,</span>
-        <span class="n">max_length</span><span class="p">)</span>
+        <span class="n">max_length</span><span class="p">,</span> <span class="n">terminal_speed</span><span class="p">)</span>
     <span class="n">adaptive</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tolerance&quot;</span><span class="p">:</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;min_step&quot;</span><span class="p">:</span> <span class="n">min_step</span><span class="p">,</span> <span class="s2">&quot;max_step&quot;</span><span class="p">:</span> <span class="n">max_step</span><span class="p">,</span>
-                <span class="s2">&quot;max_length&quot;</span><span class="p">:</span> <span class="n">max_length</span><span class="p">}</span>
+                <span class="s2">&quot;max_length&quot;</span><span class="p">:</span> <span class="n">max_length</span><span class="p">,</span> <span class="s2">&quot;terminal_speed&quot;</span><span class="p">:</span> <span class="n">terminal_speed</span><span class="p">}</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.partitioned</span><span class="w"> </span><span class="kn">import</span> <span class="n">PartitionedDataSet</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">PartitionedDataSet</span><span class="p">):</span>
@@ -14661,7 +14797,7 @@ carried and cell fields left behind (a vertex cell has no cell of the input).</p
     <div class="doc doc-contents first">
 
         <p><code>data</code> with <code>normals</code>, each point's unit normal: the direction in which
-its neighbourhood -- its <code>k</code> nearest points (at most 32), itself among
+its neighbourhood -- its <code>k</code> nearest points, itself among
 them, or the points within <code>radius</code> -- spreads least, from the
 eigenvectors of their covariance, as VTK's vtkPCANormalEstimation and
 PDAL's <code>filters.normal</code>. A point with fewer than three neighbours, or
@@ -14730,12 +14866,11 @@ of terrain). <code>periodic</code> (a box) takes neighbours across its faces.
 <span class="normal">171</span>
 <span class="normal">172</span>
 <span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">174</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">point_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">viewpoint</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">direction</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
                   <span class="n">periodic</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` with ``normals``, each point&#39;s unit normal: the direction in which</span>
-<span class="sd">    its neighbourhood -- its ``k`` nearest points (at most 32), itself among</span>
+<span class="sd">    its neighbourhood -- its ``k`` nearest points, itself among</span>
 <span class="sd">    them, or the points within ``radius`` -- spreads least, from the</span>
 <span class="sd">    eigenvectors of their covariance, as VTK&#39;s vtkPCANormalEstimation and</span>
 <span class="sd">    PDAL&#39;s ``filters.normal``. A point with fewer than three neighbours, or</span>
@@ -14758,8 +14893,7 @@ of terrain). <code>periodic</code> (a box) takes neighbours across its faces.
     <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span>
     <span class="n">positions</span> <span class="o">=</span> <span class="n">locator</span><span class="o">.</span><span class="n">positions</span>
     <span class="k">if</span> <span class="n">k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">))</span> <span class="ow">and</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="n">k</span> <span class="o">&lt;=</span> <span class="n">MAX_K</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;k is a whole number from 1 to </span><span class="si">{</span><span class="n">MAX_K</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">k</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="n">check_k</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
         <span class="n">nearest</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">locator</span><span class="o">.</span><span class="n">nearest</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">positions</span><span class="p">)</span>      <span class="c1"># itself included</span>
         <span class="c1"># Rows of k already: CSR offsets 0, k, 2k, ..., stored nowhere.</span>
         <span class="n">offsets</span> <span class="o">=</span> <span class="n">CountingArray</span><span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">)</span>
@@ -14819,11 +14953,13 @@ field, 1 for an outlier. Two tests, as VTK's two filters:</p>
 <li><strong>radius</strong> (<code>radius</code> and <code>min_neighbors</code>): fewer than <code>min_neighbors</code>
   other points within <code>radius</code>, as vtkRadiusOutlierRemoval; <code>neighbors</code>
   gives each point's count.</li>
-<li><strong>statistical</strong> (<code>k</code>, at most 32, and <code>deviations</code>): a mean distance
+<li><strong>statistical</strong> (<code>k</code> and <code>deviations</code>): a mean distance
   to its <code>k</code> nearest other points more than <code>deviations</code> standard
-  deviations above the mean of those means, as vtkStatisticalOutlierRemoval
-  and PCL; <code>mean_distance</code> gives each point's. The mean and deviation are
-  taken in double precision on the host.</li>
+  deviations above the mean of those means, as PCL; <code>mean_distance</code> gives
+  each point's. vtkStatisticalOutlierRemoval also removes the points that
+  many deviations below it (in dense spots, duplicates); the two agree on
+  the mean distances. The mean and deviation are taken in double precision
+  on the host.</li>
 </ul>
 <p>The points are marked, not removed, as PDAL marks them (class 7):
 <code>threshold_points(out, "outlier", 0, 0)</code> keeps the rest. <code>periodic</code> (a
@@ -14902,7 +15038,9 @@ answer. The pieces come back without the copies.</p>
 <span class="normal">103</span>
 <span class="normal">104</span>
 <span class="normal">105</span>
-<span class="normal">106</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">outliers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">min_neighbors</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">deviations</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">periodic</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
              <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` with each point marked an outlier or not: ``outlier``, a u8 point</span>
@@ -14911,11 +15049,13 @@ answer. The pieces come back without the copies.</p>
 <span class="sd">    - **radius** (``radius`` and ``min_neighbors``): fewer than ``min_neighbors``</span>
 <span class="sd">      other points within ``radius``, as vtkRadiusOutlierRemoval; ``neighbors``</span>
 <span class="sd">      gives each point&#39;s count.</span>
-<span class="sd">    - **statistical** (``k``, at most 32, and ``deviations``): a mean distance</span>
+<span class="sd">    - **statistical** (``k`` and ``deviations``): a mean distance</span>
 <span class="sd">      to its ``k`` nearest other points more than ``deviations`` standard</span>
-<span class="sd">      deviations above the mean of those means, as vtkStatisticalOutlierRemoval</span>
-<span class="sd">      and PCL; ``mean_distance`` gives each point&#39;s. The mean and deviation are</span>
-<span class="sd">      taken in double precision on the host.</span>
+<span class="sd">      deviations above the mean of those means, as PCL; ``mean_distance`` gives</span>
+<span class="sd">      each point&#39;s. vtkStatisticalOutlierRemoval also removes the points that</span>
+<span class="sd">      many deviations below it (in dense spots, duplicates); the two agree on</span>
+<span class="sd">      the mean distances. The mean and deviation are taken in double precision</span>
+<span class="sd">      on the host.</span>
 
 <span class="sd">    The points are marked, not removed, as PDAL marks them (class 7):</span>
 <span class="sd">    ``threshold_points(out, &quot;outlier&quot;, 0, 0)`` keeps the rest. ``periodic`` (a</span>
@@ -14935,8 +15075,8 @@ answer. The pieces come back without the copies.</p>
     <span class="k">if</span> <span class="n">radial</span> <span class="ow">and</span> <span class="p">(</span><span class="n">radius</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">min_neighbors</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">radius</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;the radius test takes a radius of at least zero and &quot;</span>
                          <span class="s2">&quot;min_neighbors&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">radial</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">))</span> <span class="ow">and</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="n">k</span> <span class="o">&lt;=</span> <span class="n">MAX_K</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;k is a whole number from 1 to </span><span class="si">{</span><span class="n">MAX_K</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">k</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">radial</span><span class="p">:</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="n">check_k</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">PartitionedDataSet</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">locator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;a PointLocator finds one piece&#39;s points; pieces take none&quot;</span><span class="p">)</span>
@@ -16516,7 +16656,7 @@ over the points within <code>radius</code> (<code>outliers</code>' radius test,
 reach) then gives each owned point the whole's answer. <code>around</code> (a
 <code>PartitionedDataSet</code> with a piece for each of <code>data</code>'s) widens each
 piece's box to its own piece's points too: the targets <code>sph_interpolate</code>
-resamples onto there. With <code>k</code> (at most 32), every point among an owned
+resamples onto there. With <code>k</code>, every point among an owned
 point's <code>k</code> nearest, wherever it is: <code>point_normals</code> and <code>outliers</code>
 by the <code>k</code> nearest then see the whole's neighbours.</p>
 <p>Each copy is a vertex cell marked <code>DUPLICATECELL</code> at a point marked
@@ -16579,7 +16719,7 @@ an image, moved by the box's side: run filters on the result without
 <span class="sd">    reach) then gives each owned point the whole&#39;s answer. ``around`` (a</span>
 <span class="sd">    ``PartitionedDataSet`` with a piece for each of ``data``&#39;s) widens each</span>
 <span class="sd">    piece&#39;s box to its own piece&#39;s points too: the targets ``sph_interpolate``</span>
-<span class="sd">    resamples onto there. With ``k`` (at most 32), every point among an owned</span>
+<span class="sd">    resamples onto there. With ``k``, every point among an owned</span>
 <span class="sd">    point&#39;s ``k`` nearest, wherever it is: ``point_normals`` and ``outliers``</span>
 <span class="sd">    by the ``k`` nearest then see the whole&#39;s neighbours.</span>
 

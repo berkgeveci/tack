@@ -5121,7 +5121,7 @@ given one.</p>
 </tr>
 <tr>
 <td><code>locator.nearest(k, points=None)</code></td>
-<td>the <code>k</code> nearest (<code>k</code> up to <code>MAX_K</code>, 32), <code>(ids, squared_distances)</code>, each <code>(m, k)</code>, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched</td>
+<td>the <code>k</code> nearest (any <code>k</code>; up to 32 kept in private arrays, more in the output's rows), <code>(ids, squared_distances)</code>, each <code>(m, k)</code>, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched</td>
 </tr>
 <tr>
 <td><code>locator.grid()</code></td>
@@ -5154,7 +5154,7 @@ and pass it on; without one, nothing changes (it is compiled out).</p>
 </tr>
 <tr>
 <td><code>outliers(data, k=, deviations=1.0)</code></td>
-<td>marks points whose mean distance to their <code>k</code> nearest is more than <code>deviations</code> standard deviations above the mean of those means, with each one (<code>mean_distance</code>): VTK's <code>vtkStatisticalOutlierRemoval</code> and PCL, the same points, mean and deviation. Marked, not removed, as PDAL marks (class 7): <code>threshold_points(out, "outlier", 0, 0)</code> keeps the rest</td>
+<td>marks points whose mean distance to their <code>k</code> nearest is more than <code>deviations</code> standard deviations above the mean of those means, with each one (<code>mean_distance</code>): PCL's test; VTK's <code>vtkStatisticalOutlierRemoval</code> has the same mean and deviation and also removes points that far below the mean. Marked, not removed, as PDAL marks (class 7): <code>threshold_points(out, "outlier", 0, 0)</code> keeps the rest</td>
 </tr>
 <tr>
 <td><code>surface_normals(data, consistent=True)</code></td>
