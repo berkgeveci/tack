@@ -673,13 +673,14 @@ def dof_tables(shape, order):
     return kind, entity, a, b, corner_node
 
 
-def view_order(shape, order, basis=None):
+def view_order(shape, order, any_order=False):
     """Node ``n`` (lexicographic) as an ``H1`` view of ``order`` numbers its cell's nodes
-    (``dof_index``): itself above order 2, and in a Bernstein basis (a tensor view
-    at every order); at order 2 the quadratic shapes' order -- corners, edges,
-    quad faces, interior (``shapes.Shape.quadratic_node``)."""
+    (``dof_index``): itself above order 2, and with ``any_order`` (a view reading
+    the space as a basis of any order at 2 as well: a Bernstein basis, an
+    element-to-DOF table; ``H1._any_order``); at order 2 the quadratic shapes'
+    order -- corners, edges, quad faces, interior (``shapes.Shape.quadratic_node``)."""
     kind, entity, _, _, _ = dof_tables(shape, order)
-    if order != 2 or basis == BERNSTEIN:
+    if order != 2 or any_order:
         return np.arange(len(kind), dtype=np.int32)
     first_face = shape.NUM_FACES - shape.QUADRATIC_FACES
     return np.array([e if k == CORNER else
@@ -733,9 +734,9 @@ def entity_nodes(shape, order):
     return edges, faces
 
 
-def view_index(shape, order, basis=None):
+def view_index(shape, order, any_order=False):
     """Lexicographic node ``n``'s number in an ``H1`` view of ``order``'s ``dof(c, k)``:
     at order 1 the corner it is (point data reads corners), else ``view_order``."""
     if order == 1:
         return np.asarray(dof_tables(shape, 1)[1], np.int32)
-    return view_order(shape, order, basis)
+    return view_order(shape, order, any_order)

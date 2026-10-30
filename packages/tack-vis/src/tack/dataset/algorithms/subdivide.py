@@ -973,7 +973,9 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                         _trace_simplex_curved(
                             cells, slot_of, per_cell, level, steps, *lattice, first, rank,
                             edge_nodes, face_nodes, _face_stride(group.shape, order),
-                            tack.array(bases.view_index(group.shape, order, family)),
+                            tack.array(bases.view_index(
+                                group.shape, order,
+                                data.geometry.space._any_order(group.shape))),
                             _typed(bases.nodes(family, order), steps),
                             _typed(bases.weights(family, order), steps), order + 1,
                             int(family == bases.BERNSTEIN), geometry)
@@ -1021,7 +1023,8 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                             cells, u, slot_of, per_cell, level, steps,
                             *_lattice_tables(group.shape, level), first, rank, edge_nodes,
                             face_nodes, _face_stride(group.shape, order),
-                            tack.array(bases.view_index(group.shape, order, family)),
+                            tack.array(bases.view_index(group.shape, order,
+                                                        field.space._any_order(group.shape))),
                             _typed(bases.nodes(family, order), steps),
                             _typed(bases.weights(family, order), steps), order + 1,
                             int(family == bases.BERNSTEIN), out)
@@ -1033,7 +1036,9 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
                         _trace_values(cells, u, slot_of, per_cell, level, steps,
                                       *_lattice_tables(group.shape, level), first, rank,
                                       edge_nodes, face_nodes,
-                                      tack.array(bases.view_index(group.shape, order, family)),
+                                      tack.array(bases.view_index(
+                                          group.shape, order,
+                                          field.space._any_order(group.shape))),
                                       _typed(bases.nodes(family, order), steps),
                                       _typed(bases.weights(family, order), steps), order + 1,
                                       int(family == bases.BERNSTEIN), out)

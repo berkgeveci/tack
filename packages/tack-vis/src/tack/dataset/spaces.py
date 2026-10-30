@@ -102,7 +102,7 @@ class Space:
         another device): the same kind and parameters, array parameters copied
         to that topology's device."""
         target = topology.device
-        return type(self)(topology, **{k: v.to_device(target) if _is_array(v) else v
+        return type(self)(topology, **{k: v.to_device(target) if hasattr(v, "to_device") else v
                                        for k, v in self.params.items()})
 
     def attributes(self, group=None, dtype=None):
@@ -149,6 +149,68 @@ def reference_cells(topology, what):
 
 def _is_array(value):
     return isinstance(value, np.ndarray) or hasattr(value, "numpy")
+
+
+@tack.kernel
+def _table_corners(cells, table, per_cell, corner_node, bad):
+    # 1 for a cell whose table row does not put its corners at its points.
+    for c in cells:
+        e = cells.entity_id(c)
+        wrong = 0
+        for j in range(cells.NUM_POINTS):
+            if table[e * per_cell + corner_node[j]] != cells.point_id(c, j):
+                wrong = 1
+        bad[e] = wrong
+
+
+def _checked_table(space):
+    """``space``'s element-to-DOF table as ``(table, nodes a cell, size)``: flat, of
+    ids on the topology's device, refused unless every cell has the same number of
+    nodes, a row of that many, and its corners at its points."""
+    from math import comb
+
+    topology = space.topology
+    _needs_reference_cells(space, "an element-to-DOF table")
+    p = space.order
+    counts = set()
+    for group in topology.groups():
+        if group.count:
+            shape = group.shape
+            _refuse_bernstein(space, shape)
+            if not bases.has_bases(shape):
+                raise NotImplementedError(f"an element-to-DOF table is on segments, quads, "
+                                          f"pixels, hexahedra, voxels, triangles, tetrahedra "
+                                          f"and wedges, not {shape.__name__} cells")
+            _refuse_simplex_nodes(space, shape)
+            counts.add(comb(p + shape.DIMENSION, shape.DIMENSION) if bases.simplex_shape(shape)
+                       else comb(p + 2, 2) * (p + 1) if bases.wedge_shape(shape)
+                       else (p + 1) ** shape.DIMENSION)
+    if len(counts) > 1:
+        raise NotImplementedError("an element-to-DOF table takes cells of one node count")
+    per_cell = counts.pop() if counts else 1
+    n = topology.num_cells
+    dofs = space.dofs
+    host = np.asarray(dofs if isinstance(dofs, np.ndarray) else arrays.to_host(dofs)).reshape(-1)
+    if host.size != n * per_cell or not np.issubdtype(host.dtype, np.integer):
+        raise ValueError(f"dofs is an integer array of {n} rows of {per_cell} nodes, not "
+                         f"{host.dtype} of {host.size} values")
+    if host.size and host.min() < 0:
+        raise ValueError("dofs holds value indices, not negative numbers")
+    size = max(int(host.max()) + 1 if host.size else 0, topology.num_points)
+    table = tack.empty((max(host.size, 1),), ids.at_least(topology.id_dtype, size),
+                       device=topology.device)
+    if host.size:
+        tack.copyto(table, host.astype(table.dtype.numpy_dtype))
+        bad = tack.empty((n,), tack.i32, device=topology.device)
+        for group in topology.groups():
+            if group.count:
+                corners = bases.dof_tables(group.shape, p)[4]
+                _table_corners(group.view(), table, per_cell,
+                               tack.array(np.asarray(corners, np.int32)), bad)
+        if int(bad.numpy().sum()):
+            raise ValueError("an element-to-DOF table puts each cell's corners at its points; "
+                             f"{int(bad.numpy().sum())} of {n} cells' rows do not")
+    return table, per_cell, size
 
 
 def _only_order_one(family, order):
@@ -332,32 +394,65 @@ class H1(Space):
     On triangles, tetrahedra and wedges with ``basis="equispaced"`` (VTK's and
     gmsh's) or ``"bernstein"``: ``(order - 1)(order - 2) / 2`` per
     triangle face or triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per
-    tetrahedron, ``(order - 1)^2 (order - 2) / 2`` per wedge."""
+    tetrahedron, ``(order - 1)^2 (order - 2) / 2`` per wedge.
+
+    ``dofs``, from order 2, numbers the values by an element-to-DOF table instead
+    of by entity, as MFEM and VTK's cell grids store them: an integer array of a
+    row per cell (``(num_cells, nodes)``, or flat), each node's value index in
+    Tack's node order for the shape (``bases.lattice_ijk``: the tensor lattice,
+    first axis fastest; the simplex's and the wedge's lattices). Each cell lists
+    its shared values in its own local order, so the field is continuous when the
+    table shares them; a cell's corners must be its points (so a corner's value
+    is its point's), and the space holds as many values as the largest index and
+    the points need. A filter's output numbers its values by entity again."""
 
     on = "points"
     interpolated = True
     basis = None
+    dofs = None
 
     @classmethod
-    def _params(cls, order=1, basis="gauss_lobatto"):
+    def _params(cls, order=1, basis="gauss_lobatto", dofs=None):
         order = int(order)
         if order < 1:
             raise ValueError(f"H1's order is at least 1, not {order}")
         family = _basis_param(basis, order, bases.CLOSED, "H1")
-        return {"order": order} if family is None else {"order": order, "basis": family}
+        out = {"order": order} if family is None else {"order": order, "basis": family}
+        if dofs is not None:
+            if order < 2:
+                raise ValueError("an element-to-DOF table numbers values of order 2 and "
+                                 "up; order 1's are the points'")
+            if not _is_array(dofs):
+                raise TypeError(f"dofs is an integer array of a row per cell, not {dofs!r}")
+            out["dofs"] = dofs
+        return out
+
+    def _table(self):
+        """The element-to-DOF table, flat on the topology's device, checked: ``(table,
+        nodes a cell, size)``."""
+        if "_dof_table" not in self.__dict__:
+            self.__dict__["_dof_table"] = _checked_table(self)
+        return self.__dict__["_dof_table"]
 
     @property
     def mixin(self):
         if self.order == 1:
             return views._H1Field
-        if self.order == 2 and self.basis != bases.BERNSTEIN:
+        if self.order == 2 and self.basis != bases.BERNSTEIN and self.dofs is None:
             return views._H1Order2Field
-        return views.of_order(views._H1TensorField, self.order,
-                              self.basis == bases.BERNSTEIN)
+        return self._tabled(views.of_order(views._H1TensorField, self.order,
+                                           self.basis == bases.BERNSTEIN))
+
+    def _tabled(self, mixin):
+        """``mixin``, read through the element-to-DOF table if this space has one."""
+        return mixin if self.dofs is None else views.with_table(mixin)
 
     @on_inputs_device
     def _layout(self):
         """Order 2 and up: ``(face_dofs, cell_dofs, size)``, made on first use and kept."""
+        if self.dofs is not None:
+            raise NotImplementedError(f"{self!r} numbers its values by its table, not by "
+                                      "entity: this needs the space numbered by entity")
         if "_order2" not in self.__dict__:
             _needs_reference_cells(self, f"H1 of order {self.order}")
             topology = self.topology
@@ -414,11 +509,30 @@ class H1(Space):
     def size(self):
         if self.order == 1:
             return self.topology.num_points
+        if self.dofs is not None:
+            return self._table()[2]
         return self._layout()[2]
+
+    def __repr__(self):
+        args = ", ".join(f"{k}={'<table>' if k == 'dofs' else repr(v)}"
+                         for k, v in self.params.items())
+        return f"H1({args})"
 
     def attributes(self, group=None, dtype=None):
         if self.order == 1:
             return {}
+        if self.dofs is not None:
+            table, per_cell, _ = self._table()
+            attributes = {"dof_table": table, "dof_count": per_cell}
+            if group is not None:
+                dtype = dtype or tack.f32
+                shape = group.shape
+                attributes.update(_simplex_tables(self, group, dtype)
+                                  if bases.simplex_shape(shape) else
+                                  _wedge_tables(self, group, dtype)
+                                  if bases.wedge_shape(shape) else
+                                  _basis_tables(self, group, dtype))
+            return attributes
         face_dofs, cell_dofs, _ = self._layout()
         topology = self.topology
         attributes = {"edge_base": topology.num_points, "face_dofs": face_dofs,
@@ -456,7 +570,8 @@ class H1(Space):
         but no quadratic functions (the segment) -- not as the quadratic shapes'
         functions."""
         return self.order > 2 or (self.order == 2 and bases.has_bases(shape) and (
-            self.basis == bases.BERNSTEIN or not shape.NUM_QUADRATIC))
+            self.basis == bases.BERNSTEIN or self.dofs is not None
+            or not shape.NUM_QUADRATIC))
 
     def mixin_for(self, key, shape=None):
         _refuse_bernstein(self, shape)
@@ -466,17 +581,20 @@ class H1(Space):
         if shape is shapes.PolyLine and self.order == 1:
             return views._PolylinePointField
         bernstein = self.basis == bases.BERNSTEIN
-        if (self.order > 2 or bernstein) and bases.simplex_shape(shape):
-            return views.of_simplex_order(views._H1SimplexField, self.order, shape.DIMENSION,
-                                          bernstein)
-        if (self.order > 2 or bernstein) and bases.wedge_shape(shape):
-            return views.of_wedge_order(views._H1WedgeField, self.order, bernstein)
+        high = self.order > 2 or bernstein or self.dofs is not None
+        if high and bases.simplex_shape(shape):
+            return self._tabled(views.of_simplex_order(views._H1SimplexField, self.order,
+                                                       shape.DIMENSION, bernstein))
+        if high and bases.wedge_shape(shape):
+            return self._tabled(views.of_wedge_order(views._H1WedgeField, self.order,
+                                                     bernstein))
         if self.order == 2 and shape is not None and self._any_order(shape):
-            return views.of_order(views._H1TensorField, 2, bernstein)
+            return self._tabled(views.of_order(views._H1TensorField, 2, bernstein))
         return self.mixin
 
     def extra_mixins(self, group):
-        if self.order == 1:
+        if self.order == 1 or self.dofs is not None:
+            # A table numbers the values itself: no edges or faces to read.
             return ()
         shape = group.shape
         incidence = ((views._EdgeIncidence,) if self._has_edges(shape) else ()) + \

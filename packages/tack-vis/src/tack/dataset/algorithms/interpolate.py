@@ -1,5 +1,7 @@
 """``interpolate``: a field whose values are a function of position, evaluated at a space's nodes -- each node once, where the geometry puts it -- with no array of node positions stored."""
 
+import numpy as np
+
 import tack
 from tack.dataset import ids
 from tack.dataset.buckets import bucket_order
@@ -84,6 +86,77 @@ def _at_nodes(cells, t, fn, writers, start, first_node, values):
                 values[t.dof_index(c, k)] = fn.at(cells.position(c, cells.quadratic_node(k)))
 
 
+@tack.kernel
+def _table_keys(cells, t, start, per_cell, keys):
+    for c in cells:
+        first = start + cells.index(c) * per_cell
+        for n in range(per_cell):
+            keys[first + n] = t.dof_index(c, n)
+
+
+@tack.kernel
+def _at_point_positions(positions, fn, values):
+    for p in range(positions.shape[0]):
+        values[p] = fn.at(positions[p])
+
+
+@tack.kernel
+def _at_table_nodes(cells, t, fn, writers, start, per_cell, node_kind, values):
+    # Every node but the corners (their points' values, already written), by the
+    # first (cell, node) entry holding it.
+    for c in cells:
+        first = start + cells.index(c) * per_cell
+        for n in range(per_cell):
+            if writers[first + n] == 1 and node_kind[n] != 0:
+                values[t.dof_index(c, n)] = fn.at(cells.position(c, t.node_parametric(n)))
+
+
+def _into_table(data, fn, space, out):
+    """``interpolate`` into an ``H1`` space numbered by an element-to-DOF table: each
+    point at its position, then each other node by the first (cell, node) entry
+    holding it, at the cell's position there."""
+    from tack import arrays
+    from tack.dataset import bases
+
+    values = out.values
+    if not isinstance(data.geometry.space, H1):
+        raise NotImplementedError("an element-to-DOF table's points take their positions "
+                                  "from an H1 geometry")
+    if data.num_points:
+        _at_point_positions(arrays.materialize(data.geometry.values)
+                            if data.geometry.space.order == 1 else
+                            _first_points(data), fn, values)
+    _, per_cell, size = space._table()
+    starts, total = {}, 0
+    groups = [g for g in data.topology.groups() if g.count]
+    for group in groups:
+        starts[group.root] = total
+        total += group.count * per_cell
+    if not total:
+        return
+    keys = tack.empty((total,), ids.at_least(data.id_dtype, size))
+    for group in data.launch_groups("cells", [out]):
+        if group.count:
+            _table_keys(data.domain_view("cells", group), out.view(group), starts[group.root],
+                        per_cell, keys)
+    writers = tack.zeros((total,), tack.i32)
+    order, offsets = bucket_order(keys, size, ids.at_least(data.id_dtype, total))
+    _first_of_each(order, offsets, writers, size)
+    for group in data.launch_groups("cells", [out]):
+        if group.count:
+            kind = bases.dof_tables(group.shape, space.order)[0]
+            _at_table_nodes(data.domain_view("cells", group), out.view(group), fn, writers,
+                            starts[group.root], per_cell,
+                            tack.array(np.asarray(kind, np.int32)), values)
+
+
+def _first_points(data):
+    """A curved geometry's point positions: its first ``num_points`` values."""
+    from tack.dataset.carry import _point_values
+
+    return _point_values(data.geometry.values, data.num_points)
+
+
 def _writers(data, space, target):
     """Which (cell, node) entry writes each of ``space``'s nodes: an i32 flag per
     entry, entries group by group, a cell's nodes together; and where each
@@ -159,6 +232,9 @@ def interpolate(data, function, space, dtype=None, unit=None):
     fn = _Of(function, data.origin)
     values = tack.zeros((space.size,), dtype or data.dtype)
     out = Field(space, values, unit)
+    if isinstance(space, H1) and space.dofs is not None:
+        _into_table(data, fn, space, out)
+        return out
     shared = isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")
     if not (shared and not isinstance(data.geometry.space, H1)):
         # Every node once, from the space's node views.

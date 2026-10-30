@@ -182,7 +182,8 @@ def _onto_nodes(data, field, space, values):
     starts, total = {}, 0
     for group in groups:
         starts[group] = total
-        per_cell = (group.shape.NUM_QUADRATIC if space.order == 2
+        any_order = space._any_order(group.shape)
+        per_cell = (group.shape.NUM_QUADRATIC if space.order == 2 and not any_order
                     else comb(space.order + group.shape.DIMENSION, group.shape.DIMENSION)
                     if bases.simplex_shape(group.shape)
                     else comb(space.order + 2, 2) * (space.order + 1)
@@ -195,7 +196,7 @@ def _onto_nodes(data, field, space, values):
     target = Field(space, _like(values, space.size))
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
-            kernel = (_node_contributions if space.order == 2
+            kernel = (_node_contributions if not space._any_order(group.shape)
                       else _simplex_node_contributions
                       if bases.simplex_shape(group.shape) or bases.wedge_shape(group.shape)
                       else _tensor_node_contributions)

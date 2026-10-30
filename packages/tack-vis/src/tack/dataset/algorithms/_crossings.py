@@ -390,7 +390,8 @@ def _nodes_of(space, shape, dtype, geometry=False):
     family = space.basis or ("gauss_lobatto" if bases.tensor_shape(shape) else "equispaced")
     like = tack.empty((1,), dtype)
     view_of = np.arange((order + 1) ** shape.DIMENSION, dtype=np.int32) if (
-        geometry and bases.tensor_shape(shape)) else bases.view_index(shape, order, space.basis)
+        geometry and bases.tensor_shape(shape)) else bases.view_index(
+        shape, order, space._any_order(shape))
     return _Nodes(edge_nodes, face_nodes, tack.array(np.asarray(view_of, np.int32)),
                   _typed(bases.nodes(family, order), like),
                   _typed(bases.weights(family, order), like), order + 1,
