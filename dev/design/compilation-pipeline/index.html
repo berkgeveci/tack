@@ -2223,6 +2223,34 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../vis-guide/gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -2237,10 +2265,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" >
         
           
-          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
             
   
   
@@ -2258,8 +2286,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2381,10 +2409,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_8" >
         
           
-          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_8" id="__nav_3_8_label" tabindex="0">
             
   
   
@@ -2402,8 +2430,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4661,7 +4689,10 @@ describes each pass in detail.</p>
 <p>GPU backends pack scalars on <em>another</em> clone. Packing rewrites the
 parameter list, and dispatch needs the unpacked IR to evaluate the launch
 range against the original arguments. <code>KernelVariant.ir</code> keeps the
-pre-packing IR. The payload holds the compiled kernel, the <code>pack_info</code>,
+pre-packing IR's skeleton (<code>_launch_skeleton</code>: name, parameters, and the
+parallel loop with its bounds but no body), once the variant is stored to
+disk; the bodies were most of what variants held, tens of megabytes for a
+high-order filter's kernels. The payload holds the compiled kernel, the <code>pack_info</code>,
 and on CUDA, HIP and Level Zero the pack buffers, which are allocated once
 per variant (Metal makes a buffer of a launch's scalars per launch). The
 CPU annotates the variant's IR in place, since nothing else reads it.

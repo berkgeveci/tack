@@ -2235,6 +2235,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -2256,10 +2284,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" checked>
         
           
-          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="">
             
   
   
@@ -2277,8 +2305,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3629,10 +3657,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_8" >
         
           
-          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="">
+          <label class="md-nav__link" for="__nav_3_8" id="__nav_3_8_label" tabindex="">
             
   
   
@@ -3650,8 +3678,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -6927,7 +6955,10 @@ each came from.</p>
 <span class="normal">564</span>
 <span class="normal">565</span>
 <span class="normal">566</span>
-<span class="normal">567</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">567</span>
+<span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles</span>
@@ -7005,7 +7036,10 @@ each came from.</p>
 
     <span class="k">if</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_in_unit_of</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;contour&#39;s tolerance&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="p">(</span><span class="n">dimension</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">dimension</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+    <span class="c1"># Polyhedra, polygons and polylines have no lattice to subdivide: linear,</span>
+    <span class="c1"># they are cut as they are (as threshold and clip cut them).</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">dimension</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">dimension</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
             <span class="n">subdivides</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">subdivision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">subdivision</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
             <span class="ow">or</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
         <span class="n">_scalar_floating</span><span class="p">(</span><span class="s2">&quot;contour&quot;</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
@@ -7879,7 +7913,9 @@ for the faces to stand on.</p>
 
 
 <a href="#tack.dataset.algorithms.extract_edges.extract_edges" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">extract_edges</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">edges</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">extract_edges</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span> <span class="n">edges</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -7894,48 +7930,66 @@ on the same points -- an order-2 field's or geometry's values at the
 points, the lines being linear. Cell and face fields are left behind: an
 edge lies on every cell and face around it. The geometry must be <code>H1</code>:
 an <code>L2</code> one has no shared points for the lines to stand on.</p>
+<p><code>subdivision=n</code> follows a curved geometry: each edge is <code>n</code> line cells
+through <code>n - 1</code> new points on the geometry's trace along it, appended after
+the points (edge <code>i</code>'s from its lower point id), so a mesh's outline shows
+its cells as they are. The output's geometry is the points' positions and
+the new ones; no other field is kept, and no ghost marks. A straight
+geometry's edges are lines already, and are not subdivided.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/extract_edges.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">24</span>
-<span class="normal">25</span>
-<span class="normal">26</span>
-<span class="normal">27</span>
-<span class="normal">28</span>
-<span class="normal">29</span>
-<span class="normal">30</span>
-<span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span>
-<span class="normal">50</span>
-<span class="normal">51</span>
-<span class="normal">52</span>
-<span class="normal">53</span>
-<span class="normal">54</span>
-<span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">extract_edges</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">edges</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_edges</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">edges</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``edges`` -- an edge ``Set``, a set&#39;s name in ``data.sets``, or edge ids (a</span>
 <span class="sd">    field or an array); by default every edge of the topology (``edges()``) --</span>
 <span class="sd">    as a dataset of line cells on the same points, cell ``i`` running from edge</span>
@@ -7945,7 +7999,14 @@ an <code>L2</code> one has no shared points for the lines to stand on.</p>
 <span class="sd">    on the same points -- an order-2 field&#39;s or geometry&#39;s values at the</span>
 <span class="sd">    points, the lines being linear. Cell and face fields are left behind: an</span>
 <span class="sd">    edge lies on every cell and face around it. The geometry must be ``H1``:</span>
-<span class="sd">    an ``L2`` one has no shared points for the lines to stand on.&quot;&quot;&quot;</span>
+<span class="sd">    an ``L2`` one has no shared points for the lines to stand on.</span>
+
+<span class="sd">    ``subdivision=n`` follows a curved geometry: each edge is ``n`` line cells</span>
+<span class="sd">    through ``n - 1`` new points on the geometry&#39;s trace along it, appended after</span>
+<span class="sd">    the points (edge ``i``&#39;s from its lower point id), so a mesh&#39;s outline shows</span>
+<span class="sd">    its cells as they are. The output&#39;s geometry is the points&#39; positions and</span>
+<span class="sd">    the new ones; no other field is kept, and no ghost marks. A straight</span>
+<span class="sd">    geometry&#39;s edges are lines already, and are not subdivided.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">refuse_hidden</span><span class="p">,</span> <span class="n">visible</span>
 
     <span class="k">if</span> <span class="n">edges</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -7969,6 +8030,11 @@ an <code>L2</code> one has no shared points for the lines to stand on.</p>
     <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
         <span class="n">_edge_cells</span><span class="p">(</span><span class="n">chosen</span><span class="p">,</span> <span class="n">found</span><span class="o">.</span><span class="n">rows</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">subdivision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">subdivision</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span>
+            <span class="ow">and</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;extract_edges keeps only the geometry when it subdivides edges&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_subdivided</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">chosen</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">subdivision</span><span class="p">))</span>
     <span class="n">lines</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">lines</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">edges_to_cells</span><span class="o">=</span><span class="n">edges_to_cells</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -8240,7 +8306,7 @@ left out. The geometry must be <code>H1</code>.</p>
 
 
 <a href="#tack.dataset.algorithms.surface_normals.surface_normals" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -8249,7 +8315,10 @@ left out. The geometry must be <code>H1</code>.</p>
 unit normal of each cell (Newell's, round its corners) as the cell field
 <code>cell_normals</code>, and at each point the cells' around it summed and made unit
 as the point field <code>normals</code> (zero at a point of no cells), as VTK's
-<code>vtkPolyDataNormals</code> computes them without splitting.</p>
+<code>vtkPolyDataNormals</code> computes them without splitting. With <code>weights="area"</code>
+each cell's normal is weighted by its area in the sum, so slivers -- which
+cut surfaces have where a crossing lands near a corner, and whose normals
+are far off the surface's -- count for little.</p>
 <p>With <code>consistent</code>, the polygons are first wound alike: each connected
 region's as its first (lowest-numbered) cell winds, by union-find over the
 edges on the device, the cells that wind against it turned round (their
@@ -8263,20 +8332,7 @@ result keeps every field; the normals are dimensionless.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/surface_normals.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">181</span>
-<span class="normal">182</span>
-<span class="normal">183</span>
-<span class="normal">184</span>
-<span class="normal">185</span>
-<span class="normal">186</span>
-<span class="normal">187</span>
-<span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">194</span>
 <span class="normal">195</span>
 <span class="normal">196</span>
 <span class="normal">197</span>
@@ -8327,13 +8383,38 @@ result keeps every field; the normals are dimensionless.</p>
 <span class="normal">242</span>
 <span class="normal">243</span>
 <span class="normal">244</span>
-<span class="normal">245</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A surface -- triangles, quads, pixels or polygons -- with its normals: the</span>
 <span class="sd">    unit normal of each cell (Newell&#39;s, round its corners) as the cell field</span>
 <span class="sd">    ``cell_normals``, and at each point the cells&#39; around it summed and made unit</span>
 <span class="sd">    as the point field ``normals`` (zero at a point of no cells), as VTK&#39;s</span>
-<span class="sd">    ``vtkPolyDataNormals`` computes them without splitting.</span>
+<span class="sd">    ``vtkPolyDataNormals`` computes them without splitting. With ``weights=&quot;area&quot;``</span>
+<span class="sd">    each cell&#39;s normal is weighted by its area in the sum, so slivers -- which</span>
+<span class="sd">    cut surfaces have where a crossing lands near a corner, and whose normals</span>
+<span class="sd">    are far off the surface&#39;s -- count for little.</span>
 
 <span class="sd">    With ``consistent``, the polygons are first wound alike: each connected</span>
 <span class="sd">    region&#39;s as its first (lowest-numbered) cell winds, by union-find over the</span>
@@ -8346,6 +8427,8 @@ result keeps every field; the normals are dimensionless.</p>
 <span class="sd">    result keeps every field; the normals are dimensionless.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">visible</span>
 
+    <span class="k">if</span> <span class="n">weights</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;area&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;weights is None or &#39;area&#39;, not </span><span class="si">{</span><span class="n">weights</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">data</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span> <span class="ow">and</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;surface_normals takes 2D cells (a surface), not a mesh of &quot;</span>
@@ -8357,6 +8440,7 @@ result keeps every field; the normals are dimensionless.</p>
         <span class="n">data</span> <span class="o">=</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Same</span><span class="p">())</span>    <span class="c1"># not the input</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span>
     <span class="n">cell_normals</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">areas</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
         <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>                      <span class="c1"># a polygon&#39;s walk</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
@@ -8365,9 +8449,9 @@ result keeps every field; the normals are dimensionless.</p>
         <span class="n">view</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="n">_ROUND</span><span class="p">:</span>
             <span class="n">_shape_normals</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">_table</span><span class="p">((</span><span class="s2">&quot;round&quot;</span><span class="p">,</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">_ROUND</span><span class="p">[</span><span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="p">]),</span>
-                           <span class="n">cell_normals</span><span class="p">)</span>
+                           <span class="n">cell_normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">_polygon_normals</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">cell_normals</span><span class="p">)</span>
+            <span class="n">_polygon_normals</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">cell_normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
     <span class="n">points</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span>
     <span class="n">points</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="c1"># Each cell&#39;s normal at each of its corners, as point_links lays them out</span>
@@ -8377,7 +8461,8 @@ result keeps every field; the normals are dimensionless.</p>
         <span class="n">corners</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">total</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
             <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
-                <span class="n">_corner_normals</span><span class="p">(</span><span class="n">group</span><span class="o">.</span><span class="n">view</span><span class="p">(),</span> <span class="n">cell_normals</span><span class="p">,</span> <span class="n">start_of</span><span class="p">[</span><span class="n">group</span><span class="o">.</span><span class="n">root</span><span class="p">],</span> <span class="n">corners</span><span class="p">)</span>
+                <span class="n">_corner_normals</span><span class="p">(</span><span class="n">group</span><span class="o">.</span><span class="n">view</span><span class="p">(),</span> <span class="n">cell_normals</span><span class="p">,</span> <span class="n">areas</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">weights</span> <span class="o">==</span> <span class="s2">&quot;area&quot;</span><span class="p">),</span>
+                                <span class="n">start_of</span><span class="p">[</span><span class="n">group</span><span class="o">.</span><span class="n">root</span><span class="p">],</span> <span class="n">corners</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">point_offsets</span><span class="p">,</span> <span class="n">point_ids</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">cell_points</span><span class="p">()</span>
         <span class="n">total</span> <span class="o">=</span> <span class="n">point_ids</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
@@ -8385,6 +8470,8 @@ result keeps every field; the normals are dimensionless.</p>
         <span class="k">if</span> <span class="n">total</span><span class="p">:</span>
             <span class="n">_entry_cells</span><span class="p">(</span><span class="n">point_offsets</span><span class="p">,</span> <span class="n">owners</span><span class="p">)</span>
         <span class="n">corners</span> <span class="o">=</span> <span class="n">_take</span><span class="p">(</span><span class="n">cell_normals</span><span class="p">,</span> <span class="n">owners</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">weights</span> <span class="o">==</span> <span class="s2">&quot;area&quot;</span> <span class="ow">and</span> <span class="n">total</span><span class="p">:</span>
+            <span class="n">_weighted</span><span class="p">(</span><span class="n">corners</span><span class="p">,</span> <span class="n">owners</span><span class="p">,</span> <span class="n">areas</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">total</span><span class="p">:</span>
         <span class="n">offsets</span><span class="p">,</span> <span class="n">links</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">point_links</span><span class="p">()</span>
         <span class="n">_average_links</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">links</span><span class="p">,</span> <span class="n">corners</span><span class="p">,</span> <span class="n">points</span><span class="p">)</span>
@@ -9252,7 +9339,8 @@ edges, and sets carry over; fields needing a reference element are dropped.</p>
         <p>A shape-based dataset of 2D cells -- triangles, quads, pixels -- as a polygonal
 one: each cell's points in order become its loop. Fields carry as
 <code>as_polyhedra</code>'s do, but values on faces and edges, whose numbering the
-polygonal topology derives afresh, are dropped.</p>
+polygonal topology derives afresh, are dropped. A polygonal dataset comes
+back as it is (a new dataset on the same topology).</p>
 
 
             <details class="mkdocstrings-source">
@@ -9282,14 +9370,20 @@ polygonal topology derives afresh, are dropped.</p>
 <span class="normal">51</span>
 <span class="normal">52</span>
 <span class="normal">53</span>
-<span class="normal">54</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">as_polygons</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A shape-based dataset of 2D cells -- triangles, quads, pixels -- as a polygonal</span>
 <span class="sd">    one: each cell&#39;s points in order become its loop. Fields carry as</span>
 <span class="sd">    ``as_polyhedra``&#39;s do, but values on faces and edges, whose numbering the</span>
-<span class="sd">    polygonal topology derives afresh, are dropped.&quot;&quot;&quot;</span>
+<span class="sd">    polygonal topology derives afresh, are dropped. A polygonal dataset comes</span>
+<span class="sd">    back as it is (a new dataset on the same topology).&quot;&quot;&quot;</span>
 
     <span class="n">topology</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">topology</span><span class="p">,</span> <span class="n">PolygonalTopology</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">topology</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">topology</span><span class="o">.</span><span class="n">groups</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> cells are not 2D&quot;</span><span class="p">)</span>
@@ -9420,27 +9514,27 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1163</span>
-<span class="normal">1164</span>
-<span class="normal">1165</span>
-<span class="normal">1166</span>
-<span class="normal">1167</span>
-<span class="normal">1168</span>
-<span class="normal">1169</span>
-<span class="normal">1170</span>
-<span class="normal">1171</span>
-<span class="normal">1172</span>
-<span class="normal">1173</span>
-<span class="normal">1174</span>
-<span class="normal">1175</span>
-<span class="normal">1176</span>
-<span class="normal">1177</span>
-<span class="normal">1178</span>
-<span class="normal">1179</span>
-<span class="normal">1180</span>
-<span class="normal">1181</span>
-<span class="normal">1182</span>
-<span class="normal">1183</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1139</span>
+<span class="normal">1140</span>
+<span class="normal">1141</span>
+<span class="normal">1142</span>
+<span class="normal">1143</span>
+<span class="normal">1144</span>
+<span class="normal">1145</span>
+<span class="normal">1146</span>
+<span class="normal">1147</span>
+<span class="normal">1148</span>
+<span class="normal">1149</span>
+<span class="normal">1150</span>
+<span class="normal">1151</span>
+<span class="normal">1152</span>
+<span class="normal">1153</span>
+<span class="normal">1154</span>
+<span class="normal">1155</span>
+<span class="normal">1156</span>
+<span class="normal">1157</span>
+<span class="normal">1158</span>
+<span class="normal">1159</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
 <span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>
@@ -11116,7 +11210,8 @@ point, scalars or vectors.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/project.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">215</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">214</span>
+<span class="normal">215</span>
 <span class="normal">216</span>
 <span class="normal">217</span>
 <span class="normal">218</span>
@@ -11195,8 +11290,7 @@ point, scalars or vectors.</p>
 <span class="normal">291</span>
 <span class="normal">292</span>
 <span class="normal">293</span>
-<span class="normal">294</span>
-<span class="normal">295</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">294</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">space</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:</span>
 <span class="sd">    a new field. Values on points or cells count as order-1 ``H1`` and</span>

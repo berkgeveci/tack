@@ -2223,6 +2223,34 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../vis-guide/gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
     
@@ -2237,10 +2265,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" >
         
           
-          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
             
   
   
@@ -2258,8 +2286,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2381,10 +2409,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_8" >
         
           
-          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_8" id="__nav_3_8_label" tabindex="0">
             
   
   
@@ -2402,8 +2430,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4222,8 +4250,14 @@ NumPy storage, first touched by the kernel that writes it.</p>
 <li><code>_optimize_module()</code> runs the new pass manager's O3 pipeline
   (<code>create_pipeline_tuning_options(3)</code>) with loop vectorization, SLP
   vectorization, loop unrolling and loop interleaving enabled.</li>
-<li>The JIT is <code>llvm.create_mcjit_compiler</code> with a <em>second</em> target machine,
-  because MCJIT takes ownership of the one it is given.</li>
+<li>The code joins a shared MCJIT engine (<code>cpu_pool.shared_jit</code>, a new one
+  every <code>MODULES_PER_ENGINE</code> (32) modules), under an entry name made unique
+  (<code>unique_name</code>: the process's random tag and a serial number), since
+  kernels of one name would otherwise share an address there. Once the code
+  is made the engine drops the module's IR (<code>remove_module</code>). An engine of
+  its own cost about 950 KB a variant, mostly its memory manager's sections
+  and state; shared, about 75 KB. Each variant keeps its engine alive, so an
+  engine goes with the last of its variants.</li>
 </ul>
 <p>No fast-math flags are emitted, so floating-point semantics follow
 <a href="../numerical-semantics/">Numerical Semantics</a>. The entry point is looked up
@@ -4244,9 +4278,11 @@ compiled kernel and under a lock, a <code>__tack_chunk(pack, start, end)</code> 
 loads the arguments from 8-byte slots (<code>pack_args</code>) and calls the kernel at
 its address.</p>
 <p><strong>Disk cache.</strong> <code>set_object_cache</code> captures the object code MCJIT emits, and
-<code>variant_artifact</code> stores it; <code>load_variant</code> adds it to a new engine with
+<code>variant_artifact</code> stores it after a header and the entry's unique name
+(<code>_STORED</code>); <code>load_variant</code> adds it to the shared engine with
 <code>add_object_file</code>, which takes about 0.4 ms and runs neither LLVM's
-optimizer nor its code generator.</p>
+optimizer nor its code generator. The name is unique across processes too,
+so code stored by two processes loads into one engine.</p>
 <p><strong>Launch.</strong> Whether a dispatch runs serially or fans out across the pool is
 decided by measurement, not a fixed threshold; <a href="../cpu-threading/">CPU Threading
 Policy</a> describes it in full. A second compiled variant
