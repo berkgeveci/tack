@@ -317,26 +317,39 @@ def _bend_at(p):
     return np.stack([x + 0.15 * y * y, y + 0.2 * x * x, z + 0.1 * x * y], axis=1)
 
 
-@pytest.mark.parametrize("cells", ["hexahedra", "quads"])
+@pytest.mark.parametrize("cells", ["hexahedra", "quads", "tetrahedra", "triangles", "wedges",
+                                   "tetrahedra-bernstein"])
 @pytest.mark.parametrize("geometry_order, order", [(2, 3), (2, 4), (3, 2), (3, 4)])
 def test_nodes_lie_on_a_curved_geometry_of_another_order(f64_backend, cells, geometry_order,
                                                         order):
     """A field's nodes on a curved geometry of another order are where the geometry
     puts them: on edges and faces its trace there, from the entity's own geometry
-    values in a frame its corners fix. The bend is of degree 2, so the curved
-    geometry is the bend of the straight cells exactly, and the field's nodes are
-    the bend of its nodes on the straight cells. They were refused."""
+    values in a frame its corners fix (a triangle face's by its corners' positions,
+    in the Lagrange or Bernstein basis of the geometry). The bend is of degree 2,
+    so the curved geometry is the bend of the straight cells exactly, and the
+    field's nodes are the bend of its nodes on the straight cells. They were
+    refused, on simplices and wedges until this round."""
     if cells == "hexahedra":
         grid = td.uniform_grid((4, 4, 3), spacing=(0.4, 0.5, 0.6), dtype=tack.f64)
         straight = _rotated(td.extract_cells(grid, np.arange(grid.num_cells)), seed=3)
-    else:
+    elif cells == "quads":
         grid = td.uniform_grid((4, 5), spacing=(0.4, 0.5), dtype=tack.f64)
         straight = td.extract_cells(grid, np.arange(grid.num_cells))
+    elif cells == "triangles":
+        straight = td.tetrahedralize(td.uniform_grid((4, 5), spacing=(0.4, 0.5),
+                                                     dtype=tack.f64))
+    else:
+        grid = td.uniform_grid((3, 4, 3), spacing=(0.4, 0.5, 0.6), dtype=tack.f64)
+        straight = _wedges(grid) if cells == "wedges" else td.tetrahedralize(grid)
     vec = tack.vec3(tack.f64)
+    if cells == "wedges":                               # _wedges' positions are f32
+        straight = td.DataSet(straight.topology,
+                              tack.array(straight.positions().astype(np.float64), vec))
     expected = _bend_at(td.interpolate(straight, _identity, td.H1(straight, order=order),
                                        dtype=vec).values.numpy())
     curved = td.DataSet(straight.topology, straight.geometry.values)
-    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=geometry_order),
+    basis = {"basis": "bernstein"} if cells.endswith("bernstein") else {}
+    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=geometry_order, **basis),
                                      dtype=vec)
     nodes = td.interpolate(curved, _identity, td.H1(curved, order=order), dtype=vec)
     np.testing.assert_allclose(nodes.values.numpy(), expected, atol=1e-12)
@@ -346,6 +359,28 @@ def test_nodes_lie_on_a_curved_geometry_of_another_order(f64_backend, cells, geo
                                        dtype=vec).values.numpy())
     nodes = td.interpolate(curved, _identity, td.L2(curved, order=order), dtype=vec)
     np.testing.assert_allclose(nodes.values.numpy(), expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("cells", ["tetrahedra", "wedges"])
+def test_nodes_on_a_curved_geometry_are_the_same_bits_in_every_piece(f64_backend, cells):
+    """A triangle face's nodes on a curved geometry of another order come from the
+    face's own trace in its canonical frame (its corners by position), so a piece
+    holding some of the cells around a face places them to the same bits as the
+    whole: every node of each piece is one of the whole's, exactly."""
+    grid = td.uniform_grid((3, 4, 3), spacing=(0.4, 0.5, 0.6), dtype=tack.f64)
+    vec = tack.vec3(tack.f64)
+    straight = _wedges(grid) if cells == "wedges" else td.tetrahedralize(grid)
+    whole = td.DataSet(straight.topology,
+                       tack.array(straight.positions().astype(np.float64), vec))
+    whole.geometry = td.interpolate(whole, _bend, td.H1(whole, order=2), dtype=vec)
+    nodes = td.interpolate(whole, _identity, td.H1(whole, order=4), dtype=vec).values.numpy()
+    known = {tuple(row) for row in nodes.tolist()}
+    n = whole.num_cells
+    for cells_of in (np.arange(0, n, 2), np.arange(n // 3, n), np.arange(n - 1, -1, -3)):
+        piece = td.extract_cells(whole, cells_of)
+        assert piece.geometry.space.order == 2
+        mine = td.interpolate(piece, _identity, td.H1(piece, order=4), dtype=vec)
+        assert all(tuple(row) in known for row in mine.values.numpy().tolist())
 
 
 @pytest.mark.parametrize("cells, basis", [("hexahedra", "gauss_lobatto"),
