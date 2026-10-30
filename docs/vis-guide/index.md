@@ -378,8 +378,9 @@ lifetime and read-only rules.
 
 ### Level Zero
 
-Level Zero device pointers need a shared allocation context. With a compatible
-VTK/Viskores Kokkos-SYCL build, initialize before allocating arrays:
+Level Zero device pointers need a shared allocation context. With a VTK that
+holds Level Zero memory (its own device arrays, or a Viskores Kokkos-SYCL
+build), initialize before allocating arrays:
 
 ```python
 from tack.interop.vtk import init_level_zero

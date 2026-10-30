@@ -44,10 +44,12 @@ any array is exchanged:
     from tack.interop.vtk import init_level_zero
     init_level_zero()        # instead of tack.set_default_device("level_zero")
 
-That starts Tack's Level Zero backend inside the context VTK's Viskores
-device already uses. It needs VTK built with Viskores on Kokkos' SYCL
-backend. Fields made before the call belong to another context and cannot
-be shared.
+That starts Tack's Level Zero backend inside VTK's Level Zero context: one
+VTK was given, the one its Viskores device runs in where VTK is built with
+Viskores on Kokkos' SYCL backend, or else one VTK makes itself. It needs a
+VTK that reports that context (``dlpack_support.level_zero_handles``) and a
+Level Zero GPU. Fields made before the call belong to another context and
+cannot be shared.
 """
 
 import tack
@@ -73,16 +75,18 @@ def init_level_zero():
     default device, and return it.
 
     Raises RuntimeError if this VTK cannot report one: it predates
-    ``dlpack_support.level_zero_handles``, was built without Viskores on
-    Kokkos' SYCL backend, or is not running on a Level Zero device.
+    ``dlpack_support.level_zero_handles``, or has no Level Zero context (no
+    device arrays of its own, and no Viskores on Kokkos' SYCL backend, on a
+    Level Zero GPU).
     """
     dlpack_support = _dlpack_support()
     handles = getattr(dlpack_support, "level_zero_handles", lambda: None)()
     if not handles:
         raise RuntimeError(
             "this VTK has no Level Zero context to share. Device interop on "
-            "Level Zero needs VTK built with Viskores on Kokkos' SYCL "
-            "backend, running on a Level Zero device.")
+            "Level Zero needs a VTK that holds Level Zero memory (its own "
+            "device arrays, or Viskores on Kokkos' SYCL backend) and a Level "
+            "Zero GPU.")
     return tack.set_default_device("level_zero", external_context=handles)
 
 
