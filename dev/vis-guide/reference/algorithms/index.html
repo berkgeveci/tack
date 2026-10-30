@@ -7230,10 +7230,10 @@ each came from.</p>
                                           <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">),</span>
             <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="n">exact</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cell_family</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cell_families</span>
 
-        <span class="c1"># A mesh subdivision does not take (mixed families, pyramids) says so.</span>
-        <span class="n">_cell_family</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> field (by subdivision)&quot;</span><span class="p">)</span>
+        <span class="c1"># A mesh subdivision does not take (pyramids, mixed dimensions) says so.</span>
+        <span class="n">_cell_families</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> field (by subdivision)&quot;</span><span class="p">)</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> H1 field is not built: it would subdivide &quot;</span>
             <span class="s2">&quot;each cell, and its corner values alone give the contour of a linear field&quot;</span><span class="p">)</span>
@@ -8124,8 +8124,11 @@ as a dataset of line cells on the same points, cell <code>i</code> running from 
 its cell sets; point fields (<code>H1</code>, values on points) and point sets stay
 on the same points -- an order-2 field's or geometry's values at the
 points, the lines being linear. Cell and face fields are left behind: an
-edge lies on every cell and face around it. The geometry must be <code>H1</code>:
-an <code>L2</code> one has no shared points for the lines to stand on.</p>
+edge lies on every cell and face around it.</p>
+<p>An <code>L2</code> geometry has no shared points for the lines to stand on: its cells
+need not meet (a periodic mesh's seam, a mesh displaced by a DG field), so
+each cell's edges are drawn on their own points, in cell order, along the
+cell's map (<code>subdivision</code> segments each), with no fields kept.</p>
 <p><code>subdivision=n</code> follows a curved geometry: each edge is <code>n</code> line cells
 through <code>n - 1</code> new points on the geometry's trace along it, appended after
 the points (edge <code>i</code>'s from its lower point id), so a mesh's outline shows
@@ -8136,34 +8139,7 @@ geometry's edges are lines already, and are not subdivided.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/extract_edges.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 58</span>
-<span class="normal"> 59</span>
-<span class="normal"> 60</span>
-<span class="normal"> 61</span>
-<span class="normal"> 62</span>
-<span class="normal"> 63</span>
-<span class="normal"> 64</span>
-<span class="normal"> 65</span>
-<span class="normal"> 66</span>
-<span class="normal"> 67</span>
-<span class="normal"> 68</span>
-<span class="normal"> 69</span>
-<span class="normal"> 70</span>
-<span class="normal"> 71</span>
-<span class="normal"> 72</span>
-<span class="normal"> 73</span>
-<span class="normal"> 74</span>
-<span class="normal"> 75</span>
-<span class="normal"> 76</span>
-<span class="normal"> 77</span>
-<span class="normal"> 78</span>
-<span class="normal"> 79</span>
-<span class="normal"> 80</span>
-<span class="normal"> 81</span>
-<span class="normal"> 82</span>
-<span class="normal"> 83</span>
-<span class="normal"> 84</span>
-<span class="normal"> 85</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 85</span>
 <span class="normal"> 86</span>
 <span class="normal"> 87</span>
 <span class="normal"> 88</span>
@@ -8184,7 +8160,43 @@ geometry's edges are lines already, and are not subdivided.</p>
 <span class="normal">103</span>
 <span class="normal">104</span>
 <span class="normal">105</span>
-<span class="normal">106</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_edges</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">edges</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``edges`` -- an edge ``Set``, a set&#39;s name in ``data.sets``, or edge ids (a</span>
 <span class="sd">    field or an array); by default every edge of the topology (``edges()``) --</span>
@@ -8194,8 +8206,12 @@ geometry's edges are lines already, and are not subdivided.</p>
 <span class="sd">    its cell sets; point fields (``H1``, values on points) and point sets stay</span>
 <span class="sd">    on the same points -- an order-2 field&#39;s or geometry&#39;s values at the</span>
 <span class="sd">    points, the lines being linear. Cell and face fields are left behind: an</span>
-<span class="sd">    edge lies on every cell and face around it. The geometry must be ``H1``:</span>
-<span class="sd">    an ``L2`` one has no shared points for the lines to stand on.</span>
+<span class="sd">    edge lies on every cell and face around it.</span>
+
+<span class="sd">    An ``L2`` geometry has no shared points for the lines to stand on: its cells</span>
+<span class="sd">    need not meet (a periodic mesh&#39;s seam, a mesh displaced by a DG field), so</span>
+<span class="sd">    each cell&#39;s edges are drawn on their own points, in cell order, along the</span>
+<span class="sd">    cell&#39;s map (``subdivision`` segments each), with no fields kept.</span>
 
 <span class="sd">    ``subdivision=n`` follows a curved geometry: each edge is ``n`` line cells</span>
 <span class="sd">    through ``n - 1`` new points on the geometry&#39;s trace along it, appended after</span>
@@ -8209,6 +8225,11 @@ geometry's edges are lines already, and are not subdivided.</p>
         <span class="n">data</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">refuse_hidden</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;extract_edges of chosen edges&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">L2</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">edges</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;extract_edges of an L2 geometry draws every cell&#39;s &quot;</span>
+                                      <span class="s2">&quot;own edges, without fields&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_own_cell_edges</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">subdivision</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">))</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;extract_edges keeps the points, so needs an H1 geometry&quot;</span><span class="p">)</span>
     <span class="n">topology</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span>
@@ -10007,27 +10028,27 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1154</span>
-<span class="normal">1155</span>
-<span class="normal">1156</span>
-<span class="normal">1157</span>
-<span class="normal">1158</span>
-<span class="normal">1159</span>
-<span class="normal">1160</span>
-<span class="normal">1161</span>
-<span class="normal">1162</span>
-<span class="normal">1163</span>
-<span class="normal">1164</span>
-<span class="normal">1165</span>
-<span class="normal">1166</span>
-<span class="normal">1167</span>
-<span class="normal">1168</span>
-<span class="normal">1169</span>
-<span class="normal">1170</span>
-<span class="normal">1171</span>
-<span class="normal">1172</span>
-<span class="normal">1173</span>
-<span class="normal">1174</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1328</span>
+<span class="normal">1329</span>
+<span class="normal">1330</span>
+<span class="normal">1331</span>
+<span class="normal">1332</span>
+<span class="normal">1333</span>
+<span class="normal">1334</span>
+<span class="normal">1335</span>
+<span class="normal">1336</span>
+<span class="normal">1337</span>
+<span class="normal">1338</span>
+<span class="normal">1339</span>
+<span class="normal">1340</span>
+<span class="normal">1341</span>
+<span class="normal">1342</span>
+<span class="normal">1343</span>
+<span class="normal">1344</span>
+<span class="normal">1345</span>
+<span class="normal">1346</span>
+<span class="normal">1347</span>
+<span class="normal">1348</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
 <span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>
@@ -13418,8 +13439,9 @@ a tuple for a vector field.</p>
 its own map (<code>quadrature</code>: collapsed onto simplices and wedges), with enough
 points for the field's order and the geometry's, so a curved geometry and a
 field of any order (<code>H1</code>, <code>L2</code>, point and cell data) integrate exactly, to
-rounding. Polyhedra take their measure from <code>cell_geometry</code> and integrate
-cell data. Only the cells of the mesh's dimension count, as in VTK: a volume's
+rounding. Polyhedra, polygons and polylines take their measure from
+<code>cell_geometry</code> and integrate cell data and point data, which is linear on
+their pieces (sub-tetrahedra, triangles, segments), exactly. Only the cells of the mesh's dimension count, as in VTK: a volume's
 integrals leave out its surfaces, lines and vertices. Only owned cells count
 (ghost marks), and a <code>PartitionedDataSet</code> sums its pieces over every rank, in
 the pieces' order.</p>
@@ -13427,46 +13449,47 @@ the pieces' order.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/integrate.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
-<span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
-<span class="normal">225</span>
-<span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
-<span class="normal">229</span>
-<span class="normal">230</span>
-<span class="normal">231</span>
-<span class="normal">232</span>
-<span class="normal">233</span>
-<span class="normal">234</span>
-<span class="normal">235</span>
-<span class="normal">236</span>
-<span class="normal">237</span>
-<span class="normal">238</span>
-<span class="normal">239</span>
-<span class="normal">240</span>
-<span class="normal">241</span>
-<span class="normal">242</span>
-<span class="normal">243</span>
-<span class="normal">244</span>
-<span class="normal">245</span>
-<span class="normal">246</span>
-<span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span>
-<span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span>
+<span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The measure of ``data`` -- its cells&#39; total volume, area or length -- and the</span>
 <span class="sd">    integral over it of each of ``fields`` (names; by default every field with a</span>
@@ -13478,8 +13501,9 @@ the pieces' order.</p>
 <span class="sd">    its own map (``quadrature``: collapsed onto simplices and wedges), with enough</span>
 <span class="sd">    points for the field&#39;s order and the geometry&#39;s, so a curved geometry and a</span>
 <span class="sd">    field of any order (``H1``, ``L2``, point and cell data) integrate exactly, to</span>
-<span class="sd">    rounding. Polyhedra take their measure from ``cell_geometry`` and integrate</span>
-<span class="sd">    cell data. Only the cells of the mesh&#39;s dimension count, as in VTK: a volume&#39;s</span>
+<span class="sd">    rounding. Polyhedra, polygons and polylines take their measure from</span>
+<span class="sd">    ``cell_geometry`` and integrate cell data and point data, which is linear on</span>
+<span class="sd">    their pieces (sub-tetrahedra, triangles, segments), exactly. Only the cells of the mesh&#39;s dimension count, as in VTK: a volume&#39;s</span>
 <span class="sd">    integrals leave out its surfaces, lines and vertices. Only owned cells count</span>
 <span class="sd">    (ghost marks), and a ``PartitionedDataSet`` sums its pieces over every rank, in</span>
 <span class="sd">    the pieces&#39; order.&quot;&quot;&quot;</span>
