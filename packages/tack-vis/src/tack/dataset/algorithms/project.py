@@ -42,6 +42,15 @@ def _tensor_cell_nodes(cells, u, t, offsets, out):
 
 
 @tack.kernel
+def _lattice_cell_nodes(cells, u, t, offsets, out):
+    # The same on a simplex's or wedge's lattice: its NODES nodes, not (p + 1)^d
+    # (the tensor count ran past them: values written past the cell's own).
+    for c in cells:
+        for n in range(t.NODES):
+            out[t.dof_index(c, n)] = u.value(c, t.node_parametric(n))
+
+
+@tack.kernel
 def _cell_nodes(cells, u, t, offsets, out):
     # An L2 cell's values: its corner mean at order 0, else its corners' values.
     for c in cells:
@@ -248,6 +257,12 @@ def project(data, field, space):
                         f"{dtype_of(values).name}")
     if isinstance(space, SideTraces):
         return traces(data, field)
+    from tack.dataset import _bernstein
+
+    if _bernstein.is_bernstein(space):
+        # Into the equispaced nodes, then their Bernstein coefficients.
+        nodal = project(data, field, _bernstein.lagrange_companion(space))
+        return _bernstein.from_lagrange(data, nodal, space)
     if not getattr(data.topology, "reference_cells", True):
         if isinstance(space, H1) and space.order == 1 and isinstance(source, Constant):
             return Field(space, _onto_points(data, field, values), field.unit)
@@ -270,7 +285,10 @@ def project(data, field, space):
     target = Field(space, out)
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
-            kernel = _tensor_cell_nodes if getattr(space, "tensor", False) else _cell_nodes
+            kernel = _cell_nodes
+            if getattr(space, "tensor", False):
+                kernel = (_tensor_cell_nodes if bases.tensor_shape(group.shape)
+                          else _lattice_cell_nodes)
             kernel(data.domain_view("cells", group), field.view(group), target.view(group),
                    space.offsets, out)
     return Field(space, out, field.unit)

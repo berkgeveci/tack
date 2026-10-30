@@ -27,10 +27,10 @@ def _hexes():
     return td.extract_cells(grid, np.arange(grid.num_cells))
 
 
-def _both(data, order=3, nodes="gauss_legendre"):
+def _both(data, order=3, basis="gauss_legendre"):
     out = {}
     for layout in ("blocks", "cells"):
-        space = td.L2(data, order=order, nodes=nodes, layout=layout)
+        space = td.L2(data, order=order, basis=basis, layout=layout)
         out[layout] = td.interpolate(data, _cubic, space)
     return out
 
@@ -49,7 +49,7 @@ def test_the_parameter(f64_backend, monkeypatch):
     assert td.L2(data, order=3, layout="cells").layout == "cells"
     assert td.L2(data, order=3, layout="auto") is td.L2(data, order=3)
     assert repr(td.L2(data, order=3, layout="cells")) == \
-        "L2(order=3, nodes='gauss_lobatto', layout='cells')"
+        "L2(order=3, basis='gauss_lobatto', layout='cells')"
     assert td.L2(data).layout == "blocks"                          # corner values
     with pytest.raises(ValueError, match="for tensor bases"):
         td.L2(data, order=1, layout="cells")
@@ -76,7 +76,7 @@ def test_every_operation_gives_the_same_answer(f64_backend):
     results = {}
     for layout, field in _both(data).items():
         data.fields["u"] = field
-        target = td.L2(data, order=4, nodes="gauss_lobatto", layout=layout)
+        target = td.L2(data, order=4, basis="gauss_lobatto", layout=layout)
         kept = td.extract_cells(data, np.array([1, 4, 7]))
         results[layout] = (
             td.probe(data, points).fields["u"].values.numpy(),
@@ -86,7 +86,7 @@ def test_every_operation_gives_the_same_answer(f64_backend):
             np.sort(td.contour(data, "u", 1.2).positions(), 0),
             td.subdivide(data, 2, fields=["u"]).fields["u"].values.numpy(),
         )
-        assert kept.fields["u"].space.nodes == "gauss_legendre"         # the basis kept
+        assert kept.fields["u"].space.basis == "gauss_legendre"         # the basis kept
         assert kept.fields["u"].space.layout == layout
     for a, b in zip(results["blocks"], results["cells"]):
         np.testing.assert_array_equal(a, b)
@@ -97,9 +97,9 @@ def test_a_filter_keeps_the_basis(f64_backend):
     """A filter carrying an ``L2`` field kept its order but not its nodes: a
     Gauss-Legendre field came out labelled Gauss-Lobatto, another basis."""
     data = _hexes()
-    data.fields["u"] = td.interpolate(data, _cubic, td.L2(data, order=3, nodes="gauss_legendre"))
+    data.fields["u"] = td.interpolate(data, _cubic, td.L2(data, order=3, basis="gauss_legendre"))
     kept = td.extract_cells(data, np.array([0, 5]))
-    assert kept.fields["u"].space.nodes == "gauss_legendre"
+    assert kept.fields["u"].space.basis == "gauss_legendre"
     points = _points(data, 400)
     out = td.probe(kept, points)
     held = out.fields["valid"].values.numpy() == 1
@@ -157,7 +157,7 @@ def test_the_environment_overrides_auto(f64_backend, monkeypatch):
     assert td.L2(data).layout == "blocks"                             # corner values
     monkeypatch.setenv("TACK_L2_LAYOUT", "diagonal")
     with pytest.raises(ValueError, match="TACK_L2_LAYOUT"):
-        _ = td.L2(data, order=3, nodes="equispaced").layout
+        _ = td.L2(data, order=3, basis="equispaced").layout
 
 
 def test_mfem_reads_and_writes_either_layout(f64_backend, monkeypatch):

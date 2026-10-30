@@ -228,7 +228,7 @@ def _carry_l2(field, out, cells):
     else:
         # The same basis: order, nodes and the layout asked for ("auto" resolves on
         # the output's device).
-        out_space = L2(out, order=space.order, nodes=space.nodes or "gauss_lobatto",
+        out_space = L2(out, order=space.order, basis=space.basis or "gauss_lobatto",
                        layout=space.params.get("layout", "auto"))
     values = _like(field.values, out_space.size)
     if count and space.layout == out_space.layout == "blocks":

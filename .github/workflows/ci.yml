@@ -159,10 +159,11 @@ jobs:
 
   # ── The main gate ──────────────────────────────────────────────────
   tests:
-    name: tests (py${{ matrix.python-version }}, ${{ matrix.shard }}/2)
+    name: tests (py${{ matrix.python-version }}, ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    # The suite in two shares (conftest's --shard), each serial: whole, it took
-    # 25-35+ min by 2026-10-29, and 35 cancelled #212's py3.11 run.
+    # The suite in three shares (conftest's --shard, by test-durations.json), each
+    # serial: whole, it took 25-35+ min by 2026-10-29 (35 cancelled #212's py3.11
+    # run), about 15 a share.
     timeout-minutes: 30
     env:
       TACK_REQUIRE_CLANG: "1"
@@ -172,7 +173,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-        shard: [1, 2]
+        shard: [1, 2, 3]
 
     steps:
       - uses: actions/checkout@v7
@@ -225,7 +226,7 @@ jobs:
           EOF
 
       - name: Run the suite
-        run: uv run pytest -q --shard ${{ matrix.shard }}/2
+        run: uv run pytest -q --shard ${{ matrix.shard }}/3
 
   # ── 64-bit ids ─────────────────────────────────────────────────────
   # tack.dataset keeps a topology's ids in i32 unless it is too large or asked
@@ -235,11 +236,51 @@ jobs:
   # with VTK and MFEM present so the comparisons run too. Its own job: it
   # repeats the whole dataset suite, which would crowd the main gate.
   ids-i64:
-    name: dataset tests with 64-bit ids (${{ matrix.shard }}/2)
+    name: dataset tests with 64-bit ids (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    # In two shares (conftest's --shard): whole, 17.5-26 min by 2026-10-29, and 30
-    # cancelled #212's run.
+    # In three shares (conftest's --shard): whole, 17.5-45 min by 2026-10-29 (30
+    # cancelled #212's run), about 15 a share.
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
+
+      - name: Sync the workspace, with VTK and MFEM
+        run: uv sync --extra cpu --extra dev --extra interop
+
+      - name: Require VTK and MFEM, the references for the dataset tests
+        run: |
+          echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
+          echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
+
+      - name: Run the dataset tests with i64 ids
+        run: uv run pytest -q --ids=i64 --shard ${{ matrix.shard }}/3 packages/tack-vis/tests
+
+  # ── The dataset tests with L2 cell-fastest ─────────────────────────
+  #
+  # L2's "auto" layout is cell-fastest on GPUs above order 2 and blocks on the
+  # CPU, so on these CPU runners every tensor L2 field is blocks and the
+  # cell-fastest paths would go untested. TACK_L2_LAYOUT=cells stores every
+  # tensor L2 field cell-fastest, so any code still assuming blocks fails here
+  # (the vault's coefficient-layout proposal, D7).
+  l2-cells:
+    name: dataset tests with L2 cell-fastest (${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    # In two shares (conftest's --shard): whole, on four workers, it ran 13 min by
+    # 2026-10-29, and #213's run (more compiled kernels a worker) lost its runner
+    # twice at 15-17 min, with no test failing.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -263,41 +304,10 @@ jobs:
           echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
           echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
 
-      - name: Run the dataset tests with i64 ids
-        run: uv run pytest -q --ids=i64 --shard ${{ matrix.shard }}/2 packages/tack-vis/tests
-
-  # ── The dataset tests with L2 cell-fastest ─────────────────────────
-  #
-  # L2's "auto" layout is cell-fastest on GPUs above order 2 and blocks on the
-  # CPU, so on these CPU runners every tensor L2 field is blocks and the
-  # cell-fastest paths would go untested. TACK_L2_LAYOUT=cells stores every
-  # tensor L2 field cell-fastest, so any code still assuming blocks fails here
-  # (the vault's coefficient-layout proposal, D7).
-  l2-cells:
-    name: dataset tests with L2 cell-fastest
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
-          python-version: "3.13"
-
-      - name: Sync the workspace, with VTK and MFEM
-        run: uv sync --extra cpu --extra dev --extra interop
-
-      - name: Require VTK and MFEM, the references for the dataset tests
-        run: |
-          echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
-          echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
-
       - name: Run the dataset tests with every tensor L2 field cell-fastest
-        run: TACK_L2_LAYOUT=cells uv run pytest -q -n 4 packages/tack-vis/tests
+        run: >-
+          TACK_L2_LAYOUT=cells uv run pytest -q -n 4 --shard ${{ matrix.shard }}/2
+          packages/tack-vis/tests
 
   # ── Warp ───────────────────────────────────────────────────────────
   # The prototype Warp backend (tack.device("warp")) and tack.interop.warp,

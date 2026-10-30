@@ -55,9 +55,15 @@ def run(arch, check):
     print(whole.num_cells, "whole cells at order", whole.fields["u"].space.order, "and",
           part.num_cells, "linear pieces")
     # --8<-- [end:clip]
+    # --8<-- [start:bernstein]
+    bezier = td.H1(data, order=4, basis="bernstein")       # coefficients, not values
+    data.fields["b"] = td.interpolate(data, blob, bezier)   # the same polynomial as "u"
+    low, high = data.fields["b"].values.numpy().min(), data.fields["b"].values.numpy().max()
+    print(bezier, "coefficients from", round(float(low), 3), "to", round(float(high), 3))
+    # --8<-- [end:bernstein]
     # --8<-- [start:layout]
-    dg = td.L2(data, order=3, nodes="gauss_legendre")             # "auto": by device
-    across = td.L2(data, order=3, nodes="gauss_legendre", layout="cells")
+    dg = td.L2(data, order=3, basis="gauss_legendre")             # "auto": by device
+    across = td.L2(data, order=3, basis="gauss_legendre", layout="cells")
     p, q = (td.interpolate(data, blob, s) for s in (dg, across))
     print(dg.layout, across.layout, dg.blocks(p.values.numpy()).shape)
     # --8<-- [end:layout]
@@ -72,6 +78,9 @@ def run(arch, check):
         values = x[:, 0] ** 3 - x[:, 1] * x[:, 2] + 0.5 * x[:, 1] ** 2
         assert np.abs(values - 0.2).max() <= 1e-3
         assert np.allclose(cut.positions()[:, 2], 0.5, atol=1e-6)
+        same = td.probe(data, points)
+        assert np.abs(same.fields["b"].values.numpy() - same.fields["u"].values.numpy()).max() \
+            < 1e-5                                                  # f32
         assert linear.num_cells == 27 * curved.num_cells
         assert linear.num_points == td.H1(curved, order=3).size
         assert whole.num_cells and part.num_cells

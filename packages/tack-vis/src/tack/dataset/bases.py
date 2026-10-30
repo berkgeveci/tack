@@ -32,14 +32,20 @@ import numpy as np
 
 from tack.dataset import shapes
 
-__all__ = ["FAMILIES", "bernstein", "dof_tables", "entity_nodes", "has_bases",
+__all__ = ["BERNSTEIN", "FAMILIES", "bernstein", "dof_tables", "entity_nodes", "has_bases",
            "lattice_ijk", "nodes", "simplex_bernstein", "simplex_lattice", "simplex_shape",
            "simplex_subdivision", "tensor_shape", "view_index", "view_order", "wedge_bernstein",
            "wedge_lattice", "wedge_shape", "wedge_subdivision", "weights"]
 
-FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre")
-#: The families with nodes at the ends, which shared values need.
-CLOSED = ("gauss_lobatto", "equispaced")
+FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre", "bernstein")
+#: The families whose values at the ends are the polynomial's there, which shared
+#: values need: the closed node sets, and Bernstein's (its end coefficients).
+CLOSED = ("gauss_lobatto", "equispaced", "bernstein")
+#: The Bernstein polynomials: coefficients, not values at nodes. Its "nodes" are
+#: its Greville points (``i / p``, the equispaced nodes), where a value would be
+#: interpolated before converting (``bernstein("equispaced", p)``), and its
+#: "weights" the binomial coefficients ``C(p, i)`` its polynomials are scaled by.
+BERNSTEIN = "bernstein"
 
 #: Node kinds in ``dof_tables``.
 CORNER, EDGE, FACE, INTERIOR = 0, 1, 2, 3
@@ -62,7 +68,9 @@ def nodes(family, order):
     """The ``order + 1`` nodes of ``family`` on ``[0, 1]``, increasing, as an f64 array,
     symmetric about ``0.5`` to the last bit."""
     if family not in FAMILIES:
-        raise ValueError(f"nodes are one of {', '.join(FAMILIES)}, not {family!r}")
+        raise ValueError(f"a basis is one of {', '.join(FAMILIES)}, not {family!r}")
+    if family == BERNSTEIN:
+        return nodes("equispaced", order)
     p = int(order)
     if p < 0:
         raise ValueError(f"an order is at least 0, not {order}")
@@ -90,7 +98,14 @@ def nodes(family, order):
 def weights(family, order):
     """The barycentric weights of ``nodes(family, order)``: ``1 / prod(x_j - x_m)``
     over ``m != j``, so the Lagrange polynomial of node ``j`` at ``t`` is
-    ``weights[j] * prod(t - x_m)``."""
+    ``weights[j] * prod(t - x_m)``. Bernstein's are ``C(p, j)``: its polynomial ``j``
+    is ``weights[j] * t^j (1 - t)^(p - j)``."""
+    if family == BERNSTEIN:
+        from math import comb
+
+        w = np.array([comb(int(order), j) for j in range(int(order) + 1)], np.float64)
+        w.setflags(write=False)
+        return w
     x = nodes(family, order)
     difference = x[:, None] - x[None, :]
     np.fill_diagonal(difference, 1.0)
@@ -104,9 +119,14 @@ def bernstein(family, order):
     """The matrix taking a 1D polynomial's values at ``nodes(family, order)`` to its
     Bernstein coefficients, row ``i`` the ``i``-th coefficient. The polynomial lies
     between its least and greatest coefficients (the convex hull property), so a
-    tensor product of these bounds a cell's geometry, or a field over the cell."""
+    tensor product of these bounds a cell's geometry, or a field over the cell.
+    Bernstein's own is the identity."""
     from math import comb
 
+    if family == BERNSTEIN:
+        m = np.eye(int(order) + 1)
+        m.setflags(write=False)
+        return m
     x = nodes(family, order)
     p = int(order)
     at = np.array([[comb(p, j) * t ** j * (1.0 - t) ** (p - j) for j in range(p + 1)]
@@ -653,12 +673,13 @@ def dof_tables(shape, order):
     return kind, entity, a, b, corner_node
 
 
-def view_order(shape, order):
+def view_order(shape, order, basis=None):
     """Node ``n`` (lexicographic) as an ``H1`` view of ``order`` numbers its cell's nodes
-    (``dof_index``): itself above order 2; at order 2 the quadratic shapes' order --
-    corners, edges, quad faces, interior (``shapes.Shape.quadratic_node``)."""
+    (``dof_index``): itself above order 2, and in a Bernstein basis (a tensor view
+    at every order); at order 2 the quadratic shapes' order -- corners, edges,
+    quad faces, interior (``shapes.Shape.quadratic_node``)."""
     kind, entity, _, _, _ = dof_tables(shape, order)
-    if order != 2:
+    if order != 2 or basis == BERNSTEIN:
         return np.arange(len(kind), dtype=np.int32)
     first_face = shape.NUM_FACES - shape.QUADRATIC_FACES
     return np.array([e if k == CORNER else
@@ -712,9 +733,9 @@ def entity_nodes(shape, order):
     return edges, faces
 
 
-def view_index(shape, order):
+def view_index(shape, order, basis=None):
     """Lexicographic node ``n``'s number in an ``H1`` view of ``order``'s ``dof(c, k)``:
     at order 1 the corner it is (point data reads corners), else ``view_order``."""
     if order == 1:
         return np.asarray(dof_tables(shape, 1)[1], np.int32)
-    return view_order(shape, order)
+    return view_order(shape, order, basis)

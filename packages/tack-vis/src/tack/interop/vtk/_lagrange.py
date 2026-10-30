@@ -12,7 +12,7 @@ A Lagrange cell of order ``p`` lists its ``(p + 1)^d`` nodes in VTK's order
 ``"equispaced"`` family on the same reference cell, the corners in the linear
 cell's order. Its points are shared with the cells around it, as an ``H1``
 space's nodes are, so a grid of such cells is a linear topology of their corners
-and fields in ``H1(order=p, nodes="equispaced")``.
+and fields in ``H1(order=p, basis="equispaced")``.
 """
 
 import numpy as np
@@ -26,6 +26,10 @@ _LINEAR = {68: 3, 70: 9, 72: 12, 69: 5, 71: 10, 73: 13}
 #: The types whose nodes are matched by VTK's parametric coordinates: the
 #: simplices and the wedge.
 _SIMPLEX = (69, 71, 73)
+#: VTK's Bezier cells: their Lagrange twin, whose points they number alike. Their
+#: points and point data are control points and coefficients, Tack's
+#: ``basis="bernstein"`` (rational weights are refused).
+BEZIER = {75: 68, 77: 70, 79: 72, 76: 69, 78: 71, 80: 73}
 
 
 def _simplex_vtk_index(vtk_type, order):
@@ -103,14 +107,23 @@ def lagrange_order(vtk_type, count):
 
 
 def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
-    """A ``vtkUnstructuredGrid`` of one kind of Lagrange cell, all of one order, as a
-    dataset: linear cells on the corner points, the geometry and point data in
-    ``H1(order=p, nodes="equispaced")``, cell data ``Constant``."""
+    """A ``vtkUnstructuredGrid`` of one kind of Lagrange or Bezier cell, all of one
+    order, as a dataset: linear cells on the corner points, the geometry and point
+    data in ``H1(order=p, basis="equispaced")`` (Lagrange) or ``"bernstein"``
+    (Bezier), cell data ``Constant``."""
     from tack.dataset import H1, Constant, DataSet, Field, UnstructuredTopology
     from tack.dataset.topology import uniform_cells
     from tack.interop.mfem import _h1_indices
 
     (vtk_type,) = types
+    basis = "equispaced"
+    weights = grid.point_data.GetRationalWeights()
+    skipped = {"vtkGhostType", weights.GetName() if weights is not None else None}
+    if vtk_type in BEZIER:
+        if weights is not None and np.any(np.asarray(weights) != 1.0):
+            raise NotImplementedError("rational Bezier cells (weights other than 1) are not "
+                                      "supported")
+        vtk_type, basis = BEZIER[vtk_type], "bernstein"
     cells = grid.cells
     offsets = np.asarray(cells.offsets_array, np.int64)
     connectivity = np.asarray(cells.connectivity_array, np.int64)
@@ -135,7 +148,7 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
         space = H1(data)
         vtk_of_dof = corner_ids
     else:
-        space = H1(data, order=order, nodes="equispaced")
+        space = H1(data, order=order, basis=basis)
         indices = _h1_indices(data, space, per_cell)
         lex_to_vtk = _vtk_index(vtk_type, order)
         vtk_points = rows[:, lex_to_vtk]
@@ -149,7 +162,7 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
     for name in grid.point_data.keys():
         array = grid.point_data[name]
         values = np.asarray(array)
-        if name == "vtkGhostType":
+        if name in skipped:
             continue
         values = values.reshape(values.shape[0], -1)[vtk_of_dof]
         data.fields[name] = Field(space, float_fields(values), unit_of(array))
@@ -189,11 +202,21 @@ def tensor_order(data):
     return max(orders, default=1)
 
 
-def to_vtk(data, order):
+def bernstein(data):
+    """Whether ``data``'s geometry or an ``H1`` field is in a Bernstein basis."""
+    from tack.dataset import H1, bases
+
+    return any(isinstance(f.space, H1) and f.space.basis == bases.BERNSTEIN
+               for f in [data.geometry, *data.fields.values()])
+
+
+def to_vtk(data, order, bezier=False):
     """``data``'s cells as VTK Lagrange cells of ``order``: points at the equispaced
     nodes of ``H1(order)`` (each shared node once), the geometry and ``H1``
     fields evaluated there (exact for a field of that order or below), cell
-    fields as cell data."""
+    fields as cell data. With ``bezier``, VTK Bezier cells: the points and point
+    data the coefficients of ``H1(order, basis="bernstein")`` (the same
+    polynomials, the same numbering)."""
     from math import comb
 
     from vtkmodules.vtkCommonCore import vtkPoints
@@ -207,7 +230,7 @@ def to_vtk(data, order):
     wedge = bases.wedge_shape(shape)
     vtk_type = 73 if wedge else ({2: 69, 3: 71} if simplex else
                                  {1: 68, 2: 70, 3: 72})[shape.DIMENSION]
-    space = H1(data, order=order, nodes="equispaced")
+    space = H1(data, order=order, basis="bernstein" if bezier else "equispaced")
     per_cell = (comb(order + 2, 2) * (order + 1) if wedge else
                 comb(order + shape.DIMENSION, shape.DIMENSION) if simplex
                 else (order + 1) ** shape.DIMENSION)
@@ -219,8 +242,10 @@ def to_vtk(data, order):
     grid = vtkUnstructuredGrid()
     grid.points = vtkPoints(data=positions)
     offsets = np.arange(0, (data.num_cells + 1) * per_cell, per_cell, dtype=np.int64)
-    grid.cells = (vtk_type, vtkCellArray(offsets=offsets,
-                                         connectivity=connectivity.astype(np.int64)))
+    written = next((b for b, lagrange in BEZIER.items() if lagrange == vtk_type),
+                   None) if bezier else vtk_type
+    grid.cells = (written, vtkCellArray(offsets=offsets,
+                                        connectivity=connectivity.astype(np.int64)))
     for name, field in data.fields.items():
         if isinstance(field.space, H1) or (isinstance(field.space, Values)
                                            and field.space.on == "points"):

@@ -330,7 +330,7 @@ def _tensor_values(data, mesh, gf, family, order):
     if simplex and nodes != "equispaced":
         nodes = None                  # Tack's simplices are equispaced: evaluate there
     space = (H1 if family == "H1" else L2)(
-        data, order=order, nodes=nodes or ("equispaced" if simplex else "gauss_lobatto"))
+        data, order=order, basis=nodes or ("equispaced" if simplex else "gauss_lobatto"))
     n = data.num_cells
     dim = data.topology.dimension
 
@@ -391,7 +391,7 @@ def mfem_grid_function(data, field, mesh, fes=None):
         raise NotImplementedError(f"an MFEM grid function of {space!r} is not supported")
     simplex = _check_tensor(data, "mfem_grid_function")
     order = space.order
-    family = space.nodes or ("equispaced" if simplex else "gauss_lobatto")
+    family = space.basis or ("equispaced" if simplex else "gauss_lobatto")
     if isinstance(space, L2) and order <= 1 and not space.tensor:
         raise NotImplementedError("L2 of corner values (order 0 and 1) has no MFEM basis "
                                   "of its own: project it into L2 on Gauss-Legendre nodes")

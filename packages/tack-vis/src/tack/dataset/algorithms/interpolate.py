@@ -147,6 +147,15 @@ def interpolate(data, function, space, dtype=None, unit=None):
         raise TypeError(f"interpolate gives values at points or cells, not on {space.on}")
     if not isinstance(space, (H1, L2, Constant, Values)):
         raise TypeError(f"interpolate takes H1, L2, Constant or Values, not {space!r}")
+    from tack.dataset import _bernstein
+
+    # A curved Bernstein geometry's values are control points: nodes are placed on
+    # its values at the equispaced nodes instead.
+    data = _bernstein.with_lagrange_geometry(data)
+    if _bernstein.is_bernstein(space):
+        # Values at the equispaced nodes, then their Bernstein coefficients.
+        nodal = interpolate(data, function, _bernstein.lagrange_companion(space), dtype, unit)
+        return _bernstein.from_lagrange(data, nodal, space)
     fn = _Of(function, data.origin)
     values = tack.zeros((space.size,), dtype or data.dtype)
     out = Field(space, values, unit)

@@ -90,7 +90,7 @@ def _points(data, n=200, seed=0):
 
 # ── Nodes and tables ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("family", bases.FAMILIES)
+@pytest.mark.parametrize("family", [f for f in bases.FAMILIES if f != bases.BERNSTEIN])
 @pytest.mark.parametrize("order", [1, 2, 3, 4, 5, 8])
 def test_nodes_are_symmetric_and_their_polynomials_reproduce(family, order):
     x = bases.nodes(family, order)
@@ -127,14 +127,14 @@ def test_each_node_is_a_corner_edge_face_or_interior_node(shape, counts):
 
 # ── Spaces ──────────────────────────────────────────────────────────
 
-def test_spaces_name_their_nodes_only_where_they_differ():
+def test_spaces_name_their_basis_only_where_they_differ():
     data = _hexes()
-    assert td.H1(data, order=2, nodes="equispaced") is td.H1(data, order=2)
-    assert td.H1(data, order=3) is not td.H1(data, order=3, nodes="equispaced")
-    assert repr(td.H1(data, order=3)) == "H1(order=3, nodes='gauss_lobatto')"
-    with pytest.raises(ValueError, match="nodes are one of"):
-        td.H1(data, order=3, nodes="gauss_legendre")     # H1 needs nodes at the ends
-    assert td.L2(data, order=1, nodes="gauss_legendre").tensor
+    assert td.H1(data, order=2, basis="equispaced") is td.H1(data, order=2)
+    assert td.H1(data, order=3) is not td.H1(data, order=3, basis="equispaced")
+    assert repr(td.H1(data, order=3)) == "H1(order=3, basis='gauss_lobatto')"
+    with pytest.raises(ValueError, match="basis is one of"):
+        td.H1(data, order=3, basis="gauss_legendre")     # H1 needs nodes at the ends
+    assert td.L2(data, order=1, basis="gauss_legendre").tensor
     assert not td.L2(data, order=1).tensor
 
 
@@ -152,14 +152,14 @@ def test_an_h1_space_holds_each_entitys_nodes_once():
 @pytest.mark.parametrize("nodes", ["gauss_lobatto", "equispaced"])
 def test_h1_is_exact_on_turned_hexahedra(f64_backend, order, nodes):
     data = _rotated(_hexes(), seed=order)
-    assert _probe_error(data, td.H1(data, order=order, nodes=nodes), _points(data)) < 1e-12
+    assert _probe_error(data, td.H1(data, order=order, basis=nodes), _points(data)) < 1e-12
 
 
 @pytest.mark.parametrize("order", [3, 5])
 @pytest.mark.parametrize("nodes", bases.FAMILIES)
 def test_l2_is_exact(f64_backend, order, nodes):
     data = _rotated(_hexes(), seed=1)
-    assert _probe_error(data, td.L2(data, order=order, nodes=nodes), _points(data)) < 1e-12
+    assert _probe_error(data, td.L2(data, order=order, basis=nodes), _points(data)) < 1e-12
 
 
 @pytest.mark.parametrize("make", [
@@ -173,7 +173,7 @@ def test_grids_and_quads(f64_backend, make):
     points = _points(data)
     for order in (3, 5):
         assert _probe_error(data, td.H1(data, order=order), points) < 1e-12
-        assert _probe_error(data, td.L2(data, order=order, nodes="gauss_legendre"),
+        assert _probe_error(data, td.L2(data, order=order, basis="gauss_legendre"),
                             points) < 1e-12
 
 
@@ -187,8 +187,8 @@ def test_project_places_the_geometry_at_the_nodes(f64_backend):
     nodes, as ``interpolate`` of the identity does; each shared node once, to the
     same bits however many cells hold it."""
     data = _rotated(_hexes(), seed=3)
-    for space in (td.H1(data, order=3), td.H1(data, order=4, nodes="equispaced"),
-                  td.L2(data, order=3, nodes="gauss_legendre")):
+    for space in (td.H1(data, order=3), td.H1(data, order=4, basis="equispaced"),
+                  td.L2(data, order=3, basis="gauss_legendre")):
         projected = td.project(data, data.geometry, space).values.numpy()
         interpolated = td.interpolate(data, _identity, space, dtype=tack.vec3(tack.f64))
         np.testing.assert_allclose(projected, interpolated.values.numpy(), atol=1e-15)
@@ -216,7 +216,7 @@ def test_other_shapes_are_refused_above_order_2():
         _ = td.H1(pyramid, order=3).size
     tets = td.tetrahedralize(_hexes())
     with pytest.raises(NotImplementedError, match="on segments, quads"):
-        _ = td.L2(tets, order=1, nodes="gauss_legendre").size
+        _ = td.L2(tets, order=1, basis="gauss_legendre").size
 
 
 # ── Curved geometry ─────────────────────────────────────────────────
@@ -285,7 +285,7 @@ def test_filters_keep_curved_geometry_and_high_order_fields(f64_backend, cells, 
     data = {"hexahedra": lambda: _rotated(td.extract_cells(grid, np.arange(27)), seed=7),
             "tetrahedra": lambda: td.tetrahedralize(grid),
             "wedges": lambda: _wedges(grid)}[cells]()
-    space = td.H1(data, order=order, nodes="equispaced") if order > 2 else td.H1(data, order=2)
+    space = td.H1(data, order=order, basis="equispaced") if order > 2 else td.H1(data, order=2)
     data.fields["u"] = td.interpolate(data, _quadratic, space)
     data.geometry = td.interpolate(data, _bend, td.H1(data, order=2), dtype=tack.vec3(tack.f64))
     n = data.num_cells
@@ -468,14 +468,14 @@ def test_lagrange_cells_are_vtks(f64_backend, order):
                                 tack.array(np.arange(data.num_cells, dtype=np.float64)))
     grid = dataset_to_vtk(data, higher_order=True)
     assert set(np.asarray(grid.cell_types).tolist()) == {72}
-    assert grid.number_of_points == td.H1(data, order=order, nodes="equispaced").size
+    assert grid.number_of_points == td.H1(data, order=order, basis="equispaced").size
     pcs = np.random.default_rng(order).uniform(0.05, 0.95, (3, 3))
     xs, us = _vtk_values_at(grid, "u", pcs)
     probed = td.probe(data, xs)
     assert probed.fields["valid"].values.numpy().all()
     np.testing.assert_allclose(probed.fields["u"].values.numpy(), us, atol=1e-8)
     back = vtk_to_dataset(grid, dtype=tack.f64)
-    assert back.geometry.space is td.H1(back, order=order, nodes="equispaced")
+    assert back.geometry.space is td.H1(back, order=order, basis="equispaced")
     np.testing.assert_allclose(td.probe(back, xs).fields["u"].values.numpy(), us, atol=1e-8)
     np.testing.assert_array_equal(back.fields["c"].values.numpy(), np.arange(data.num_cells))
 
@@ -494,7 +494,7 @@ def test_vtks_own_lagrange_hexahedra(f64_backend):
     x = np.asarray(grid.points.data, np.float64)
     grid.point_data["u"] = vtkDoubleArray(_cubic_at(x))
     data = vtk_to_dataset(grid, dtype=tack.f64)
-    assert data.fields["u"].space is td.H1(data, order=3, nodes="equispaced")
+    assert data.fields["u"].space is td.H1(data, order=3, basis="equispaced")
     assert data.num_cells == 8
     pcs = np.random.default_rng(9).uniform(0.05, 0.95, (4, 3))
     xs, us = _vtk_values_at(grid, "u", pcs)
