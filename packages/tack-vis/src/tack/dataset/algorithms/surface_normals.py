@@ -90,8 +90,9 @@ def _rewound(cells, parents, offsets, order, connectivity):
 
 
 @tack.kernel
-def _shape_normals(cells, order, out):
-    # Newell's normal round the corners, of unit length (zero for no area).
+def _shape_normals(cells, order, out, areas):
+    # Newell's normal round the corners, of unit length (zero for no area), and its
+    # length: twice the area.
     for c in cells:
         size = order.shape[0]
         origin = cells.corner_position(c, order[0])
@@ -101,10 +102,11 @@ def _shape_normals(cells, order, out):
                 cells.corner_position(c, order[k + 1 if k + 1 < size else 0]) - origin)
         length = n.norm()
         out[cells.entity_id(c)] = n / length if length > 0.0 else n
+        areas[cells.entity_id(c)] = length
 
 
 @tack.kernel
-def _polygon_normals(cells, out):
+def _polygon_normals(cells, out, areas):
     for c in cells:
         origin = cells.side_position(c, 0, 0)
         n = tack.vec3(0.0, 0.0, 0.0)
@@ -113,14 +115,25 @@ def _polygon_normals(cells, out):
                 cells.side_position(c, k, 1) - origin)
         length = n.norm()
         out[cells.entity_id(c)] = n / length if length > 0.0 else n
+        areas[cells.entity_id(c)] = length
 
 
 @tack.kernel
-def _corner_normals(cells, normals, start, out):
+def _corner_normals(cells, normals, areas, weighted, start, out):
+    # Each corner's cell normal, times the cell's area with weighted.
     for c in cells:
         first = start + cells.index(c) * cells.NUM_POINTS
+        n = normals[cells.entity_id(c)]
+        if weighted == 1:
+            n = n * areas[cells.entity_id(c)]
         for j in range(cells.NUM_POINTS):
-            out[first + j] = normals[cells.entity_id(c)]
+            out[first + j] = n
+
+
+@tack.kernel
+def _weighted(corners, owners, areas):
+    for k in range(corners.shape[0]):
+        corners[k] = corners[k] * areas[owners[k]]
 
 
 @tack.kernel
@@ -179,12 +192,15 @@ def _consistent(data):
 
 
 @on_inputs_device
-def surface_normals(data, consistent=True):
+def surface_normals(data, consistent=True, weights=None):
     """A surface -- triangles, quads, pixels or polygons -- with its normals: the
     unit normal of each cell (Newell's, round its corners) as the cell field
     ``cell_normals``, and at each point the cells' around it summed and made unit
     as the point field ``normals`` (zero at a point of no cells), as VTK's
-    ``vtkPolyDataNormals`` computes them without splitting.
+    ``vtkPolyDataNormals`` computes them without splitting. With ``weights="area"``
+    each cell's normal is weighted by its area in the sum, so slivers -- which
+    cut surfaces have where a crossing lands near a corner, and whose normals
+    are far off the surface's -- count for little.
 
     With ``consistent``, the polygons are first wound alike: each connected
     region's as its first (lowest-numbered) cell winds, by union-find over the
@@ -197,6 +213,8 @@ def surface_normals(data, consistent=True):
     result keeps every field; the normals are dimensionless."""
     from tack.dataset.ghosts import visible
 
+    if weights not in (None, "area"):
+        raise ValueError(f"weights is None or 'area', not {weights!r}")
     data = visible(data)
     if data.num_cells and data.topology.dimension != 2:
         raise ValueError(f"surface_normals takes 2D cells (a surface), not a mesh of "
@@ -208,6 +226,7 @@ def surface_normals(data, consistent=True):
         data = carry(data, data.topology, points=Same(), cells=Same())    # not the input
     n = data.num_cells
     cell_normals = _vectors(n, data.dtype)
+    areas = tack.empty((n,), data.dtype)
     if not getattr(data.topology, "reference_cells", True):
         data.topology.faces()                      # a polygon's walk
     for group in data.launch_groups("cells", []):
@@ -216,9 +235,9 @@ def surface_normals(data, consistent=True):
         view = data.domain_view("cells", group)
         if group.shape in _ROUND:
             _shape_normals(view, _table(("round", group.shape), _ROUND[group.shape]),
-                           cell_normals)
+                           cell_normals, areas)
         else:
-            _polygon_normals(view, cell_normals)
+            _polygon_normals(view, cell_normals, areas)
     points = tack.empty((data.num_points,), tack.vec(3, data.dtype))
     points.fill(0)
     # Each cell's normal at each of its corners, as point_links lays them out
@@ -228,7 +247,8 @@ def surface_normals(data, consistent=True):
         corners = _vectors(total, data.dtype)
         for group in data.launch_groups("cells", []):
             if group.count:
-                _corner_normals(group.view(), cell_normals, start_of[group.root], corners)
+                _corner_normals(group.view(), cell_normals, areas, int(weights == "area"),
+                                start_of[group.root], corners)
     else:
         point_offsets, point_ids = data.topology.cell_points()
         total = point_ids.shape[0]
@@ -236,6 +256,8 @@ def surface_normals(data, consistent=True):
         if total:
             _entry_cells(point_offsets, owners)
         corners = _take(cell_normals, owners)
+        if weights == "area" and total:
+            _weighted(corners, owners, areas)
     if total:
         offsets, links = data.topology.point_links()
         _average_links(offsets, links, corners, points)

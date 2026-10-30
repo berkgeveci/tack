@@ -348,6 +348,40 @@ def test_nodes_lie_on_a_curved_geometry_of_another_order(f64_backend, cells, geo
     np.testing.assert_allclose(nodes.values.numpy(), expected, atol=1e-12)
 
 
+@pytest.mark.parametrize("cells, basis", [("hexahedra", "gauss_lobatto"),
+                                          ("hexahedra", "bernstein"),
+                                          ("tetrahedra", "equispaced"), ("wedges", "equispaced")])
+def test_edges_follow_a_curved_geometry(f64_backend, cells, basis):
+    """``extract_edges(..., subdivision=n)``: each edge as ``n`` lines through points on
+    the curved geometry -- the bend of the straight edge's points, since the bend
+    is of degree 2 -- for a mesh's outline drawn as its cells are."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.4, 0.6), dtype=tack.f64)
+    straight = {"hexahedra": lambda: _rotated(td.extract_cells(grid, np.arange(8)), seed=5),
+                "tetrahedra": lambda: td.tetrahedralize(grid),
+                "wedges": lambda: _wedges(grid)}[cells]()
+    points = straight.positions().astype(np.float64)       # the wedges' are f32
+    curved = td.DataSet(straight.topology, points, dtype=tack.f64)
+    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=2, basis=basis),
+                                     dtype=tack.vec3(tack.f64))
+    level = 5
+    out = td.extract_edges(curved, subdivision=level)
+    rows = straight.topology.edges().rows.numpy()
+    assert out.num_cells == len(rows) * level
+    assert out.num_points == straight.num_points + len(rows) * (level - 1)
+    t = np.arange(1, level) / level
+    expected = (points[rows[:, 0], None] * (1 - t[None, :, None])
+                + points[rows[:, 1], None] * t[None, :, None]).reshape(-1, 3)
+    got = out.positions()
+    np.testing.assert_allclose(got[:straight.num_points], _bend_at(points), atol=1e-12)
+    np.testing.assert_allclose(got[straight.num_points:], _bend_at(expected), atol=1e-12)
+    lines = out.topology.connectivity.numpy().reshape(-1, level, 2)
+    np.testing.assert_array_equal(lines[:, 0, 0], rows[:, 0])
+    np.testing.assert_array_equal(lines[:, -1, 1], rows[:, 1])
+    np.testing.assert_array_equal(lines[:, 1:, 0], lines[:, :-1, 1])
+    # A straight geometry's edges are lines already.
+    assert td.extract_edges(straight, subdivision=level).num_cells == len(rows)
+
+
 @tack.func
 def _bulge(x):
     return [x[0] + 0.3 * x[1] * (1.0 - x[1]), x[1], x[2]]

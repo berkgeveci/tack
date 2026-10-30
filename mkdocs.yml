@@ -160,6 +160,7 @@ nav:
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md
           - Communicate Between Blocks: vis-guide/14-communication.md
       - Worked Examples: vis-guide/examples.md
+      - Gallery: vis-guide/gallery.md
       - Reference:
           - Dataset API: vis-guide/reference/dataset-api.md
           - Algorithms: vis-guide/reference/algorithms.md

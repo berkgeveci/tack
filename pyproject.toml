@@ -137,6 +137,8 @@ ignore = [
 # cannot bite where nothing outlives the turn of the loop.
 "benchmarks/*.py" = ["B023"]
 "**/examples/*.py" = ["B023"]
+# A gallery script names its result before returning it: the docs show that line.
+"docs/gallery/*.py" = ["RET504"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["tack"]

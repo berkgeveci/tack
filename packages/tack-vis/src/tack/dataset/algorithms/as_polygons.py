@@ -31,9 +31,12 @@ def as_polygons(data, fields=None):
     """A shape-based dataset of 2D cells -- triangles, quads, pixels -- as a polygonal
     one: each cell's points in order become its loop. Fields carry as
     ``as_polyhedra``'s do, but values on faces and edges, whose numbering the
-    polygonal topology derives afresh, are dropped."""
+    polygonal topology derives afresh, are dropped. A polygonal dataset comes
+    back as it is (a new dataset on the same topology)."""
 
     topology = data.topology
+    if isinstance(topology, PolygonalTopology):
+        return carry(data, topology, points=Same(), cells=Same(), fields=fields)
     for group in topology.groups():
         if group.count and group.shape.DIMENSION != 2:
             raise ValueError(f"{group.shape.__name__} cells are not 2D")

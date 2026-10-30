@@ -126,3 +126,52 @@ def test_refusals():
         td.surface_normals(vtk_to_dataset(strip, dtype=tack.f64))
     with pytest.raises(ValueError, match="2D cells"):
         td.surface_normals(td.uniform_grid((3, 3, 3)))
+
+
+def _area_weighted(data):
+    """Each point's cells' Newell vectors summed (twice their areas times their
+    normals), made unit (zero at a point of no cells), from the polygons' point
+    lists."""
+    points = data.positions().astype(np.float64)
+    offsets, ids = (a.numpy() for a in td.as_polygons(data).topology.loops())
+    out = np.zeros_like(points)
+    for c in range(len(offsets) - 1):
+        ring = ids[offsets[c]:offsets[c + 1]]
+        x = points[ring] - points[ring[0]]
+        n = np.cross(x, np.roll(x, -1, axis=0)).sum(0)
+        out[ring] += n
+    length = np.linalg.norm(out, axis=1)[:, None]
+    return np.divide(out, length, out=np.zeros_like(out), where=length > 0)
+
+
+@pytest.mark.parametrize("name", ["sphere", "wavy quads", "polygons"])
+def test_area_weighted_normals(name):
+    """``weights="area"``: each cell's normal weighted by its area at the points, so
+    a contour's slivers -- its crossings near corners -- no longer swing the
+    normals off the surface. The cells' normals are the same either way."""
+    data = vtk_to_dataset(SURFACES[name](), dtype=tack.f64)
+    weighted = td.surface_normals(data, weights="area")
+    np.testing.assert_allclose(weighted.fields["normals"].values.numpy(), _area_weighted(data),
+                               atol=1e-12)
+    np.testing.assert_array_equal(weighted.fields["cell_normals"].values.numpy(),
+                                  td.surface_normals(data).fields["cell_normals"].values.numpy())
+    as_polygons = td.as_polygons(data)
+    np.testing.assert_allclose(
+        td.surface_normals(as_polygons, weights="area").fields["normals"].values.numpy(),
+        _area_weighted(data), atol=1e-12)
+    with pytest.raises(ValueError, match="weights"):
+        td.surface_normals(data, weights="angle")
+
+
+def test_area_weights_steady_a_contours_normals():
+    """On a sphere's contour cut through a coarse grid, crossings near corners make
+    slivers: the area-weighted normals stay near the sphere's, the plain ones not
+    always."""
+    grid = td.uniform_grid((7, 7, 7), origin=(-1.0, -1.0, -1.0), spacing=(1 / 3,) * 3,
+                           dtype=tack.f64)
+    grid.fields["r"] = td.Field(td.H1(grid), tack.array(np.linalg.norm(grid.positions(), axis=1)))
+    surface = td.contour(grid, "r", 0.8)
+    x = surface.positions()
+    exact = x / np.linalg.norm(x, axis=1)[:, None]
+    weighted = td.surface_normals(surface, weights="area").fields["normals"].values.numpy()
+    assert np.abs((weighted * exact).sum(1)).min() > 0.9
