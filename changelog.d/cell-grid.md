@@ -19,3 +19,21 @@
   quads, tetrahedra and wedges), `Constant` fields as `constant`. Reading takes
   each type's corners from its cell spec and orders types by the specs'
   offsets, so a grid round-trips.
+- `vtk_to_dataset` reads every VTK higher-order cell Tack has a shape for, of any
+  shapes, dimensions and orders in one grid (Lagrange, Bezier, quadratic,
+  biquadratic, triquadratic, quadratic-linear, the 7-node triangle and cubic
+  lines, with linear cells beside them): each type's nodes matched to Tack's by
+  VTK's parametric coordinates and copied, and where Tack's cell has nodes a
+  VTK cell lacks, VTK's own interpolation functions give them, exactly.
+  `test_vtk_higher_order.py` holds VTK's higher-order test files and one cell of
+  each type to VTK's interpolation, derivatives, contours, slices, clips,
+  boundaries and edges (it skips without VTK's test data).
+
+### Fixed
+
+- `vtk_to_dataset` of a grid of VTK cell types Tack has no shape for (the
+  biquadratic quad, among others) built a topology it could not read, with no
+  word; they are read (above) or refused, naming the types. Pyramids above
+  order 1 and quadratic polygons are refused.
+- A serendipity field of integers truncated its face centres (computed in its
+  own type); they are computed in floating point, as its basis is evaluated.

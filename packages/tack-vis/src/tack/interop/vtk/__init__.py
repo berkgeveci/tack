@@ -644,6 +644,10 @@ def _polydata_as_grid(polydata):
     return grid
 
 
+#: The VTK cell types Tack has a shape for (``tack.dataset.shapes``).
+_KNOWN_TYPES = {1, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 42}
+
+
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
                    origin=None, copy=True):
     """``vtk_to_dataset`` before the time is stamped."""
@@ -712,11 +716,12 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             polyhedral = 42 in present
         from tack.interop.vtk import _lagrange
 
-        if present and present <= (set(_lagrange.LAGRANGE) | set(_lagrange.BEZIER)
-                                   | set(_lagrange.QUADRATIC)):
-            if len(present) > 1:
-                raise NotImplementedError("Lagrange cells of several shapes in one grid are "
-                                          "not supported")
+        if present & (_lagrange.HIGHER_ORDER | set(_lagrange.REFUSED)):
+            linear = present - _lagrange.HIGHER_ORDER - set(_lagrange.REFUSED)
+            if linear - set(_lagrange._LINEAR_SHAPES):
+                raise NotImplementedError(
+                    f"VTK cell types {sorted(linear - set(_lagrange._LINEAR_SHAPES))} beside "
+                    "higher-order cells")
 
             def float_fields(values):
                 values = values.reshape(values.shape[0]) if values.shape[1] == 1 else values
@@ -758,6 +763,10 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             topology = PolygonalTopology(_ids(offsets), _ids(connectivity),
                                          num_points=num_points, id_dtype=id_dtype)
         else:
+            unknown = present - _KNOWN_TYPES
+            if unknown:
+                raise NotImplementedError(f"VTK cell types {sorted(unknown)} have no Tack "
+                                          "shape")
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)

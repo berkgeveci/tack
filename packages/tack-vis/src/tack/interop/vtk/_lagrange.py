@@ -137,76 +137,216 @@ def lagrange_order(vtk_type, count):
     return order
 
 
-def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
-    """A ``vtkUnstructuredGrid`` of one kind of Lagrange or Bezier cell, all of one
-    order, as a dataset: linear cells on the corner points, the geometry and point
-    data in ``H1(order=p, basis="equispaced")`` (Lagrange) or ``"bernstein"``
-    (Bezier), cell data ``Constant``."""
-    from tack.dataset import H1, Constant, DataSet, Field, UnstructuredTopology, shapes
-    from tack.dataset.topology import uniform_cells
-    from tack.interop.mfem import _h1_indices
+#: VTK's other higher-order cells: (Tack's shape, the order of Tack's space that holds
+#: them). Their nodes are found by VTK's parametric coordinates; where Tack's cell
+#: has nodes they lack, VTK's own interpolation functions give them (exactly: each
+#: space lies in Tack's of that order).
+_CLASSIC = {21: ("Line", 2), 22: ("Triangle", 2), 23: ("Quad", 2), 24: ("Tetra", 2),
+            25: ("Hexahedron", 2), 26: ("Wedge", 2), 28: ("Quad", 2),
+            29: ("Hexahedron", 2), 30: ("Quad", 2), 31: ("Wedge", 2), 32: ("Wedge", 2),
+            33: ("Hexahedron", 2), 34: ("Triangle", 3), 35: ("Line", 3)}
+#: VTK's linear cells beside higher-order ones: order 1 in the grid's space.
+_LINEAR_SHAPES = {3: "Line", 5: "Triangle", 9: "Quad", 10: "Tetra", 12: "Hexahedron",
+                  13: "Wedge", 14: "Pyramid"}
+#: The types whose space is Tack's order-2 serendipity space (or, on simplices, the
+#: full one): a grid of these alone reads into it.
+_SERENDIPITY = {21, 22, 23, 24, 25, 26}
+#: Higher-order types Tack has no cell for.
+REFUSED = {27: "quadratic pyramids", 36: "quadratic polygons", 37: "triquadratic pyramids",
+           74: "Lagrange pyramids", 81: "Bezier pyramids"}
+#: Every higher-order type the importer takes.
+HIGHER_ORDER = set(LAGRANGE) | set(BEZIER) | set(_CLASSIC)
 
-    (vtk_type,) = types
-    basis = "equispaced"
-    quadratic = vtk_type if vtk_type in QUADRATIC else None
-    if quadratic is not None:
-        vtk_type, basis = QUADRATIC[quadratic]
-    weights = grid.point_data.GetRationalWeights()
-    skipped = {"vtkGhostType", weights.GetName() if weights is not None else None}
-    if vtk_type in BEZIER:
-        if weights is not None and np.any(np.asarray(weights) != 1.0):
-            raise NotImplementedError("rational Bezier cells (weights other than 1) are not "
-                                      "supported")
-        vtk_type, basis = BEZIER[vtk_type], "bernstein"
-    cells = grid.cells
-    offsets = np.asarray(cells.offsets_array, np.int64)
-    connectivity = np.asarray(cells.connectivity_array, np.int64)
+
+def _shape_of(vtk_type):
+    """``(Tack shape, order or None)``: the shape a VTK higher-order type is, and the
+    order of Tack's space for it (``None``: a Lagrange or Bezier cell's own, from its
+    node count)."""
+    from tack.dataset import shapes
+
+    if vtk_type in _LINEAR_SHAPES:
+        return getattr(shapes, _LINEAR_SHAPES[vtk_type]), 1
+    if vtk_type in _CLASSIC:
+        name, order = _CLASSIC[vtk_type]
+        return getattr(shapes, name), order
+    twin = BEZIER.get(vtk_type, vtk_type)
+    return getattr(shapes, LAGRANGE[twin][0]), None
+
+
+def _parametric_nodes(shape, order, stored=None):
+    """Tack's nodes of ``shape`` at ``order`` (``stored`` lexicographic ones, or all),
+    as parametric points ``(n, 3)``."""
+    from tack.dataset import bases
+
+    lattice = np.asarray(bases.lattice_ijk(shape, order), np.float64) / order
+    lattice = lattice if stored is None else lattice[stored]
+    out = np.zeros((len(lattice), 3))
+    out[:, :lattice.shape[1]] = lattice
+    return out
+
+
+def _node_matrix(cell, vtk_type, nodes):
+    """How a VTK cell's node values give Tack's ``nodes`` (parametric points): an index
+    per node where it is one of the cell's own nodes (``-1`` where not), and the
+    interpolation weights ``(len(nodes), cell points)`` from VTK's functions."""
+    n = cell.GetNumberOfPoints()
+    own = np.asarray(cell.GetParametricCoords(), np.float64)[:3 * n].reshape(n, 3)
+    if vtk_type == 35:                                   # vtkCubicLine's r is on [-1, 1]
+        own = own.copy()
+        own[:, 0] = (own[:, 0] + 1.0) / 2.0
+    index = np.full(len(nodes), -1, np.int64)
+    for k, node in enumerate(nodes):
+        hit = np.flatnonzero(np.abs(own - node).max(axis=1) < 1e-9)
+        if len(hit):
+            index[k] = hit[0]
+    weights = np.zeros((len(nodes), n))
+    row = [0.0] * n
+    for k, node in enumerate(nodes):
+        at = list(node)
+        if vtk_type == 35:
+            at[0] = 2.0 * at[0] - 1.0
+        cell.InterpolateFunctions(at, row)
+        weights[k] = row
+    return index, weights
+
+
+@tack.kernel
+def _node_places(cells, u, node_of, starts, out):
+    # Each cell's node n (lexicographic, node_of its place in the view's order):
+    # where the space keeps it.
+    for c in cells:
+        e = cells.entity_id(c)
+        for n in range(node_of.shape[0]):
+            out[starts[e] + n] = u.dof_index(c, node_of[n])
+
+
+def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
+    """A ``vtkUnstructuredGrid`` of VTK's higher-order cells -- Lagrange, Bezier, the
+    classic quadratic, biquadratic and triquadratic ones, cubic lines -- of any
+    shapes, dimensions and orders together, as a dataset: linear cells on their
+    corners, the geometry and point data in ``H1`` of the grid's largest order
+    (equispaced; ``"bernstein"`` for Bezier cells; serendipity for a grid of quad8,
+    hex20 and wedge15 with the quadratic simplices), cell data ``Constant``.
+
+    Each type's nodes are matched to Tack's by VTK's parametric coordinates and
+    copied; where Tack's cell has nodes a VTK cell lacks (a hex20 in a grid of
+    order 2, a quadratic cell beside cubic ones, a quadratic-linear quad), VTK's
+    interpolation functions give them, exactly. A node shared by cells takes its
+    first cell's value. Pyramids above order 1, quadratic polygons and rational
+    Bezier cells are refused, and Bezier cells beside others."""
+    from tack.arrays import ConstantArray
+    from tack.dataset import H1, Constant, DataSet, Field, UnstructuredTopology, bases, ids
+
+    refused = sorted(REFUSED[t] for t in types if t in REFUSED)
+    if refused:
+        raise NotImplementedError(f"{', '.join(refused)}: Tack has no such higher-order cell")
+    bezier = {t for t in types if t in BEZIER}
+    if bezier and bezier != set(types):
+        raise NotImplementedError("Bezier cells beside other higher-order cells")
+    weights_array = grid.point_data.GetRationalWeights()
+    skipped = {"vtkGhostType", weights_array.GetName() if weights_array is not None else None}
+    if bezier and weights_array is not None and np.any(np.asarray(weights_array) != 1.0):
+        raise NotImplementedError("rational Bezier cells (weights other than 1) are not "
+                                  "supported")
+    cell_types = np.asarray(grid.cell_types, np.int64).reshape(-1)
+    offsets = np.asarray(grid.cells.offsets_array, np.int64)
+    connectivity = np.asarray(grid.cells.connectivity_array, np.int64)
     counts = np.diff(offsets)
     n = len(counts)
-    if n == 0 or len(set(counts.tolist())) != 1:
-        raise NotImplementedError("Lagrange cells of several orders in one grid are not "
-                                  "supported")
-    order = 2 if quadratic is not None else lagrange_order(vtk_type, int(counts[0]))
-    per_cell = int(counts[0])
-    rows = connectivity.reshape(n, per_cell)
-    corners_of = (6 if vtk_type == 73 else LAGRANGE[vtk_type][1] + 1 if vtk_type in _SIMPLEX
-                  else 2 ** LAGRANGE[vtk_type][1])
-    corner_ids, compact = np.unique(rows[:, :corners_of], return_inverse=True)
+    # Each cell's (VTK type, node count): its kind, and its Tack shape and order.
+    kinds = {}
+    for vtk_type, count in set(zip(cell_types.tolist(), counts.tolist(), strict=True)):
+        shape, order = _shape_of(vtk_type)
+        if order is None:
+            order = lagrange_order(BEZIER.get(vtk_type, vtk_type), count)
+        kinds[(vtk_type, count)] = (shape, order)
+    order = max(o for _, o in kinds.values())
+    if bezier and len({o for _, o in kinds.values()}) > 1:
+        raise NotImplementedError("Bezier cells of several orders (degree elevation is not "
+                                  "supported)")
+    basis = ("bernstein" if bezier else "serendipity"
+             if order == 2 and set(types) <= _SERENDIPITY | set(_LINEAR_SHAPES)
+             and set(types) & {23, 25, 26}
+             else "equispaced")
+
+    # The topology: each cell's corners (VTK lists them first), renumbered.
+    shape_of_cell = np.empty(n, object)
+    corner_counts = np.empty(n, np.int64)
+    for (vtk_type, count), (shape, _) in kinds.items():
+        mask = (cell_types == vtk_type) & (counts == count)
+        shape_of_cell[mask] = shape
+        corner_counts[mask] = shape.NUM_POINTS
+    corner_rows = [connectivity[offsets[c]:offsets[c] + corner_counts[c]] for c in range(n)]
+    corners = np.concatenate(corner_rows) if n else np.zeros(0, np.int64)
+    corner_ids, compact = np.unique(corners, return_inverse=True)
+    linear_types = np.array([s.ID for s in shape_of_cell], np.uint8)
+    cell_offsets = np.concatenate([[0], np.cumsum(corner_counts)])
+    idt = ids.at_least(id_dtype or tack.i32, max(len(corner_ids), len(compact)))
+    topology = UnstructuredTopology(
+        tack.array(linear_types), tack.array(cell_offsets.astype(idt.numpy_dtype)),
+        tack.array(compact.astype(idt.numpy_dtype)), num_points=len(corner_ids),
+        id_dtype=idt)
     points = np.asarray(grid.points.data, np.float64)
-    types_, cell_offsets = uniform_cells(_LINEAR[vtk_type], n, tack.i64)
-    topology = UnstructuredTopology(types_, cell_offsets,
-                                    compact.reshape(-1).astype(np.int64),
-                                    num_points=len(corner_ids), id_dtype=id_dtype)
     data = DataSet(topology, points[corner_ids] - shift, dtype=dtype)
+
+    point_arrays = [name for name in grid.point_data.keys() if name not in skipped]
+    sources = [points] + [np.asarray(grid.point_data[name]).reshape(len(points), -1)
+                          for name in point_arrays]
     if order == 1:
         space = H1(data)
-        vtk_of_dof = corner_ids
+        node_values = [source[corner_ids] for source in sources]
     else:
-        space = H1(data, order=order, **({"basis": basis} if basis else {}))
-        indices = _h1_indices(data, space, per_cell)
-        if quadratic is not None:
-            shape = getattr(shapes, LAGRANGE[vtk_type][0])
-            stored = space.stored_nodes(shape)
-            if len(stored) != per_cell:
-                raise ValueError(f"a VTK quadratic cell of type {quadratic} has "
-                                 f"{len(stored)} points, not {per_cell}")
-            lex_to_vtk = _quadratic_vtk_index(quadratic, stored)
-        else:
-            lex_to_vtk = _vtk_index(vtk_type, order)
-        vtk_points = rows[:, lex_to_vtk]
-        vtk_of_dof = np.full(space.size, -1, np.int64)
-        vtk_of_dof[indices.reshape(-1)] = vtk_points.reshape(-1)
-        if (vtk_of_dof < 0).any() or not np.array_equal(vtk_of_dof[indices.reshape(-1)],
-                                                        vtk_points.reshape(-1)):
-            raise NotImplementedError("the Lagrange cells do not share their points as an "
+        space = H1(data, order=order, basis=basis)
+        # Where each cell's nodes live in the space, cell by cell.
+        stored = {s: space.stored_nodes(s) for s in set(shape_of_cell.tolist())}
+        sizes = np.array([len(stored[s]) for s in shape_of_cell], np.int64)
+        starts = np.concatenate([[0], np.cumsum(sizes)])
+        places = tack.empty((max(int(starts[-1]), 1),), ids.at_least(idt, space.size))
+        field = Field(space, ConstantArray(0.0, space.size))
+        starts_array = tack.array(starts[:-1].astype(np.int64))
+        for group in data.launch_groups("cells", [field]):
+            if group.count:
+                node_of = bases.view_order(group.shape, order, space._any_order(group.shape))
+                node_of = np.asarray(node_of)[stored[group.shape]]
+                _node_places(data.domain_view("cells", group), field.view(group),
+                             tack.array(node_of.astype(np.int32)), starts_array, places)
+        places = places.numpy()[:int(starts[-1])]
+        node_values = [np.zeros((space.size, source.shape[1])) for source in sources]
+        written = np.zeros(space.size, bool)
+        shared_bad = False
+        for (vtk_type, count), (shape, _) in kinds.items():
+            cells_of = np.flatnonzero((cell_types == vtk_type) & (counts == count))
+            nodes = _parametric_nodes(shape, order, stored[shape])
+            index, weights = _node_matrix(grid.GetCell(int(cells_of[0])), vtk_type, nodes)
+            rows = np.stack([connectivity[offsets[c]:offsets[c] + count] for c in cells_of])
+            at = np.stack([places[starts[c]:starts[c + 1]] for c in cells_of])
+            if (index >= 0).all():
+                # Tack's nodes are the cell's own: copied, to the bit.
+                vtk_points = rows[:, index]
+                for out, source in zip(node_values, sources, strict=True):
+                    out[at.reshape(-1)] = source[vtk_points.reshape(-1)]
+                seen = np.full(space.size, -1, np.int64)
+                seen[at.reshape(-1)] = vtk_points.reshape(-1)
+                shared_bad |= bool((seen[at.reshape(-1)] != vtk_points.reshape(-1)).any())
+            else:
+                if bezier:
+                    raise NotImplementedError("Bezier cells whose nodes are not Tack's")
+                for out, source in zip(node_values, sources, strict=True):
+                    values = np.einsum("nj,cjk->cnk", weights, source[rows])
+                    # The cell's own nodes copied, as above; the others interpolated.
+                    own = index >= 0
+                    values[:, own] = source[rows[:, index[own]]]
+                    fresh = ~written[at]
+                    out[at[fresh]] = values[fresh]
+            written[at.reshape(-1)] = True
+        if shared_bad:
+            raise NotImplementedError("the higher-order cells do not share their points as an "
                                       "H1 space shares its nodes (each cell's own copies)")
-        data.geometry = Field(space, _vectors(points[vtk_of_dof] - shift, dtype))
-    for name in grid.point_data.keys():
+        data.geometry = Field(space, _vectors(node_values[0] - shift, dtype))
+    for name, values in zip(point_arrays, node_values[1:], strict=True):
         array = grid.point_data[name]
-        values = np.asarray(array)
-        if name in skipped:
-            continue
-        values = values.reshape(values.shape[0], -1)[vtk_of_dof]
+        if not np.issubdtype(np.asarray(array).dtype, np.floating) and order > 1:
+            values = values.astype(np.asarray(array).dtype)
         data.fields[name] = Field(space, float_fields(values), unit_of(array))
     for name in grid.cell_data.keys():
         if name in ("vtkGhostType", "HigherOrderDegrees"):
