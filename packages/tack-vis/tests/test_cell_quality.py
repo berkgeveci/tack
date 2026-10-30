@@ -211,3 +211,19 @@ def test_measures_by_name():
     assert set(td.cell_quality(grid, ["condition", "max_edge"])) == {"condition", "max_edge"}
     with pytest.raises(ValueError, match="no measure 'skew'"):
         td.cell_quality(grid, "skew")
+
+
+def test_a_polyhedrons_measures_are_its_fans():
+    """What the docstring says of polyhedra: a cube as a polyhedron is measured by
+    the tetrahedra fanning it, against the regular tetrahedron -- scaled Jacobian
+    1/sqrt(3), condition 1.29 -- where the hexahedron scores 1; the edge measures
+    are the same on both."""
+    grid = td.uniform_grid((2, 2, 2), spacing=(0.5, 0.5, 0.5))
+    hexahedron = td.extract_cells(grid, [0])
+    ours, theirs = td.cell_quality(td.as_polyhedra(hexahedron)), td.cell_quality(hexahedron)
+    np.testing.assert_allclose(ours["scaled_jacobian"].values.numpy(), 1 / np.sqrt(3),
+                               rtol=1e-5)
+    np.testing.assert_allclose(ours["condition"].values.numpy(), 1.2909945, rtol=1e-5)
+    np.testing.assert_allclose(theirs["scaled_jacobian"].values.numpy(), 1.0, rtol=1e-6)
+    for name in ("edge_ratio", "min_edge", "max_edge"):
+        np.testing.assert_allclose(ours[name].values.numpy(), theirs[name].values.numpy())

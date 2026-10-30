@@ -25,7 +25,8 @@ IMAGES = Path(__file__).resolve().parents[1] / "assets" / "gallery"
 KINDS = ("polyhedra", "linear", "high-order", "curved")
 
 TITLES = {"polyhedra": "Polyhedra", "linear": "Tetrahedra",
-          "high-order": "Order 4 on straight cells", "curved": "Order 3 on curved cells"}
+          "high-order": "Order 4 on straight cells", "curved": "Order 3 on curved cells",
+          "mixed": "Hexahedra, wedges and pyramids", "hexahedra": "Hexahedra"}
 
 
 def arguments(description, kinds=KINDS):
@@ -64,15 +65,12 @@ def _twist(x):
 
 # ── The datasets ────────────────────────────────────────────────────
 
-def _voronoi_columns(n=40, layers=6, seed=3):
-    """Voronoi cells of random points in the unit square, extruded through the unit
-    cube in ``layers``: polygonal prisms, faces of up to a dozen points. The points'
-    mirror images across the square's sides make the cells tile the square
+def _voronoi(seeds):
+    """The Voronoi diagram of ``seeds`` in the unit square, and each seed's region:
+    the seeds' mirror images across the square's sides make the regions tile it
     exactly."""
     from scipy.spatial import Voronoi
 
-    rng = np.random.default_rng(seed)
-    seeds = rng.uniform(0, 1, (n, 2))
     mirrored = [seeds]
     for axis in (0, 1):
         for side in (0.0, 1.0):
@@ -80,8 +78,26 @@ def _voronoi_columns(n=40, layers=6, seed=3):
             image[:, axis] = 2 * side - image[:, axis]
             mirrored.append(image)
     vor = Voronoi(np.concatenate(mirrored))
-    regions = [vor.regions[vor.point_region[i]] for i in range(n)]
-    # The mirrored cells' shared vertices are the square's; snap them onto it.
+    return vor, [vor.regions[vor.point_region[i]] for i in range(len(seeds))]
+
+
+def _voronoi_columns(n=150, layers=8, relax=20, seed=3):
+    """Voronoi cells of ``n`` points in the unit square, relaxed toward their
+    regions' centroids ``relax`` times (Lloyd's method: even cells, no very short
+    edges, as a polyhedral mesher makes them), extruded through the unit cube in
+    ``layers``: polygonal prisms."""
+    seeds = np.random.default_rng(seed).uniform(0, 1, (n, 2))
+    for _ in range(relax):
+        vor, regions = _voronoi(seeds)
+        for i, r in enumerate(regions):
+            ring = vor.vertices[r]
+            x, y = ring[:, 0], ring[:, 1]
+            cross = x * np.roll(y, -1) - np.roll(x, -1) * y
+            area = cross.sum() / 2
+            seeds[i] = [((x + np.roll(x, -1)) * cross).sum() / (6 * area),
+                        ((y + np.roll(y, -1)) * cross).sum() / (6 * area)]
+    vor, regions = _voronoi(seeds)
+    # The regions' vertices on the square's sides are on them to rounding: snap.
     xy = np.clip(vor.vertices, 0.0, 1.0)
     xy[np.abs(xy) < 1e-12] = 0.0
     xy[np.abs(xy - 1) < 1e-12] = 1.0
@@ -106,6 +122,70 @@ def _voronoi_columns(n=40, layers=6, seed=3):
     return td.DataSet(td.PolyhedralTopology.from_cell_faces(cells, len(points)), points)
 
 
+def _mixed(n=6):
+    """The unit cube's n^3 hexahedra: a third kept, a third each split into two
+    wedges, a third into six pyramids about its centre (a point of its own). Every
+    face between two cells is the same quad or triangle in both."""
+    ijk = np.stack(np.meshgrid(*(np.arange(n + 1),) * 3, indexing="ij"), -1)
+    points = list(ijk.transpose(2, 1, 0, 3).reshape(-1, 3) / n)
+
+    def at(i, j, k):
+        return i + (n + 1) * (j + (n + 1) * k)
+
+    hexes, wedges, pyramids = [], [], []
+    for k in range(n):
+        for j in range(n):
+            for i in range(n):
+                h = [at(i, j, k), at(i + 1, j, k), at(i + 1, j + 1, k), at(i, j + 1, k),
+                     at(i, j, k + 1), at(i + 1, j, k + 1), at(i + 1, j + 1, k + 1),
+                     at(i, j + 1, k + 1)]
+                if i < n // 3:
+                    hexes.append(h)
+                elif i < 2 * n // 3:
+                    wedges += [[h[0], h[1], h[3], h[4], h[5], h[7]],
+                               [h[1], h[2], h[3], h[5], h[6], h[7]]]
+                else:
+                    points.append(np.asarray([i + 0.5, j + 0.5, k + 0.5]) / n)
+                    apex = len(points) - 1
+                    # Each face's corners reversed from outward: a base toward the apex.
+                    for face in ((0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2),
+                                 (2, 6, 7, 3), (3, 7, 4, 0)):
+                        pyramids.append([h[f] for f in face] + [apex])
+    cells = ([(12, c) for c in hexes] + [(13, c) for c in wedges]
+             + [(14, c) for c in pyramids])
+    types = np.array([t for t, _ in cells], np.uint8)
+    sizes = np.array([len(c) for _, c in cells])
+    offsets = np.concatenate([[0], np.cumsum(sizes)])
+    connectivity = np.concatenate([c for _, c in cells])
+    topology = td.UnstructuredTopology(tack.array(types), tack.array(offsets),
+                                       tack.array(connectivity), num_points=len(points))
+    return td.DataSet(topology, np.asarray(points))
+
+
+def jittered(data, amount=0.25, seed=5):
+    """``data`` with its points inside the unit cube moved at random by up to
+    ``amount`` of the mesh spacing along each axis (the boundary's stay), so its
+    cells differ in shape and quality."""
+    x = data.positions().astype(np.float64)
+    inside = ((x > 1e-9) & (x < 1 - 1e-9)).all(axis=1)
+    edges = data.topology.edges().rows.numpy()
+    spacing = np.median(np.linalg.norm(x[edges[:, 1]] - x[edges[:, 0]], axis=1))
+    rng = np.random.default_rng(seed)
+    x[inside] += rng.uniform(-amount, amount, (inside.sum(), 3)) * spacing
+    out = td.DataSet(data.topology, x.astype(np.float32))
+    for name, field in data.fields.items():
+        out.fields[name] = td.Field(field.space, field.values)
+    return out
+
+
+def twisted(data):
+    """``data`` (straight hexahedra) on an order-3 geometry, the cube twisted and
+    bowed."""
+    data = td.DataSet(data.topology, data.geometry.values)
+    data.geometry = td.interpolate(data, _twist, td.H1(data, order=3), dtype=tack.vec3())
+    return data
+
+
 # --8<-- [start:datasets]
 def dataset(kind):
     """The dataset of ``kind`` (``KINDS``), with the field ``u`` (``schwarz``)."""
@@ -121,10 +201,16 @@ def dataset(kind):
         grid = td.uniform_grid((4, 4, 4), spacing=(1 / 3,) * 3)
         data = td.extract_cells(grid, np.arange(grid.num_cells))
         data.fields["u"] = td.interpolate(data, schwarz, td.H1(data, order=4))
+    elif kind == "hexahedra":
+        grid = td.uniform_grid((7, 7, 7), spacing=(1 / 6,) * 3)
+        data = td.extract_cells(grid, np.arange(grid.num_cells))
+        data.fields["u"] = td.interpolate(data, schwarz, td.H1(data))
+    elif kind == "mixed":
+        data = _mixed()
+        data.fields["u"] = td.interpolate(data, schwarz, td.H1(data))
     elif kind == "curved":
         grid = td.uniform_grid((4, 4, 4), spacing=(1 / 3,) * 3)
-        data = td.extract_cells(grid, np.arange(grid.num_cells))
-        data.geometry = td.interpolate(data, _twist, td.H1(data, order=3), dtype=tack.vec3())
+        data = twisted(td.extract_cells(grid, np.arange(grid.num_cells)))
         data.fields["u"] = td.interpolate(data, schwarz, td.H1(data, order=3))
     else:
         raise ValueError(f"no dataset of kind {kind!r}")
@@ -175,7 +261,9 @@ _COOL_TO_WARM = ((0.0, (0.23, 0.299, 0.754)), (0.5, (0.865, 0.865, 0.865)),
 
 def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True):
     """Draw ``parts`` -- ``(dataset, field name, range)``, a field on points or cells,
-    or ``(dataset, None, None)`` for plain grey -- and ``outline`` (lines, thin and
+    or ``(dataset, None, None)`` for plain grey, and optionally a fourth entry, a
+    dict of the actor's properties (``color``, ``line_width``, ...) -- and
+    ``outline`` (lines, thin and
     dark) to a progressive JPEG at ``path`` (a third of a PNG's size, so the page
     loads quickly), seen from ``view`` (azimuth and elevation in
     degrees, from the -y side of the unit cube). Lit less (``lit=False``), mostly
@@ -199,7 +287,8 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
     from tack.interop.vtk import dataset_to_vtk
 
     renderer = vtkRenderer(background=(1.0, 1.0, 1.0))
-    for data, name, (low, high) in ((d, n, r or (0.0, 1.0)) for d, n, r in parts):
+    for data, name, (low, high), properties in (
+            (p[0], p[1], p[2] or (0.0, 1.0), p[3] if len(p) > 3 else {}) for p in parts):
         grid = dataset_to_vtk(data)
         if "normals" in grid.point_data.keys():
             grid.point_data.SetNormals(grid.point_data["normals"])
@@ -222,13 +311,16 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
         actor.property.ambient = 0.2 if lit else 0.6
         actor.property.diffuse = 0.8 if lit else 0.4
         actor.property.specular = 0.2 if lit else 0.0
+        for key, value in properties.items():
+            setattr(actor.property, key, value)
         renderer.AddActor(actor)
     if outline is not None:
         lines = vtkActor(mapper=vtkDataSetMapper(input_data=dataset_to_vtk(outline),
                                                  scalar_visibility=False))
         lines.property.color = (0.25, 0.25, 0.3)
         lines.property.line_width = 1.0
-        lines.property.opacity = 0.5
+        # A mesh of many small cells (the tetrahedra) fainter, or it hides the result.
+        lines.property.opacity = 0.5 if outline.num_cells < 3000 else 0.12
         renderer.AddActor(lines)
     window = vtkRenderWindow(off_screen_rendering=True, size=size, multi_samples=8)
     window.AddRenderer(renderer)

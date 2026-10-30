@@ -637,3 +637,51 @@ def test_everything_in_f32_on_every_backend(backend):
     assert probed.fields["valid"].values.numpy().all()
     np.testing.assert_allclose(probed.fields["u"].values.numpy(), _quadratic_at(nodes),
                                atol=1e-4)
+
+
+def _cubic_gradient_at(p):
+    x, y, z = p[:, 0], p[:, 1], p[:, 2]
+    return np.stack([3 * x * x + y * z * z, -4 * y * z + x * z * z,
+                     -2 * y * y + 2 * x * y * z + 1.5 * z * z], axis=1)
+
+
+@pytest.mark.parametrize("layout", ["blocks", "cells"])
+def test_gradients_at_an_l2_spaces_nodes(f64_backend, layout):
+    """``gradients(data, field, at=L2(...))``: the gradient at each cell's own nodes of
+    the space, exact there -- a cubic's on straight cells of order 3 and up, and on a
+    curved geometry the coordinate x's gradient (1, 0, 0), x being in the
+    geometry's own space. Vector fields give 9 values a node, row by row."""
+    data = _rotated(_hexes(), seed=11)
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=4))
+    space = td.L2(data, order=3, layout=layout)
+    g = td.gradients(data, "u", at=space)
+    assert g.space is space and g.values.numpy().shape == (space.size, 3)
+    nodes = td.interpolate(data, _identity, space, dtype=tack.vec3(tack.f64)).values.numpy()
+    np.testing.assert_allclose(g.values.numpy(), _cubic_gradient_at(nodes), atol=1e-9)
+    # Vectors: the identity's gradient is the identity matrix at every node.
+    data.fields["x"] = td.interpolate(data, _identity, td.H1(data, order=2),
+                                      dtype=tack.vec3(tack.f64))
+    eye = td.gradients(data, "x", at=space).values.numpy()
+    np.testing.assert_allclose(eye, np.tile(np.eye(3).reshape(-1), (space.size, 1)),
+                               atol=1e-12)
+    curved = td.DataSet(data.topology, data.geometry.values)
+    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=3),
+                                     dtype=tack.vec3(tack.f64))
+    curved.fields["x"] = td.interpolate(curved, _identity, td.H1(curved, order=3),
+                                        dtype=tack.vec3(tack.f64))
+    eye = td.gradients(curved, "x", at=td.L2(curved, order=2)).values.numpy()
+    np.testing.assert_allclose(eye, np.tile(np.eye(3).reshape(-1), (len(eye), 1)), atol=1e-9)
+    with pytest.raises(ValueError, match="another topology"):
+        td.gradients(data, "u", at=td.L2(_hexes(), order=2))
+
+
+def test_gradients_at_an_l2_spaces_nodes_on_simplices(f64_backend):
+    """The same on tetrahedra: the polynomial (of total degree 4) in H1 of order 4
+    (equispaced), its gradient at the nodes of L2 of order 2, exact."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.4, 0.6), dtype=tack.f64)
+    data = td.tetrahedralize(grid)
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=4, basis="equispaced"))
+    space = td.L2(data, order=2, basis="equispaced")
+    g = td.gradients(data, "u", at=space).values.numpy()
+    nodes = td.interpolate(data, _identity, space, dtype=tack.vec3(tack.f64)).values.numpy()
+    np.testing.assert_allclose(g, _cubic_gradient_at(nodes), atol=1e-9)

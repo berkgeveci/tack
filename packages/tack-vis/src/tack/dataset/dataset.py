@@ -862,7 +862,7 @@ class DataSet:
         points' the points. Shared nodes need positions per point: an ``L2``
         geometry has none, and is refused for them. On polyhedra, polygons and
         polylines only point nodes exist."""
-        from tack.dataset.spaces import Constant, Values, reference_cells
+        from tack.dataset.spaces import Values, reference_cells
 
         if space.topology is not self.topology:
             raise ValueError("a space of another topology")
@@ -913,6 +913,16 @@ class DataSet:
             return out
         groups = (self.launch_groups("cells", keys=(space,)) if space.varies
                   else self.topology.groups())
+        out += [view for _, view in self._cell_node_views(space, groups)]
+        return out
+
+    def _cell_node_views(self, space, groups):
+        """``(group, view)`` for each of ``groups``' cell views over ``space``'s nodes in
+        the cells (``node_views``' last part): ``node_count``, ``node_dof``,
+        ``node_position`` and ``node_parametric_point``."""
+        from tack.dataset.spaces import Constant, Values
+
+        out = []
         for group in groups:
             if not group.count:
                 continue
@@ -923,29 +933,25 @@ class DataSet:
                 tack.copyto(ijk, lattice)
                 nodes_of = views.of_node_order(views._SimplexCellNodes, space.order,
                                                len(lattice) // group.shape.DIMENSION)
-                out.append(self.domain_view(
-                    "cells", group,
-                    (nodes_of,),
-                    node_offsets=space.offsets, node_ijk=ijk,
-                    node_points=_space_nodes(space, self.geometry)))
+                view = self.domain_view("cells", group, (nodes_of,),
+                                        node_offsets=space.offsets, node_ijk=ijk,
+                                        node_points=_space_nodes(space, self.geometry))
             elif isinstance(space, L2) and space.tensor:
                 cells = space.layout == "cells"
                 mixin = views._TensorCellNodesCells if cells else views._TensorCellNodes
-                out.append(self.domain_view(
-                    "cells", group, (views.of_node_order(mixin, space.order),),
-                    node_offsets=space.offsets, node_cells=self.num_cells,
-                    node_points=_space_nodes(space, self.geometry)))
+                view = self.domain_view("cells", group, (views.of_node_order(mixin, space.order),),
+                                        node_offsets=space.offsets, node_cells=self.num_cells,
+                                        node_points=_space_nodes(space, self.geometry))
             elif isinstance(space, L2):
                 order = group.keys[space] if space.varies else space.order
                 dof = views._CornerDof if order == 1 else views._OffsetDof
                 place = views._CornerPosition if order == 1 else views._CenterPosition
-                out.append(self.domain_view("cells", group, (dof, place),
-                                            node_offsets=space.offsets))
+                view = self.domain_view("cells", group, (dof, place), node_offsets=space.offsets)
             elif isinstance(space, (Constant, Values)):
-                out.append(self.domain_view("cells", group,
-                                            (views._CellDof, views._CenterPosition)))
+                view = self.domain_view("cells", group, (views._CellDof, views._CenterPosition))
             else:
                 raise TypeError(f"no nodes for {space!r}")
+            out.append((group, view))
         return out
 
     @on_inputs_device
