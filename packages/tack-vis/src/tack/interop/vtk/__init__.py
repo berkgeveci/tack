@@ -510,7 +510,11 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``origin`` (three numbers) becomes the dataset's ``origin``: VTK's points,
     an image's origin and a rectilinear grid's lines are taken relative to it,
     subtracted in double precision before they become ``dtype``, so points far
-    from zero keep their precision.
+    from zero keep their precision. Without one, converting to ``f32`` takes
+    the lower corner of VTK's bounds, rounded down, where the data are more
+    than 100 times farther from zero than they are wide
+    (``tack.dataset.dataset.automatic_origin``; a composite's pieces one
+    origin), and zero otherwise.
 
     A ``vtkOverlappingAMR`` becomes an ``AMRDataSet``: each block (an image or a
     rectilinear grid) converted as above, placed in its level by its
@@ -541,6 +545,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
     be shared -- an origin to subtract, a type to convert, triangle strips,
     collapsed hexahedra, polyhedra -- is copied as before."""
+    if origin is None and dtype == tack.f32:
+        origin = _far_origin(grid)
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
                           id_dtype=id_dtype, origin=origin, copy=copy)
     if grid.GetInformation().Has(_time_key()):
@@ -562,6 +568,23 @@ def _strip_triangles(offsets, connectivity):
     rows = np.stack([connectivity[first], connectivity[first + 1], connectivity[first + 2]], 1)
     rows[odd, 0], rows[odd, 1] = rows[odd, 1], rows[odd, 0].copy()
     return rows, strip
+
+
+def _far_origin(grid):
+    """The origin data far from zero for their size take in f32
+    (``automatic_origin`` of VTK's bounds), or None; none for a hyper tree grid,
+    whose octree keeps its roots' own lattice."""
+    import numpy as np
+    from vtkmodules.vtkCommonDataModel import vtkHyperTreeGrid
+
+    from tack.dataset.dataset import automatic_origin
+
+    if isinstance(grid, vtkHyperTreeGrid) or not hasattr(grid, "GetBounds"):
+        return None
+    bounds = [0.0] * 6           # filled: composites' GetBounds() returns no tuple
+    grid.GetBounds(bounds)
+    bounds = np.asarray(bounds, np.float64)
+    return automatic_origin(bounds[0::2], bounds[1::2])
 
 
 def _collapsed_hexahedra(types, offsets, connectivity):
