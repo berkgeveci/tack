@@ -8,13 +8,15 @@ from tack.dataset.carry import selected
 from tack.dataset.dataset import DataSet, Field
 
 
-def _moved(data, positions, fields=None):
-    """``data`` with the geometry's values replaced: same topology and sets, and the
-    fields ``fields`` selects (all by default)."""
+def _moved(data, positions, fields=None, space=None):
+    """``data`` with the geometry's values replaced (in ``space``, by default the
+    geometry's): same topology and sets, and the fields ``fields`` selects (all by
+    default)."""
     from tack.dataset.ghosts import keep_marks
 
     fields = {name: data.fields[name] for name in selected(data, fields)}
-    return keep_marks(data, DataSet(data.topology, Field(data.geometry.space, positions),
+    space = data.geometry.space if space is None else space
+    return keep_marks(data, DataSet(data.topology, Field(space, positions),
                                     fields=fields, sets=dict(data.sets)))
 
 

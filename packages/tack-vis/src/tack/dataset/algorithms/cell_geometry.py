@@ -6,7 +6,7 @@ import tack
 from tack.dataset import shapes
 from tack.dataset.algorithms._common import _measure_unit, _table, _vectors
 from tack.dataset.dataset import Field
-from tack.dataset.spaces import Values
+from tack.dataset.spaces import H1, L2, Values
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['CellGeometry', 'cell_geometry']
@@ -157,7 +157,21 @@ def cell_geometry(data):
     trilinear volume); its faces must be wound out of it. A 2D cell's area --
     triangle, quad, pixel or polygon -- along its own normal (Newell's), from
     its edges going round it. A line's or a polyline's length, and the
-    centroid of its segments; a vertex's point, with measure 0."""
+    centroid of its segments; a vertex's point, with measure 0.
+
+    On a curved geometry (``H1`` above order 1, or an ``L2`` one of order 2 or
+    more) each cell is measured as it is, by quadrature through its own map
+    (``integrate.cell_measures``): its volume, area or length, and the centroid
+    those weigh. (A curved cell was measured by its corners.)"""
+    space = data.geometry.space
+    if getattr(data.topology, "reference_cells", True) and (
+            (isinstance(space, H1) and space.order > 1)
+            or (isinstance(space, L2) and space.tensor)):
+        from tack.dataset.algorithms.integrate import cell_measures
+
+        volumes, centroids = cell_measures(data)
+        return CellGeometry(Field(Values(data, "cells"), volumes, _measure_unit(data)),
+                            Field(Values(data, "cells"), centroids, data.unit))
     if data.topology.dimension > 1 and not getattr(data.topology, "reference_cells", True):
         data.topology.faces()                      # polyhedra and polygons walk theirs
     n = data.num_cells

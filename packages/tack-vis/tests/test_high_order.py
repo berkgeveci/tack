@@ -698,3 +698,106 @@ def test_pieces_of_curved_cells_are_refused_where_they_would_come_out_straight(f
     for run in (td.ghost_cells, td.merge_pieces):
         with pytest.raises(NotImplementedError, match="come out straight"):
             run(pieces, fields=[])
+
+
+def test_contours_of_high_order_fields_on_mixed_meshes_say_why_they_are_refused(f64_backend):
+    """Subdivision takes cells of one family, so a high-order field on a mesh of
+    hexahedra and wedges is refused, and the message says that. It spoke of corner
+    values (MFEM's mixed Fichera corner)."""
+    grid = td.uniform_grid((3, 2, 2), dtype=tack.f64)
+    h = td.extract_cells(grid, np.arange(2)).topology.connectivity.numpy().reshape(-1, 8)
+    second = h[1]
+    conn = [*h[0], *second[[0, 1, 3, 4, 5, 7]], *second[[1, 2, 3, 5, 6, 7]]]
+    types = tack.array(np.array([shapes.HEXAHEDRON, shapes.WEDGE, shapes.WEDGE], np.uint8))
+    offsets = tack.array(np.array([0, 8, 14, 20], np.int32))
+    mixed = td.DataSet(td.UnstructuredTopology(types, offsets,
+                                               tack.array(np.array(conn, np.int32)),
+                                               num_points=grid.num_points), grid.positions())
+    mixed.fields["u"] = td.interpolate(mixed, _quadratic, td.H1(mixed, order=2))
+    with pytest.raises(NotImplementedError, match="all simplices, all wedges or all tensor"):
+        td.contour(mixed, "u", 1.0)
+
+
+@pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra"])
+def test_jumps_of_a_high_order_dg_field_are_at_the_face_center(f64_backend, cells):
+    """``jump`` evaluates each side's own basis at the face's center: an L2 field of
+    order 2 that is (1 + c) x^2 in cell c jumps by (c1 - c0) x^2 there. It took the
+    face's corner values (``traces``) and their linear mean, wrong above order 1."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.4, 0.6), dtype=tack.f64)
+    data = (td.extract_cells(grid, np.arange(grid.num_cells)) if cells == "hexahedra"
+            else td.tetrahedralize(grid))
+    space = td.L2(data, order=2, basis="equispaced", layout="blocks")
+    nodes = td.interpolate(data, _identity, space, dtype=tack.vec3(tack.f64)).values.numpy()
+    offsets = space.offsets.numpy()
+    cell = np.repeat(np.arange(data.num_cells), np.diff(offsets))
+    data.fields["u"] = td.Field(space, tack.array((1.0 + cell) * nodes[:, 0] ** 2))
+    jumps = td.jump(data, "u").values.numpy()
+    sides = data.topology.faces().sides.numpy()
+    x = td.face_centers(data).values.numpy()[:, 0]
+    inner = sides[:, 2] >= 0
+    expected = np.where(inner, (sides[:, 2] - sides[:, 0]) * x ** 2, 0.0)
+    np.testing.assert_allclose(jumps, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("layout", ["blocks", "cells"])
+def test_a_curved_l2_geometry_is_curved(f64_backend, layout):
+    """A curved geometry in L2 (each cell its own nodes, as a mesh displaced by a DG
+    field or a periodic mesh of order 2 keeps it) maps, bounds and inverts its cells
+    as the same geometry in H1 does: probes and cell centres agree. It was read as
+    order-1 corner values, each cell's first values, and probes missed. On
+    tetrahedra it is refused, not misread."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    curved = _rotated(td.extract_cells(grid, np.arange(8)), seed=2)
+    vec = tack.vec3(tack.f64)
+    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=2), dtype=vec)
+    curved.fields["u"] = td.interpolate(curved, _quadratic, td.H1(curved, order=2))
+    space = td.L2(curved, order=2, layout=layout)
+    broken = td.DataSet(curved.topology, td.project(curved, curved.geometry, space),
+                        fields={"u": curved.fields["u"]})
+    centers = td.cell_centers(curved).values.numpy()
+    np.testing.assert_allclose(td.cell_centers(broken).values.numpy(), centers, atol=1e-13)
+    points = curved.geometry.values.numpy()
+    a, b = td.probe(curved, points), td.probe(broken, points)
+    assert b.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(b.fields["u"].values.numpy(), a.fields["u"].values.numpy(),
+                               atol=1e-9)
+    tets = td.tetrahedralize(grid)
+    tets.geometry = td.interpolate(tets, _bend, td.H1(tets, order=2), dtype=vec)
+    space = td.L2(tets, order=2, basis="equispaced")
+    broken = td.DataSet(tets.topology, td.project(tets, tets.geometry, space))
+    with pytest.raises(NotImplementedError, match="curved L2 geometries"):
+        td.cell_centers(broken)
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_subdividing_an_l2_geometry_keeps_its_cells_apart(f64_backend, order):
+    """Cells of an L2 geometry share points in the topology but need not meet in space
+    (a periodic mesh's seam, a mesh displaced by a DG field): ``subdivide`` gives each
+    its own lattice points. Here each cell is moved by its own offset, and every
+    sub-cell's corners and values are the unmoved ones' plus it. Shared points took
+    one cell's position, stretching the others' sub-cells across the mesh."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    curved = _rotated(td.extract_cells(grid, np.arange(8)), seed=3)
+    vec = tack.vec3(tack.f64)
+    if order > 1:
+        curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=order), dtype=vec)
+    curved.fields["u"] = td.interpolate(curved, _quadratic, td.H1(curved, order=2))
+    space = td.L2(curved, order=order, layout="blocks")
+    values = td.project(curved, curved.geometry, space).values.numpy()
+    cell = np.repeat(np.arange(curved.num_cells), np.diff(space.offsets.numpy()))
+    shift = np.c_[10.0 * cell, np.zeros((len(cell), 2))]
+    moved = tack.empty((len(values),), vec)
+    tack.copyto(moved, values + shift)
+    apart = td.DataSet(curved.topology, td.Field(space, moved),
+                       fields={"u": curved.fields["u"]})
+    a, b = td.subdivide(curved, 3), td.subdivide(apart, 3)
+    assert b.num_cells == a.num_cells
+    corners_a = a.topology.connectivity.numpy().reshape(-1, 8)
+    corners_b = b.topology.connectivity.numpy().reshape(-1, 8)
+    parent = np.repeat(np.arange(curved.num_cells), 27)
+    x_a = a.geometry.values.numpy()[corners_a]
+    x_b = b.geometry.values.numpy()[corners_b]
+    x_a[..., 0] += 10.0 * parent[:, None]
+    np.testing.assert_allclose(x_b, x_a, atol=1e-12)
+    np.testing.assert_allclose(b.fields["u"].values.numpy()[corners_b],
+                               a.fields["u"].values.numpy()[corners_a], atol=1e-12)
