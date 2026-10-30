@@ -137,7 +137,7 @@ def _affine(seed, shear=False):
 
 
 @pytest.mark.parametrize("dims, shear", [((5, 4, 3), False), ((5, 4, 3), True), ((6, 5), False)])
-def test_transformed_images_stay_images(backend, dims, shear):
+def test_transformed_images_stay_images(f64_backend, dims, shear):
     """An image under an affine map is an image: the map folded into its origin and
     direction (any invertible matrix), nothing stored per point, its positions the
     map of the image's -- and every filter's output what it is on the same
@@ -181,7 +181,7 @@ def test_a_far_transformed_image_keeps_its_bits(backend):
 
 
 @needs_vtk
-def test_transformed_images_go_to_vtk_as_images(backend):
+def test_transformed_images_go_to_vtk_as_images(f64_backend):
     """VTK holds the folded map as an image's origin and direction matrix: the same
     points as vtkTransformFilter makes of the image."""
     from tack.interop.vtk import dataset_to_vtk
