@@ -1326,6 +1326,40 @@ def _to_vtk_values(values, share=False):
     return np.array(to_host(values))            # a copy: the grid owns its values
 
 
+def _write_fields(grid, data, share):
+    """``data``'s point and cell fields into ``grid``'s point and cell data, with
+    its normals as VTK's active normals (``dataset_to_vtk``)."""
+    import numpy as np
+
+    from tack.dataset import H1, Constant, Values
+    from tack.dataset.carry import _point_values
+
+    for name, field in data.fields.items():
+        space = field.space
+        if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
+            # An order-2 field's values at the points, its first ones: the grid
+            # is linear, as the filters read order-2 data.
+            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
+                                                   share)
+            _label(grid.point_data[name], field.unit)
+        elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
+            grid.cell_data[name] = _to_vtk_values(field.values, share)
+            _label(grid.cell_data[name], field.unit)
+    for attributes, names in ((grid.point_data, _POINT_NORMALS),
+                              (grid.cell_data, _CELL_NORMALS)):
+        for name in names:
+            if name in attributes.keys():
+                values = np.asarray(attributes[name])
+                if values.ndim == 2 and values.shape[1] == 3 and values.dtype.kind == "f":
+                    attributes.SetActiveNormals(name)   # not writable as a property
+                    break
+
+
+#: The fields ``dataset_to_vtk`` makes VTK's active normals, first found first.
+_POINT_NORMALS = ("Normals", "normals")
+_CELL_NORMALS = ("Normals", "Normals (cells)", "cell_normals")
+
+
 def dataset_to_vtk(data, copy=True, higher_order=False):
     """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
     images and rectilinear grids, its ratios the same along every axis, into a
@@ -1356,6 +1390,12 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
 
     The step's time (``data.time``) becomes VTK's ``DATA_TIME_STEP``; VTK has
     no unit for it.
+
+    Normals become VTK's active normals, which its renderers and filters read
+    and a plain array is not: a 3-vector point field named ``Normals`` (VTK's
+    readers' and filters' name) or ``normals`` (``surface_normals``' and
+    ``point_normals``'), and a 3-vector cell field named ``Normals``,
+    ``Normals (cells)`` or ``cell_normals``. Tack keeps no roles of its own.
 
     With ``copy=False`` the VTK dataset shares Tack's memory where the arrays
     are stored on the CPU: the points (with no origin), the field values, the
@@ -1524,17 +1564,7 @@ def _dataset_to_vtk(data, copy=True):
                         f"{type(coordinates).__name__}")
     from tack.dataset.carry import _point_values
 
-    for name, field in data.fields.items():
-        space = field.space
-        if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
-            # An order-2 field's values at the points, its first ones: the grid
-            # is linear, as the filters read order-2 data.
-            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
-                                                   share)
-            _label(grid.point_data[name], field.unit)
-        elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
-            grid.cell_data[name] = _to_vtk_values(field.values, share)
-            _label(grid.cell_data[name], field.unit)
+    _write_fields(grid, data, share)
     if data.ghosts is not None:
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
 
