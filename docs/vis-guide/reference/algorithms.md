@@ -46,6 +46,7 @@ topologies, sets, implicit functions, locators -- are in
 - [Cells kept whole](#cells-kept-whole): New datasets of some of the input's cells, unchanged, with only the points they use.
 - [Cutting](#cutting): New datasets of pieces of cells, with points made on their edges.
 - [Surfaces and edges](#surfaces-and-edges): A mesh's faces and edges, as sets or datasets on the same points.
+- [Shapes for drawing](#shapes-for-drawing): Geometry made to be drawn: what a renderer would otherwise make from lines and vectors, made by Tack so its fields and marks come along.
 - [Connectivity and winding](#connectivity-and-winding): Which cells belong together, and which are wound wrong.
 - [Changing cell types](#changing-cell-types): The same points and region, in other cells.
 - [Moving the geometry](#moving-the-geometry): New positions for the same topology.
@@ -136,6 +137,22 @@ A mesh's faces and edges, as sets or datasets on the same points.
     options: {show_root_full_path: false}
 
 ::: tack.dataset.algorithms.surface_normals.surface_normals
+    options: {show_root_full_path: false}
+
+## Shapes for drawing
+
+Geometry made to be drawn: what a renderer would otherwise make from lines and
+vectors, made by Tack so its fields and marks come along.
+
+| Algorithm | Gives | Takes | VTK | Viskores |
+|---|---|---|---|---|
+| [`tubes`](#tack.dataset.algorithms.tubes.tubes) | lines as tubes of quads, with outward normals | lines | vtkTubeFilter | — |
+| [`glyphs`](#tack.dataset.algorithms.glyphs.glyphs) | an arrow at each point along a vector field | dataset | vtkGlyph3D | — |
+
+::: tack.dataset.algorithms.tubes.tubes
+    options: {show_root_full_path: false}
+
+::: tack.dataset.algorithms.glyphs.glyphs
     options: {show_root_full_path: false}
 
 ## Connectivity and winding
