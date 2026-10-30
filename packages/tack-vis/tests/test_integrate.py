@@ -136,5 +136,22 @@ def test_polyhedra_take_cell_data():
     out = td.integrate(poly, "c")
     assert out.measure == pytest.approx(1.0) and out.values["c"] == pytest.approx(2.0)
     poly.fields["p"] = td.Field(td.H1(poly), tack.array(np.zeros(poly.num_points)))
-    with pytest.raises(NotImplementedError, match="cell data only"):
+    with pytest.raises(NotImplementedError, match="needs a reference element"):
         td.integrate(poly, "p")
+
+
+def test_only_the_meshs_own_dimension_counts():
+    """A tetrahedron with a triangle, a line and a vertex beside it: the volume's
+    integrals leave the lower-dimensional cells out, as VTK's vtkIntegrateAttributes
+    does. A vertex failed (no quadrature rule)."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [2, 0, 0], [3, 0, 0],
+                       [2, 1, 0], [4, 4, 4]], np.float64)
+    types = tack.array(np.array([shapes.TETRA, shapes.TRIANGLE, shapes.LINE, shapes.VERTEX],
+                                np.uint8))
+    offsets = tack.array(np.array([0, 4, 7, 9, 10], np.int32))
+    conn = tack.array(np.array([0, 1, 2, 3, 4, 5, 6, 4, 5, 7], np.int32))
+    data = td.DataSet(td.UnstructuredTopology(types, offsets, conn, num_points=8),
+                      tack.array(points, tack.vec3(tack.f64)))
+    data.fields["one"] = td.Field(td.H1(data), tack.array(np.ones(8)))
+    out = td.integrate(data, "one")
+    assert out.measure == pytest.approx(1 / 6) and out.values["one"] == pytest.approx(1 / 6)

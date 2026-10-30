@@ -5,7 +5,9 @@
   cell's reference element through its own map (collapsed onto simplices and
   wedges; `integrate.quadrature`), so curved cells and fields of any order
   integrate exactly to rounding; owned cells only, and over a
-  `PartitionedDataSet` every piece on every rank. Polyhedra take cell data.
+  `PartitionedDataSet` every piece on every rank; the cells of the mesh's
+  dimension only, as VTK's (a volume leaves out its surfaces, lines and
+  vertices). Polyhedra take cell data.
 
 ### Fixed
 
