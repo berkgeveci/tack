@@ -32,6 +32,7 @@ from tack.dataset.dataset import Field, for_each
 from tack.dataset.ghosts import _before
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import UnstructuredTopology, uniform_cells
+from tack.dataset.views import _axis
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['subdivide']
@@ -290,31 +291,6 @@ def _values(cells, u, slot_of, per_cell, ijk, steps, corner_at, first, rank, out
 # position; a face from its first corner, toward the first of that corner's two
 # neighbours), the same in every cell and every piece holding it, whatever cells
 # a piece holds -- as a linear contour's crossings are since #188.
-
-
-@tack.func
-def _lagrange(t, j, nodes, weights, q):
-    # The 1D Lagrange polynomial of node j (of q, at nodes) at t, barycentric.
-    v = weights[j]
-    for m in range(q):
-        if m != j:
-            v = v * (t - nodes[m])
-    return v
-
-
-@tack.func
-def _axis(t, j, nodes, weights, q, bern):
-    # The 1D basis polynomial j (of q) at t: Bernstein's, weights[j] t^j (1 - t)^(q-1-j),
-    # with bern, else the Lagrange polynomial through nodes.
-    if bern == 1:
-        v = weights[j]
-        s = 1.0 - t
-        for _ in range(j):
-            v = v * t
-        for _ in range(q - 1 - j):
-            v = v * s
-        return v
-    return _lagrange(t, j, nodes, weights, q)
 
 
 @tack.func
