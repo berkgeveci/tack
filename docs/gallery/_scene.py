@@ -26,7 +26,7 @@ KINDS = ("polyhedra", "linear", "high-order", "curved")
 
 TITLES = {"polyhedra": "Polyhedra", "linear": "Tetrahedra",
           "high-order": "Order 4 on straight cells", "curved": "Order 3 on curved cells",
-          "mixed": "Hexahedra, wedges and pyramids"}
+          "mixed": "Hexahedra, wedges and pyramids", "hexahedra": "Hexahedra"}
 
 
 def arguments(description, kinds=KINDS):
@@ -65,15 +65,12 @@ def _twist(x):
 
 # ── The datasets ────────────────────────────────────────────────────
 
-def _voronoi_columns(n=40, layers=6, seed=3):
-    """Voronoi cells of random points in the unit square, extruded through the unit
-    cube in ``layers``: polygonal prisms, faces of up to a dozen points. The points'
-    mirror images across the square's sides make the cells tile the square
+def _voronoi(seeds):
+    """The Voronoi diagram of ``seeds`` in the unit square, and each seed's region:
+    the seeds' mirror images across the square's sides make the regions tile it
     exactly."""
     from scipy.spatial import Voronoi
 
-    rng = np.random.default_rng(seed)
-    seeds = rng.uniform(0, 1, (n, 2))
     mirrored = [seeds]
     for axis in (0, 1):
         for side in (0.0, 1.0):
@@ -81,8 +78,26 @@ def _voronoi_columns(n=40, layers=6, seed=3):
             image[:, axis] = 2 * side - image[:, axis]
             mirrored.append(image)
     vor = Voronoi(np.concatenate(mirrored))
-    regions = [vor.regions[vor.point_region[i]] for i in range(n)]
-    # The mirrored cells' shared vertices are the square's; snap them onto it.
+    return vor, [vor.regions[vor.point_region[i]] for i in range(len(seeds))]
+
+
+def _voronoi_columns(n=150, layers=8, relax=20, seed=3):
+    """Voronoi cells of ``n`` points in the unit square, relaxed toward their
+    regions' centroids ``relax`` times (Lloyd's method: even cells, no very short
+    edges, as a polyhedral mesher makes them), extruded through the unit cube in
+    ``layers``: polygonal prisms."""
+    seeds = np.random.default_rng(seed).uniform(0, 1, (n, 2))
+    for _ in range(relax):
+        vor, regions = _voronoi(seeds)
+        for i, r in enumerate(regions):
+            ring = vor.vertices[r]
+            x, y = ring[:, 0], ring[:, 1]
+            cross = x * np.roll(y, -1) - np.roll(x, -1) * y
+            area = cross.sum() / 2
+            seeds[i] = [((x + np.roll(x, -1)) * cross).sum() / (6 * area),
+                        ((y + np.roll(y, -1)) * cross).sum() / (6 * area)]
+    vor, regions = _voronoi(seeds)
+    # The regions' vertices on the square's sides are on them to rounding: snap.
     xy = np.clip(vor.vertices, 0.0, 1.0)
     xy[np.abs(xy) < 1e-12] = 0.0
     xy[np.abs(xy - 1) < 1e-12] = 1.0
@@ -186,6 +201,10 @@ def dataset(kind):
         grid = td.uniform_grid((4, 4, 4), spacing=(1 / 3,) * 3)
         data = td.extract_cells(grid, np.arange(grid.num_cells))
         data.fields["u"] = td.interpolate(data, schwarz, td.H1(data, order=4))
+    elif kind == "hexahedra":
+        grid = td.uniform_grid((7, 7, 7), spacing=(1 / 6,) * 3)
+        data = td.extract_cells(grid, np.arange(grid.num_cells))
+        data.fields["u"] = td.interpolate(data, schwarz, td.H1(data))
     elif kind == "mixed":
         data = _mixed()
         data.fields["u"] = td.interpolate(data, schwarz, td.H1(data))

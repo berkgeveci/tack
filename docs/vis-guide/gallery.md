@@ -192,19 +192,21 @@ and the ball's rim, not the sub-faces between them.
 
 Each cell's scaled Jacobian, red where poor (0 degenerate, below 0 inverted) and
 blue where ideal (1), on meshes whose inner points are moved at random, with the
-cells about a corner taken out. A polyhedron's measure is that of the tetrahedra
-fanning it, so even a cube-like one scores below 1. On the curved cells it is
-the least over the geometry's own Jacobian's samples.
+cells about a corner taken out. On the curved cells it is the least over the
+geometry's own Jacobian's samples. Polyhedra are left out: with no reference
+element, theirs is measured by the tetrahedra fanning them, on another scale (a
+cube as a polyhedron scores 0.58), and is read as a validity check -- positive
+when the cell is star-shaped -- comparing polyhedra only with each other.
 
 <div class="grid cards" markdown>
-
--   ![The quality of polyhedra](../assets/gallery/quality-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
-
-    Polyhedra
 
 -   ![The quality of tetrahedra](../assets/gallery/quality-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Tetrahedra
+
+-   ![The quality of hexahedra](../assets/gallery/quality-hexahedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Hexahedra
 
 -   ![The quality of a mixed mesh](../assets/gallery/quality-mixed.jpg){ loading=lazy decoding=async width=640 height=560 }
 

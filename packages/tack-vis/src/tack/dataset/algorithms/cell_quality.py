@@ -490,10 +490,16 @@ def cell_quality(data, measures=None):
     measured as Verdict does, by its four tetrahedra over both base diagonals.
     Polyhedra and polygons, which have no reference cell, are measured by the fan
     tetrahedra and triangles Tack evaluates them in, each against the regular
-    tetrahedron or equilateral triangle: a valid star-shaped polyhedron has a
-    positive scaled Jacobian, though an ideal-looking one (a cube as a polyhedron)
-    scores below 1. Lines and vertices have no Jacobian measures (NaN); a line's
-    edges are its segments. Hidden cells are measured like the rest.
+    tetrahedron or equilateral triangle. Their Jacobian measures (scaled
+    Jacobian, Jacobian ratio, condition) are therefore on the fan's scale, not
+    the shapes': a cube as a polyhedron has a scaled Jacobian of 0.58 and a
+    condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron has an
+    ideal to score 1 against. Read them as a validity check -- a positive scaled
+    Jacobian when every fan tetrahedron is upright (the cell star-shaped from its
+    points' mean), zero or negative when one is flat or inverted -- and compare
+    polyhedra with each other, not with shaped cells. The edge measures mean the
+    same on every cell. Lines and vertices have no Jacobian measures (NaN); a
+    line's edges are its segments. Hidden cells are measured like the rest.
 
     Matched to VTK 9.7.1's ``vtkMeshQuality`` to rounding for the scaled Jacobian
     of every linear shape, the condition number of triangles, quads, tetrahedra

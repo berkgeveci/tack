@@ -5,7 +5,7 @@ inverted), on meshes with their inner points jittered and on curved cells, the
 cells near a corner taken out so the inside shows.
 
 From the checkout (writes docs/assets/gallery/quality-<kind>.jpg):
-uv run python docs/gallery/quality.py [polyhedra linear mixed curved] [--arch metal]
+uv run python docs/gallery/quality.py [linear hexahedra mixed curved] [--arch metal]
 """
 
 import _scene
@@ -13,7 +13,9 @@ import numpy as np
 
 import tack.dataset as td
 
-KINDS = ("polyhedra", "linear", "mixed", "curved")
+# Not polyhedra: theirs are measured by the tetrahedra fanning them, on another
+# scale (a cube as a polyhedron scores 0.58), read as a validity check.
+KINDS = ("linear", "hexahedra", "mixed", "curved")
 
 
 def quality(data):
