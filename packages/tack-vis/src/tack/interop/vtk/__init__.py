@@ -1225,7 +1225,7 @@ def _to_vtk_values(values, share=False):
     return np.array(to_host(values))            # a copy: the grid owns its values
 
 
-def dataset_to_vtk(data, copy=True, higher_order=False):
+def dataset_to_vtk(data, copy=True, higher_order=False, cell_grid=False):
     """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
     images and rectilinear grids, its ratios the same along every axis, into a
     ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into
@@ -1282,8 +1282,23 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     ``VTK_QUADRATIC_QUAD``, ``_HEXAHEDRON`` and ``_WEDGE`` from serendipity (quad8,
     hex20, wedge15), ``VTK_QUADRATIC_TRIANGLE`` and ``_TETRA`` from the full order-2
     space; ``True`` chooses them when a field is serendipity. ``vtk_to_dataset``
-    reads such cells into those spaces, the geometry too."""
+    reads such cells into those spaces, the geometry too.
+
+    With ``cell_grid``, the dataset becomes a ``vtkCellGrid`` (VTK's
+    discontinuous-Galerkin cells) instead: each shape's cells a DG cell type, the
+    geometry its shape attribute and each field an attribute, order 1 in VTK's
+    complete basis ``C`` (shared through the points for ``H1``, per cell for
+    ``L2``), higher orders in its arbitrary-order basis ``A`` (equispaced,
+    lexicographic, as Tack's equispaced nodes; others converted there exactly),
+    ``Constant`` fields and values on cells ``constant``; fields of other spaces
+    are left out with a warning. The cells come type by type, in Tack's order
+    within each. It needs ``vtkDGCell.SetCellSpec``, newer than VTK 9.7.1."""
     from tack.interop.vtk import _lagrange
+
+    if cell_grid:
+        from tack.interop.vtk import _cellgrid
+
+        return _cellgrid.to_cell_grid(data)
 
     if higher_order not in (False, True, "lagrange", "bezier", "quadratic"):
         raise ValueError(f"higher_order is False, True, \"lagrange\", \"bezier\" or "

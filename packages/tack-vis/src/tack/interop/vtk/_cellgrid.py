@@ -6,8 +6,9 @@ per attribute and cell type, its function space, basis, order and DOF sharing
 (``vtkCellAttribute``'s cell-type information, readable from Python since VTK's
 ``GetCellTypes``/``GetDOFSharing``/... accessors). Tack reads it so:
 
-- Cells: each type's cells in ``GetCellTypes`` order, on the shape attribute's
-  corner ids (VTK's DG corner orders are its classic cells', which are Tack's).
+- Cells: each type's cells, types in VTK's cell order (by their cell specs'
+  offsets), on the cell spec's corner ids (VTK's DG corner orders are its classic
+  cells', which are Tack's).
 - The shape attribute (geometry) must be ``HGRAD`` and shared. Its order-1
   complete basis (``C1``) is the points themselves, copied; a higher order is
   resampled onto ``H1(order=p, basis="equispaced")``.
@@ -166,13 +167,31 @@ def _resampled(grid, attribute, cell_types, counts, order):
     return (np.concatenate(parts) if parts else np.zeros((0, width))), per_cell
 
 
+def _corners(grid, cell_type, shape_info):
+    """``cell_type``'s cells' corner ids: its cell spec's first corners, or (without
+    one) those of a corner-first shape basis's connectivity."""
+    spec = grid.GetCellType(cell_type).GetCellSourceConnectivity(-1)
+    if spec is not None:
+        # Corner-first (VTK's sides read a cell spec's first corners): a spec may
+        # share a quadratic shape's connectivity.
+        rows = np.asarray(spec).reshape(spec.GetNumberOfTuples(), -1)
+        return rows[:, :SHAPES[cell_type].NUM_POINTS]
+    if shape_info.basis not in ("C", "I"):
+        raise NotImplementedError(f"{cell_type} cells without a cell spec, their shape in basis "
+                                  f"{shape_info.basis}: no corners to read")
+    return shape_info.connectivity[:, :SHAPES[cell_type].NUM_POINTS]
+
+
 def to_dataset(grid, dtype=tack.f32, id_dtype=None, shift=(0.0, 0.0, 0.0)):
     """A ``vtkCellGrid`` as a ``DataSet`` (see the module's docstring)."""
     from tack.dataset import H1, L2, Constant, DataSet, Field, UnstructuredTopology, ids
     from tack.interop.mfem import _h1_indices
 
     _register()
-    cell_types = [t for t in map(_text, grid.GetCellTypes()) if t in SHAPES]
+    # VTK numbers cells type by type from each cell spec's offset (its first id):
+    # Tack's cells follow that order.
+    cell_types = sorted((t for t in map(_text, grid.GetCellTypes()) if t in SHAPES),
+                        key=lambda t: grid.GetCellType(t).GetCellSourceOffset(-1))
     unknown = [t for t in map(_text, grid.GetCellTypes()) if t not in SHAPES]
     if unknown:
         raise NotImplementedError(f"cell grids of {', '.join(unknown)} cells")
@@ -189,19 +208,24 @@ def to_dataset(grid, dtype=tack.f32, id_dtype=None, shift=(0.0, 0.0, 0.0)):
         if info.order > 1 and SHAPES[t] is shapes.Pyramid:
             raise NotImplementedError(
                 f"a curved pyramid ({info.basis}{info.order}): Tack's pyramids are of order 1")
-        if info.basis not in ("C", "I") or info.connectivity is None:
-            raise NotImplementedError(
-                f"a cell grid's shape in basis {info.basis}{info.order} on {t}: Tack reads "
-                "the corner-first bases (C, I)")
+        if info.connectivity is None:
+            raise NotImplementedError(f"a cell grid's shape on {t} without a connectivity")
     if len({infos[t].values_name for t in cell_types}) > 1:
         raise NotImplementedError("a cell grid whose cell types' shapes keep their points "
                                   "in different arrays")
     points = infos[cell_types[0]].values.reshape(-1, 3) if cell_types else np.zeros((0, 3))
-    corners = [infos[t].connectivity[:, :SHAPES[t].NUM_POINTS] for t in cell_types]
+    corners = [_corners(grid, t, infos[t]) for t in cell_types]
     sizes = [SHAPES[t].NUM_POINTS for t in cell_types]
     n = sum(counts)
     connectivity = np.concatenate([c.reshape(-1) for c in corners]) if corners else \
         np.zeros(0, np.int64)
+    order = max(info.order for info in infos.values()) if infos else 1
+    used = None
+    if order > 1:
+        # A curved shape's other nodes are not points: the topology keeps the corners
+        # (renumbered), and the geometry is resampled at Tack's nodes below.
+        used, connectivity = np.unique(connectivity, return_inverse=True)
+        points = points[used]
     idt = ids.at_least(id_dtype or tack.i32, max(len(points), len(connectivity)))
     offsets = np.concatenate([[0], np.cumsum(np.repeat(sizes, counts))]) if n else \
         np.zeros(1, np.int64)
@@ -213,7 +237,6 @@ def to_dataset(grid, dtype=tack.f32, id_dtype=None, shift=(0.0, 0.0, 0.0)):
     positions = tack.empty((len(points),), vec)
     tack.copyto(positions, (points - np.asarray(shift)).astype(dtype.numpy_dtype))
     data = DataSet(topology, positions, origin=shift)
-    order = max(info.order for info in infos.values()) if infos else 1
     if order > 1:
         space = H1(data, order=order, basis="equispaced")
         nodes, per_cell = _resampled(grid, shape_attribute, cell_types, counts, order)
@@ -251,6 +274,7 @@ def to_dataset(grid, dtype=tack.f32, id_dtype=None, shift=(0.0, 0.0, 0.0)):
                 same = all(np.array_equal(info[t].connectivity[:, :SHAPES[t].NUM_POINTS],
                                           corners[k]) for k, t in enumerate(cell_types))
                 values = info[cell_types[0]].values.reshape(-1, width)
+                values = values if used is None or len(values) <= used.max() else values[used]
                 if not same or len(values) != len(points):
                     left_out.append(f"{name} (shared on other points than the shape's)")
                     continue
@@ -294,3 +318,197 @@ def _array(values, element, dtype):
     tack.copyto(out, (values.reshape(-1) if values.shape[1] == 1 else values)
                 .astype(dtype.numpy_dtype))
     return out
+
+
+# ── Writing ─────────────────────────────────────────────────────────
+
+#: Tack's shapes and VTK's DG cell types.
+CELL_TYPES = {shape: name for name, shape in SHAPES.items()}
+
+_SUPERSCRIPTS = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def _space_name(width):
+    """VTK's name of a ``width``-component attribute's space (``"ℝ³"``)."""
+    return "ℝ" + str(width).translate(_SUPERSCRIPTS)
+
+
+def _vtk_array(values, name, ids=False):
+    """Host ``values`` (``(n, components)``) as a VTK array named ``name``."""
+    from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkIdTypeArray
+
+    values = np.ascontiguousarray(values, np.int64 if ids else np.float64)
+    out = (vtkIdTypeArray if ids else vtkDoubleArray)()
+    out.SetName(name)
+    out.SetNumberOfComponents(values.shape[1] if values.ndim > 1 else 1)
+    out.SetNumberOfTuples(values.shape[0])
+    np.asarray(out).reshape(values.shape)[...] = values
+    return out
+
+
+def _host(values, width):
+    """A field's values on the host, ``(n, width)`` doubles."""
+    from tack import arrays
+
+    return np.asarray(arrays.to_host(arrays.materialize(values)), np.float64).reshape(-1, width)
+
+
+def to_cell_grid(data):
+    """``data`` as a ``vtkCellGrid``: each shape's cells a DG cell type (in Tack's
+    cell order within it), the geometry its shape attribute and each field an
+    attribute -- order 1 in VTK's complete basis ``C`` (shared through the points
+    for ``H1``, per cell for ``L2``), higher orders in its arbitrary-order basis
+    ``A`` (lexicographic, the first axis fastest, equispaced, as Tack's
+    equispaced nodes), ``Constant`` fields ``constant``. Fields of other spaces
+    are left out with a warning."""
+    from vtkmodules.vtkCommonDataModel import vtkCellAttribute, vtkCellGrid
+    from vtkmodules.vtkFiltersCellGrid import (
+        vtkDGEdge,
+        vtkDGHex,
+        vtkDGPyr,
+        vtkDGQuad,
+        vtkDGTet,
+        vtkDGTri,
+        vtkDGVert,
+        vtkDGWdg,
+    )
+
+    from tack import arrays
+    from tack.dataset import H1, L2, Constant, UnstructuredTopology, Values
+    from tack.dataset.algorithms.extract_cells import extract_cells
+    from tack.dataset.algorithms.project import project
+    from tack.interop.mfem import _h1_indices
+
+    _register()
+    classes = {"vtkDGVert": vtkDGVert, "vtkDGEdge": vtkDGEdge, "vtkDGTri": vtkDGTri,
+               "vtkDGQuad": vtkDGQuad, "vtkDGTet": vtkDGTet, "vtkDGHex": vtkDGHex,
+               "vtkDGWdg": vtkDGWdg, "vtkDGPyr": vtkDGPyr}
+    if not isinstance(data.topology, UnstructuredTopology):
+        if not getattr(data.topology, "reference_cells", True):
+            raise NotImplementedError("a cell grid of polygons, polyhedra or polylines: VTK's "
+                                      "DG cells have reference elements")
+        data = extract_cells(data, np.arange(data.num_cells))
+    if not isinstance(data.geometry.space, H1):
+        raise NotImplementedError("a cell grid's shape is shared (an H1 geometry)")
+    topology = data.topology
+    types, offsets, connectivity = (
+        np.asarray(arrays.to_host(arrays.materialize(a))).reshape(-1)
+        for a in (topology.types, topology.offsets, topology.connectivity))
+    by_id = {int(shape.ID): shape for shape in SHAPES.values()}
+    seen = list(dict.fromkeys(types.tolist()))           # types by first appearance
+    present = [by_id[t] for t in seen if t in by_id]
+    if set(types.tolist()) - set(by_id):
+        raise NotImplementedError("a cell grid of shapes VTK's DG cells do not have "
+                                  "(pixels and voxels are taken as quads and hexahedra)")
+    cells = {shape: np.flatnonzero(types == shape.ID) for shape in present}
+    grid = vtkCellGrid()
+    corners = {}
+    first = 0
+    for shape in present:
+        name = CELL_TYPES[shape]
+        rows = np.stack([connectivity[offsets[c]:offsets[c] + shape.NUM_POINTS]
+                         for c in cells[shape]])
+        conn = _vtk_array(rows, "conn", ids=True)
+        grid.GetAttributes(name).AddArray(conn)
+        metadata = classes[name]()
+        grid.AddCellMetadata(metadata)
+        metadata.SetCellSpec(conn, first)          # its cells' ids from first
+        corners[shape] = conn
+        first += len(cells[shape])
+
+    left_out = []
+
+    def table(space, shape):
+        """Each of ``shape``'s cells' nodes' places in ``space`` (lexicographic)."""
+        per_cell = len(_lattice(shape, space.order))
+        if len(present) > 1:
+            raise NotImplementedError("a curved or high-order cell grid of several shapes")
+        return _h1_indices(data, space, per_cell)[cells[shape]]
+
+    def attribute(name, width, shape_attribute=False):
+        out = vtkCellAttribute()
+        out.Initialize(name, _space_name(width), width)
+        if shape_attribute:
+            grid.SetShapeAttribute(out)
+        else:
+            grid.AddCellAttribute(out)
+        return out
+
+    def shared(out, field, group, width, offset=None):
+        space = field.space
+        if space.order == 1:
+            values = _host(field.values, width)[:data.num_points]
+            if offset is not None:
+                values = values + offset
+            array = _vtk_array(values, out.GetName().Data(), ids=False)
+            grid.GetAttributes(group).AddArray(array)
+            for shape in present:
+                out.SetCellTypeInfo(CELL_TYPES[shape], group, "HGRAD", "C", 1)
+                out.SetArrayForCellTypeAndRole(CELL_TYPES[shape], "values", array)
+                out.SetArrayForCellTypeAndRole(CELL_TYPES[shape], "connectivity", corners[shape])
+            return
+        equispaced = H1(data, order=space.order, basis="equispaced")
+        if space is not equispaced:
+            field = project(data, field, equispaced)
+        values = _host(field.values, width)
+        if offset is not None:
+            values = values + offset
+        group = f"{group} {space.order}"
+        array = _vtk_array(values, out.GetName().Data())
+        grid.GetAttributes(group).AddArray(array)
+        for shape in present:
+            ids = _vtk_array(table(equispaced, shape), f"{out.GetName().Data()} conn", ids=True)
+            grid.GetAttributes(CELL_TYPES[shape]).AddArray(ids)
+            out.SetCellTypeInfo(CELL_TYPES[shape], group, "HGRAD", "A", space.order)
+            out.SetArrayForCellTypeAndRole(CELL_TYPES[shape], "values", array)
+            out.SetArrayForCellTypeAndRole(CELL_TYPES[shape], "connectivity", ids)
+
+    def per_cell(out, field, width):
+        space = field.space
+        target = space.order
+        if target > 1 and ((space.basis or "gauss_lobatto") != "equispaced"
+                           or space.layout != "blocks"):
+            space = L2(data, order=target, basis="equispaced", layout="blocks")
+            field = project(data, field, space)
+        values = _host(field.values, width)
+        def count(shape):
+            return shape.NUM_POINTS if target == 1 else len(_lattice(shape, target))
+
+        starts = np.concatenate([[0], np.cumsum([count(by_id[int(t)]) for t in types])])
+        for shape in present:
+            n = count(shape)
+            rows = np.stack([values[starts[c]:starts[c] + n].reshape(-1) for c in cells[shape]])
+            array = _vtk_array(rows, out.GetName().Data())
+            grid.GetAttributes(CELL_TYPES[shape]).AddArray(array)
+            out.SetCellTypeInfo(CELL_TYPES[shape], "", "HGRAD", "C" if target == 1 else "A",
+                                target)
+            out.SetArrayForCellTypeAndRole(CELL_TYPES[shape], "values", array)
+
+    shape = attribute("shape", 3, shape_attribute=True)
+    shared(shape, data.geometry, "coordinates", 3, offset=np.asarray(data.origin))
+    for name, field in data.fields.items():
+        space = field.space
+        width = arrays.width_of(field.values) or 1
+        if isinstance(space, Values) and space.on == "points":
+            space, field = H1(data), field.__class__(H1(data), field.values)
+        if (isinstance(space, Values) and space.on == "cells") or isinstance(space, Constant) \
+                or (isinstance(space, L2) and not space.varies and space.order == 0):
+            out = attribute(name, width)
+            values = _host(field.values, width)
+            for s in present:
+                array = _vtk_array(values[cells[s]], name)
+                grid.GetAttributes(CELL_TYPES[s]).AddArray(array)
+                out.SetCellTypeInfo(CELL_TYPES[s], "", "constant", "C", 0)
+                out.SetArrayForCellTypeAndRole(CELL_TYPES[s], "values", array)
+        elif isinstance(space, H1) and space.dofs is None and space.basis in (
+                None, "equispaced", "gauss_lobatto") and (space.order == 1 or len(present) == 1):
+            shared(attribute(name, width), field, "point-data", width)
+        elif isinstance(space, L2) and not space.varies and space.basis in (
+                None, "equispaced", "gauss_lobatto"):
+            per_cell(attribute(name, width), field, width)
+        else:
+            left_out.append(f"{name} ({space!r})")
+    if left_out:
+        warnings.warn("dataset_to_vtk left out fields a cell grid has no basis for here: "
+                      + ", ".join(left_out), stacklevel=3)
+    return grid

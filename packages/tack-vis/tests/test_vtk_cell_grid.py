@@ -27,6 +27,7 @@ if not _FILES or not hasattr(vtk.vtkCellAttribute, "GetCellTypes"):
     pytest.skip("needs VTK's cell grid test data (TACK_VTK_DATA) and a VTK with "
                 "vtkCellAttribute's cell-type accessors", allow_module_level=True)
 
+from tack.interop import vtk as interop
 from tack.interop.vtk import _cellgrid, vtk_to_dataset
 
 _NAMES = [os.path.basename(f) for f in _FILES]
@@ -298,3 +299,86 @@ def test_transforms_are_vtks(name):
         moved.world_positions(),
         np.asarray(shape.GetArrayForCellTypeAndRole(cell_type, "values")).reshape(-1, 3),
         atol=1e-12)
+
+
+# ── Writing ─────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("name", [n for n in _NAMES if n not in _REFUSED])
+def test_cell_grids_round_trip(name):
+    """Read, written back (``dataset_to_vtk(..., cell_grid=True)``) and read again,
+    every file gives the same geometry and fields."""
+    _, data, _ = _imported(name)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        again = vtk_to_dataset(interop.dataset_to_vtk(data, cell_grid=True), dtype=tack.f64)
+    assert again.num_cells == data.num_cells
+    np.testing.assert_allclose(again.world_positions(), data.world_positions(), atol=1e-13)
+    assert set(again.fields) == set(data.fields)
+    for field_name, field in data.fields.items():
+        assert again.fields[field_name].space == type(field.space)(again, **field.space.params)
+        np.testing.assert_allclose(again.fields[field_name].values.numpy(),
+                                   field.values.numpy(), atol=1e-12, err_msg=field_name)
+
+
+@tack.func
+def _bent(x):
+    return [x[0] + 0.1 * x[1] * x[1], x[1] + 0.15 * x[0] * x[2], x[2] + 0.1 * x[0] * x[1]]
+
+
+@tack.func
+def _cubic(x):
+    return x[0] * x[0] * x[1] - 2.0 * x[2] * x[2] * x[2] + x[0] * x[1] * x[2] + 1.0
+
+
+def _tack_cases():
+    from tack.dataset import shapes
+    from tack.dataset.topology import uniform_cells
+
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    hexahedra = td.extract_cells(grid, np.arange(8))
+    tetrahedra = td.tetrahedralize(grid)
+    hexes = hexahedra.topology.connectivity.numpy().reshape(-1, 8)
+    conn = [[h[0], h[1], h[3], h[4], h[5], h[7]] for h in hexes] + \
+        [[h[1], h[2], h[3], h[5], h[6], h[7]] for h in hexes]
+    types, offsets = uniform_cells(int(shapes.WEDGE), len(conn), tack.i32)
+    wedges = td.DataSet(td.UnstructuredTopology(
+        types, offsets, tack.array(np.array(conn, np.int32).reshape(-1)),
+        num_points=hexahedra.num_points), hexahedra.positions())
+    quads = td.uniform_grid((4, 3), spacing=(0.5, 0.5), dtype=tack.f64)
+    return {"hexahedra": hexahedra, "tetrahedra": tetrahedra, "wedges": wedges,
+            "quads": quads}
+
+
+@pytest.mark.parametrize("kind", ["hexahedra", "tetrahedra", "wedges", "quads"])
+@pytest.mark.parametrize("order", [2, 3])
+def test_written_cell_grids_evaluate_as_tack(kind, order):
+    """A curved Tack dataset written as a cell grid -- the geometry and an ``H1``
+    field of ``order`` in VTK's ``A`` basis, an ``L2`` field of ``order`` per cell,
+    a cell field -- evaluates in VTK's own evaluator, at random points of every
+    cell, as Tack evaluates it: VTK's ``A`` nodes are Tack's equispaced nodes in
+    Tack's order."""
+    data = _tack_cases()[kind]
+    vec = tack.vec3(tack.f64)
+    data.geometry = td.interpolate(data, _bent, td.H1(data, order=order), dtype=vec)
+    data.fields["u"] = td.interpolate(data, _cubic, td.H1(data, order=order))
+    data.fields["w"] = td.interpolate(data, _cubic, td.L2(data, order=order))
+    data.fields["c"] = td.Field(td.Constant(data), tack.array(np.arange(data.num_cells, dtype=float)))
+    grid = interop.dataset_to_vtk(data, cell_grid=True)
+    rng = np.random.default_rng(1)
+    per_cell = 4
+    shape = _cellgrid.SHAPES[_cellgrid._text(grid.GetCellTypes()[0])]
+    pcs = _inside(shape, data.num_cells * per_cell, rng)
+    points = tack.empty((len(pcs),), vec)
+    tack.copyto(points, pcs)
+    attributes = {_cellgrid._text(a.GetName()): a for a in grid.GetCellAttributeList()}
+    cells = np.repeat(np.arange(data.num_cells), per_cell)
+    for field_name, field in [("shape", data.geometry), *data.fields.items()]:
+        width = 3 if field_name == "shape" else 1
+        ours = tack.empty((len(pcs),), vec if width == 3 else tack.f64)
+        td.for_each(_at, data, "cells", field, points, per_cell, ours,
+                    tack.empty((len(pcs),), vec))
+        theirs = _cellgrid.evaluate(grid, attributes[field_name],
+                                    _cellgrid._text(grid.GetCellTypes()[0]), cells,
+                                    _cellgrid._to_vtk_parameters(shape, pcs))
+        np.testing.assert_allclose(theirs, ours.numpy().reshape(len(pcs), -1), atol=1e-12,
+                                   err_msg=field_name)

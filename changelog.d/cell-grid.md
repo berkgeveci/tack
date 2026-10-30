@@ -11,3 +11,11 @@
   mode. `test_vtk_cell_grid.py` holds every `.dg` file of VTK's test data to
   VTK's evaluator, cell centres, probe, ranges, linear cells and transform (it
   skips without them).
+- `dataset_to_vtk(data, cell_grid=True)` writes a `vtkCellGrid`: each shape's
+  cells a DG cell type (`vtkDGCell.SetCellSpec`), the geometry its shape
+  attribute, order 1 in VTK's complete basis `C` (shared for `H1`, per cell for
+  `L2`), higher orders in its arbitrary-order basis `A` (VTK's `A` nodes are
+  Tack's equispaced nodes in Tack's order, which the tests show on hexahedra,
+  quads, tetrahedra and wedges), `Constant` fields as `constant`. Reading takes
+  each type's corners from its cell spec and orders types by the specs'
+  offsets, so a grid round-trips.
