@@ -284,7 +284,11 @@ def _nodes_per_cell(space, shape):
     from tack.dataset import bases
 
     if space.order == 2 and not space._any_order(shape):
-        return shape.NUM_QUADRATIC
+        # Serendipity stores the first ones, its corners and edges.
+        return (shape.NUM_POINTS + shape.NUM_EDGES if space.basis == bases.SERENDIPITY
+                else shape.NUM_QUADRATIC)
+    if bases.has_bases(shape):
+        return len(space.stored_nodes(shape))
     if bases.simplex_shape(shape):
         return comb(space.order + shape.DIMENSION, shape.DIMENSION)
     if bases.wedge_shape(shape):
@@ -307,8 +311,12 @@ def _node_entries(space, values):
     entry = tack.empty((max(topology.num_cells, 1),), ids.at_least(topology.id_dtype, total))
     view_of = Field(space, values)
     for group, start, per_cell in groups:
-        node_of = (bases.view_index(group.shape, space.order, space._any_order(group.shape))
-                   if bases.has_bases(group.shape) else np.arange(per_cell))
+        node_of = np.arange(per_cell)
+        if bases.has_bases(group.shape):
+            # The stored nodes, lexicographic, as the view numbers them.
+            node_of = bases.view_index(group.shape, space.order,
+                                       space._any_order(group.shape))[
+                space.stored_nodes(group.shape)]
         _node_indices(group.view(), view_of.view(group), per_cell,
                       tack.array(np.asarray(node_of, np.int32)), start, entry, index)
     return index, entry, groups, total

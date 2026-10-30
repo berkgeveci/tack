@@ -102,8 +102,13 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
     """The mixins and attributes that read ``field`` for ``group``: its space's (or
     ``space_mixin``, for the geometry), an addressing mixin for values shared by
     points, and its storage's."""
-    storage, attributes = views.storage(field.values)
     space = field.space
+    values = field.values
+    if isinstance(space, H1) and space.basis == bases.SERENDIPITY:
+        from tack.dataset._serendipity import full_values
+
+        values = full_values(space, values)       # read as the full order-2 space
+    storage, attributes = views.storage(values)
     if space.varies and space not in group.keys:
         raise ValueError(f"{space!r} varies from cell to cell: its views come from the "
                          "subgroups for_each makes")
@@ -795,6 +800,8 @@ class DataSet:
                 if group.count:
                     out.append(self.domain_view("edges", group, (views._EdgeDof, where),
                                                 node_edge_base=self.num_points))
+            if space.basis == bases.SERENDIPITY:
+                return out                       # no face centres or insides stored
             if any(g.count and g.shape.QUADRATIC_FACES for g in self.topology.groups()):
                 for group in self.topology.faces().groups():
                     if group.count and group.shape is shapes.Quad:

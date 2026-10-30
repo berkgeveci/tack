@@ -263,6 +263,8 @@ def _basis_param(family, order, families, space):
     spaces are one."""
     if family not in families:
         raise ValueError(f"{space}'s basis is one of {', '.join(families)}, not {family!r}")
+    if family == bases.SERENDIPITY:
+        return family                                 # its own space at order 2
     if family in bases.CLOSED and order <= (1 if family == bases.BERNSTEIN else 2):
         return None
     return family
@@ -357,12 +359,19 @@ def _refuse_simplex_nodes(space, shape):
 
 
 def _refuse_bernstein(space, shape):
-    """Bernstein bases are on the shapes with bases of any order: pyramids and cells
-    without a reference element are refused."""
+    """Bernstein bases are on the shapes with bases of any order, serendipity on
+    those of two and three dimensions: pyramids and cells without a reference
+    element are refused."""
     if space.basis == bases.BERNSTEIN and shape is not None and not bases.has_bases(shape):
         raise NotImplementedError(
             f"the Bernstein basis is on segments, quads, pixels, hexahedra, voxels, "
             f"triangles, tetrahedra and wedges, not {shape.__name__} cells")
+    if space.basis == bases.SERENDIPITY and shape is not None and (
+            not bases.has_bases(shape) or shape.DIMENSION < 2):
+        raise NotImplementedError(
+            f"serendipity is on quads, pixels, hexahedra, voxels and wedges (and "
+            f"triangles and tetrahedra, where it is the full space), not "
+            f"{shape.__name__} cells")
 
 
 def _on_gpu(topology):
@@ -396,6 +405,13 @@ class H1(Space):
     triangle face or triangle, ``(order - 1)(order - 2)(order - 3) / 6`` per
     tetrahedron, ``(order - 1)^2 (order - 2) / 2`` per wedge.
 
+    ``basis="serendipity"`` (order 2 alone) is the full order-2 space less its values
+    at quad faces' centres and cells' insides, which its functions determine from
+    the corners and edges (quad8, hex20, wedge15; the full space on triangles and
+    tetrahedra): it stores the points' values, then one per edge, as the full
+    space numbers them, and its views read the full space's values
+    (``_serendipity.full_values``).
+
     ``dofs``, from order 2, numbers the values by an element-to-DOF table instead
     of by entity, as MFEM and VTK's cell grids store them: an integer array of a
     row per cell (``(num_cells, nodes)``, or flat), each node's value index in
@@ -416,8 +432,14 @@ class H1(Space):
         order = int(order)
         if order < 1:
             raise ValueError(f"H1's order is at least 1, not {order}")
+        if basis == bases.SERENDIPITY and order != 2:
+            raise NotImplementedError(f"serendipity is of order 2 (quad8, hex20, wedge15), "
+                                      f"not {order}")
         family = _basis_param(basis, order, bases.CLOSED, "H1")
         out = {"order": order} if family is None else {"order": order, "basis": family}
+        if dofs is not None and family == bases.SERENDIPITY:
+            raise NotImplementedError("serendipity values are numbered by entity, not by a "
+                                      "table")
         if dofs is not None:
             if order < 2:
                 raise ValueError("an element-to-DOF table numbers values of order 2 and "
@@ -439,6 +461,7 @@ class H1(Space):
         if self.order == 1:
             return views._H1Field
         if self.order == 2 and self.basis != bases.BERNSTEIN and self.dofs is None:
+            # Serendipity too: its views read the full order-2 space's values.
             return views._H1Order2Field
         return self._tabled(views.of_order(views._H1TensorField, self.order,
                                            self.basis == bases.BERNSTEIN))
@@ -488,14 +511,15 @@ class H1(Space):
             slots = tack.empty((nf,), idt)
             face_dofs = tack.empty((nf,), idt)
             on_faces = 0
+            serendipity = self.basis == bases.SERENDIPITY     # corners and edges alone
             if nf:
-                _face_counts(faces.kinds, (p - 1) ** 2,
+                _face_counts(faces.kinds, 0 if serendipity else (p - 1) ** 2,
                              (p - 1) * (p - 2) // 2 if p > 2 else 0, counts)
                 on_faces = exclusive_scan(counts, slots, nf)
                 _place(counts, slots, base, face_dofs)
             counts = tack.zeros((n,), tack.i32)
             for group in topology.groups():
-                if group.count:
+                if group.count and not serendipity:
                     _interior_counts(group.view(), p, counts)
             slots = tack.empty((n,), idt)
             cell_dofs = tack.empty((n,), idt)
@@ -533,7 +557,9 @@ class H1(Space):
                                   if bases.wedge_shape(shape) else
                                   _basis_tables(self, group, dtype))
             return attributes
-        face_dofs, cell_dofs, _ = self._layout()
+        # Serendipity's views read the full order-2 space's values (_serendipity).
+        face_dofs, cell_dofs, _ = (H1(self.topology, order=2)._layout()
+                                   if self.basis == bases.SERENDIPITY else self._layout())
         topology = self.topology
         attributes = {"edge_base": topology.num_points, "face_dofs": face_dofs,
                       "cell_dofs": cell_dofs}
@@ -548,7 +574,7 @@ class H1(Space):
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[root])
-            high = self.order > 2 or self.basis == bases.BERNSTEIN
+            high = self._any_order(group.shape)
             if high and bases.simplex_shape(group.shape):
                 attributes.update(_simplex_tables(self, group, dtype or tack.f32))
             elif high and bases.wedge_shape(group.shape):
@@ -563,6 +589,16 @@ class H1(Space):
 
     def _has_faces(self, shape):
         return shape.DIMENSION == 3 if self._any_order(shape) else bool(shape.QUADRATIC_FACES)
+
+    def stored_nodes(self, shape):
+        """The lexicographic nodes of a ``shape`` cell (order 2 and up) whose values the
+        space stores: all of them, or serendipity's corners and edges."""
+        if not bases.has_bases(shape):
+            self._layout()                        # refuses the shape, with the remedy
+        kind = bases.dof_tables(shape, self.order)[0]
+        if self.basis == bases.SERENDIPITY:
+            return np.flatnonzero(kind <= bases.EDGE).astype(np.int32)
+        return np.arange(len(kind), dtype=np.int32)
 
     def _any_order(self, shape):
         """Whether views read this space on ``shape`` cells as a basis of any order --
@@ -581,7 +617,7 @@ class H1(Space):
         if shape is shapes.PolyLine and self.order == 1:
             return views._PolylinePointField
         bernstein = self.basis == bases.BERNSTEIN
-        high = self.order > 2 or bernstein or self.dofs is not None
+        high = shape is not None and self._any_order(shape)
         if high and bases.simplex_shape(shape):
             return self._tabled(views.of_simplex_order(views._H1SimplexField, self.order,
                                                        shape.DIMENSION, bernstein))
@@ -682,6 +718,10 @@ class L2(Space):
         order = int(order)
         if order < 0:
             raise ValueError(f"L2's order is at least 0, not {order}")
+        if basis == bases.SERENDIPITY:
+            raise ValueError("serendipity is an H1 basis (shared corners and edges); L2's "
+                             "basis is gauss_lobatto, equispaced, gauss_legendre or "
+                             "bernstein")
         family = _basis_param(basis, order, bases.FAMILIES, "L2")
         if order == 0:
             family = None                   # one value at the center, whatever the basis

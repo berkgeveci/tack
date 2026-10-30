@@ -696,7 +696,8 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             polyhedral = 42 in present
         from tack.interop.vtk import _lagrange
 
-        if present and present <= set(_lagrange.LAGRANGE) | set(_lagrange.BEZIER):
+        if present and present <= (set(_lagrange.LAGRANGE) | set(_lagrange.BEZIER)
+                                   | set(_lagrange.QUADRATIC)):
             if len(present) > 1:
                 raise NotImplementedError("Lagrange cells of several shapes in one grid are "
                                           "not supported")
@@ -1260,15 +1261,26 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     ``_WEDGE``) instead: points and point data the
     coefficients of ``H1(order, basis="bernstein")``, which ``vtk_to_dataset``
     reads back as such; ``True`` chooses Bezier cells when the geometry or an
-    ``H1`` field is in a Bernstein basis, ``"lagrange"`` Lagrange cells always."""
+    ``H1`` field is in a Bernstein basis, ``"lagrange"`` Lagrange cells always.
+    ``higher_order="quadratic"`` writes VTK's classic quadratic cells (order 2):
+    ``VTK_QUADRATIC_QUAD``, ``_HEXAHEDRON`` and ``_WEDGE`` from serendipity (quad8,
+    hex20, wedge15), ``VTK_QUADRATIC_TRIANGLE`` and ``_TETRA`` from the full order-2
+    space; ``True`` chooses them when a field is serendipity. ``vtk_to_dataset``
+    reads such cells into those spaces, the geometry too."""
     from tack.interop.vtk import _lagrange
 
-    if higher_order not in (False, True, "lagrange", "bezier"):
-        raise ValueError(f"higher_order is False, True, \"lagrange\" or \"bezier\", not "
-                         f"{higher_order!r}")
+    if higher_order not in (False, True, "lagrange", "bezier", "quadratic"):
+        raise ValueError(f"higher_order is False, True, \"lagrange\", \"bezier\" or "
+                         f"\"quadratic\", not {higher_order!r}")
     order = _lagrange.tensor_order(data) if higher_order else 1
     bezier = higher_order == "bezier" or (higher_order is True and _lagrange.bernstein(data))
-    out = _lagrange.to_vtk(data, order, bezier) if order > 1 else _dataset_to_vtk(data, copy)
+    quadratic = higher_order == "quadratic" or (higher_order is True and order == 2
+                                                and _lagrange.serendipity(data))
+    if quadratic and order != 2:
+        raise ValueError(f"VTK's quadratic cells are of order 2; this dataset's highest "
+                         f"order is {order}")
+    out = (_lagrange.to_vtk(data, order, bezier, quadratic) if order > 1
+           else _dataset_to_vtk(data, copy))
     time = _time_of(data)
     if time is not None:
         from vtkmodules.vtkCommonDataModel import vtkDataObject
