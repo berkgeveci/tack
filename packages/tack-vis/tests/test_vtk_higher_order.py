@@ -10,7 +10,8 @@ VTK linearizes a higher-order cell on its own nodes before cutting it, so VTK's
 cuts are Tack's with ``subdivision`` the cell's order and ``exact=False``, to
 rounding where the two triangulate alike; Tack's defaults (exact crossings) are
 checked to approach the finer answers. The files need VTK's test data
-(``TACK_VTK_DATA``, its ``ExternalData`` directory); without it the module skips.
+(``TACK_VTK_DATA``, its ``ExternalData`` directory) and skip without it; the cells
+built here need only VTK.
 """
 
 import os
@@ -24,8 +25,10 @@ from tack.dataset import implicit
 
 vtk = pytest.importorskip("vtkmodules.vtkCommonDataModel")
 _DATA = os.environ.get("TACK_VTK_DATA", "")
-if not _DATA or not os.path.isdir(os.path.join(_DATA, "Testing", "Data")):
-    pytest.skip("needs VTK's test data (TACK_VTK_DATA)", allow_module_level=True)
+#: The tests that read VTK's test data; the cells built here need only VTK.
+needs_data = pytest.mark.skipif(
+    not _DATA or not os.path.isdir(os.path.join(_DATA, "Testing", "Data")),
+    reason="needs VTK's test data (TACK_VTK_DATA)")
 
 from vtkmodules.vtkCommonCore import reference
 
@@ -124,6 +127,7 @@ def _compare(grid, data, rng, rtol=1e-12):
                                    atol=rtol * max(np.abs(theirs).max(), 1.0), err_msg=name)
 
 
+@needs_data
 @pytest.mark.parametrize("name", list(_FILES))
 def test_files_read_and_evaluate_as_vtk(name):
     """Every file reads -- mixed shapes, dimensions and orders together (Elements.vtu's
@@ -175,6 +179,7 @@ def _plane():
         implicit.Plane((4.0, 2.25, 2.25), (1.0, 1.0, 1.0))
 
 
+@needs_data
 @pytest.mark.parametrize("level", [2.5, 1.5, 0.5, 1.05])
 def test_lagrange_contours_are_vtks(hexahedra, level):
     """``vtkContourFilter``'s isosurfaces of the hexahedra are Tack's contour on the
@@ -198,6 +203,7 @@ def test_lagrange_contours_are_vtks(hexahedra, level):
         abs(_measure(theirs, "Area") - fine)
 
 
+@needs_data
 def test_lagrange_slices_and_clips_are_vtks(hexahedra):
     """``vtkCutter`` and ``vtkClipDataSet`` by a plane are Tack's slice and clip on the
     order-2 nodes (VTK keeps the plane's positive side: ``inside=False``)."""
@@ -216,6 +222,7 @@ def test_lagrange_slices_and_clips_are_vtks(hexahedra):
         pytest.approx(_measure(kept, "Volume"), rel=1e-12)
 
 
+@needs_data
 def test_lagrange_boundaries_are_vtks(hexahedra):
     """``vtkDataSetSurfaceFilter``'s boundary is Tack's at level 0 (the corners), and
     finer, both approach the curved boundary's exact area (``integrate`` of Tack's
@@ -325,6 +332,7 @@ def test_each_higher_order_cell_cuts_as_vtk(vtk_type):
         assert _total(ours_edges) == pytest.approx(_measure(edges, "Length"), rel=1e-7)
 
 
+@needs_data
 def test_quadratic_quad_derivatives_are_vtks():
     """VTK's ``quadraticQuadDeriv``: the derivatives of a field on the quadratic and
     biquadratic quads of Disc_*Quads are VTK's ``Derivatives`` at random points."""
