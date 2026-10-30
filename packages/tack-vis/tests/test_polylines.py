@@ -261,6 +261,28 @@ def test_contour_lines_agree_across_paths(backend):
     np.testing.assert_allclose(sorted(map(tuple, a)), sorted(map(tuple, b)), atol=1e-6)
 
 
+def test_contour_lines_through_an_edge_of_three_cells(backend):
+    """A surface whose edge (points 0 and 1) has three triangles, as an open book of
+    three pages: the topology's faces refuse it, but contour lines meet there,
+    one crossing of that edge shared by the three pages' lines. (A polygonal
+    topology refuses such an edge when it is made.)"""
+    x = np.array([[0, 0, 0], [0, 0, 1], [1, 0, 0.5], [-1, 0.2, 0.5], [0, -1, 0.5]],
+                 np.float64)
+    triangles = np.array([[0, 1, 2], [1, 0, 3], [0, 1, 4]])
+    topology = td.UnstructuredTopology(np.full(3, 5, np.uint8), np.arange(0, 10, 3),
+                                       triangles.reshape(-1), num_points=5)
+    data = td.DataSet(topology, x, dtype=tack.f64)
+    data.fields["z"] = td.Field(td.H1(data), _scalars(x[:, 2]))
+    out = td.contour(data, "z", 0.4)
+    assert out.num_cells == 3
+    # Four points: one on the shared edge, one on each page's far side.
+    assert out.num_points == 4
+    np.testing.assert_allclose(out.positions()[:, 2], 0.4, atol=1e-12)
+    shared = np.bincount(out.topology.connectivity.numpy(), minlength=4)
+    assert sorted(shared.tolist()) == [1, 1, 1, 3]
+    assert td.slice_plane(data, (0, 0, 0.4), (0, 0, 1)).num_cells == 3
+
+
 def test_a_plane_slices_a_2d_mesh_into_a_line(backend):
     data = _circle_meshes()["quads"]
     cut = td.slice_plane(data, (0.1, 0.0, 0.0), (1.0, 0.0, 0.0))
