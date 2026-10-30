@@ -7,7 +7,7 @@ from tack import arrays
 from tack.dataset.algorithms._common import _length
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.partitioned import PartitionedDataSet
-from tack.dataset.point_locator import MAX_K, _count_within, cached_point_locator
+from tack.dataset.point_locator import _count_within, cached_point_locator, check_k
 from tack.dataset.spaces import H1, Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -48,7 +48,7 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
     - **radius** (``radius`` and ``min_neighbors``): fewer than ``min_neighbors``
       other points within ``radius``, as vtkRadiusOutlierRemoval; ``neighbors``
       gives each point's count.
-    - **statistical** (``k``, at most 32, and ``deviations``): a mean distance
+    - **statistical** (``k`` and ``deviations``): a mean distance
       to its ``k`` nearest other points more than ``deviations`` standard
       deviations above the mean of those means, as PCL; ``mean_distance`` gives
       each point's. vtkStatisticalOutlierRemoval also removes the points that
@@ -74,8 +74,8 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
     if radial and (radius is None or min_neighbors is None or not radius >= 0):
         raise ValueError("the radius test takes a radius of at least zero and "
                          "min_neighbors")
-    if not radial and not (isinstance(k, (int, np.integer)) and 1 <= k <= MAX_K):
-        raise ValueError(f"k is a whole number from 1 to {MAX_K}, not {k!r}")
+    if not radial:
+        k = check_k(k)
     if isinstance(data, PartitionedDataSet):
         if locator is not None:
             raise ValueError("a PointLocator finds one piece's points; pieces take none")

@@ -450,7 +450,7 @@ given one.
 | | |
 |---|---|
 | `locator.neighbors(radius, points=None)` | every point within `radius` (inclusive) of each query, CSR `(offsets, ids)`; the queries are the points themselves, each leaving itself out, unless `points` (a host array of world positions, or a Tack array relative to the origin) are given |
-| `locator.nearest(k, points=None)` | the `k` nearest (`k` up to `MAX_K`, 32), `(ids, squared_distances)`, each `(m, k)`, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched |
+| `locator.nearest(k, points=None)` | the `k` nearest (any `k`; up to 32 kept in private arrays, more in the output's rows), `(ids, squared_distances)`, each `(m, k)`, nearest first, ties by index; -1 where the points run out. Rings of bins outwards until the k-th distance lies within those searched |
 | `locator.grid()` | the sorted points and the grid as a device class, for one's own kernels: `span(x, r)`, `cell(x)`, `bin(i, j, k)`, `first(b)`, `end(b)`, `point(s)`, `offset(p, x)` (point `p` less `x`, to its nearest image in a periodic box) |
 
 `PointLocator(..., periodic=box)` takes a periodic box in world coordinates (a
