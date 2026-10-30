@@ -105,6 +105,21 @@ def test_warp_is_vtks(backend):
     assert set(out.fields) == set(data.fields) and out.topology is data.topology
 
 
+def test_warp_along_values_on_points(backend):
+    """Values on points are the order-1 geometry's space: a surface warped along its
+    own normals (``surface_normals`` keeps them as values on points, and warp
+    refused them) and scaled by a scalar given that way."""
+    grid = td.uniform_grid((3, 3, 3))
+    surface = td.surface_normals(td.extract_surface(grid, td.boundary_faces(grid)))
+    normals = surface.fields["normals"]
+    assert normals.space is td.Values(surface, "points")
+    x = surface.positions()
+    s = td.Field(td.Values(surface, "points"), tack.array((x[:, 2] + 1).astype(np.float32)))
+    out = td.warp(surface, "normals", 0.1, scale_by=s)
+    np.testing.assert_allclose(out.positions(),
+                               x + 0.1 * (x[:, 2:] + 1) * normals.values.numpy(), rtol=1e-6)
+
+
 @needs_vtk
 def test_transform_is_vtks(backend):
     grid = _grid()

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 SCRIPTS = ("contour", "slice", "clip", "threshold", "surfaces", "quality", "gradients", "probe",
-           "subdivide", "pieces", "mfem_examples")
+           "subdivide", "pieces", "streamlines", "glyphs", "pathlines", "mfem_examples")
 
 
 def main():

@@ -8,7 +8,6 @@ import pytest
 
 import tack
 import tack.dataset as td
-from tack.dataset.point_locator import MAX_K
 from tack.runtime.dispatch import env_flag
 
 try:
@@ -114,9 +113,25 @@ def test_small_and_degenerate_clouds():
     empty = td.PointLocator(td.point_cloud(np.zeros((0, 3))))
     assert empty.nearest(2)[0].shape == (0, 2)
     assert empty.neighbors(1.0)[0].numpy().tolist() == [0]
-    for bad in (0, MAX_K + 1, 2.5):
+    for bad in (0, -3, 2.5, True):
         with pytest.raises(ValueError, match="whole number"):
             one.nearest(bad)
+
+
+@pytest.mark.parametrize("k", [32, 33, 100])
+def test_nearest_beyond_the_private_arrays_is_brute_force(k):
+    """Up to 32 neighbours are kept in private arrays, more in the output's rows:
+    the same search, ties by index, either way."""
+    x = np.round(_cloud(400), 1)                    # ties at every distance
+    ids, d2 = td.PointLocator(td.point_cloud(x)).nearest(k)
+    for q in range(0, len(x), 37):
+        d = _squared(x, x[q])
+        d[q] = np.inf
+        expected = np.lexsort((np.arange(len(x)), d))[:k]
+        assert ids.numpy()[q].tolist() == expected.tolist()
+        np.testing.assert_allclose(d2.numpy()[q], d[expected], rtol=1e-6, atol=1e-6)
+    few = td.PointLocator(td.point_cloud(x[:20])).nearest(k)[0].numpy()
+    assert (few[:, 19:] == -1).all() and (few[:, :19] >= 0).all()
 
 
 def test_a_locator_serves_its_geometry_until_written():

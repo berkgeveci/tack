@@ -46,9 +46,9 @@ def perot(data, flux):
     centers = face_centers(data)
     volumes, centroids = cell_geometry(data)
     out = _vectors(data.num_cells, data.dtype)
-    out.fill(0)                                    # cells of a lower dimension: no faces
+    out.fill(0)                       # cells of a lower dimension, and vertices: no faces
     for group in data.launch_groups("cells", []):
-        if group.count and group.shape.DIMENSION == data.topology.dimension:
+        if group.count and group.shape.DIMENSION == data.topology.dimension > 0:
             _perot(data.domain_view("cells", group), materialize(flux.values), areas.values,
                    centers.values, centroids.values, volumes.values, out)
     # Areas times offsets over volumes cancel: the components' unit.

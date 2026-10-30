@@ -241,9 +241,9 @@ def _split_counts(counts, kind, out):
 
 
 @tack.kernel
-def _join_starts(s0, s1, s2, s3, s4, out):
-    for i in range(out.shape[0]):
-        out[i] = [s0[i], s1[i], s2[i], s3[i], s4[i]]
+def _set_kind(scanned, kind, starts):
+    for i in range(scanned.shape[0]):
+        starts[i][kind] = scanned[i]
 
 
 @on_inputs_device
@@ -345,14 +345,16 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
             _scan_kinds(counts, starts, sums, n)
         totals = [int(v) for v in sums.numpy().reshape(-1)] if n else [0] * _KINDS
     else:
-        totals, parts = [], []
+        # One kind at a time through one buffer, scanned in place: the kinds'
+        # scans kept apart until joined held five more arrays of the cells.
+        totals = []
+        scanned = tack.empty((n,), odt)
         for kind in range(_KINDS):
-            part = tack.empty((n,), tack.i32)
-            kind_starts = tack.empty((n,), odt)
-            _split_counts(counts, kind, part)
-            totals.append(exclusive_scan(part, kind_starts, n))
-            parts.append(kind_starts)
-        _join_starts(*parts, starts)
+            _split_counts(counts, kind, scanned)
+            totals.append(exclusive_scan(scanned, scanned, n))
+            _set_kind(scanned, kind, starts)
+        del scanned
+    del counts
     n_cells, n_conn, n_records, n_centroids, n_members = totals
 
     types = tack.empty((n_cells,), tack.u8)
@@ -367,6 +369,7 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
         _clip_emit(group.view(), values, float(value), invert, table, cases, edges, remap,
                    whole_type, whole_order, starts, types, offsets, connectivity, sources,
                    keys, slots, centroid_offsets, centroid_cells)
+    del starts                            # before the merge, the clip's peak
     _close(offsets, n_cells, n_conn)
     _close(centroid_offsets, n_centroids, n_members)
 

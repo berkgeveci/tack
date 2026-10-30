@@ -103,6 +103,40 @@ def test_fluxes_skip_cells_of_a_lower_dimension():
     assert (td.perot(data, flux).values.numpy()[lower] == 0.0).all()
 
 
+def _cells(types, offsets, connectivity):
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [2, 0, 0]], np.float64)
+    topology = td.UnstructuredTopology(np.array(types, np.uint8), np.array(offsets, np.int32),
+                                       np.array(connectivity, np.int32), num_points=5)
+    return td.DataSet(topology, tack.array(points, tack.vec3(tack.f64)))
+
+
+@pytest.mark.quick
+def test_a_surfaces_lines_and_a_mesh_of_vertices_have_no_faces():
+    """A line among triangles (EnSight's and VTK's surfaces carry them) has none of
+    the surface's edges: face geometry, fluxes and normals are the triangles'
+    alone, the line's zero. A mesh of vertices has no faces at all. Both failed
+    inside the kernels, on methods lines and vertices lack ('side_position',
+    'num_faces')."""
+    both = _cells([vd.TRIANGLE, vd.TRIANGLE, vd.LINE], [0, 3, 6, 8], [0, 1, 2, 0, 2, 3, 1, 4])
+    triangles = _cells([vd.TRIANGLE, vd.TRIANGLE], [0, 3, 6], [0, 1, 2, 0, 2, 3])
+    answers = []
+    for data in (both, triangles):
+        area = td.face_geometry(data).area
+        ones = td.Field(td.Values(data, "faces"), tack.ones((area.values.shape[0],), tack.f64))
+        normals = td.surface_normals(data)
+        answers.append([area.values.numpy(), td.net_flux(data, area).values.numpy(),
+                        td.perot(data, ones).values.numpy(),
+                        normals.fields["cell_normals"].values.numpy(),
+                        normals.fields["normals"].values.numpy()])
+    for ours, theirs in zip(*answers):
+        np.testing.assert_array_equal(ours[:len(theirs)], theirs)   # the line's after
+    assert not answers[0][1][2] and not answers[0][2][2].any() and not answers[0][3][2].any()
+    vertices = _cells([vd.VERTEX] * 5, range(6), range(5))
+    none = td.Field(td.Values(vertices, "faces"), tack.ones((0,), tack.f64))
+    assert not td.net_flux(vertices, none).values.numpy().any()
+    assert not td.perot(vertices, none).values.numpy().any()
+
+
 @pytest.mark.quick
 def test_as_polyhedra_refuses_inside_out_neighbours():
     """An inside-out cell beside an upright one goes round their face the same way,

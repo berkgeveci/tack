@@ -115,3 +115,24 @@ def test_point_data_ghosts_and_time_come_across():
 def test_an_empty_polydata():
     data = vtk_to_dataset(vtk.vtkPolyData())
     assert (data.num_cells, data.num_points) == (0, 0)
+
+
+def test_normals_go_back_as_vtks_active_normals():
+    """VTK's renderers and filters read a dataset's active normals, not an array
+    named for them: a clipped surface's carried normals, and ``surface_normals``'
+    point and cell normals, come back as VTK's active ones; a field of another
+    width under the name does not."""
+    from tack.interop.vtk import dataset_to_vtk
+
+    sphere = vtk.vtkSphereSource(theta_resolution=16, phi_resolution=12)()
+    assert sphere.point_data.GetNormals() is not None
+    clipped = dataset_to_vtk(td.clip(vtk_to_dataset(sphere), td.Plane((0, 0, 0), (0, 1, 0))))
+    assert clipped.point_data.GetNormals().GetName() == "Normals"
+    surface = vtk_to_dataset(vtk.vtkSphereSource(theta_resolution=16, phi_resolution=12,
+                                                 generate_normals=False)())
+    back = dataset_to_vtk(td.surface_normals(surface))
+    assert back.point_data.GetNormals().GetName() == "normals"
+    assert back.cell_data.GetNormals().GetName() == "cell_normals"
+    surface.fields["normals"] = td.Field(td.H1(surface),
+                                         tack.array(np.ones(surface.num_points, np.float32)))
+    assert dataset_to_vtk(surface).point_data.GetNormals() is None

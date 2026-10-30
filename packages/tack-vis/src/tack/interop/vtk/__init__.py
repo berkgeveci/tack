@@ -280,15 +280,20 @@ def _from_vtk(array, dtype=None):
 
 def _array_to_field(array, float_dtype, share=False):
     """A VTK data array's values as a field's: floating point in ``float_dtype`` (in
-    its own type when that is ``None``), integers in their own type; a constant or
-    affine array stays implicit. With ``share``, VTK's memory where it can be
-    (``_shared``)."""
+    its own type when that is ``None``), integers in their own type, bits as u8 0
+    and 1; a constant or affine array stays implicit. With ``share``, VTK's memory
+    where it can be (``_shared``)."""
     import numpy as np
+    from vtkmodules.vtkCommonCore import vtkBitArray
 
     from tack.arrays import ConstantArray, CountingArray
     from tack.lang.types import from_numpy_dtype
 
-    host = np.asarray(array)
+    if isinstance(array, vtkBitArray):
+        # NumPy reads a vtkBitArray as its packed bytes, eight values to a byte.
+        host = _bits(array).reshape(array.number_of_tuples, -1)
+    else:
+        host = np.asarray(array)
     if host.dtype.kind == "S":
         # A vtkCharArray has no numpy-compatible wrapper in 9.7.1, and NumPy reads
         # it as bytes; its values are signed 8-bit integers, as vtk_to_numpy gave.
@@ -485,11 +490,15 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     no other cells allowed), or polygons (``VTK_POLYGON``), when it becomes a
     ``PolygonalTopology`` (its triangles and quads polygons too, and no other
     cells allowed). Its types, offsets and connectivity stay implicit where
-    VTK's are (a cell type given as a number, affine offsets).
+    VTK's are (a cell type given as a number, affine offsets). Hexahedra with
+    corners repeated as finite-element files write other shapes (Tecplot's
+    bricks, degenerate Exodus and Patran hexahedra) become those shapes: a
+    wedge ``[a, b, c, c, d, e, f, f]`` (in any rotation), a pyramid ``[a, b, c,
+    d, e, e, e, e]``, a tetrahedron ``[a, b, c, c, d, d, d, d]``.
     A ``vtkPolyData`` is taken as the unstructured grid of its cells in VTK's
-    order -- verts, lines, polygons (of three or four points triangles and
-    quads), and triangle strips, each strip as its triangles, which take its
-    cell data -- so the same rules hold: a surface of triangles and quads is
+    order -- verts (a poly vertex as its vertices), lines, polygons (of three or
+    four points triangles and quads), and triangle strips, each strip as its
+    triangles, which take its cell data -- so the same rules hold: a surface of triangles and quads is
     an ``UnstructuredTopology``, one with larger polygons a ``PolygonalTopology``,
     lines a ``PolylineTopology``, and polylines or polygons beside other cells
     are refused.
@@ -501,7 +510,11 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``origin`` (three numbers) becomes the dataset's ``origin``: VTK's points,
     an image's origin and a rectilinear grid's lines are taken relative to it,
     subtracted in double precision before they become ``dtype``, so points far
-    from zero keep their precision.
+    from zero keep their precision. Without one, converting to ``f32`` takes
+    the lower corner of VTK's bounds, rounded down, where the data are more
+    than 100 times farther from zero than they are wide
+    (``tack.dataset.dataset.automatic_origin``; a composite's pieces one
+    origin), and zero otherwise.
 
     A ``vtkOverlappingAMR`` becomes an ``AMRDataSet``: each block (an image or a
     rectilinear grid) converted as above, placed in its level by its
@@ -540,7 +553,9 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``dtype=None``. The shared arrays are read-only to Tack and hold VTK's
     arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
     be shared -- an origin to subtract, a type to convert, triangle strips,
-    polyhedra -- is copied as before."""
+    collapsed hexahedra, polyhedra -- is copied as before."""
+    if origin is None and dtype == tack.f32:
+        origin = _far_origin(grid)
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
                           id_dtype=id_dtype, origin=origin, copy=copy)
     if grid.GetInformation().Has(_time_key()):
@@ -564,12 +579,87 @@ def _strip_triangles(offsets, connectivity):
     return rows, strip
 
 
+def _far_origin(grid):
+    """The origin data far from zero for their size take in f32
+    (``automatic_origin`` of VTK's bounds), or None; none for a hyper tree grid,
+    whose octree keeps its roots' own lattice."""
+    import numpy as np
+    from vtkmodules.vtkCommonDataModel import vtkHyperTreeGrid
+
+    from tack.dataset.dataset import automatic_origin
+
+    if isinstance(grid, vtkHyperTreeGrid) or not hasattr(grid, "GetBounds"):
+        return None
+    bounds = [0.0] * 6           # filled: composites' GetBounds() returns no tuple
+    grid.GetBounds(bounds)
+    bounds = np.asarray(bounds, np.float64)
+    return automatic_origin(bounds[0::2], bounds[1::2])
+
+
+def _collapsed_hexahedra(types, offsets, connectivity):
+    """Hexahedra with corners repeated as finite-element files write other shapes
+    (Tecplot's bricks, Patran's and Exodus' degenerate hexahedra) as those
+    shapes: ``[a, b, c, c, d, e, f, f]`` (any rotation of the quads) a wedge
+    ``[a, b, c, d, e, f]``, ``[a, b, c, d, e, e, e, e]`` a pyramid,
+    ``[a, b, c, c, d, d, d, d]`` a tetrahedron, VTK's corner orders keeping the
+    volume's sign. ``(types, offsets, connectivity)`` as NumPy arrays, or None
+    where there is none; any other collapse stays a hexahedron."""
+    import numpy as np
+
+    from tack.arrays import to_host
+
+    def host(values):
+        return np.asarray(values if isinstance(values, np.ndarray) else to_host(values))
+
+    t = host(types).reshape(-1)
+    hexes = np.flatnonzero(t == 12)
+    if not len(hexes):
+        return None
+    o = host(offsets).astype(np.int64)
+    c = host(connectivity)
+    rows = c[o[hexes][:, None] + np.arange(8)]
+    ordered = np.sort(rows, axis=1)
+    distinct = 1 + (np.diff(ordered, axis=1) != 0).sum(axis=1)
+    if (distinct == 8).all():
+        return None
+    # Each converted hexahedron's new type and its corners' places in its row.
+    kinds = np.full(len(hexes), 12, np.uint8)
+    places = np.tile(np.arange(8), (len(hexes), 1))
+    top = (rows[:, 4] == rows[:, 5]) & (rows[:, 5] == rows[:, 6]) & (rows[:, 6] == rows[:, 7])
+    tetra = top & (rows[:, 2] == rows[:, 3]) & (distinct == 4)
+    pyramid = top & (distinct == 5)
+    kinds[tetra], places[tetra, :4] = 10, [0, 1, 2, 4]
+    kinds[pyramid], places[pyramid, :5] = 14, [0, 1, 2, 3, 4]
+    for turn in range(4):
+        bottom = [(turn + i) % 4 for i in range(4)]
+        wedge = ((kinds == 12) & (distinct == 6)
+                 & (rows[:, bottom[2]] == rows[:, bottom[3]])
+                 & (rows[:, 4 + bottom[2]] == rows[:, 4 + bottom[3]]))
+        kinds[wedge] = 13
+        places[wedge, :6] = bottom[:3] + [4 + b for b in bottom[:3]]
+    if (kinds == 12).all():
+        return None
+    t = t.copy()
+    t[hexes] = kinds
+    sizes = np.diff(o)
+    sizes[hexes] = np.select([kinds == 13, kinds == 14, kinds == 10], [6, 5, 4], 8)
+    starts = np.concatenate([[0], np.cumsum(sizes)])
+    within = np.arange(starts[-1]) - np.repeat(starts[:-1], sizes)
+    local = within.copy()
+    rank = np.full(len(t), -1)
+    rank[hexes] = np.arange(len(hexes))
+    entry_rank = np.repeat(rank, sizes)
+    moved = entry_rank >= 0
+    local[moved] = places[entry_rank[moved], within[moved]]
+    return t, starts, c[np.repeat(o[:-1], sizes) + local]
+
+
 def _polydata_as_grid(polydata):
     """A ``vtkPolyData`` as the ``vtkUnstructuredGrid`` of its cells, on the same
     points and point data: its verts, lines, polygons and strips in VTK's cell
     order (a polygon of three or four points a triangle or quad, as
-    ``vtkPolyData.GetCellType`` says), each strip as its triangles, which take
-    its cell data."""
+    ``vtkPolyData.GetCellType`` says), each strip as its triangles and each
+    poly vertex as its vertices, which take its cell data."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkIdList, vtkUnsignedCharArray
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
@@ -579,7 +669,11 @@ def _polydata_as_grid(polydata):
                                                 ("polys", polydata.polys),
                                                 ("strips", polydata.strips))
              if cells.number_of_cells]
-    if len(kinds) == 1 and kinds[0][0] != "strips":
+    def poly_vertices(cells):
+        return (np.diff(np.asarray(cells.offsets_array)) > 1).any()
+
+    if len(kinds) == 1 and kinds[0][0] != "strips" and not (kinds[0][0] == "verts"
+                                                           and poly_vertices(kinds[0][1])):
         # One kind of cell: the grid takes the polydata's cell array itself, so
         # its offsets and connectivity are not copied, and the cells (and their
         # cell data) are the same in the same order.
@@ -607,15 +701,20 @@ def _polydata_as_grid(polydata):
         offsets = np.asarray(cells.offsets_array, np.int64)
         connectivity = np.asarray(cells.connectivity_array, np.int64)
         size = np.diff(offsets)
-        if kind == "strips":
+        if kind == "verts":
+            # A poly vertex is its vertices.
+            types.append(np.ones(len(connectivity), np.uint8))
+            sizes.append(np.ones(len(connectivity), np.int64))
+            members.append(connectivity)
+            sources.append(first + np.repeat(np.arange(n), size))
+        elif kind == "strips":
             rows, strip = _strip_triangles(offsets, connectivity)
             types.append(np.full(len(rows), 5, np.uint8))
             sizes.append(np.full(len(rows), 3))
             members.append(rows.reshape(-1))
             sources.append(first + strip)
         else:
-            types.append({"verts": np.where(size == 1, 1, 2),
-                          "lines": np.where(size == 2, 3, 4),
+            types.append({"lines": np.where(size == 2, 3, 4),
                           "polys": np.select([size == 3, size == 4], [5, 9], 7)}[kind]
                          .astype(np.uint8))
             sizes.append(size)
@@ -632,7 +731,7 @@ def _polydata_as_grid(polydata):
     grid.cells = (vtkUnsignedCharArray(np.concatenate(types)),
                   vtkCellArray(offsets=offsets, connectivity=np.concatenate(members)))
     source = np.concatenate(sources)
-    if len(source) == polydata.number_of_cells:            # no strips: the same cells
+    if len(source) == polydata.number_of_cells:  # no strips or poly vertices: the same cells
         grid.GetCellData().ShallowCopy(polydata.GetCellData())
     else:
         ids = vtkIdList()
@@ -642,10 +741,6 @@ def _polydata_as_grid(polydata):
         grid.GetCellData().CopyAllocate(polydata.GetCellData(), len(source))
         grid.GetCellData().CopyData(polydata.GetCellData(), ids, 0)
     return grid
-
-
-#: The VTK cell types Tack has a shape for (``tack.dataset.shapes``).
-_KNOWN_TYPES = {1, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 42}
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
@@ -763,10 +858,21 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             topology = PolygonalTopology(_ids(offsets), _ids(connectivity),
                                          num_points=num_points, id_dtype=id_dtype)
         else:
-            unknown = present - _KNOWN_TYPES
+            from tack.dataset.shapes import _BY_ID
+
+            # Refused here, by VTK's names, rather than by the first algorithm.
+            unknown = sorted(present - set(_BY_ID))
             if unknown:
-                raise NotImplementedError(f"VTK cell types {sorted(unknown)} have no Tack "
-                                          "shape")
+                from vtkmodules.vtkCommonDataModel import vtkCellTypeUtilities
+
+                names = ", ".join(vtkCellTypeUtilities.GetClassNameFromTypeId(t)
+                                  for t in unknown)
+                raise ValueError(f"VTK cell types {unknown} ({names}) are not shapes Tack "
+                                 "has")
+            if 12 in present:
+                collapsed = _collapsed_hexahedra(types, offsets, connectivity)
+                if collapsed is not None:
+                    types, offsets, connectivity = collapsed
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
@@ -1234,6 +1340,40 @@ def _to_vtk_values(values, share=False):
     return np.array(to_host(values))            # a copy: the grid owns its values
 
 
+def _write_fields(grid, data, share):
+    """``data``'s point and cell fields into ``grid``'s point and cell data, with
+    its normals as VTK's active normals (``dataset_to_vtk``)."""
+    import numpy as np
+
+    from tack.dataset import H1, Constant, Values
+    from tack.dataset.carry import _point_values
+
+    for name, field in data.fields.items():
+        space = field.space
+        if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
+            # An order-2 field's values at the points, its first ones: the grid
+            # is linear, as the filters read order-2 data.
+            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
+                                                   share)
+            _label(grid.point_data[name], field.unit)
+        elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
+            grid.cell_data[name] = _to_vtk_values(field.values, share)
+            _label(grid.cell_data[name], field.unit)
+    for attributes, names in ((grid.point_data, _POINT_NORMALS),
+                              (grid.cell_data, _CELL_NORMALS)):
+        for name in names:
+            if name in attributes.keys():
+                values = np.asarray(attributes[name])
+                if values.ndim == 2 and values.shape[1] == 3 and values.dtype.kind == "f":
+                    attributes.SetActiveNormals(name)   # not writable as a property
+                    break
+
+
+#: The fields ``dataset_to_vtk`` makes VTK's active normals, first found first.
+_POINT_NORMALS = ("Normals", "normals")
+_CELL_NORMALS = ("Normals", "Normals (cells)", "cell_normals")
+
+
 def dataset_to_vtk(data, copy=True, higher_order=False, cell_grid=False):
     """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
     images and rectilinear grids, its ratios the same along every axis, into a
@@ -1264,6 +1404,12 @@ def dataset_to_vtk(data, copy=True, higher_order=False, cell_grid=False):
 
     The step's time (``data.time``) becomes VTK's ``DATA_TIME_STEP``; VTK has
     no unit for it.
+
+    Normals become VTK's active normals, which its renderers and filters read
+    and a plain array is not: a 3-vector point field named ``Normals`` (VTK's
+    readers' and filters' name) or ``normals`` (``surface_normals``' and
+    ``point_normals``'), and a 3-vector cell field named ``Normals``,
+    ``Normals (cells)`` or ``cell_normals``. Tack keeps no roles of its own.
 
     With ``copy=False`` the VTK dataset shares Tack's memory where the arrays
     are stored on the CPU: the points (with no origin), the field values, the
@@ -1447,17 +1593,7 @@ def _dataset_to_vtk(data, copy=True):
                         f"{type(coordinates).__name__}")
     from tack.dataset.carry import _point_values
 
-    for name, field in data.fields.items():
-        space = field.space
-        if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
-            # An order-2 field's values at the points, its first ones: the grid
-            # is linear, as the filters read order-2 data.
-            grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
-                                                   share)
-            _label(grid.point_data[name], field.unit)
-        elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
-            grid.cell_data[name] = _to_vtk_values(field.values, share)
-            _label(grid.cell_data[name], field.unit)
+    _write_fields(grid, data, share)
     if data.ghosts is not None:
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
 
