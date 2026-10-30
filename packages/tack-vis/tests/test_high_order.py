@@ -311,6 +311,43 @@ def test_pieces_of_a_curved_grid_stay_curved(f64_backend):
         np.testing.assert_array_equal(td.probe(piece, centers).fields["u"].values.numpy(),
                                       td.probe(grid, centers).fields["u"].values.numpy())
 
+
+def _bend_at(p):
+    x, y, z = p[:, 0], p[:, 1], p[:, 2]
+    return np.stack([x + 0.15 * y * y, y + 0.2 * x * x, z + 0.1 * x * y], axis=1)
+
+
+@pytest.mark.parametrize("cells", ["hexahedra", "quads"])
+@pytest.mark.parametrize("geometry_order, order", [(2, 3), (2, 4), (3, 2), (3, 4)])
+def test_nodes_lie_on_a_curved_geometry_of_another_order(f64_backend, cells, geometry_order,
+                                                        order):
+    """A field's nodes on a curved geometry of another order are where the geometry
+    puts them: on edges and faces its trace there, from the entity's own geometry
+    values in a frame its corners fix. The bend is of degree 2, so the curved
+    geometry is the bend of the straight cells exactly, and the field's nodes are
+    the bend of its nodes on the straight cells. They were refused."""
+    if cells == "hexahedra":
+        grid = td.uniform_grid((4, 4, 3), spacing=(0.4, 0.5, 0.6), dtype=tack.f64)
+        straight = _rotated(td.extract_cells(grid, np.arange(grid.num_cells)), seed=3)
+    else:
+        grid = td.uniform_grid((4, 5), spacing=(0.4, 0.5), dtype=tack.f64)
+        straight = td.extract_cells(grid, np.arange(grid.num_cells))
+    vec = tack.vec3(tack.f64)
+    expected = _bend_at(td.interpolate(straight, _identity, td.H1(straight, order=order),
+                                       dtype=vec).values.numpy())
+    curved = td.DataSet(straight.topology, straight.geometry.values)
+    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=geometry_order),
+                                     dtype=vec)
+    nodes = td.interpolate(curved, _identity, td.H1(curved, order=order), dtype=vec)
+    np.testing.assert_allclose(nodes.values.numpy(), expected, atol=1e-12)
+    # A cell's own nodes (L2) are where its geometry maps them; their views could
+    # not be built on a geometry of another order (both defined ORDER).
+    expected = _bend_at(td.interpolate(straight, _identity, td.L2(straight, order=order),
+                                       dtype=vec).values.numpy())
+    nodes = td.interpolate(curved, _identity, td.L2(curved, order=order), dtype=vec)
+    np.testing.assert_allclose(nodes.values.numpy(), expected, atol=1e-12)
+
+
 @tack.func
 def _bulge(x):
     return [x[0] + 0.3 * x[1] * (1.0 - x[1]), x[1], x[2]]

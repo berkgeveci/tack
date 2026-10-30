@@ -2561,7 +2561,7 @@ class _WedgeNewton:
 
 
 class _TableInteriorNodes:
-    """``H1`` of order ``ORDER`` (3 or more): a cell's interior nodes from a table of their
+    """``H1`` of order ``NODE_ORDER`` (3 or more): a cell's interior nodes from a table of their
     lattice coordinates (``node_interior``, three a node), where its geometry maps
     them (wedges)."""
 
@@ -2617,6 +2617,20 @@ def of_simplex_order(mixin, order, dimension, bernstein=False):
                               + ("Bernstein" if bernstein else ""), parents,
                               {"ORDER": int(order), "NODES": comb(int(order) + dimension,
                                                                   dimension)})
+    return _by_order[key]
+
+
+def of_node_order(mixin, order, count=None):
+    """A node mixin (``node_views``) with ``NODE_ORDER`` set, and ``NODE_COUNT`` (the
+    nodes a cell has) when given: names of their own, since a node view is the
+    cell view of a geometry that may be curved and of another order, whose
+    ``ORDER`` and ``NODES`` they would hide."""
+    key = (mixin, int(order), "nodes", count)
+    if key not in _by_order:
+        attributes = {"NODE_ORDER": int(order)}
+        if count is not None:
+            attributes["NODE_COUNT"] = int(count)
+        _by_order[key] = type(f"{mixin.__name__}{order}n{count or ''}", (mixin,), attributes)
     return _by_order[key]
 
 
@@ -2954,18 +2968,18 @@ class _CenterPosition:
 
 
 class _TensorEdgeNodes:
-    """``H1`` of order ``ORDER`` (3 or more): an edge's ``ORDER - 1`` nodes, in order from
+    """``H1`` of order ``NODE_ORDER`` (3 or more): an edge's ``NODE_ORDER - 1`` nodes, in order from
     its lower point id, at the space's 1D nodes (``node_points``) along it -- the
     edge's straight line between its points, or the geometry's own value there
     (``_GeometryAtDof``) when the geometry shares the space's layout."""
 
     @tack.func
     def node_count(self, i):
-        return self.ORDER - 1
+        return self.NODE_ORDER - 1
 
     @tack.func
     def node_dof(self, i, j):
-        return self.node_edge_base + self.entity_id(i) * (self.ORDER - 1) + j
+        return self.node_edge_base + self.entity_id(i) * (self.NODE_ORDER - 1) + j
 
     @tack.func
     def node_place(self, i, j):
@@ -2978,13 +2992,13 @@ class _TensorEdgeNodes:
 
 
 class _TensorFaceNodes:
-    """``H1`` of order ``ORDER`` (3 or more): a quad face's ``(ORDER - 1)^2`` nodes,
+    """``H1`` of order ``NODE_ORDER`` (3 or more): a quad face's ``(NODE_ORDER - 1)^2`` nodes,
     lexicographic in the frame of its own row (from its point 0, toward its points
     1 and 3)."""
 
     @tack.func
     def node_count(self, i):
-        return (self.ORDER - 1) * (self.ORDER - 1)
+        return (self.NODE_ORDER - 1) * (self.NODE_ORDER - 1)
 
     @tack.func
     def node_dof(self, i, j):
@@ -2992,23 +3006,23 @@ class _TensorFaceNodes:
 
     @tack.func
     def node_place(self, i, j):
-        return tack.vec3(self.node_points[j % (self.ORDER - 1) + 1],
-                         self.node_points[j // (self.ORDER - 1) + 1], 0.0)
+        return tack.vec3(self.node_points[j % (self.NODE_ORDER - 1) + 1],
+                         self.node_points[j // (self.NODE_ORDER - 1) + 1], 0.0)
 
     @tack.func
     def node_steps(self, i, j):
         # The node's place in steps of the 1D nodes, from the face's point 0.
-        return j % (self.ORDER - 1) + 1, j // (self.ORDER - 1) + 1
+        return j % (self.NODE_ORDER - 1) + 1, j // (self.NODE_ORDER - 1) + 1
 
 
 class _SimplexFaceNodes:
-    """``H1`` of order ``ORDER`` (3 or more): a triangle face's ``(ORDER - 1)(ORDER - 2) /
+    """``H1`` of order ``NODE_ORDER`` (3 or more): a triangle face's ``(NODE_ORDER - 1)(NODE_ORDER - 2) /
     2`` nodes, in the frame of its own row (``U`` toward its point 1, ``V`` toward
     its point 2, ``U`` fastest)."""
 
     @tack.func
     def node_count(self, i):
-        return (self.ORDER - 1) * (self.ORDER - 2) // 2
+        return (self.NODE_ORDER - 1) * (self.NODE_ORDER - 2) // 2
 
     @tack.func
     def node_dof(self, i, j):
@@ -3016,17 +3030,17 @@ class _SimplexFaceNodes:
 
     @tack.func
     def node_steps(self, i, j):
-        # Rows of V = 1, 2, ...: row V holds ORDER - 1 - V nodes.
+        # Rows of V = 1, 2, ...: row V holds NODE_ORDER - 1 - V nodes.
         v = 1
         rest = j
-        while rest >= self.ORDER - 1 - v:
-            rest -= self.ORDER - 1 - v
+        while rest >= self.NODE_ORDER - 1 - v:
+            rest -= self.NODE_ORDER - 1 - v
             v += 1
         return rest + 1, v
 
 
 class _SimplexInteriorNodes:
-    """``H1`` of order ``ORDER`` (3 or more): a triangle's or tetrahedron's nodes strictly
+    """``H1`` of order ``NODE_ORDER`` (3 or more): a triangle's or tetrahedron's nodes strictly
     inside it, in node order (``bases.simplex_lattice``), where its geometry maps
     them."""
 
@@ -3034,7 +3048,7 @@ class _SimplexInteriorNodes:
     def node_count(self, i):
         n = 1
         for k in range(self.DIMENSION):
-            n = n * (self.ORDER - 1 - k) // (k + 1)
+            n = n * (self.NODE_ORDER - 1 - k) // (k + 1)
         return n
 
     @tack.func
@@ -3043,8 +3057,8 @@ class _SimplexInteriorNodes:
 
     @tack.func
     def node_position(self, i, j):
-        # The j-th lattice point (i, j, k >= 1, sum <= ORDER - 1), the first axis fastest.
-        p = self.ORDER
+        # The j-th lattice point (i, j, k >= 1, sum <= NODE_ORDER - 1), the first axis fastest.
+        p = self.NODE_ORDER
         found = 0
         pc = tack.vec3(0.0, 0.0, 0.0)
         for kk in range(1 if self.DIMENSION == 3 else 0, p if self.DIMENSION == 3 else 1):
@@ -3058,12 +3072,12 @@ class _SimplexInteriorNodes:
 
 
 class _SimplexCellNodes:
-    """``L2`` on a simplex of order ``ORDER``: a cell's ``NODES`` nodes, in node order
+    """``L2`` on a simplex of order ``NODE_ORDER``: a cell's ``NODE_COUNT`` nodes, in node order
     (``node_ijk``, ``bases.simplex_lattice``), where its geometry maps them."""
 
     @tack.func
     def node_count(self, i):
-        return self.NODES
+        return self.NODE_COUNT
 
     @tack.func
     def node_dof(self, i, j):
@@ -3108,7 +3122,7 @@ class _StraightNodePosition:
             # A triangle face: the node's barycentric steps over its row's points,
             # from the first point by position toward the other two.
             a, b, c = _triangle_frame(self, i)
-            w0 = self.ORDER - sa - sb
+            w0 = self.NODE_ORDER - sa - sb
             wb = sa if b == 1 else (sb if b == 2 else w0)
             wc = sa if c == 1 else (sb if c == 2 else w0)
             xa = self.corner_position(i, a)
@@ -3118,14 +3132,14 @@ class _StraightNodePosition:
             x0 = self.corner_position(i, 0)
             x1 = self.corner_position(i, 1)
             if _before(x1, x0):
-                return x1 + self.node_points[self.ORDER - sa] * (x0 - x1)
+                return x1 + self.node_points[self.NODE_ORDER - sa] * (x0 - x1)
             return x0 + self.node_points[sa] * (x1 - x0)
         a, b, d = _square_frame(self, i)
         ax, ay = _square_corner(a)
         bx, by = _square_corner(b)
         dx, dy = _square_corner(d)
-        ua = sa - ax * self.ORDER
-        ub = sb - ay * self.ORDER
+        ua = sa - ax * self.NODE_ORDER
+        ub = sb - ay * self.NODE_ORDER
         tu = self.node_points[ua * (bx - ax) + ub * (by - ay)]
         tv = self.node_points[ua * (dx - ax) + ub * (dy - ay)]
         xa = self.corner_position(i, a)
@@ -3134,15 +3148,83 @@ class _StraightNodePosition:
                 + (1.0 - tu) * tv * (self.corner_position(i, d) - xa))
 
 
+@tack.func
+def _lagrange(t, j, nodes, weights, q):
+    # The 1D Lagrange polynomial of node j (of q, at nodes) at t, barycentric.
+    v = weights[j]
+    for m in range(q):
+        if m != j:
+            v = v * (t - nodes[m])
+    return v
+
+
+@tack.func
+def _axis(t, j, nodes, weights, q, bern):
+    # The 1D basis polynomial j (of q) at t: Bernstein's, weights[j] t^j (1 - t)^(q-1-j),
+    # with bern, else the Lagrange polynomial through nodes.
+    if bern == 1:
+        v = weights[j]
+        s = 1.0 - t
+        for _ in range(j):
+            v = v * t
+        for _ in range(q - 1 - j):
+            v = v * s
+        return v
+    return _lagrange(t, j, nodes, weights, q)
+
+
+class _CurvedNodePosition:
+    """An edge's or quad face's node where a curved geometry of another order puts
+    it: the geometry's trace on the entity at the node, from the geometry's values
+    there (``trace``: ``trace_q`` a side per entity, copied from the cells by
+    ``dataset._entity_traces`` in the frame the entity's corners' positions fix),
+    with the field's 1D nodes read in that frame as ``_StraightNodePosition``
+    reads them, so every piece holding the entity gets the same bits."""
+
+    @tack.func
+    def node_position(self, i, j):
+        sa, sb = self.node_steps(i, j)
+        q = self.trace_q
+        if self.NUM_POINTS == 2:
+            t = self.node_points[sa]
+            if _before(self.corner_position(i, 1), self.corner_position(i, 0)):
+                t = self.node_points[self.NODE_ORDER - sa]
+            base = self.entity_id(i) * q
+            x = self.trace[base] * _axis(t, 0, self.trace_nodes, self.trace_weights, q,
+                                         self.trace_bernstein)
+            for k in range(1, q):
+                x += self.trace[base + k] * _axis(t, k, self.trace_nodes, self.trace_weights,
+                                                  q, self.trace_bernstein)
+            return x
+        a, b, d = _square_frame(self, i)
+        ax, ay = _square_corner(a)
+        bx, by = _square_corner(b)
+        dx, dy = _square_corner(d)
+        ua = sa - ax * self.NODE_ORDER
+        ub = sb - ay * self.NODE_ORDER
+        tu = self.node_points[ua * (bx - ax) + ub * (by - ay)]
+        tv = self.node_points[ua * (dx - ax) + ub * (dy - ay)]
+        base = self.entity_id(i) * q * q
+        x = self.trace[base] * (
+            _axis(tu, 0, self.trace_nodes, self.trace_weights, q, self.trace_bernstein)
+            * _axis(tv, 0, self.trace_nodes, self.trace_weights, q, self.trace_bernstein))
+        for k in range(1, q * q):
+            x += self.trace[base + k] * (
+                _axis(tu, k % q, self.trace_nodes, self.trace_weights, q, self.trace_bernstein)
+                * _axis(tv, k // q, self.trace_nodes, self.trace_weights, q,
+                        self.trace_bernstein))
+        return x
+
+
 class _TensorInteriorNodes:
-    """``H1`` of order ``ORDER`` (3 or more): a cell's ``(ORDER - 1)^d`` interior nodes,
+    """``H1`` of order ``NODE_ORDER`` (3 or more): a cell's ``(NODE_ORDER - 1)^d`` interior nodes,
     lexicographic in its frame, where its geometry maps them."""
 
     @tack.func
     def node_count(self, i):
         n = 1
         for _ in range(self.DIMENSION):
-            n *= self.ORDER - 1
+            n *= self.NODE_ORDER - 1
         return n
 
     @tack.func
@@ -3151,7 +3233,7 @@ class _TensorInteriorNodes:
 
     @tack.func
     def node_position(self, i, j):
-        q = self.ORDER - 1
+        q = self.NODE_ORDER - 1
         pc = tack.vec3(self.node_points[j % q + 1], 0.0, 0.0)
         if self.DIMENSION >= 2:
             pc[1] = self.node_points[(j // q) % q + 1]
@@ -3161,7 +3243,7 @@ class _TensorInteriorNodes:
 
 
 class _TensorCellNodes:
-    """``L2`` on a tensor basis: a cell's ``(ORDER + 1)^d`` nodes, in node order, where
+    """``L2`` on a tensor basis: a cell's ``(NODE_ORDER + 1)^d`` nodes, in node order, where
     its geometry maps them (layout ``"blocks"``; ``_TensorCellNodesCells`` is
     cell-fastest)."""
 
@@ -3169,7 +3251,7 @@ class _TensorCellNodes:
     def node_count(self, i):
         n = 1
         for _ in range(self.DIMENSION):
-            n *= self.ORDER + 1
+            n *= self.NODE_ORDER + 1
         return n
 
     @tack.func
@@ -3178,7 +3260,7 @@ class _TensorCellNodes:
 
     @tack.func
     def node_position(self, i, j):
-        q = self.ORDER + 1
+        q = self.NODE_ORDER + 1
         pc = tack.vec3(self.node_points[j % q], 0.0, 0.0)
         if self.DIMENSION >= 2:
             pc[1] = self.node_points[(j // q) % q]

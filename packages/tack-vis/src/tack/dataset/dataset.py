@@ -309,6 +309,83 @@ def _relaid(values, source, space):
     return out
 
 
+@tack.kernel
+def _copy_edge_traces(cells, edge_nodes, q, edges):
+    # Each of the cells' edges' geometry values, from the edge's first corner by
+    # position: every cell holding an edge copies the same values to the same places.
+    for c in cells:
+        for e in range(cells.NUM_EDGES):
+            flip = views._before(cells.corner_position(c, cells.edge_corner(e, 1)),
+                           cells.corner_position(c, cells.edge_corner(e, 0)))
+            base = cells.edge_id(c, e) * q
+            for k in range(q):
+                j = q - 1 - k if flip else k
+                edges[base + k] = cells.get(cells.dof_index(c, edge_nodes[e * q + j]))
+
+
+@tack.kernel
+def _copy_face_traces(cells, face_nodes, q, faces):
+    # Each of the cells' quad faces' geometry values, in the face's frame
+    # (views._square_frame's), as _copy_edge_traces copies edges'.
+    for c in cells:
+        for f in range(cells.NUM_FACES):
+            if cells.face_num_points(f) == 4:
+                a = 0
+                for k in range(1, 4):
+                    if views._before(cells.corner_position(c, cells.face_corner(f, k)),
+                               cells.corner_position(c, cells.face_corner(f, a))):
+                        a = k
+                b = (a + 1) % 4
+                d = (a + 3) % 4
+                if views._before(cells.corner_position(c, cells.face_corner(f, d)),
+                           cells.corner_position(c, cells.face_corner(f, b))):
+                    b, d = d, b
+                ax, ay = views._square_corner(a)
+                bx, by = views._square_corner(b)
+                dx, dy = views._square_corner(d)
+                p = q - 1
+                base = cells.face_id(c, f) * q * q
+                for k in range(q * q):
+                    fa = ax * p + (k % q) * (bx - ax) + (k // q) * (dx - ax)
+                    fb = ay * p + (k % q) * (by - ay) + (k // q) * (dy - ay)
+                    faces[base + k] = cells.get(cells.dof_index(c, face_nodes[f * q * q + fa
+                                                                               + q * fb]))
+
+
+def _entity_traces(data):
+    """A curved tensor geometry's values on every edge and quad face, ``q`` a side
+    (``q - 1`` its order), for ``views._CurvedNodePosition``: ``(edges, faces,
+    attributes)``, the attributes its 1D basis."""
+    from tack.dataset import bases
+
+    geometry = data.geometry
+    space = geometry.space
+    q = space.order + 1
+    topology = data.topology
+    vec = arrays.element_type(geometry.values)
+    edges = tack.empty((max(topology.edges().num_edges * q, 1),), vec)
+    solid = any(g.count and g.shape.DIMENSION == 3 for g in topology.groups())
+    faces = tack.empty((max(topology.faces().num_faces * q * q, 1) if solid else 1,), vec)
+    for group in topology.groups():
+        if group.count and group.shape.DIMENSION > 1:
+            edge_nodes, face_nodes = (
+                tack.array(x.reshape(-1) if x.size else np.zeros(1, np.int32))
+                for x in bases.entity_nodes(group.shape, space.order))
+            cells = data.domain_view("cells", group)
+            _copy_edge_traces(cells, edge_nodes, q, edges)
+            if group.shape.DIMENSION == 3:
+                _copy_face_traces(cells, face_nodes, q, faces)
+    family = space.basis or "gauss_lobatto"
+    dtype = _basis_type(geometry)
+    tables = []
+    for values in (bases.nodes(family, space.order), bases.weights(family, space.order)):
+        out = tack.empty((len(values),), dtype)
+        tack.copyto(out, np.asarray(values).astype(dtype.numpy_dtype))
+        tables.append(out)
+    return edges, faces, {"trace_q": q, "trace_nodes": tables[0], "trace_weights": tables[1],
+                          "trace_bernstein": int(family == bases.BERNSTEIN)}
+
+
 def _space_nodes(space, geometry):
     """``space``'s 1D nodes as a device array in the geometry's float type, where
     node views place its nodes."""
@@ -686,20 +763,29 @@ class DataSet:
 
     def _tensor_nodes(self, space):
         """``node_views``' edges, quad faces and interiors of an ``H1`` space of order 3
-        or more. An edge's and a face's nodes are placed on its straight geometry, or
-        are the geometry's own values when it has the space's layout; a curved
-        geometry of another order would need the cells to place them, and is
-        refused for now."""
+        or more. An edge's and a face's nodes are placed on its straight geometry, are
+        the geometry's own values when it has the space's layout, or the geometry's
+        trace there when it is curved and of another order (``_entity_traces``; on
+        hexahedra, quads and their kin, refused on curved simplices and wedges for
+        now)."""
         geometry = self.geometry
         face_dofs, cell_dofs, _ = space._layout()
         points = _space_nodes(space, geometry)
         same = geometry.space is space
-        if geometry.space.order > 1 and not same:
-            raise NotImplementedError(
-                f"the nodes of {space!r} on a curved geometry of another order "
-                f"({geometry.space!r}): interpolate into the geometry's own space, or "
-                "make the geometry straight")
-        where = views._GeometryAtDof if same else views._StraightNodePosition
+        where, edge_trace, face_trace = views._StraightNodePosition, {}, {}
+        if same:
+            where = views._GeometryAtDof
+        elif geometry.space.order > 1:
+            if any(g.count and (bases.simplex_shape(g.shape) or bases.wedge_shape(g.shape)
+                                or not bases.has_bases(g.shape))
+                   for g in self.topology.groups()):
+                raise NotImplementedError(
+                    f"the nodes of {space!r} on a curved geometry of another order "
+                    f"({geometry.space!r}) on cells other than tensor ones: interpolate "
+                    "into the geometry's own space, or make the geometry straight")
+            edges, faces, basis = _entity_traces(self)
+            where = views._CurvedNodePosition
+            edge_trace, face_trace = dict(basis, trace=edges), dict(basis, trace=faces)
         out = []
         topology = self.topology
         dims = {g.shape.DIMENSION for g in topology.groups() if g.count}
@@ -707,19 +793,19 @@ class DataSet:
             for group in topology.edges().groups():
                 if group.count:
                     out.append(self.domain_view(
-                        "edges", group, (views.of_order(views._TensorEdgeNodes, space.order),
+                        "edges", group, (views.of_node_order(views._TensorEdgeNodes, space.order),
                                          where),
-                        node_edge_base=self.num_points, node_points=points))
+                        node_edge_base=self.num_points, node_points=points, **edge_trace))
         if 3 in dims:
             for group in topology.faces().groups():
                 if group.count and group.shape is shapes.Quad:
                     out.append(self.domain_view(
-                        "faces", group, (views.of_order(views._TensorFaceNodes, space.order),
+                        "faces", group, (views.of_node_order(views._TensorFaceNodes, space.order),
                                          where),
-                        node_face_dofs=face_dofs, node_points=points))
+                        node_face_dofs=face_dofs, node_points=points, **face_trace))
                 elif group.count and group.shape is shapes.Triangle and space.order > 2:
                     out.append(self.domain_view(
-                        "faces", group, (views.of_order(views._SimplexFaceNodes, space.order),
+                        "faces", group, (views.of_node_order(views._SimplexFaceNodes, space.order),
                                          where),
                         node_face_dofs=face_dofs, node_points=points))
         for group in topology.groups():
@@ -734,13 +820,14 @@ class DataSet:
                 if not lattice.size:
                     continue                          # order 3: no interior nodes
                 out.append(self.domain_view(
-                    "cells", group, (views.of_order(views._TableInteriorNodes, space.order),),
+                    "cells", group,
+                    (views.of_node_order(views._TableInteriorNodes, space.order),),
                     node_cell_dofs=cell_dofs, node_points=points, node_interior=table))
                 continue
             interior = (views._SimplexInteriorNodes if bases.simplex_shape(group.shape)
                         else views._TensorInteriorNodes)
             out.append(self.domain_view(
-                "cells", group, (views.of_order(interior, space.order),),
+                "cells", group, (views.of_node_order(interior, space.order),),
                 node_cell_dofs=cell_dofs, node_points=points))
         return out
 
@@ -759,7 +846,9 @@ class DataSet:
         ``H1``'s nodes are its points and, at order 2, its edges' middles, its
         quad faces' centers and its hexahedra's and quads' interiors; a shared
         node's position is the mean of its entity's points on a straight
-        geometry, the geometry's own value there on an order-2 one. ``L2``'s
+        geometry, the geometry's own value there on one of the space's layout,
+        and on a curved geometry of another order (tensor cells) its trace on
+        the edge or face at the node. ``L2``'s
         are its cells' corners (order 1) or parametric centers (order 0),
         ``Constant``'s and values on cells' the parametric centers, values on
         points' the points. Shared nodes need positions per point: an ``L2``
@@ -789,8 +878,10 @@ class DataSet:
             raise TypeError(f"values on {space.on} have no nodes to visit as such; "
                             f"for_each over {space.on!r} visits them")
         reference_cells(self.topology, f"the nodes of {space!r}")
-        if isinstance(space, H1) and (space.order > 2 or (space.order == 2 and all(
-                space._any_order(g.shape) for g in self.topology.groups() if g.count))):
+        # Order 2 on a geometry curved to a higher order needs its traces too.
+        if isinstance(space, H1) and (space.order > 2 or (space.order == 2 and (all(
+                space._any_order(g.shape) for g in self.topology.groups() if g.count)
+                or geometry.space.order > 2))):
             return out + self._tensor_nodes(space)
         if isinstance(space, H1):
             face_dofs, cell_dofs, _ = space._layout()
@@ -822,10 +913,8 @@ class DataSet:
                 lattice = bases.lattice_ijk(group.shape, space.order).reshape(-1)
                 ijk = tack.empty((len(lattice),), tack.i32)
                 tack.copyto(ijk, lattice)
-                nodes_of = (views.of_wedge_order(views._SimplexCellNodes, space.order)
-                            if bases.wedge_shape(group.shape) else
-                            views.of_simplex_order(views._SimplexCellNodes, space.order,
-                                                   group.shape.DIMENSION))
+                nodes_of = views.of_node_order(views._SimplexCellNodes, space.order,
+                                               len(lattice) // group.shape.DIMENSION)
                 out.append(self.domain_view(
                     "cells", group,
                     (nodes_of,),
@@ -835,7 +924,7 @@ class DataSet:
                 cells = space.layout == "cells"
                 mixin = views._TensorCellNodesCells if cells else views._TensorCellNodes
                 out.append(self.domain_view(
-                    "cells", group, (views.of_order(mixin, space.order),),
+                    "cells", group, (views.of_node_order(mixin, space.order),),
                     node_offsets=space.offsets, node_cells=self.num_cells,
                     node_points=_space_nodes(space, self.geometry)))
             elif isinstance(space, L2):
