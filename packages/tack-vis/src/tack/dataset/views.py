@@ -2958,6 +2958,10 @@ class _CornerPosition:
     def node_position(self, i, j):
         return self.corner_position(i, j)
 
+    @tack.func
+    def node_parametric_point(self, i, j):
+        return self.parametric_point(j)
+
 
 class _CenterPosition:
     """A cell's one node: where the geometry maps the parametric center."""
@@ -2965,6 +2969,10 @@ class _CenterPosition:
     @tack.func
     def node_position(self, i, j):
         return self.position(i, self.parametric_center())
+
+    @tack.func
+    def node_parametric_point(self, i, j):
+        return self.parametric_center()
 
 
 class _TensorEdgeNodes:
@@ -3084,12 +3092,16 @@ class _SimplexCellNodes:
         return self.node_offsets[self.entity_id(i)] + j
 
     @tack.func
-    def node_position(self, i, j):
+    def node_parametric_point(self, i, j):
         pc = tack.vec3(self.node_points[self.node_ijk[j * self.DIMENSION]],
                        self.node_points[self.node_ijk[j * self.DIMENSION + 1]], 0.0)
         if self.DIMENSION == 3:
             pc[2] = self.node_points[self.node_ijk[j * self.DIMENSION + 2]]
-        return self.position(i, pc)
+        return pc
+
+    @tack.func
+    def node_position(self, i, j):
+        return self.position(i, self.node_parametric_point(i, j))
 
 
 @tack.func
@@ -3259,14 +3271,18 @@ class _TensorCellNodes:
         return self.node_offsets[self.entity_id(i)] + j
 
     @tack.func
-    def node_position(self, i, j):
+    def node_parametric_point(self, i, j):
         q = self.NODE_ORDER + 1
         pc = tack.vec3(self.node_points[j % q], 0.0, 0.0)
         if self.DIMENSION >= 2:
             pc[1] = self.node_points[(j // q) % q]
         if self.DIMENSION == 3:
             pc[2] = self.node_points[j // (q * q)]
-        return self.position(i, pc)
+        return pc
+
+    @tack.func
+    def node_position(self, i, j):
+        return self.position(i, self.node_parametric_point(i, j))
 
 
 class _TensorCellNodesCells(_TensorCellNodes):

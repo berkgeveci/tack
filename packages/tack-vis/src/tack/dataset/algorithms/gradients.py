@@ -8,7 +8,7 @@ from tack.dataset.algorithms._common import _field, _vectors, _with_basis
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.carry import _take
 from tack.dataset.dataset import Field, for_each
-from tack.dataset.spaces import H1, Constant, Values
+from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import corner_layout
 from tack.runtime.dispatch import on_inputs_device
 
@@ -42,6 +42,14 @@ def _world_gradient(cells, u, c, pc):
 def _gradients(cells, u, out):
     for c in cells:
         out[cells.entity_id(c)] = _world_gradient(cells, u, c, cells.parametric_center())
+
+
+@tack.kernel
+def _node_gradients(cells, u, out):
+    # The gradient at each of the cell's nodes of the target space.
+    for c in cells:
+        for j in range(cells.node_count(c)):
+            out[cells.node_dof(c, j)] = _world_gradient(cells, u, c, cells.node_parametric_point(c, j))
 
 
 @tack.kernel
@@ -196,6 +204,13 @@ def _place_rows(rows, k, out):
 
 
 def _scalar_gradients(data, field, at):
+    if isinstance(at, L2):
+        # At an L2 space's nodes: each cell's own, from the cell alone.
+        out = _vectors(at.size, data.dtype)
+        groups = data.launch_groups("cells", [field], keys=(at,) if at.varies else ())
+        for group, view in data._cell_node_views(at, groups):
+            _node_gradients(view, field.view(group), out)
+        return out
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_scalar_gradients(data, field, at)
     if at == "cells":
@@ -228,7 +243,12 @@ def gradients(data, field, at="cells"):
 
     A scalar gives a 3-vector per entity; a vector of ``k`` components ``3k``
     values, row by row -- ``d(u_i)/d(x_j)`` at ``3 * i + j``, the layout of
-    VTK's and Viskores' gradient tensors. The field's basis gives its
+    VTK's and Viskores' gradient tensors.
+
+    ``at`` may instead be an ``L2`` space of the dataset: the gradient at each of
+    its nodes in each cell -- a discontinuous field, exact at the nodes, so an
+    ``H1`` field of order ``p`` keeps its order's detail in ``L2`` of order ``p``,
+    where a gradient at the points averages it away. The field's basis gives its
     derivative in parametric coordinates and the geometry's Jacobian turns that
     into a world gradient, so the two need not share a space. A 2D cell's
     gradient lies in its plane (VTK's and Viskores' in-plane gradient), lines
@@ -250,15 +270,25 @@ def gradients(data, field, at="cells"):
             and not isinstance(field.space, (H1, Constant))):
         raise NotImplementedError(f"gradients of a field on {field.space!r} on a mesh "
                                   "without reference elements: point or cell data only")
-    if at not in ("cells", "points"):
-        raise ValueError(f"gradients are at 'cells' or 'points', not {at!r}")
-    space = Values(data, at)
+    if isinstance(at, L2):
+        if at.topology is not data.topology:
+            raise ValueError("gradients at the nodes of a space of another topology")
+        if not getattr(data.topology, "reference_cells", True):
+            raise NotImplementedError("gradients at an L2 space's nodes take cells with a "
+                                      "reference element")
+        space = at
+    elif at not in ("cells", "points"):
+        raise ValueError(f"gradients are at 'cells' or 'points', or an L2 space's nodes, "
+                         f"not {at!r}")
+    else:
+        space = Values(data, at)
     # Per unit length; a difference of degrees Celsius is in kelvin.
     unit = units.derived(units.delta(field.unit), (data.unit, -1))
     width = width_of(field.values)
     if not width:
         return Field(space, _scalar_gradients(data, field, at), unit)
-    n = data.num_cells if at == "cells" else data.num_points
+    n = space.size if isinstance(at, L2) else data.num_cells if at == "cells" \
+        else data.num_points
     out = tack.empty((n,), tack.vec(3 * width, data.dtype))
     values = materialize(field.values)
     for k in range(width):

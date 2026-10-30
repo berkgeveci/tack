@@ -1,6 +1,6 @@
 # Gallery
 
-What the cutting filters make of each kind of cell. Every picture is a script in
+What Tack's filters make of each kind of cell. Every picture is a script in
 `docs/gallery/` that builds its data, runs Tack's filter, and draws the result
 through VTK: Tack makes everything drawn -- the result's polygons, their normals
 (`surface_normals(..., weights="area")`), and the outline, each cell edge as lines
@@ -21,6 +21,10 @@ The kinds of cells, left to right:
   each crossing placed on the field itself.
 - **Order 3 on curved cells**: the same 27 hexahedra twisted and bowed by an
   order-3 geometry, the field `H1` of order 3 on it.
+
+Cell quality also shows a **mixed mesh**: the cube's hexahedra, a third kept, a
+third split into wedges and a third into pyramids, every face between two cells
+the same in both.
 
 Each cuts the same field, Schwarz's P surface: `cos 2πx + cos 2πy + cos 2πz`.
 
@@ -119,4 +123,130 @@ boundaries are shaded flat, since a clipped solid has sharp edges.
 
 ```python
 --8<-- "docs/gallery/clip.py:clip"
+```
+
+## Threshold
+
+The cells where the field is at least 1: blobs about the cube's corners, joined
+along its edges where the field stays above 1. Threshold keeps cells, never parts
+of them: on the high-order and curved cells the cells whose field's bounds lie in
+the range are kept whole, the others on their linear sub-cells, which is why
+their surfaces come in steps.
+
+<div class="grid cards" markdown>
+
+-   ![Thresholded polyhedra](../assets/gallery/threshold-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![Thresholded tetrahedra](../assets/gallery/threshold-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![A thresholded order-4 field](../assets/gallery/threshold-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![Thresholded curved cells](../assets/gallery/threshold-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/threshold.py:threshold"
+```
+
+## Surfaces and feature edges
+
+The clip section's cube with a ball taken out: its boundary, and its feature
+edges -- where two faces turn by 30 degrees or more -- in red. On the curved cells
+the surface is subdivided, and the feature edges follow the cube's curved edges
+and the ball's rim, not the sub-faces between them.
+
+<div class="grid cards" markdown>
+
+-   ![The surface of clipped polyhedra](../assets/gallery/surfaces-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![The surface of clipped tetrahedra](../assets/gallery/surfaces-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![The surface of a clipped order-4 field's cells](../assets/gallery/surfaces-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![The surface of clipped curved cells](../assets/gallery/surfaces-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/surfaces.py:surfaces"
+```
+
+## Cell quality
+
+Each cell's scaled Jacobian, red where poor (0 degenerate, below 0 inverted) and
+blue where ideal (1), on meshes whose inner points are moved at random, with the
+cells about a corner taken out. A polyhedron's measure is that of the tetrahedra
+fanning it, so even a cube-like one scores below 1. On the curved cells it is
+the least over the geometry's own Jacobian's samples.
+
+<div class="grid cards" markdown>
+
+-   ![The quality of polyhedra](../assets/gallery/quality-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![The quality of tetrahedra](../assets/gallery/quality-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![The quality of a mixed mesh](../assets/gallery/quality-mixed.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Hexahedra, wedges and pyramids
+
+-   ![The quality of curved cells](../assets/gallery/quality-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/quality.py:quality"
+```
+
+## Gradients
+
+The P surface colored by the length of the field's gradient. A linear field's
+gradient is averaged to the points; a high-order field's is taken at the nodes of
+an `L2` space of its order (`gradients(data, field, at=L2(...))`), exact there, so
+the surface keeps its peaks, which averaging to the points flattens.
+
+<div class="grid cards" markdown>
+
+-   ![Gradients on polyhedra](../assets/gallery/gradients-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![Gradients on tetrahedra](../assets/gallery/gradients-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![Gradients of an order-4 field](../assets/gallery/gradients-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![Gradients on curved cells](../assets/gallery/gradients-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/gradients.py:gradients"
 ```
