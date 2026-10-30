@@ -39,6 +39,7 @@ from tack.dataset.algorithms.ghost_points import ghost_points
 from tack.dataset.algorithms.gradients import gradients
 from tack.dataset.algorithms.halo_catalog import halo_catalog
 from tack.dataset.algorithms.implicit_values import implicit_values
+from tack.dataset.algorithms.integrate import Integrals, integrate
 from tack.dataset.algorithms.interpolate import interpolate
 from tack.dataset.algorithms.jump import jump
 from tack.dataset.algorithms.log_values import log_values
@@ -81,6 +82,7 @@ __all__ = [
     "EdgeKind",
     "FaceGeometry",
     "FlowQuantities",
+    "Integrals",
     "ParticleStatus",
     "Statistics",
     "advect",
@@ -121,6 +123,7 @@ __all__ = [
     "gradients",
     "halo_catalog",
     "implicit_values",
+    "integrate",
     "interpolate",
     "jump",
     "log_values",

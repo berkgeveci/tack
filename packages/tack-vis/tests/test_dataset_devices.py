@@ -188,6 +188,7 @@ CALLS = {
         (d.topology.faces().num_faces,), device=d.device))),
     "statistics": lambda d: td.statistics(d, "s"),
     "entropy": lambda d: td.entropy(d, "s"),
+    "integrate": lambda d: td.integrate(d, ["s", "v"]),
     "probe": lambda d: td.probe(d, _point(d.device)),
     "advect": lambda d: td.advect(d, "v", np.array([[0.5, 0.5, 0.5]], np.float32), 0.01, 3),
     "streamlines": lambda d: td.streamlines(d, "v", np.array([[0.5, 0.5, 0.5]], np.float32),
