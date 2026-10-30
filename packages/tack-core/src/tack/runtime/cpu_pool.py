@@ -45,11 +45,13 @@ the Python path is the fallback everywhere.
 """
 import ctypes
 import ctypes.util
+import itertools
 import os
 import platform
 import struct
 import threading
 import time
+import uuid
 
 import llvmlite.binding as llvm
 import llvmlite.ir as ir
@@ -644,6 +646,87 @@ class CPool:
             return list(self._elems)
 
 
+# ── Shared JIT engines ──────────────────────────────────────────────
+
+#: Compiled code shares MCJIT engines, this many modules to an engine. An engine
+#: each cost about 950 KB a kernel variant (its memory manager's sections and
+#: state); shared, and with each module's IR removed once its code is made, about
+#: 75. Each variant keeps its engine alive, so an engine is freed with the last
+#: variant it holds: kernels made and dropped (a class defined per call)
+#: accumulate at most an engine's worth.
+MODULES_PER_ENGINE = 32
+
+#: Entry symbols are renamed unique before they join an engine, here and in any
+#: process whose stored object code this one loads (``unique_name``).
+_PROCESS = uuid.uuid4().hex[:12]
+_serial = itertools.count()
+
+
+def unique_name(name: str) -> str:
+    """``name`` made unique among every symbol any engine of any process defines."""
+    return f"{name}__{_PROCESS}_{next(_serial)}"
+
+
+class _SharedJIT:
+    """The engine new code joins, replaced after ``MODULES_PER_ENGINE`` modules;
+    each ``add`` returns the engine with the code's address, for the caller to
+    keep."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._engine = None
+        self._count = 0
+        self._emitted = []
+
+    def _current(self):
+        if self._engine is None or self._count >= MODULES_PER_ENGINE:
+            engine = llvm.create_mcjit_compiler(llvm.parse_assembly(""), _jit_target_machine())
+            emitted = []
+            # The object code MCJIT makes for each module, by its name, for the disk
+            # cache (the engine's first compile also makes its empty first module's).
+            engine.set_object_cache(
+                lambda module, buffer: emitted.append((module.name, bytes(buffer))), None)
+            self._engine, self._emitted, self._count = engine, emitted, 0
+        self._count += 1
+        return self._engine
+
+    def add_module(self, module, name):
+        """``(engine, address of name, object code)`` for a parsed, optimized module
+        (renamed ``name`` too, to find its object code)."""
+        with self._lock:
+            engine = self._current()
+            self._emitted.clear()
+            module.name = name
+            engine.add_module(module)
+            engine.finalize_object()
+            address = engine.get_function_address(name)
+            code = next((buffer for owner, buffer in self._emitted if owner == name), None)
+            # The code stays in the engine's memory; the module's IR (large for
+            # unrolled high-order kernels) is no longer needed.
+            engine.remove_module(module)
+            return engine, address, code
+
+    def add_object(self, data, name):
+        """``(engine, address of name)`` for stored object code."""
+        with self._lock:
+            engine = self._current()
+            engine.add_object_file(llvm.ObjectFileRef.from_data(data))
+            engine.finalize_object()
+            return engine, engine.get_function_address(name)
+
+
+shared_jit = _SharedJIT()
+
+
+def _jit_target_machine():
+    """The engines' target machine: the host CPU at O3 (kernels' modules are
+    optimized before they come; this is code generation's level)."""
+    _target_machine()                    # initializes the target, printer and asm parser
+    target = llvm.Target.from_default_triple()
+    return target.create_target_machine(cpu=llvm.get_host_cpu_name(),
+                                        features=llvm.get_host_cpu_features().flatten(), opt=3)
+
+
 # ── Per-kernel wrappers and argument packs ──────────────────────────
 
 _wrapper_lock = threading.Lock()
@@ -673,7 +756,8 @@ def _build_chunk_wrapper(compiled) -> int:
     kernel_type = ir.FunctionType(ir.VoidType(), [*ptypes, _i64, _i64])
     module = ir.Module(name=f"chunk_{compiled._func_name}")
     module.triple = llvm.get_default_triple()
-    wrapper = ir.Function(module, _chunk_fn_type, name="__tack_chunk")
+    name = unique_name("__tack_chunk")
+    wrapper = ir.Function(module, _chunk_fn_type, name=name)
     b = ir.IRBuilder(wrapper.append_basic_block("entry"))
     pack, start, end = wrapper.args
     args = []
@@ -685,10 +769,9 @@ def _build_chunk_wrapper(compiled) -> int:
     b.ret_void()
     mod = llvm.parse_assembly(str(module))
     mod.verify()
-    engine = llvm.create_mcjit_compiler(mod, _target_machine())
-    engine.finalize_object()
+    engine, address, _ = shared_jit.add_module(mod, name)
     compiled._chunk_engine = engine
-    compiled._chunk = engine.get_function_address("__tack_chunk")
+    compiled._chunk = address
     return compiled._chunk
 
 

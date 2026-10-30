@@ -21,7 +21,7 @@ holds one compiled specialization:
 
 | Attribute | Contents |
 |-----------|----------|
-| `ir` | the post-pass IR (before GPU scalar packing), kept so the launch range can be evaluated on every dispatch without rerunning passes |
+| `ir` | the post-pass IR's skeleton (before GPU scalar packing): name, parameters and the parallel loop's bounds without its body (`_launch_skeleton`), kept so the launch range can be evaluated on every dispatch without rerunning passes |
 | `payload` | whatever the backend's `build` callback returned: the JIT'd function on the CPU; the compiled kernel, `pack_info` and pack buffers on GPU |
 | `requires_full_workgroups` | whether every launch must be a multiple of 256 lanes |
 | `atomic_targets` | atomic parameter indices and their alignments, rechecked against each call's storage |
@@ -510,7 +510,7 @@ anew from the call's scalars, as `_build_variant` does.
 
 | Backend | Artifact | Loading it |
 |---|---|---|
-| CPU | the object code MCJIT emitted (`set_object_cache`) | `add_object_file` into a new engine: about 0.4 ms, no LLVM optimization or code generation |
+| CPU | the object code MCJIT emitted (`set_object_cache`), after its entry's unique name | `add_object_file` into the shared engine: about 0.4 ms, no LLVM optimization or code generation |
 | Metal | MSL source, entry name, parameter layout, scalar pack layout | `newLibraryWithSource`, which macOS's own shader cache makes fast for source it has compiled before |
 | CUDA | PTX from NVRTC, entry name, parameter layout, scalar pack layout | `cuModuleLoadData`: the driver compiles the PTX for the device, so the target names the device and compute capability, the driver version, NVRTC's version and its options |
 | HIP | the code object from hipRTC, entry name, parameter layout, scalar pack layout | `hipModuleLoadData`: machine code for one architecture, so the target names the device and `gcnArchName` with its feature flags (which also separates devices with and without texture hardware), the ROCm runtime and driver, hipRTC, hip-python and the hipRTC options |

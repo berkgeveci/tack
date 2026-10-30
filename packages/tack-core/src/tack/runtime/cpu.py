@@ -877,25 +877,25 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     mod.verify()
 
     # Run optimization passes (loop vectorization, unrolling, etc.)
-    # Uses its own target machine instance since MCJIT takes ownership of one
-    tm_opt = _create_target_machine()
-    _optimize_module(mod, tm_opt)
+    _optimize_module(mod, _create_target_machine())
 
-    # Create execution engine with a fresh target machine
-    tm_jit = _create_target_machine()
-    engine = llvm.create_mcjit_compiler(mod, tm_jit)
-    # Keep the object code MCJIT makes, for the disk cache.
-    emitted = []
-    engine.set_object_cache(lambda _module, buffer: emitted.append(bytes(buffer)), None)
-
-    compiled = _load_kernel(engine, ir_func)
-    compiled.object_code = emitted[0] if len(emitted) == 1 else None
+    # Its code joins a shared engine (cpu_pool.shared_jit) under a name no other
+    # module there has: kernels of one name would otherwise share an address.
+    name = cpu_pool.unique_name(kernel_entry_name(ir_func.name))
+    mod.get_function(kernel_entry_name(ir_func.name)).name = name
+    engine, address, code = cpu_pool.shared_jit.add_module(mod, name)
+    compiled = _load_kernel(engine, address, ir_func)
+    # The object code with its entry's name, for the disk cache.
+    compiled.object_code = None if code is None else _STORED + name.encode() + b"\0" + code
     return compiled
 
 
-def _load_kernel(engine, ir_func: ir.IRFunction) -> CompiledKernel:
-    """The kernel's entry point in a JIT engine that holds its code."""
-    func_ptr = engine.get_function_address(kernel_entry_name(ir_func.name))
+#: How a stored variant begins: then its entry's name, a NUL, and the object code.
+_STORED = b"tack-cpu-object 1\0"
+
+
+def _load_kernel(engine, func_ptr, ir_func: ir.IRFunction) -> CompiledKernel:
+    """The kernel's entry point at ``func_ptr``, in a JIT engine that holds its code."""
     if func_ptr == 0:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
 
@@ -1188,10 +1188,11 @@ class CPUBackend(Backend):
         return compiled.object_code
 
     def load_variant(self, ir_func, object_code, effective_args=None):
-        engine = llvm.create_mcjit_compiler(llvm.parse_assembly(""), _create_target_machine())
-        engine.add_object_file(llvm.ObjectFileRef.from_data(object_code))
-        engine.finalize_object()
-        compiled = _load_kernel(engine, ir_func)
+        if not object_code.startswith(_STORED):
+            raise ValueError("not a stored CPU kernel")
+        name, _, code = object_code[len(_STORED):].partition(b"\0")
+        engine, address = cpu_pool.shared_jit.add_object(code, name.decode())
+        compiled = _load_kernel(engine, address, ir_func)
         compiled.object_code = object_code
         return compiled
 
