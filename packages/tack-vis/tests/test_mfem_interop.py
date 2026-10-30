@@ -365,13 +365,15 @@ _BASES = {"Gauss-Lobatto": "GaussLobatto", "closed uniform": "ClosedUniform",
 
 @pytest.mark.parametrize("family, order, basis", [
     ("H1", 3, "Gauss-Lobatto"), ("H1", 4, "Gauss-Lobatto"), ("H1", 3, "closed uniform"),
-    ("H1", 3, "Bernstein"), ("L2", 2, "Gauss-Legendre"), ("L2", 3, "Gauss-Legendre"),
-    ("L2", 3, "Gauss-Lobatto"), ("L2", 2, "closed uniform"), ("L2", 2, "Bernstein")])
+    ("H1", 2, "Bernstein"), ("H1", 3, "Bernstein"), ("L2", 2, "Gauss-Legendre"),
+    ("L2", 3, "Gauss-Legendre"), ("L2", 3, "Gauss-Lobatto"), ("L2", 2, "closed uniform"),
+    ("L2", 2, "Bernstein")])
 def test_higher_order_fields_are_mfems(f64_backend, family, order, basis):
-    """Fields of orders 2 to 4 on hexahedra, in MFEM's own spaces: on nodes Tack has
-    (Gauss-Lobatto, closed uniform, Gauss-Legendre) copied in Tack's numbering; on
-    Bernstein evaluated at Tack's Gauss-Lobatto nodes -- the same polynomials, so
-    values and gradients at random points are MFEM's either way."""
+    """Fields of orders 2 to 4 on hexahedra, in MFEM's own spaces, copied in Tack's
+    numbering: on nodes Tack has (Gauss-Lobatto, closed uniform, Gauss-Legendre)
+    their values, and MFEM's positive basis' coefficients into Tack's Bernstein
+    space (they were evaluated at Gauss-Lobatto nodes). Values and gradients at
+    random points are MFEM's, and the field goes back to MFEM unchanged."""
     mesh = _cartesian("HEXAHEDRON")
     kind = getattr(mfem.BasisType, _BASES[basis])
     fec = (mfem.H1_FECollection if family == "H1" else mfem.L2_FECollection)(order, 3, kind)
@@ -379,7 +381,34 @@ def test_higher_order_fields_are_mfems(f64_backend, family, order, basis):
     data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
     u = data.fields["u"]
     assert u.space.order == order and u.space.size == gf.FESpace().GetNDofs()
+    assert (u.space.basis == "bernstein") == (basis == "Bernstein")
     _compare(mesh, data, u, gf, np.random.default_rng(order), 2e-5)
+    from tack.interop.mfem import mfem_grid_function
+
+    back = mfem_grid_function(data, u, mesh)           # order 2: Lobatto's nodes are uniform
+    np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())
+
+
+@pytest.mark.parametrize("kind", ["TETRAHEDRON", "WEDGE"])
+@pytest.mark.parametrize("family", ["H1", "L2"])
+def test_positive_bases_on_simplices_and_wedges_are_copied(f64_backend, kind, family):
+    """MFEM's positive basis of order 3 on tetrahedra and wedges: its coefficients
+    copied into Tack's Bernstein space (matched by the control points' reference
+    coordinates), values and gradients MFEM's, and back unchanged. (MFEM projects
+    into a positive basis by taking the function's values at the control points as
+    coefficients, so the function is not the one projected: compare with MFEM's.)"""
+    from tack.interop.mfem import mfem_grid_function
+
+    mesh = _cartesian(kind)
+    fec = (mfem.H1_FECollection if family == "H1" else mfem.L2_FECollection)(
+        3, 3, mfem.BasisType.Positive)
+    gf = _projected(mesh, fec, _smooth)
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    u = data.fields["u"]
+    assert u.space.basis == "bernstein" and u.space.size == gf.FESpace().GetNDofs()
+    _compare(mesh, data, u, gf, np.random.default_rng(3), 2e-5)
+    back = mfem_grid_function(data, u, mesh, gf.FESpace())
+    np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())
 
 
 @pytest.mark.parametrize("order", [3, 4])
