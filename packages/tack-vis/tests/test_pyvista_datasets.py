@@ -44,16 +44,11 @@ _REFUSED = {
     "prostar": "is not 3D: a polyhedral topology",                       # polyhedra and lines
     **dict.fromkeys(("aero_bracket", "fea_bracket", "pump_bracket", "notch_displacement",
                      "disc_quads", "quadratic_pyramid", "tri_quadratic_hexahedron"),
-                    r"VTK cell types \[.*\] \(vtk.*Quad.*\) are not linear shapes"),
+                    r"VTK cell types \[.*\] \(vtk.*Quad.*\) are not shapes Tack has"),
 }
 
 #: Known failures to convert, by dataset: they skip the algorithms.
-_UNREAD = dict.fromkeys(
-    ("gpr_path", "particles", "sparse_points"),
-    "a polydata's poly vertex (one vert cell of several points, as vtkTableToPolyData "
-    "and vtkParticleReader make) is mapped to VTK_POLY_VERTEX, then refused as 'not "
-    "a linear shape', in words for higher-order cells; strips are split, poly vertices "
-    "are not")
+_UNREAD = {}
 
 #: Refusals of an algorithm beyond the Viskores datasets' (their ``_REFUSALS``).
 _REFUSALS = re.compile("|".join([

@@ -1115,8 +1115,30 @@ def test_vtk_quadratic_cells_are_refused_when_read():
     grid.cells = (24, vtk.vtkCellArray(offsets=np.array([0, 10]),
                                        connectivity=np.arange(10)))
     with pytest.raises(ValueError, match=r"VTK cell types \[24\] \(vtkQuadraticTetra\) are "
-                                         "not linear shapes"):
+                                         "not shapes Tack has: of the higher-order"):
         vtk_to_dataset(grid)
+
+
+@needs_vtk
+def test_a_polydatas_poly_vertices_are_its_vertices():
+    """A vert cell of several points (vtkTableToPolyData's, vtkParticleReader's) is
+    one vertex per point, each taking the poly vertex's cell data, as strips
+    become triangles."""
+    points = np.arange(15, dtype=np.float32).reshape(5, 3)
+    polydata = vtk.vtkPolyData(points=vtk.vtkPoints(data=vtk.vtkFloatArray(points)))
+    polydata.verts = vtk.vtkCellArray(offsets=np.array([0, 3, 4, 5]),
+                                      connectivity=np.array([4, 0, 2, 1, 3]))
+    polydata.cell_data["c"] = np.array([7.0, 8.0, 9.0])
+    data = vtk_to_dataset(polydata)
+    assert data.num_cells == 5
+    np.testing.assert_array_equal(data.topology.types.numpy(), 1)
+    np.testing.assert_array_equal(data.topology.connectivity.numpy(), [4, 0, 2, 1, 3])
+    np.testing.assert_array_equal(data.fields["c"].values.numpy(), [7, 7, 7, 8, 9])
+    lines = vtk.vtkCellArray(offsets=np.array([0, 2]), connectivity=np.array([0, 1]))
+    polydata.lines = lines                         # with another kind of cell too
+    polydata.cell_data["c"] = np.array([7.0, 8.0, 9.0, 10.0])
+    mixed = vtk_to_dataset(polydata)
+    np.testing.assert_array_equal(mixed.fields["c"].values.numpy(), [7, 7, 7, 8, 9, 10])
 
 
 @needs_vtk

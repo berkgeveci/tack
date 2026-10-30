@@ -564,8 +564,8 @@ def _polydata_as_grid(polydata):
     """A ``vtkPolyData`` as the ``vtkUnstructuredGrid`` of its cells, on the same
     points and point data: its verts, lines, polygons and strips in VTK's cell
     order (a polygon of three or four points a triangle or quad, as
-    ``vtkPolyData.GetCellType`` says), each strip as its triangles, which take
-    its cell data."""
+    ``vtkPolyData.GetCellType`` says), each strip as its triangles and each
+    poly vertex as its vertices, which take its cell data."""
     import numpy as np
     from vtkmodules.vtkCommonCore import vtkIdList, vtkUnsignedCharArray
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
@@ -575,7 +575,11 @@ def _polydata_as_grid(polydata):
                                                 ("polys", polydata.polys),
                                                 ("strips", polydata.strips))
              if cells.number_of_cells]
-    if len(kinds) == 1 and kinds[0][0] != "strips":
+    def poly_vertices(cells):
+        return (np.diff(np.asarray(cells.offsets_array)) > 1).any()
+
+    if len(kinds) == 1 and kinds[0][0] != "strips" and not (kinds[0][0] == "verts"
+                                                           and poly_vertices(kinds[0][1])):
         # One kind of cell: the grid takes the polydata's cell array itself, so
         # its offsets and connectivity are not copied, and the cells (and their
         # cell data) are the same in the same order.
@@ -603,15 +607,20 @@ def _polydata_as_grid(polydata):
         offsets = np.asarray(cells.offsets_array, np.int64)
         connectivity = np.asarray(cells.connectivity_array, np.int64)
         size = np.diff(offsets)
-        if kind == "strips":
+        if kind == "verts":
+            # A poly vertex is its vertices.
+            types.append(np.ones(len(connectivity), np.uint8))
+            sizes.append(np.ones(len(connectivity), np.int64))
+            members.append(connectivity)
+            sources.append(first + np.repeat(np.arange(n), size))
+        elif kind == "strips":
             rows, strip = _strip_triangles(offsets, connectivity)
             types.append(np.full(len(rows), 5, np.uint8))
             sizes.append(np.full(len(rows), 3))
             members.append(rows.reshape(-1))
             sources.append(first + strip)
         else:
-            types.append({"verts": np.where(size == 1, 1, 2),
-                          "lines": np.where(size == 2, 3, 4),
+            types.append({"lines": np.where(size == 2, 3, 4),
                           "polys": np.select([size == 3, size == 4], [5, 9], 7)}[kind]
                          .astype(np.uint8))
             sizes.append(size)
@@ -628,7 +637,7 @@ def _polydata_as_grid(polydata):
     grid.cells = (vtkUnsignedCharArray(np.concatenate(types)),
                   vtkCellArray(offsets=offsets, connectivity=np.concatenate(members)))
     source = np.concatenate(sources)
-    if len(source) == polydata.number_of_cells:            # no strips: the same cells
+    if len(source) == polydata.number_of_cells:  # no strips or poly vertices: the same cells
         grid.GetCellData().ShallowCopy(polydata.GetCellData())
     else:
         ids = vtkIdList()
@@ -756,9 +765,11 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
                 names = ", ".join(vtkCellTypeUtilities.GetClassNameFromTypeId(t)
                                   for t in unknown)
-                raise ValueError(f"VTK cell types {unknown} ({names}) are not linear shapes: "
-                                 "of the higher-order cells, VTK's Lagrange curves, "
-                                 "quadrilaterals and hexahedra convert")
+                higher = (": of the higher-order cells, VTK's Lagrange curves, "
+                          "quadrilaterals and hexahedra convert"
+                          if any(t >= 21 for t in unknown) else "")
+                raise ValueError(f"VTK cell types {unknown} ({names}) are not shapes Tack "
+                                 f"has{higher}")
             topology = UnstructuredTopology(types, offsets, connectivity, num_points=num_points,
                                             id_dtype=id_dtype)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
