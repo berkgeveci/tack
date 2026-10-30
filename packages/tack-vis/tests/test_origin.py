@@ -355,8 +355,45 @@ def test_vtk_points_come_and_go_relative_to_the_origin():
     assert np.abs(data.world_positions() - world).max() < 1e-6
     back = np.asarray(dataset_to_vtk(data).points.data)
     assert back.dtype == np.float64 and np.abs(back - world).max() < 1e-6
-    lost = vtk_to_dataset(grid)                     # f32 without an origin: 0.25 m steps
+    # Without one, an origin is chosen: these points are far from zero for their width.
+    chosen = vtk_to_dataset(grid)
+    assert chosen.origin == tuple(np.floor(world.min(axis=0)))
+    assert np.abs(chosen.world_positions() - world).max() < 1e-6
+    lost = vtk_to_dataset(grid, origin=(0, 0, 0))   # f32 relative to zero: 0.25 m steps
     assert np.abs(lost.world_positions() - world).max() > 1e-3
+
+
+def test_an_origin_is_chosen_only_far_from_zero():
+    """A box more than 100 times farther from zero than it is wide gets its lower
+    corner, rounded down; anything nearer keeps zero (a small cloud about zero
+    once got (-1, -1, -1), coarsening its single-precision values)."""
+    near = np.random.default_rng(0).random((50, 3)) - 0.5
+    assert td.point_cloud(near).origin == (0.0, 0.0, 0.0)
+    assert td.point_cloud(near + 20.0).origin == (0.0, 0.0, 0.0)
+    far = near + np.array(ORIGIN)
+    cloud = td.point_cloud(far)
+    assert cloud.origin == tuple(np.floor(far.min(axis=0)))
+    assert np.abs(cloud.world_positions() - far).max() < 1e-6
+
+
+@needs_vtk
+def test_a_composites_pieces_get_one_chosen_origin():
+    from vtkmodules.vtkCommonDataModel import vtkPartitionedDataSet
+
+    pieces = vtkPartitionedDataSet()
+    pieces.number_of_partitions = 2
+    worlds = []
+    for i in range(2):
+        world = np.array(ORIGIN) + np.random.default_rng(i).random((4, 3)) + i
+        grid = vtkUnstructuredGrid()
+        grid.points = vtkPoints(data=vtkDoubleArray(world))
+        grid.cells = (1, _vertex_cells_vtk(4))
+        pieces.SetPartition(i, grid)
+        worlds.append(world)
+    data = vtk_to_dataset(pieces)
+    assert data[0].origin == data[1].origin == tuple(np.floor(worlds[0].min(axis=0)))
+    for piece, world in zip(data, worlds):
+        assert np.abs(piece.world_positions() - world).max() < 1e-6
 
 
 def _vertex_cells_vtk(n):

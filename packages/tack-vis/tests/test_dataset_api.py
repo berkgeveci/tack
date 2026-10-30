@@ -1084,6 +1084,93 @@ def test_vtk_char_arrays_come_across_as_i8():
 
 
 @needs_vtk
+@pytest.mark.parametrize("copy", [True, False])
+def test_vtk_bit_arrays_come_across_as_u8(copy):
+    """NumPy reads a vtkBitArray as its packed bytes, eight values to one; its
+    values arrive one to a point, as 0 and 1 (kitchen.vtk's ``SCALARS hpor bit``
+    once came as 1428 values for its 11424 points)."""
+    from vtkmodules.vtkCommonCore import vtkBitArray
+
+    bits = [1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0]
+    image = vtk.vtkImageData(dimensions=(4, 3, 1))
+    flags = vtkBitArray()
+    flags.SetNumberOfTuples(len(bits))
+    for i, v in enumerate(bits):
+        flags.SetValue(i, v)
+    flags.SetName("flags")
+    image.GetPointData().AddArray(flags)
+    data = vtk_to_dataset(image, copy=copy)
+    assert data.fields["flags"].values.dtype == tack.u8
+    np.testing.assert_array_equal(data.fields["flags"].values.numpy(), bits)
+
+
+@needs_vtk
+def test_vtk_higher_order_cells_tack_has_no_shape_for_are_refused_when_read():
+    """VTK's cells Tack reads neither as shapes nor as higher-order spaces (a
+    biquadratic quad) are refused by VTK's names when the grid is read. They came
+    across as cells no algorithm took, every one failing ('are not linear
+    shapes')."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [.5, 0, 0], [1, .5, 0],
+                       [.5, 1, 0], [0, .5, 0], [.5, .5, 0]], np.float32)
+    grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=points))
+    grid.cells = (28, vtk.vtkCellArray(offsets=np.array([0, 9]), connectivity=np.arange(9)))
+    with pytest.raises(ValueError, match=r"VTK cell types \[28\] \(vtkBiQuadraticQuad\) are "
+                                         "not shapes Tack has: of the higher-order"):
+        vtk_to_dataset(grid)
+
+
+@needs_vtk
+def test_collapsed_hexahedra_are_the_shapes_they_collapse_to():
+    """Finite-element files write wedges, pyramids and tetrahedra as hexahedra with
+    corners repeated; they come across as those shapes, of the same volume as
+    VTK measures the hexahedra, beside a hexahedron that stays one."""
+    cube = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1],
+                     [1, 1, 1], [0, 1, 1]], np.float64)
+    rows = [[0, 1, 2, 3, 4, 5, 6, 7],                     # a hexahedron
+            [0, 1, 2, 2, 4, 5, 6, 6],                     # wedges, the pair in each place
+            [1, 2, 3, 3, 5, 6, 7, 7], [0, 1, 1, 3, 4, 5, 5, 7], [0, 0, 2, 3, 4, 4, 6, 7],
+            [0, 1, 2, 3, 6, 6, 6, 6],                     # a pyramid
+            [0, 1, 2, 2, 6, 6, 6, 6],                     # a tetrahedron
+            [0, 1, 2, 3, 4, 4, 6, 6]]                     # some other collapse: kept
+    grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=cube))
+    grid.cells = (12, vtk.vtkCellArray(offsets=np.arange(0, 8 * len(rows) + 1, 8),
+                                       connectivity=np.ravel(rows)))
+    grid.cell_data["c"] = np.arange(len(rows), dtype=np.float64)
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    np.testing.assert_array_equal(data.topology.types.numpy(),
+                                  [12, 13, 13, 13, 13, 14, 10, 12])
+    np.testing.assert_array_equal(data.topology.connectivity.numpy()[8:14], [0, 1, 2, 4, 5, 6])
+    np.testing.assert_array_equal(data.fields["c"].values.numpy(), np.arange(len(rows)))
+    from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
+
+    sizes = np.asarray(vtkCellSizeFilter()(grid).cell_data["Volume"])
+    np.testing.assert_allclose(td.cell_geometry(data).measure.values.numpy()[:7], sizes[:7],
+                               rtol=1e-12)
+
+
+@needs_vtk
+def test_a_polydatas_poly_vertices_are_its_vertices():
+    """A vert cell of several points (vtkTableToPolyData's, vtkParticleReader's) is
+    one vertex per point, each taking the poly vertex's cell data, as strips
+    become triangles."""
+    points = np.arange(15, dtype=np.float32).reshape(5, 3)
+    polydata = vtk.vtkPolyData(points=vtk.vtkPoints(data=vtk.vtkFloatArray(points)))
+    polydata.verts = vtk.vtkCellArray(offsets=np.array([0, 3, 4, 5]),
+                                      connectivity=np.array([4, 0, 2, 1, 3]))
+    polydata.cell_data["c"] = np.array([7.0, 8.0, 9.0])
+    data = vtk_to_dataset(polydata)
+    assert data.num_cells == 5
+    np.testing.assert_array_equal(data.topology.types.numpy(), 1)
+    np.testing.assert_array_equal(data.topology.connectivity.numpy(), [4, 0, 2, 1, 3])
+    np.testing.assert_array_equal(data.fields["c"].values.numpy(), [7, 7, 7, 8, 9])
+    lines = vtk.vtkCellArray(offsets=np.array([0, 2]), connectivity=np.array([0, 1]))
+    polydata.lines = lines                         # with another kind of cell too
+    polydata.cell_data["c"] = np.array([7.0, 8.0, 9.0, 10.0])
+    mixed = vtk_to_dataset(polydata)
+    np.testing.assert_array_equal(mixed.fields["c"].values.numpy(), [7, 7, 7, 8, 9, 10])
+
+
+@needs_vtk
 def test_vtk_constant_and_affine_fields_stay_implicit():
     """VTK's implicit arrays in point and cell data are Tack's implicit arrays, and
     back: nothing stored on either side."""

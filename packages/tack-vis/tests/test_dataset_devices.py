@@ -142,6 +142,8 @@ CALLS = {
     "extract_edges": td.extract_edges,
     "feature_edges": lambda d: td.feature_edges(td.extract_surface(d, td.boundary_faces(d))),
     "surface_normals": lambda d: td.surface_normals(td.extract_surface(d)),
+    "tubes": lambda d: td.tubes(td.extract_edges(d), 0.05, radius_by="s"),
+    "glyphs": lambda d: td.glyphs(d, "v", scale=0.1),
     "tetrahedralize": td.tetrahedralize,
     "merge_points": lambda d: (None if isinstance(d.topology, td.StructuredTopology)
                                else td.merge_points(d)),

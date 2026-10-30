@@ -7,7 +7,7 @@ from tack.arrays import CountingArray
 from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms.outliers import _locator
 from tack.dataset.dataset import DataSet, Field
-from tack.dataset.point_locator import MAX_K
+from tack.dataset.point_locator import check_k
 from tack.dataset.spaces import H1
 from tack.runtime.dispatch import on_inputs_device
 
@@ -122,7 +122,7 @@ def _normals(grid, offsets, ids, vx, vy, vz, toward_point, tolerance, normals):
 def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0, 1.0),
                   periodic=None, locator=None):
     """``data`` with ``normals``, each point's unit normal: the direction in which
-    its neighbourhood -- its ``k`` nearest points (at most 32), itself among
+    its neighbourhood -- its ``k`` nearest points, itself among
     them, or the points within ``radius`` -- spreads least, from the
     eigenvectors of their covariance, as VTK's vtkPCANormalEstimation and
     PDAL's ``filters.normal``. A point with fewer than three neighbours, or
@@ -145,8 +145,7 @@ def point_normals(data, k=None, radius=None, viewpoint=None, direction=(0.0, 0.0
     n = data.num_points
     positions = locator.positions
     if k is not None:
-        if not (isinstance(k, (int, np.integer)) and 1 <= k <= MAX_K):
-            raise ValueError(f"k is a whole number from 1 to {MAX_K}, not {k!r}")
+        k = check_k(k)
         nearest, _ = locator.nearest(int(k), positions)      # itself included
         # Rows of k already: CSR offsets 0, k, 2k, ..., stored nowhere.
         offsets = CountingArray(n + 1, start=0, step=int(k), dtype=data.id_dtype)

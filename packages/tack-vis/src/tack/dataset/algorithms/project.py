@@ -65,6 +65,16 @@ def _cell_nodes(cells, u, t, offsets, out):
 
 
 @tack.kernel
+def _corner_copies(cells, u, offsets, out):
+    # An order-1 L2 cell's values from point values: its corners' own, copied, so
+    # integers come across too.
+    for c in cells:
+        first = offsets[cells.entity_id(c)]
+        for j in range(cells.NUM_POINTS):
+            out[first + j] = u.corner_value(c, j)
+
+
+@tack.kernel
 def _distinct_point_means(cells, values, out):
     # A polyhedral, polygonal or polyline cell: the mean over its distinct points.
     for c in cells:
@@ -232,7 +242,8 @@ def project(data, field, space):
     source or target. On polyhedra, polygons and polylines -- no reference
     element -- only cell values and point values project, one into the other,
     each cell averaging over its distinct points. The values must be floating
-    point, scalars or vectors.
+    point, scalars or vectors, except from order-1 ``H1`` into order-1 ``L2``,
+    which copies them and takes integers too.
     """
     field = _with_basis(data, _field(data, field))
     source = field.space
@@ -253,6 +264,15 @@ def project(data, field, space):
         return Field(space, _take(values, tack.arange(space.size, dtype=data.id_dtype)),
                      field.unit)
     if dtype_of(values) not in (tack.f32, tack.f64):
+        if (isinstance(space, L2) and not space.varies and space.order == 1
+                and isinstance(source, H1) and source.order == 1
+                and getattr(data.topology, "reference_cells", True)):
+            out = _like(values, space.size)
+            for group in data.launch_groups("cells", [field]):
+                if group.count:
+                    _corner_copies(data.domain_view("cells", group), field.view(group),
+                                   space.offsets, out)
+            return Field(space, out, field.unit)
         raise TypeError(f"project averages and interpolates floating-point values, not "
                         f"{dtype_of(values).name}")
     if isinstance(space, SideTraces):
