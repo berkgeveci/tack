@@ -72,6 +72,22 @@ def _cell_integrals(cells, u, points, weights, out):
         out[cells.entity_id(c)] = total
 
 
+@tack.kernel
+def _drop_cells(cells, values):
+    # Cells of a lower dimension than the mesh's: no part of its measure.
+    for c in cells:
+        values[cells.entity_id(c)] = 0.0
+
+
+def _top_cells(data, values):
+    """``values`` (one per cell) with the cells below the mesh's dimension zeroed."""
+    top = data.topology.dimension
+    for group in data.topology.groups():
+        if group.count and group.shape.DIMENSION < top:
+            _drop_cells(data.domain_view("cells", group), values)
+    return values
+
+
 def quadrature(shape, n):
     """``(points, weights)``: ``n``-point Gauss-Legendre rules along each axis of
     ``shape``'s reference element, collapsed onto a simplex (Duffy: the triangle
@@ -81,9 +97,11 @@ def quadrature(shape, n):
     ``points`` are ``(m, 3)``, the weights sum to the element's measure, and a
     polynomial of degree ``2 n - 1`` along each axis of the cube (fewer collapsed)
     integrates exactly."""
+    d = shape.DIMENSION
+    if d == 0:
+        return np.zeros((1, 3)), np.ones(1)     # a vertex: its point, measure 0
     x, w = np.polynomial.legendre.leggauss(int(n))
     x, w = (x + 1) / 2, w / 2
-    d = shape.DIMENSION
     if shape in (shapes.Triangle, shapes.Tetra, shapes.Wedge):
         u, v = np.meshgrid(x, x, indexing="ij")
         wu, wv = np.meshgrid(w, w, indexing="ij")
@@ -153,10 +171,11 @@ def _cell_values(data, field):
     field = _with_basis(data, field)
     width = arrays.width_of(field.values)
     dtype = arrays.dtype_of(field.values)
-    out = tack.empty((data.num_cells,), tack.vec(width, dtype) if width else dtype)
+    out = tack.zeros((data.num_cells,), tack.vec(width, dtype) if width else dtype)
     n = _points_per_axis(data, _order(field.space))
+    top = data.topology.dimension
     for group in data.launch_groups("cells", [field]):
-        if group.count:
+        if group.count and group.shape.DIMENSION == top:
             _cell_integrals(data.domain_view("cells", group), field.view(group),
                             *_tables(data, group.shape, n), out)
     return out
@@ -168,7 +187,8 @@ def _piece(data, names):
     from tack.dataset.ghosts import owned_values, visible
 
     data = visible(data)
-    measures = cell_geometry(data).measure
+    measures = Field(Values(data, "cells"), _top_cells(data, arrays.materialize(
+        cell_geometry(data).measure.values)))
     measure = float(np.sum(np.asarray(owned_values(data, measures).numpy(), np.float64)))
     values = {}
     for name in names:
@@ -177,8 +197,8 @@ def _piece(data, names):
             space = _with_basis(data, field).space
             if not isinstance(space, Constant):
                 raise NotImplementedError(
-                    f"integrals of {space!r} on cells without a reference element: cell "
-                    "data only")
+                    f"integrating {space!r} needs a reference element (polygons and "
+                    "polyhedra integrate cell data)")
             # Constant in each cell: its value times the cell's measure.
             cell_values = owned_values(data, Field(Values(data, "cells"),
                                                    arrays.materialize(field.values))).numpy()
@@ -206,8 +226,10 @@ def integrate(data, fields=None):
     points for the field's order and the geometry's, so a curved geometry and a
     field of any order (``H1``, ``L2``, point and cell data) integrate exactly, to
     rounding. Polyhedra take their measure from ``cell_geometry`` and integrate
-    cell data. Only owned cells count (ghost marks), and a ``PartitionedDataSet``
-    sums its pieces over every rank, in the pieces' order."""
+    cell data. Only the cells of the mesh's dimension count, as in VTK: a volume's
+    integrals leave out its surfaces, lines and vertices. Only owned cells count
+    (ghost marks), and a ``PartitionedDataSet`` sums its pieces over every rank, in
+    the pieces' order."""
     from tack.dataset.algorithms._common import _measure_unit
     from tack.dataset.partitioned import PartitionedDataSet
 
