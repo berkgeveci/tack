@@ -27,17 +27,19 @@ Each grid function becomes a field in the space its collection matches:
   is exact; pyramids, whose MFEM basis is another, are refused.
 
 - ``H1`` from order 3 and ``L2`` from order 2, on quads and hexahedra: Tack's
-  space of that order (``tack.dataset.bases``). On nodes Tack has -- MFEM's
-  default Gauss-Lobatto for ``H1`` and Gauss-Legendre for ``L2``, Gauss-Lobatto
-  and closed uniform for either -- the values are copied, permuted into Tack's
-  numbering: both number a cell's nodes lexicographically on the same
+  space of that order (``tack.dataset.bases``). On bases Tack has -- MFEM's
+  default Gauss-Lobatto for ``H1`` and Gauss-Legendre for ``L2``, Gauss-Lobatto,
+  closed uniform and positive (Bernstein, ``H1Pos``, from order 2) for either --
+  the values are copied, permuted into Tack's numbering: both number a cell's
+  nodes (a Bernstein basis' control points) lexicographically on the same
   reference cell, and a shared node is every element's, which is checked. On
-  any other basis (Bernstein, open uniform) the function is evaluated at Tack's
+  any other basis (open uniform) the function is evaluated at Tack's
   Gauss-Lobatto nodes, the same polynomials, so exactly.
-- The same on triangles and tetrahedra, whose Tack nodes are equispaced: MFEM's
-  closed uniform values are copied (matched by reference coordinates), and any
-  other basis -- MFEM's default Gauss-Lobatto-based simplex nodes for ``H1``,
-  Gauss-Legendre for ``L2`` -- is evaluated at Tack's equispaced lattice.
+- The same on triangles, tetrahedra and wedges, whose Tack nodes are equispaced:
+  MFEM's closed uniform values and positive coefficients are copied (matched by
+  reference coordinates), and any other basis -- MFEM's default
+  Gauss-Lobatto-based simplex nodes for ``H1``, Gauss-Legendre for ``L2`` -- is
+  evaluated at Tack's equispaced lattice.
 
 A curved mesh gets a geometry of its nodes' order the same way. Vector grid
 functions (``vdim > 1``) become fields of vectors, in either ordering.
@@ -101,16 +103,19 @@ def _collection(fes):
         else fes.GetOrder(0)
 
 
-#: An MFEM collection's basis type, by its name, as Tack's nodes: H1's default is
-#: Gauss-Lobatto ("H1_"), "@U" closed uniform; L2's default Gauss-Legendre
-#: ("L2_"), "_T1" Gauss-Lobatto, "_T4" closed uniform. Anything else (Bernstein,
-#: open uniform, ...) has no Tack nodes: its function is evaluated at Tack's.
+#: An MFEM collection's basis type, by its name, as Tack's basis: H1's default is
+#: Gauss-Lobatto ("H1_"), "@U" closed uniform, "H1Pos" Bernstein; L2's default
+#: Gauss-Legendre ("L2_"), "_T1" Gauss-Lobatto, "_T2" Bernstein (MFEM's positive
+#: basis), "_T4" closed uniform. Anything else (open uniform, ...) has no Tack
+#: basis: its function is evaluated at Tack's nodes.
 def _nodes_of(fes):
     name = fes.FEColl().Name()
     if name.startswith("H1_"):
         return "gauss_lobatto"
     if name.startswith("H1@U_"):
         return "equispaced"
+    if name.startswith(("H1Pos_", "L2_T2_")):
+        return "bernstein"
     if name.startswith("L2_") and not name.startswith("L2_T"):
         return "gauss_legendre"
     if name.startswith("L2_T1_"):
@@ -318,18 +323,40 @@ def _check_tensor(data, what):
     return families.pop() if families else False
 
 
+def _table_values(data, gf, order):
+    """``gf``, an H1 grid function of order 2 or more on a basis Tack has, as ``(space,
+    values)``: its values as MFEM stores them, in a space numbered by MFEM's
+    element-to-DOF table (``H1(..., dofs=table)``, each row in Tack's node order),
+    so nothing is permuted."""
+    from tack.dataset import H1, bases
+    from tack.dataset.ids import at_least
+
+    simplex = _check_tensor(data, f"MFEM H1 order {order}")
+    fes = gf.FESpace()
+    nodes = _nodes_of(fes)
+    if nodes is None or (simplex and nodes not in ("equispaced", "bernstein")):
+        raise ValueError(f"MFEM's {fes.FEColl().Name()} has no basis here to number by its "
+                         "table: import it without dofs='table', evaluated at Tack's nodes")
+    table = _element_dofs(fes, bases.nodes(nodes, order), order)
+    idt = at_least(data.id_dtype, fes.GetNDofs())
+    space = H1(data, order=order, basis=nodes,
+               dofs=tack.array(table.reshape(-1).astype(idt.numpy_dtype)))
+    return space, _by_dof(fes, gf.GetDataArray())
+
+
 def _tensor_values(data, mesh, gf, family, order):
     """``gf``, an H1 or L2 grid function of order ``order`` on quads or hexahedra, as
     ``(space, values)`` in Tack's space of that order. On nodes Tack has
-    (``_nodes_of``) its values are copied, permuted into Tack's numbering; on
-    any other basis it is evaluated at Tack's Gauss-Lobatto nodes (the same
-    polynomials, so exactly)."""
+    (``_nodes_of``) its values are copied, permuted into Tack's numbering, and a
+    positive basis' coefficients into Tack's Bernstein space; on any other basis
+    it is evaluated at Tack's Gauss-Lobatto nodes (the same polynomials, so
+    exactly)."""
     from tack.dataset import H1, L2, bases
 
     simplex = _check_tensor(data, f"MFEM {family} order {order}")
     fes = gf.FESpace()
     nodes = _nodes_of(fes)
-    if simplex and nodes != "equispaced":
+    if simplex and nodes not in ("equispaced", "bernstein"):
         nodes = None                  # Tack's simplices are equispaced: evaluate there
     space = (H1 if family == "H1" else L2)(
         data, order=order, basis=nodes or ("equispaced" if simplex else "gauss_lobatto"))
@@ -381,7 +408,8 @@ def mfem_grid_function(data, field, mesh, fes=None):
     ``mfem_to_dataset`` made from ``mesh``), as an MFEM ``GridFunction``: on
     ``fes`` if given (its collection's nodes must be the field's), else on a new
     space of the field's family, order and nodes (``H1_FECollection`` or
-    ``L2_FECollection`` with the matching basis type), ``byVDIM`` for vectors.
+    ``L2_FECollection`` with the matching basis type, MFEM's positive one for a
+    Bernstein field), ``byVDIM`` for vectors.
     The values are copied, permuted into MFEM's numbering. Keep the returned
     function's ``fes`` and ``fec`` attributes alive as long as it is used."""
     from tack import arrays
@@ -404,7 +432,8 @@ def mfem_grid_function(data, field, mesh, fes=None):
     if fes is None:
         kind = {"gauss_lobatto": m.BasisType.GaussLobatto,
                 "equispaced": m.BasisType.ClosedUniform,
-                "gauss_legendre": m.BasisType.GaussLegendre}[family]
+                "gauss_legendre": m.BasisType.GaussLegendre,
+                "bernstein": m.BasisType.Positive}[family]
         fec = (m.H1_FECollection if isinstance(space, H1) else m.L2_FECollection)(
             order, dim, kind)
         fes = m.FiniteElementSpace(mesh, fec, vdim, m.Ordering.byVDIM)
@@ -433,13 +462,22 @@ def _supported():
     return get_backend().supported_dtypes
 
 
-def mfem_field(data, mesh, gf, dtype=tack.f32):
+def mfem_field(data, mesh, gf, dtype=tack.f32, dofs=None):
     """``gf``, an MFEM grid function on ``mesh``, as a field of ``data`` (the dataset
-    ``mfem_to_dataset`` made from ``mesh``)."""
+    ``mfem_to_dataset`` made from ``mesh``). ``dofs="table"`` keeps an ``H1`` field
+    of order 2 and up numbered as MFEM numbers it: its values as they are, in a
+    space numbered by MFEM's element-to-DOF table (``H1(..., dofs=table)``), on the
+    bases whose values are copied; by default they are permuted into Tack's
+    numbering by entity."""
     from tack.dataset import H1, L2, Constant, Field
 
+    if dofs not in (None, "table"):
+        raise ValueError(f"dofs is None or 'table', not {dofs!r}")
     fes = gf.FESpace()
     family, order = _collection(fes)
+    if dofs == "table" and family == "H1" and order >= 2:
+        space, values = _table_values(data, gf, order)
+        return Field(space, _field_values(values, dtype))
     if family == "H1" and order == 1:
         if fes.GetNDofs() != mesh.GetNV():
             raise ValueError("an order-1 H1 space has a DOF per vertex")
@@ -448,7 +486,7 @@ def mfem_field(data, mesh, gf, dtype=tack.f32):
         return Field(Constant(data), _field_values(_by_dof(fes, gf.GetDataArray()), dtype))
     if family == "L2" and order == 1:
         return Field(L2(data), _field_values(_corner_values(mesh, gf), dtype))
-    if family == "H1" and order == 2 and _nodes_of(fes) is not None:
+    if family == "H1" and order == 2 and _nodes_of(fes) not in (None, "bernstein"):
         space, values = _quadratic_values(data, mesh, gf)
         return Field(space, _field_values(values, dtype))
     if order >= 2:
@@ -457,16 +495,19 @@ def mfem_field(data, mesh, gf, dtype=tack.f32):
     raise NotImplementedError(f"MFEM {family} order {order} has no space here yet")
 
 
-def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
+def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None, dofs=None):
     """A ``tack.dataset.DataSet`` of an MFEM mesh and named grid functions on it.
 
     The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved
-    mesh an ``H1`` field of positions of its nodes' order (above order 2, on
-    quads and hexahedra). Element attributes become ``fields["attribute"]``.
-    ``id_dtype`` is the topology's (``tack.dataset.ids``).
+    mesh an ``H1`` field of positions of its nodes' order. Element attributes
+    become ``fields["attribute"]``. ``id_dtype`` is the topology's
+    (``tack.dataset.ids``). ``dofs="table"`` numbers a curved geometry and the
+    ``H1`` fields of order 2 and up as MFEM does (``mfem_field``).
     """
     from tack.dataset import Constant, DataSet, Field
 
+    if dofs not in (None, "table"):
+        raise ValueError(f"dofs is None or 'table', not {dofs!r}")
     nodes = mesh.GetNodes()
     curved = nodes is not None and _collection(nodes.FESpace())[1] > 1
     order = _collection(nodes.FESpace())[1] if curved else 1
@@ -488,7 +529,9 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
     if curved:
         # The corners first, to have a dataset to number the nodes on; then the
         # curved geometry, MFEM's nodes at those nodes.
-        if order == 2 and _nodes_of(nodes.FESpace()) is not None:
+        if dofs == "table":
+            space, values = _table_values(data, nodes, order)
+        elif order == 2 and _nodes_of(nodes.FESpace()) not in (None, "bernstein"):
             space, values = _quadratic_values(data, mesh, nodes)
         else:
             space, values = _tensor_values(data, mesh, nodes, "H1", order)
@@ -496,5 +539,5 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
     attributes = np.array([mesh.GetAttribute(e) for e in range(mesh.GetNE())], np.int32)
     data.fields["attribute"] = Field(Constant(data), _field_values(attributes, tack.i32))
     for name, gf in (fields or {}).items():
-        data.fields[name] = mfem_field(data, mesh, gf, dtype=dtype)
+        data.fields[name] = mfem_field(data, mesh, gf, dtype=dtype, dofs=dofs)
     return data
