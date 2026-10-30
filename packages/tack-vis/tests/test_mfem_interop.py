@@ -481,3 +481,54 @@ def test_fields_go_back_to_mfem(f64_backend, family, order):
     data.fields["x"] = mfem_field(data, mesh, vectors, dtype=tack.f64)
     again = mfem_grid_function(data, data.fields["x"], mesh, fes=vectors.FESpace())
     np.testing.assert_array_equal(again.GetDataArray(), vectors.GetDataArray())
+
+
+# ── Meshes MFEM's examples bring ────────────────────────────────────
+
+def _shipped(name):
+    """One of MFEM's meshes as PyMFEM ships them (its data directory)."""
+    import pathlib
+
+    path = pathlib.Path(mfem.__file__).parent / "external" / "ser" / "data" / name
+    if not path.exists():
+        pytest.skip(f"PyMFEM ships no {name}")
+    return mfem.Mesh(str(path), 1, 1)
+
+
+def test_curved_meshes_in_legacy_collections(f64_backend):
+    """``escher-p3.mesh`` keeps its nodes in MFEM's older "Cubic" collection (and
+    other data meshes in "Linear", "Quadratic", "QuadraticPos"): Lagrange spaces,
+    read as H1 of their order. They were refused."""
+    mesh = _shipped("escher-p3.mesh")
+    assert mesh.GetNodes().FESpace().FEColl().Name() == "Cubic"
+    gf = _projected(mesh, mfem.H1_FECollection(3, 3), _quadratic)
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    assert data.geometry.space.order == 3
+    _compare(mesh, data, data.fields["u"], gf, np.random.default_rng(4), 3e-5)
+
+
+def test_periodic_meshes_have_an_l2_geometry(f64_backend):
+    """A periodic mesh keeps its nodes per element (``L2_T1``), the two sides of a
+    seam apart in space though neighbours in the topology: an L2 geometry on the
+    identified vertices, each element where MFEM puts it."""
+    for name, dim in (("periodic-hexagon.mesh", 2), ("periodic-cube.mesh", 3)):
+        mesh = _shipped(name)
+        assert mesh.GetNodes().FESpace().FEColl().Name().startswith("L2")
+        fec = mfem.L2_FECollection(2, dim)
+        gf = _projected(mesh, fec, lambda x: x[0] - 0.5 * x[1] + x[0] * x[1])
+        data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+        assert isinstance(data.geometry.space, td.L2)
+        if dim == 3:
+            _compare(mesh, data, data.fields["u"], gf, np.random.default_rng(5), 3e-5)
+        else:
+            assert (data.geometry.values.numpy()[:, 2] == 0).all()
+
+
+def test_a_curved_2d_mesh_has_three_coordinates(f64_backend):
+    """A 2D mesh's curved nodes have two components; Tack's positions three (z 0).
+    They were refused ("geometry values must be 3-vectors")."""
+    mesh = _shipped("star-q3.mesh")
+    data = mfem_to_dataset(mesh, dtype=tack.f64)
+    assert data.geometry.space.order == 3
+    x = data.geometry.values.numpy()
+    assert x.shape[1] == 3 and (x[:, 2] == 0).all()

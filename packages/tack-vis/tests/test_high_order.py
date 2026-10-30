@@ -698,3 +698,24 @@ def test_pieces_of_curved_cells_are_refused_where_they_would_come_out_straight(f
     for run in (td.ghost_cells, td.merge_pieces):
         with pytest.raises(NotImplementedError, match="come out straight"):
             run(pieces, fields=[])
+
+
+@pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra"])
+def test_jumps_of_a_high_order_dg_field_are_at_the_face_center(f64_backend, cells):
+    """``jump`` evaluates each side's own basis at the face's center: an L2 field of
+    order 2 that is (1 + c) x^2 in cell c jumps by (c1 - c0) x^2 there. It took the
+    face's corner values (``traces``) and their linear mean, wrong above order 1."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.4, 0.6), dtype=tack.f64)
+    data = (td.extract_cells(grid, np.arange(grid.num_cells)) if cells == "hexahedra"
+            else td.tetrahedralize(grid))
+    space = td.L2(data, order=2, basis="equispaced", layout="blocks")
+    nodes = td.interpolate(data, _identity, space, dtype=tack.vec3(tack.f64)).values.numpy()
+    offsets = space.offsets.numpy()
+    cell = np.repeat(np.arange(data.num_cells), np.diff(offsets))
+    data.fields["u"] = td.Field(space, tack.array((1.0 + cell) * nodes[:, 0] ** 2))
+    jumps = td.jump(data, "u").values.numpy()
+    sides = data.topology.faces().sides.numpy()
+    x = td.face_centers(data).values.numpy()[:, 0]
+    inner = sides[:, 2] >= 0
+    expected = np.where(inner, (sides[:, 2] - sides[:, 0]) * x ** 2, 0.0)
+    np.testing.assert_allclose(jumps, expected, atol=1e-12)
