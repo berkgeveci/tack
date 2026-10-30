@@ -196,7 +196,7 @@ def amr_ghost_cells(amr, layers, fields):
                          "hierarchy without them")
     d = amr.dimension
     pieces = [box for _, box in amr]
-    names = _carried(pieces, fields)
+    names = _carried(pieces, fields, "ghost_cells")
     common_origin(amr._as_pieces(), "ghost_cells of an AMRDataSet")
     extents = []
     for level in range(amr.num_levels):

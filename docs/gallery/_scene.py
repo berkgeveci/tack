@@ -17,6 +17,8 @@ import numpy as np
 
 import tack
 import tack.dataset as td
+from tack.dataset import shapes
+from tack.dataset.topology import uniform_cells
 
 #: Where the pictures go: the docs' assets.
 IMAGES = Path(__file__).resolve().parents[1] / "assets" / "gallery"
@@ -26,7 +28,9 @@ KINDS = ("polyhedra", "linear", "high-order", "curved")
 
 TITLES = {"polyhedra": "Polyhedra", "linear": "Tetrahedra",
           "high-order": "Order 4 on straight cells", "curved": "Order 3 on curved cells",
-          "mixed": "Hexahedra, wedges and pyramids", "hexahedra": "Hexahedra"}
+          "mixed": "Hexahedra, wedges and pyramids", "hexahedra": "Hexahedra",
+          "curved-tetrahedra": "Order 2 on curved tetrahedra",
+          "curved-wedges": "Order 2 on curved wedges"}
 
 
 def arguments(description, kinds=KINDS):
@@ -162,6 +166,21 @@ def _mixed(n=6):
     return td.DataSet(topology, np.asarray(points))
 
 
+def _wedges(grid):
+    """``grid``'s hexahedra, each split into two wedges across a diagonal of its
+    bottom and top faces, the same diagonal in every column (so they meet face to
+    face)."""
+    hexes = td.extract_cells(grid, np.arange(grid.num_cells)).topology.connectivity.numpy()
+    conn = []
+    for h in hexes.reshape(-1, 8):
+        conn += [[h[0], h[1], h[3], h[4], h[5], h[7]], [h[1], h[2], h[3], h[5], h[6], h[7]]]
+    types, offsets = uniform_cells(int(shapes.WEDGE), len(conn), tack.i32)
+    topology = td.UnstructuredTopology(types, offsets,
+                                       tack.array(np.array(conn, np.int32).reshape(-1)),
+                                       num_points=grid.num_points)
+    return td.DataSet(topology, grid.positions())
+
+
 def jittered(data, amount=0.25, seed=5):
     """``data`` with its points inside the unit cube moved at random by up to
     ``amount`` of the mesh spacing along each axis (the boundary's stay), so its
@@ -201,6 +220,12 @@ def dataset(kind):
         grid = td.uniform_grid((4, 4, 4), spacing=(1 / 3,) * 3)
         data = td.extract_cells(grid, np.arange(grid.num_cells))
         data.fields["u"] = td.interpolate(data, schwarz, td.H1(data, order=4))
+    elif kind in ("curved-tetrahedra", "curved-wedges"):
+        grid = td.uniform_grid((4, 4, 4), spacing=(1 / 3,) * 3)
+        straight = td.tetrahedralize(grid) if kind == "curved-tetrahedra" else _wedges(grid)
+        data = td.DataSet(straight.topology, straight.geometry.values)
+        data.geometry = td.interpolate(data, _twist, td.H1(data, order=2), dtype=tack.vec3())
+        data.fields["u"] = td.interpolate(data, schwarz, td.H1(data, order=2))
     elif kind == "hexahedra":
         grid = td.uniform_grid((7, 7, 7), spacing=(1 / 6,) * 3)
         data = td.extract_cells(grid, np.arange(grid.num_cells))
@@ -279,6 +304,7 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
         vtkActor,
         vtkColorTransferFunction,
         vtkDataSetMapper,
+        vtkMapper,
         vtkRenderer,
         vtkRenderWindow,
         vtkWindowToImageFilter,
@@ -286,6 +312,9 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
 
     from tack.interop.vtk import dataset_to_vtk
 
+    # Lines on the faces they lie on (sub-cell edges, feature edges) drawn over
+    # them, not fighting them.
+    vtkMapper.SetResolveCoincidentTopologyToPolygonOffset()
     renderer = vtkRenderer(background=(1.0, 1.0, 1.0))
     for data, name, (low, high), properties in (
             (p[0], p[1], p[2] or (0.0, 1.0), p[3] if len(p) > 3 else {}) for p in parts):

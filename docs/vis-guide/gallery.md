@@ -22,9 +22,13 @@ The kinds of cells, left to right:
 - **Order 3 on curved cells**: the same 27 hexahedra twisted and bowed by an
   order-3 geometry, the field `H1` of order 3 on it.
 
-Cell quality also shows a **mixed mesh**: the cube's hexahedra, a third kept, a
-third split into wedges and a third into pyramids, every face between two cells
-the same in both.
+Some sections show other data where it makes their point:
+
+- **Hexahedra**, jittered (cell quality), and an **image** (pieces).
+- **A mixed mesh** (cell quality, pieces): the cube's hexahedra, a third kept, a
+  third split into wedges and a third into pyramids, every face between two cells
+  the same in both.
+- **Curved tetrahedra and wedges**, order 2 (subdivide).
 
 Each cuts the same field, Schwarz's P surface: `cos 2πx + cos 2πy + cos 2πz`.
 
@@ -251,4 +255,96 @@ the surface keeps its peaks, which averaging to the points flattens.
 
 ```python
 --8<-- "docs/gallery/gradients.py:gradients"
+```
+
+## Probe
+
+The field sampled at the points of an image plane tilted through the cube and
+wider than it, the points no cell holds left out (`valid` 0). Each point's cell is
+found through the cell locator, a curved cell inverted by Newton's method from
+its own geometry, so on the curved cells the plane's edge follows the curved
+boundary. The plane is an image turned by `transform`, which keeps it an image.
+
+<div class="grid cards" markdown>
+
+-   ![A probe (polyhedra)](../assets/gallery/probe-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![A probe (tetrahedra)](../assets/gallery/probe-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![A probe (order 4 on straight cells)](../assets/gallery/probe-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![A probe (order 3 on curved cells)](../assets/gallery/probe-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/probe.py:probe"
+```
+
+## Subdivide
+
+High-order and curved cells as the linear sub-cells the cutting filters cut and
+VTK can draw, 4 a side, every sub-cell's edges drawn: hexahedra into hexahedra,
+tetrahedra into Freudenthal's tetrahedra, wedges into layers of them. A lattice
+point shared by cells is computed once, from the edge or face it lies on.
+
+<div class="grid cards" markdown>
+
+-   ![Sub-cells (order 4 on straight cells)](../assets/gallery/subdivide-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![Sub-cells (order 3 on curved cells)](../assets/gallery/subdivide-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+-   ![Sub-cells (order 2 on curved tetrahedra)](../assets/gallery/subdivide-curved-tetrahedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 2 on curved tetrahedra
+
+-   ![Sub-cells (order 2 on curved wedges)](../assets/gallery/subdivide-curved-wedges.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 2 on curved wedges
+
+</div>
+
+```python
+--8<-- "docs/gallery/subdivide.py:subdivide"
+```
+
+## Pieces and ghost cells
+
+Each mesh in eight pieces, one an octant of the cube (an image split into eight
+blocks), each given a layer of its neighbours' cells as ghosts, and drawn pulled
+apart: a piece's own cells in its color, its ghosts faint, reaching into the
+pieces around it. Polyhedra are not shown, since `ghost_cells` does not take
+polyhedral pieces yet, nor curved and high-order cells, whose geometry and
+fields ghost cells do not carry yet (it refuses them).
+
+<div class="grid cards" markdown>
+
+-   ![Pieces with ghost cells (an image)](../assets/gallery/pieces-image.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    An image
+
+-   ![Pieces with ghost cells (tetrahedra)](../assets/gallery/pieces-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![Pieces with ghost cells (hexahedra, wedges and pyramids)](../assets/gallery/pieces-mixed.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Hexahedra, wedges and pyramids
+
+</div>
+
+```python
+--8<-- "docs/gallery/pieces.py:pieces"
 ```

@@ -1,7 +1,8 @@
 ### Added
 
 - A gallery in the Visualization Guide: contour, slice, clip, threshold,
-  surfaces with feature edges, cell quality and gradients on polyhedra,
+  surfaces with feature edges, cell quality, gradients, probe, subdivide and
+  pieces with ghost cells on polyhedra,
   tetrahedra, an order-4 field on straight hexahedra, an order-3 field on
   curved ones and a mixed mesh, each picture a script in `docs/gallery/` (Tack makes what is
   drawn, VTK draws linear polygons and lines), rebuilt by
@@ -20,3 +21,5 @@
   the sub-cell path, which failed; they are cut as they are, as `clip` and
   `threshold` cut them.
 - `as_polygons` of a polygonal dataset failed; it comes back as it is.
+- `ghost_cells` and `merge_pieces` made a curved geometry straight with no word
+  (they move positions at the points); they refuse it.

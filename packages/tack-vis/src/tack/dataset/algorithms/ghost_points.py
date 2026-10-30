@@ -115,7 +115,7 @@ def _ghosted(data, radius, k, periodic, around, fields, world):
     pieces = list(data)
     for i, piece in enumerate(pieces):
         _check_cloud(i, piece)
-    names = _carried(pieces, fields)
+    names = _carried(pieces, fields, "ghost_points")
     blocks = tc.Blocks([piece.device for piece in pieces], world)
     if blocks.count > 1 << (63 - INDEX_BITS):
         raise ValueError(f"ghost_points handles up to {1 << (63 - INDEX_BITS)} pieces")
