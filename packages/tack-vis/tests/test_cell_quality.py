@@ -164,6 +164,52 @@ def test_inverted_and_degenerate_cells():
     np.testing.assert_array_equal(quality["condition"].values.numpy()[1:], big)
 
 
+#: Cells with an edge of no length or no area or volume: a scaled Jacobian of 0
+#: and, every corner degenerate, a Jacobian ratio of 0.
+DEGENERATE = {
+    "triangle": [[[0, 0, 0], [1, 0, 0], [1, 0, 0]], [[0, 0, 0], [1, 0, 0], [2, 0, 0]]],
+    "quad": [[[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]],
+             [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]],
+    "tetra": [[[0, 0, 0], [1, 0, 0], [1, 0, 0], [0, 0, 1]],
+              [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]],
+    "hexahedron": [[[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]] * 2],
+}
+
+
+@pytest.mark.parametrize("shape", DEGENERATE)
+def test_degenerate_cells_score_zero(shape):
+    """Not the largest float of either sign; Verdict's 0 for triangles, quads and
+    tetrahedra (its hexahedra give its largest value, 1e30)."""
+    cells = [np.asarray(c, np.float64) for c in DEGENERATE[shape]]
+    quality = td.cell_quality(_dataset(shape, cells))
+    np.testing.assert_array_equal(quality["scaled_jacobian"].values.numpy(), 0.0)
+    np.testing.assert_array_equal(quality["jacobian_ratio"].values.numpy(), 0.0)
+    if vtkMeshQuality is not None and shape != "hexahedron":
+        np.testing.assert_array_equal(_vtk(shape, cells, "ScaledJacobian"), 0.0)
+
+
+@pytest.mark.parametrize("shape", ["triangle", "quad"])
+def test_polygons_of_three_and_four_points_are_triangles_and_quads(shape):
+    """A polygonal topology (any polygon of five points or more makes one) measures
+    its triangles and quads as those shapes, not by fans from their centers."""
+    cells = _distorted(shape)
+    data = _dataset(shape, cells)
+    shapes = td.cell_quality(data)
+    polygons = td.cell_quality(td.as_polygons(data))
+    for name, field in shapes.items():
+        np.testing.assert_allclose(polygons[name].values.numpy(), field.values.numpy(),
+                                   rtol=1e-12, atol=1e-14, err_msg=name)
+
+
+def test_a_regular_hexagons_fan_triangles_are_equilateral():
+    angles = np.arange(6) * np.pi / 3
+    hexagon = td.DataSet(td.PolygonalTopology([0, 6], np.arange(6)),
+                         np.c_[np.cos(angles), np.sin(angles), np.zeros(6)], dtype=tack.f64)
+    quality = td.cell_quality(hexagon, ["scaled_jacobian", "condition", "jacobian_ratio"])
+    for name, field in quality.items():
+        np.testing.assert_allclose(field.values.numpy(), 1.0, rtol=1e-12, err_msg=name)
+
+
 def test_curved_cells_are_measured_along_their_edges():
     """An order-2 geometry: straight, it measures as the linear cell; with a corner
     pulled off the straight edge, the tangents at that corner turn and its scaled
