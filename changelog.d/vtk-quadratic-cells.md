@@ -1,5 +1,6 @@
 ### Fixed
 
-- `vtk_to_dataset` refuses VTK's quadratic cells (`vtkQuadraticTetra` and the
-  rest), naming them, as its docstring said it did; they came across as
-  cells no algorithm took, every one failing with "are not linear shapes".
+- `vtk_to_dataset` refuses VTK cells it reads neither as shapes nor as
+  higher-order spaces (biquadratic and triquadratic cells, quadratic
+  pyramids), naming them by VTK's class names; they came across as cells no
+  algorithm took, every one failing with "are not linear shapes".
