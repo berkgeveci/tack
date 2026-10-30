@@ -42,7 +42,7 @@ def merge_pieces(data, root=0, fields=None, device=None, tolerance=0.0):
     from tack.dataset.algorithms.ghost_cells import _carried, _kind
 
     pieces = list(data)
-    names = _carried(pieces, fields)
+    names = _carried(pieces, fields, "merge_pieces")
     common_origin(data, "merge_pieces")
     tolerance = _tolerance(data, tolerance, "merge_pieces")
     blocks = tc.Blocks([piece.device for piece in pieces], data.world)

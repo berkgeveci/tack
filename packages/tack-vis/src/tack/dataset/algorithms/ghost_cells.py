@@ -226,9 +226,17 @@ def _kind(field):
     return None
 
 
-def _carried(pieces, fields):
+def _carried(pieces, fields, what="ghost_cells"):
     if not pieces:
         return []
+    # Pieces' cells and points travel with their positions at the points: a
+    # curved geometry's other nodes would be lost, the pieces made straight.
+    for i, piece in enumerate(pieces):
+        space = piece.geometry.space
+        if isinstance(space, H1) and space.order > 1:
+            raise NotImplementedError(
+                f"{what} carries a geometry at the points; partition {i}'s is "
+                f"{space!r}, which would come out straight")
     names = list(pieces[0].fields) if fields is None else \
         ([fields] if isinstance(fields, str) else list(fields))
     for i, piece in enumerate(pieces):
@@ -236,7 +244,7 @@ def _carried(pieces, fields):
             if name not in piece.fields:
                 raise KeyError(f"partition {i} has no field {name!r}")
             if _kind(piece.fields[name]) is None:
-                raise TypeError(f"ghost_cells carries point and cell fields; {name!r} is in "
+                raise TypeError(f"{what} carries point and cell fields; {name!r} is in "
                                 f"{piece.fields[name].space!r} (choose others with fields=)")
     return names
 
