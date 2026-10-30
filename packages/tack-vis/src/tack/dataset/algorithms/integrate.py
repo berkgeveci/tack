@@ -88,6 +88,80 @@ def _top_cells(data, values):
     return values
 
 
+@tack.kernel
+def _polyhedron_integrals(cells, u, out):
+    # A point field is linear on a polyhedron's sub-tetrahedra (each face fanned
+    # from its points' mean, the fans from the cell's points' mean, values too):
+    # each one's volume times the mean of its corners' values. Positions from the
+    # cell's first point, as cell_geometry takes them.
+    for c in cells:
+        origin = cells.point_position(cells.point_id(c, 0))
+        xc = origin - origin
+        uc = u[cells.point_id(c, 0)] * 0.0
+        for j in range(cells.num_points(c)):
+            xc += cells.point_position(cells.point_id(c, j)) - origin
+            uc += u[cells.point_id(c, j)]
+        xc = xc / cells.num_points(c)
+        uc = uc / cells.num_points(c)
+        total = uc * 0.0
+        for k in range(cells.num_faces(c)):
+            size = cells.side_num_points(c, k)
+            xf = origin - origin
+            uf = uc * 0.0
+            for j in range(size):
+                xf += cells.side_position(c, k, j) - origin
+                uf += u[cells.side_point_id(c, k, j)]
+            xf = xf / size
+            uf = uf / size
+            for j in range(size):
+                nxt = j + 1 if j + 1 < size else 0
+                a = cells.side_position(c, k, j) - origin - xc
+                b = cells.side_position(c, k, nxt) - origin - xc
+                six = a.dot(b.cross(xf - xc))
+                total += six * (uc + uf + u[cells.side_point_id(c, k, j)]
+                                + u[cells.side_point_id(c, k, nxt)])
+        out[cells.entity_id(c)] = total / 24.0
+
+
+@tack.kernel
+def _polygon_integrals(cells, u, out):
+    # Linear on the triangles fanning a polygon from its points' mean: each one's
+    # area along the polygon's normal (Newell's) times its corners' mean value.
+    for c in cells:
+        origin = cells.side_position(c, 0, 0)
+        n = origin - origin
+        for k in range(cells.num_faces(c)):
+            n += (cells.side_position(c, k, 0) - origin).cross(
+                cells.side_position(c, k, 1) - origin)
+        length = n.norm()
+        unit = n / length if length > 0.0 else n
+        xc = origin - origin
+        uc = u[cells.point_id(c, 0)] * 0.0
+        for j in range(cells.num_points(c)):
+            xc += cells.point_position(cells.point_id(c, j)) - origin
+            uc += u[cells.point_id(c, j)]
+        xc = xc / cells.num_points(c)
+        uc = uc / cells.num_points(c)
+        total = uc * 0.0
+        for k in range(cells.num_faces(c)):
+            a = cells.side_position(c, k, 0) - origin - xc
+            b = cells.side_position(c, k, 1) - origin - xc
+            total += a.cross(b).dot(unit) * (uc + u[cells.side_point_id(c, k, 0)]
+                                             + u[cells.side_point_id(c, k, 1)])
+        out[cells.entity_id(c)] = total / 6.0
+
+
+@tack.kernel
+def _polyline_integrals(cells, u, out):
+    # Linear on each segment: its length times its ends' mean value.
+    for c in cells:
+        total = u[cells.line_point_id(c, 0)] * 0.0
+        for j in range(cells.line_num_points(c) - 1):
+            p, q = cells.line_point_id(c, j), cells.line_point_id(c, j + 1)
+            total += (cells.point_position(q) - cells.point_position(p)).norm() * (u[p] + u[q])
+        out[cells.entity_id(c)] = total / 2.0
+
+
 def quadrature(shape, n):
     """``(points, weights)``: ``n``-point Gauss-Legendre rules along each axis of
     ``shape``'s reference element, collapsed onto a simplex (Duffy: the triangle
@@ -181,6 +255,34 @@ def _cell_values(data, field):
     return out
 
 
+def _on_points(space):
+    """Whether ``space`` holds one value a point: linear on polyhedra's pieces."""
+    return ((isinstance(space, H1) and space.order == 1 and space.dofs is None
+             and space.basis is None)
+            or (isinstance(space, Values) and space.on == "points"))
+
+
+def _no_reference_values(data, field):
+    """Each polyhedron's, polygon's or polyline's integral of a point field, exact
+    on the pieces it is linear on."""
+    values = arrays.materialize(field.values)
+    width = arrays.width_of(values)
+    dtype = arrays.dtype_of(values)
+    out = tack.zeros((data.num_cells,), tack.vec(width, dtype) if width else dtype)
+    data.topology.faces()
+    for group in data.launch_groups("cells", []):
+        if not group.count:
+            continue
+        cells = data.domain_view("cells", group)
+        if group.shape.DIMENSION == 3:
+            _polyhedron_integrals(cells, values, out)
+        elif group.shape.DIMENSION == 2:
+            _polygon_integrals(cells, values, out)
+        elif group.shape is shapes.PolyLine:
+            _polyline_integrals(cells, values, out)
+    return out
+
+
 def _piece(data, names):
     """One dataset's owned cells' measure and integrals, summed in cell order (f64)."""
     from tack.dataset.algorithms.cell_geometry import cell_geometry
@@ -195,10 +297,16 @@ def _piece(data, names):
         field = data.fields[name]
         if not getattr(data.topology, "reference_cells", True):
             space = _with_basis(data, field).space
+            if _on_points(space):
+                per_cell = _top_cells(data, _no_reference_values(data, field))
+                values[name] = np.asarray(owned_values(data, Field(Values(data, "cells"),
+                                                                   per_cell)).numpy(),
+                                          np.float64).sum(axis=0)
+                continue
             if not isinstance(space, Constant):
                 raise NotImplementedError(
                     f"integrating {space!r} needs a reference element (polygons and "
-                    "polyhedra integrate cell data)")
+                    "polyhedra integrate cell data and point data)")
             # Constant in each cell: its value times the cell's measure.
             cell_values = owned_values(data, Field(Values(data, "cells"),
                                                    arrays.materialize(field.values))).numpy()
@@ -225,8 +333,9 @@ def integrate(data, fields=None):
     its own map (``quadrature``: collapsed onto simplices and wedges), with enough
     points for the field's order and the geometry's, so a curved geometry and a
     field of any order (``H1``, ``L2``, point and cell data) integrate exactly, to
-    rounding. Polyhedra take their measure from ``cell_geometry`` and integrate
-    cell data. Only the cells of the mesh's dimension count, as in VTK: a volume's
+    rounding. Polyhedra, polygons and polylines take their measure from
+    ``cell_geometry`` and integrate cell data and point data, which is linear on
+    their pieces (sub-tetrahedra, triangles, segments), exactly. Only the cells of the mesh's dimension count, as in VTK: a volume's
     integrals leave out its surfaces, lines and vertices. Only owned cells count
     (ghost marks), and a ``PartitionedDataSet`` sums its pieces over every rank, in
     the pieces' order."""

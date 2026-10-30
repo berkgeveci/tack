@@ -135,9 +135,34 @@ def test_polyhedra_take_cell_data():
     poly.fields["c"] = td.Field(td.Constant(poly), tack.array(np.full(8, 2.0)))
     out = td.integrate(poly, "c")
     assert out.measure == pytest.approx(1.0) and out.values["c"] == pytest.approx(2.0)
-    poly.fields["p"] = td.Field(td.H1(poly), tack.array(np.zeros(poly.num_points)))
-    with pytest.raises(NotImplementedError, match="needs a reference element"):
-        td.integrate(poly, "p")
+
+
+def _linear_at(x):
+    return 1.0 + x[:, 0] + 2.0 * x[:, 1] - 3.0 * x[:, 2]
+
+
+def test_point_fields_on_polyhedra_and_polygons():
+    """A point field is linear on a polyhedron's sub-tetrahedra and a polygon's
+    triangles, so a linear field integrates exactly: over the half-unit grid's
+    eight polyhedra and over its top's polygons, scalar and vector. They were
+    refused."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5,) * 3, dtype=tack.f64)
+    poly = td.as_polyhedra(td.extract_cells(grid, np.arange(8)))
+    x = poly.positions()
+    poly.fields["u"] = td.Field(td.H1(poly), tack.array(_linear_at(x)))
+    vector = np.c_[_linear_at(x), x[:, 0], np.ones(len(x))]
+    poly.fields["v"] = td.Field(td.H1(poly), tack.array(vector, tack.vec3(tack.f64)))
+    out = td.integrate(poly, ["u", "v"])
+    exact = 1.0 + 0.5 + 2 * 0.5 - 3 * 0.5             # the mean of u over the unit cube
+    assert out.measure == pytest.approx(1.0)
+    assert out.values["u"] == pytest.approx(exact, abs=1e-14)
+    np.testing.assert_allclose(out.values["v"], [exact, 0.5, 1.0], atol=1e-14)
+    top = td.as_polygons(td.extract_surface(grid))
+    top.fields["u"] = td.Field(td.H1(top), tack.array(_linear_at(top.positions())))
+    surface = td.integrate(top, "u")
+    # Over the cube's six faces: area 6, and u's mean over them is its mean, 0.5.
+    assert surface.measure == pytest.approx(6.0)
+    assert surface.values["u"] == pytest.approx(6.0 * exact, abs=1e-13)
 
 
 def test_only_the_meshs_own_dimension_counts():

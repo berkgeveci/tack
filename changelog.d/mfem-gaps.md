@@ -7,6 +7,10 @@
   their own along the cell's map (`subdivision` segments each): its cells need not
   meet. It was refused.
 
+- `integrate` takes point data on polyhedra, polygons and polylines, exactly:
+  the values are linear on their sub-tetrahedra, triangles and segments. It
+  took cell data alone.
+
 ### Fixed
 
 - A curved cell is inverted to rounding: two Newton steps past VTK's stopping
