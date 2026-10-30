@@ -55,6 +55,44 @@ def schwarz(x):
     return tack.cos(k * x[0]) + tack.cos(k * x[1]) + tack.cos(k * x[2])
 
 
+# --8<-- [start:swirl]
+@tack.func
+def swirl(x):
+    """A swirl inside the unit cube: divergence-free, its velocity along every face
+    (none through it), so paths wind round inside rather than leave."""
+    k = math.pi
+    sx, cx = tack.sin(k * x[0]), tack.cos(k * x[0])
+    sy, cy = tack.sin(k * x[1]), tack.cos(k * x[1])
+    sz, cz = tack.sin(k * x[2]), tack.cos(k * x[2])
+    return [sx * cy - 0.5 * sx * cz, -cx * sy + 0.5 * sy * cz, 0.5 * sz * (cx - cy)]
+
+
+@tack.func
+def swirl_base(x):
+    """The swirl's part about z (``swirl`` is it plus half of ``swirl_turn``)."""
+    k = math.pi
+    return [tack.sin(k * x[0]) * tack.cos(k * x[1]), -tack.cos(k * x[0]) * tack.sin(k * x[1]),
+            0.0 * x[2]]
+
+
+@tack.func
+def swirl_turn(x):
+    """The swirl's other part, divergence-free alone: weighted in time, the swirl
+    unsteady."""
+    k = math.pi
+    sx, cx = tack.sin(k * x[0]), tack.cos(k * x[0])
+    sy, cy = tack.sin(k * x[1]), tack.cos(k * x[1])
+    sz, cz = tack.sin(k * x[2]), tack.cos(k * x[2])
+    return [-sx * cz, sy * cz, sz * (cx - cy)]
+# --8<-- [end:swirl]
+
+
+def with_velocity(data):
+    """``data`` with ``v``, the swirl, in the space of its field ``u``."""
+    data.fields["v"] = td.interpolate(data, swirl, data.fields["u"].space, dtype=tack.vec3())
+    return data
+
+
 @tack.func
 def _twist(x):
     # The unit cube bent: each z level turned about the cube's axis, and bowed.

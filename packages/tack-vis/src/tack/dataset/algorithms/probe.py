@@ -45,6 +45,15 @@ def _values_from_points(mesh, field, found, pcs, tets, out):
 
 
 @tack.kernel
+def _rounded(values, lo, hi, out):
+    # Half away from zero, as VTK's interpolation of integers (vtkMath::Round),
+    # within the integer type's range: the store truncates toward zero.
+    for q in range(values.shape[0]):
+        v = values[q]
+        out[q] = min(max(tack.select(v >= 0.0, v + 0.5, v - 0.5), lo), hi)
+
+
+@tack.kernel
 def _found_keys(found, ncells, keys):
     for q in range(found.shape[0]):
         keys[q] = found[q] if found[q] >= 0 else ncells
@@ -64,7 +73,9 @@ def probe(data, where, fields=None, locator=None):
     field with a basis (``H1``, ``L2``, ``Constant``, values on points)
     evaluated through it in the cell holding the point, values on cells taken
     from that cell, and ``valid`` (1, or 0 where no cell holds the point and the
-    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``.
+    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``. An integer
+    field evaluated through a basis is rounded to the nearest integer, halves away
+    from zero, as VTK's probe rounds; values on cells are copied.
 
     ``data`` may be an ``AMRDataSet``: each point goes to the finest level whose
     cell holds it (refined cells hold nothing), so a probe onto an image
@@ -160,8 +171,13 @@ def probe(data, where, fields=None, locator=None):
             continue
         width = arrays.width_of(f.values)
         dtype = arrays.dtype_of(f.values)
-        values = (tack.empty((m,), tack.vec(width, dtype)) if width
-                  else tack.empty((m,), dtype))
+        # An interpolated integer field is evaluated in the geometry's float
+        # type and rounded, as VTK's probe does; cell values are copied.
+        rounds = not isinstance(space, Constant) and np.issubdtype(dtype.numpy_dtype,
+                                                                   np.integer)
+        evaluated = data.dtype if rounds else dtype
+        values = (tack.empty((m,), tack.vec(width, evaluated)) if width
+                  else tack.empty((m,), evaluated))
         by_id = field_by_id(data, f) if search is not None else None
         if m and by_id is not None:
             values.fill(0)
@@ -178,6 +194,8 @@ def probe(data, where, fields=None, locator=None):
                 elif group.count:
                     _evaluate(data.domain_view("cells", group), f.view(group), links, order,
                               pcs, values)
+        if rounds:
+            values = _to_integers(values, width, dtype, data.dtype)
         out[name] = Field(H1(where), values, f.unit)
     valid = tack.empty((m,), tack.i32)
     if m:
@@ -189,6 +207,22 @@ def probe(data, where, fields=None, locator=None):
 
     return keep_marks(where, DataSet(where.topology, where.geometry, fields=kept,
                                      sets=dict(where.sets)))
+
+
+def _to_integers(values, width, dtype, evaluated):
+    """``values`` rounded into ``dtype``, clamped to its range: the type's least
+    value (a power of two, or 0) and the float type ``evaluated``'s largest value
+    within it."""
+    m = values.shape[0]
+    out = tack.empty((m,), tack.vec(width, dtype)) if width else tack.empty((m,), dtype)
+    if m:
+        real = np.dtype(evaluated.numpy_dtype).type
+        info = np.iinfo(dtype.numpy_dtype)
+        hi = real(info.max)
+        if int(hi) > info.max:
+            hi = np.nextafter(hi, real(0))
+        _rounded(values, float(info.min), float(hi), out)
+    return out
 
 
 def _held_box(piece):

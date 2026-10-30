@@ -16,18 +16,20 @@ __all__ = ['ParticleStatus', 'advect']
 @on_inputs_device
 def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
            tolerance=None, min_step=None, max_step=None, max_length=None,
-           neighbors=False):
+           neighbors=False, terminal_speed=None):
     """Seeds moved through the velocity ``field`` (a 3-vector field or its name: point
     data, cell data, or a field of any order or ``L2``, on a straight or curved
     geometry) by up to ``steps`` fixed steps of ``step_size``, as
     Viskores' ParticleAdvection: a dataset of the particles where they stopped,
     one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the
     bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,
-    ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of
+    ``ZERO_VELOCITY``, ``SLOW_SPEED``). ``seeds`` is an ``(n, 3)`` array or a field of
     3-vectors; ``integrator`` ``"rk4"``, ``"euler"`` or ``"rk45"`` (adaptive steps,
     with ``tolerance``, ``min_step`` and ``max_step``: see ``streamlines``);
-    ``max_length`` stops a particle whose path has gone that far; ``locator``
-    reuses a ``CellLocator`` of ``data``.
+    ``max_length`` stops a particle whose path has gone that far, and
+    ``terminal_speed`` (in the velocity's unit; vtkStreamTracer's) one where the
+    velocity's speed is at or below it, before another step, the seed included
+    (``SLOW_SPEED``); ``locator`` reuses a ``CellLocator`` of ``data``.
     ``neighbors=True`` tries the face neighbours of the cell a particle was last
     found in before searching the locator's bins: the same particles, bit for
     bit, in about half the time on large meshes, for a table of six ids a cell
@@ -49,10 +51,11 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
     a CPU core: below a few thousand seeds a CPU copy of the mesh is faster
     (the Visualization Guide's "Integrate a steady velocity field")."""
     # A step as a time ("0.5 s") is in the spatial unit over the velocity's.
-    step_size, tolerance, min_step, max_step, max_length = _parameters(
-        data, field, "time", "advect", step_size, tolerance, min_step, max_step, max_length)
+    step_size, tolerance, min_step, max_step, max_length, terminal_speed = _parameters(
+        data, field, "time", "advect", step_size, tolerance, min_step, max_step, max_length,
+        terminal_speed)
     adaptive = {"tolerance": tolerance, "min_step": min_step, "max_step": max_step,
-                "max_length": max_length}
+                "max_length": max_length, "terminal_speed": terminal_speed}
     if isinstance(data, PartitionedDataSet):
         from tack.dataset.algorithms._particles import advect_pieces
         return advect_pieces(data, field, seeds, step_size, steps, integrator, neighbors,

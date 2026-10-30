@@ -274,6 +274,9 @@ class _Topology:
     #: (`extract_surface._fresh_boundary`): the surface's topology and each of
     #: its faces' cells, so that a repeated call only carries the fields.
     _boundary = None
+    #: Its 2D cells' sides matched by their points, for contour lines
+    #: (`contour._sides`): a side of any number of cells, unlike `faces()`.
+    _sides = None
 
     #: The arrays it is built from, which say its device.
     _STORED = ()

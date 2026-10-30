@@ -162,7 +162,7 @@ def test_ghost_points_refuses():
     with pytest.raises(ValueError, match="radius .* or k"):
         td.ghost_points(pieces, radius=1.0, k=4)
     with pytest.raises(ValueError, match="k is a whole number"):
-        td.ghost_points(pieces, k=40)
+        td.ghost_points(pieces, k=0)
     with pytest.raises(ValueError, match="k needs none"):
         td.ghost_points(pieces, k=4, around=pieces)
     with pytest.raises(TypeError, match="PartitionedDataSet"):
