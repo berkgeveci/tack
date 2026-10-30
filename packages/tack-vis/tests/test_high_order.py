@@ -700,6 +700,24 @@ def test_pieces_of_curved_cells_are_refused_where_they_would_come_out_straight(f
             run(pieces, fields=[])
 
 
+def test_contours_of_high_order_fields_on_mixed_meshes_say_why_they_are_refused(f64_backend):
+    """Subdivision takes cells of one family, so a high-order field on a mesh of
+    hexahedra and wedges is refused, and the message says that. It spoke of corner
+    values (MFEM's mixed Fichera corner)."""
+    grid = td.uniform_grid((3, 2, 2), dtype=tack.f64)
+    h = td.extract_cells(grid, np.arange(2)).topology.connectivity.numpy().reshape(-1, 8)
+    second = h[1]
+    conn = [*h[0], *second[[0, 1, 3, 4, 5, 7]], *second[[1, 2, 3, 5, 6, 7]]]
+    types = tack.array(np.array([shapes.HEXAHEDRON, shapes.WEDGE, shapes.WEDGE], np.uint8))
+    offsets = tack.array(np.array([0, 8, 14, 20], np.int32))
+    mixed = td.DataSet(td.UnstructuredTopology(types, offsets,
+                                               tack.array(np.array(conn, np.int32)),
+                                               num_points=grid.num_points), grid.positions())
+    mixed.fields["u"] = td.interpolate(mixed, _quadratic, td.H1(mixed, order=2))
+    with pytest.raises(NotImplementedError, match="all simplices, all wedges or all tensor"):
+        td.contour(mixed, "u", 1.0)
+
+
 @pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra"])
 def test_jumps_of_a_high_order_dg_field_are_at_the_face_center(f64_backend, cells):
     """``jump`` evaluates each side's own basis at the face's center: an L2 field of

@@ -24,3 +24,6 @@
   points through the topology, so on a periodic mesh, whose seam's cells share
   points but sit apart, sub-cells stretched across the mesh; each cell's lattice
   points are now its own.
+- `contour` of a high-order field on a mesh subdivision does not take (cells of
+  two families, as MFEM's mixed Fichera corner; pyramids) is refused with that
+  reason; the message spoke of corner values.
