@@ -700,22 +700,53 @@ def test_pieces_of_curved_cells_are_refused_where_they_would_come_out_straight(f
             run(pieces, fields=[])
 
 
-def test_contours_of_high_order_fields_on_mixed_meshes_say_why_they_are_refused(f64_backend):
-    """Subdivision takes cells of one family, so a high-order field on a mesh of
-    hexahedra and wedges is refused, and the message says that. It spoke of corner
-    values (MFEM's mixed Fichera corner)."""
-    grid = td.uniform_grid((3, 2, 2), dtype=tack.f64)
+def _hexahedron_and_wedges():
+    """A hexahedron beside a hexahedron split into two wedges, every face between two
+    cells the same in both (a quad face between the hexahedron and the wedges)."""
+    grid = td.uniform_grid((3, 2, 2), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
     h = td.extract_cells(grid, np.arange(2)).topology.connectivity.numpy().reshape(-1, 8)
     second = h[1]
     conn = [*h[0], *second[[0, 1, 3, 4, 5, 7]], *second[[1, 2, 3, 5, 6, 7]]]
     types = tack.array(np.array([shapes.HEXAHEDRON, shapes.WEDGE, shapes.WEDGE], np.uint8))
     offsets = tack.array(np.array([0, 8, 14, 20], np.int32))
-    mixed = td.DataSet(td.UnstructuredTopology(types, offsets,
-                                               tack.array(np.array(conn, np.int32)),
-                                               num_points=grid.num_points), grid.positions())
-    mixed.fields["u"] = td.interpolate(mixed, _quadratic, td.H1(mixed, order=2))
-    with pytest.raises(NotImplementedError, match="all simplices, all wedges or all tensor"):
-        td.contour(mixed, "u", 1.0)
+    return td.DataSet(td.UnstructuredTopology(types, offsets, tack.array(np.array(conn, np.int32)),
+                                              num_points=grid.num_points),
+                      tack.array(grid.positions(), tack.vec3(tack.f64)))
+
+
+@pytest.mark.parametrize("order", [2, 3])
+def test_mixed_meshes_subdivide_and_contour_as_one(f64_backend, order):
+    """A mesh of several families (MFEM's mixed Fichera corner) is subdivided a family
+    at a time and joined at the lattice points they share: a level-``order``
+    lattice has as many points as ``H1(order=order)`` has nodes, the contour of a
+    field of that order has no cracks between the families (its open edges all on
+    the box's boundary), and it holds the field's level at its points to the
+    sub-cells' linear error (a joined mesh's crossings are placed linearly: exact
+    crossings are for one family). Contours of high-order fields on mixed meshes
+    were refused."""
+    mixed = _hexahedron_and_wedges()
+    mixed.fields["u"] = td.interpolate(mixed, _quadratic, td.H1(mixed, order=order))
+    refined = td.subdivide(mixed, order)
+    assert refined.num_points == td.H1(mixed, order=order).size
+    assert refined.num_cells == order ** 3 * 3
+    surface = td.contour(mixed, "u", 1.1)
+    assert surface.num_cells > 0
+    conn = surface.topology.connectivity.numpy()
+    offsets = surface.topology.offsets.numpy()
+    count = {}
+    for c in range(surface.num_cells):
+        ring = conn[offsets[c]:offsets[c + 1]]
+        for a, b in zip(ring, np.roll(ring, -1), strict=True):
+            key = (min(a, b), max(a, b))
+            count[key] = count.get(key, 0) + 1
+    x = surface.geometry.values.numpy()
+    box = np.array([[0.0, 0.0, 0.0], [1.0, 0.5, 0.5]])
+    for (a, b), n in count.items():
+        if n == 1:
+            on = np.isclose(x[[a, b]], box[0]) | np.isclose(x[[a, b]], box[1])
+            assert (on[0] & on[1]).any(), (x[a], x[b])
+    # A quadratic's error along a sub-edge h = 0.5 / order: at most h^2 |u''| / 8.
+    np.testing.assert_allclose(_quadratic_at(x), 1.1, atol=(0.5 / order) ** 2 * 4 / 8)
 
 
 @pytest.mark.parametrize("cells", ["hexahedra", "tetrahedra"])

@@ -15,6 +15,12 @@
   its cells as its `H1` twin (`_L2SimplexGeometry`, `_L2WedgeGeometry`, over
   the `_SimplexGeometry` and `_WedgeGeometry` the `H1` ones now share). It was
   refused.
+- `subdivide`, and the cuts that subdivide (`contour`, `slice`, `clip`,
+  `threshold`), take meshes of several families of one dimension (hexahedra,
+  wedges and tetrahedra, as MFEM's mixed Fichera corner): each family is refined
+  alone and the parts joined at the lattice points they share. Their cuts'
+  crossings are placed linearly on the sub-cells (exact crossings stay a
+  one-family feature). They were refused.
 
 ### Fixed
 

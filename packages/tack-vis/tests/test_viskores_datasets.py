@@ -293,7 +293,7 @@ _REFUSALS = re.compile("|".join([
     "cell ids lie outside",                      # extract_cells([0, 1]) of one cell
     "tetrahedra and wedges; not yet on",         # subdivide of other shapes
     "has the equispaced basis only",             # simplices above order 2, another basis
-    "or all tensor shapes",                      # subdivide of a mix of families
+    "takes cells of one dimension",              # subdivide of a mix of dimensions
 ]))
 
 
