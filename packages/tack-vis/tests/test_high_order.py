@@ -156,7 +156,7 @@ def test_h1_is_exact_on_turned_hexahedra(f64_backend, order, nodes):
 
 
 @pytest.mark.parametrize("order", [3, 5])
-@pytest.mark.parametrize("nodes", bases.FAMILIES)
+@pytest.mark.parametrize("nodes", [f for f in bases.FAMILIES if f != bases.SERENDIPITY])
 def test_l2_is_exact(f64_backend, order, nodes):
     data = _rotated(_hexes(), seed=1)
     assert _probe_error(data, td.L2(data, order=order, basis=nodes), _points(data)) < 1e-12

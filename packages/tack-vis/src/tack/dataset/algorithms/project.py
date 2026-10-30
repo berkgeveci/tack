@@ -2,7 +2,6 @@
 a field between spaces, of which ``to_points``, ``to_cells`` and ``discontinuous``
 are shortcuts."""
 
-from math import comb
 
 import tack
 from tack.arrays import dtype_of, materialize
@@ -87,35 +86,26 @@ def _corner_contributions(cells, u, start, contributions):
 
 
 @tack.kernel
-def _node_contributions(cells, u, t, start, keys, contributions):
-    # Each cell's value at each node of the order-2 target, keyed by the node.
+def _node_contributions(cells, u, t, start, count, keys, contributions):
+    # Each cell's value at each of its first count nodes of the order-2 target (all
+    # NUM_QUADRATIC, or serendipity's corners and edges), keyed by the node.
     for c in cells:
-        first = start + cells.index(c) * cells.NUM_QUADRATIC
-        for k in range(cells.NUM_QUADRATIC):
+        first = start + cells.index(c) * count
+        for k in range(count):
             keys[first + k] = t.dof_index(c, k)
             contributions[first + k] = u.value(c, cells.quadratic_node(k))
 
 
 @tack.kernel
-def _tensor_node_contributions(cells, u, t, start, keys, contributions):
-    # Each cell's value at each node of a tensor H1 target, keyed by the node.
+def _listed_node_contributions(cells, u, t, start, node_of, count, keys, contributions):
+    # Each cell's value at each node of an H1 target read as a basis of any order
+    # (the nodes it stores, lexicographic: node_of), keyed by the node.
     for c in cells:
-        count = (t.ORDER + 1) ** cells.DIMENSION
         first = start + cells.index(c) * count
-        for n in range(count):
-            keys[first + n] = t.dof_index(c, n)
-            contributions[first + n] = u.value(c, t.node_parametric(n))
-
-
-@tack.kernel
-def _simplex_node_contributions(cells, u, t, start, keys, contributions):
-    # The same for a simplex H1 target: its NODES nodes.
-    for c in cells:
-        count = t.NODES
-        first = start + cells.index(c) * count
-        for n in range(count):
-            keys[first + n] = t.dof_index(c, n)
-            contributions[first + n] = u.value(c, t.node_parametric(n))
+        for k in range(count):
+            n = node_of[k]
+            keys[first + k] = t.dof_index(c, n)
+            contributions[first + k] = u.value(c, t.node_parametric(n))
 
 
 @tack.kernel
@@ -176,19 +166,26 @@ def _onto_points(data, field, values):
     return out
 
 
+def _quadratic_count(space, shape):
+    """The order-2 nodes a space stores on a ``shape`` cell, in the quadratic shapes'
+    order: all of them, or serendipity's corners and edges (the first ones)."""
+    if space.basis == bases.SERENDIPITY:
+        return shape.NUM_POINTS + shape.NUM_EDGES
+    return shape.NUM_QUADRATIC
+
+
 def _onto_nodes(data, field, space, values):
     """H1 of order 2 and up: each node the mean of the cells around it evaluated there."""
     groups = data.topology.groups()
     starts, total = {}, 0
+    nodes = {}
     for group in groups:
         starts[group] = total
-        any_order = space._any_order(group.shape)
-        per_cell = (group.shape.NUM_QUADRATIC if space.order == 2 and not any_order
-                    else comb(space.order + group.shape.DIMENSION, group.shape.DIMENSION)
-                    if bases.simplex_shape(group.shape)
-                    else comb(space.order + 2, 2) * (space.order + 1)
-                    if bases.wedge_shape(group.shape)
-                    else (space.order + 1) ** group.shape.DIMENSION)
+        if space._any_order(group.shape):
+            nodes[group] = space.stored_nodes(group.shape)
+            per_cell = len(nodes[group])
+        else:
+            per_cell = _quadratic_count(space, group.shape)
         total += group.count * per_cell
     idt = ids.at_least(data.id_dtype, space.size)
     keys = tack.empty((total,), idt)
@@ -196,12 +193,14 @@ def _onto_nodes(data, field, space, values):
     target = Field(space, _like(values, space.size))
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
-            kernel = (_node_contributions if not space._any_order(group.shape)
-                      else _simplex_node_contributions
-                      if bases.simplex_shape(group.shape) or bases.wedge_shape(group.shape)
-                      else _tensor_node_contributions)
-            kernel(data.domain_view("cells", group), field.view(group), target.view(group),
-                   starts[group.root], keys, contributions)
+            cells, u, t = data.domain_view("cells", group), field.view(group), target.view(group)
+            listed = nodes.get(group.root)
+            if listed is None:
+                _node_contributions(cells, u, t, starts[group.root],
+                                    _quadratic_count(space, group.shape), keys, contributions)
+            else:
+                _listed_node_contributions(cells, u, t, starts[group.root],
+                                           tack.array(listed), len(listed), keys, contributions)
     out = target.values
     _start(data, field, out)              # an order-2 field's points come first
     if total:

@@ -32,15 +32,21 @@ import numpy as np
 
 from tack.dataset import shapes
 
-__all__ = ["BERNSTEIN", "FAMILIES", "bernstein", "dof_tables", "entity_nodes", "has_bases",
+__all__ = ["BERNSTEIN", "FAMILIES", "SERENDIPITY", "bernstein", "dof_tables", "entity_nodes", "has_bases",
            "lattice_ijk", "nodes", "simplex_bernstein", "simplex_lattice", "simplex_shape",
            "simplex_subdivision", "tensor_shape", "view_index", "view_order", "wedge_bernstein",
            "wedge_lattice", "wedge_shape", "wedge_subdivision", "weights"]
 
-FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre", "bernstein")
+FAMILIES = ("gauss_lobatto", "equispaced", "gauss_legendre", "bernstein", "serendipity")
 #: The families whose values at the ends are the polynomial's there, which shared
-#: values need: the closed node sets, and Bernstein's (its end coefficients).
-CLOSED = ("gauss_lobatto", "equispaced", "bernstein")
+#: values need: the closed node sets, Bernstein's (its end coefficients) and
+#: serendipity.
+CLOSED = ("gauss_lobatto", "equispaced", "bernstein", "serendipity")
+#: Serendipity (``H1`` of order 2 alone): the full order-2 space less its values at
+#: quad faces' centres and cells' insides, which its functions determine from
+#: the corners and edges (quad8, hex20, wedge15). Read as the equispaced order-2
+#: basis, so its nodes, weights and Bernstein matrix are that basis'.
+SERENDIPITY = "serendipity"
 #: The Bernstein polynomials: coefficients, not values at nodes. Its "nodes" are
 #: its Greville points (``i / p``, the equispaced nodes), where a value would be
 #: interpolated before converting (``bernstein("equispaced", p)``), and its
@@ -69,7 +75,7 @@ def nodes(family, order):
     symmetric about ``0.5`` to the last bit."""
     if family not in FAMILIES:
         raise ValueError(f"a basis is one of {', '.join(FAMILIES)}, not {family!r}")
-    if family == BERNSTEIN:
+    if family in (BERNSTEIN, SERENDIPITY):
         return nodes("equispaced", order)
     p = int(order)
     if p < 0:
@@ -106,6 +112,8 @@ def weights(family, order):
         w = np.array([comb(int(order), j) for j in range(int(order) + 1)], np.float64)
         w.setflags(write=False)
         return w
+    if family == SERENDIPITY:
+        return weights("equispaced", order)
     x = nodes(family, order)
     difference = x[:, None] - x[None, :]
     np.fill_diagonal(difference, 1.0)
@@ -127,6 +135,8 @@ def bernstein(family, order):
         m = np.eye(int(order) + 1)
         m.setflags(write=False)
         return m
+    if family == SERENDIPITY:
+        return bernstein("equispaced", order)
     x = nodes(family, order)
     p = int(order)
     at = np.array([[comb(p, j) * t ** j * (1.0 - t) ** (p - j) for j in range(p + 1)]

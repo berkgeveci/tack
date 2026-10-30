@@ -254,6 +254,15 @@ VTK Bezier cells, and `vtk_to_dataset` reads Bezier cells back into them.
 --8<-- "docs/examples/data_high_order.py:bernstein"
 ```
 
+`basis="serendipity"` (order 2) is the full order-2 space less its values at quad
+faces' centres and cells' insides, which its functions determine from the
+corners and edges: VTK's quad8, hex20 and wedge15 cells, and Exodus's and
+Abaqus's quadratic elements. On triangles and tetrahedra it is the full space.
+It holds every quadratic of position on straight cells, and `vtk_to_dataset`
+reads VTK's quadratic cells into it (the quadratic triangle and tetrahedron into
+the full order-2 space); `dataset_to_vtk(..., higher_order="quadratic")` writes
+them back.
+
 A space numbers its values by entity -- points, then each edge's, face's and
 cell's -- so cells sharing an edge or face share its values. `dofs=` numbers
 them by an element-to-DOF table instead, as MFEM and VTK's cell grids store

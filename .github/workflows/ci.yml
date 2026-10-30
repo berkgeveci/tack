@@ -529,15 +529,16 @@ jobs:
   # Metal is required: an unavailable GPU must fail the job before pytest can
   # quietly omit the hardware cases.
   metal:
-    name: metal (${{ matrix.shard }}/3)
+    name: metal (${{ matrix.shard }}/4)
     runs-on: macos-latest
-    # The suite in three shares (conftest's --shard), one process each: whole, it
-    # took 42 min of a 45 min limit when macOS runners were short (2026-10-29).
+    # The suite in four shares (conftest's --shard), one process each: whole, it
+    # took 42 min of a 45 min limit when macOS runners were short (2026-10-29),
+    # and a third of it 25 of 30 (#216, cancelled while finishing).
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     env:
       TACK_REQUIRE_CLANG: "1"
 
@@ -576,7 +577,7 @@ jobs:
 
       - name: Run the suite with Metal required
         env:
-          SHARD: ${{ matrix.shard }}/3
+          SHARD: ${{ matrix.shard }}/4
         run: |
           uv run python - <<'EOF'
           import os
