@@ -134,6 +134,7 @@
  "packages/tack-vis/tests/test_probe_pieces.py": 11.5,
  "packages/tack-vis/tests/test_project.py": 23.5,
  "packages/tack-vis/tests/test_public_filters.py": 1.7,
+ "packages/tack-vis/tests/test_pyvista_datasets.py": 4.3,
  "packages/tack-vis/tests/test_reductions_across_ranks.py": 0.0,
  "packages/tack-vis/tests/test_refinement_and_sources.py": 2.3,
  "packages/tack-vis/tests/test_sets.py": 1.0,
