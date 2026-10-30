@@ -9622,6 +9622,11 @@ applied to each position as a column (Viskores' PointTransform, VTK's
 vtkTransformFilter). On a dataset with an origin the map moves the origin,
 in double precision, and only its linear part acts on the geometry's values,
 so a rotation far from zero loses nothing.</p>
+<p>An image stays an image: the map is folded into its origin and direction
+(<code>UniformCoordinates</code>; the direction may be any invertible matrix, a shear
+too), in double precision, and no position is stored -- as VTK's image data
+with a direction matrix holds it. A singular map (a projection) gives the
+positions themselves.</p>
 
 
             <details class="mkdocstrings-source">
@@ -9651,13 +9656,35 @@ so a rotation far from zero loses nothing.</p>
 <span class="normal">45</span>
 <span class="normal">46</span>
 <span class="normal">47</span>
-<span class="normal">48</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">matrix</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The geometry under an affine map: a 4x4 matrix (its last row 0 0 0 1) or 3x4,</span>
 <span class="sd">    applied to each position as a column (Viskores&#39; PointTransform, VTK&#39;s</span>
 <span class="sd">    vtkTransformFilter). On a dataset with an origin the map moves the origin,</span>
 <span class="sd">    in double precision, and only its linear part acts on the geometry&#39;s values,</span>
-<span class="sd">    so a rotation far from zero loses nothing.&quot;&quot;&quot;</span>
+<span class="sd">    so a rotation far from zero loses nothing.</span>
+
+<span class="sd">    An image stays an image: the map is folded into its origin and direction</span>
+<span class="sd">    (``UniformCoordinates``; the direction may be any invertible matrix, a shear</span>
+<span class="sd">    too), in double precision, and no position is stored -- as VTK&#39;s image data</span>
+<span class="sd">    with a direction matrix holds it. A singular map (a projection) gives the</span>
+<span class="sd">    positions themselves.&quot;&quot;&quot;</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">matrix</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">m</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]):</span>
@@ -9669,7 +9696,17 @@ so a rotation far from zero loses nothing.</p>
     <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">origin</span><span class="p">):</span>
         <span class="n">origin</span> <span class="o">=</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span> <span class="o">+</span> <span class="n">m</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span>
         <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">([</span><span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">))])</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span>
+    <span class="c1"># A singular map (a projection) flattens the image: its positions are stored.</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">UniformCoordinates</span><span class="p">)</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">])</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="n">image</span> <span class="o">=</span> <span class="n">UniformCoordinates</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">_origin</span><span class="p">)</span> <span class="o">+</span> <span class="n">m</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">],</span>
+                                   <span class="n">values</span><span class="o">.</span><span class="n">_spacing</span><span class="p">,</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">values</span><span class="o">.</span><span class="n">_matrix</span><span class="p">,</span>
+                                   <span class="n">dtype</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">image</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">origin</span>
+        <span class="k">return</span> <span class="n">out</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
         <span class="n">_affine</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">out</span><span class="p">)</span>
@@ -10399,10 +10436,16 @@ curved edges at its corners. A pyramid, which has no Jacobian at its apex, is
 measured as Verdict does, by its four tetrahedra over both base diagonals.
 Polyhedra and polygons, which have no reference cell, are measured by the fan
 tetrahedra and triangles Tack evaluates them in, each against the regular
-tetrahedron or equilateral triangle: a valid star-shaped polyhedron has a
-positive scaled Jacobian, though an ideal-looking one (a cube as a polyhedron)
-scores below 1. Lines and vertices have no Jacobian measures (NaN); a line's
-edges are its segments. Hidden cells are measured like the rest.</p>
+tetrahedron or equilateral triangle. Their Jacobian measures (scaled
+Jacobian, Jacobian ratio, condition) are therefore on the fan's scale, not
+the shapes': a cube as a polyhedron has a scaled Jacobian of 0.58 and a
+condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron has an
+ideal to score 1 against. Read them as a validity check -- a positive scaled
+Jacobian when every fan tetrahedron is upright (the cell star-shaped from its
+points' mean), zero or negative when one is flat or inverted -- and compare
+polyhedra with each other, not with shaped cells. The edge measures mean the
+same on every cell. Lines and vertices have no Jacobian measures (NaN); a
+line's edges are its segments. Hidden cells are measured like the rest.</p>
 <p>Matched to VTK 9.7.1's <code>vtkMeshQuality</code> to rounding for the scaled Jacobian
 of every linear shape, the condition number of triangles, quads, tetrahedra
 and hexahedra, and the edge ratio of triangles, quads, tetrahedra and wedges.
@@ -10505,7 +10548,13 @@ tests).</p>
 <span class="normal">556</span>
 <span class="normal">557</span>
 <span class="normal">558</span>
-<span class="normal">559</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">559</span>
+<span class="normal">560</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_quality</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">measures</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;How well shaped each cell is: a dict of cell fields, one per measure named in</span>
 <span class="sd">    ``measures`` (all of ``MEASURES`` by default). Each is 1 on the ideal cell of its</span>
@@ -10532,10 +10581,16 @@ tests).</p>
 <span class="sd">    measured as Verdict does, by its four tetrahedra over both base diagonals.</span>
 <span class="sd">    Polyhedra and polygons, which have no reference cell, are measured by the fan</span>
 <span class="sd">    tetrahedra and triangles Tack evaluates them in, each against the regular</span>
-<span class="sd">    tetrahedron or equilateral triangle: a valid star-shaped polyhedron has a</span>
-<span class="sd">    positive scaled Jacobian, though an ideal-looking one (a cube as a polyhedron)</span>
-<span class="sd">    scores below 1. Lines and vertices have no Jacobian measures (NaN); a line&#39;s</span>
-<span class="sd">    edges are its segments. Hidden cells are measured like the rest.</span>
+<span class="sd">    tetrahedron or equilateral triangle. Their Jacobian measures (scaled</span>
+<span class="sd">    Jacobian, Jacobian ratio, condition) are therefore on the fan&#39;s scale, not</span>
+<span class="sd">    the shapes&#39;: a cube as a polyhedron has a scaled Jacobian of 0.58 and a</span>
+<span class="sd">    condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron has an</span>
+<span class="sd">    ideal to score 1 against. Read them as a validity check -- a positive scaled</span>
+<span class="sd">    Jacobian when every fan tetrahedron is upright (the cell star-shaped from its</span>
+<span class="sd">    points&#39; mean), zero or negative when one is flat or inverted -- and compare</span>
+<span class="sd">    polyhedra with each other, not with shaped cells. The edge measures mean the</span>
+<span class="sd">    same on every cell. Lines and vertices have no Jacobian measures (NaN); a</span>
+<span class="sd">    line&#39;s edges are its segments. Hidden cells are measured like the rest.</span>
 
 <span class="sd">    Matched to VTK 9.7.1&#39;s ``vtkMeshQuality`` to rounding for the scaled Jacobian</span>
 <span class="sd">    of every linear shape, the condition number of triangles, quads, tetrahedra</span>
@@ -10936,7 +10991,11 @@ at each cell's parametric center (<code>at="cells"</code>) or at the points
 around it, as VTK's vtkGradientFilter and Viskores' point gradients do).</p>
 <p>A scalar gives a 3-vector per entity; a vector of <code>k</code> components <code>3k</code>
 values, row by row -- <code>d(u_i)/d(x_j)</code> at <code>3 * i + j</code>, the layout of
-VTK's and Viskores' gradient tensors. The field's basis gives its
+VTK's and Viskores' gradient tensors.</p>
+<p><code>at</code> may instead be an <code>L2</code> space of the dataset: the gradient at each of
+its nodes in each cell -- a discontinuous field, exact at the nodes, so an
+<code>H1</code> field of order <code>p</code> keeps its order's detail in <code>L2</code> of order <code>p</code>,
+where a gradient at the points averages it away. The field's basis gives its
 derivative in parametric coordinates and the geometry's Jacobian turns that
 into a world gradient, so the two need not share a space. A 2D cell's
 gradient lies in its plane (VTK's and Viskores' in-plane gradient), lines
@@ -10956,22 +11015,7 @@ around each point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/gradients.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
-<span class="normal">225</span>
-<span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
-<span class="normal">229</span>
-<span class="normal">230</span>
-<span class="normal">231</span>
-<span class="normal">232</span>
-<span class="normal">233</span>
-<span class="normal">234</span>
-<span class="normal">235</span>
-<span class="normal">236</span>
-<span class="normal">237</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">237</span>
 <span class="normal">238</span>
 <span class="normal">239</span>
 <span class="normal">240</span>
@@ -11005,7 +11049,37 @@ around each point.</p>
 <span class="normal">268</span>
 <span class="normal">269</span>
 <span class="normal">270</span>
-<span class="normal">271</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">at</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The gradient of ``field`` -- ``H1``, ``L2`` or ``Constant``, scalar or vector --</span>
 <span class="sd">    at each cell&#39;s parametric center (``at=&quot;cells&quot;``) or at the points</span>
@@ -11014,7 +11088,12 @@ around each point.</p>
 
 <span class="sd">    A scalar gives a 3-vector per entity; a vector of ``k`` components ``3k``</span>
 <span class="sd">    values, row by row -- ``d(u_i)/d(x_j)`` at ``3 * i + j``, the layout of</span>
-<span class="sd">    VTK&#39;s and Viskores&#39; gradient tensors. The field&#39;s basis gives its</span>
+<span class="sd">    VTK&#39;s and Viskores&#39; gradient tensors.</span>
+
+<span class="sd">    ``at`` may instead be an ``L2`` space of the dataset: the gradient at each of</span>
+<span class="sd">    its nodes in each cell -- a discontinuous field, exact at the nodes, so an</span>
+<span class="sd">    ``H1`` field of order ``p`` keeps its order&#39;s detail in ``L2`` of order ``p``,</span>
+<span class="sd">    where a gradient at the points averages it away. The field&#39;s basis gives its</span>
 <span class="sd">    derivative in parametric coordinates and the geometry&#39;s Jacobian turns that</span>
 <span class="sd">    into a world gradient, so the two need not share a space. A 2D cell&#39;s</span>
 <span class="sd">    gradient lies in its plane (VTK&#39;s and Viskores&#39; in-plane gradient), lines</span>
@@ -11036,15 +11115,25 @@ around each point.</p>
             <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="p">(</span><span class="n">H1</span><span class="p">,</span> <span class="n">Constant</span><span class="p">))):</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;gradients of a field on </span><span class="si">{</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="si">!r}</span><span class="s2"> on a mesh &quot;</span>
                                   <span class="s2">&quot;without reference elements: point or cell data only&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">at</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;gradients are at &#39;cells&#39; or &#39;points&#39;, not </span><span class="si">{</span><span class="n">at</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">space</span> <span class="o">=</span> <span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">at</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">at</span><span class="p">,</span> <span class="n">L2</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">at</span><span class="o">.</span><span class="n">topology</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;gradients at the nodes of a space of another topology&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;gradients at an L2 space&#39;s nodes take cells with a &quot;</span>
+                                      <span class="s2">&quot;reference element&quot;</span><span class="p">)</span>
+        <span class="n">space</span> <span class="o">=</span> <span class="n">at</span>
+    <span class="k">elif</span> <span class="n">at</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;gradients are at &#39;cells&#39; or &#39;points&#39;, or an L2 space&#39;s nodes, &quot;</span>
+                         <span class="sa">f</span><span class="s2">&quot;not </span><span class="si">{</span><span class="n">at</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">space</span> <span class="o">=</span> <span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">at</span><span class="p">)</span>
     <span class="c1"># Per unit length; a difference of degrees Celsius is in kelvin.</span>
     <span class="n">unit</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">derived</span><span class="p">(</span><span class="n">units</span><span class="o">.</span><span class="n">delta</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">),</span> <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
     <span class="n">width</span> <span class="o">=</span> <span class="n">width_of</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">width</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">_scalar_gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">at</span><span class="p">),</span> <span class="n">unit</span><span class="p">)</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span> <span class="k">if</span> <span class="n">at</span> <span class="o">==</span> <span class="s2">&quot;cells&quot;</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">size</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">at</span><span class="p">,</span> <span class="n">L2</span><span class="p">)</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span> <span class="k">if</span> <span class="n">at</span> <span class="o">==</span> <span class="s2">&quot;cells&quot;</span> \
+        <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">width</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">))</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">width</span><span class="p">):</span>
@@ -16671,7 +16760,7 @@ of the root rank's first piece).</p>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.ghost_cells</span><span class="w"> </span><span class="kn">import</span> <span class="n">_carried</span><span class="p">,</span> <span class="n">_kind</span>
 
     <span class="n">pieces</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-    <span class="n">names</span> <span class="o">=</span> <span class="n">_carried</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="n">_carried</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span> <span class="s2">&quot;merge_pieces&quot;</span><span class="p">)</span>
     <span class="n">common_origin</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;merge_pieces&quot;</span><span class="p">)</span>
     <span class="n">tolerance</span> <span class="o">=</span> <span class="n">_tolerance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">,</span> <span class="s2">&quot;merge_pieces&quot;</span><span class="p">)</span>
     <span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="n">piece</span><span class="o">.</span><span class="n">device</span> <span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">],</span> <span class="n">data</span><span class="o">.</span><span class="n">world</span><span class="p">)</span>

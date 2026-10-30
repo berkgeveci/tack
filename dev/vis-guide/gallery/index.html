@@ -2330,6 +2330,83 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threshold
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surfaces-and-feature-edges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surfaces and feature edges
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cell-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell quality
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gradients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gradients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Probe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subdivide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subdivide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pieces-and-ghost-cells" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pieces and ghost cells
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3719,6 +3796,83 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threshold
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surfaces-and-feature-edges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surfaces and feature edges
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cell-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell quality
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gradients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gradients
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Probe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subdivide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subdivide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pieces-and-ghost-cells" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pieces and ghost cells
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3740,7 +3894,7 @@
 
 
 <h1 id="gallery">Gallery<a class="headerlink" href="#gallery" title="Permanent link">&para;</a></h1>
-<p>What the cutting filters make of each kind of cell. Every picture is a script in
+<p>What Tack's filters make of each kind of cell. Every picture is a script in
 <code>docs/gallery/</code> that builds its data, runs Tack's filter, and draws the result
 through VTK: Tack makes everything drawn -- the result's polygons, their normals
 (<code>surface_normals(..., weights="area")</code>), and the outline, each cell edge as lines
@@ -3761,6 +3915,14 @@ only draws linear polygons and lines. Run one alone
 <li><strong>Order 3 on curved cells</strong>: the same 27 hexahedra twisted and bowed by an
   order-3 geometry, the field <code>H1</code> of order 3 on it.</li>
 </ul>
+<p>Some sections show other data where it makes their point:</p>
+<ul>
+<li><strong>Hexahedra</strong>, jittered (cell quality), and an <strong>image</strong> (pieces).</li>
+<li><strong>A mixed mesh</strong> (cell quality, pieces): the cube's hexahedra, a third kept, a
+  third split into wedges and a third into pyramids, every face between two cells
+  the same in both.</li>
+<li><strong>Curved tetrahedra and wedges</strong>, order 2 (subdivide).</li>
+</ul>
 <p>Each cuts the same field, Schwarz's P surface: <code>cos 2πx + cos 2πy + cos 2πz</code>.</p>
 <details class="example">
 <summary>The datasets</summary>
@@ -3778,10 +3940,22 @@ only draws linear polygons and lines. Run one alone
         <span class="n">grid</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="mi">3</span><span class="p">,)</span> <span class="o">*</span> <span class="mi">3</span><span class="p">)</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">extract_cells</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">grid</span><span class="o">.</span><span class="n">num_cells</span><span class="p">))</span>
         <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schwarz</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;curved-tetrahedra&quot;</span><span class="p">,</span> <span class="s2">&quot;curved-wedges&quot;</span><span class="p">):</span>
+        <span class="n">grid</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="mi">3</span><span class="p">,)</span> <span class="o">*</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">straight</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">tetrahedralize</span><span class="p">(</span><span class="n">grid</span><span class="p">)</span> <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;curved-tetrahedra&quot;</span> <span class="k">else</span> <span class="n">_wedges</span><span class="p">(</span><span class="n">grid</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">DataSet</span><span class="p">(</span><span class="n">straight</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">straight</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">_twist</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">())</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schwarz</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;hexahedra&quot;</span><span class="p">:</span>
+        <span class="n">grid</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">7</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="mi">6</span><span class="p">,)</span> <span class="o">*</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">extract_cells</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">grid</span><span class="o">.</span><span class="n">num_cells</span><span class="p">))</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schwarz</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;mixed&quot;</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">_mixed</span><span class="p">()</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schwarz</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
     <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;curved&quot;</span><span class="p">:</span>
         <span class="n">grid</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="mi">3</span><span class="p">,)</span> <span class="o">*</span> <span class="mi">3</span><span class="p">)</span>
-        <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">extract_cells</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">grid</span><span class="o">.</span><span class="n">num_cells</span><span class="p">))</span>
-        <span class="n">data</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">_twist</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">())</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">twisted</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">extract_cells</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">grid</span><span class="o">.</span><span class="n">num_cells</span><span class="p">)))</span>
         <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schwarz</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no dataset of kind </span><span class="si">{</span><span class="n">kind</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -3877,6 +4051,232 @@ boundaries are shaded flat, since a clipped solid has sharp edges.</p>
     <span class="c1"># cut on linear sub-cells: a PartitionedDataSet of the two.</span>
     <span class="n">ball</span> <span class="o">=</span> <span class="n">implicit</span><span class="o">.</span><span class="n">Sphere</span><span class="p">(</span><span class="n">center</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">radius</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
     <span class="n">kept</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ball</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="n">_scene</span><span class="o">.</span><span class="n">level</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+</code></pre></div>
+<h2 id="threshold">Threshold<a class="headerlink" href="#threshold" title="Permanent link">&para;</a></h2>
+<p>The cells where the field is at least 1: blobs about the cube's corners, joined
+along its edges where the field stays above 1. Threshold keeps cells, never parts
+of them: on the high-order and curved cells the cells whose field's bounds lie in
+the range are kept whole, the others on their linear sub-cells, which is why
+their surfaces come in steps.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Thresholded polyhedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/threshold-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="Thresholded tetrahedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/threshold-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="A thresholded order-4 field" decoding="async" height="560" loading="lazy" src="../../assets/gallery/threshold-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="Thresholded curved cells" decoding="async" height="560" loading="lazy" src="../../assets/gallery/threshold-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># Linear cells are kept whole when every corner is in range. High-order and</span>
+    <span class="c1"># curved cells are kept whole when the field&#39;s bounds (its Bernstein</span>
+    <span class="c1"># coefficients) lie in range; the others are cut on linear sub-cells at the</span>
+    <span class="c1"># range&#39;s ends: a PartitionedDataSet of the two.</span>
+    <span class="n">kept</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="n">_scene</span><span class="o">.</span><span class="n">level</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+</code></pre></div>
+<h2 id="surfaces-and-feature-edges">Surfaces and feature edges<a class="headerlink" href="#surfaces-and-feature-edges" title="Permanent link">&para;</a></h2>
+<p>The clip section's cube with a ball taken out: its boundary, and its feature
+edges -- where two faces turn by 30 degrees or more -- in red. On the curved cells
+the surface is subdivided, and the feature edges follow the cube's curved edges
+and the ball's rim, not the sub-faces between them.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="The surface of clipped polyhedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/surfaces-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="The surface of clipped tetrahedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/surfaces-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="The surface of a clipped order-4 field's cells" decoding="async" height="560" loading="lazy" src="../../assets/gallery/surfaces-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="The surface of clipped curved cells" decoding="async" height="560" loading="lazy" src="../../assets/gallery/surfaces-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># A high-order or curved part comes subdivided into linear cells first: the</span>
+    <span class="c1"># surface of its sub-cells, a polyhedral one&#39;s its polygons. The feature</span>
+    <span class="c1"># edges are VTK&#39;s: boundary, sharp (two faces&#39; normals 30 degrees apart or</span>
+    <span class="c1"># more) and non-manifold edges, as lines with their kind.</span>
+    <span class="n">surface</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">extract_surface</span><span class="p">(</span><span class="n">_scene</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">kept</span><span class="p">))</span>
+    <span class="n">edges</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">feature_edges</span><span class="p">(</span><span class="n">surface</span><span class="p">,</span> <span class="n">angle</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="cell-quality">Cell quality<a class="headerlink" href="#cell-quality" title="Permanent link">&para;</a></h2>
+<p>Each cell's scaled Jacobian, red where poor (0 degenerate, below 0 inverted) and
+blue where ideal (1), on meshes whose inner points are moved at random, with the
+cells about a corner taken out. On the curved cells it is the least over the
+geometry's own Jacobian's samples. Polyhedra are left out: with no reference
+element, theirs is measured by the tetrahedra fanning them, on another scale (a
+cube as a polyhedron scores 0.58), and is read as a validity check -- positive
+when the cell is star-shaped -- comparing polyhedra only with each other.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="The quality of tetrahedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/quality-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="The quality of hexahedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/quality-hexahedra.jpg" width="640" /></p>
+<p>Hexahedra</p>
+</li>
+<li>
+<p><img alt="The quality of a mixed mesh" decoding="async" height="560" loading="lazy" src="../../assets/gallery/quality-mixed.jpg" width="640" /></p>
+<p>Hexahedra, wedges and pyramids</p>
+</li>
+<li>
+<p><img alt="The quality of curved cells" decoding="async" height="560" loading="lazy" src="../../assets/gallery/quality-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># Verdict&#39;s measures generalized: on each shape from its ideal cell, on</span>
+    <span class="c1"># polyhedra from the tetrahedra fanning them, on a curved geometry at the</span>
+    <span class="c1"># samples of its own Jacobian.</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">cell_quality</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">])[</span>
+        <span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h2 id="gradients">Gradients<a class="headerlink" href="#gradients" title="Permanent link">&para;</a></h2>
+<p>The P surface colored by the length of the field's gradient. A linear field's
+gradient is averaged to the points; a high-order field's is taken at the nodes of
+an <code>L2</code> space of its order (<code>gradients(data, field, at=L2(...))</code>), exact there, so
+the surface keeps its peaks, which averaging to the points flattens.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Gradients on polyhedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/gradients-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="Gradients on tetrahedra" decoding="async" height="560" loading="lazy" src="../../assets/gallery/gradients-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="Gradients of an order-4 field" decoding="async" height="560" loading="lazy" src="../../assets/gallery/gradients-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="Gradients on curved cells" decoding="async" height="560" loading="lazy" src="../../assets/gallery/gradients-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="n">u</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">u</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="c1"># Exact at the nodes of L2 of the field&#39;s order: discontinuous, one</span>
+        <span class="c1"># value per node of each cell.</span>
+        <span class="n">at</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="n">u</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Each cell&#39;s gradient at its corners, averaged over the cells around</span>
+        <span class="c1"># each point (VTK&#39;s and Viskores&#39; point gradients).</span>
+        <span class="n">at</span> <span class="o">=</span> <span class="s2">&quot;points&quot;</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;slope&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">magnitude</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="n">at</span><span class="o">=</span><span class="n">at</span><span class="p">))</span>
+    <span class="n">surface</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;slope&quot;</span><span class="p">],</span> <span class="n">subdivision</span><span class="o">=</span><span class="n">_scene</span><span class="o">.</span><span class="n">level</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+</code></pre></div>
+<h2 id="probe">Probe<a class="headerlink" href="#probe" title="Permanent link">&para;</a></h2>
+<p>The field sampled at the points of an image plane tilted through the cube and
+wider than it, the points no cell holds left out (<code>valid</code> 0). Each point's cell is
+found through the cell locator, a curved cell inverted by Newton's method from
+its own geometry, so on the curved cells the plane's edge follows the curved
+boundary. The plane is an image turned by <code>transform</code>, which keeps it an image.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="A probe (polyhedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/probe-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="A probe (tetrahedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/probe-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="A probe (order 4 on straight cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/probe-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="A probe (order 3 on curved cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/probe-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># Each point&#39;s cell found through the cell locator (curved cells inverted by</span>
+    <span class="c1"># Newton&#39;s method from their own geometry), the field evaluated there;</span>
+    <span class="c1"># &quot;valid&quot; is 0 where no cell holds the point.</span>
+    <span class="n">sampled</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">plane</span><span class="p">(),</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">])</span>
+    <span class="n">held</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">sampled</span><span class="p">,</span> <span class="s2">&quot;valid&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="subdivide">Subdivide<a class="headerlink" href="#subdivide" title="Permanent link">&para;</a></h2>
+<p>High-order and curved cells as the linear sub-cells the cutting filters cut and
+VTK can draw, 4 a side, every sub-cell's edges drawn: hexahedra into hexahedra,
+tetrahedra into Freudenthal's tetrahedra, wedges into layers of them. A lattice
+point shared by cells is computed once, from the edge or face it lies on.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Sub-cells (order 4 on straight cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/subdivide-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="Sub-cells (order 3 on curved cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/subdivide-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+<li>
+<p><img alt="Sub-cells (order 2 on curved tetrahedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/subdivide-curved-tetrahedra.jpg" width="640" /></p>
+<p>Order 2 on curved tetrahedra</p>
+</li>
+<li>
+<p><img alt="Sub-cells (order 2 on curved wedges)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/subdivide-curved-wedges.jpg" width="640" /></p>
+<p>Order 2 on curved wedges</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># Each cell&#39;s lattice of 4 steps a side: hexahedra into 64 hexahedra,</span>
+    <span class="c1"># tetrahedra into Freudenthal&#39;s 64 tetrahedra, wedges into layers of them.</span>
+    <span class="c1"># A lattice point shared by cells is one point, computed once, from the</span>
+    <span class="c1"># entity it lies on, so every piece holding it gets the same bits.</span>
+    <span class="n">linear</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="pieces-and-ghost-cells">Pieces and ghost cells<a class="headerlink" href="#pieces-and-ghost-cells" title="Permanent link">&para;</a></h2>
+<p>Each mesh in eight pieces, one an octant of the cube (an image split into eight
+blocks), each given a layer of its neighbours' cells as ghosts, and drawn pulled
+apart: a piece's own cells in its color, its ghosts faint, reaching into the
+pieces around it. Polyhedra are not shown, since <code>ghost_cells</code> does not take
+polyhedral pieces yet, nor curved and high-order cells, whose geometry and
+fields ghost cells do not carry yet (it refuses them).</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Pieces with ghost cells (an image)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pieces-image.jpg" width="640" /></p>
+<p>An image</p>
+</li>
+<li>
+<p><img alt="Pieces with ghost cells (tetrahedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pieces-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="Pieces with ghost cells (hexahedra, wedges and pyramids)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pieces-mixed.jpg" width="640" /></p>
+<p>Hexahedra, wedges and pyramids</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># Pieces neighbour where they share points; each gains the cells of the</span>
+    <span class="c1"># others that use a point it shares (marked DUPLICATECELL), and owns each</span>
+    <span class="c1"># shared point once. ghost_cells keeps the plans that update_ghosts reruns.</span>
+    <span class="n">ghosted</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">octants</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
 </code></pre></div>
 
 
