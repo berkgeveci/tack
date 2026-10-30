@@ -697,9 +697,12 @@ def test_extract_edges_of_a_set(backend):
         td.extract_edges(data, td.Set(_grid(3, "explicit"), "edges", [0]))
     with pytest.raises(IndexError, match="edge ids lie outside"):
         td.extract_edges(data, [len(rows)])
-    with pytest.raises(TypeError, match="H1 geometry"):
-        td.extract_edges(td.DataSet(data.topology, td.project(data, data.geometry,
-                                                              td.L2(data))))
+    # An L2 geometry's cells need not meet: each cell's own edges, on its own points.
+    broken = td.DataSet(data.topology, td.project(data, data.geometry, td.L2(data)))
+    own = td.extract_edges(broken)
+    assert own.num_cells == 12 * data.num_cells and own.num_points == 24 * data.num_cells
+    with pytest.raises(NotImplementedError, match="every cell's own edges"):
+        td.extract_edges(broken, [0])
 
 
 def test_extract_edges_of_polyhedra_and_surfaces(backend):

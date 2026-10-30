@@ -775,7 +775,8 @@ def test_subdividing_an_l2_geometry_keeps_its_cells_apart(f64_backend, order):
     (a periodic mesh's seam, a mesh displaced by a DG field): ``subdivide`` gives each
     its own lattice points. Here each cell is moved by its own offset, and every
     sub-cell's corners and values are the unmoved ones' plus it. Shared points took
-    one cell's position, stretching the others' sub-cells across the mesh."""
+    one cell's position, stretching the others' sub-cells across the mesh. And
+    ``extract_edges`` draws each cell's own edges (it refused an L2 geometry)."""
     grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
     curved = _rotated(td.extract_cells(grid, np.arange(8)), seed=3)
     vec = tack.vec3(tack.f64)
@@ -801,3 +802,13 @@ def test_subdividing_an_l2_geometry_keeps_its_cells_apart(f64_backend, order):
     np.testing.assert_allclose(x_b, x_a, atol=1e-12)
     np.testing.assert_allclose(b.fields["u"].values.numpy()[corners_b],
                                a.fields["u"].values.numpy()[corners_a], atol=1e-12)
+    # Edges: each cell's own, 12 of them in 3 segments along its map, every point
+    # on the H1 twin's edges once moved back.
+    edges = td.extract_edges(apart, subdivision=3)
+    assert edges.num_cells == curved.num_cells * 12 * 3
+    x = edges.geometry.values.numpy().copy()
+    x[:, 0] -= 10.0 * np.repeat(np.arange(curved.num_cells), 12 * 4)
+    twin = td.extract_edges(curved if order > 1 else td.subdivide(curved, 3, fields=[]),
+                            subdivision=3).geometry.values.numpy()
+    nearest = np.abs(x[:, None, :] - twin[None, :, :]).max(axis=2).min(axis=1)
+    assert nearest.max() < 1e-12

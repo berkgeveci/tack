@@ -1,4 +1,6 @@
-"""``extract_edges``: the edges of set ``name`` (all of them by default) as line cells on the same points, each running from its lower point id to its higher. Values on edges become the lines' cell values, and edge sets cell sets; point fields (``H1``, values on points) stay on the same points -- an order-2 field's or geometry's values at the points, the lines being linear. Cell fields are left behind: an edge has as many cells as meet there. The geometry must be ``H1``."""
+"""``extract_edges``: the edges of set ``name`` (all of them by default) as line cells on the same points, each running from its lower point id to its higher. Values on edges become the lines' cell values, and edge sets cell sets; point fields (``H1``, values on points) stay on the same points -- an order-2 field's or geometry's values at the points, the lines being linear. Cell fields are left behind: an edge has as many cells as meet there. An ``L2`` geometry's edges are each cell's own."""
+
+import numpy as np
 
 import tack
 from tack import arrays
@@ -7,7 +9,7 @@ from tack.dataset import ids as id_types
 from tack.dataset import shapes
 from tack.dataset.carry import Same, Take, carry
 from tack.dataset.sets import Set
-from tack.dataset.spaces import H1
+from tack.dataset.spaces import H1, L2
 from tack.dataset.topology import UnstructuredTopology, uniform_cells
 from tack.dataset.views import _axis, _before
 from tack.runtime.dispatch import on_inputs_device
@@ -24,11 +26,12 @@ def _edge_cells(ids, rows, connectivity, n):
 
 
 @tack.kernel
-def _curved_edges(ids, rows, positions, trace, nodes, weights, q, bernstein, level, n,
+def _curved_edges(ids, rows, positions, trace, nodes, weights, q, bernstein, steps, level, n,
                   points, connectivity, out):
     # Edge i (edge ids[i]) as level segments: its level - 1 inner points on the
     # geometry's trace, at k / level from its first point by position (so every
-    # piece computes the same bits), numbered from its lower point id.
+    # piece computes the same bits), numbered from its lower point id. steps[k] is
+    # k / level in the geometry's type (an integer over a literal is f32).
     for i in range(n):
         e = ids[i]
         row = rows[e]
@@ -36,7 +39,7 @@ def _curved_edges(ids, rows, positions, trace, nodes, weights, q, bernstein, lev
         previous = row[0]
         for k in range(1, level):
             kk = level - k if flip else k
-            t = (kk + 0.0) / level
+            t = steps[kk]
             x = trace[e * q] * _axis(t, 0, nodes, weights, q, bernstein)
             for j in range(1, q):
                 x += trace[e * q + j] * _axis(t, j, nodes, weights, q, bernstein)
@@ -47,6 +50,30 @@ def _curved_edges(ids, rows, positions, trace, nodes, weights, q, bernstein, lev
             previous = p
         connectivity[2 * (i * level + level - 1)] = previous
         connectivity[2 * (i * level + level - 1) + 1] = row[1]
+
+
+@tack.kernel
+def _edge_counts(cells, counts):
+    for c in cells:
+        counts[cells.entity_id(c)] = cells.NUM_EDGES
+
+
+@tack.kernel
+def _own_edges(cells, starts, steps, level, out, connectivity):
+    # Each of a cell's edges as level segments through level + 1 points of its own
+    # on the cell's map, from the edge's first corner.
+    for c in cells:
+        first = starts[cells.entity_id(c)]
+        for k in range(cells.NUM_EDGES):
+            a = cells.parametric_point(cells.edge_corner(k, 0))
+            b = cells.parametric_point(cells.edge_corner(k, 1))
+            edge = first + k
+            for t in range(level + 1):
+                p = edge * (level + 1) + t
+                out[p] = cells.position(c, a + (b - a) * steps[t])
+                if t < level:
+                    connectivity[2 * (edge * level + t)] = p
+                    connectivity[2 * (edge * level + t) + 1] = p + 1
 
 
 @tack.kernel
@@ -65,8 +92,12 @@ def extract_edges(data, edges=None, fields=None, subdivision=None):
     its cell sets; point fields (``H1``, values on points) and point sets stay
     on the same points -- an order-2 field's or geometry's values at the
     points, the lines being linear. Cell and face fields are left behind: an
-    edge lies on every cell and face around it. The geometry must be ``H1``:
-    an ``L2`` one has no shared points for the lines to stand on.
+    edge lies on every cell and face around it.
+
+    An ``L2`` geometry has no shared points for the lines to stand on: its cells
+    need not meet (a periodic mesh's seam, a mesh displaced by a DG field), so
+    each cell's edges are drawn on their own points, in cell order, along the
+    cell's map (``subdivision`` segments each), with no fields kept.
 
     ``subdivision=n`` follows a curved geometry: each edge is ``n`` line cells
     through ``n - 1`` new points on the geometry's trace along it, appended after
@@ -80,6 +111,11 @@ def extract_edges(data, edges=None, fields=None, subdivision=None):
         data = visible(data)
     else:
         refuse_hidden(data, "extract_edges of chosen edges")
+    if isinstance(data.geometry.space, L2):
+        if edges is not None or fields:
+            raise NotImplementedError("extract_edges of an L2 geometry draws every cell's "
+                                      "own edges, without fields")
+        return _own_cell_edges(data, int(subdivision or 1))
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_edges keeps the points, so needs an H1 geometry")
     topology = data.topology
@@ -125,11 +161,48 @@ def _subdivided(data, chosen, n, level):
     if n:
         _curved_edges(chosen, data.topology.edges().rows, positions, trace,
                       basis["trace_nodes"], basis["trace_weights"], basis["trace_q"],
-                      basis["trace_bernstein"], level, n, num_points, connectivity, out)
+                      basis["trace_bernstein"], _steps(level, positions), level, n, num_points,
+                      connectivity, out)
     types, offsets = uniform_cells(shapes.LINE, n * level, idt)
     lines = UnstructuredTopology(types, offsets, connectivity, num_points=total)
     return drop_marks(data, DataSet(lines, out, **data._frame()),
                       "extract_edges' subdivided edges have no marks")
+
+
+def _steps(level, like):
+    """``k / level`` for ``k`` from 0 to ``level``, in ``like``'s float type."""
+    dtype = arrays.dtype_of(like)
+    steps = tack.empty((level + 1,), dtype)
+    tack.copyto(steps, (np.arange(level + 1) / level).astype(dtype.numpy_dtype))
+    return steps
+
+
+def _own_cell_edges(data, level):
+    """Every cell's edges as ``level`` line cells each, on points of their own
+    along the cell's map (an ``L2`` geometry's edges)."""
+    from tack.algorithms.scan import exclusive_scan
+    from tack.dataset import DataSet
+    from tack.dataset.ghosts import drop_marks
+
+    counts = tack.zeros((data.num_cells,), tack.i64)
+    for group in data.launch_groups("cells", []):
+        if group.count:
+            _edge_counts(data.domain_view("cells", group), counts)
+    starts = tack.empty((data.num_cells,), tack.i64)
+    n = exclusive_scan(counts, starts, data.num_cells) if data.num_cells else 0
+    total = n * (level + 1)
+    idt = id_types.at_least(data.id_dtype, total)
+    out = tack.empty((total,), tack.vec(3, data.dtype))
+    connectivity = tack.empty((2 * n * level,), idt)
+    steps = _steps(level, out)
+    for group in data.launch_groups("cells", []):
+        if group.count and group.shape.NUM_EDGES:
+            _own_edges(data.domain_view("cells", group), starts, steps, level, out,
+                       connectivity)
+    types, offsets = uniform_cells(shapes.LINE, n * level, idt)
+    lines = UnstructuredTopology(types, offsets, connectivity, num_points=total)
+    return drop_marks(data, DataSet(lines, out, **data._frame()),
+                      "extract_edges' edges of an L2 geometry have no marks")
 
 
 def _edge_ids(data, edges, count):

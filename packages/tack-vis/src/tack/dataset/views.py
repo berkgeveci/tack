@@ -827,6 +827,11 @@ def quadratic_faces(shape):
 #: map of higher degree can take from the center.
 CURVED_NEWTON_ITERATIONS = tack.constant(20, tack.i32)
 
+#: Newton steps a curved cell takes past VTK's stopping rule (a step under
+#: ``NEWTON_TOLERANCE``): Newton's error squares each step, so two take the
+#: answer from about 1e-4 to rounding (curved probes agreed with MFEM to 1e-8).
+CURVED_NEWTON_POLISH = tack.constant(2, tack.i32)
+
 
 class _Geometry:
     """The geometry field, read through an entity: ``corner_position(i, j)``, which a storage
@@ -899,8 +904,9 @@ class _CurvedNewton:
     def curved_to_parametric(self, i, x):
         """``world_to_parametric`` on the geometry itself: Newton's method from the
         parametric center on ``position`` and ``geometry_jacobian``, the shape's
-        step and VTK's stopping rules, so a curved cell is inverted as it is,
-        not as its corners make it. Returns ``(pc, converged)``."""
+        step and VTK's stopping rules, then ``CURVED_NEWTON_POLISH`` steps more, so
+        a curved cell is inverted as it is, not as its corners make it, to
+        rounding. Returns ``(pc, converged)``."""
         pc = self.parametric_center()
         converged = 0
         for _ in range(CURVED_NEWTON_ITERATIONS):
@@ -913,6 +919,9 @@ class _CurvedNewton:
                     and abs(step[2]) <= NEWTON_TOLERANCE):
                 converged = 1
                 break
+        if converged == 1:
+            for _ in range(CURVED_NEWTON_POLISH):
+                pc += self._newton_step(self.geometry_jacobian(i, pc), x - self.position(i, pc))
         return pc, converged
 
 
@@ -933,6 +942,10 @@ def _newton_from(view, x, rx, ry, rz, first):
                 and abs(step[2]) <= NEWTON_TOLERANCE):
             converged = 1
             break
+    if converged == 1:
+        for _ in range(CURVED_NEWTON_POLISH):
+            jac, at = view.gathered_map(rx, ry, rz, first, pc)
+            pc += view._newton_step(jac, x - at)
     return pc, converged
 
 
