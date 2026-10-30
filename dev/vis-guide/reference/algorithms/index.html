@@ -3264,6 +3264,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.integrate.integrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        integrate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.integrate.Integrals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.dataset.algorithms.statistics.Statistics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5727,6 +5749,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.integrate.integrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        integrate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.dataset.algorithms.integrate.Integrals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.dataset.algorithms.statistics.Statistics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7058,7 +7102,11 @@ each came from.</p>
 <span class="normal">583</span>
 <span class="normal">584</span>
 <span class="normal">585</span>
-<span class="normal">586</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">586</span>
+<span class="normal">587</span>
+<span class="normal">588</span>
+<span class="normal">589</span>
+<span class="normal">590</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">merge_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``field`` crosses ``value``: a surface of a 3D mesh, as triangles</span>
@@ -7154,6 +7202,10 @@ each came from.</p>
                                           <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span> <span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">),</span>
             <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">,</span> <span class="n">exact</span><span class="o">=</span><span class="n">exact</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cell_family</span>
+
+        <span class="c1"># A mesh subdivision does not take (mixed families, pyramids) says so.</span>
+        <span class="n">_cell_family</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> field (by subdivision)&quot;</span><span class="p">)</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;contour of an order-</span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="si">}</span><span class="s2"> H1 field is not built: it would subdivide &quot;</span>
             <span class="s2">&quot;each cell, and its corner values alone give the contour of a linear field&quot;</span><span class="p">)</span>
@@ -9920,34 +9972,34 @@ the lattice points: a curved or high-order dataset as a linear one, as VTK's
 <code>vtkCellGridToUnstructuredGrid</code> gives one (for export, rendering, or a filter
 that takes only linear cells). <code>level</code> is by default the largest order of the
 geometry and fields. A lattice point shared by cells is one point, its value
-computed once. <code>H1</code> and <code>L2</code> fields become point data (an <code>L2</code> field's
+computed once (on an <code>L2</code> geometry each cell's points are its own). <code>H1</code> and <code>L2</code> fields become point data (an <code>L2</code> field's
 value at a shared point from one of its cells); cell fields go to every
 sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1139</span>
-<span class="normal">1140</span>
-<span class="normal">1141</span>
-<span class="normal">1142</span>
-<span class="normal">1143</span>
-<span class="normal">1144</span>
-<span class="normal">1145</span>
-<span class="normal">1146</span>
-<span class="normal">1147</span>
-<span class="normal">1148</span>
-<span class="normal">1149</span>
-<span class="normal">1150</span>
-<span class="normal">1151</span>
-<span class="normal">1152</span>
-<span class="normal">1153</span>
-<span class="normal">1154</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1154</span>
 <span class="normal">1155</span>
 <span class="normal">1156</span>
 <span class="normal">1157</span>
 <span class="normal">1158</span>
-<span class="normal">1159</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">1159</span>
+<span class="normal">1160</span>
+<span class="normal">1161</span>
+<span class="normal">1162</span>
+<span class="normal">1163</span>
+<span class="normal">1164</span>
+<span class="normal">1165</span>
+<span class="normal">1166</span>
+<span class="normal">1167</span>
+<span class="normal">1168</span>
+<span class="normal">1169</span>
+<span class="normal">1170</span>
+<span class="normal">1171</span>
+<span class="normal">1172</span>
+<span class="normal">1173</span>
+<span class="normal">1174</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
 <span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>
@@ -9955,7 +10007,7 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 <span class="sd">    ``vtkCellGridToUnstructuredGrid`` gives one (for export, rendering, or a filter</span>
 <span class="sd">    that takes only linear cells). ``level`` is by default the largest order of the</span>
 <span class="sd">    geometry and fields. A lattice point shared by cells is one point, its value</span>
-<span class="sd">    computed once. ``H1`` and ``L2`` fields become point data (an ``L2`` field&#39;s</span>
+<span class="sd">    computed once (on an ``L2`` geometry each cell&#39;s points are its own). ``H1`` and ``L2`` fields become point data (an ``L2`` field&#39;s</span>
 <span class="sd">    value at a shared point from one of its cells); cell fields go to every</span>
 <span class="sd">    sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.&quot;&quot;&quot;</span>
     <span class="n">names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">fields</span><span class="p">)</span>
@@ -10152,22 +10204,18 @@ positions themselves.</p>
 space (or its name), or one 3-vector for every point -- times <code>scale</code>
 and, if given, a scalar field <code>scale_by</code> in the same space (Viskores'
 Warp; VTK's vtkWarpVector and vtkWarpScalar). Values on points are that
-space when the geometry is order-1 <code>H1</code> (<code>surface_normals</code>' normals).</p>
+space when the geometry is order-1 <code>H1</code> (<code>surface_normals</code>' normals). A
+2-vector field (a 2D problem's displacement) moves x and y.</p>
+<p><code>direction</code> may also be an <code>H1</code> field of higher order than the geometry
+(a finite-element displacement, as MFEM's examples displace their meshes):
+the geometry is first carried into its space (<code>project</code>, exact for the
+lower order), so the output's geometry is curved, in that space; <code>scale_by</code>
+is then in that space too.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/warp.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">29</span>
-<span class="normal">30</span>
-<span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">39</span>
 <span class="normal">40</span>
 <span class="normal">41</span>
 <span class="normal">42</span>
@@ -10191,16 +10239,53 @@ space when the geometry is order-1 <code>H1</code> (<code>surface_normals</code>
 <span class="normal">60</span>
 <span class="normal">61</span>
 <span class="normal">62</span>
-<span class="normal">63</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">warp</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">direction</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">scale_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The geometry moved along ``direction`` -- a 3-vector field in the geometry&#39;s</span>
 <span class="sd">    space (or its name), or one 3-vector for every point -- times ``scale``</span>
 <span class="sd">    and, if given, a scalar field ``scale_by`` in the same space (Viskores&#39;</span>
 <span class="sd">    Warp; VTK&#39;s vtkWarpVector and vtkWarpScalar). Values on points are that</span>
-<span class="sd">    space when the geometry is order-1 ``H1`` (``surface_normals``&#39; normals).&quot;&quot;&quot;</span>
+<span class="sd">    space when the geometry is order-1 ``H1`` (``surface_normals``&#39; normals). A</span>
+<span class="sd">    2-vector field (a 2D problem&#39;s displacement) moves x and y.</span>
+
+<span class="sd">    ``direction`` may also be an ``H1`` field of higher order than the geometry</span>
+<span class="sd">    (a finite-element displacement, as MFEM&#39;s examples displace their meshes):</span>
+<span class="sd">    the geometry is first carried into its space (``project``, exact for the</span>
+<span class="sd">    lower order), so the output&#39;s geometry is curved, in that space; ``scale_by``</span>
+<span class="sd">    is then in that space too.&quot;&quot;&quot;</span>
     <span class="n">geometry</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">)):</span>
+        <span class="n">direction</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">direction</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">direction</span>
+        <span class="n">direction</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">direction</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">width_of</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;direction must be a 3-vector field in the geometry&#39;s space &quot;</span>
+                             <span class="s2">&quot;(or a 2-vector one, moving x and y)&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">direction</span><span class="o">.</span><span class="n">space</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">:</span>
+            <span class="n">geometry</span> <span class="o">=</span> <span class="n">_lifted</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">geometry</span><span class="p">,</span> <span class="n">direction</span><span class="o">.</span><span class="n">space</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">factors</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_by</span> <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_by</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">scale_by</span><span class="p">])</span>
     <span class="k">if</span> <span class="n">factors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">factors</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
@@ -10210,14 +10295,11 @@ space when the geometry is order-1 <code>H1</code> (<code>surface_normals</code>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;scale_by must be a scalar field in the geometry&#39;s space&quot;</span><span class="p">)</span>
         <span class="n">factors</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">factors</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">)):</span>
-        <span class="n">direction</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">direction</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">direction</span>
-        <span class="n">direction</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">direction</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">direction</span><span class="o">.</span><span class="n">space</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">geometry</span><span class="o">.</span><span class="n">space</span> <span class="ow">or</span> <span class="n">width_of</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;direction must be a 3-vector field in the geometry&#39;s space&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="n">Field</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-            <span class="n">_warp_by_field</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">materialize</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">),</span>
-                           <span class="n">factors</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+            <span class="n">moving</span> <span class="o">=</span> <span class="n">_warp_by_field</span> <span class="k">if</span> <span class="n">width_of</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="k">else</span> <span class="n">_warp_in_plane</span>
+            <span class="n">moving</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">materialize</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">factors</span><span class="p">,</span>
+                   <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
@@ -10225,7 +10307,7 @@ space when the geometry is order-1 <code>H1</code> (<code>surface_normals</code>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
             <span class="n">_warp_constant</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">d</span><span class="p">),</span> <span class="n">factors</span><span class="p">,</span>
                            <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span> <span class="n">space</span><span class="o">=</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -10424,6 +10506,10 @@ trilinear volume); its faces must be wound out of it. A 2D cell's area --
 triangle, quad, pixel or polygon -- along its own normal (Newell's), from
 its edges going round it. A line's or a polyline's length, and the
 centroid of its segments; a vertex's point, with measure 0.</p>
+<p>On a curved geometry (<code>H1</code> above order 1, or an <code>L2</code> one of order 2 or
+more) each cell is measured as it is, by quadrature through its own map
+(<code>integrate.cell_measures</code>): its volume, area or length, and the centroid
+those weigh. (A curved cell was measured by its corners.)</p>
 
 
             <details class="mkdocstrings-source">
@@ -10458,7 +10544,21 @@ centroid of its segments; a vertex's point, with measure 0.</p>
 <span class="normal">178</span>
 <span class="normal">179</span>
 <span class="normal">180</span>
-<span class="normal">181</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_geometry</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell&#39;s volume, by the</span>
 <span class="sd">    divergence theorem over its faces -- polyhedral or of a shape -- with faces</span>
@@ -10467,7 +10567,21 @@ centroid of its segments; a vertex's point, with measure 0.</p>
 <span class="sd">    trilinear volume); its faces must be wound out of it. A 2D cell&#39;s area --</span>
 <span class="sd">    triangle, quad, pixel or polygon -- along its own normal (Newell&#39;s), from</span>
 <span class="sd">    its edges going round it. A line&#39;s or a polyline&#39;s length, and the</span>
-<span class="sd">    centroid of its segments; a vertex&#39;s point, with measure 0.&quot;&quot;&quot;</span>
+<span class="sd">    centroid of its segments; a vertex&#39;s point, with measure 0.</span>
+
+<span class="sd">    On a curved geometry (``H1`` above order 1, or an ``L2`` one of order 2 or</span>
+<span class="sd">    more) each cell is measured as it is, by quadrature through its own map</span>
+<span class="sd">    (``integrate.cell_measures``): its volume, area or length, and the centroid</span>
+<span class="sd">    those weigh. (A curved cell was measured by its corners.)&quot;&quot;&quot;</span>
+    <span class="n">space</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">L2</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">tensor</span><span class="p">)):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.integrate</span><span class="w"> </span><span class="kn">import</span> <span class="n">cell_measures</span>
+
+        <span class="n">volumes</span><span class="p">,</span> <span class="n">centroids</span> <span class="o">=</span> <span class="n">cell_measures</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">CellGeometry</span><span class="p">(</span><span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">volumes</span><span class="p">,</span> <span class="n">_measure_unit</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span>
+                            <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">centroids</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">unit</span><span class="p">))</span>
     <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
         <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>                      <span class="c1"># polyhedra and polygons walk theirs</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span>
@@ -12685,42 +12799,80 @@ are refused unless the conversion is a relabelling (<code>"1000*m"</code> to
 
         <p>A field's difference across each face at the face's center, side 1 minus side
 0 (zero on the boundary): a field on faces. Each side is the field as its own
-cell has it -- <code>traces</code> -- so a DG field's jumps are its own, not its cells'
-averages; a continuous field's are zero. Cell data (<code>Constant</code>, values on
+cell's basis has it at the face's center (the mean of the face's corners in
+the cell's reference element, the same point from both sides), so a DG
+field's jumps are its own, of any order, not its cells' averages; a
+continuous field's are zero. Up to order 1 the face's corner values
+(<code>traces</code>) give the center exactly; above it, the corners' linear mean was
+wrong, and each side's basis is evaluated there. Cell data (<code>Constant</code>, values on
 cells) is read from each side's cell directly, on any topology, polyhedral
 included.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/jump.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">jump</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A field&#39;s difference across each face at the face&#39;s center, side 1 minus side</span>
 <span class="sd">    0 (zero on the boundary): a field on faces. Each side is the field as its own</span>
-<span class="sd">    cell has it -- ``traces`` -- so a DG field&#39;s jumps are its own, not its cells&#39;</span>
-<span class="sd">    averages; a continuous field&#39;s are zero. Cell data (``Constant``, values on</span>
+<span class="sd">    cell&#39;s basis has it at the face&#39;s center (the mean of the face&#39;s corners in</span>
+<span class="sd">    the cell&#39;s reference element, the same point from both sides), so a DG</span>
+<span class="sd">    field&#39;s jumps are its own, of any order, not its cells&#39; averages; a</span>
+<span class="sd">    continuous field&#39;s are zero. Up to order 1 the face&#39;s corner values</span>
+<span class="sd">    (``traces``) give the center exactly; above it, the corners&#39; linear mean was</span>
+<span class="sd">    wrong, and each side&#39;s basis is evaluated there. Cell data (``Constant``, values on</span>
 <span class="sd">    cells) is read from each side&#39;s cell directly, on any topology, polyhedral</span>
 <span class="sd">    included.&quot;&quot;&quot;</span>
     <span class="n">field</span> <span class="o">=</span> <span class="n">_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span><span class="o">.</span><span class="n">num_faces</span><span class="p">)</span>
+    <span class="n">faces</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">_on_cells</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
         <span class="n">for_each</span><span class="p">(</span><span class="n">_cell_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="s2">&quot;order&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="s2">&quot;varies&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="c1"># Up to order 1 a side is linear over the face, so its corner values</span>
+        <span class="c1"># (traces) give the center exactly -- on a pyramid&#39;s triangles too, whose</span>
+        <span class="c1"># map from the reference is not affine.</span>
+        <span class="n">for_each</span><span class="p">(</span><span class="n">_trace_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">traces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">for_each</span><span class="p">(</span><span class="n">_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">traces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+        <span class="n">reference_cells</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;jump&quot;</span><span class="p">)</span>
+        <span class="n">sides</span> <span class="o">=</span> <span class="n">_like</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span><span class="p">:</span>
+            <span class="n">sides</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">field</span><span class="p">]):</span>
+            <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
+                <span class="n">_side_centers</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">sides</span><span class="p">)</span>
+        <span class="n">for_each</span><span class="p">(</span><span class="n">_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">sides</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">units</span><span class="o">.</span><span class="n">delta</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">))</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -13041,6 +13193,13 @@ than the mesh's (no faces of it) zero.</p>
 <td>—</td>
 <td>Entropy</td>
 </tr>
+<tr>
+<td><a href="#tack.dataset.algorithms.integrate.integrate"><code>integrate</code></a></td>
+<td>the measure and fields' integrals, by quadrature through each cell's own map (curved and high-order exactly)</td>
+<td>dataset, pieces</td>
+<td>vtkIntegrateAttributes</td>
+<td>—</td>
+</tr>
 </tbody>
 </table>
 
@@ -13205,6 +13364,172 @@ AMR hierarchy's levels, an octree's leaves -- then count by their size.</p>
     <span class="k">return</span> <span class="n">_summary</span><span class="p">(</span><span class="o">*</span><span class="n">moments</span><span class="p">)</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">unit</span><span class="o">=</span><span class="n">unit</span><span class="p">,</span> <span class="n">weight_unit</span><span class="o">=</span><span class="n">weight_unit</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.dataset.algorithms.integrate.integrate" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">integrate</span>
+
+
+<a href="#tack.dataset.algorithms.integrate.integrate" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>The measure of <code>data</code> -- its cells' total volume, area or length -- and the
+integral over it of each of <code>fields</code> (names; by default every field with a
+basis or on the cells), as VTK's <code>vtkIntegrateAttributes</code> gives them:
+<code>Integrals(measure, measure_unit, values, units)</code>, <code>values[name]</code> a float or
+a tuple for a vector field.</p>
+<p>Each cell is integrated by Gauss quadrature in its reference element through
+its own map (<code>quadrature</code>: collapsed onto simplices and wedges), with enough
+points for the field's order and the geometry's, so a curved geometry and a
+field of any order (<code>H1</code>, <code>L2</code>, point and cell data) integrate exactly, to
+rounding. Polyhedra take their measure from <code>cell_geometry</code> and integrate
+cell data. Only the cells of the mesh's dimension count, as in VTK: a volume's
+integrals leave out its surfaces, lines and vertices. Only owned cells count
+(ghost marks), and a <code>PartitionedDataSet</code> sums its pieces over every rank, in
+the pieces' order.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/integrate.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The measure of ``data`` -- its cells&#39; total volume, area or length -- and the</span>
+<span class="sd">    integral over it of each of ``fields`` (names; by default every field with a</span>
+<span class="sd">    basis or on the cells), as VTK&#39;s ``vtkIntegrateAttributes`` gives them:</span>
+<span class="sd">    ``Integrals(measure, measure_unit, values, units)``, ``values[name]`` a float or</span>
+<span class="sd">    a tuple for a vector field.</span>
+
+<span class="sd">    Each cell is integrated by Gauss quadrature in its reference element through</span>
+<span class="sd">    its own map (``quadrature``: collapsed onto simplices and wedges), with enough</span>
+<span class="sd">    points for the field&#39;s order and the geometry&#39;s, so a curved geometry and a</span>
+<span class="sd">    field of any order (``H1``, ``L2``, point and cell data) integrate exactly, to</span>
+<span class="sd">    rounding. Polyhedra take their measure from ``cell_geometry`` and integrate</span>
+<span class="sd">    cell data. Only the cells of the mesh&#39;s dimension count, as in VTK: a volume&#39;s</span>
+<span class="sd">    integrals leave out its surfaces, lines and vertices. Only owned cells count</span>
+<span class="sd">    (ghost marks), and a ``PartitionedDataSet`` sums its pieces over every rank, in</span>
+<span class="sd">    the pieces&#39; order.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms._common</span><span class="w"> </span><span class="kn">import</span> <span class="n">_measure_unit</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.partitioned</span><span class="w"> </span><span class="kn">import</span> <span class="n">PartitionedDataSet</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">PartitionedDataSet</span><span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.statistics</span><span class="w"> </span><span class="kn">import</span> <span class="n">_over_pieces</span>
+
+        <span class="n">pieces</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="n">_names</span><span class="p">(</span><span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">pieces</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">_over_pieces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">piece</span><span class="p">:</span> <span class="n">_piece</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="n">names</span><span class="p">))</span>
+        <span class="n">measure</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">fsum</span><span class="p">(</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">)</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">v</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">}</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">pieces</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="n">_names</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
+        <span class="n">measure</span><span class="p">,</span> <span class="n">values</span> <span class="o">=</span> <span class="n">_piece</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">data</span>
+    <span class="n">out_units</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">units</span><span class="o">.</span><span class="n">derived</span><span class="p">((</span><span class="n">first</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                                     <span class="p">(</span><span class="n">_measure_unit</span><span class="p">(</span><span class="n">first</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="n">first</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+                 <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">Integrals</span><span class="p">(</span><span class="n">measure</span><span class="o">=</span><span class="n">measure</span><span class="p">,</span> <span class="n">measure_unit</span><span class="o">=</span><span class="n">_measure_unit</span><span class="p">(</span><span class="n">first</span><span class="p">)</span> <span class="k">if</span> <span class="n">first</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                     <span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">ndim</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">v</span><span class="p">)))</span>
+                             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+                     <span class="n">units</span><span class="o">=</span><span class="n">out_units</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="tack.dataset.algorithms.integrate.Integrals" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">Integrals</span>
+
+
+<a href="#tack.dataset.algorithms.integrate.Integrals" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.NamedTuple">NamedTuple</span></code></p>
+
+
+
+        <p><code>integrate</code>'s answer: <code>measure</code> (the total volume, area or length, in
+<code>measure_unit</code>) and, per field, its integral (a float, or a tuple for a vector
+field) in <code>values</code> and that integral's unit in <code>units</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
     </div>
 
 </div>
