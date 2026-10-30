@@ -507,6 +507,29 @@ def test_curved_meshes_in_legacy_collections(f64_backend):
     _compare(mesh, data, data.fields["u"], gf, np.random.default_rng(4), 3e-5)
 
 
+@pytest.mark.parametrize("name", ["escher-p3.mesh", "fichera-q3.mesh"])
+def test_curved_probes_agree_with_mfem_to_rounding(f64_backend, name):
+    """``probe`` at the world positions MFEM maps random reference points of every
+    curved element to gives MFEM's values to rounding: each cell is inverted past
+    VTK's Newton stopping rule (``CURVED_NEWTON_POLISH``). They agreed to 3e-9."""
+    mesh = _shipped(name)
+    gf = _projected(mesh, mfem.H1_FECollection(3, 3), _quadratic)
+    data = mfem_to_dataset(mesh, {"u": gf}, dtype=tack.f64)
+    rng = np.random.default_rng(6)
+    points, values = [], []
+    for e in range(mesh.GetNE()):
+        ip = mfem.IntegrationPoint()
+        ip.Set3(*(float(x) for x in _inside(mesh.GetElementBaseGeometry(e), rng)))
+        T = mesh.GetElementTransformation(e)
+        T.SetIntPoint(ip)
+        points.append(np.asarray(T.Transform(ip)))
+        values.append(gf.GetValue(e, ip))
+    probed = td.probe(data, np.array(points))
+    assert probed.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), values,
+                               atol=1e-13 * np.abs(values).max())
+
+
 def test_periodic_meshes_have_an_l2_geometry(f64_backend):
     """A periodic mesh keeps its nodes per element (``L2_T1``), the two sides of a
     seam apart in space though neighbours in the topology: an L2 geometry on the

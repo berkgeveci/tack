@@ -522,6 +522,15 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     marked afresh (VTK's ``vtkGhostType`` bits come in and are recomputed).
     Blocks with ghost layers are refused.
 
+    A ``vtkCellGrid`` (VTK's discontinuous-Galerkin cells, read from ``.dg``
+    files by ``vtkCellGridReader``) becomes a ``DataSet`` of its cells on its
+    shape attribute's corners: ``C1`` attributes copied (shared ones as ``H1``,
+    per-cell ones as ``L2``), ``constant`` ones as ``Constant``, and every other
+    ``HGRAD`` or Bezier basis resampled by VTK onto Tack's equispaced space of
+    its order (``tack.interop.vtk._cellgrid``); ``HCURL`` and ``HDIV`` are left
+    out, with a warning. It needs VTK's cell-type accessors on
+    ``vtkCellAttribute``, newer than 9.7.1.
+
     A ``vtkPartitionedDataSet`` becomes a ``PartitionedDataSet``, each piece
     converted as above (null pieces skipped), and a
     ``vtkPartitionedDataSetCollection`` a ``dict`` of them, keyed by each
@@ -779,6 +788,13 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
     if isinstance(grid, vtkHyperTreeGrid):
         return _htg_to_octree(grid, dtype)
+    from vtkmodules.vtkCommonDataModel import vtkCellGrid
+
+    if isinstance(grid, vtkCellGrid):
+        from tack.interop.vtk import _cellgrid
+
+        return _cellgrid.to_dataset(grid, dtype=dtype or tack.f64, id_dtype=id_dtype,
+                                    shift=shift)
     if isinstance(grid, vtkPartitionedDataSetCollection):
         return _collection_to_datasets(grid, options)
     if isinstance(grid, vtkPartitionedDataSet):
@@ -795,11 +811,12 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
             polyhedral = 42 in present
         from tack.interop.vtk import _lagrange
 
-        if present and present <= (set(_lagrange.LAGRANGE) | set(_lagrange.BEZIER)
-                                   | set(_lagrange.QUADRATIC)):
-            if len(present) > 1:
-                raise NotImplementedError("Lagrange cells of several shapes in one grid are "
-                                          "not supported")
+        if present & (_lagrange.HIGHER_ORDER | set(_lagrange.REFUSED)):
+            linear = present - _lagrange.HIGHER_ORDER - set(_lagrange.REFUSED)
+            if linear - set(_lagrange._LINEAR_SHAPES):
+                raise NotImplementedError(
+                    f"VTK cell types {sorted(linear - set(_lagrange._LINEAR_SHAPES))} beside "
+                    "higher-order cells")
 
             def float_fields(values):
                 values = values.reshape(values.shape[0]) if values.shape[1] == 1 else values
@@ -850,12 +867,8 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
                 names = ", ".join(vtkCellTypeUtilities.GetClassNameFromTypeId(t)
                                   for t in unknown)
-                higher = (": of the higher-order cells, VTK's Lagrange and Bezier cells "
-                          "and its quadratic triangles, quads, tetrahedra, hexahedra and "
-                          "wedges convert, one shape to a grid"
-                          if any(t >= 21 for t in unknown) else "")
                 raise ValueError(f"VTK cell types {unknown} ({names}) are not shapes Tack "
-                                 f"has{higher}")
+                                 "has")
             if 12 in present:
                 collapsed = _collapsed_hexahedra(types, offsets, connectivity)
                 if collapsed is not None:
@@ -1361,7 +1374,7 @@ _POINT_NORMALS = ("Normals", "normals")
 _CELL_NORMALS = ("Normals", "Normals (cells)", "cell_normals")
 
 
-def dataset_to_vtk(data, copy=True, higher_order=False):
+def dataset_to_vtk(data, copy=True, higher_order=False, cell_grid=False):
     """Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of
     images and rectilinear grids, its ratios the same along every axis, into a
     ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into
@@ -1424,8 +1437,23 @@ def dataset_to_vtk(data, copy=True, higher_order=False):
     ``VTK_QUADRATIC_QUAD``, ``_HEXAHEDRON`` and ``_WEDGE`` from serendipity (quad8,
     hex20, wedge15), ``VTK_QUADRATIC_TRIANGLE`` and ``_TETRA`` from the full order-2
     space; ``True`` chooses them when a field is serendipity. ``vtk_to_dataset``
-    reads such cells into those spaces, the geometry too."""
+    reads such cells into those spaces, the geometry too.
+
+    With ``cell_grid``, the dataset becomes a ``vtkCellGrid`` (VTK's
+    discontinuous-Galerkin cells) instead: each shape's cells a DG cell type, the
+    geometry its shape attribute and each field an attribute, order 1 in VTK's
+    complete basis ``C`` (shared through the points for ``H1``, per cell for
+    ``L2``), higher orders in its arbitrary-order basis ``A`` (equispaced,
+    lexicographic, as Tack's equispaced nodes; others converted there exactly),
+    ``Constant`` fields and values on cells ``constant``; fields of other spaces
+    are left out with a warning. The cells come type by type, in Tack's order
+    within each. It needs ``vtkDGCell.SetCellSpec``, newer than VTK 9.7.1."""
     from tack.interop.vtk import _lagrange
+
+    if cell_grid:
+        from tack.interop.vtk import _cellgrid
+
+        return _cellgrid.to_cell_grid(data)
 
     if higher_order not in (False, True, "lagrange", "bezier", "quadratic"):
         raise ValueError(f"higher_order is False, True, \"lagrange\", \"bezier\" or "

@@ -156,13 +156,18 @@ def test_triangles_of_any_order(f64_backend, order):
 
 
 def test_other_simplex_nodes_and_layouts_are_refused(f64_backend):
-    """Simplices above order 2 have equispaced nodes this round: Gauss-Lobatto (the
-    default) is refused with the remedy, and so is a cell-fastest L2."""
+    """Simplices above order 2 have equispaced nodes this round: Gauss-Lobatto is
+    refused with the remedy, and so is a cell-fastest L2. Without a basis, a mesh
+    of simplices takes theirs (the default refused, MFEM's ports found)."""
     data = _tetrahedra()
     with pytest.raises(NotImplementedError, match='basis="equispaced"'):
-        _ = td.H1(data, order=3).size
+        _ = td.H1(data, order=3, basis="gauss_lobatto").size
     with pytest.raises(NotImplementedError, match='basis="equispaced"'):
-        _ = td.L2(data, order=4).size
+        _ = td.L2(data, order=4, basis="gauss_lobatto").size
+    assert td.H1(data, order=3) is td.H1(data, order=3, basis="equispaced")
+    assert td.L2(data, 4) is td.L2(data, order=4, basis="equispaced")
+    grid = td.uniform_grid((3, 3, 3), dtype=tack.f64)
+    assert td.L2(grid, order=4) is td.L2(grid, order=4, basis="gauss_lobatto")
     with pytest.raises(ValueError, match="stored in blocks"):
         _ = td.L2(data, order=3, basis="equispaced", layout="cells").layout
     assert td.L2(data, order=3, basis="equispaced").layout == "blocks"

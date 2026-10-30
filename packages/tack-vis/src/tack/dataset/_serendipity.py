@@ -80,7 +80,7 @@ def full_values(space, values):
     then each quad face's centre and each cell's inside. Kept on the space for the
     last values asked for, until Tack writes them."""
     from tack.dataset.dataset import Field
-    from tack.dataset.spaces import H1
+    from tack.dataset.spaces import H1, _float_type
 
     token = arrays._revision(values)
     kept = space.__dict__.get("_full_values")
@@ -89,7 +89,9 @@ def full_values(space, values):
     full = H1(space.topology, order=2)
     held = arrays.materialize(values)
     width = arrays.width_of(held)
-    dtype = arrays.dtype_of(held)
+    # The centres are sums with weights (-1/4, 1/2): an integer field's in floating
+    # point, the type its basis is evaluated in (in an integer type they truncated).
+    dtype = _float_type(arrays.dtype_of(held), space.topology.device)
     out = tack.empty((full.size,), tack.vec(width, dtype) if width else dtype,
                      device=space.topology.device)
     stored = arrays.size_of(held)

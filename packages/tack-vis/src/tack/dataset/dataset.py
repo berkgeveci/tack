@@ -251,12 +251,22 @@ def _geometry_parts(data, group, kind):
                 "around an edge has its own, and edges have no sides to choose from")
         if geometry.space.tensor:
             # Curved, each cell its own nodes (a mesh displaced by a DG field, a
-            # periodic mesh of order 2 or more): tensor shapes only.
+            # periodic mesh of order 2 or more).
             space = geometry.space
+            bernstein = space.basis == bases.BERNSTEIN
+            if bases.simplex_shape(group.shape):
+                mixins, attributes = _space_parts(geometry, group, views.of_simplex_order(
+                    views._L2SimplexGeometry, space.order, group.shape.DIMENSION, bernstein))
+                return [*mixins, views._SimplexNewton], attributes
+            if bases.wedge_shape(group.shape):
+                mixins, attributes = _space_parts(geometry, group, views.of_wedge_order(
+                    views._L2WedgeGeometry, space.order, bernstein))
+                return [*mixins, views._WedgeNewton], attributes
             if not bases.tensor_shape(group.shape):
                 raise NotImplementedError(
                     f"an L2 geometry of order {space.order} on {group.shape.__name__} "
-                    "cells: curved L2 geometries are on segments, quads and hexahedra")
+                    "cells: curved L2 geometries are on segments, quads, hexahedra, "
+                    "triangles, tetrahedra and wedges")
             mixin = (views._L2CellsTensorGeometry if space.layout == "cells"
                      else views._L2TensorGeometry)
             mixins, attributes = _space_parts(

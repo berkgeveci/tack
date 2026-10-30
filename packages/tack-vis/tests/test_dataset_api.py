@@ -1105,17 +1105,29 @@ def test_vtk_bit_arrays_come_across_as_u8(copy):
 
 
 @needs_vtk
-def test_vtk_higher_order_cells_tack_has_no_shape_for_are_refused_when_read():
-    """VTK's cells Tack reads neither as shapes nor as higher-order spaces (a
-    biquadratic quad) are refused by VTK's names when the grid is read. They came
-    across as cells no algorithm took, every one failing ('are not linear
-    shapes')."""
+def test_vtk_cells_tack_has_no_shape_for_are_refused_when_read():
+    """VTK's cells Tack reads neither as shapes nor as higher-order spaces are refused
+    by VTK's names when the grid is read (a poly-vertex), or as the higher-order
+    cells Tack lacks (a quadratic pyramid). They came across as cells no algorithm
+    took, every one failing ('are not linear shapes'). A biquadratic quad, once
+    among them, reads as an order-2 quad."""
     points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [.5, 0, 0], [1, .5, 0],
-                       [.5, 1, 0], [0, .5, 0], [.5, .5, 0]], np.float32)
+                       [.5, 1, 0], [0, .5, 0], [.5, .5, 0]], np.float64)
     grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=points))
     grid.cells = (28, vtk.vtkCellArray(offsets=np.array([0, 9]), connectivity=np.arange(9)))
-    with pytest.raises(ValueError, match=r"VTK cell types \[28\] \(vtkBiQuadraticQuad\) are "
-                                         "not shapes Tack has: of the higher-order"):
+    quad = vtk_to_dataset(grid, dtype=tack.f64)
+    assert quad.geometry.space == td.H1(quad, order=2)
+    nodes = quad.geometry.values.numpy() + np.asarray(quad.origin)       # all nine
+    np.testing.assert_allclose(nodes[np.lexsort(nodes.T)], points[np.lexsort(points.T)])
+    grid.cells = (2, vtk.vtkCellArray(offsets=np.array([0, 9]), connectivity=np.arange(9)))
+    with pytest.raises(ValueError, match=r"VTK cell types \[2\] \(vtkPolyVertex\) are not "
+                                         "shapes Tack has"):
+        vtk_to_dataset(grid)
+    pyramid = np.vstack([points[:4], [[.5, .5, 1]], points[4:8],
+                         [[.25, .25, .5], [.75, .25, .5], [.75, .75, .5], [.25, .75, .5]]])
+    grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=pyramid))
+    grid.cells = (27, vtk.vtkCellArray(offsets=np.array([0, 13]), connectivity=np.arange(13)))
+    with pytest.raises(NotImplementedError, match="quadratic pyramids"):
         vtk_to_dataset(grid)
 
 

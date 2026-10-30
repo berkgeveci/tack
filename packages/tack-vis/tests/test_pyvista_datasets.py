@@ -47,17 +47,13 @@ def on_each_f64_backend(f64_backend):
     tack.set_default_device("cpu")
 
 
-#: Refused when read, as they should be: VTK's bi- and triquadratic cells and
-#: quadratic pyramids (types 27-29) are neither shapes of Tack's nor spaces it
-#: reads (VTK's quadratic triangles, quads, tetrahedra, hexahedra and wedges it
-#: reads as order-2 spaces; the FEA brackets and the notch are such grids).
+#: Refused when read, as they should be: quadratic pyramids have no Tack cell
+#: (VTK's other higher-order cells it reads, mixed in a grid as they come: the
+#: bi- and triquadratic ones, the notch's quadratic tetrahedra and hexahedra).
 _REFUSED = {
     "unstructured_grid": "may hold only triangles, quads and polygons",   # polygons and more
     "prostar": "is not 3D: a polyhedral topology",                       # polyhedra and lines
-    **dict.fromkeys(("disc_quads", "quadratic_pyramid", "tri_quadratic_hexahedron"),
-                    r"VTK cell types \[.*\] \(vtk.*Quad.*\) are not shapes Tack has"),
-    # Quadratic tetrahedra and hexahedra together: one shape to a grid.
-    "notch_displacement": "Lagrange cells of several shapes in one grid are not supported",
+    "quadratic_pyramid": "quadratic pyramids: Tack has no such higher-order cell",
 }
 
 #: Known failures to convert, by dataset: they skip the algorithms.
@@ -73,6 +69,10 @@ _REFUSALS = re.compile("|".join([
     "surface_normals takes 2D cells .* not a mesh of dimension 0",
     # An order-2 geometry (VTK's quadratic cells, read as order-2 spaces):
     "needs an order-1 H1 geometry",
+    # ... of simplices, and a field of another order on it (the roadmap's round 3):
+    "on a curved geometry of another order",
+    # An integer field of order 2 (disc_quads' node numbers), which shrink projects:
+    "project averages and interpolates floating-point values",
     "glyphs places arrows at the points: an H1 order-1 geometry",
 ]))
 

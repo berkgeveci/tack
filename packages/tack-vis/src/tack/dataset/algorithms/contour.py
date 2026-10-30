@@ -489,10 +489,10 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
                                           fields=fields, dimension=dimension),
             tolerance=tolerance, exact=exact)
     if isinstance(space, H1) and space.order != 1:
-        from tack.dataset.algorithms.subdivide import _cell_family
+        from tack.dataset.algorithms.subdivide import _cell_families
 
-        # A mesh subdivision does not take (mixed families, pyramids) says so.
-        _cell_family(data, f"contour of an order-{space.order} field (by subdivision)")
+        # A mesh subdivision does not take (pyramids, mixed dimensions) says so.
+        _cell_families(data, f"contour of an order-{space.order} field (by subdivision)")
         raise NotImplementedError(
             f"contour of an order-{space.order} H1 field is not built: it would subdivide "
             "each cell, and its corner values alone give the contour of a linear field")
