@@ -624,6 +624,10 @@ def test_contour_of_polyhedra_is_the_shape_paths(backend, name):
         poly.fields["s"] = td.Field(td.H1(poly), data.fields["s"].values)
         theirs = td.contour(data, "s", iso)
         ours = td.contour(poly, "s", iso)
+        # Linear cells with no lattice: a subdivision asked for changes nothing (it
+        # sent them to the sub-cell path, which failed).
+        again = td.contour(poly, "s", iso, subdivision=4)
+        np.testing.assert_array_equal(again.positions(), ours.positions())
         assert isinstance(ours.topology, td.PolygonalTopology)
         np.testing.assert_allclose(np.unique(ours.positions().round(6), axis=0),
                                    np.unique(theirs.positions().round(6), axis=0), atol=1e-6)

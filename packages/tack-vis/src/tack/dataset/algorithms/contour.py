@@ -465,7 +465,10 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
 
     if tolerance is not None:
         tolerance = _in_unit_of(field, tolerance, "contour's tolerance")
-    if (dimension is None or dimension == data.topology.dimension) and (
+    # Polyhedra, polygons and polylines have no lattice to subdivide: linear,
+    # they are cut as they are (as threshold and clip cut them).
+    if (dimension is None or dimension == data.topology.dimension) and getattr(
+            data.topology, "reference_cells", True) and (
             subdivides(data, field) or (subdivision is not None and subdivision > 1)
             or tolerance is not None):
         _scalar_floating("contour", field)

@@ -310,9 +310,10 @@ def _relaid(values, source, space):
 
 
 @tack.kernel
-def _copy_edge_traces(cells, edge_nodes, q, edges):
+def _copy_edge_traces(cells, edge_nodes, view_of, q, edges):
     # Each of the cells' edges' geometry values, from the edge's first corner by
     # position: every cell holding an edge copies the same values to the same places.
+    # view_of: a lexicographic node's number in the geometry view's dof_index.
     for c in cells:
         for e in range(cells.NUM_EDGES):
             flip = views._before(cells.corner_position(c, cells.edge_corner(e, 1)),
@@ -320,7 +321,7 @@ def _copy_edge_traces(cells, edge_nodes, q, edges):
             base = cells.edge_id(c, e) * q
             for k in range(q):
                 j = q - 1 - k if flip else k
-                edges[base + k] = cells.get(cells.dof_index(c, edge_nodes[e * q + j]))
+                edges[base + k] = cells.get(cells.dof_index(c, view_of[edge_nodes[e * q + j]]))
 
 
 @tack.kernel
@@ -352,10 +353,11 @@ def _copy_face_traces(cells, face_nodes, q, faces):
                                                                                + q * fb]))
 
 
-def _entity_traces(data):
-    """A curved tensor geometry's values on every edge and quad face, ``q`` a side
-    (``q - 1`` its order), for ``views._CurvedNodePosition``: ``(edges, faces,
-    attributes)``, the attributes its 1D basis."""
+def _entity_traces(data, faces=True):
+    """A curved geometry's values on every edge and (``faces``, tensor cells only) quad
+    face, ``q`` a side (``q - 1`` its order), for ``views._CurvedNodePosition`` and
+    ``extract_edges``' subdivided edges: ``(edges, faces, attributes)``, the
+    attributes its 1D basis."""
     from tack.dataset import bases
 
     geometry = data.geometry
@@ -364,16 +366,22 @@ def _entity_traces(data):
     topology = data.topology
     vec = arrays.element_type(geometry.values)
     edges = tack.empty((max(topology.edges().num_edges * q, 1),), vec)
-    solid = any(g.count and g.shape.DIMENSION == 3 for g in topology.groups())
+    solid = faces and any(g.count and g.shape.DIMENSION == 3 for g in topology.groups())
     faces = tack.empty((max(topology.faces().num_faces * q * q, 1) if solid else 1,), vec)
     for group in topology.groups():
         if group.count and group.shape.DIMENSION > 1:
+            shape = group.shape
             edge_nodes, face_nodes = (
                 tack.array(x.reshape(-1) if x.size else np.zeros(1, np.int32))
-                for x in bases.entity_nodes(group.shape, space.order))
+                for x in bases.entity_nodes(shape, space.order))
+            tensor = not (bases.simplex_shape(shape) or bases.wedge_shape(shape))
+            view_of = tack.array(
+                np.arange(q ** shape.DIMENSION, dtype=np.int32) if tensor else
+                np.asarray(bases.view_index(shape, space.order, space._any_order(shape)),
+                           np.int32))
             cells = data.domain_view("cells", group)
-            _copy_edge_traces(cells, edge_nodes, q, edges)
-            if group.shape.DIMENSION == 3:
+            _copy_edge_traces(cells, edge_nodes, view_of, q, edges)
+            if solid and shape.DIMENSION == 3 and tensor:
                 _copy_face_traces(cells, face_nodes, q, faces)
     family = space.basis or "gauss_lobatto"
     dtype = _basis_type(geometry)
