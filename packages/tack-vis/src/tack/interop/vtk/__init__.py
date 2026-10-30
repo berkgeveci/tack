@@ -509,6 +509,15 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     marked afresh (VTK's ``vtkGhostType`` bits come in and are recomputed).
     Blocks with ghost layers are refused.
 
+    A ``vtkCellGrid`` (VTK's discontinuous-Galerkin cells, read from ``.dg``
+    files by ``vtkCellGridReader``) becomes a ``DataSet`` of its cells on its
+    shape attribute's corners: ``C1`` attributes copied (shared ones as ``H1``,
+    per-cell ones as ``L2``), ``constant`` ones as ``Constant``, and every other
+    ``HGRAD`` or Bezier basis resampled by VTK onto Tack's equispaced space of
+    its order (``tack.interop.vtk._cellgrid``); ``HCURL`` and ``HDIV`` are left
+    out, with a warning. It needs VTK's cell-type accessors on
+    ``vtkCellAttribute``, newer than 9.7.1.
+
     A ``vtkPartitionedDataSet`` becomes a ``PartitionedDataSet``, each piece
     converted as above (null pieces skipped), and a
     ``vtkPartitionedDataSetCollection`` a ``dict`` of them, keyed by each
@@ -680,6 +689,13 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
     if isinstance(grid, vtkHyperTreeGrid):
         return _htg_to_octree(grid, dtype)
+    from vtkmodules.vtkCommonDataModel import vtkCellGrid
+
+    if isinstance(grid, vtkCellGrid):
+        from tack.interop.vtk import _cellgrid
+
+        return _cellgrid.to_dataset(grid, dtype=dtype or tack.f64, id_dtype=id_dtype,
+                                    shift=shift)
     if isinstance(grid, vtkPartitionedDataSetCollection):
         return _collection_to_datasets(grid, options)
     if isinstance(grid, vtkPartitionedDataSet):
