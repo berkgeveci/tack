@@ -92,7 +92,10 @@ the twisted geometry, not through its corners.
 A ball about the cube's near top corner taken out, the kept part's surface
 colored by the field. Polyhedra are clipped cell by cell into polyhedra; on the
 high-order and curved cells, the cells wholly kept stay whole and only the cut
-ones are cut on sub-cells.
+ones are cut on sub-cells. An implicit function is cut as the geometry carries
+it: on the 27 straight hexahedra the ball is trilinear in each cell, a coarse
+ball, while on the order-3 curved cells it is cubic, round to the eye. The
+boundaries are shaded flat, since a clipped solid has sharp edges.
 
 <div class="grid cards" markdown>
 

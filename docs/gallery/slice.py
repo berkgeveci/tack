@@ -31,8 +31,9 @@ def main():
     args = _scene.arguments(__doc__)
     for kind in args.kinds:
         data = _scene.dataset(kind)
-        parts = [(_scene.normals(cut), "u", (-3.0, 3.0)) for cut in slice_(data)]
-        _scene.draw(args.output / f"slice-{kind}.png", parts, outline=_scene.outline(data))
+        parts = [(cut, "u", (-3.0, 3.0)) for cut in slice_(data)]
+        _scene.draw(args.output / f"slice-{kind}.png", parts, outline=_scene.outline(data),
+                    lit=False)
 
 
 if __name__ == "__main__":

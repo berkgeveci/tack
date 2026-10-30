@@ -64,21 +64,31 @@ def _twist(x):
 
 # ── The datasets ────────────────────────────────────────────────────
 
-def _voronoi_columns(n=60, layers=6, seed=3):
-    """Voronoi cells of random points over the unit square, the bounded ones,
-    extruded through the unit cube in ``layers``: polygonal prisms, faces of up to
-    a dozen points."""
+def _voronoi_columns(n=40, layers=6, seed=3):
+    """Voronoi cells of random points in the unit square, extruded through the unit
+    cube in ``layers``: polygonal prisms, faces of up to a dozen points. The points'
+    mirror images across the square's sides make the cells tile the square
+    exactly."""
     from scipy.spatial import Voronoi
 
     rng = np.random.default_rng(seed)
-    vor = Voronoi(rng.uniform(0, 1, (n, 2)))
-    regions = [r for r in (vor.regions[i] for i in vor.point_region)
-               if r and -1 not in r and all((0 <= vor.vertices[v]).all()
-                                            and (vor.vertices[v] <= 1).all() for v in r)]
+    seeds = rng.uniform(0, 1, (n, 2))
+    mirrored = [seeds]
+    for axis in (0, 1):
+        for side in (0.0, 1.0):
+            image = seeds.copy()
+            image[:, axis] = 2 * side - image[:, axis]
+            mirrored.append(image)
+    vor = Voronoi(np.concatenate(mirrored))
+    regions = [vor.regions[vor.point_region[i]] for i in range(n)]
+    # The mirrored cells' shared vertices are the square's; snap them onto it.
+    xy = np.clip(vor.vertices, 0.0, 1.0)
+    xy[np.abs(xy) < 1e-12] = 0.0
+    xy[np.abs(xy - 1) < 1e-12] = 1.0
     used = sorted({v for r in regions for v in r})
     renumber = {v: i for i, v in enumerate(used)}
     nv = len(used)
-    xy = vor.vertices[used]
+    xy = xy[used]
     points = np.array([[x, y, k / layers] for k in range(layers + 1) for x, y in xy])
     cells = []
     for r in regions:
@@ -150,9 +160,10 @@ def normals(surface):
 
 
 def boundary(data):
-    """``data``'s boundary as polygons with normals; a curved or high-order dataset
-    subdivided first, so it is linear."""
-    return normals(td.extract_surface(linear(data)))
+    """``data``'s boundary as polygons, a curved or high-order dataset subdivided
+    first, so it is linear. Shaded flat: a solid's boundary has sharp edges, which
+    point normals would smear."""
+    return td.extract_surface(linear(data))
 
 
 # ── Drawing ─────────────────────────────────────────────────────────
@@ -162,11 +173,13 @@ _COOL_TO_WARM = ((0.0, (0.23, 0.299, 0.754)), (0.5, (0.865, 0.865, 0.865)),
                  (1.0, (0.706, 0.016, 0.15)))
 
 
-def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560)):
+def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True):
     """Draw ``parts`` -- ``(dataset, field name, range)``, a field on points or cells,
     or ``(dataset, None, None)`` for plain grey -- and ``outline`` (lines, thin and
     dark) to a PNG at ``path``, seen from ``view`` (azimuth and elevation in
-    degrees, from the -y side of the unit cube)."""
+    degrees, from the -y side of the unit cube). Lit less (``lit=False``), mostly
+    ambient, the parts show their colors, as a slice is read by them, with
+    enough shade to tell planes apart."""
     import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  # registers the rendering backend
     from vtkmodules.vtkIOImage import vtkPNGWriter
@@ -205,9 +218,9 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560)):
         actor = vtkActor(mapper=mapper)
         if name is None:
             actor.property.color = (0.8, 0.8, 0.8)
-        actor.property.ambient = 0.2
-        actor.property.diffuse = 0.8
-        actor.property.specular = 0.2
+        actor.property.ambient = 0.2 if lit else 0.6
+        actor.property.diffuse = 0.8 if lit else 0.4
+        actor.property.specular = 0.2 if lit else 0.0
         renderer.AddActor(actor)
     if outline is not None:
         lines = vtkActor(mapper=vtkDataSetMapper(input_data=dataset_to_vtk(outline),
