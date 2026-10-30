@@ -20,3 +20,7 @@
   probes, centres and everything else were wrong. On tensor shapes it is now a
   curved geometry (`views._L2TensorGeometry`, either layout); on simplices and
   wedges it is refused.
+- `subdivide` (and the cuts that subdivide) of an `L2` geometry shared lattice
+  points through the topology, so on a periodic mesh, whose seam's cells share
+  points but sit apart, sub-cells stretched across the mesh; each cell's lattice
+  points are now its own.

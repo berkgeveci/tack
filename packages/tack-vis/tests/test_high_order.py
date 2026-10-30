@@ -749,3 +749,37 @@ def test_a_curved_l2_geometry_is_curved(f64_backend, layout):
     broken = td.DataSet(tets.topology, td.project(tets, tets.geometry, space))
     with pytest.raises(NotImplementedError, match="curved L2 geometries"):
         td.cell_centers(broken)
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_subdividing_an_l2_geometry_keeps_its_cells_apart(f64_backend, order):
+    """Cells of an L2 geometry share points in the topology but need not meet in space
+    (a periodic mesh's seam, a mesh displaced by a DG field): ``subdivide`` gives each
+    its own lattice points. Here each cell is moved by its own offset, and every
+    sub-cell's corners and values are the unmoved ones' plus it. Shared points took
+    one cell's position, stretching the others' sub-cells across the mesh."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    curved = _rotated(td.extract_cells(grid, np.arange(8)), seed=3)
+    vec = tack.vec3(tack.f64)
+    if order > 1:
+        curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=order), dtype=vec)
+    curved.fields["u"] = td.interpolate(curved, _quadratic, td.H1(curved, order=2))
+    space = td.L2(curved, order=order, layout="blocks")
+    values = td.project(curved, curved.geometry, space).values.numpy()
+    cell = np.repeat(np.arange(curved.num_cells), np.diff(space.offsets.numpy()))
+    shift = np.c_[10.0 * cell, np.zeros((len(cell), 2))]
+    moved = tack.empty((len(values),), vec)
+    tack.copyto(moved, values + shift)
+    apart = td.DataSet(curved.topology, td.Field(space, moved),
+                       fields={"u": curved.fields["u"]})
+    a, b = td.subdivide(curved, 3), td.subdivide(apart, 3)
+    assert b.num_cells == a.num_cells
+    corners_a = a.topology.connectivity.numpy().reshape(-1, 8)
+    corners_b = b.topology.connectivity.numpy().reshape(-1, 8)
+    parent = np.repeat(np.arange(curved.num_cells), 27)
+    x_a = a.geometry.values.numpy()[corners_a]
+    x_b = b.geometry.values.numpy()[corners_b]
+    x_a[..., 0] += 10.0 * parent[:, None]
+    np.testing.assert_allclose(x_b, x_a, atol=1e-12)
+    np.testing.assert_allclose(b.fields["u"].values.numpy()[corners_b],
+                               a.fields["u"].values.numpy()[corners_a], atol=1e-12)

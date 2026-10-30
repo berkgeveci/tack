@@ -18,6 +18,9 @@ cell every piece chooses alike, the lowest global id or the first centroid by
 position. With ghost marks, each lattice point is marked as ``carry`` marks a
 point it makes (``_lattice_marks``) and each sub-cell takes its parent's, so each
 piece's cut is its share of the whole's.
+
+An ``L2`` geometry shares nothing: cells that share points in the topology need not
+meet in space (a periodic mesh's seam), so each cell's lattice points are its own.
 """
 
 import numpy as np
@@ -109,6 +112,13 @@ def _lattice_keys(cells, t, slot_of, per_cell, node_of, keys):
         if slot >= 0:
             for n in range(per_cell):
                 keys[slot * per_cell + n] = t.dof_index(c, node_of[n])
+
+
+@tack.kernel
+def _own_keys(keys):
+    # Every refined cell's lattice points its own.
+    for k in range(keys.shape[0]):
+        keys[k] = k
 
 
 @tack.kernel
@@ -890,7 +900,12 @@ def _refined(data, flags, level, fields, elsewhere=None, cut=None):
     total = count * per_cell
     keys = tack.empty((total,), tack.i64)
     if count:
-        if level == 1:
+        if isinstance(data.geometry.space, L2):
+            # A discontinuous geometry: cells that share points in the topology need
+            # not meet in space (a periodic mesh's seam, a mesh displaced by a DG
+            # field), so each cell's lattice is its own.
+            _own_keys(keys)
+        elif level == 1:
             corner_of = tack.array(np.asarray(bases.dof_tables(
                 next(g.shape for g in topology.groups() if g.count), 1)[1], np.int32))
             for group in topology.groups():
@@ -1144,7 +1159,7 @@ def subdivide(data, level=None, fields=None):
     ``vtkCellGridToUnstructuredGrid`` gives one (for export, rendering, or a filter
     that takes only linear cells). ``level`` is by default the largest order of the
     geometry and fields. A lattice point shared by cells is one point, its value
-    computed once. ``H1`` and ``L2`` fields become point data (an ``L2`` field's
+    computed once (on an ``L2`` geometry each cell's points are its own). ``H1`` and ``L2`` fields become point data (an ``L2`` field's
     value at a shared point from one of its cells); cell fields go to every
     sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels."""
     names = list(data.fields) if fields is None else list(fields)
