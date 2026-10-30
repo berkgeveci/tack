@@ -1105,16 +1105,16 @@ def test_vtk_bit_arrays_come_across_as_u8(copy):
 
 
 @needs_vtk
-def test_vtk_quadratic_cells_are_refused_when_read():
-    """VTK's quadratic cells are no shapes of Tack's: refused by VTK's names when
-    the grid is read. They came across as cells no algorithm took, every one
-    failing ('are not linear shapes'); PyVista's FEA brackets are such grids."""
-    points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [.5, 0, 0], [.5, .5, 0],
-                       [0, .5, 0], [0, 0, .5], [.5, 0, .5], [0, .5, .5]], np.float32)
+def test_vtk_higher_order_cells_tack_has_no_shape_for_are_refused_when_read():
+    """VTK's cells Tack reads neither as shapes nor as higher-order spaces (a
+    biquadratic quad) are refused by VTK's names when the grid is read. They came
+    across as cells no algorithm took, every one failing ('are not linear
+    shapes')."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [.5, 0, 0], [1, .5, 0],
+                       [.5, 1, 0], [0, .5, 0], [.5, .5, 0]], np.float32)
     grid = vtk.vtkUnstructuredGrid(points=vtk.vtkPoints(data=points))
-    grid.cells = (24, vtk.vtkCellArray(offsets=np.array([0, 10]),
-                                       connectivity=np.arange(10)))
-    with pytest.raises(ValueError, match=r"VTK cell types \[24\] \(vtkQuadraticTetra\) are "
+    grid.cells = (28, vtk.vtkCellArray(offsets=np.array([0, 9]), connectivity=np.arange(9)))
+    with pytest.raises(ValueError, match=r"VTK cell types \[28\] \(vtkBiQuadraticQuad\) are "
                                          "not shapes Tack has: of the higher-order"):
         vtk_to_dataset(grid)
 

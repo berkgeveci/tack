@@ -850,8 +850,9 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
                 names = ", ".join(vtkCellTypeUtilities.GetClassNameFromTypeId(t)
                                   for t in unknown)
-                higher = (": of the higher-order cells, VTK's Lagrange curves, "
-                          "quadrilaterals and hexahedra convert"
+                higher = (": of the higher-order cells, VTK's Lagrange and Bezier cells "
+                          "and its quadratic triangles, quads, tetrahedra, hexahedra and "
+                          "wedges convert, one shape to a grid"
                           if any(t >= 21 for t in unknown) else "")
                 raise ValueError(f"VTK cell types {unknown} ({names}) are not shapes Tack "
                                  f"has{higher}")

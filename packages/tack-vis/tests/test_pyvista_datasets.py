@@ -37,14 +37,17 @@ def on_each_f64_backend(f64_backend):
     tack.set_default_device("cpu")
 
 
-#: Refused when read, as they should be: VTK's quadratic cells (types 21-29)
-#: are no shapes of Tack's, which reads VTK's Lagrange cells instead.
+#: Refused when read, as they should be: VTK's bi- and triquadratic cells and
+#: quadratic pyramids (types 27-29) are neither shapes of Tack's nor spaces it
+#: reads (VTK's quadratic triangles, quads, tetrahedra, hexahedra and wedges it
+#: reads as order-2 spaces; the FEA brackets and the notch are such grids).
 _REFUSED = {
     "unstructured_grid": "may hold only triangles, quads and polygons",   # polygons and more
     "prostar": "is not 3D: a polyhedral topology",                       # polyhedra and lines
-    **dict.fromkeys(("aero_bracket", "fea_bracket", "pump_bracket", "notch_displacement",
-                     "disc_quads", "quadratic_pyramid", "tri_quadratic_hexahedron"),
+    **dict.fromkeys(("disc_quads", "quadratic_pyramid", "tri_quadratic_hexahedron"),
                     r"VTK cell types \[.*\] \(vtk.*Quad.*\) are not shapes Tack has"),
+    # Quadratic tetrahedra and hexahedra together: one shape to a grid.
+    "notch_displacement": "Lagrange cells of several shapes in one grid are not supported",
 }
 
 #: Known failures to convert, by dataset: they skip the algorithms.
@@ -58,6 +61,9 @@ _REFUSALS = re.compile("|".join([
     r"a polyline topology's edges \(its segments\) are not derived",
     "advection takes .* not polylines",
     "surface_normals takes 2D cells .* not a mesh of dimension 0",
+    # An order-2 geometry (VTK's quadratic cells, read as order-2 spaces):
+    "needs an order-1 H1 geometry",
+    "glyphs places arrows at the points: an H1 order-1 geometry",
 ]))
 
 #: Refusals of one dataset's own: the vessels' voxels meet three at nine
@@ -152,7 +158,7 @@ def test_each_dataset_is_read_or_refused(name):
     """Every file converts to a dataset of the cells Tack takes, or is refused
     saying why."""
     if name in _REFUSED:
-        with pytest.raises(ValueError, match=_REFUSED[name]):
+        with pytest.raises((ValueError, NotImplementedError), match=_REFUSED[name]):
             _converted(name)
         return
     data = _converted(name)
