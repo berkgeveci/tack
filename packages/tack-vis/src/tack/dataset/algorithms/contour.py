@@ -537,6 +537,7 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
     for group in groups:
         _contour_points(data.domain_view("cells", group), field.view(group), levels, nlevels,
                         per_cell, starts, points, edges, weights, sources, keys, which)
+    del counts, starts                    # the cells' bookkeeping, before the merge
     if triangles:
         keep = tack.empty((triangles,), tack.i32)
         _distinct_triangles(keys, keep)
@@ -546,8 +547,13 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
             arrays_in = (points, edges, weights, sources, keys, which)
             arrays_out = tuple(_like(a, 3 * kept) for a in arrays_in)
             _kept_triangles(keep, slots, *arrays_in, *arrays_out)
+            # The copies alone from here: the tuple held the originals through
+            # the merge.
+            del arrays_in
             points, edges, weights, sources, keys, which = arrays_out
+            del arrays_out
             triangles, n = kept, 3 * kept
+        del keep, slots
     triangle_cells = tack.empty((triangles,), idt)
     triangle_levels = tack.empty((triangles,), tack.i32)
     if triangles:
