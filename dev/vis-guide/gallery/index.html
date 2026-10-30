@@ -2407,6 +2407,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#streamlines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streamlines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#glyphs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Glyphs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pathlines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pathlines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3873,6 +3923,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#streamlines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streamlines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#glyphs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Glyphs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pathlines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pathlines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4277,6 +4377,143 @@ fields ghost cells do not carry yet (it refuses them).</p>
     <span class="c1"># others that use a point it shares (marked DUPLICATECELL), and owns each</span>
     <span class="c1"># shared point once. ghost_cells keeps the plans that update_ghosts reruns.</span>
     <span class="n">ghosted</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">ghost_cells</span><span class="p">(</span><span class="n">octants</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+</code></pre></div>
+<h2 id="flow">Flow<a class="headerlink" href="#flow" title="Permanent link">&para;</a></h2>
+<p>The flow sections carry particles through a swirl inside the cube:
+divergence-free, its velocity along every face and never through one, so paths
+wind round rather than leave. The velocity is interpolated into each kind's
+space -- <code>H1</code> of order 4 on the straight cells, order 3 on the curved ones --
+and evaluated there, the curved cells inverted from their own geometry. Lines are
+drawn as tubes and vectors as arrows that Tack makes: <code>tubes</code> (VTK's
+<code>vtkTubeFilter</code>) and <code>glyphs</code> (<code>vtkGlyph3D</code> with its arrow).</p>
+<details class="example">
+<summary>The swirl</summary>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">swirl</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A swirl inside the unit cube: divergence-free, its velocity along every face</span>
+<span class="sd">    (none through it), so paths wind round inside rather than leave.&quot;&quot;&quot;</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span>
+    <span class="n">sx</span><span class="p">,</span> <span class="n">cx</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">sy</span><span class="p">,</span> <span class="n">cy</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">sz</span><span class="p">,</span> <span class="n">cz</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">sx</span> <span class="o">*</span> <span class="n">cy</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">sx</span> <span class="o">*</span> <span class="n">cz</span><span class="p">,</span> <span class="o">-</span><span class="n">cx</span> <span class="o">*</span> <span class="n">sy</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">sy</span> <span class="o">*</span> <span class="n">cz</span><span class="p">,</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">sz</span> <span class="o">*</span> <span class="p">(</span><span class="n">cx</span> <span class="o">-</span> <span class="n">cy</span><span class="p">)]</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">swirl_base</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The swirl&#39;s part about z (``swirl`` is it plus half of ``swirl_turn``).&quot;&quot;&quot;</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="o">-</span><span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="mf">0.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">swirl_turn</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The swirl&#39;s other part, divergence-free alone: weighted in time, the swirl</span>
+<span class="sd">    unsteady.&quot;&quot;&quot;</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span>
+    <span class="n">sx</span><span class="p">,</span> <span class="n">cx</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">sy</span><span class="p">,</span> <span class="n">cy</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">sz</span><span class="p">,</span> <span class="n">cz</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="n">tack</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+    <span class="k">return</span> <span class="p">[</span><span class="o">-</span><span class="n">sx</span> <span class="o">*</span> <span class="n">cz</span><span class="p">,</span> <span class="n">sy</span> <span class="o">*</span> <span class="n">cz</span><span class="p">,</span> <span class="n">sz</span> <span class="o">*</span> <span class="p">(</span><span class="n">cx</span> <span class="o">-</span> <span class="n">cy</span><span class="p">)]</span>
+</code></pre></div>
+</details>
+<h3 id="streamlines">Streamlines<a class="headerlink" href="#streamlines" title="Permanent link">&para;</a></h3>
+<p>Paths from 25 seeds across the cube, RK45 with its steps measured along the path,
+each stopped at length 1.4 (about one turn), as tubes colored by the time taken.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Streamlines (polyhedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/streamlines-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="Streamlines (tetrahedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/streamlines-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="Streamlines (order 4 on straight cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/streamlines-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="Streamlines (order 3 on curved cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/streamlines-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># RK45 with steps measured along the path (as VTK&#39;s vtkStreamTracer): each</span>
+    <span class="c1"># step&#39;s error kept under the tolerance; a path ends where it leaves the</span>
+    <span class="c1"># mesh. The velocity is evaluated in its own space on each kind of cell,</span>
+    <span class="c1"># curved ones inverted from their geometry.</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">streamlines</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;v&quot;</span><span class="p">,</span> <span class="n">SEEDS</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="n">integrator</span><span class="o">=</span><span class="s2">&quot;rk45&quot;</span><span class="p">,</span>
+                           <span class="n">step_unit</span><span class="o">=</span><span class="s2">&quot;length&quot;</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mf">1.4</span><span class="p">)</span>
+    <span class="n">tubes</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">tubes</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="mf">0.006</span><span class="p">,</span> <span class="n">sides</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="glyphs">Glyphs<a class="headerlink" href="#glyphs" title="Permanent link">&para;</a></h3>
+<p>The velocity as arrows on a 12 x 12 lattice across the cube's middle, sampled by
+probe, over the slice there colored by speed.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Velocity arrows (polyhedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/glyphs-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="Velocity arrows (tetrahedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/glyphs-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="Velocity arrows (order 4 on straight cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/glyphs-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="Velocity arrows (order 3 on curved cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/glyphs-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># The velocity at the lattice&#39;s points (the points no cell holds dropped),</span>
+    <span class="c1"># an arrow at each, 0.1 long at unit speed, and the slice beneath.</span>
+    <span class="n">sampled</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">lattice</span><span class="p">(),</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;v&quot;</span><span class="p">])</span>
+    <span class="n">held</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">sampled</span><span class="p">,</span> <span class="s2">&quot;valid&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">held</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;speed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">magnitude</span><span class="p">(</span><span class="n">held</span><span class="p">,</span> <span class="s2">&quot;v&quot;</span><span class="p">)</span>
+    <span class="n">shafts</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">glyphs</span><span class="p">(</span><span class="n">held</span><span class="p">,</span> <span class="s2">&quot;v&quot;</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+    <span class="n">plane</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">implicit</span><span class="o">.</span><span class="n">Plane</span><span class="p">((</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)),</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;v&quot;</span><span class="p">],</span>
+                     <span class="n">subdivision</span><span class="o">=</span><span class="n">_scene</span><span class="o">.</span><span class="n">level</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="n">plane</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;speed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">magnitude</span><span class="p">(</span><span class="n">plane</span><span class="p">,</span> <span class="s2">&quot;v&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="pathlines">Pathlines<a class="headerlink" href="#pathlines" title="Permanent link">&para;</a></h3>
+<p>Particles through an unsteady swirl, its second part's weight rising from 0 to 1
+and back over 60 steps: the temporal filter <code>Pathlines</code> takes each step's dataset
+and moves every particle to the step's time, the velocity linear in time between
+steps. Each path is a tube colored by time.</p>
+<div class="grid cards">
+<ul>
+<li>
+<p><img alt="Pathlines (polyhedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pathlines-polyhedra.jpg" width="640" /></p>
+<p>Polyhedra</p>
+</li>
+<li>
+<p><img alt="Pathlines (tetrahedra)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pathlines-linear.jpg" width="640" /></p>
+<p>Tetrahedra</p>
+</li>
+<li>
+<p><img alt="Pathlines (order 4 on straight cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pathlines-high-order.jpg" width="640" /></p>
+<p>Order 4 on straight cells</p>
+</li>
+<li>
+<p><img alt="Pathlines (order 3 on curved cells)" decoding="async" height="560" loading="lazy" src="../../assets/gallery/pathlines-curved.jpg" width="640" /></p>
+<p>Order 3 on curved cells</p>
+</li>
+</ul>
+</div>
+<div class="highlight"><pre><span></span><code>    <span class="c1"># A temporal filter: each update takes a step&#39;s dataset and moves every</span>
+    <span class="c1"># particle from its time to the step&#39;s, the velocity linear in time</span>
+    <span class="c1"># between the steps, in RK4 substeps of at most step_size.</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Pathlines</span><span class="p">(</span><span class="s2">&quot;v&quot;</span><span class="p">,</span> <span class="n">seeds</span><span class="o">=</span><span class="n">SEEDS</span><span class="p">,</span> <span class="n">step_size</span><span class="o">=</span><span class="mf">0.025</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">STEPS</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="n">paths</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">step</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">turn</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
+    <span class="n">tubes</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">tubes</span><span class="p">(</span><span class="n">lines</span><span class="p">,</span> <span class="mf">0.008</span><span class="p">,</span> <span class="n">sides</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 </code></pre></div>
 
 
