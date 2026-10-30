@@ -3586,6 +3586,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.dataset.bases.BERNSTEIN" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BERNSTEIN
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.dataset.bases.nodes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7428,6 +7439,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.dataset.bases.BERNSTEIN" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BERNSTEIN
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.dataset.bases.nodes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -8986,13 +9008,7 @@ keep what they need (<code>tack.dataset.temporal</code>).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">341</span>
-<span class="normal">342</span>
-<span class="normal">343</span>
-<span class="normal">344</span>
-<span class="normal">345</span>
-<span class="normal">346</span>
-<span class="normal">347</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">347</span>
 <span class="normal">348</span>
 <span class="normal">349</span>
 <span class="normal">350</span>
@@ -9004,7 +9020,13 @@ keep what they need (<code>tack.dataset.temporal</code>).</p>
 <span class="normal">356</span>
 <span class="normal">357</span>
 <span class="normal">358</span>
-<span class="normal">359</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topology</span><span class="p">,</span> <span class="n">geometry</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
              <span class="n">ghosts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">global_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">time</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
              <span class="n">time_unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -9349,13 +9371,7 @@ groups, layouts) is derived there afresh, not copied.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">381</span>
-<span class="normal">382</span>
-<span class="normal">383</span>
-<span class="normal">384</span>
-<span class="normal">385</span>
-<span class="normal">386</span>
-<span class="normal">387</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">387</span>
 <span class="normal">388</span>
 <span class="normal">389</span>
 <span class="normal">390</span>
@@ -9378,7 +9394,13 @@ groups, layouts) is derived there afresh, not copied.</p>
 <span class="normal">407</span>
 <span class="normal">408</span>
 <span class="normal">409</span>
-<span class="normal">410</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;This dataset on ``device``: itself if it is already there, else a copy --</span>
 <span class="sd">    the topology made from its arrays copied there, each field in the same</span>
 <span class="sd">    space on it, the sets by the same ids. What the topology derives (faces,</span>
@@ -9434,14 +9456,14 @@ An <code>L2</code> geometry has none per point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">558</span>
-<span class="normal">559</span>
-<span class="normal">560</span>
-<span class="normal">561</span>
-<span class="normal">562</span>
-<span class="normal">563</span>
-<span class="normal">564</span>
-<span class="normal">565</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span>
+<span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span>
+<span class="normal">571</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Every point&#39;s position as a host array, ``(num_points, 3)``: an ``H1``</span>
 <span class="sd">    geometry&#39;s values, relative to ``origin`` (``world_positions`` adds it).</span>
 <span class="sd">    An ``L2`` geometry has none per point.&quot;&quot;&quot;</span>
@@ -9479,13 +9501,7 @@ positions per point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">567</span>
-<span class="normal">568</span>
-<span class="normal">569</span>
-<span class="normal">570</span>
-<span class="normal">571</span>
-<span class="normal">572</span>
-<span class="normal">573</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">573</span>
 <span class="normal">574</span>
 <span class="normal">575</span>
 <span class="normal">576</span>
@@ -9508,7 +9524,13 @@ positions per point.</p>
 <span class="normal">593</span>
 <span class="normal">594</span>
 <span class="normal">595</span>
-<span class="normal">596</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rebased</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+<span class="normal">596</span>
+<span class="normal">597</span>
+<span class="normal">598</span>
+<span class="normal">599</span>
+<span class="normal">600</span>
+<span class="normal">601</span>
+<span class="normal">602</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rebased</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;This dataset with its geometry relative to ``origin`` instead: the same</span>
 <span class="sd">    world positions, each value moved by the difference of the two origins</span>
 <span class="sd">    (taken in double precision, added in the geometry&#39;s type). An image</span>
@@ -9563,10 +9585,10 @@ positions per point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">598</span>
-<span class="normal">599</span>
-<span class="normal">600</span>
-<span class="normal">601</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">world_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">604</span>
+<span class="normal">605</span>
+<span class="normal">606</span>
+<span class="normal">607</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">world_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Every point&#39;s position as a float64 host array, ``(num_points, 3)``:</span>
 <span class="sd">    ``origin`` plus ``positions()``, added in double precision.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span>
@@ -9596,13 +9618,7 @@ cell groups' subgroups of its members.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">603</span>
-<span class="normal">604</span>
-<span class="normal">605</span>
-<span class="normal">606</span>
-<span class="normal">607</span>
-<span class="normal">608</span>
-<span class="normal">609</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">609</span>
 <span class="normal">610</span>
 <span class="normal">611</span>
 <span class="normal">612</span>
@@ -9612,7 +9628,13 @@ cell groups' subgroups of its members.</p>
 <span class="normal">616</span>
 <span class="normal">617</span>
 <span class="normal">618</span>
-<span class="normal">619</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">619</span>
+<span class="normal">620</span>
+<span class="normal">621</span>
+<span class="normal">622</span>
+<span class="normal">623</span>
+<span class="normal">624</span>
+<span class="normal">625</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">domain_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">domain</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``DomainGroup``s of ``domain``: ``&quot;cells&quot;``, ``&quot;faces&quot;``, ``&quot;edges&quot;``, or</span>
 <span class="sd">    the name of a cell, face or edge set in ``sets`` -- a cell set&#39;s as the</span>
@@ -9655,13 +9677,7 @@ faces and edges have been derived; <code>extra</code> mixins and attributes last
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">621</span>
-<span class="normal">622</span>
-<span class="normal">623</span>
-<span class="normal">624</span>
-<span class="normal">625</span>
-<span class="normal">626</span>
-<span class="normal">627</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">627</span>
 <span class="normal">628</span>
 <span class="normal">629</span>
 <span class="normal">630</span>
@@ -9703,7 +9719,13 @@ faces and edges have been derived; <code>extra</code> mixins and attributes last
 <span class="normal">666</span>
 <span class="normal">667</span>
 <span class="normal">668</span>
-<span class="normal">669</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">669</span>
+<span class="normal">670</span>
+<span class="normal">671</span>
+<span class="normal">672</span>
+<span class="normal">673</span>
+<span class="normal">674</span>
+<span class="normal">675</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">domain_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="p">(),</span> <span class="o">**</span><span class="n">extra_attributes</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``group``&#39;s view: kind, shape, geometry, and for cells their incidence when</span>
 <span class="sd">    faces and edges have been derived; ``extra`` mixins and attributes last</span>
@@ -9793,13 +9815,7 @@ polylines only point nodes exist.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">731</span>
-<span class="normal">732</span>
-<span class="normal">733</span>
-<span class="normal">734</span>
-<span class="normal">735</span>
-<span class="normal">736</span>
-<span class="normal">737</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">737</span>
 <span class="normal">738</span>
 <span class="normal">739</span>
 <span class="normal">740</span>
@@ -9895,7 +9911,14 @@ polylines only point nodes exist.</p>
 <span class="normal">830</span>
 <span class="normal">831</span>
 <span class="normal">832</span>
-<span class="normal">833</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">833</span>
+<span class="normal">834</span>
+<span class="normal">835</span>
+<span class="normal">836</span>
+<span class="normal">837</span>
+<span class="normal">838</span>
+<span class="normal">839</span>
+<span class="normal">840</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">node_views</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">space</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Views over ``space``&#39;s nodes, each visited once: entity views -- points,</span>
 <span class="sd">    edges, quad faces, cells -- whose ``node_count(i)`` nodes have</span>
@@ -9940,7 +9963,8 @@ polylines only point nodes exist.</p>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;values on </span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">on</span><span class="si">}</span><span class="s2"> have no nodes to visit as such; &quot;</span>
                         <span class="sa">f</span><span class="s2">&quot;for_each over </span><span class="si">{</span><span class="n">space</span><span class="o">.</span><span class="n">on</span><span class="si">!r}</span><span class="s2"> visits them&quot;</span><span class="p">)</span>
     <span class="n">reference_cells</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;the nodes of </span><span class="si">{</span><span class="n">space</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="ow">or</span> <span class="p">(</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span>
+            <span class="n">space</span><span class="o">.</span><span class="n">_any_order</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">groups</span><span class="p">()</span> <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">count</span><span class="p">))):</span>
         <span class="k">return</span> <span class="n">out</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_nodes</span><span class="p">(</span><span class="n">space</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">):</span>
         <span class="n">face_dofs</span><span class="p">,</span> <span class="n">cell_dofs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">_layout</span><span class="p">()</span>
@@ -10025,14 +10049,7 @@ that give each cell a key, as <code>polyhedra.SizeBuckets</code> does.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">845</span>
-<span class="normal">846</span>
-<span class="normal">847</span>
-<span class="normal">848</span>
-<span class="normal">849</span>
-<span class="normal">850</span>
-<span class="normal">851</span>
-<span class="normal">852</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">852</span>
 <span class="normal">853</span>
 <span class="normal">854</span>
 <span class="normal">855</span>
@@ -10044,7 +10061,14 @@ that give each cell a key, as <code>polyhedra.SizeBuckets</code> does.</p>
 <span class="normal">861</span>
 <span class="normal">862</span>
 <span class="normal">863</span>
-<span class="normal">864</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">864</span>
+<span class="normal">865</span>
+<span class="normal">866</span>
+<span class="normal">867</span>
+<span class="normal">868</span>
+<span class="normal">869</span>
+<span class="normal">870</span>
+<span class="normal">871</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">launch_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">(),</span> <span class="n">keys</span><span class="o">=</span><span class="p">()):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The groups a kernel over ``domain`` launches once each, given the ``Field``s</span>
 <span class="sd">    it reads: the domain&#39;s groups, each split by the keys of the spaces among</span>
@@ -10280,14 +10304,7 @@ keeps its points. <code>unit</code> is the spatial unit (<code>DataSet.unit</cod
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1047</span>
-<span class="normal">1048</span>
-<span class="normal">1049</span>
-<span class="normal">1050</span>
-<span class="normal">1051</span>
-<span class="normal">1052</span>
-<span class="normal">1053</span>
-<span class="normal">1054</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1054</span>
 <span class="normal">1055</span>
 <span class="normal">1056</span>
 <span class="normal">1057</span>
@@ -10298,7 +10315,14 @@ keeps its points. <code>unit</code> is the spatial unit (<code>DataSet.unit</cod
 <span class="normal">1062</span>
 <span class="normal">1063</span>
 <span class="normal">1064</span>
-<span class="normal">1065</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">uniform_grid</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">direction</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="normal">1065</span>
+<span class="normal">1066</span>
+<span class="normal">1067</span>
+<span class="normal">1068</span>
+<span class="normal">1069</span>
+<span class="normal">1070</span>
+<span class="normal">1071</span>
+<span class="normal">1072</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">uniform_grid</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">direction</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                  <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A dataset of ``dims`` points (one to three sizes) at ``origin + direction @</span>
 <span class="sd">    (ijk * spacing)``: VTK&#39;s image data, Viskores&#39; uniform data set. Nothing per</span>
@@ -10351,14 +10375,14 @@ default that of axes given as device arrays, else the default device.
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1037</span>
-<span class="normal">1038</span>
-<span class="normal">1039</span>
-<span class="normal">1040</span>
-<span class="normal">1041</span>
-<span class="normal">1042</span>
-<span class="normal">1043</span>
-<span class="normal">1044</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rectilinear_grid</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">z</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1044</span>
+<span class="normal">1045</span>
+<span class="normal">1046</span>
+<span class="normal">1047</span>
+<span class="normal">1048</span>
+<span class="normal">1049</span>
+<span class="normal">1050</span>
+<span class="normal">1051</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rectilinear_grid</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">z</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A dataset of the grid whose lines run through ``x``, ``y`` and ``z``; see</span>
 <span class="sd">    ``grid_topology`` for axes of one point or none. It is on ``device``, by</span>
 <span class="sd">    default that of axes given as device arrays, else the default device.</span>
@@ -10410,14 +10434,7 @@ is in, and <code>units</code> maps field names to their units.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1068</span>
-<span class="normal">1069</span>
-<span class="normal">1070</span>
-<span class="normal">1071</span>
-<span class="normal">1072</span>
-<span class="normal">1073</span>
-<span class="normal">1074</span>
-<span class="normal">1075</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1075</span>
 <span class="normal">1076</span>
 <span class="normal">1077</span>
 <span class="normal">1078</span>
@@ -10468,7 +10485,14 @@ is in, and <code>units</code> maps field names to their units.</p>
 <span class="normal">1123</span>
 <span class="normal">1124</span>
 <span class="normal">1125</span>
-<span class="normal">1126</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">point_cloud</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="normal">1126</span>
+<span class="normal">1127</span>
+<span class="normal">1128</span>
+<span class="normal">1129</span>
+<span class="normal">1130</span>
+<span class="normal">1131</span>
+<span class="normal">1132</span>
+<span class="normal">1133</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">point_cloud</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                 <span class="n">units</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A point cloud: a dataset of ``positions``, one vertex cell per point (types,</span>
 <span class="sd">    offsets and connectivity implicit, stored nowhere), with ``fields`` (a dict of</span>
@@ -13782,10 +13806,13 @@ adds one per edge, per quad face and per hexahedron or quad, for the shape's
 quadratic Lagrange functions (tetrahedra, hexahedra, voxels, wedges,
 triangles, quads and pixels). Order 3 and up are on segments, quads, pixels,
 hexahedra and voxels (<code>tack.dataset.bases</code>): <code>order - 1</code> values per edge,
-<code>(order - 1)^2</code> per quad face and <code>(order - 1)^d</code> per cell, on the 1D
-<code>nodes</code> <code>"gauss_lobatto"</code> (the default) or <code>"equispaced"</code>, which agree
-up to order 2; and on triangles, tetrahedra and wedges with
-<code>nodes="equispaced"</code> (VTK's and gmsh's): <code>(order - 1)(order - 2) / 2</code> per
+<code>(order - 1)^2</code> per quad face and <code>(order - 1)^d</code> per cell, in the
+<code>basis</code> <code>"gauss_lobatto"</code> (the default: Lagrange polynomials on
+Gauss-Lobatto nodes) or <code>"equispaced"</code> (on equispaced nodes), which agree
+up to order 2; or <code>"bernstein"</code>: the Bernstein polynomials' coefficients,
+not values at nodes (VTK's Bezier cells; from order 2, on every shape here).
+On triangles, tetrahedra and wedges with <code>basis="equispaced"</code> (VTK's and
+gmsh's) or <code>"bernstein"</code>: <code>(order - 1)(order - 2) / 2</code> per
 triangle face or triangle, <code>(order - 1)(order - 2)(order - 3) / 6</code> per
 tetrahedron, <code>(order - 1)^2 (order - 2) / 2</code> per wedge.</p>
 
@@ -13839,12 +13866,13 @@ tetrahedron, <code>(order - 1)^2 (order - 2) / 2</code> per wedge.</p>
 value at each of the cell's corners -- a linear DG field -- and order 0 one
 value per cell. <code>order</code> is one order for every cell, or an array of one per
 cell (p-adaptive, orders 0 and 1), read when the space is made. Order 2 and
-up, or <code>nodes="gauss_legendre"</code> at any order from 1, are on segments, quads,
+up, or <code>basis="gauss_legendre"</code> at any order from 1, are on segments, quads,
 pixels, hexahedra and voxels (<code>tack.dataset.bases</code>): <code>(order + 1)^d</code> values
-a cell in node order, the first axis fastest, on the 1D <code>nodes</code>
-<code>"gauss_lobatto"</code> (the default), <code>"equispaced"</code> or <code>"gauss_legendre"</code>;
-and from order 2 on triangles, tetrahedra and wedges with
-<code>nodes="equispaced"</code>: each cell's values at its lattice's nodes
+a cell in node order, the first axis fastest, in the <code>basis</code>
+<code>"gauss_lobatto"</code> (the default), <code>"equispaced"</code> or <code>"gauss_legendre"</code>
+(Lagrange polynomials on those nodes) or <code>"bernstein"</code> (the Bernstein
+polynomials' coefficients); and from order 2 on triangles, tetrahedra and
+wedges with <code>basis="equispaced"</code> or <code>"bernstein"</code>: each cell's values at its lattice's nodes
 (<code>bases.lattice_ijk</code>), always in blocks.</p>
 <p><code>layout</code> says how a tensor basis' values are stored: <code>"blocks"</code>, each
 cell's together (value <code>n</code> of cell <code>c</code> at <code>offsets[c] + n</code>: MFEM's and
@@ -13971,15 +13999,15 @@ in this space's values (blocks of one size only).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/spaces.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">569</span>
-<span class="normal">570</span>
-<span class="normal">571</span>
-<span class="normal">572</span>
-<span class="normal">573</span>
-<span class="normal">574</span>
-<span class="normal">575</span>
-<span class="normal">576</span>
-<span class="normal">577</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">indices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">608</span>
+<span class="normal">609</span>
+<span class="normal">610</span>
+<span class="normal">611</span>
+<span class="normal">612</span>
+<span class="normal">613</span>
+<span class="normal">614</span>
+<span class="normal">615</span>
+<span class="normal">616</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">indices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A host ``(num_cells, values a cell)`` array: where each cell&#39;s value ``n`` is</span>
 <span class="sd">    in this space&#39;s values (blocks of one size only).&quot;&quot;&quot;</span>
     <span class="n">n</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">num_cells</span>
@@ -14014,16 +14042,16 @@ size only (a tensor basis, or corner values of one shape).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/spaces.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">579</span>
-<span class="normal">580</span>
-<span class="normal">581</span>
-<span class="normal">582</span>
-<span class="normal">583</span>
-<span class="normal">584</span>
-<span class="normal">585</span>
-<span class="normal">586</span>
-<span class="normal">587</span>
-<span class="normal">588</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">blocks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span>
+<span class="normal">621</span>
+<span class="normal">622</span>
+<span class="normal">623</span>
+<span class="normal">624</span>
+<span class="normal">625</span>
+<span class="normal">626</span>
+<span class="normal">627</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">blocks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``values`` (a host array of a field of this space) as ``(num_cells, values a</span>
 <span class="sd">    cell, ...)``, each cell&#39;s in node order, whatever the layout. Blocks of one</span>
 <span class="sd">    size only (a tensor basis, or corner values of one shape).&quot;&quot;&quot;</span>
@@ -14057,26 +14085,26 @@ size only (a tensor basis, or corner values of one shape).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/spaces.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">617</span>
-<span class="normal">618</span>
-<span class="normal">619</span>
-<span class="normal">620</span>
-<span class="normal">621</span>
-<span class="normal">622</span>
-<span class="normal">623</span>
-<span class="normal">624</span>
-<span class="normal">625</span>
-<span class="normal">626</span>
-<span class="normal">627</span>
-<span class="normal">628</span>
-<span class="normal">629</span>
-<span class="normal">630</span>
-<span class="normal">631</span>
-<span class="normal">632</span>
-<span class="normal">633</span>
-<span class="normal">634</span>
-<span class="normal">635</span>
-<span class="normal">636</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">659</span>
+<span class="normal">660</span>
+<span class="normal">661</span>
+<span class="normal">662</span>
+<span class="normal">663</span>
+<span class="normal">664</span>
+<span class="normal">665</span>
+<span class="normal">666</span>
+<span class="normal">667</span>
+<span class="normal">668</span>
+<span class="normal">669</span>
+<span class="normal">670</span>
+<span class="normal">671</span>
+<span class="normal">672</span>
+<span class="normal">673</span>
+<span class="normal">674</span>
+<span class="normal">675</span>
+<span class="normal">676</span>
+<span class="normal">677</span>
+<span class="normal">678</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s order, an i32 array (for a space with an order per cell).&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">varies</span><span class="p">:</span>
@@ -14331,7 +14359,34 @@ own row's frame). <code>L2</code> keeps each cell's <code>(p + 1)^d</code> value
   </span>
 
 <a href="#tack.dataset.bases.FAMILIES" class="headerlink" title="Permanent link">&para;</a></h4>
-<div class="doc-signature highlight"><pre><span></span><code><span class="n">FAMILIES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;gauss_lobatto&quot;</span><span class="p">,</span> <span class="s2">&quot;equispaced&quot;</span><span class="p">,</span> <span class="s2">&quot;gauss_legendre&quot;</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">FAMILIES</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">&quot;gauss_lobatto&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;equispaced&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gauss_legendre&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;bernstein&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="tack.dataset.bases.BERNSTEIN" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">BERNSTEIN</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
+  </span>
+
+<a href="#tack.dataset.bases.BERNSTEIN" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="n">BERNSTEIN</span> <span class="o">=</span> <span class="s1">&#39;bernstein&#39;</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -14366,13 +14421,7 @@ symmetric about <code>0.5</code> to the last bit.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/bases.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">60</span>
-<span class="normal">61</span>
-<span class="normal">62</span>
-<span class="normal">63</span>
-<span class="normal">64</span>
-<span class="normal">65</span>
-<span class="normal">66</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">66</span>
 <span class="normal">67</span>
 <span class="normal">68</span>
 <span class="normal">69</span>
@@ -14392,12 +14441,22 @@ symmetric about <code>0.5</code> to the last bit.</p>
 <span class="normal">83</span>
 <span class="normal">84</span>
 <span class="normal">85</span>
-<span class="normal">86</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">nodes</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``order + 1`` nodes of ``family`` on ``[0, 1]``, increasing, as an f64 array,</span>
 <span class="sd">    symmetric about ``0.5`` to the last bit.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">family</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">FAMILIES</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;nodes are one of </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">FAMILIES</span><span class="p">)</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">family</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;a basis is one of </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">FAMILIES</span><span class="p">)</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">family</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">family</span> <span class="o">==</span> <span class="n">BERNSTEIN</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">nodes</span><span class="p">(</span><span class="s2">&quot;equispaced&quot;</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
     <span class="n">p</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">p</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;an order is at least 0, not </span><span class="si">{</span><span class="n">order</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -14444,26 +14503,41 @@ symmetric about <code>0.5</code> to the last bit.</p>
 
         <p>The barycentric weights of <code>nodes(family, order)</code>: <code>1 / prod(x_j - x_m)</code>
 over <code>m != j</code>, so the Lagrange polynomial of node <code>j</code> at <code>t</code> is
-<code>weights[j] * prod(t - x_m)</code>.</p>
+<code>weights[j] * prod(t - x_m)</code>. Bernstein's are <code>C(p, j)</code>: its polynomial <code>j</code>
+is <code>weights[j] * t^j (1 - t)^(p - j)</code>.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/bases.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">89</span>
-<span class="normal">90</span>
-<span class="normal">91</span>
-<span class="normal">92</span>
-<span class="normal">93</span>
-<span class="normal">94</span>
-<span class="normal">95</span>
-<span class="normal">96</span>
-<span class="normal">97</span>
-<span class="normal">98</span>
-<span class="normal">99</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">weights</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The barycentric weights of ``nodes(family, order)``: ``1 / prod(x_j - x_m)``</span>
 <span class="sd">    over ``m != j``, so the Lagrange polynomial of node ``j`` at ``t`` is</span>
-<span class="sd">    ``weights[j] * prod(t - x_m)``.&quot;&quot;&quot;</span>
+<span class="sd">    ``weights[j] * prod(t - x_m)``. Bernstein&#39;s are ``C(p, j)``: its polynomial ``j``</span>
+<span class="sd">    is ``weights[j] * t^j (1 - t)^(p - j)``.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">family</span> <span class="o">==</span> <span class="n">BERNSTEIN</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">math</span><span class="w"> </span><span class="kn">import</span> <span class="n">comb</span>
+
+        <span class="n">w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">comb</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">order</span><span class="p">),</span> <span class="n">j</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">order</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)],</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">w</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">nodes</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
     <span class="n">difference</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
     <span class="n">np</span><span class="o">.</span><span class="n">fill_diagonal</span><span class="p">(</span><span class="n">difference</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
@@ -14496,33 +14570,44 @@ over <code>m != j</code>, so the Lagrange polynomial of node <code>j</code> at <
         <p>The matrix taking a 1D polynomial's values at <code>nodes(family, order)</code> to its
 Bernstein coefficients, row <code>i</code> the <code>i</code>-th coefficient. The polynomial lies
 between its least and greatest coefficients (the convex hull property), so a
-tensor product of these bounds a cell's geometry, or a field over the cell.</p>
+tensor product of these bounds a cell's geometry, or a field over the cell.
+Bernstein's own is the identity.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/bases.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">102</span>
-<span class="normal">103</span>
-<span class="normal">104</span>
-<span class="normal">105</span>
-<span class="normal">106</span>
-<span class="normal">107</span>
-<span class="normal">108</span>
-<span class="normal">109</span>
-<span class="normal">110</span>
-<span class="normal">111</span>
-<span class="normal">112</span>
-<span class="normal">113</span>
-<span class="normal">114</span>
-<span class="normal">115</span>
-<span class="normal">116</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">bernstein</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The matrix taking a 1D polynomial&#39;s values at ``nodes(family, order)`` to its</span>
 <span class="sd">    Bernstein coefficients, row ``i`` the ``i``-th coefficient. The polynomial lies</span>
 <span class="sd">    between its least and greatest coefficients (the convex hull property), so a</span>
-<span class="sd">    tensor product of these bounds a cell&#39;s geometry, or a field over the cell.&quot;&quot;&quot;</span>
+<span class="sd">    tensor product of these bounds a cell&#39;s geometry, or a field over the cell.</span>
+<span class="sd">    Bernstein&#39;s own is the identity.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">math</span><span class="w"> </span><span class="kn">import</span> <span class="n">comb</span>
 
+    <span class="k">if</span> <span class="n">family</span> <span class="o">==</span> <span class="n">BERNSTEIN</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">order</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">m</span><span class="o">.</span><span class="n">setflags</span><span class="p">(</span><span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">m</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">nodes</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
     <span class="n">p</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
     <span class="n">at</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">comb</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span> <span class="o">**</span> <span class="n">j</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span> <span class="o">**</span> <span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="n">j</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">p</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
@@ -14569,27 +14654,7 @@ and 2 (see <code>_simplex_dof_tables</code>).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/bases.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">576</span>
-<span class="normal">577</span>
-<span class="normal">578</span>
-<span class="normal">579</span>
-<span class="normal">580</span>
-<span class="normal">581</span>
-<span class="normal">582</span>
-<span class="normal">583</span>
-<span class="normal">584</span>
-<span class="normal">585</span>
-<span class="normal">586</span>
-<span class="normal">587</span>
-<span class="normal">588</span>
-<span class="normal">589</span>
-<span class="normal">590</span>
-<span class="normal">591</span>
-<span class="normal">592</span>
-<span class="normal">593</span>
-<span class="normal">594</span>
-<span class="normal">595</span>
-<span class="normal">596</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">596</span>
 <span class="normal">597</span>
 <span class="normal">598</span>
 <span class="normal">599</span>
@@ -14646,7 +14711,27 @@ and 2 (see <code>_simplex_dof_tables</code>).</p>
 <span class="normal">650</span>
 <span class="normal">651</span>
 <span class="normal">652</span>
-<span class="normal">653</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dof_tables</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
+<span class="normal">653</span>
+<span class="normal">654</span>
+<span class="normal">655</span>
+<span class="normal">656</span>
+<span class="normal">657</span>
+<span class="normal">658</span>
+<span class="normal">659</span>
+<span class="normal">660</span>
+<span class="normal">661</span>
+<span class="normal">662</span>
+<span class="normal">663</span>
+<span class="normal">664</span>
+<span class="normal">665</span>
+<span class="normal">666</span>
+<span class="normal">667</span>
+<span class="normal">668</span>
+<span class="normal">669</span>
+<span class="normal">670</span>
+<span class="normal">671</span>
+<span class="normal">672</span>
+<span class="normal">673</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dof_tables</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;For each of a ``shape`` cell&#39;s ``(order + 1)^d`` nodes, in node order, where its</span>
 <span class="sd">    value lives: four i32 arrays ``(kind, entity, a, b)``.</span>
 
@@ -14748,9 +14833,9 @@ and 2 (see <code>_simplex_dof_tables</code>).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/bases.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">136</span>
-<span class="normal">137</span>
-<span class="normal">138</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">tensor_shape</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">tensor_shape</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether ``shape`` has tensor bases of any order here.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">_SHAPES</span>
 </code></pre></div></td></tr></table></div>
@@ -17649,14 +17734,7 @@ nodes (<code>DataSet.node_views</code>), taking arrays, not fields.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">867</span>
-<span class="normal">868</span>
-<span class="normal">869</span>
-<span class="normal">870</span>
-<span class="normal">871</span>
-<span class="normal">872</span>
-<span class="normal">873</span>
-<span class="normal">874</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">874</span>
 <span class="normal">875</span>
 <span class="normal">876</span>
 <span class="normal">877</span>
@@ -17678,7 +17756,14 @@ nodes (<code>DataSet.node_views</code>), taking arrays, not fields.</p>
 <span class="normal">893</span>
 <span class="normal">894</span>
 <span class="normal">895</span>
-<span class="normal">896</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">896</span>
+<span class="normal">897</span>
+<span class="normal">898</span>
+<span class="normal">899</span>
+<span class="normal">900</span>
+<span class="normal">901</span>
+<span class="normal">902</span>
+<span class="normal">903</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">for_each</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run ``kernel(view, *args)`` once per shape in ``domain`` of ``data``.</span>
 
@@ -19935,7 +20020,7 @@ arrays) stays implicit, as a <code>ConstantArray</code> or <code>CountingArray</
 unstructured grid's cells must all be linear shapes -- or all VTK Lagrange
 curves, quadrilaterals or hexahedra of one order <code>p</code>, which become linear
 cells on their corner points, with the geometry and point data in
-<code>H1(order=p, nodes="equispaced")</code> (VTK's Lagrange nodes) -- unless it holds
+<code>H1(order=p, basis="equispaced")</code> (VTK's Lagrange nodes) -- unless it holds
 polyhedra (or <code>polyhedral</code> is true), when it becomes a
 <code>PolyhedralTopology</code>, every cell a polyhedron of its faces, polylines,
 when it becomes a <code>PolylineTopology</code> (its lines two-point polylines, and
@@ -20077,7 +20162,7 @@ polyhedra -- is copied as before.</p>
 <span class="sd">    unstructured grid&#39;s cells must all be linear shapes -- or all VTK Lagrange</span>
 <span class="sd">    curves, quadrilaterals or hexahedra of one order ``p``, which become linear</span>
 <span class="sd">    cells on their corner points, with the geometry and point data in</span>
-<span class="sd">    ``H1(order=p, nodes=&quot;equispaced&quot;)`` (VTK&#39;s Lagrange nodes) -- unless it holds</span>
+<span class="sd">    ``H1(order=p, basis=&quot;equispaced&quot;)`` (VTK&#39;s Lagrange nodes) -- unless it holds</span>
 <span class="sd">    polyhedra (or ``polyhedral`` is true), when it becomes a</span>
 <span class="sd">    ``PolyhedralTopology``, every cell a polyhedron of its faces, polylines,</span>
 <span class="sd">    when it becomes a ``PolylineTopology`` (its lines two-point polylines, and</span>
@@ -20196,7 +20281,13 @@ field is above order 1 becomes VTK Lagrange cells (<code>VTK_LAGRANGE_CURVE</cod
 <code>_WEDGE</code>) of the largest order: points at the equispaced nodes of
 <code>H1</code> of that order, each shared node once, the geometry and <code>H1</code> fields
 evaluated there (exact for fields of that order or below), cell fields as
-cell data. <code>vtk_to_dataset</code> reads such a grid back into those spaces.</p>
+cell data. <code>vtk_to_dataset</code> reads such a grid back into those spaces.
+<code>higher_order="bezier"</code> writes VTK Bezier cells (<code>VTK_BEZIER_CURVE</code>,
+<code>_QUADRILATERAL</code>, <code>_HEXAHEDRON</code>, <code>_TRIANGLE</code>, <code>_TETRAHEDRON</code>,
+<code>_WEDGE</code>) instead: points and point data the
+coefficients of <code>H1(order, basis="bernstein")</code>, which <code>vtk_to_dataset</code>
+reads back as such; <code>True</code> chooses Bezier cells when the geometry or an
+<code>H1</code> field is in a Bernstein basis, <code>"lagrange"</code> Lagrange cells always.</p>
 
 
             <details class="mkdocstrings-source">
@@ -20257,7 +20348,17 @@ cell data. <code>vtk_to_dataset</code> reads such a grid back into those spaces.
 <span class="normal">1264</span>
 <span class="normal">1265</span>
 <span class="normal">1266</span>
-<span class="normal">1267</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="normal">1267</span>
+<span class="normal">1268</span>
+<span class="normal">1269</span>
+<span class="normal">1270</span>
+<span class="normal">1271</span>
+<span class="normal">1272</span>
+<span class="normal">1273</span>
+<span class="normal">1274</span>
+<span class="normal">1275</span>
+<span class="normal">1276</span>
+<span class="normal">1277</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of</span>
 <span class="sd">    images and rectilinear grids, its ratios the same along every axis, into a</span>
 <span class="sd">    ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into</span>
@@ -20303,11 +20404,21 @@ cell data. <code>vtk_to_dataset</code> reads such a grid back into those spaces.
 <span class="sd">    ``_WEDGE``) of the largest order: points at the equispaced nodes of</span>
 <span class="sd">    ``H1`` of that order, each shared node once, the geometry and ``H1`` fields</span>
 <span class="sd">    evaluated there (exact for fields of that order or below), cell fields as</span>
-<span class="sd">    cell data. ``vtk_to_dataset`` reads such a grid back into those spaces.&quot;&quot;&quot;</span>
+<span class="sd">    cell data. ``vtk_to_dataset`` reads such a grid back into those spaces.</span>
+<span class="sd">    ``higher_order=&quot;bezier&quot;`` writes VTK Bezier cells (``VTK_BEZIER_CURVE``,</span>
+<span class="sd">    ``_QUADRILATERAL``, ``_HEXAHEDRON``, ``_TRIANGLE``, ``_TETRAHEDRON``,</span>
+<span class="sd">    ``_WEDGE``) instead: points and point data the</span>
+<span class="sd">    coefficients of ``H1(order, basis=&quot;bernstein&quot;)``, which ``vtk_to_dataset``</span>
+<span class="sd">    reads back as such; ``True`` chooses Bezier cells when the geometry or an</span>
+<span class="sd">    ``H1`` field is in a Bernstein basis, ``&quot;lagrange&quot;`` Lagrange cells always.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.interop.vtk</span><span class="w"> </span><span class="kn">import</span> <span class="n">_lagrange</span>
 
+    <span class="k">if</span> <span class="n">higher_order</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;lagrange&quot;</span><span class="p">,</span> <span class="s2">&quot;bezier&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;higher_order is False, True, </span><span class="se">\&quot;</span><span class="s2">lagrange</span><span class="se">\&quot;</span><span class="s2"> or </span><span class="se">\&quot;</span><span class="s2">bezier</span><span class="se">\&quot;</span><span class="s2">, not &quot;</span>
+                         <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">higher_order</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">order</span> <span class="o">=</span> <span class="n">_lagrange</span><span class="o">.</span><span class="n">tensor_order</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="k">if</span> <span class="n">higher_order</span> <span class="k">else</span> <span class="mi">1</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">_lagrange</span><span class="o">.</span><span class="n">to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span> <span class="k">if</span> <span class="n">order</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">_dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="p">)</span>
+    <span class="n">bezier</span> <span class="o">=</span> <span class="n">higher_order</span> <span class="o">==</span> <span class="s2">&quot;bezier&quot;</span> <span class="ow">or</span> <span class="p">(</span><span class="n">higher_order</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">and</span> <span class="n">_lagrange</span><span class="o">.</span><span class="n">bernstein</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">_lagrange</span><span class="o">.</span><span class="n">to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">bezier</span><span class="p">)</span> <span class="k">if</span> <span class="n">order</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">_dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="p">)</span>
     <span class="n">time</span> <span class="o">=</span> <span class="n">_time_of</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">time</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">vtkmodules.vtkCommonDataModel</span><span class="w"> </span><span class="kn">import</span> <span class="n">vtkDataObject</span>
@@ -21925,7 +22036,7 @@ function's <code>fes</code> and <code>fec</code> attributes alive as long as it 
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;an MFEM grid function of </span><span class="si">{</span><span class="n">space</span><span class="si">!r}</span><span class="s2"> is not supported&quot;</span><span class="p">)</span>
     <span class="n">simplex</span> <span class="o">=</span> <span class="n">_check_tensor</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;mfem_grid_function&quot;</span><span class="p">)</span>
     <span class="n">order</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span>
-    <span class="n">family</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">nodes</span> <span class="ow">or</span> <span class="p">(</span><span class="s2">&quot;equispaced&quot;</span> <span class="k">if</span> <span class="n">simplex</span> <span class="k">else</span> <span class="s2">&quot;gauss_lobatto&quot;</span><span class="p">)</span>
+    <span class="n">family</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">basis</span> <span class="ow">or</span> <span class="p">(</span><span class="s2">&quot;equispaced&quot;</span> <span class="k">if</span> <span class="n">simplex</span> <span class="k">else</span> <span class="s2">&quot;gauss_lobatto&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">L2</span><span class="p">)</span> <span class="ow">and</span> <span class="n">order</span> <span class="o">&lt;=</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">space</span><span class="o">.</span><span class="n">tensor</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;L2 of corner values (order 0 and 1) has no MFEM basis &quot;</span>
                                   <span class="s2">&quot;of its own: project it into L2 on Gauss-Legendre nodes&quot;</span><span class="p">)</span>

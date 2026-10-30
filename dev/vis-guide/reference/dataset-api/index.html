@@ -4615,7 +4615,7 @@ array accesses.</p>
 <tbody>
 <tr>
 <td><code>H1(data, order=1)</code></td>
-<td>one per point, shared by the cells around it; order 2 adds one per edge and quad face; order <code>p</code> (<code>nodes=</code>) <code>p - 1</code> per edge, <code>(p - 1)^2</code> per quad face, <code>(p - 1)^d</code> per cell</td>
+<td>one per point, shared by the cells around it; order 2 adds one per edge and quad face; order <code>p</code> (<code>basis=</code>) <code>p - 1</code> per edge, <code>(p - 1)^2</code> per quad face, <code>(p - 1)^d</code> per cell</td>
 <td>yes, continuous</td>
 <td>order 1 on all; order 2 on tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels; any order on segments, quads, pixels, hexahedra and voxels, and on triangles, tetrahedra and wedges with <code>nodes="equispaced"</code> (<code>(p - 1)(p - 2)/2</code> per triangle face, <code>(p - 1)(p - 2)(p - 3)/6</code> per tetrahedron, <code>(p - 1)^2 (p - 2)/2</code> per wedge)</td>
 </tr>

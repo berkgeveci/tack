@@ -4144,12 +4144,12 @@ mesh and have runnable examples below.</p>
 <td>A higher-order H1 approximation; not an H2 space</td>
 </tr>
 <tr>
-<td><code>td.H1(data, order=p, nodes=...)</code></td>
-<td>From order 3, on segments, quads and hexahedra: <code>p - 1</code> per edge, <code>(p - 1)²</code> per face, <code>(p - 1)^d</code> per cell; on triangles, tetrahedra and wedges with <code>nodes="equispaced"</code></td>
+<td><code>td.H1(data, order=p, basis=...)</code></td>
+<td>From order 3, on segments, quads and hexahedra: <code>p - 1</code> per edge, <code>(p - 1)²</code> per face, <code>(p - 1)^d</code> per cell; on triangles, tetrahedra and wedges with <code>basis="equispaced"</code> or <code>"bernstein"</code> (Bernstein coefficients, from order 2)</td>
 <td>Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices and wedges</td>
 </tr>
 <tr>
-<td><code>td.L2(data, order=p, nodes=...)</code></td>
+<td><code>td.L2(data, order=p, basis=...)</code></td>
 <td>From order 2 (or on Gauss–Legendre nodes): each cell's own <code>(p + 1)^d</code> values (<code>C(p + d, d)</code> on a simplex, equispaced)</td>
 <td>DG fields of any order</td>
 </tr>
@@ -4394,11 +4394,26 @@ uv<span class="w"> </span>run<span class="w"> </span>--with<span class="w"> </sp
 checks run without Matplotlib.</p>
 <h2 id="higher-orders">Higher orders<a class="headerlink" href="#higher-orders" title="Permanent link">&para;</a></h2>
 <p>On segments, quads and hexahedra (pixels and voxels too) a space may have any
-order. Its nodes are the products of 1D nodes along each axis, chosen by
-<code>nodes=</code>: <code>"gauss_lobatto"</code> (the default, MFEM's for H1 and Nek5000's),
-<code>"equispaced"</code> (VTK's Lagrange cells, Exodus, gmsh) or, for <code>L2</code> alone,
-<code>"gauss_legendre"</code> (MFEM's default for DG), which has no nodes at a cell's
-ends to share. Up to order 2 the first two are the same nodes.</p>
+order. <code>basis=</code> names its polynomials: Lagrange polynomials on the products
+of 1D nodes along each axis, <code>"gauss_lobatto"</code> (the default, MFEM's for H1 and
+Nek5000's), <code>"equispaced"</code> (VTK's Lagrange cells, Exodus, gmsh) or, for <code>L2</code>
+alone, <code>"gauss_legendre"</code> (MFEM's default for DG), which has no nodes at a
+cell's ends to share. Up to order 2 the first two are the same nodes.</p>
+<p><code>basis="bernstein"</code> holds the Bernstein polynomials' coefficients instead of
+values at nodes: control points, for a geometry. They bound the cell's field or
+shape (it lies within their convex hull) and are what VTK's Bezier cells store.
+A corner's coefficient is its value, and an edge's or a face's depends on that
+entity alone, so they are shared as nodal values are. <code>interpolate</code> and
+<code>project</code> fill a Bernstein space from values at the equispaced nodes, and every
+filter sees the same polynomials as the equispaced Lagrange space of the order.
+Bernstein spaces are on segments, quads, hexahedra, triangles, tetrahedra and
+wedges. <code>dataset_to_vtk(..., higher_order=True)</code> writes a dataset with them as
+VTK Bezier cells, and <code>vtk_to_dataset</code> reads Bezier cells back into them.</p>
+<div class="highlight"><pre><span></span><code>    <span class="n">bezier</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">basis</span><span class="o">=</span><span class="s2">&quot;bernstein&quot;</span><span class="p">)</span>       <span class="c1"># coefficients, not values</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;b&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">bezier</span><span class="p">)</span>   <span class="c1"># the same polynomial as &quot;u&quot;</span>
+    <span class="n">low</span><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;b&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;b&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">bezier</span><span class="p">,</span> <span class="s2">&quot;coefficients from&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">low</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;to&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">high</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+</code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">blob</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="c1"># A smooth field: its level sets are curved surfaces inside every cell.</span>
@@ -4477,8 +4492,8 @@ on a GPU and <code>"blocks"</code> everywhere else, because each is the faster o
 it is picked: at order 6 cell-fastest reads 2.3 times and writes 3.6 times
 faster on an RTX 4060 Ti, and blocks read about 1.6 times and write about twice
 as fast on a CPU.</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">dg</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">nodes</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">)</span>             <span class="c1"># &quot;auto&quot;: by device</span>
-    <span class="n">across</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">nodes</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code>    <span class="n">dg</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">basis</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">)</span>             <span class="c1"># &quot;auto&quot;: by device</span>
+    <span class="n">across</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">basis</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">)</span>
     <span class="n">p</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">(</span><span class="n">dg</span><span class="p">,</span> <span class="n">across</span><span class="p">))</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">dg</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span> <span class="n">across</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span> <span class="n">dg</span><span class="o">.</span><span class="n">blocks</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 </code></pre></div>
