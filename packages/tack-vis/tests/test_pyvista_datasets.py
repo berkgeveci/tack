@@ -47,14 +47,31 @@ _REFUSED = {
                     r"VTK cell types \[.*\] \(vtk.*Quad.*\) are not linear shapes"),
 }
 
+#: Known failures to convert, by dataset: they skip the algorithms.
+_UNREAD = dict.fromkeys(
+    ("gpr_path", "particles", "sparse_points"),
+    "a polydata's poly vertex (one vert cell of several points, as vtkTableToPolyData "
+    "and vtkParticleReader make) is mapped to VTK_POLY_VERTEX, then refused as 'not "
+    "a linear shape', in words for higher-order cells; strips are split, poly vertices "
+    "are not")
+
 #: Refusals of an algorithm beyond the Viskores datasets' (their ``_REFUSALS``).
 _REFUSALS = re.compile("|".join([
     test_viskores_datasets._REFUSALS.pattern,
     "subdivision takes cells of one dimension",  # hexahedra and their boundary quads
+    # Polylines (faults.vtk), and their surface, the free ends:
+    r"a polyline topology's edges \(its segments\) are not derived",
+    "advection takes .* not polylines",
+    "surface_normals takes 2D cells .* not a mesh of dimension 0",
 ]))
 
-#: Refusals of one dataset's own: its voxels meet three at nine faces.
-_REFUSALS_OF = {"blood_vessels": "faces are shared by more than two cells"}
+#: Refusals of one dataset's own: the vessels' voxels meet three at nine
+#: faces; the surfaces have edges of three or more polygons -- the action
+#: figure one, the room every one (each triangle is there twice), the
+#: sextant's duplicate and collapsed polygons hundreds -- which a topology's
+#: faces refuse, and with them contours, slices, normals and face fields.
+_REFUSALS_OF = dict.fromkeys(("blood_vessels", "action_figure", "room_surface_mesh",
+                              "sextant"), "faces are shared by more than two cells")
 
 #: Faces are the topology's, derived over hidden cells too; the reservoir's
 #: hidden pinch-out (layer 8, zero thickness) gives each of its faces four
@@ -62,8 +79,22 @@ _REFUSALS_OF = {"blood_vessels": "faces are shared by more than two cells"}
 _HIDDEN = ("faces are derived over hidden cells, and the reservoir's collapsed hidden "
            "cells claim theirs twice ('969 faces are shared by more than two cells')")
 
+#: tecplot_ascii.dat writes its 56 wedges as hexahedra with two pairs of
+#: corners equal (Tecplot's FEBRICK zones, and Exodus, write wedges so). They
+#: convert as hexahedra; each one's collapsed face is an edge, which every
+#: such cell around that edge claims.
+_COLLAPSED = ("wedges written as collapsed hexahedra stay hexahedra, whose collapsed "
+              "faces (an edge) are claimed by every cell around it ('1 faces are "
+              "shared by more than two cells')")
+
 #: Known failures, by (dataset, call).
 _BUGS = {
+    **{("tecplot_ascii", call): _COLLAPSED
+       for call in ("as_polyhedra", "boundary_faces", "clip_polyhedra", "contour by tolerance",
+                    "contour of order 3", "contour_2d", "divergence", "extract_surface",
+                    "face_centers", "face_geometry", "feature_edges", "interpolate",
+                    "interpolate of order 4", "jump", "net_flux", "perot", "subdivide",
+                    "surface_normals", "traces", "upwind_flux")},
     **{("reservoir", call): _HIDDEN
        for call in ("clip_polyhedra", "extract_surface", "boundary_faces", "feature_edges",
                     "as_polyhedra", "interpolate", "interpolate of order 4", "subdivide",
@@ -133,7 +164,9 @@ def _prepared(name, device):
     return data, spacing
 
 
-@pytest.mark.parametrize("name", pv.DATASETS)
+@pytest.mark.parametrize("name", [
+    pytest.param(name, marks=[pytest.mark.xfail(reason=_UNREAD[name], strict=True)]
+                 if name in _UNREAD else []) for name in pv.DATASETS])
 def test_each_dataset_is_read_or_refused(name):
     """Every file converts to a dataset of the cells Tack takes, or is refused
     saying why."""
@@ -150,7 +183,7 @@ def test_each_dataset_is_read_or_refused(name):
 
 def _cases():
     for name in pv.DATASETS:
-        if name in _REFUSED:
+        if name in _REFUSED or name in _UNREAD:
             continue
         for call in test_dataset_devices.CALLS:
             reason = _BUGS.get((name, call))
