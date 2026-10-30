@@ -50,9 +50,11 @@ def outliers(data, radius=None, min_neighbors=None, k=None, deviations=1.0, peri
       gives each point's count.
     - **statistical** (``k``, at most 32, and ``deviations``): a mean distance
       to its ``k`` nearest other points more than ``deviations`` standard
-      deviations above the mean of those means, as vtkStatisticalOutlierRemoval
-      and PCL; ``mean_distance`` gives each point's. The mean and deviation are
-      taken in double precision on the host.
+      deviations above the mean of those means, as PCL; ``mean_distance`` gives
+      each point's. vtkStatisticalOutlierRemoval also removes the points that
+      many deviations below it (in dense spots, duplicates); the two agree on
+      the mean distances. The mean and deviation are taken in double precision
+      on the host.
 
     The points are marked, not removed, as PDAL marks them (class 7):
     ``threshold_points(out, "outlier", 0, 0)`` keeps the rest. ``periodic`` (a
