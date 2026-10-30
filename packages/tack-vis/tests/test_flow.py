@@ -440,6 +440,77 @@ def test_rk45_is_as_close_to_the_path_as_vtks(backend):
         assert abs(len(mine) - len(vtks)) <= 0.2 * len(vtks)
 
 
+def _slowing(image):
+    """Flow along x slowing linearly, 1 - x / 4, drifting a little in y: every
+    cell reproduces it, and no path leaves the image before it slows."""
+    x = np.asarray([image.GetPoint(i) for i in range(image.number_of_points)])
+    image.point_data["v"] = np.c_[1.0 - 0.25 * x[:, 0], 0.02 * np.ones(len(x)),
+                                  np.zeros(len(x))]
+    return image
+
+
+@pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
+def test_terminal_speed_ends_a_path_at_its_first_slow_point_as_vtks(backend):
+    """``terminal_speed`` is vtkStreamTracer's TerminalSpeed: a path ends at its
+    first point where the speed is at or below it. Fixed RK4 steps in the
+    length unit through a field slowing along x: VTK's paths, point for point.
+    VTK also drops a step whose two ends' average speed is at or below it, so
+    its path may end one point sooner, only there."""
+    image = _slowing(vtk.vtkImageData(dimensions=(41, 11, 3), origin=(0.0, -0.5, -0.1),
+                                      spacing=(0.1, 0.1, 0.1)))
+    data = vtk_to_dataset(image, dtype=tack.f64 if tack.get_default_device()._backend.supports_f64
+                          else tack.f32)
+    seeds = np.array([[0.05, 0.0, 0.0], [0.73, 0.2, 0.0], [1.6, -0.3, 0.0]])
+    out = td.streamlines(data, "v", seeds, 0.1, 500, step_unit="length", terminal_speed=0.3)
+    p = out.world_positions()
+    offsets, members = (a.numpy() for a in out.topology.lines())
+    ours = [p[members[offsets[k]:offsets[k + 1]]] for k in range(len(offsets) - 1)]
+    tracer = vtk.vtkStreamTracer(
+        integrator_type=vtk.vtkStreamTracer.RUNGE_KUTTA4,
+        integration_direction=vtk.vtkStreamTracer.FORWARD, initial_integration_step=0.1,
+        maximum_number_of_steps=500, maximum_propagation=100.0, terminal_speed=0.3,
+        integration_step_unit=vtk.vtkStreamTracer.LENGTH_UNIT)
+    tracer.SetInputArrayToProcess(0, 0, 0, 0, "v")
+    tracer.SetSourceData(vtk.vtkPolyData(points=vtk.vtkPoints(data=seeds)))
+    lines = tracer(image)
+    offsets, members = lines.lines.offsets_array, lines.lines.connectivity_array
+    theirs = [np.asarray(lines.points.data)[members[offsets[k]:offsets[k + 1]]]
+              for k in range(len(offsets) - 1)]
+    assert len(ours) == len(theirs) == 3
+    for mine, vtks in zip(ours, theirs):
+        speed = np.hypot(1.0 - 0.25 * mine[:, 0], 0.02)
+        assert speed[-1] <= 0.3 < speed[:-1].min()
+        np.testing.assert_allclose(mine[:len(vtks)], vtks, atol=1e-5)
+        assert len(mine) - len(vtks) in (0, 1)
+        if len(mine) > len(vtks):
+            assert (speed[-2] + speed[-1]) / 2 <= 0.3
+
+
+def test_terminal_speed_stops_a_slow_seed_and_says_so(backend):
+    """A seed already at or below the terminal speed takes no step; a particle
+    stopped by it is ``SLOW_SPEED`` and ``TERMINATE``; a speed with a unit is
+    taken in the velocity's; and a later call with no terminal speed moves it on."""
+    image = _slowing(vtk.vtkImageData(dimensions=(41, 11, 3), origin=(0.0, -0.5, -0.1),
+                                      spacing=(0.1, 0.1, 0.1))) if vtk is not None else None
+    if image is None:
+        pytest.skip("needs VTK for the image")
+    data = vtk_to_dataset(image)
+    v = data.fields["v"]
+    data.fields["v"] = td.Field(v.space, v.values, "m/s")
+    seeds = np.array([[3.5, 0.0, 0.0], [0.5, 0.0, 0.0]])
+    out = td.advect(data, "v", seeds, 0.05, 400, integrator="rk45", tolerance=1e-6,
+                    terminal_speed="30 cm/s")
+    status = out.fields["status"].values.numpy()
+    slow = int(td.ParticleStatus.SLOW_SPEED | td.ParticleStatus.TERMINATE)
+    assert ((status & slow) == slow).all()
+    assert out.fields["steps"].values.numpy()[0] == 0
+    assert out.positions()[1][0] > 2.7
+    on = td.advect(data, "v", out, 0.05, 100)          # steps: the taken ones too
+    assert (on.fields["steps"].values.numpy() > out.fields["steps"].values.numpy()).all()
+    with pytest.raises(ValueError, match="terminal_speed must be at least 0"):
+        td.advect(data, "v", seeds, 0.05, 10, terminal_speed=-1.0)
+
+
 @pytest.mark.parametrize("polyhedra", [False, True])
 def test_a_mixed_mesh(backend, polyhedra):
     data = _two_hexes_and_a_pyramid()

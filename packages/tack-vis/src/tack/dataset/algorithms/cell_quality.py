@@ -140,6 +140,25 @@ def _matrix(m, k):
                      [m[b + 6], m[b + 7], m[b + 8]])
 
 
+@tack.func
+def _unit(v):
+    # v at unit length, or zero where it has none (a degenerate cell's normal).
+    length = v.norm()
+    return v / length if length > 0.0 else v * 0.0
+
+
+@tack.func
+def _corner_ratio(least, most, big):
+    # The least corner determinant over the greatest: 0 where every corner is
+    # degenerate, -big where none is positive and some is inverted.
+    out = -big
+    if most > 0.0:
+        out = least / most
+    elif least == 0.0:
+        out = 0.0
+    return out
+
+
 @tack.kernel
 def _reference_quality(cells, dim, pcs, directions, norms, inverses, corner, big, sj, ratio,
                        cond):
@@ -154,8 +173,7 @@ def _reference_quality(cells, dim, pcs, directions, norms, inverses, corner, big
             # A surface cell is measured about its normal at its center, Verdict's.
             middle = cells.geometry_jacobian(c, cells.parametric_center())
             normal = middle @ tack.vec3(1.0, 0.0, 0.0)
-            normal = normal.cross(middle @ tack.vec3(0.0, 1.0, 0.0))
-            normal = normal / normal.norm()
+            normal = _unit(normal.cross(middle @ tack.vec3(0.0, 1.0, 0.0)))
         for k in range(norms.shape[0]):
             j = cells.geometry_jacobian(c, tack.vec3(pcs[3 * k], pcs[3 * k + 1], pcs[3 * k + 2]))
             a0 = _column(directions, k, 0, j)
@@ -169,7 +187,7 @@ def _reference_quality(cells, dim, pcs, directions, norms, inverses, corner, big
                 lengths = lengths * a2.norm()
             else:
                 det = a0.cross(a1).dot(normal)
-            scaled = det / lengths * norms[k] if lengths > 0.0 else -big
+            scaled = det / lengths * norms[k] if lengths > 0.0 else 0.0
             worst = min(worst, scaled)
             if corner[k] == 1:
                 least = min(least, det)
@@ -206,7 +224,7 @@ def _reference_quality(cells, dim, pcs, directions, norms, inverses, corner, big
                     conditioned = big
         sj[e] = worst
         cond[e] = conditioned
-        ratio[e] = least / most if most > 0.0 else -big
+        ratio[e] = _corner_ratio(least, most, big)
 
 
 @tack.func
@@ -288,7 +306,7 @@ def _pyramid_quality(cells, norms, inverses, big, sj, ratio, cond):
                                                           big))
         sj[e] = worst
         cond[e] = conditioned
-        ratio[e] = least / most if most > 0.0 else -big
+        ratio[e] = _corner_ratio(least, most, big)
 
 
 @tack.kernel
@@ -323,49 +341,87 @@ def _polyhedron_quality(cells, w, big, sj, ratio, cond):
                                                               _matrix(w, 0), big))
         sj[e] = worst
         cond[e] = conditioned
-        ratio[e] = least / most if most > 0.0 else -big
+        ratio[e] = _corner_ratio(least, most, big)
+
+
+@tack.func
+def _triangle(a, b, normal, big):
+    # Verdict's triangle on edges a and b from one corner, about normal: the
+    # scaled Jacobian (twice the area over the largest product of two edges,
+    # times 2/sqrt(3), 1 when equilateral), twice the area, and the condition
+    # number ((|a|^2 + |b|^2 + |b-a|^2) over 4 sqrt(3) times the area, which is
+    # 2 sqrt(3) times det).
+    ab = b - a
+    det = a.cross(b).dot(normal)
+    most_pair = max(max(a.norm() * b.norm(), b.norm() * ab.norm()), ab.norm() * a.norm())
+    scaled = det / most_pair * 1.1547005383792515 if most_pair > 0.0 else 0.0
+    conditioned = big
+    if det > 0.0:
+        conditioned = (a.dot(a) + b.dot(b) + ab.dot(ab)) / (3.4641016151377544 * det)
+    return scaled, det, conditioned
 
 
 @tack.kernel
 def _polygon_quality(cells, big, sj, ratio, cond):
     for c in cells:
-        # The fan triangles from the polygon's points' mean, about Newell's normal.
+        # A triangle or a quad as the reference shape is measured (corners'
+        # edges, a quad about its normal at its center); any other polygon by the
+        # fan triangles from its points' mean, about Newell's normal.
         e = cells.entity_id(c)
+        n = cells.num_faces(c)
         origin = cells.side_position(c, 0, 0)
         normal = tack.vec3(0.0, 0.0, 0.0)
         center = tack.vec3(0.0, 0.0, 0.0)
-        for k in range(cells.num_faces(c)):
+        for k in range(n):
             a = cells.side_position(c, k, 0) - origin
             normal += a.cross(cells.side_position(c, k, 1) - origin)
             center += a
-        normal = normal / normal.norm()
-        center = origin + center / cells.num_faces(c)
+        normal = _unit(normal)
+        center = origin + center / n
         worst = big
         least = big
         most = -big
         conditioned = 1.0
-        for k in range(cells.num_faces(c)):
-            a = cells.side_position(c, k, 0) - center
-            b = cells.side_position(c, k, 1) - center
-            ab = b - a
-            det = a.cross(b).dot(normal)
-            most_pair = max(max(a.norm() * b.norm(), b.norm() * ab.norm()), ab.norm() * a.norm())
-            # Verdict's triangle: twice the area over the largest product of two
-            # edges, times 2/sqrt(3) (1 when equilateral).
-            scaled = det / most_pair * 1.1547005383792515 if most_pair > 0.0 else -big
-            worst = min(worst, scaled)
-            least = min(least, det)
-            most = max(most, det)
-            # The equilateral triangle's condition number: (|a|^2 + |b|^2 + |b-a|^2)
-            # over 2 sqrt(3) times the area -- twice it is det.
-            if det > 0.0:
-                conditioned = max(conditioned, (a.dot(a) + b.dot(b) + ab.dot(ab))
-                                  / (1.7320508075688772 * det))
-            else:
-                conditioned = big
+        if n == 3:
+            scaled, det, conditioned = _triangle(cells.side_position(c, 1, 0) - origin,
+                                                 cells.side_position(c, 2, 0) - origin,
+                                                 normal, big)
+            worst = scaled
+            least = det
+            most = det
+        elif n == 4:
+            p0 = origin
+            p1 = cells.side_position(c, 1, 0)
+            p2 = cells.side_position(c, 2, 0)
+            p3 = cells.side_position(c, 3, 0)
+            # The bilinear map's derivatives at the center.
+            middle = _unit(((p1 - p0) + (p2 - p3)).cross((p3 - p0) + (p2 - p1)))
+            for k in range(4):
+                here = cells.side_position(c, k, 0)
+                a0 = cells.side_position(c, k, 1) - here
+                a1 = cells.side_position(c, k + 3 if k == 0 else k - 1, 0) - here
+                det = a0.cross(a1).dot(middle)
+                lengths = a0.norm() * a1.norm()
+                worst = min(worst, det / lengths if lengths > 0.0 else 0.0)
+                least = min(least, det)
+                most = max(most, det)
+                # The square's corner edges are orthonormal, so T's norm is A's.
+                if det > 0.0:
+                    conditioned = max(conditioned, (a0.dot(a0) + a1.dot(a1)) / (2.0 * det))
+                else:
+                    conditioned = big
+        else:
+            for k in range(n):
+                scaled, det, fan = _triangle(cells.side_position(c, k, 0) - center,
+                                             cells.side_position(c, k, 1) - center, normal,
+                                             big)
+                worst = min(worst, scaled)
+                least = min(least, det)
+                most = max(most, det)
+                conditioned = max(conditioned, fan)
         sj[e] = worst
         cond[e] = conditioned
-        ratio[e] = least / most if most > 0.0 else -big
+        ratio[e] = _corner_ratio(least, most, big)
 
 
 @tack.kernel
@@ -472,10 +528,12 @@ def cell_quality(data, measures=None):
 
     - ``scaled_jacobian``: the least, over the cell's corners (and a hexahedron's
       center), of the determinant of its edges there, each scaled to unit length,
-      relative to the ideal cell's: 1 ideal, 0 degenerate, negative inverted.
+      relative to the ideal cell's: 1 ideal, 0 degenerate (an edge of no length
+      at a corner, or a flat cell; Verdict gives its largest value for such a
+      hexahedron), negative inverted.
     - ``jacobian_ratio``: the least corner determinant over the greatest; 1 for a
-      cell whose Jacobian is constant (every simplex), negative where one corner
-      is inverted.
+      cell whose Jacobian is constant (every simplex), 0 where every corner is
+      degenerate, negative where one corner is inverted.
     - ``condition``: the greatest, over the corners, condition number of the
       corner's edges against the ideal cell's (``|T| |T^-1| / d``, ``T = A W^-1``,
       Frobenius norms): 1 ideal, growing as the cell distorts, infinite (the
@@ -490,16 +548,18 @@ def cell_quality(data, measures=None):
     measured as Verdict does, by its four tetrahedra over both base diagonals.
     Polyhedra and polygons, which have no reference cell, are measured by the fan
     tetrahedra and triangles Tack evaluates them in, each against the regular
-    tetrahedron or equilateral triangle. Their Jacobian measures (scaled
-    Jacobian, Jacobian ratio, condition) are therefore on the fan's scale, not
-    the shapes': a cube as a polyhedron has a scaled Jacobian of 0.58 and a
-    condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron has an
-    ideal to score 1 against. Read them as a validity check -- a positive scaled
-    Jacobian when every fan tetrahedron is upright (the cell star-shaped from its
-    points' mean), zero or negative when one is flat or inverted -- and compare
-    polyhedra with each other, not with shaped cells. The edge measures mean the
-    same on every cell. Lines and vertices have no Jacobian measures (NaN); a
-    line's edges are its segments. Hidden cells are measured like the rest.
+    tetrahedron or equilateral triangle, except that a polygon of three or four
+    points is measured as the triangle or quad it is. Their Jacobian measures
+    (scaled Jacobian, Jacobian ratio, condition) are therefore on the fan's
+    scale, not the shapes': a cube as a polyhedron has a scaled Jacobian of 0.58
+    and a condition of 1.29 where the hexahedron has 1 and 1, and no polyhedron
+    has an ideal to score 1 against. Read them as a validity check -- a positive
+    scaled Jacobian when every fan tetrahedron is upright (the cell star-shaped
+    from its points' mean), zero or negative when one is flat or inverted -- and
+    compare polyhedra with each other, not with shaped cells. The edge measures
+    mean the same on every cell. Lines and vertices have no Jacobian measures
+    (NaN); a line's edges are its segments. Hidden cells are measured like the
+    rest.
 
     Matched to VTK 9.7.1's ``vtkMeshQuality`` to rounding for the scaled Jacobian
     of every linear shape, the condition number of triangles, quads, tetrahedra

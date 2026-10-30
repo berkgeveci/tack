@@ -34,8 +34,9 @@ from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ["PointLocator"]
 
-#: The most neighbours ``nearest`` keeps per point: its private arrays' size.
-MAX_K = 32
+#: The most neighbours ``nearest`` keeps in private arrays; more are kept in the
+#: output's rows.
+_PRIVATE_K = 32
 #: Bins along one axis at most, and bins in all at most per point.
 _AXIS_BINS = 1 << 20
 _BINS_PER_POINT = 4
@@ -215,57 +216,65 @@ def _fill_within(grid, queries, r, own, offsets, ids):
                             at += 1
 
 
+@tack.func
+def _nearest_into(grid, x, q, own, k, best_d, best_i, base):
+    # Rings of bins about x's bin, outwards, until the k-th distance is within
+    # the rings searched; the k best kept sorted by (distance, id) in
+    # best_d[base:base + k] and best_i[base:base + k]. The number found.
+    found = 0
+    ci, cj, ck = grid.cell(x)
+    ring = 0
+    searching = 1
+    while searching == 1:
+        for kk in range(ck - ring, ck + ring + 1):
+            for jj in range(cj - ring, cj + ring + 1):
+                for ii in range(ci - ring, ci + ring + 1):
+                    inside = (grid.ring_bin(ii, ci, grid.nx) and grid.ring_bin(jj, cj, grid.ny)
+                              and grid.ring_bin(kk, ck, grid.nz))
+                    far = max(abs(ii - ci), max(abs(jj - cj), abs(kk - ck)))
+                    if inside and far == ring:
+                        b = grid.bin(ii, jj, kk)
+                        for s in range(grid.first(b), grid.end(b)):
+                            p = grid.point(s)
+                            if own == 0 or p != q:
+                                d2 = grid.distance2(p, x)
+                                last = base + k - 1
+                                take = 0
+                                if found < k:
+                                    take = 1
+                                elif d2 < best_d[last] or (d2 == best_d[last]
+                                                           and p < best_i[last]):
+                                    take = 1
+                                if take == 1:
+                                    at = base + min(found, k - 1)
+                                    moving = 1
+                                    while moving == 1 and at > base:
+                                        if best_d[at - 1] > d2 or (best_d[at - 1] == d2
+                                                                   and best_i[at - 1] > p):
+                                            best_d[at] = best_d[at - 1]
+                                            best_i[at] = best_i[at - 1]
+                                            at -= 1
+                                        else:
+                                            moving = 0
+                                    best_d[at] = d2
+                                    best_i[at] = p
+                                    found = min(found + 1, k)
+        reach = ring * grid.side
+        if found == k and best_d[base + k - 1] <= reach * reach:
+            searching = 0
+        if ring >= grid.rings:
+            searching = 0
+        ring += 1
+    return found
+
+
 @tack.kernel
 def _nearest(grid, queries, k, own, ids, d2s):
-    # Rings of bins about the query's bin, outwards, until the k-th distance is
-    # within the rings searched; the k best kept sorted by (distance, id).
+    # At most _PRIVATE_K (32) neighbours, kept in private arrays.
     for q in range(queries.shape[0]):
-        x = queries[q]
         best_d = tack.local_array_like(d2s, 32)
         best_i = tack.local_array_like(ids, 32)
-        found = 0
-        ci, cj, ck = grid.cell(x)
-        ring = 0
-        searching = 1
-        while searching == 1:
-            for kk in range(ck - ring, ck + ring + 1):
-                for jj in range(cj - ring, cj + ring + 1):
-                    for ii in range(ci - ring, ci + ring + 1):
-                        inside = (grid.ring_bin(ii, ci, grid.nx) and grid.ring_bin(jj, cj, grid.ny)
-                                  and grid.ring_bin(kk, ck, grid.nz))
-                        far = max(abs(ii - ci), max(abs(jj - cj), abs(kk - ck)))
-                        if inside and far == ring:
-                            b = grid.bin(ii, jj, kk)
-                            for s in range(grid.first(b), grid.end(b)):
-                                p = grid.point(s)
-                                if own == 0 or p != q:
-                                    d2 = grid.distance2(p, x)
-                                    take = 0
-                                    if found < k:
-                                        take = 1
-                                    elif d2 < best_d[k - 1] or (d2 == best_d[k - 1]
-                                                                and p < best_i[k - 1]):
-                                        take = 1
-                                    if take == 1:
-                                        at = min(found, k - 1)
-                                        moving = 1
-                                        while moving == 1 and at > 0:
-                                            if best_d[at - 1] > d2 or (best_d[at - 1] == d2
-                                                                       and best_i[at - 1] > p):
-                                                best_d[at] = best_d[at - 1]
-                                                best_i[at] = best_i[at - 1]
-                                                at -= 1
-                                            else:
-                                                moving = 0
-                                        best_d[at] = d2
-                                        best_i[at] = p
-                                        found = min(found + 1, k)
-            reach = ring * grid.side
-            if found == k and best_d[k - 1] <= reach * reach:
-                searching = 0
-            if ring >= grid.rings:
-                searching = 0
-            ring += 1
+        found = _nearest_into(grid, queries[q], q, own, k, best_d, best_i, 0)
         for t in range(k):
             if t < found:
                 ids[q * k + t] = best_i[t]
@@ -273,6 +282,16 @@ def _nearest(grid, queries, k, own, ids, d2s):
             else:
                 ids[q * k + t] = -1
                 d2s[q * k + t] = -1.0
+
+
+@tack.kernel
+def _nearest_in_rows(grid, queries, k, own, ids, d2s):
+    # More neighbours, kept in the query's row of the output.
+    for q in range(queries.shape[0]):
+        found = _nearest_into(grid, queries[q], q, own, k, d2s, ids, q * k)
+        for t in range(found, k):
+            ids[q * k + t] = -1
+            d2s[q * k + t] = -1.0
 
 
 class PointLocator:
@@ -422,20 +441,27 @@ class PointLocator:
 
     @on_inputs_device
     def nearest(self, k, points=None):
-        """The ``k`` nearest points (``1 <= k <= MAX_K``) to each query point:
+        """The ``k`` nearest points (``k`` at least 1) to each query point:
         ``(ids, squared_distances)``, each ``(m, k)``, nearest first, ties by
         index; -1 (and a squared distance of -1) where there are fewer points
         than ``k``. The queries are the points themselves (each leaving itself
         out) unless ``points`` are given."""
-        if not (isinstance(k, (int, np.integer)) and 1 <= k <= MAX_K):
-            raise ValueError(f"k is a whole number from 1 to {MAX_K}, not {k!r}")
+        k = check_k(k)
         queries, own = self._queries(points)
         m = int(queries.shape[0])
         ids = tack.empty((m * k,), self.data.id_dtype)
         d2s = tack.empty((m * k,), self.data.dtype)
         if m:
-            _nearest(self.grid(), queries, int(k), own, ids, d2s)
+            (_nearest if k <= _PRIVATE_K else _nearest_in_rows)(self.grid(), queries, k, own,
+                                                                 ids, d2s)
         return ids.reshape((m, k)), d2s.reshape((m, k))
+
+
+def check_k(k):
+    """``k``, a number of neighbours, as an int: a whole number of at least 1."""
+    if not (isinstance(k, (int, np.integer)) and not isinstance(k, bool) and k >= 1):
+        raise ValueError(f"k is a whole number of at least 1, not {k!r}")
+    return int(k)
 
 
 def periodic_box(periodic):

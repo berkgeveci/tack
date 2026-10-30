@@ -351,3 +351,108 @@ fields ghost cells do not carry yet (it refuses them).
 ```python
 --8<-- "docs/gallery/pieces.py:pieces"
 ```
+
+## Flow
+
+The flow sections carry particles through a swirl inside the cube:
+divergence-free, its velocity along every face and never through one, so paths
+wind round rather than leave. The velocity is interpolated into each kind's
+space -- `H1` of order 4 on the straight cells, order 3 on the curved ones --
+and evaluated there, the curved cells inverted from their own geometry. Lines are
+drawn as tubes and vectors as arrows that Tack makes: `tubes` (VTK's
+`vtkTubeFilter`) and `glyphs` (`vtkGlyph3D` with its arrow).
+
+??? example "The swirl"
+
+    ```python
+    --8<-- "docs/gallery/_scene.py:swirl"
+    ```
+
+### Streamlines
+
+Paths from 25 seeds across the cube, RK45 with its steps measured along the path,
+each stopped at length 1.4 (about one turn), as tubes colored by the time taken.
+
+<div class="grid cards" markdown>
+
+-   ![Streamlines (polyhedra)](../assets/gallery/streamlines-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![Streamlines (tetrahedra)](../assets/gallery/streamlines-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![Streamlines (order 4 on straight cells)](../assets/gallery/streamlines-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![Streamlines (order 3 on curved cells)](../assets/gallery/streamlines-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/streamlines.py:streamlines"
+```
+
+### Glyphs
+
+The velocity as arrows on a 12 x 12 lattice across the cube's middle, sampled by
+probe, over the slice there colored by speed.
+
+<div class="grid cards" markdown>
+
+-   ![Velocity arrows (polyhedra)](../assets/gallery/glyphs-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![Velocity arrows (tetrahedra)](../assets/gallery/glyphs-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![Velocity arrows (order 4 on straight cells)](../assets/gallery/glyphs-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![Velocity arrows (order 3 on curved cells)](../assets/gallery/glyphs-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/glyphs.py:glyphs"
+```
+
+### Pathlines
+
+Particles through an unsteady swirl, its second part's weight rising from 0 to 1
+and back over 60 steps: the temporal filter `Pathlines` takes each step's dataset
+and moves every particle to the step's time, the velocity linear in time between
+steps. Each path is a tube colored by time.
+
+<div class="grid cards" markdown>
+
+-   ![Pathlines (polyhedra)](../assets/gallery/pathlines-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Polyhedra
+
+-   ![Pathlines (tetrahedra)](../assets/gallery/pathlines-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Tetrahedra
+
+-   ![Pathlines (order 4 on straight cells)](../assets/gallery/pathlines-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 4 on straight cells
+
+-   ![Pathlines (order 3 on curved cells)](../assets/gallery/pathlines-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
+
+    Order 3 on curved cells
+
+</div>
+
+```python
+--8<-- "docs/gallery/pathlines.py:pathlines"
+```

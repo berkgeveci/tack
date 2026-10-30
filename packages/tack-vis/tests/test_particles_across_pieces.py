@@ -125,6 +125,27 @@ def test_rk45_steps_go_with_the_particles_across_pieces():
         assert t == pytest.approx(float(whole.fields["time"].values.numpy()[q]), rel=1e-5)
 
 
+@pytest.mark.quick
+def test_a_terminal_speed_stops_particles_on_any_piece_as_on_the_whole():
+    """A helix that slows as it rises: particles stop below the terminal speed
+    wherever that happens, on the piece they are on, as on the whole grid."""
+    grid = helix()
+    x = grid.positions()
+    v = grid.fields["v"].values.numpy() * (1.2 - 0.5 * x[:, 2])[:, None]
+    grid.fields["v"] = td.Field(td.H1(grid), tack.array(v.astype(np.float32), tack.vec3()))
+    options = {"integrator": "rk45", "tolerance": 1e-5, "terminal_speed": 0.25}
+    whole = td.advect(grid, "v", SEEDS, 0.02, 400, **options)
+    got = by_seed(td.advect(td.split(grid, (2, 2, 2), ghost_layers=1), "v", SEEDS, 0.02, 400,
+                            **options))
+    slow = whole.fields["status"].values.numpy() & ParticleStatus.SLOW_SPEED
+    assert slow.sum() >= 2 * ParticleStatus.SLOW_SPEED      # some stop, mid-path
+    for q in range(len(SEEDS)):
+        x, n, status, t = got[q]
+        assert n == whole.fields["steps"].values.numpy()[q]
+        assert status == whole.fields["status"].values.numpy()[q]
+        np.testing.assert_allclose(x, whole.positions()[q], atol=1e-5)
+
+
 @pytest.mark.parametrize("budget", [1, 3])
 def test_launches_of_a_few_steps_hand_particles_on_alike(budget, monkeypatch):
     """Advection in launches of a few steps (a GPU's) pauses particles after whole

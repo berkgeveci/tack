@@ -86,6 +86,38 @@ def test_probe_of_a_structured_grid_is_vtks(backend):
 
 
 @needs_vtk
+def test_integer_fields_are_rounded_as_vtk_rounds_them(backend):
+    # VTK interpolates in doubles and rounds half away from zero; Tack evaluates
+    # in the geometry's type, so a value within its rounding of a half may go
+    # either way, and the same field as floats says which those are. One point
+    # 0.003 under the bottom face VTK takes within its tolerance; the values are
+    # compared where both hold the point.
+    grid = _grid("hexahedron")
+    x = np.asarray(grid.points.data).astype(np.float64)
+    labels = np.round(40 * x[:, 0] + 7 * x[:, 1]).astype(np.uint8)
+    offsets = np.round(np.c_[-30 * x[:, 2], 25 * x[:, 1] - 9, 3 * x[:, 0]]).astype(np.int16)
+    grid.point_data["labels"] = labels
+    grid.point_data["offsets"] = offsets
+    grid.point_data["as_floats"] = np.c_[labels, offsets].astype(np.float64)
+    points = np.random.default_rng(7).uniform(-0.4, 3.4, (500, 3))
+    out = td.probe(vtk_to_dataset(grid), points)
+    valid, expected = _vtk_probe(grid, points, "labels")
+    _, offsets_expected = _vtk_probe(grid, points, "offsets")
+    _, exact = _vtk_probe(grid, points, "as_floats")
+    held = out.fields["valid"].values.numpy() == 1
+    assert (held != (valid == 1)).sum() <= 1
+    inside = held & (valid == 1)
+    assert 50 < inside.sum() < 500
+    assert out.fields["labels"].values.dtype == tack.u8
+    ours = np.c_[out.fields["labels"].values.numpy(), out.fields["offsets"].values.numpy()]
+    theirs = np.c_[expected, offsets_expected]
+    clear = (np.abs(np.abs(exact - np.trunc(exact)) - 0.5) > 1e-4).all(axis=1)
+    np.testing.assert_array_equal(ours[inside & clear], theirs[inside & clear])
+    assert (np.abs(ours[inside].astype(np.int64) - theirs[inside]) <= 1).all()
+    assert (ours[~held] == 0).all()
+
+
+@needs_vtk
 def test_locator_finds_the_cell_and_its_coordinates(backend):
     grid = _grid("hexahedron")
     data = vtk_to_dataset(grid)

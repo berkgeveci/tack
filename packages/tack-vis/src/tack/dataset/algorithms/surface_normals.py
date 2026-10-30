@@ -162,7 +162,7 @@ def _consistent(data):
     pairs.fill(-1)
     relations = tack.zeros((nf,), tack.i32)
     for group in data.launch_groups("cells", []):
-        if group.count:
+        if group.count and group.shape.DIMENSION == 2:      # lines and vertices: no edges
             _edge_relations(data.domain_view("cells", group), faces.sides, pairs, relations)
     parents = tack.array(2 * np.arange(n, dtype=pdt.numpy_dtype), pdt)
     changed = tack.zeros((1,), tack.i32)
@@ -209,8 +209,10 @@ def surface_normals(data, consistent=True, weights=None):
     consistency, which is on by default there too. A surface no winding makes
     consistent (a Moebius strip) is refused, as is an edge of three or more
     polygons (the mesh's faces refuse it). A polygonal topology is consistent
-    already (it refuses to be made otherwise), so it is left as it is. The
-    result keeps every field; the normals are dimensionless."""
+    already (it refuses to be made otherwise), so it is left as it is. Lines
+    and vertices among the polygons are kept as they are, with a zero normal
+    that adds nothing at their points. The result keeps every field; the
+    normals are dimensionless."""
     from tack.dataset.ghosts import visible
 
     if weights not in (None, "area"):
@@ -227,10 +229,12 @@ def surface_normals(data, consistent=True, weights=None):
     n = data.num_cells
     cell_normals = _vectors(n, data.dtype)
     areas = tack.empty((n,), data.dtype)
+    cell_normals.fill(0)                           # lines and vertices: none,
+    areas.fill(0)                                  # nor any area to weigh by
     if not getattr(data.topology, "reference_cells", True):
         data.topology.faces()                      # a polygon's walk
     for group in data.launch_groups("cells", []):
-        if not group.count:
+        if not group.count or group.shape.DIMENSION != 2:
             continue
         view = data.domain_view("cells", group)
         if group.shape in _ROUND:

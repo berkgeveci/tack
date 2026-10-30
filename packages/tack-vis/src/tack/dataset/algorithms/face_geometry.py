@@ -84,10 +84,14 @@ def face_geometry(data):
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
     areas = tack.empty((faces.num_faces,), dtype)
-    if data.topology.dimension == 2:
-        for_each(_edge_geometry, data, "cells", normals, areas)
-    elif data.topology.dimension == 1:
-        for_each(_end_geometry, data, "cells", normals, areas)
+    dimension = data.topology.dimension
+    if dimension in (1, 2):
+        # Faces of a 2D or 1D mesh are its cells' sides; cells of a lower
+        # dimension (a surface's lines, a line mesh's vertices) have none.
+        kernel = _edge_geometry if dimension == 2 else _end_geometry
+        for group in data.launch_groups("cells", []):
+            if group.count and group.shape.DIMENSION == dimension:
+                kernel(data.domain_view("cells", group), normals, areas)
     else:
         for_each(_face_geometry, data, "faces", normals, areas)
     # A face of a k-dimensional mesh measures k - 1 dimensions; a polyline end's
