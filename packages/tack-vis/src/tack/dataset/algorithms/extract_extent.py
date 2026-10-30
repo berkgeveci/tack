@@ -43,6 +43,32 @@ def _ranges(extent, n):
     return [tuple(int(v) for v in values[2 * a:2 * a + 2]) for a in range(n)]
 
 
+def _grid_axes(data, n):
+    """Which of x, y and z a grid of ``n`` axes has, where its coordinates say (an
+    image's or a rectilinear grid's keep all three, the flat ones of one point);
+    otherwise None."""
+    coordinates = data.geometry.values
+    if n < 3 and isinstance(coordinates, (UniformCoordinates, CartesianProduct)):
+        axes = [a for a, d in enumerate(coordinates.dims) if d != 1]
+        if len(axes) == n:
+            return axes
+    return None
+
+
+def _vtk_form(data, n, extent, rate):
+    """``extent`` and ``rate`` given in VTK's three axes, as VTK writes a flat
+    image's (``(i0, i1, j0, j1, 0, 0)``, a rate per axis), reduced to the
+    grid's ``n`` axes; anything else as it is."""
+    values = np.asarray(extent, dtype=np.int64).reshape(-1)
+    axes = _grid_axes(data, n) if values.size == 6 else None
+    if axes is None:
+        return extent, rate
+    extent = [values[2 * a:2 * a + 2] for a in axes]
+    if np.ndim(rate) == 1 and len(rate) == 3:
+        rate = [rate[a] for a in axes]
+    return extent, rate
+
+
 @on_inputs_device
 def extract_extent(data, extent, rate=1, fields=None):
     """The points of ``data``, a structured grid, in the box ``extent`` -- one
@@ -51,7 +77,9 @@ def extract_extent(data, extent, rate=1, fields=None):
     count them, from the topology's ``offset``), clipped to the grid -- every
     ``rate``-th along each axis (a number, or one per axis): a structured grid
     of the same kind, an image's coordinates still uniform, a rectilinear
-    grid's axes cut, explicit points taken. VTK's ``vtkExtractGrid``.
+    grid's axes cut, explicit points taken. VTK's ``vtkExtractGrid``. A flat
+    image or rectilinear grid also takes VTK's three axes' extent and rates,
+    the flat axis's pair and rate ignored.
 
     An axis of one point is dropped: a k-plane of a 3D grid is a 2D grid,
     whose cells are faces of the 3D grid's. Point fields come along at the
@@ -65,6 +93,7 @@ def extract_extent(data, extent, rate=1, fields=None):
                         "or a curvilinear grid); extract_cells selects any mesh's cells")
     dims = list(topology.point_dims)
     n = len(dims)
+    extent, rate = _vtk_form(data, n, extent, rate)
     rates = [int(rate)] * n if np.ndim(rate) == 0 else [int(r) for r in rate]
     if len(rates) != n or min(rates) < 1:
         raise ValueError(f"rate is a step of at least 1, or one per axis, not {rate!r}")

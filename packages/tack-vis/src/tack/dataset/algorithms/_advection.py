@@ -35,19 +35,25 @@ ZERO_VELOCITY = tack.constant(64, tack.i32)
 # the piece that owns that cell (advection over a partitioned dataset). The
 # driver clears it; users never see it.
 HANDOFF = tack.constant(128, tack.i32)
+# Not Viskores': it stopped where the velocity's speed was at or below the
+# terminal speed (vtkStreamTracer's TerminalSpeed), with TERMINATE.
+SLOW_SPEED = tack.constant(256, tack.i32)
 
 
 class ParticleStatus(enum.IntFlag):
     """The bits of ``advect``'s ``status`` field, Viskores' ParticleStatus:
     ``SUCCESS`` (cleared when the seed was outside the mesh), ``TERMINATE`` (it
-    stopped after its steps or at zero velocity), ``SPATIAL_BOUNDS`` (it left
-    the mesh), ``TOOK_ANY_STEPS``, ``ZERO_VELOCITY``."""
+    stopped after its steps, at zero velocity, at its path's ``max_length`` or
+    below the terminal speed), ``SPATIAL_BOUNDS`` (it left the mesh),
+    ``TOOK_ANY_STEPS``, ``ZERO_VELOCITY``; and, not Viskores', ``SLOW_SPEED``
+    (it stopped where the speed was at or below ``terminal_speed``)."""
 
     SUCCESS = 1
     TERMINATE = 2
     SPATIAL_BOUNDS = 4
     TOOK_ANY_STEPS = 16
     ZERO_VELOCITY = 64
+    SLOW_SPEED = 256
 
 
 # What the next point location is for.
@@ -79,7 +85,7 @@ _METHODS = {"euler": int(_EULER), "rk4": int(_RK4), "rk45": int(_RK45)}
 @tack.kernel
 def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, steps, status,
             trace, trace_times, lengths, capacity, record, ghosts, handoff, budget, first,
-            moved, hints, tol, min_step, max_step, max_length, hs, travelled):
+            moved, hints, tol, min_step, max_step, max_length, terminal, hs, travelled):
     # by_length: h is an arc length, and the particle follows the velocity's
     # direction, v / |v| -- vtkStreamTracer's length unit -- with the time a
     # unit of length takes, 1 / |v|, integrated beside it by the same weights.
@@ -102,7 +108,9 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
     # (h for Euler and RK4), kept between launches and pieces; travelled[q] its
     # path's length so far (its steps in the length unit, the distances moved in
     # the time unit), for max_length (0: none), whose last step lands on it in
-    # the length unit.
+    # the length unit. terminal (0: none) is vtkStreamTracer's TerminalSpeed: a
+    # whole step is not begun where the velocity's speed is at or below it, so a
+    # path ends at its first point that slow (the seed's too).
     for q in range(xs.shape[0]):
         x = xs[q]
         t = times[q]
@@ -197,6 +205,7 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
             v = p - p
             if found == 1:
                 v = velocity.value(mesh, best, best_type, best_pc, best_tet)
+            raw = v.dot(v)            # the speed squared, before the length unit
             # Along the direction, the time a unit of length takes; a speed
             # at zero velocity's threshold stops the particle as before.
             w = h - h + 1.0
@@ -234,6 +243,11 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     else:
                         r1 = sub
                         bisect = 1
+                elif mode == _STEP and stage == 0 and terminal > 0.0 \
+                        and raw <= terminal * terminal:
+                    # Too slow to begin another step: the path ends here.
+                    st = st | SLOW_SPEED | TERMINATE
+                    running = 0
                 elif (method == _RK4 and stage < 3) or (method == _RK45 and stage < 5):
                     if stage == 0:
                         k1 = v
@@ -475,11 +489,12 @@ def _velocity(data, field):
 
 
 def _parameters(data, field, unit, who, step_size, tolerance=None, min_step=None,
-                max_step=None, max_length=None):
+                max_step=None, max_length=None, terminal_speed=None):
     """The step parameters as numbers: ``step_size``, ``min_step`` and ``max_step`` in
     the spatial unit along the path (``unit="length"``) or the field's time unit
-    (``"time"``), ``tolerance`` (a distance) and ``max_length`` in the spatial unit;
-    a plain number as given, ``None`` kept."""
+    (``"time"``), ``tolerance`` (a distance) and ``max_length`` in the spatial unit,
+    ``terminal_speed`` in the velocity's unit; a plain number as given, ``None``
+    kept."""
     def step(value, what):
         if value is None:
             return None
@@ -492,9 +507,21 @@ def _parameters(data, field, unit, who, step_size, tolerance=None, min_step=None
     def length(value, what):
         return None if value is None else _length(data, value, f"{who}'s {what}")
 
+    def speed(value):
+        if value is None or not _has_quantity(value):
+            return value
+        from tack.dataset.partitioned import PartitionedDataSet
+
+        if isinstance(data, PartitionedDataSet):
+            every = data.world._allgather([piece.fields[field].unit for piece in data])
+            velocity = units.common("the pieces' velocity", [u for part in every for u in part])
+        else:
+            velocity = _field(data, field).unit
+        return units.magnitude(value, velocity, f"{who}'s terminal_speed")
+
     return (step(step_size, "step size"), length(tolerance, "tolerance"),
             step(min_step, "min_step"), step(max_step, "max_step"),
-            length(max_length, "max_length"))
+            length(max_length, "max_length"), speed(terminal_speed))
 
 
 def _adaptive(integrator, step_size, tolerance, min_step, max_step):
@@ -524,7 +551,7 @@ def _adaptive(integrator, step_size, tolerance, min_step, max_step):
 
 def _run(data, field, seeds, step_size, steps, integrator, locator, record, resume=None,
          handoff=False, unit="time", tolerance=None, min_step=None, max_step=None,
-         max_length=None, neighbors=False):
+         max_length=None, neighbors=False, terminal_speed=None):
     """``resume``, ``(times, steps, status)`` for the seeds -- or with each one's
     current step and length so far, ``(times, steps, status, step, travelled)``
     -- goes on from there: ``steps`` counts the steps already taken, and a
@@ -532,7 +559,9 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     ending in a ghost cell (``HANDOFF``). ``unit`` is what ``step_size``
     measures: ``"time"``, or ``"length"`` along the path. ``tolerance``,
     ``min_step`` and ``max_step`` are RK45's (``_adaptive``); ``max_length``
-    stops a particle whose path has gone that far (``None``: no limit).
+    stops a particle whose path has gone that far (``None``: no limit), and
+    ``terminal_speed`` one where the velocity's speed is at or below it, before
+    another step (``None``: none).
     ``neighbors`` walks from a particle's last cell to its face neighbours before
     searching the bins (``CellLocator.cell_neighbors``).
 
@@ -543,6 +572,8 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     tol, low, high = _adaptive(integrator, step_size, tolerance, min_step, max_step)
     if max_length is not None and not float(max_length) > 0.0:
         raise ValueError(f"max_length must be positive, not {max_length!r}")
+    if terminal_speed is not None and not float(terminal_speed) >= 0.0:
+        raise ValueError(f"terminal_speed must be at least 0, not {terminal_speed!r}")
     if unit not in ("time", "length"):
         raise ValueError(f"step_unit is 'time' or 'length', not {unit!r}")
     geometry = data.geometry
@@ -608,6 +639,6 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
                   (_METHODS[integrator], 1 if unit == "length" else 0, eps, xs, times,
                    taken, status, trace, trace_times, lengths, capacity, 1 if record else 0,
                    ghosts, 1 if marks is not None else 0), xs.device,
-                  (tol, low, high, 0.0 if max_length is None else float(max_length), hs,
-                   travelled))
+                  (tol, low, high, 0.0 if max_length is None else float(max_length),
+                   0.0 if terminal_speed is None else float(terminal_speed), hs, travelled))
     return xs, times, taken, status, (trace, trace_times), lengths, capacity, (hs, travelled)

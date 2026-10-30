@@ -50,7 +50,7 @@ def _chains(kept, starts, lengths, line_offsets, line_points):
 @on_inputs_device
 def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None,
                 step_unit="time", tolerance=None, min_step=None, max_step=None,
-                max_length=None, neighbors=False):
+                max_length=None, neighbors=False, terminal_speed=None):
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
     positions after every step, the seed first, as one polyline per seed
     (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
@@ -72,7 +72,10 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     fiftieth of ``step_size`` and twice it, VTK's ratios), in ``step_unit``. A
     step at ``min_step`` is taken whatever its error. ``max_length`` (any
     integrator) stops a path that has gone that far, its last step landing on
-    it in the length unit.
+    it in the length unit; ``terminal_speed`` (in the velocity's unit, as
+    ``vtkStreamTracer``'s) ends a path at its first point where the speed is at
+    or below it, so a path stops where the flow does instead of wandering
+    through near-still fluid.
 
     Over a ``PartitionedDataSet`` (``field`` by name), paths cross from piece to
     piece, each piece holding the stretches it traced."""
@@ -80,11 +83,11 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     # a length ("1 mm"), in the spatial unit.
     if step_unit not in ("time", "length"):
         raise ValueError(f"step_unit is 'time' or 'length', not {step_unit!r}")
-    step_size, tolerance, min_step, max_step, max_length = _parameters(
+    step_size, tolerance, min_step, max_step, max_length, terminal_speed = _parameters(
         data, field, step_unit, "streamlines", step_size, tolerance, min_step, max_step,
-        max_length)
+        max_length, terminal_speed)
     adaptive = {"tolerance": tolerance, "min_step": min_step, "max_step": max_step,
-                "max_length": max_length}
+                "max_length": max_length, "terminal_speed": terminal_speed}
     from tack.dataset.partitioned import PartitionedDataSet
 
     if isinstance(data, PartitionedDataSet):

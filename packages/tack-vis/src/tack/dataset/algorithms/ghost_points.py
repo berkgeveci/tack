@@ -38,7 +38,7 @@ from tack.dataset.dataset import Field
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
-from tack.dataset.point_locator import MAX_K, PointLocator, periodic_box
+from tack.dataset.point_locator import PointLocator, check_k, periodic_box
 from tack.dataset.sets import Set
 from tack.dataset.spaces import H1, Constant, Values
 from tack.dataset.topology import UnstructuredTopology
@@ -63,7 +63,7 @@ def ghost_points(data, radius=None, k=None, periodic=None, around=None, fields=N
     reach) then gives each owned point the whole's answer. ``around`` (a
     ``PartitionedDataSet`` with a piece for each of ``data``'s) widens each
     piece's box to its own piece's points too: the targets ``sph_interpolate``
-    resamples onto there. With ``k`` (at most 32), every point among an owned
+    resamples onto there. With ``k``, every point among an owned
     point's ``k`` nearest, wherever it is: ``point_normals`` and ``outliers``
     by the ``k`` nearest then see the whole's neighbours.
 
@@ -104,8 +104,8 @@ def _ghosted(data, radius, k, periodic, around, fields, world):
                          "k nearest)")
     if radius is not None and not radius >= 0:
         raise ValueError(f"radius must be at least zero, not {radius!r}")
-    if k is not None and not (isinstance(k, (int, np.integer)) and 1 <= k <= MAX_K):
-        raise ValueError(f"k is a whole number from 1 to {MAX_K}, not {k!r}")
+    if k is not None:
+        k = check_k(k)
     if around is not None and k is not None:
         raise ValueError("around widens the boxes a radius reaches from; k needs none")
     if not isinstance(data, PartitionedDataSet):

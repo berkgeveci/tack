@@ -160,6 +160,28 @@ def as_origin(origin):
     return tuple(float(v) for v in values)
 
 
+#: How many times farther from zero than they are wide positions must be for an
+#: origin: below it, single precision relative to zero keeps 6e-6 of their width.
+_FAR = 100.0
+
+
+def automatic_origin(lower, upper):
+    """The origin positions in the box ``lower``-``upper`` take when none is given,
+    or None: the lower corner rounded down to whole units where the box is more
+    than ``_FAR`` (100) times farther from zero than it is wide (a survey's
+    eastings and northings, a terrain far from its datum), so single-precision
+    values relative to it keep their precision; none otherwise, or for no box."""
+    lower = np.asarray(lower, np.float64)
+    upper = np.asarray(upper, np.float64)
+    if not (np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))
+            and np.all(lower <= upper)):
+        return None
+    reach = max(np.abs(lower).max(), np.abs(upper).max())
+    if reach <= _FAR * (upper - lower).max():
+        return None
+    return tuple(float(v) for v in np.floor(lower))
+
+
 def same_origin(what, datasets):
     """The origin every one of ``datasets`` has, or ``ValueError`` naming ``what``
     if two differ: positions compared or moved between datasets must be relative
@@ -1196,9 +1218,10 @@ def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None
     ``positions`` is an ``(n, 3)`` host array of world positions, or a Tack array
     of 3-vectors already relative to ``origin``. Host positions are taken
     relative to ``origin`` in double precision before they become ``dtype``;
-    without one, float64 positions get the lower corner of their box, rounded
-    down to whole units, so a LiDAR survey's eastings and northings keep their
-    precision in single precision, and other positions get zero. ``dtype`` is
+    without one, float64 positions far from zero for their box's width get its
+    lower corner, rounded down to whole units (``automatic_origin``), so a
+    LiDAR survey's eastings and northings keep their precision in single
+    precision, and other positions get zero. ``dtype`` is
     ``tack.f32``, or ``tack.f64`` on a device that has it. Floating-point fields
     become ``dtype`` too; integer fields (a LAS classification, intensities) keep
     their type. ``unit`` is the spatial unit (``DataSet.unit``), which ``origin``
@@ -1219,7 +1242,7 @@ def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None
                            else None).reshape(-1, 3)
         n = len(world)
         if origin is None and world.dtype == np.float64 and n:
-            origin = np.floor(world.min(axis=0))
+            origin = automatic_origin(world.min(axis=0), world.max(axis=0))
         local = world.astype(np.float64) - np.asarray(as_origin(origin))
     with target:
         topology = UnstructuredTopology(*_vertex_cells(n, ids.choose(None, n)), num_points=n)

@@ -40,9 +40,9 @@ def net_flux(data, flux):
     out = _like(flux.values, data.num_cells)
     out.fill(0)
     # Cells of a lower dimension (a surface's triangles among tetrahedra) have
-    # no faces of the mesh's, so no flux: zero.
+    # no faces of the mesh's, so no flux: zero. Nor has a mesh of vertices any.
     values = materialize(flux.values)
     for group in data.launch_groups("cells", []):
-        if group.count and group.shape.DIMENSION == data.topology.dimension:
+        if group.count and group.shape.DIMENSION == data.topology.dimension > 0:
             _outward_sums(data.domain_view("cells", group), values, out)
     return Field(Values(data, "cells"), out, flux.unit)

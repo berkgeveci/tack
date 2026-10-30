@@ -257,24 +257,26 @@ def test_polyhedra_put_values_that_are_not_finite_where_shapes_do(backend, value
     assert sum(volumes) == pytest.approx(8.0, rel=1e-5)
 
 
-def test_a_nan_is_below_the_level_in_2d_contours_too(backend):
-    """A 2D mesh's lines found their first rising crossing with ``< iso`` but
-    paired crossings by ``>= iso``, so a NaN made the lines counted and the
-    lines written disagree, and the unwritten ones' slots (whatever ``empty``
-    held) indexed past an array: a bus error, now and then. A NaN gives the
-    lines -inf gives."""
+@pytest.mark.parametrize("dims", [(12, 12), (6, 6, 6)])
+def test_a_cell_holding_a_nan_has_no_contour(backend, dims):
+    """A cell with a NaN among its point values gives no lines or triangles: the
+    contour is that of the cells holding numbers alone (``threshold`` with
+    ``all_points``, which a NaN fails), so no point is placed on an edge to a
+    missing value. (In 2D, lines once counted and written by different rules
+    over a NaN indexed past an array: a bus error, now and then.)"""
     rng = np.random.default_rng(1)
-    grid = td.uniform_grid((12, 12))
-    for _ in range(10):
+    grid = td.uniform_grid(dims)
+    for _ in range(5):
         v = rng.random(grid.num_points).astype(np.float32)
-        v[rng.random(grid.num_points) < 0.2] = np.nan
-        counts = []
-        for values in (v, np.where(np.isnan(v), -np.inf, v).astype(np.float32)):
-            grid.fields["v"] = td.Field(td.H1(grid), tack.array(values))
-            lines = td.contour(grid, "v", 0.5)
-            lines.topology.validate()
-            counts.append(lines.num_cells)
-        assert counts[0] == counts[1]
+        v[rng.random(grid.num_points) < 0.1] = np.nan
+        grid.fields["v"] = td.Field(td.H1(grid), tack.array(v))
+        out = td.contour(grid, "v", 0.5)
+        out.topology.validate()
+        assert out.num_cells and np.isfinite(out.positions()).all()
+        theirs = td.contour(td.threshold(grid, "v", -1.0, 2.0, all_points=True), "v", 0.5)
+        assert out.num_cells == theirs.num_cells
+        np.testing.assert_allclose(np.sort(out.positions(), axis=0),
+                                   np.sort(theirs.positions(), axis=0), atol=1e-6)
 
 
 # ── A level through mesh points ─────────────────────────────────────
