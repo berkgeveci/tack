@@ -10,6 +10,11 @@
 - `integrate` takes point data on polyhedra, polygons and polylines, exactly:
   the values are linear on their sub-tetrahedra, triangles and segments. It
   took cell data alone.
+- A curved `L2` geometry on triangles, tetrahedra and wedges (a mesh displaced
+  by a DG field, a periodic mesh of order 2 or more) maps, measures and inverts
+  its cells as its `H1` twin (`_L2SimplexGeometry`, `_L2WedgeGeometry`, over
+  the `_SimplexGeometry` and `_WedgeGeometry` the `H1` ones now share). It was
+  refused.
 
 ### Fixed
 

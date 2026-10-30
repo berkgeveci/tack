@@ -744,8 +744,7 @@ def test_a_curved_l2_geometry_is_curved(f64_backend, layout):
     """A curved geometry in L2 (each cell its own nodes, as a mesh displaced by a DG
     field or a periodic mesh of order 2 keeps it) maps, bounds and inverts its cells
     as the same geometry in H1 does: probes and cell centres agree. It was read as
-    order-1 corner values, each cell's first values, and probes missed. On
-    tetrahedra it is refused, not misread."""
+    order-1 corner values, each cell's first values, and probes missed."""
     grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
     curved = _rotated(td.extract_cells(grid, np.arange(8)), seed=2)
     vec = tack.vec3(tack.f64)
@@ -761,12 +760,31 @@ def test_a_curved_l2_geometry_is_curved(f64_backend, layout):
     assert b.fields["valid"].values.numpy().all()
     np.testing.assert_allclose(b.fields["u"].values.numpy(), a.fields["u"].values.numpy(),
                                atol=1e-9)
-    tets = td.tetrahedralize(grid)
-    tets.geometry = td.interpolate(tets, _bend, td.H1(tets, order=2), dtype=vec)
-    space = td.L2(tets, order=2, basis="equispaced")
-    broken = td.DataSet(tets.topology, td.project(tets, tets.geometry, space))
-    with pytest.raises(NotImplementedError, match="curved L2 geometries"):
-        td.cell_centers(broken)
+
+
+@pytest.mark.parametrize("cells, order", [("tetrahedra", 2), ("tetrahedra", 3), ("wedges", 2),
+                                          ("wedges", 3)])
+def test_a_curved_l2_geometry_on_simplices_and_wedges(f64_backend, cells, order):
+    """A curved ``L2`` geometry on tetrahedra and wedges maps, measures and inverts
+    its cells as its ``H1`` twin: centres, measures and probes agree. It was
+    refused (MFEM's ports)."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    data = td.tetrahedralize(grid) if cells == "tetrahedra" else _wedges(grid)
+    vec = tack.vec3(tack.f64)
+    data.geometry = td.interpolate(data, _bend, td.H1(data, order=order), dtype=vec)
+    data.fields["u"] = td.interpolate(data, _quadratic, td.H1(data, order=order))
+    broken = td.DataSet(data.topology,
+                        td.project(data, data.geometry, td.L2(data, order=order)),
+                        fields={"u": data.fields["u"]})
+    np.testing.assert_allclose(td.cell_centers(broken).values.numpy(),
+                               td.cell_centers(data).values.numpy(), atol=1e-13)
+    np.testing.assert_allclose(td.cell_geometry(broken).measure.values.numpy(),
+                               td.cell_geometry(data).measure.values.numpy(), rtol=1e-12)
+    points = td.cell_centers(data).values.numpy()
+    a, b = td.probe(data, points), td.probe(broken, points)
+    assert b.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(b.fields["u"].values.numpy(), a.fields["u"].values.numpy(),
+                               atol=1e-12)
 
 
 @pytest.mark.parametrize("order", [1, 2])

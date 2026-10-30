@@ -2225,10 +2225,11 @@ class _L2SimplexField(_SimplexBasis):
         return self.get(self.dof_index(c, n))
 
 
-class _H1SimplexGeometry(_SimplexDofs, _SimplexPolynomials, _Geometry):
-    """Curved geometry of order 3 or more on simplices: an ``H1`` field of positions of
-    that order (equispaced). Positions and Jacobians from differences to node 0's
-    position, as the tensor geometry's, so f32 keeps thin cells."""
+class _SimplexGeometry(_SimplexPolynomials, _Geometry):
+    """A curved geometry on simplices (equispaced, or Bernstein), from its nodes'
+    positions wherever the space keeps them (``dof_index``). Positions and
+    Jacobians from differences to node 0's position, as the tensor geometry's, so
+    f32 keeps thin cells."""
 
     CURVED = 1
 
@@ -2247,10 +2248,6 @@ class _H1SimplexGeometry(_SimplexDofs, _SimplexPolynomials, _Geometry):
             a = min(a, s)
             b = max(b, s)
         return first + a, first + b
-
-    @tack.func
-    def corner_position(self, c, j):
-        return self.get(self.point_id(c, j))
 
     @tack.func
     def position(self, c, pc):
@@ -2274,6 +2271,28 @@ class _H1SimplexGeometry(_SimplexDofs, _SimplexPolynomials, _Geometry):
             m += (self.get(self.dof_index(c, n)) - first).outer_product(
                 self.simplex_gradient(n, f, g))
         return m
+
+
+class _H1SimplexGeometry(_SimplexDofs, _SimplexGeometry):
+    """Curved geometry of order 3 or more on simplices: an ``H1`` field of positions of
+    that order, its corners the points'."""
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+
+class _L2SimplexGeometry(_SimplexGeometry):
+    """A curved geometry in ``L2`` on simplices: each cell's own ``NODES`` positions
+    from ``point_offsets[cell]``; its corners where its map puts them."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return self.point_offsets[self.entity_id(c)] + n
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.position(c, self.parametric_point(j))
 
 
 class _SimplexNewton:
@@ -2527,8 +2546,9 @@ class _L2WedgeField(_WedgeBasis):
         return self.get(self.dof_index(c, n))
 
 
-class _H1WedgeGeometry(_WedgeDofs, _WedgePolynomials, _Geometry):
-    """Curved geometry of order 3 or more on wedges, from differences to node 0."""
+class _WedgeGeometry(_WedgePolynomials, _Geometry):
+    """A curved geometry on wedges, from differences to node 0, its nodes wherever
+    the space keeps them (``dof_index``)."""
 
     CURVED = 1
 
@@ -2545,10 +2565,6 @@ class _H1WedgeGeometry(_WedgeDofs, _WedgePolynomials, _Geometry):
             a = min(a, s)
             b = max(b, s)
         return first + a, first + b
-
-    @tack.func
-    def corner_position(self, c, j):
-        return self.get(self.point_id(c, j))
 
     @tack.func
     def position(self, c, pc):
@@ -2572,6 +2588,27 @@ class _H1WedgeGeometry(_WedgeDofs, _WedgePolynomials, _Geometry):
             m += (self.get(self.dof_index(c, n)) - first).outer_product(
                 self.wedge_gradient(n, f, g))
         return m
+
+
+class _H1WedgeGeometry(_WedgeDofs, _WedgeGeometry):
+    """Curved geometry of order 3 or more on wedges, its corners the points'."""
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+
+class _L2WedgeGeometry(_WedgeGeometry):
+    """A curved geometry in ``L2`` on wedges: each cell's own ``NODES`` positions from
+    ``point_offsets[cell]``; its corners where its map puts them."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return self.point_offsets[self.entity_id(c)] + n
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.position(c, self.parametric_point(j))
 
 
 class _WedgeNewton:
