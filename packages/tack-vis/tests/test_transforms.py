@@ -122,6 +122,84 @@ def test_transform_is_vtks(backend):
         td.transform(vtk_to_dataset(grid), np.ones((4, 4)))
 
 
+@tack.func
+def _wave(x):
+    return tack.sin(x[0]) * x[1] + 0.5 * x[2] * x[2]
+
+
+def _affine(seed, shear=False):
+    rng = np.random.default_rng(seed)
+    q, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+    linear = q @ np.diag([1.5, 0.7, 2.0])
+    if shear:
+        linear = linear @ np.array([[1.0, 0.4, 0.0], [0.0, 1.0, 0.0], [0.2, 0.0, 1.0]])
+    return np.vstack([np.c_[linear, rng.normal(size=3)], [0.0, 0.0, 0.0, 1.0]])
+
+
+@pytest.mark.parametrize("dims, shear", [((5, 4, 3), False), ((5, 4, 3), True), ((6, 5), False)])
+def test_transformed_images_stay_images(f64_backend, dims, shear):
+    """An image under an affine map is an image: the map folded into its origin and
+    direction (any invertible matrix), nothing stored per point, its positions the
+    map of the image's -- and every filter's output what it is on the same
+    positions stored. A singular map gives the positions themselves."""
+    from tack.arrays import UniformCoordinates
+
+    image = td.uniform_grid(dims, origin=(0.5, -1.0, 2.0)[:len(dims)],
+                            spacing=(0.3, 0.4, 0.5)[:len(dims)], dtype=tack.f64)
+    image.fields["s"] = td.interpolate(image, _wave, td.H1(image))
+    m = _affine(len(dims) + shear, shear)
+    out = td.transform(image, m)
+    assert isinstance(out.geometry.values, UniformCoordinates)
+    assert out.topology is image.topology and set(out.fields) == {"s"}
+    expected = image.positions() @ m[:3, :3].T + m[:3, 3]
+    np.testing.assert_allclose(out.positions(), expected, atol=1e-12)
+    stored = td.DataSet(image.topology, expected, dtype=tack.f64)
+    stored.fields["s"] = image.fields["s"]
+    centers = td.cell_centers(stored).values.numpy()
+    np.testing.assert_allclose(td.cell_centers(out).values.numpy(), centers, atol=1e-12)
+    np.testing.assert_allclose(td.probe(out, centers).fields["s"].values.numpy(),
+                               td.probe(stored, centers).fields["s"].values.numpy(), atol=1e-12)
+    # Twice: the directions compose.
+    twice = td.transform(out, m)
+    assert isinstance(twice.geometry.values, UniformCoordinates)
+    np.testing.assert_allclose(twice.positions(), expected @ m[:3, :3].T + m[:3, 3], atol=1e-11)
+    flat = np.diag([1.0, 1.0, 0.0, 1.0])
+    projected = td.transform(image, flat)
+    assert not isinstance(projected.geometry.values, UniformCoordinates)
+    np.testing.assert_allclose(projected.positions()[:, 2], 0.0)
+
+
+def test_a_far_transformed_image_keeps_its_bits(backend):
+    """On a dataset far from zero the map moves the origin in double precision and the
+    image's direction takes only its linear part, as for stored positions."""
+    image = td.uniform_grid((4, 4, 4), spacing=(0.25, 0.25, 0.25))
+    image.origin = (1e7, -3e6, 5e5)
+    m = _affine(9)
+    out = td.transform(image, m)
+    np.testing.assert_allclose(out.origin, m[:3, :3] @ np.asarray(image.origin) + m[:3, 3])
+    np.testing.assert_allclose(out.positions(), image.positions() @ m[:3, :3].T, atol=1e-6)
+
+
+@needs_vtk
+def test_transformed_images_go_to_vtk_as_images(f64_backend):
+    """VTK holds the folded map as an image's origin and direction matrix: the same
+    points as vtkTransformFilter makes of the image."""
+    from tack.interop.vtk import dataset_to_vtk
+
+    image = td.uniform_grid((5, 4, 3), origin=(0.5, -1.0, 2.0), spacing=(0.3, 0.4, 0.5),
+                            dtype=tack.f64)
+    m = _affine(4)
+    out = dataset_to_vtk(td.transform(image, m))
+    assert isinstance(out, vtk.vtkImageData)
+    t = vtk.vtkTransform()
+    t.SetMatrix(m.reshape(-1))
+    theirs = vtk.vtkTransformFilter(transform=t)(dataset_to_vtk(image))
+    ours = np.array([out.GetPoint(i) for i in range(out.number_of_points)])
+    np.testing.assert_allclose(ours, np.asarray(theirs.points.data), atol=1e-12)
+    back = vtk_to_dataset(out, dtype=tack.f64)
+    np.testing.assert_allclose(back.positions(), ours, atol=1e-12)
+
+
 def _viskores_cylindrical(p):
     r = np.hypot(p[:, 0], p[:, 1])
     theta = np.where(r > 0, np.arcsin(np.divide(p[:, 1], r, out=np.zeros_like(r), where=r > 0)), 0)

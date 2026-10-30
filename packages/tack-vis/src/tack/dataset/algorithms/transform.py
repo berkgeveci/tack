@@ -3,7 +3,7 @@
 import numpy as np
 
 import tack
-from tack.arrays import materialize, size_of
+from tack.arrays import UniformCoordinates, materialize, size_of
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.algorithms._moving import _moved
 from tack.runtime.dispatch import on_inputs_device
@@ -26,7 +26,13 @@ def transform(data, matrix, fields=None):
     applied to each position as a column (Viskores' PointTransform, VTK's
     vtkTransformFilter). On a dataset with an origin the map moves the origin,
     in double precision, and only its linear part acts on the geometry's values,
-    so a rotation far from zero loses nothing."""
+    so a rotation far from zero loses nothing.
+
+    An image stays an image: the map is folded into its origin and direction
+    (``UniformCoordinates``; the direction may be any invertible matrix, a shear
+    too), in double precision, and no position is stored -- as VTK's image data
+    with a direction matrix holds it. A singular map (a projection) gives the
+    positions themselves."""
     m = np.asarray(matrix, float)
     if m.shape == (4, 4):
         if not np.allclose(m[3], [0, 0, 0, 1]):
@@ -38,7 +44,17 @@ def transform(data, matrix, fields=None):
     if any(data.origin):
         origin = m[:, :3] @ np.asarray(data.origin) + m[:, 3]
         m = np.hstack([m[:, :3], np.zeros((3, 1))])
-    n = size_of(data.geometry.values)
+    values = data.geometry.values
+    # A singular map (a projection) flattens the image: its positions are stored.
+    if isinstance(values, UniformCoordinates) and np.linalg.det(m[:, :3]) != 0.0:
+        image = UniformCoordinates(values.dims, m[:, :3] @ np.asarray(values._origin) + m[:, 3],
+                                   values._spacing, m[:, :3] @ values._matrix,
+                                   dtype=data.dtype, device=data.device)
+        out = _moved(data, image, fields)
+        if origin is not None:
+            out.origin = origin
+        return out
+    n = size_of(values)
     out = _vectors(n, data.dtype)
     if n:
         _affine(materialize(data.geometry.values), *map(float, m.reshape(-1)), out)
