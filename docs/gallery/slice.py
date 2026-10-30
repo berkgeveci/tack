@@ -3,7 +3,7 @@
 """Slice: three planes through each kind of cell, colored by the field they cut,
 over the cells' outline.
 
-From the checkout (writes docs/assets/gallery/slice-<kind>.png):
+From the checkout (writes docs/assets/gallery/slice-<kind>.jpg):
 uv run python docs/gallery/slice.py [polyhedra linear high-order curved] [--arch metal]
 """
 
@@ -32,7 +32,7 @@ def main():
     for kind in args.kinds:
         data = _scene.dataset(kind)
         parts = [(cut, "u", (-3.0, 3.0)) for cut in slice_(data)]
-        _scene.draw(args.output / f"slice-{kind}.png", parts, outline=_scene.outline(data),
+        _scene.draw(args.output / f"slice-{kind}.jpg", parts, outline=_scene.outline(data),
                     lit=False)
 
 

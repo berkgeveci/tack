@@ -36,19 +36,19 @@ The P surface (zero) and the levels -1 and 1, each colored by its level.
 
 <div class="grid cards" markdown>
 
--   ![Contours of polyhedra](../assets/gallery/contour-polyhedra.png){ loading=lazy }
+-   ![Contours of polyhedra](../assets/gallery/contour-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Polyhedra
 
--   ![Contours of tetrahedra](../assets/gallery/contour-linear.png){ loading=lazy }
+-   ![Contours of tetrahedra](../assets/gallery/contour-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Tetrahedra
 
--   ![Contours of an order-4 field](../assets/gallery/contour-high-order.png){ loading=lazy }
+-   ![Contours of an order-4 field](../assets/gallery/contour-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Order 4 on straight cells
 
--   ![Contours on curved cells](../assets/gallery/contour-curved.png){ loading=lazy }
+-   ![Contours on curved cells](../assets/gallery/contour-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Order 3 on curved cells
 
@@ -65,19 +65,19 @@ the twisted geometry, not through its corners.
 
 <div class="grid cards" markdown>
 
--   ![Slices of polyhedra](../assets/gallery/slice-polyhedra.png){ loading=lazy }
+-   ![Slices of polyhedra](../assets/gallery/slice-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Polyhedra
 
--   ![Slices of tetrahedra](../assets/gallery/slice-linear.png){ loading=lazy }
+-   ![Slices of tetrahedra](../assets/gallery/slice-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Tetrahedra
 
--   ![Slices of an order-4 field](../assets/gallery/slice-high-order.png){ loading=lazy }
+-   ![Slices of an order-4 field](../assets/gallery/slice-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Order 4 on straight cells
 
--   ![Slices of curved cells](../assets/gallery/slice-curved.png){ loading=lazy }
+-   ![Slices of curved cells](../assets/gallery/slice-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Order 3 on curved cells
 
@@ -99,19 +99,19 @@ boundaries are shaded flat, since a clipped solid has sharp edges.
 
 <div class="grid cards" markdown>
 
--   ![Clipped polyhedra](../assets/gallery/clip-polyhedra.png){ loading=lazy }
+-   ![Clipped polyhedra](../assets/gallery/clip-polyhedra.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Polyhedra
 
--   ![Clipped tetrahedra](../assets/gallery/clip-linear.png){ loading=lazy }
+-   ![Clipped tetrahedra](../assets/gallery/clip-linear.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Tetrahedra
 
--   ![A clipped order-4 field](../assets/gallery/clip-high-order.png){ loading=lazy }
+-   ![A clipped order-4 field](../assets/gallery/clip-high-order.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Order 4 on straight cells
 
--   ![Clipped curved cells](../assets/gallery/clip-curved.png){ loading=lazy }
+-   ![Clipped curved cells](../assets/gallery/clip-curved.jpg){ loading=lazy decoding=async width=640 height=560 }
 
     Order 3 on curved cells
 

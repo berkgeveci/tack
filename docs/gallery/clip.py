@@ -3,7 +3,7 @@
 """Clip: each kind of cell with a ball about a corner of the cube taken out, the
 kept part's surface colored by the field, over the cells' outline.
 
-From the checkout (writes docs/assets/gallery/clip-<kind>.png):
+From the checkout (writes docs/assets/gallery/clip-<kind>.jpg):
 uv run python docs/gallery/clip.py [polyhedra linear high-order curved] [--arch metal]
 """
 
@@ -38,7 +38,7 @@ def main():
     args = _scene.arguments(__doc__)
     for kind in args.kinds:
         data = _scene.dataset(kind)
-        _scene.draw(args.output / f"clip-{kind}.png", [(surface(clip(data)), "u", (-3.0, 3.0))],
+        _scene.draw(args.output / f"clip-{kind}.jpg", [(surface(clip(data)), "u", (-3.0, 3.0))],
                     outline=_scene.outline(data))
 
 

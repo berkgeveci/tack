@@ -176,13 +176,14 @@ _COOL_TO_WARM = ((0.0, (0.23, 0.299, 0.754)), (0.5, (0.865, 0.865, 0.865)),
 def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True):
     """Draw ``parts`` -- ``(dataset, field name, range)``, a field on points or cells,
     or ``(dataset, None, None)`` for plain grey -- and ``outline`` (lines, thin and
-    dark) to a PNG at ``path``, seen from ``view`` (azimuth and elevation in
+    dark) to a progressive JPEG at ``path`` (a third of a PNG's size, so the page
+    loads quickly), seen from ``view`` (azimuth and elevation in
     degrees, from the -y side of the unit cube). Lit less (``lit=False``), mostly
     ambient, the parts show their colors, as a slice is read by them, with
     enough shade to tell planes apart."""
     import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  # registers the rendering backend
-    from vtkmodules.vtkIOImage import vtkPNGWriter
+    from vtkmodules.vtkIOImage import vtkJPEGWriter
     from vtkmodules.vtkRenderingCore import (
         VTK_GET_ARRAY_BY_NAME,
         VTK_SCALAR_MODE_USE_CELL_FIELD_DATA,
@@ -242,8 +243,9 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
     window.Render()
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect, Write().
-    png = vtkPNGWriter(file_name=str(path))
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
+    # An image writer called on its input writes raw pixels (VTK 9.7.1): connect,
+    # Write().
+    jpeg = vtkJPEGWriter(file_name=str(path), quality=85, progressive=True)
+    vtkWindowToImageFilter(input=window) >> jpeg
+    jpeg.Write()
     print(f"wrote {path}")

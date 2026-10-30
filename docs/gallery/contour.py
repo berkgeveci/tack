@@ -3,7 +3,7 @@
 """Contour: Schwarz's P surface and two levels either side of it, on each kind of
 cell, over the cells' outline.
 
-From the checkout (writes docs/assets/gallery/contour-<kind>.png):
+From the checkout (writes docs/assets/gallery/contour-<kind>.jpg):
 uv run python docs/gallery/contour.py [polyhedra linear high-order curved] [--arch metal]
 """
 
@@ -29,7 +29,7 @@ def main():
     for kind in args.kinds:
         data = _scene.dataset(kind)
         surfaces = _scene.normals(contour(data))
-        _scene.draw(args.output / f"contour-{kind}.png",
+        _scene.draw(args.output / f"contour-{kind}.jpg",
                     [(surfaces, "contour_value", (LEVELS[0], LEVELS[-1]))],
                     outline=_scene.outline(data))
 
