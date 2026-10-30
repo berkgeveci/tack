@@ -462,8 +462,9 @@ class _KeyProbe:
 class KernelVariant:
     """One compiled specialization of a kernel, plus the IR behind it.
 
-    `ir` is the post-pass IR — kept so the loop range can be resolved from
-    it on every dispatch without re-running the passes. `payload` is
+    `ir` is the post-pass IR's skeleton (``_launch_skeleton``) — kept so the
+    loop range can be resolved from it on every dispatch without re-running
+    the passes. `payload` is
     whatever the backend needed to cache alongside it. `written_arrays`
     lists ``(index, name)`` for each array argument the kernel may store
     to, so a dispatch can refuse read-only storage without walking IR.
@@ -711,6 +712,7 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
                                                  for a in effective_args))
         slot[key] = variant
         _store_variant(backend, disk_key, variant)
+        variant.ir = _launch_skeleton(ir_func)
     elif variant.requires_full_workgroups:
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
@@ -752,7 +754,7 @@ def _stored_variant(backend, disk_key, template, effective_args):
     except Exception:
         disk_cache._count("bad")
         return None
-    variant = KernelVariant(ir_func, payload,
+    variant = KernelVariant(_launch_skeleton(ir_func), payload,
                             requires_full_workgroups=entry["full_groups"],
                             atomic_targets=entry["atomic_targets"],
                             written_arrays=_written_array_args(template, effective_args),
@@ -761,6 +763,22 @@ def _stored_variant(backend, disk_key, template, effective_args):
         check_workgroup_launch(ir_func.name, _get_loop_range(ir_func, effective_args),
                                backend_label=backend.label)
     return variant
+
+
+def _launch_skeleton(ir_func):
+    """What a compiled variant keeps of its IR: the function's name, parameters
+    and metadata, and the parallel loop with its bounds but not its body, which
+    is all dispatch reads (``_get_launch``). The body was most of the memory a
+    variant held: tens of megabytes of IR for a high-order filter's kernels."""
+    import copy
+    skeleton = copy.copy(ir_func)
+    skeleton.__dict__.pop('_launch_plan', None)
+    loop = next((s for s in ir_func.body if isinstance(s, ir.IRParallelFor)), None)
+    if loop is not None:
+        loop = copy.copy(loop)
+        loop.body = []
+    skeleton.body = [loop] if loop is not None else []
+    return skeleton
 
 
 def _store_variant(backend, disk_key, variant):

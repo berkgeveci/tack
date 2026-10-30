@@ -288,6 +288,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
     from tack.lang.inspect_kernel import _prepare_ir
     from tack.lang.ir_traversal import walk_ir
     from tack.runtime.dispatch import get_backend
+    from tack.runtime.kernel_utils import _launch_skeleton
 
     tack.set_default_device("cpu")
 
@@ -300,8 +301,10 @@ def test_inspection_localizes_assigned_scalar_parameters():
     out = tack.empty((4,), tack.i32)
     inspected, _ = _prepare_ir(increment, (out, 3))
     increment(out, 3)
+    # A variant keeps only its IR's launch skeleton (the loop's body goes once
+    # compiled): the parameters and loop agree; the body is checked below.
     executed = next(iter(get_backend()._cache[increment].values())).ir
-    assert ir.dump(inspected) == ir.dump(executed)
+    assert ir.dump(_launch_skeleton(inspected)) == ir.dump(executed)
     assignments = [node.target for node in walk_ir(inspected) if isinstance(node, ir.IRAssign)]
     assert 'value' not in assignments
     assert '__value_local__' in assignments

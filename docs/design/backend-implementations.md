@@ -103,8 +103,14 @@ NumPy storage, first touched by the kernel that writes it.
 - `_optimize_module()` runs the new pass manager's O3 pipeline
   (`create_pipeline_tuning_options(3)`) with loop vectorization, SLP
   vectorization, loop unrolling and loop interleaving enabled.
-- The JIT is `llvm.create_mcjit_compiler` with a *second* target machine,
-  because MCJIT takes ownership of the one it is given.
+- The code joins a shared MCJIT engine (`cpu_pool.shared_jit`, a new one
+  every `MODULES_PER_ENGINE` (32) modules), under an entry name made unique
+  (`unique_name`: the process's random tag and a serial number), since
+  kernels of one name would otherwise share an address there. Once the code
+  is made the engine drops the module's IR (`remove_module`). An engine of
+  its own cost about 950 KB a variant, mostly its memory manager's sections
+  and state; shared, about 75 KB. Each variant keeps its engine alive, so an
+  engine goes with the last of its variants.
 
 No fast-math flags are emitted, so floating-point semantics follow
 [Numerical Semantics](numerical-semantics.md). The entry point is looked up
@@ -130,9 +136,11 @@ loads the arguments from 8-byte slots (`pack_args`) and calls the kernel at
 its address.
 
 **Disk cache.** `set_object_cache` captures the object code MCJIT emits, and
-`variant_artifact` stores it; `load_variant` adds it to a new engine with
+`variant_artifact` stores it after a header and the entry's unique name
+(`_STORED`); `load_variant` adds it to the shared engine with
 `add_object_file`, which takes about 0.4 ms and runs neither LLVM's
-optimizer nor its code generator.
+optimizer nor its code generator. The name is unique across processes too,
+so code stored by two processes loads into one engine.
 
 **Launch.** Whether a dispatch runs serially or fans out across the pool is
 decided by measurement, not a fixed threshold; [CPU Threading

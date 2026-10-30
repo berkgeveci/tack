@@ -410,7 +410,10 @@ describes each pass in detail.
 GPU backends pack scalars on *another* clone. Packing rewrites the
 parameter list, and dispatch needs the unpacked IR to evaluate the launch
 range against the original arguments. `KernelVariant.ir` keeps the
-pre-packing IR. The payload holds the compiled kernel, the `pack_info`,
+pre-packing IR's skeleton (`_launch_skeleton`: name, parameters, and the
+parallel loop with its bounds but no body), once the variant is stored to
+disk; the bodies were most of what variants held, tens of megabytes for a
+high-order filter's kernels. The payload holds the compiled kernel, the `pack_info`,
 and on CUDA, HIP and Level Zero the pack buffers, which are allocated once
 per variant (Metal makes a buffer of a launch's scalars per launch). The
 CPU annotates the variant's IR in place, since nothing else reads it.
