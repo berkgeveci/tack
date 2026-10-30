@@ -322,7 +322,8 @@ _COOL_TO_WARM = ((0.0, (0.23, 0.299, 0.754)), (0.5, (0.865, 0.865, 0.865)),
                  (1.0, (0.706, 0.016, 0.15)))
 
 
-def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True):
+def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True,
+         flat=False):
     """Draw ``parts`` -- ``(dataset, field name, range)``, a field on points or cells,
     or ``(dataset, None, None)`` for plain grey, and optionally a fourth entry, a
     dict of the actor's properties (``color``, ``line_width``, ...) -- and
@@ -331,7 +332,8 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
     loads quickly), seen from ``view`` (azimuth and elevation in
     degrees, from the -y side of the unit cube). Lit less (``lit=False``), mostly
     ambient, the parts show their colors, as a slice is read by them, with
-    enough shade to tell planes apart."""
+    enough shade to tell planes apart. ``flat`` looks down the z axis instead, at a
+    2D mesh."""
     import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
     import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  # registers the rendering backend
     from vtkmodules.vtkIOImage import vtkJPEGWriter
@@ -392,11 +394,16 @@ def draw(path, parts, outline=None, view=(30.0, 20.0), size=(640, 560), lit=True
     window = vtkRenderWindow(off_screen_rendering=True, size=size, multi_samples=8)
     window.AddRenderer(renderer)
     camera = renderer.active_camera
-    camera.position = (0.5, -2.5, 0.5)
-    camera.focal_point = (0.5, 0.5, 0.5)
-    camera.view_up = (0.0, 0.0, 1.0)
-    camera.Azimuth(view[0])
-    camera.Elevation(view[1])
+    if flat:
+        camera.position = (0.0, 0.0, 1.0)
+        camera.focal_point = (0.0, 0.0, 0.0)
+        camera.view_up = (0.0, 1.0, 0.0)
+    else:
+        camera.position = (0.5, -2.5, 0.5)
+        camera.focal_point = (0.5, 0.5, 0.5)
+        camera.view_up = (0.0, 0.0, 1.0)
+        camera.Azimuth(view[0])
+        camera.Elevation(view[1])
     renderer.ResetCamera()
     camera.Zoom(1.15)
     window.Render()
