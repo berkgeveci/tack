@@ -323,6 +323,27 @@ def _check_tensor(data, what):
     return families.pop() if families else False
 
 
+def _table_values(data, gf, order):
+    """``gf``, an H1 grid function of order 2 or more on a basis Tack has, as ``(space,
+    values)``: its values as MFEM stores them, in a space numbered by MFEM's
+    element-to-DOF table (``H1(..., dofs=table)``, each row in Tack's node order),
+    so nothing is permuted."""
+    from tack.dataset import H1, bases
+    from tack.dataset.ids import at_least
+
+    simplex = _check_tensor(data, f"MFEM H1 order {order}")
+    fes = gf.FESpace()
+    nodes = _nodes_of(fes)
+    if nodes is None or (simplex and nodes not in ("equispaced", "bernstein")):
+        raise ValueError(f"MFEM's {fes.FEColl().Name()} has no basis here to number by its "
+                         "table: import it without dofs='table', evaluated at Tack's nodes")
+    table = _element_dofs(fes, bases.nodes(nodes, order), order)
+    idt = at_least(data.id_dtype, fes.GetNDofs())
+    space = H1(data, order=order, basis=nodes,
+               dofs=tack.array(table.reshape(-1).astype(idt.numpy_dtype)))
+    return space, _by_dof(fes, gf.GetDataArray())
+
+
 def _tensor_values(data, mesh, gf, family, order):
     """``gf``, an H1 or L2 grid function of order ``order`` on quads or hexahedra, as
     ``(space, values)`` in Tack's space of that order. On nodes Tack has
@@ -441,13 +462,22 @@ def _supported():
     return get_backend().supported_dtypes
 
 
-def mfem_field(data, mesh, gf, dtype=tack.f32):
+def mfem_field(data, mesh, gf, dtype=tack.f32, dofs=None):
     """``gf``, an MFEM grid function on ``mesh``, as a field of ``data`` (the dataset
-    ``mfem_to_dataset`` made from ``mesh``)."""
+    ``mfem_to_dataset`` made from ``mesh``). ``dofs="table"`` keeps an ``H1`` field
+    of order 2 and up numbered as MFEM numbers it: its values as they are, in a
+    space numbered by MFEM's element-to-DOF table (``H1(..., dofs=table)``), on the
+    bases whose values are copied; by default they are permuted into Tack's
+    numbering by entity."""
     from tack.dataset import H1, L2, Constant, Field
 
+    if dofs not in (None, "table"):
+        raise ValueError(f"dofs is None or 'table', not {dofs!r}")
     fes = gf.FESpace()
     family, order = _collection(fes)
+    if dofs == "table" and family == "H1" and order >= 2:
+        space, values = _table_values(data, gf, order)
+        return Field(space, _field_values(values, dtype))
     if family == "H1" and order == 1:
         if fes.GetNDofs() != mesh.GetNV():
             raise ValueError("an order-1 H1 space has a DOF per vertex")
@@ -465,16 +495,19 @@ def mfem_field(data, mesh, gf, dtype=tack.f32):
     raise NotImplementedError(f"MFEM {family} order {order} has no space here yet")
 
 
-def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
+def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None, dofs=None):
     """A ``tack.dataset.DataSet`` of an MFEM mesh and named grid functions on it.
 
     The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved
-    mesh an ``H1`` field of positions of its nodes' order (above order 2, on
-    quads and hexahedra). Element attributes become ``fields["attribute"]``.
-    ``id_dtype`` is the topology's (``tack.dataset.ids``).
+    mesh an ``H1`` field of positions of its nodes' order. Element attributes
+    become ``fields["attribute"]``. ``id_dtype`` is the topology's
+    (``tack.dataset.ids``). ``dofs="table"`` numbers a curved geometry and the
+    ``H1`` fields of order 2 and up as MFEM does (``mfem_field``).
     """
     from tack.dataset import Constant, DataSet, Field
 
+    if dofs not in (None, "table"):
+        raise ValueError(f"dofs is None or 'table', not {dofs!r}")
     nodes = mesh.GetNodes()
     curved = nodes is not None and _collection(nodes.FESpace())[1] > 1
     order = _collection(nodes.FESpace())[1] if curved else 1
@@ -496,7 +529,9 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
     if curved:
         # The corners first, to have a dataset to number the nodes on; then the
         # curved geometry, MFEM's nodes at those nodes.
-        if order == 2 and _nodes_of(nodes.FESpace()) not in (None, "bernstein"):
+        if dofs == "table":
+            space, values = _table_values(data, nodes, order)
+        elif order == 2 and _nodes_of(nodes.FESpace()) not in (None, "bernstein"):
             space, values = _quadratic_values(data, mesh, nodes)
         else:
             space, values = _tensor_values(data, mesh, nodes, "H1", order)
@@ -504,5 +539,5 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
     attributes = np.array([mesh.GetAttribute(e) for e in range(mesh.GetNE())], np.int32)
     data.fields["attribute"] = Field(Constant(data), _field_values(attributes, tack.i32))
     for name, gf in (fields or {}).items():
-        data.fields[name] = mfem_field(data, mesh, gf, dtype=dtype)
+        data.fields[name] = mfem_field(data, mesh, gf, dtype=dtype, dofs=dofs)
     return data
