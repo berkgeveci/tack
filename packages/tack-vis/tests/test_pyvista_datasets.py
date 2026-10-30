@@ -4,16 +4,26 @@ volume, surfaces with lines, point clouds of 100k points, integer fields.
 Each converts to a dataset or is refused for a stated reason, and every
 algorithm of the device tests runs on each one, to an answer or a stated
 refusal. Known failures are strict ``xfail``s naming what is wrong, so a fix
-shows. Skipped without the files: ``python _pyvista_datasets.py`` fetches
-them into ``TACK_PYVISTA_DATA``."""
+shows.
+
+Not part of CI or the default run: the module runs only when
+``TACK_PYVISTA_DATA`` names the files' directory (``python
+_pyvista_datasets.py`` fetches them there), and is otherwise skipped whole,
+before its 8700 cases are made."""
 
 import functools
+import os
 import re
 import warnings
 
+import pytest
+
+if not os.environ.get("TACK_PYVISTA_DATA"):
+    pytest.skip("PyVista's datasets run only with TACK_PYVISTA_DATA set (not in CI)",
+                allow_module_level=True)
+
 import _pyvista_datasets as pv
 import numpy as np
-import pytest
 import test_dataset_devices
 import test_viskores_datasets
 
