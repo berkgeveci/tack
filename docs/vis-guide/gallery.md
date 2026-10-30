@@ -9,6 +9,9 @@ only draws linear polygons and lines. Run one alone
 (`uv run python docs/gallery/contour.py curved --arch metal`), or all of them with
 `docs/gallery/build.py`.
 
+The [MFEM Gallery](mfem-gallery.md) shows MFEM's examples through Tack: curved
+meshes, adaptive refinement, periodic meshes and DG fields solved with PyMFEM.
+
 The kinds of cells, left to right:
 
 - **Polyhedra**: Voronoi cells of random points extruded through the cube, a

@@ -161,6 +161,7 @@ nav:
           - Communicate Between Blocks: vis-guide/14-communication.md
       - Worked Examples: vis-guide/examples.md
       - Gallery: vis-guide/gallery.md
+      - MFEM Gallery: vis-guide/mfem-gallery.md
       - Reference:
           - Dataset API: vis-guide/reference/dataset-api.md
           - Algorithms: vis-guide/reference/algorithms.md
