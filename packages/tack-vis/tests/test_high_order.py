@@ -719,3 +719,33 @@ def test_jumps_of_a_high_order_dg_field_are_at_the_face_center(f64_backend, cell
     inner = sides[:, 2] >= 0
     expected = np.where(inner, (sides[:, 2] - sides[:, 0]) * x ** 2, 0.0)
     np.testing.assert_allclose(jumps, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("layout", ["blocks", "cells"])
+def test_a_curved_l2_geometry_is_curved(f64_backend, layout):
+    """A curved geometry in L2 (each cell its own nodes, as a mesh displaced by a DG
+    field or a periodic mesh of order 2 keeps it) maps, bounds and inverts its cells
+    as the same geometry in H1 does: probes and cell centres agree. It was read as
+    order-1 corner values, each cell's first values, and probes missed. On
+    tetrahedra it is refused, not misread."""
+    grid = td.uniform_grid((3, 3, 3), spacing=(0.5, 0.5, 0.5), dtype=tack.f64)
+    curved = _rotated(td.extract_cells(grid, np.arange(8)), seed=2)
+    vec = tack.vec3(tack.f64)
+    curved.geometry = td.interpolate(curved, _bend, td.H1(curved, order=2), dtype=vec)
+    curved.fields["u"] = td.interpolate(curved, _quadratic, td.H1(curved, order=2))
+    space = td.L2(curved, order=2, layout=layout)
+    broken = td.DataSet(curved.topology, td.project(curved, curved.geometry, space),
+                        fields={"u": curved.fields["u"]})
+    centers = td.cell_centers(curved).values.numpy()
+    np.testing.assert_allclose(td.cell_centers(broken).values.numpy(), centers, atol=1e-13)
+    points = curved.geometry.values.numpy()
+    a, b = td.probe(curved, points), td.probe(broken, points)
+    assert b.fields["valid"].values.numpy().all()
+    np.testing.assert_allclose(b.fields["u"].values.numpy(), a.fields["u"].values.numpy(),
+                               atol=1e-9)
+    tets = td.tetrahedralize(grid)
+    tets.geometry = td.interpolate(tets, _bend, td.H1(tets, order=2), dtype=vec)
+    space = td.L2(tets, order=2, basis="equispaced")
+    broken = td.DataSet(tets.topology, td.project(tets, tets.geometry, space))
+    with pytest.raises(NotImplementedError, match="curved L2 geometries"):
+        td.cell_centers(broken)

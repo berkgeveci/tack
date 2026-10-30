@@ -227,6 +227,20 @@ def _geometry_parts(data, group, kind):
             raise NotImplementedError(
                 f"the {kind} of an L2 geometry have no positions of their own: each cell "
                 "around an edge has its own, and edges have no sides to choose from")
+        if geometry.space.tensor:
+            # Curved, each cell its own nodes (a mesh displaced by a DG field, a
+            # periodic mesh of order 2 or more): tensor shapes only.
+            space = geometry.space
+            if not bases.tensor_shape(group.shape):
+                raise NotImplementedError(
+                    f"an L2 geometry of order {space.order} on {group.shape.__name__} "
+                    "cells: curved L2 geometries are on segments, quads and hexahedra")
+            mixin = (views._L2CellsTensorGeometry if space.layout == "cells"
+                     else views._L2TensorGeometry)
+            mixins, attributes = _space_parts(
+                geometry, group, views.of_order(mixin, space.order,
+                                                space.basis == bases.BERNSTEIN))
+            return [*mixins, views._TensorNewton], attributes
         mixins, attributes = _space_parts(geometry, group, views._L2Geometry)
         if group.shape not in (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine):
             mixins = [*mixins, views._CornerBox, views._CurvedNewton]

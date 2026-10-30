@@ -1814,10 +1814,12 @@ class _NoTensorFaces:
         return self.cell_dofs[self.entity_id(c)]          # not reached
 
 
-class _H1TensorGeometry(_TensorDofs, _TensorPolynomials, _Geometry):
-    """Curved geometry of order 2 or more on tensor shapes: an ``H1`` field of positions
-    of that order. Positions and Jacobians are formed from differences to node 0's
-    position, as order 1's are, so f32 keeps thin cells."""
+class _TensorGeometry(_TensorPolynomials, _Geometry):
+    """A curved tensor geometry's positions, Jacobians and control box from its nodes'
+    values, read through ``dof_index(c, n)`` (node ``n`` lexicographic): an ``H1``
+    field of positions (``_H1TensorGeometry``) or an ``L2`` one, each cell its own
+    (``_L2TensorGeometry``). Positions and Jacobians are formed from differences to
+    node 0's position, as order 1's are, so f32 keeps thin cells."""
 
     CURVED = 1
 
@@ -1865,10 +1867,6 @@ class _H1TensorGeometry(_TensorDofs, _TensorPolynomials, _Geometry):
         return first + a, first + b
 
     @tack.func
-    def corner_position(self, c, j):
-        return self.get(self.point_id(c, j))
-
-    @tack.func
     def position(self, c, pc):
         lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
         ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
@@ -1902,6 +1900,39 @@ class _H1TensorGeometry(_TensorDofs, _TensorPolynomials, _Geometry):
             m += (self.get(self.dof_index(c, n)) - first).outer_product(
                 self.node_gradient(n, lx, ly, lz, dx, dy, dz))
         return m
+
+
+class _H1TensorGeometry(_TensorDofs, _TensorGeometry):
+    """Curved geometry of order 2 or more on tensor shapes: an ``H1`` field of positions
+    of that order, its corners the points'."""
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.get(self.point_id(c, j))
+
+
+class _L2TensorGeometry(_TensorGeometry):
+    """A curved geometry in ``L2`` on tensor shapes (a mesh displaced by a DG field, a
+    periodic mesh of order 2 or more): each cell's own ``(ORDER + 1)^d`` positions
+    from ``point_offsets[cell]`` (the space's offsets, named as the geometry's are
+    beside the domain view's); its corners where its map puts them."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return self.point_offsets[self.entity_id(c)] + n
+
+    @tack.func
+    def corner_position(self, c, j):
+        return self.position(c, self.parametric_point(j))
+
+
+class _L2CellsTensorGeometry(_L2TensorGeometry):
+    """``_L2TensorGeometry`` laid out cell-fastest: value ``n`` of cell ``c`` at ``n *
+    layout_cells + c``."""
+
+    @tack.func
+    def dof_index(self, c, n):
+        return n * self.layout_cells + self.entity_id(c)
 
 
 class _H1TensorField(_TensorDofs, _TensorBasis):

@@ -15,3 +15,8 @@
   basis at the face's center (DG jumps against MFEM's to 1e-16).
 - `mfem_to_dataset` of a 2D curved mesh refused its two-component nodes; they
   get z = 0.
+- An `L2` geometry above order 1 (a mesh displaced by a DG field, a periodic
+  mesh of order 2) was read as order-1 corners, each cell's first values, so
+  probes, centres and everything else were wrong. On tensor shapes it is now a
+  curved geometry (`views._L2TensorGeometry`, either layout); on simplices and
+  wedges it is refused.
