@@ -47,7 +47,9 @@ there are (also for `"hip"` and `"level_zero"`), and `tack.device("cuda:1")`
 is the second. A bare `"cuda"` or `"hip"` is the GPU the thread already
 uses, as a framework that embeds Tack may have chosen, else the first.
 Each device compiles its own kernels, and a kernel's arrays must all be on
-one: `b = a.to_device(tack.device("cuda:1"))` copies through the host.
+one: `b = a.to_device(tack.device("cuda:1"))` copies through the host. To
+split one problem over several devices, or MPI ranks, see
+[Communicate Between Blocks](18-communication.md).
 
 Options make a separate device: `tack.device("cpu", num_threads=1)` is a
 second CPU device with one thread. It shares memory with the default CPU

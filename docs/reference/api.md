@@ -358,9 +358,9 @@ Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
 `tack.communication` moves data between blocks -- units of work with global
 ids, each on a device, such as the pieces of a partitioned dataset -- and
 combines values over them. `World()` is this process; its blocks may be on any
-of its devices. The Visualization Guide's
-[Communicate Between Blocks](../vis-guide/14-communication.md) builds an
-algorithm on it step by step, and the
+of its devices. The User's Guide's
+[Communicate Between Blocks](../users-guide/18-communication.md) builds
+algorithms on it step by step, and the
 [Runtime API contract](../contracts/runtime-api.md#communication-between-blocks)
 says what it guarantees.
 
