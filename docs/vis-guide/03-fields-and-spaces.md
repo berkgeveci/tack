@@ -65,7 +65,6 @@ quietly read the other field on the next:
 <!-- tack-check: fields-by-space -->
 ```python
 import numpy as np
-import pytest
 
 import tack
 import tack.dataset as td
@@ -78,8 +77,12 @@ data.fields["p"] = td.Field(td.H1(data), tack.array(x[:, 0].astype(np.float32)))
 data.fields["p", td.Constant] = td.Field(td.Constant(data), tack.zeros((data.num_cells,)))
 
 assert isinstance(data.fields["p", td.H1].space, td.H1)
-with pytest.raises(KeyError, match="names 2 fields"):
+try:
     data.fields["p"]
+except KeyError as refused:
+    print(refused)                                 # 'p' names 2 fields, in H1(order=1) and ...
+else:
+    raise AssertionError("a name two fields share must be refused")
 
 gradient = td.gradients(data, ("p", td.H1))        # algorithms take (name, space) too
 kept = td.threshold(data, ("p", td.H1), 0.5, 2.0, fields="p")   # a name keeps both
