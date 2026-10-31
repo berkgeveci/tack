@@ -408,20 +408,6 @@ def _attributes_to_fields(attributes, space, float_dtype, share=False):
     return fields
 
 
-def _cell_field_name(name, fields):
-    """A cell array's field name: its own, or, where a point array has it (VTK
-    keeps the two apart, a dataset's fields share one namespace), ``"<name>
-    (cells)"``, with a warning, so neither is lost."""
-    import warnings
-
-    if name not in fields:
-        return name
-    renamed = f"{name} (cells)"
-    warnings.warn(f"VTK has a point array and a cell array named {name!r}; the cell "
-                  f"array is the field {renamed!r}", stacklevel=4)
-    return renamed
-
-
 def _global_ids(attributes, share=False):
     """An attributes object's ``GlobalIds`` array as i64 ids, or ``None``; with
     ``share``, VTK's memory where it is i64 already."""
@@ -567,8 +553,9 @@ def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id
     Points and floating-point arrays become fields of ``dtype``, by default the
     default float type (``tack.get_default_float()``, f32 unless set); integer
     arrays keep their type. Named point data become ``H1`` fields and named
-    cell data ``Constant`` fields (a cell array named as a point array is
-    ``"<name> (cells)"``, with a warning); a ``vtkGhostType`` array becomes the ghost marks
+    cell data ``Constant`` fields (a point array and a cell array of one name
+    are two fields of that name, ``data.fields[name, td.Constant]`` the cell
+    one); a ``vtkGhostType`` array becomes the ghost marks
     (``data.ghosts``), not a field; a constant or affine array (VTK's implicit
     arrays) stays implicit, as a ``ConstantArray`` or ``CountingArray``. An
     unstructured grid's cells must all be linear shapes -- or all VTK Lagrange
@@ -1053,7 +1040,8 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
     fields = _attributes_to_fields(grid.point_data, H1(topology), dtype, share)
     for name, field in _attributes_to_fields(grid.cell_data, Constant(topology), dtype,
                                              share).items():
-        fields[_cell_field_name(name, fields)] = field
+        # A point array and a cell array of one name are two fields of that name.
+        fields[name if name not in fields else (name, field.space)] = field
     if isinstance(grid, vtkRectilinearGrid):
         unit = _units_label(grid.x_coordinates)
     elif isinstance(grid, vtkImageData):
@@ -1482,6 +1470,17 @@ def _to_vtk_values(values, share=False):
     return np.array(to_host(values))            # a copy: the grid owns its values
 
 
+def _once(written, kind, name, data):
+    """Refuse a second VTK array of ``kind`` called ``name``: VTK keeps one point and
+    one cell array of a name, so two point fields of one name (an ``H1`` field and
+    its ``Values`` twin) cannot both go."""
+    if (kind, name) in written:
+        spaces = " and ".join(repr(f.space) for f in data.fields.named(name))
+        raise ValueError(f"fields {name!r} in {spaces} would be two VTK {kind} arrays of "
+                         "one name: rename one")
+    written.add((kind, name))
+
+
 def _write_fields(grid, data, share):
     """``data``'s point and cell fields into ``grid``'s point and cell data, with
     its normals as VTK's active normals (``dataset_to_vtk``)."""
@@ -1490,15 +1489,18 @@ def _write_fields(grid, data, share):
     from tack.dataset import H1, Constant, Values
     from tack.dataset.carry import _point_values
 
-    for name, field in data.fields.items():
+    written = set()
+    for name, field in data.fields.entries():
         space = field.space
         if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
+            _once(written, "point", name, data)
             # An order-2 field's values at the points, its first ones: the grid
             # is linear, as the filters read order-2 data.
             grid.point_data[name] = _to_vtk_values(_point_values(field.values, data.num_points),
                                                    share)
             _label(grid.point_data[name], field.unit)
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
+            _once(written, "cell", name, data)
             grid.cell_data[name] = _to_vtk_values(field.values, share)
             _label(grid.cell_data[name], field.unit)
     for attributes, names in ((grid.point_data, _POINT_NORMALS),

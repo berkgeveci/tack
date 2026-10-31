@@ -37,7 +37,7 @@ from tack.dataset._matching import INDEX_BITS, INDEX_MASK
 from tack.dataset.algorithms._common import _csr_rows, _tolerance
 from tack.dataset.algorithms._structured_ghosts import structured_ghost_cells
 from tack.dataset.carry import _take
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, field_label, is_field_key
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
@@ -208,7 +208,7 @@ def update_ghosts(data, *fields):
             if not isinstance(field.values, tack.Array):
                 raise TypeError(f"update_ghosts writes the values in place; {name!r} holds "
                                 f"a {type(field.values).__name__}, not a Tack array")
-            by_kind[kind][g][name] = field.values
+            by_kind[kind][g][field_label(name)] = field.values
     for kind, values in by_kind.items():
         if any(values.values()):
             plans[kind].run(values)
@@ -238,7 +238,7 @@ def _carried(pieces, fields, what="ghost_cells"):
                 f"{what} carries a geometry at the points; partition {i}'s is "
                 f"{space!r}, which would come out straight")
     names = list(pieces[0].fields) if fields is None else \
-        ([fields] if isinstance(fields, str) else list(fields))
+        ([fields] if is_field_key(fields) else list(fields))
     for i, piece in enumerate(pieces):
         for name in names:
             if name not in piece.fields:
@@ -388,7 +388,7 @@ def _ghost_parts(blocks, pieces, hosts, needed, owners, names, numbered):
             for name in names:
                 field = piece.fields[name]
                 chosen = point_ids if _kind(field) == "points" else cell_ids
-                message["field." + name] = _take(field.values, chosen)
+                message["field." + field_label(name)] = _take(field.values, chosen)
             for kind, chosen in (("points", point_ids), ("cells", cell_ids)):
                 if numbered[kind]:
                     message["ids." + kind] = _take(getattr(piece.global_ids, kind), chosen)
@@ -476,10 +476,10 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
             parts = [field.values]
             if kind == "points" and len(new_from):
                 # Each new point's values from the first message that brought it.
-                sent = [message["field." + name] for _, message in sources]
+                sent = [message["field." + field_label(name)] for _, message in sources]
                 parts.append(_take(_joined(sent), tack.array(new_from, tack.i64)))
             elif kind == "cells":
-                parts += [message["field." + name] for _, message in sources]
+                parts += [message["field." + field_label(name)] for _, message in sources]
             values = _joined(parts)
             space = field.space
             if kind == "points":

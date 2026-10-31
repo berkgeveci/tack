@@ -177,9 +177,8 @@ def test_contours_of_viskores_files():
         solids.AddCellType(shape)
     solids = solids(_read("mixed-cell-shapes.vtk"))
     values = [5.5, 9.5, 11.5, 14.5, 17.5, 20.5, 25.5]
-    with pytest.warns(UserWarning, match="point array and a cell array named 'scalars'"):
-        data = vtk_to_dataset(solids)
-    ours = td.contour(data, "scalars", values)
+    data = vtk_to_dataset(solids)                # a point and a cell array "scalars"
+    ours = td.contour(data, ("scalars", td.H1), values)
     f = vtkContourFilter()
     for i, value in enumerate(values):
         f.SetValue(i, value)
@@ -215,8 +214,7 @@ def test_contours_by_cell_dimension():
                 e.AddCellType(shape)
         return e(grid)
 
-    with pytest.warns(UserWarning, match="named 'scalars'"):
-        data = vtk_to_dataset(cells(3, 2, 1, 0))
+    data = vtk_to_dataset(cells(3, 2, 1, 0))
     values = [5.5, 9.5, 11.5, 14.5, 17.5, 20.5, 25.5]
     f = vtkContourFilter()
     for i, value in enumerate(values):
@@ -224,32 +222,38 @@ def test_contours_by_cell_dimension():
     f.SetInputArrayToProcess(0, 0, 0, 0, "scalars")
     shapes = {3: {vd.TRIANGLE}, 2: {vd.LINE}, 1: {vd.VERTEX}}
     for dimension in (3, 2, 1):
-        ours = td.contour(data, "scalars", values, dimension=dimension)
+        ours = td.contour(data, ("scalars", td.H1), values, dimension=dimension)
         theirs = f(cells(dimension))
         assert ours.num_cells == theirs.number_of_cells > 0, dimension
         assert set(np.unique(ours.topology.types.numpy())) == shapes[dimension]
         assert _measure(ours) == pytest.approx(_vtk_measure(theirs), rel=1e-6)
-    assert td.contour(data, "scalars", values).num_cells == f(cells(3)).number_of_cells
+    assert td.contour(data, ("scalars", td.H1), values).num_cells == \
+        f(cells(3)).number_of_cells
     with pytest.raises(ValueError, match="3, 2 or 1"):
-        td.contour(data, "scalars", values, dimension=0)
+        td.contour(data, ("scalars", td.H1), values, dimension=0)
 
 
 @pytest.mark.quick
 @needs_vtk
 def test_a_point_and_a_cell_array_of_one_name_both_arrive():
-    """VTK keeps point and cell arrays apart; a dataset's fields share one name
-    space. The cell array of ``mixed-cell-shapes.vtk``'s ``scalars`` once
-    replaced the point array, and a contour of it found nothing."""
-    from tack.interop.vtk import vtk_to_dataset
+    """VTK keeps point and cell arrays apart, and so does a dataset: two fields of one
+    name, each found by its space, and both written back under it. The cell array
+    of ``mixed-cell-shapes.vtk``'s ``scalars`` once replaced the point array, and a
+    contour of it found nothing."""
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
     grid = vd.to_vtk(vd.make_3d_explicit_5())
     grid.point_data["v"] = np.arange(grid.number_of_points, dtype=np.float64)
     grid.cell_data["v"] = -np.arange(grid.number_of_cells, dtype=np.float64)
-    with pytest.warns(UserWarning, match="the cell array is the field 'v \\(cells\\)'"):
-        data = vtk_to_dataset(grid)
-    assert isinstance(data.fields["v"].space, td.H1)
-    np.testing.assert_array_equal(data.fields["v"].values.numpy(), np.arange(11))
-    np.testing.assert_array_equal(data.fields["v (cells)"].values.numpy(), [0, -1, -2, -3])
+    data = vtk_to_dataset(grid)
+    assert isinstance(data.fields["v", td.H1].space, td.H1)
+    np.testing.assert_array_equal(data.fields["v", td.H1].values.numpy(), np.arange(11))
+    np.testing.assert_array_equal(data.fields["v", td.Constant].values.numpy(), [0, -1, -2, -3])
+    with pytest.raises(KeyError, match="names 2 fields"):
+        data.fields["v"]
+    back = dataset_to_vtk(data)
+    np.testing.assert_array_equal(np.asarray(back.point_data["v"]), np.arange(11))
+    np.testing.assert_array_equal(np.asarray(back.cell_data["v"]), [0, -1, -2, -3])
 
 
 #: Where Tack differs from VTK by design: in a mesh with 3D cells,

@@ -316,9 +316,10 @@ def test_a_dataset_refuses_parts_on_two_devices(second):
     data = _hexes(second)
     with pytest.raises(ValueError, match="two devices"):
         td.Field(td.H1(data), tack.zeros((data.num_points,)))
-    data.fields["elsewhere"] = td.Field.__new__(td.Field)
-    data.fields["elsewhere"].space, data.fields["elsewhere"].values = (
-        td.H1(data), tack.zeros((data.num_points,)))
+    elsewhere = td.Field.__new__(td.Field)        # past the Field's own check
+    elsewhere.space, elsewhere.values = td.H1(data), tack.zeros((data.num_points,))
+    elsewhere._unit = None
+    data.fields["elsewhere"] = elsewhere
     with pytest.raises(ValueError, match="two devices"):
         td.contour(data, "s", 3.0)
 

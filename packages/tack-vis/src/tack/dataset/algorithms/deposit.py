@@ -8,7 +8,7 @@ from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.arrays import UniformCoordinates
 from tack.dataset import units
 from tack.dataset.carry import _point_values
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, is_field_key
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.partitioned import PartitionedDataSet
 from tack.dataset.spaces import H1, Values
@@ -176,7 +176,7 @@ def _unit(data, grid, field, reduce, per_volume, pieces=None, world=None):
     sources = pieces if pieces is not None else [data]
     counted = field is None or reduce == "count"
     mine = [(piece.unit, None if counted else
-             (piece.fields[field] if isinstance(field, str) else field).unit)
+             (piece.fields[field] if is_field_key(field) else field).unit)
             for piece in sources]
     if world is not None:
         mine = [pair for part in world._allgather(mine) for pair in part]
@@ -214,7 +214,7 @@ def _deposited(data, grid, field, reduce, method, per_volume, skip_copies=False)
     if field is None:
         values = tack.zeros((max(n, 1),), data.dtype)
     else:
-        f = data.fields[field] if isinstance(field, str) else field
+        f = data.fields[field] if is_field_key(field) else field
         on_points = (isinstance(f.space, H1) and f.space.order == 1) or (
             isinstance(f.space, Values) and f.space.on == "points")
         if not on_points or f.space.topology is not data.topology:
@@ -283,7 +283,7 @@ def _deposit_pieces(data, grid, field, reduce, method, per_volume):
     from tack import communication as tc
     from tack.dataset import ids
 
-    if field is not None and not isinstance(field, str):
+    if field is not None and not is_field_key(field):
         raise TypeError("deposit of a PartitionedDataSet takes a field's name: a Field "
                         "belongs to one partition's topology")
     pieces = list(data)

@@ -6,7 +6,7 @@ import tack
 from tack import arrays
 from tack.arrays import CartesianProduct, UniformCoordinates
 from tack.dataset import units
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, is_field_key
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['convert']
@@ -86,13 +86,14 @@ def convert(data, unit, field=None):
         out._geometry = Field(out.geometry.space, out.geometry.values, target)
         out.origin = np.asarray(data.origin) * factor
         return out
-    if not isinstance(field, str):
-        raise TypeError(f"convert takes a field's name, not {field!r}")
+    if not is_field_key(field):
+        raise TypeError(f"convert takes a field's name (or name and space), not {field!r}")
     if field not in data.fields:
         raise KeyError(f"no field {field!r}: the dataset has "
                        f"{', '.join(map(repr, data.fields)) or 'none'}")
     fields = dict(data.fields)
-    fields[field] = _converted(data.fields[field], target, f"field {field!r}")
+    fields[data.fields.key_of(field)] = _converted(data.fields[field], target,
+                                                   f"field {field!r}")
     from tack.dataset.ghosts import keep_marks
 
     return keep_marks(data, DataSet(data.topology, data.geometry, fields=fields,

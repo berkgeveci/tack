@@ -333,6 +333,24 @@ field. It is kept apart from `fields`: `data.geometry` returns it, assigning
 the cells; it is never among the fields they carry or select. An `L2` geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.
 
+**Fields.** `data.fields` holds the fields by name and space: two fields may
+share a name in different spaces, as VTK's point and cell arrays do
+([Fields that share a name](../03-fields-and-spaces.md#fields-that-share-a-name)).
+
+| | |
+|---|---|
+| `data.fields["p"]` | the one field called `"p"`; `KeyError` where two share the name |
+| `data.fields["p", td.Constant]`, `data.fields["p", space]` | the field of that name in a kind of space, or in that space |
+| `data.fields["p"] = f` | `f` is the one field called `"p"`, replacing every other |
+| `data.fields["p", space] = f` | `f` beside the fields of that name in other spaces, replacing the one in its own |
+| `"p" in data.fields`, `("p", td.H1) in data.fields` | whether any field matches |
+| `list(data.fields)`, `dict(data.fields)` | the keys: each name, or `(name, space)` for a name fields share; every key finds its field, and `DataSet(fields=...)` takes them back |
+| `data.fields.named("p")`, `data.fields.entries()` | every field called `"p"`; each field with its name |
+
+An algorithm's field argument, and each entry of a filter's `fields=`, is a
+`Field`, a name, or `(name, space)`; in `fields=`, a name selects every field
+of that name.
+
 ## Units
 
 `Field(space, values, unit=None)`: `unit` is the values' physical unit, a

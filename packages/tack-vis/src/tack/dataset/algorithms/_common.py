@@ -75,9 +75,9 @@ def _same_space(*fields):
 
 def _field(data, field):
     """A field by name or object, checked against the dataset before launch."""
-    from tack.dataset.dataset import Field
+    from tack.dataset.dataset import Field, is_field_key
 
-    field = data.fields[field] if isinstance(field, str) else field
+    field = data.fields[field] if is_field_key(field) else field
     if not isinstance(field, Field):
         raise TypeError("a field argument is a tack.dataset.Field or its name")
     if field.space.topology is not data.topology:

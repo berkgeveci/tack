@@ -31,6 +31,7 @@ from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import argsort
 from tack.arrays import ConstantArray, size_of
 from tack.dataset import bases, ids, shapes, views
+from tack.dataset.carry import selected
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.ghosts import _before
 from tack.dataset.spaces import H1, L2, Constant, Values
@@ -1336,7 +1337,7 @@ def subdivide(data, level=None, fields=None):
     computed once (on an ``L2`` geometry each cell's points are its own). ``H1`` and ``L2`` fields become point data (an ``L2`` field's
     value at a shared point from one of its cells); cell fields go to every
     sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels."""
-    names = list(data.fields) if fields is None else list(fields)
+    names = selected(data, fields)
     level = default_level(data, *(data.fields[name] for name in names)) if level is None \
         else int(level)
     if level < 1:
@@ -1442,7 +1443,7 @@ def split_by_range(data, field, lower, upper, subdivision, tolerance, fields, cu
     if level < 1:
         raise ValueError(f"subdivision is at least 1, not {level}")
     name = next((k for k, f in data.fields.items() if f is field), "__cut__")
-    names = list(data.fields) if fields is None else list(fields)
+    names = selected(data, fields)
     carried = {k: data.fields[k] for k in names}
     carried[name] = field
     # The whole cells' corners are the whole part's: the cut part's copies are ghosts.

@@ -70,9 +70,11 @@ def fields_of(data, field, what):
     """The field named ``field`` in each piece of ``data``, for an algorithm that
     combines them (``what``): a name, since a ``Field`` belongs to one piece's
     topology; a piece without it is refused."""
-    if not isinstance(field, str):
-        raise TypeError(f"{what} of a PartitionedDataSet takes a field's name: a Field "
-                        "belongs to one partition's topology")
+    from tack.dataset.dataset import is_field_key
+
+    if not is_field_key(field):
+        raise TypeError(f"{what} of a PartitionedDataSet takes a field's name (or name "
+                        "and space): a Field belongs to one partition's topology")
     for i, piece in enumerate(data):
         if field not in piece.fields:
             raise KeyError(f"partition {i} has no field {field!r}: it has "

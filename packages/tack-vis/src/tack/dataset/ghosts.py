@@ -191,9 +191,10 @@ def owned_values(data, field):
     edges, and order-2 fields, have no marks of their own yet; on a dataset
     with ghost marks they are refused rather than counted twice."""
     from tack.dataset.carry import _take
+    from tack.dataset.dataset import is_field_key
     from tack.dataset.spaces import H1, L2, Constant, Values
 
-    if isinstance(field, str):
+    if is_field_key(field):
         field = data.fields[field]
     if data._ghosts_lost:
         why = data._ghosts_lost if isinstance(data._ghosts_lost, str) else (

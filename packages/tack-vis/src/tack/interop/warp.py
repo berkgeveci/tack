@@ -244,8 +244,13 @@ def _add_fields(data, out, device):
     from tack.dataset import H1, Constant, Values
     from tack.dataset.carry import _point_values
 
-    for name, field in data.fields.items():
+    named = set()
+    for name, field in data.fields.entries():
         space = field.space
+        if name in named:
+            raise ValueError(f"warp-simdata keeps one field of a name; {name!r} is in "
+                             f"{' and '.join(repr(f.space) for f in data.fields.named(name))}")
+        named.add(name)
         if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
             values, association = _point_values(field.values, data.num_points), sd.AssociationType.NODE
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):

@@ -31,10 +31,13 @@ def test_algorithms_refuse_fields_of_another_topology(backend, name, empty, name
 
     data, other = mesh(), mesh()
     foreign = td.Field(td.H1(other), tack.arrays.ConstantArray(0.5, other.num_points))
-    # A direct dict assignment must not bypass the check at the algorithm boundary.
-    data.fields["foreign"] = foreign
+    if named:
+        # The dataset's fields refuse it as it is put in, so no name can reach it.
+        with pytest.raises(ValueError, match="another topology"):
+            data.fields["foreign"] = foreign
+        return
     with pytest.raises(ValueError, match="another topology"):
-        FIELD_OPERATIONS[name](data, "foreign" if named else foreign)
+        FIELD_OPERATIONS[name](data, foreign)
 
 
 def test_a_raw_device_array_is_not_a_dataset_field(backend):

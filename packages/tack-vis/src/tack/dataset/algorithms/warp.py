@@ -6,7 +6,7 @@ import tack
 from tack.arrays import ConstantArray, size_of, width_of
 from tack.dataset.algorithms._common import _vectors, _with_basis
 from tack.dataset.algorithms._moving import _moved
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, is_field_key
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['warp']
@@ -52,8 +52,8 @@ def warp(data, direction, scale=1.0, scale_by=None, fields=None):
     is then in that space too."""
     geometry = data.geometry
     dtype = data.dtype
-    if isinstance(direction, (str, Field)):
-        direction = data.fields[direction] if isinstance(direction, str) else direction
+    if isinstance(direction, Field) or is_field_key(direction):
+        direction = data.fields[direction] if is_field_key(direction) else direction
         direction = _with_basis(data, direction)
         if width_of(direction.values) not in (2, 3):
             raise ValueError("direction must be a 3-vector field in the geometry's space "
@@ -61,7 +61,7 @@ def warp(data, direction, scale=1.0, scale_by=None, fields=None):
         if direction.space is not geometry.space:
             geometry = _lifted(data, geometry, direction.space)
     n = size_of(geometry.values)
-    factors = (scale_by if not isinstance(scale_by, str) else data.fields[scale_by])
+    factors = data.fields[scale_by] if is_field_key(scale_by) else scale_by
     if factors is None:
         factors = ConstantArray(1.0, n, dtype=dtype, device=data.device)
     else:
