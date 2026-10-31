@@ -1283,6 +1283,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#warp-prototype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Warp (prototype)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-messages" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3960,6 +3971,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#warp-prototype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Warp (prototype)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#error-messages" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4051,6 +4073,13 @@ its own compilation pipeline and memory model.</p>
 <td>OpenCL C → libocloc → SPIR-V</td>
 <td>Level Zero runtime</td>
 </tr>
+<tr>
+<td>Warp (prototype)</td>
+<td>Linux/Windows, Apple silicon</td>
+<td>NVIDIA through Warp, or Warp's CPU</td>
+<td>Python <code>@wp.kernel</code> → Warp</td>
+<td><code>warp-lang</code></td>
+</tr>
 </tbody>
 </table>
 <p>Every backend keeps what it compiles on disk, so a later process does not
@@ -4138,6 +4167,7 @@ with a different meaning.</p>
 <th>CUDA</th>
 <th>HIP</th>
 <th>Level Zero</th>
+<th>Warp (prototype)</th>
 </tr>
 </thead>
 <tbody>
@@ -4148,6 +4178,7 @@ with a different meaning.</p>
 <td>yes</td>
 <td>yes</td>
 <td>depends on the device</td>
+<td>yes</td>
 </tr>
 <tr>
 <td>Shared memory, barriers, <code>thread_id</code>, block reductions</td>
@@ -4156,6 +4187,7 @@ with a different meaning.</p>
 <td>yes</td>
 <td>yes</td>
 <td>yes</td>
+<td>on a CUDA device</td>
 </tr>
 <tr>
 <td>Atomic array types</td>
@@ -4164,6 +4196,7 @@ with a different meaning.</p>
 <td>32- and 64-bit ints, <code>f32</code>, <code>f64</code></td>
 <td>32- and 64-bit ints, <code>f32</code>, <code>f64</code></td>
 <td><code>i32</code>, <code>u32</code>, <code>f32</code></td>
+<td>32- and 64-bit ints, <code>f32</code>, <code>f64</code></td>
 </tr>
 <tr>
 <td><code>sum</code>/<code>min</code>/<code>max</code> on the device</td>
@@ -4172,6 +4205,7 @@ with a different meaning.</p>
 <td><code>f32</code></td>
 <td><code>f32</code></td>
 <td><code>f32</code></td>
+<td>no (NumPy)</td>
 </tr>
 <tr>
 <td>3D textures</td>
@@ -4180,6 +4214,7 @@ with a different meaning.</p>
 <td>hardware</td>
 <td>hardware where the device has image support</td>
 <td>hardware where the device has samplers</td>
+<td>no</td>
 </tr>
 <tr>
 <td>Iterations per launch</td>
@@ -4188,6 +4223,7 @@ with a different meaning.</p>
 <td>device limit (max grid × 256)</td>
 <td>device limit, at most 2^32 − 256</td>
 <td>device limit (max group count × group size)</td>
+<td>2^31 − 1</td>
 </tr>
 </tbody>
 </table>
@@ -4195,7 +4231,7 @@ with a different meaning.</p>
 count and the limit; split the work across several calls.</p>
 <p>The <a href="../../contracts/backend-capabilities/">backend capability contract</a> has
 the full matrix, what each capability rejects and when, and the subset that
-is portable to all five. In code, ask the backend rather than checking its
+is portable to all five supported backends. In code, ask the backend rather than checking its
 name:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack.runtime.dispatch</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_backend</span>
 <span class="n">be</span> <span class="o">=</span> <span class="n">get_backend</span><span class="p">()</span>
@@ -4328,6 +4364,46 @@ devices with texture units (Xe-HPG/Xe-LPG). Xe-HPC (Ponte Vecchio) falls
 back to software trilinear since it has no sampler hardware.</p>
 <div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;level_zero&quot;</span><span class="p">)</span>
 </code></pre></div>
+<h2 id="warp-prototype">Warp (prototype)<a class="headerlink" href="#warp-prototype" title="Permanent link">&para;</a></h2>
+<p>A sixth backend runs Tack kernels through <a href="https://github.com/NVIDIA/warp">NVIDIA Warp</a>,
+for running Tack, and <code>tack.dataset</code>'s filters, inside a program built on
+Warp. It is a <strong>prototype</strong>: CI runs its tests on Warp's CPU, and on CUDA
+its filters matched Tack's CUDA backend bit for bit (a probe to within
+2e-7), but it lacks parts of the language (below) and its interface may
+change. The whole suite runs on it with
+<code>PYTHONPATH=packages/tack-core/tests uv run pytest -p _warp_default</code>.</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>warp<span class="w">       </span><span class="c1"># or: pip install -e &#39;packages/tack-core[warp]&#39;</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;warp&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>Each kernel variant becomes a <code>@wp.kernel</code> written from Tack's typed IR,
+which Warp compiles and caches; helpers keep Tack's semantics where Warp's
+differ (wrapping integers, floor <code>//</code> and <code>%</code>, NaN-preferring <code>min</code>/<code>max</code>,
+signed zeros, no fused multiply-add across statements). The device is Warp's
+default device when Tack first makes it: its first CUDA device, else its
+CPU. Arrays are <code>wp.array</code> buffers, and launches are queued on Warp's
+current stream, so a <code>wp.ScopedStream</code> around Tack calls applies.</p>
+<p>What works: every array type including <code>f64</code>; atomics on 32- and 64-bit
+integers, <code>f32</code> and <code>f64</code>; workgroups (shared memory, barriers,
+<code>thread_id</code>, block reductions) on a CUDA device; <code>array_from_ptr</code>; DLPack
+both ways (CUDA memory on Warp's device, or host memory on Warp's CPU);
+debug mode's bounds checks.</p>
+<p>What it lacks:</p>
+<ul>
+<li><strong><code>tack.inspect</code></strong>: there is no backend source to show; inspect the kernel
+  with arrays on another device.</li>
+<li><strong>3D textures</strong>: a kernel that samples one raises <code>RuntimeError</code>.</li>
+<li><strong>Device reductions</strong>: <code>sum</code>, <code>min</code>, <code>max</code> and <code>mean</code> reduce through NumPy,
+  as on the CPU.</li>
+<li><strong>Disk-cached variants</strong>: Warp's own kernel cache keeps the compiled code;
+  Tack's disk cache keeps only the lowered IR.</li>
+<li><strong>Launches above 2^31 − 1 iterations</strong> (Warp's 32-bit thread index).</li>
+</ul>
+<p><code>tack.interop.warp</code> (in tack-vis, <code>uv sync --extra warp</code>, which adds
+warp-simdata) shares arrays with Warp both ways (<code>from_warp</code>, <code>to_warp</code>)
+and exchanges datasets with warp-simdata (<code>from_simdata</code>, <code>to_simdata</code>), most
+models without copies. See its
+<a href="../../vis-guide/reference/data-model/#interoperability">reference</a>.</p>
 <h2 id="error-messages">Error Messages<a class="headerlink" href="#error-messages" title="Permanent link">&para;</a></h2>
 <p>If a backend is unavailable, <code>tack.device()</code> gives a clear error:</p>
 <div class="highlight"><pre><span></span><code>RuntimeError: Cannot start the &#39;hip&#39; device: missing dependency.

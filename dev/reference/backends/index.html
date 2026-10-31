@@ -3877,7 +3877,7 @@
 <h1 id="backends">Backends<a class="headerlink" href="#backends" title="Permanent link">&para;</a></h1>
 <div class="admonition info">
 <p class="admonition-title">This page is the source of truth</p>
-<p>Tack has five backends and the details differ in ways that matter. This
+<p>Tack has five backends, and a sixth as a prototype (Warp), and the details differ in ways that matter. This
 table is the canonical one — the README and the guides link here rather
 than restating it, because a capability table copied into three places
 drifts, and this one has.</p>
@@ -3929,6 +3929,13 @@ drifts, and this one has.</p>
 <td><code>zeCommandListAppendLaunchKernel</code></td>
 <td><code>L0Buffer</code></td>
 </tr>
+<tr>
+<td><strong>Warp</strong> (prototype)</td>
+<td><code>warp_gen.py</code> → <code>@wp.kernel</code> Python</td>
+<td>Warp</td>
+<td><code>wp.launch</code> on Warp's current stream</td>
+<td><code>WarpBuffer</code> (<code>wp.array</code>)</td>
+</tr>
 </tbody>
 </table>
 <p><code>hip_gen.py</code> is a few statements: it subclasses the CUDA generator and swaps
@@ -3971,6 +3978,11 @@ wrong spelling still compiles as C.</p>
 <td><strong>Level Zero</strong></td>
 <td>once queued on an asynchronous immediate command list</td>
 <td>the native binary, and the SPIR-V to fall back on</td>
+</tr>
+<tr>
+<td><strong>Warp</strong> (prototype)</td>
+<td>once queued on Warp's current stream</td>
+<td>nothing: Warp's own kernel cache keeps the compiled code</td>
 </tr>
 </tbody>
 </table>
@@ -4041,6 +4053,15 @@ Guide and <a href="../../users-guide/17-kernel-cache/">The Kernel Cache</a>.</p>
 <td>✅</td>
 <td>⚠️</td>
 </tr>
+<tr>
+<td>Warp (prototype)</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Metal has no <code>f64</code></strong> — Apple GPUs do not implement double precision, so this
@@ -4056,7 +4077,7 @@ builds its supported set from the answer. Ask the backend rather than assuming:<
 separately, so the two cannot disagree.</p>
 <h2 id="workgroup-execution">Workgroup execution<a class="headerlink" href="#workgroup-execution" title="Permanent link">&para;</a></h2>
 <p><code>supports_workgroups</code> is false on CPU and true on Metal, CUDA, HIP and
-Level Zero. Shared memory, barriers, local thread indices and block
+Level Zero, and on Warp's CUDA devices (not its CPU). Shared memory, barriers, local thread indices and block
 reductions require this capability. CPU rejects such kernels before
 compilation or execution; use <code>local_array</code> / <code>local_array_like</code> for
 private scratch storage instead.</p>
@@ -4074,8 +4095,10 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[cuda]&#39;</span><span class="w">         </span><span class="c1"># cuda-python; needs the NVIDIA driver</span>
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[hip]&#39;</span><span class="w">          </span><span class="c1"># hip-python; needs ROCm</span>
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[level_zero]&#39;</span><span class="w">   </span><span class="c1"># installs nothing — see below</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[warp]&#39;</span><span class="w">         </span><span class="c1"># warp-lang: the prototype Warp backend</span>
 </code></pre></div>
-<p>Two of these need a word.</p>
+<p>Two of these need a word; the Warp backend is described in
+<a href="../../users-guide/08-backends/#warp-prototype">Backends</a>.</p>
 <p><strong>HIP.</strong> <code>hip-python</code>'s version tracks the ROCm release it binds to — 7.1.x
 against ROCm 7.1, 7.2.x against 7.2 — so the extra sets a lower bound rather
 than a pin. A system on a different ROCm wants it spelled out:</p>

@@ -4227,7 +4227,8 @@ can be derived is derived, so two declarations can't disagree.</p>
 <code>f64</code> also loses <code>f64</code> atomics. That matters on Level Zero, where
 <code>supported_dtypes</code> depends on the device.</p>
 <h2 id="capability-matrix">Capability matrix<a class="headerlink" href="#capability-matrix" title="Permanent link">&para;</a></h2>
-<p>Read from the backend classes at <code>23d6e1d</code>. "All ten" means <code>i8</code>, <code>u8</code>,
+<p>Read from the backend classes at <code>23d6e1d</code>. The Warp column is the prototype backend's (#158), read at <code>955470f9</code>;
+the portable subset below is the five supported backends'. "All ten" means <code>i8</code>, <code>u8</code>,
 <code>i16</code>, <code>u16</code>, <code>i32</code>, <code>u32</code>, <code>i64</code>, <code>u64</code>, <code>f32</code> and <code>f64</code>.</p>
 <table>
 <thead>
@@ -4238,6 +4239,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <th>CUDA</th>
 <th>HIP</th>
 <th>Level Zero</th>
+<th>Warp (prototype)</th>
 </tr>
 </thead>
 <tbody>
@@ -4248,6 +4250,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td><code>cuda</code> / CUDA</td>
 <td><code>hip</code> / HIP</td>
 <td><code>level_zero</code> / Level Zero</td>
+<td><code>warp</code> / Warp</td>
 </tr>
 <tr>
 <td><code>supported_dtypes</code></td>
@@ -4256,6 +4259,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>All ten</td>
 <td>All ten</td>
 <td>All except <code>f64</code>, plus <code>f64</code> when the device reports it</td>
+<td>All ten</td>
 </tr>
 <tr>
 <td><code>supports_f64</code></td>
@@ -4264,6 +4268,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>yes</td>
 <td>yes</td>
 <td>per device</td>
+<td>yes</td>
 </tr>
 <tr>
 <td><code>supports_device_reductions</code></td>
@@ -4272,6 +4277,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>yes</td>
 <td>yes</td>
 <td>yes</td>
+<td>no (NumPy)</td>
 </tr>
 <tr>
 <td><code>supports_workgroups</code></td>
@@ -4280,6 +4286,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>yes</td>
 <td>yes</td>
 <td>yes</td>
+<td>on a CUDA device</td>
 </tr>
 <tr>
 <td><code>supported_atomic_dtypes</code></td>
@@ -4288,6 +4295,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td><code>i32</code>, <code>u32</code>, <code>i64</code>, <code>u64</code>, <code>f32</code>, <code>f64</code></td>
 <td><code>i32</code>, <code>u32</code>, <code>i64</code>, <code>u64</code>, <code>f32</code>, <code>f64</code></td>
 <td><code>i32</code>, <code>u32</code>, <code>f32</code></td>
+<td><code>i32</code>, <code>u32</code>, <code>i64</code>, <code>u64</code>, <code>f32</code>, <code>f64</code></td>
 </tr>
 <tr>
 <td><code>device_options</code></td>
@@ -4296,6 +4304,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>none</td>
 <td>none</td>
 <td><code>external_context</code></td>
+<td>none</td>
 </tr>
 <tr>
 <td><code>device_memory_spaces</code></td>
@@ -4304,11 +4313,13 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td><code>cuda</code>, <code>cuda_pinned</code>, <code>cuda_managed</code></td>
 <td><code>hip</code>, <code>hip_pinned</code>, <code>hip_managed</code></td>
 <td><code>level_zero</code></td>
+<td>none (unchecked)</td>
 </tr>
 <tr>
 <td><code>dlpack_refusal_note</code></td>
 <td>none</td>
 <td>set</td>
+<td>none</td>
 <td>none</td>
 <td>none</td>
 <td>none</td>
@@ -4320,6 +4331,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>hardware</td>
 <td>hardware if the device has image support and the extents fit, else software</td>
 <td>hardware if the device has samplers and the extents fit, else software</td>
+<td>none: a kernel that samples one raises <code>RuntimeError</code></td>
 </tr>
 <tr>
 <td>Largest launch (iterations)</td>
@@ -4328,12 +4340,14 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>max <code>gridDim.x</code> × 256</td>
 <td>max <code>gridDim.x</code> × 256, capped at 2^32 − 256</td>
 <td><code>maxGroupCountX</code> × the workgroup size</td>
+<td>2^31 − 1</td>
 </tr>
 <tr>
 <td><code>Array.export_memory()</code></td>
 <td>no</td>
 <td>yes (<code>mtl_buffer</code>)</td>
 <td>yes (OS handle)</td>
+<td>no</td>
 <td>no</td>
 <td>no</td>
 </tr>
@@ -4344,6 +4358,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td><code>kDLCUDA</code></td>
 <td><code>kDLROCM</code></td>
 <td><code>kDLOneAPI</code></td>
+<td><code>kDLCUDA</code> on a CUDA device, else <code>kDLCPU</code></td>
 </tr>
 <tr>
 <td>DLPack zero-copy import</td>
@@ -4352,6 +4367,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td><code>kDLCUDA</code>, <code>kDLCUDAManaged</code></td>
 <td><code>kDLROCM</code></td>
 <td><code>kDLOneAPI</code></td>
+<td><code>kDLCUDA</code>, <code>kDLCUDAManaged</code> on Warp's CUDA device; <code>kDLCPU</code> on its CPU</td>
 </tr>
 <tr>
 <td>A kernel call returns</td>
@@ -4360,6 +4376,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>once queued</td>
 <td>once queued</td>
 <td>once queued (with a driver older than API 1.6, after it completes)</td>
+<td>once queued on Warp's current stream</td>
 </tr>
 <tr>
 <td>Disk-cache artifact</td>
@@ -4368,6 +4385,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>PTX</td>
 <td>code object</td>
 <td>native binary, with SPIR-V to fall back on</td>
+<td>none: Warp's kernel cache keeps the compiled code</td>
 </tr>
 <tr>
 <td>Devices</td>
@@ -4376,6 +4394,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>every device: <code>"cuda:N"</code> is ordinal N; bare <code>"cuda"</code> the device of a current context Tack did not make, else 0</td>
 <td>every device: <code>"hip:N"</code> is device N; bare <code>"hip"</code> is <code>hipGetDevice()</code></td>
 <td>every device of the first driver: <code>"level_zero:N"</code> is the Nth; or the one in <code>external_context</code></td>
+<td>Warp's default device when Tack first makes it: its first CUDA device, else its CPU</td>
 </tr>
 <tr>
 <td>Python requirements</td>
@@ -4384,6 +4403,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td><code>cuda-python&gt;=13.2.0</code> (<code>[cuda]</code>)</td>
 <td><code>hip-python&gt;=7.0</code>, Linux x86_64 only (<code>[hip]</code>)</td>
 <td>none. The <code>[level_zero]</code> extra is empty</td>
+<td><code>warp-lang&gt;=1.18</code> (<code>[warp]</code>), no wheels for Intel macOS</td>
 </tr>
 <tr>
 <td>System requirements</td>
@@ -4392,6 +4412,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <td>NVIDIA driver and NVRTC (13 or newer; older warns at the first compile)</td>
 <td>ROCm with hipRTC</td>
 <td><code>libze_loader.so</code> and <code>libocloc.so</code> (Intel compute runtime)</td>
+<td>an NVIDIA driver for CUDA devices; none for Warp's CPU</td>
 </tr>
 </tbody>
 </table>
@@ -4624,6 +4645,16 @@ handle raises <code>ValueError</code>. For VTK, call
 <code>tack.interop.vtk.init_level_zero()</code> instead of
 <code>tack.set_default_device("level_zero")</code>. See
 <a href="../../design/interoperability/">Interoperability</a>.</p>
+<p><strong>Warp (prototype).</strong> <code>codegen/warp_gen.py</code> writes each variant as a
+<code>@wp.kernel</code> from the typed IR, every operand converted to its annotated
+type, arrays passed by address and accessed through <code>wp.func_native</code>
+helpers at 64-bit indices, with helpers where Warp's semantics differ from
+Tack's (wrapping integers in an unsigned carrier, floor <code>//</code> and <code>%</code>, 64-bit
+trip counts, NaN-preferring <code>min</code>/<code>max</code>, signed zeros, no contraction across
+statements). Scalars are Warp kernel arguments, so nothing is packed and no
+dispatch lock is held. <code>supports_inspect</code> is false: <code>tack.inspect</code> raises
+<code>NotImplementedError</code>. A texture sample has no code generator and fails at
+compilation. See <a href="../../users-guide/08-backends/#warp-prototype">Backends</a>.</p>
 <h2 id="portable-subset">Portable subset<a class="headerlink" href="#portable-subset" title="Permanent link">&para;</a></h2>
 <p>A program stays within every backend's capabilities if it keeps to the
 following rules. Everything else in the
