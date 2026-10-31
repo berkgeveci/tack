@@ -74,30 +74,31 @@ Because `supported_atomic_dtypes` is an intersection, a device without
 
 ## Capability matrix
 
-Read from the backend classes at `23d6e1d`. "All ten" means `i8`, `u8`,
+Read from the backend classes at `23d6e1d`. The Warp column is the prototype backend's (#158), read at `955470f9`;
+the portable subset below is the five supported backends'. "All ten" means `i8`, `u8`,
 `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32` and `f64`.
 
-| | CPU | Metal | CUDA | HIP | Level Zero |
-|---|---|---|---|---|---|
-| `name` / `label` | `cpu` / CPU | `metal` / Metal | `cuda` / CUDA | `hip` / HIP | `level_zero` / Level Zero |
-| `supported_dtypes` | All ten | All except `f64` | All ten | All ten | All except `f64`, plus `f64` when the device reports it |
-| `supports_f64` | yes | no | yes | yes | per device |
-| `supports_device_reductions` | no (NumPy) | yes | yes | yes | yes |
-| `supports_workgroups` | no | yes | yes | yes | yes |
-| `supported_atomic_dtypes` | All ten | `i32`, `u32`, `f32` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | `i32`, `u32`, `f32` |
-| `device_options` | `num_threads` | none | none | none | `external_context` |
-| `device_memory_spaces` | none (unchecked) | none (unchecked) | `cuda`, `cuda_pinned`, `cuda_managed` | `hip`, `hip_pinned`, `hip_managed` | `level_zero` |
-| `dlpack_refusal_note` | none | set | none | none | none |
-| 3D textures | software trilinear over a private copy | hardware | hardware | hardware if the device has image support and the extents fit, else software | hardware if the device has samplers and the extents fit, else software |
-| Largest launch (iterations) | no limit | 2^32 | max `gridDim.x` × 256 | max `gridDim.x` × 256, capped at 2^32 − 256 | `maxGroupCountX` × the workgroup size |
-| `Array.export_memory()` | no | yes (`mtl_buffer`) | yes (OS handle) | no | no |
-| DLPack export device | `kDLCPU` | `kDLCPU` (host view of unified memory) | `kDLCUDA` | `kDLROCM` | `kDLOneAPI` |
-| DLPack zero-copy import | `kDLCPU`, `kDLCUDAHost`, `kDLROCMHost` | none in practice (see [DLPack](runtime-api.md#dlpack)) | `kDLCUDA`, `kDLCUDAManaged` | `kDLROCM` | `kDLOneAPI` |
-| A kernel call returns | after the range has run | once queued | once queued | once queued | once queued (with a driver older than API 1.6, after it completes) |
-| Disk-cache artifact | object code | MSL source | PTX | code object | native binary, with SPIR-V to fall back on |
-| Devices | the host | `MTLCreateSystemDefaultDevice()` | every device: `"cuda:N"` is ordinal N; bare `"cuda"` the device of a current context Tack did not make, else 0 | every device: `"hip:N"` is device N; bare `"hip"` is `hipGetDevice()` | every device of the first driver: `"level_zero:N"` is the Nth; or the one in `external_context` |
-| Python requirements | `llvmlite` (`[cpu]` extra) | `pyobjc-framework-Metal` (`[metal]`) | `cuda-python>=13.2.0` (`[cuda]`) | `hip-python>=7.0`, Linux x86_64 only (`[hip]`) | none. The `[level_zero]` extra is empty |
-| System requirements | none | macOS with a Metal GPU | NVIDIA driver and NVRTC (13 or newer; older warns at the first compile) | ROCm with hipRTC | `libze_loader.so` and `libocloc.so` (Intel compute runtime) |
+| | CPU | Metal | CUDA | HIP | Level Zero | Warp (prototype) |
+|---|---|---|---|---|---|---|
+| `name` / `label` | `cpu` / CPU | `metal` / Metal | `cuda` / CUDA | `hip` / HIP | `level_zero` / Level Zero | `warp` / Warp |
+| `supported_dtypes` | All ten | All except `f64` | All ten | All ten | All except `f64`, plus `f64` when the device reports it | All ten |
+| `supports_f64` | yes | no | yes | yes | per device | yes |
+| `supports_device_reductions` | no (NumPy) | yes | yes | yes | yes | no (NumPy) |
+| `supports_workgroups` | no | yes | yes | yes | yes | on a CUDA device |
+| `supported_atomic_dtypes` | All ten | `i32`, `u32`, `f32` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | `i32`, `u32`, `f32` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` |
+| `device_options` | `num_threads` | none | none | none | `external_context` | none |
+| `device_memory_spaces` | none (unchecked) | none (unchecked) | `cuda`, `cuda_pinned`, `cuda_managed` | `hip`, `hip_pinned`, `hip_managed` | `level_zero` | none (unchecked) |
+| `dlpack_refusal_note` | none | set | none | none | none | none |
+| 3D textures | software trilinear over a private copy | hardware | hardware | hardware if the device has image support and the extents fit, else software | hardware if the device has samplers and the extents fit, else software | none: a kernel that samples one raises `RuntimeError` |
+| Largest launch (iterations) | no limit | 2^32 | max `gridDim.x` × 256 | max `gridDim.x` × 256, capped at 2^32 − 256 | `maxGroupCountX` × the workgroup size | 2^31 − 1 |
+| `Array.export_memory()` | no | yes (`mtl_buffer`) | yes (OS handle) | no | no | no |
+| DLPack export device | `kDLCPU` | `kDLCPU` (host view of unified memory) | `kDLCUDA` | `kDLROCM` | `kDLOneAPI` | `kDLCUDA` on a CUDA device, else `kDLCPU` |
+| DLPack zero-copy import | `kDLCPU`, `kDLCUDAHost`, `kDLROCMHost` | none in practice (see [DLPack](runtime-api.md#dlpack)) | `kDLCUDA`, `kDLCUDAManaged` | `kDLROCM` | `kDLOneAPI` | `kDLCUDA`, `kDLCUDAManaged` on Warp's CUDA device; `kDLCPU` on its CPU |
+| A kernel call returns | after the range has run | once queued | once queued | once queued | once queued (with a driver older than API 1.6, after it completes) | once queued on Warp's current stream |
+| Disk-cache artifact | object code | MSL source | PTX | code object | native binary, with SPIR-V to fall back on | none: Warp's kernel cache keeps the compiled code |
+| Devices | the host | `MTLCreateSystemDefaultDevice()` | every device: `"cuda:N"` is ordinal N; bare `"cuda"` the device of a current context Tack did not make, else 0 | every device: `"hip:N"` is device N; bare `"hip"` is `hipGetDevice()` | every device of the first driver: `"level_zero:N"` is the Nth; or the one in `external_context` | Warp's default device when Tack first makes it: its first CUDA device, else its CPU |
+| Python requirements | `llvmlite` (`[cpu]` extra) | `pyobjc-framework-Metal` (`[metal]`) | `cuda-python>=13.2.0` (`[cuda]`) | `hip-python>=7.0`, Linux x86_64 only (`[hip]`) | none. The `[level_zero]` extra is empty | `warp-lang>=1.18` (`[warp]`), no wheels for Intel macOS |
+| System requirements | none | macOS with a Metal GPU | NVIDIA driver and NVRTC (13 or newer; older warns at the first compile) | ROCm with hipRTC | `libze_loader.so` and `libocloc.so` (Intel compute runtime) | an NVIDIA driver for CUDA devices; none for Warp's CPU |
 
 ### Level Zero and `f64`
 
@@ -270,6 +271,17 @@ handle raises `ValueError`. For VTK, call
 `tack.interop.vtk.init_level_zero()` instead of
 `tack.set_default_device("level_zero")`. See
 [Interoperability](../design/interoperability.md).
+
+**Warp (prototype).** `codegen/warp_gen.py` writes each variant as a
+`@wp.kernel` from the typed IR, every operand converted to its annotated
+type, arrays passed by address and accessed through `wp.func_native`
+helpers at 64-bit indices, with helpers where Warp's semantics differ from
+Tack's (wrapping integers in an unsigned carrier, floor `//` and `%`, 64-bit
+trip counts, NaN-preferring `min`/`max`, signed zeros, no contraction across
+statements). Scalars are Warp kernel arguments, so nothing is packed and no
+dispatch lock is held. `supports_inspect` is false: `tack.inspect` raises
+`NotImplementedError`. A texture sample has no code generator and fails at
+compilation. See [Backends](../users-guide/08-backends.md#warp-prototype).
 
 ## Portable subset
 
