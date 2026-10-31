@@ -854,9 +854,23 @@ def empty(shape, dtype=f32, *, device=None, exportable=False, layout="aos") -> A
                                     exportable=exportable) for _ in range(dtype.size)),
                         dtype.shape)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
+    _check_dtype(backend, scalar)
     storage = (int(math.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
     buffer = _allocate(backend, scalar, storage, exportable=exportable)
     return _array_view(dtype, shape, buffer, device=backend)
+
+
+def _check_dtype(backend, scalar):
+    """Refuse an array of a type the device's kernels cannot take (``f64`` on
+    Metal, or on a Level Zero device without it) where it is made, rather than
+    at the first kernel that is given it."""
+    if scalar not in backend.supported_dtypes:
+        supported = ", ".join(str(t) for t in sorted(backend.supported_dtypes,
+                                                     key=lambda t: t.name))
+        raise TypeError(
+            f"{scalar} arrays are not supported on {backend.label}, whose kernels "
+            f"take {supported}. Use a supported type (f32 for f64), or keep the "
+            f"array on a device that has {scalar}.")
 
 
 def _allocate(backend, dtype, shape, **options):
@@ -888,6 +902,7 @@ def _empty_for_mpi(shape, dtype, device) -> Array:
     shape = _array_shape(shape)
     dtype = as_dtype(dtype)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
+    _check_dtype(backend, scalar)
     storage = (int(math.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
     return _array_view(dtype, shape, backend.allocate_mpi_array(scalar, storage),
                        device=backend)
@@ -1199,6 +1214,7 @@ def array_from_ptr(ptr, shape, dtype, *, device=None, writable: bool = False) ->
     else:
         scalar, storage = dtype, shape
     backend = _target(device)
+    _check_dtype(backend, scalar)
 
     # Validate the pointer's memory space against what this backend expects,
     # on backends that distinguish device memory; Metal MTLBuffer objects

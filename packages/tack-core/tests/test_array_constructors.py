@@ -174,7 +174,11 @@ def test_python_values_default_to_f32_and_i32_numpy_arrays_keep_theirs(backend):
     assert tack.array([1.0, 2.0]).dtype is tack.f32
     assert tack.array([1, 2]).dtype is tack.i32
     assert tack.array([1, 2**40]).dtype is tack.i64
-    assert tack.array(np.zeros(3)).dtype is tack.f64
+    if tack.get_default_device()._backend.supports_f64:
+        assert tack.array(np.zeros(3)).dtype is tack.f64
+    else:                                       # an f64 array cannot be made there
+        with pytest.raises(TypeError, match="not supported"):
+            tack.array(np.zeros(3))
     assert tack.array(np.zeros(3, np.int64)).dtype is tack.i64
     with pytest.raises(TypeError, match="boolean"):
         tack.array([True, False])

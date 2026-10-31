@@ -79,3 +79,25 @@ def test_devices_with_f64_compute_in_it():
     out = tack.empty((4,), tack.f32)
     _cast(x, out)
     np.testing.assert_array_equal(out.numpy(), np.arange(4) * 0.5)
+
+
+def test_f64_arrays_are_refused_where_they_are_made(no_f64):
+    """Not at the first kernel given one: every way of making an array checks the
+    device's types, so an f64 array never exists on Metal."""
+    host = np.arange(4, dtype=np.float64)
+    made = [lambda: tack.empty((4,), tack.f64, device=no_f64),
+            lambda: tack.zeros((4,), tack.vec3(tack.f64), device=no_f64),
+            lambda: tack.zeros((4,), tack.vec3(tack.f64), device=no_f64, layout="soa"),
+            lambda: tack.array(host, device=no_f64),
+            lambda: tack.array(host).to_device(no_f64),
+            lambda: tack.zeros((4,), tack.f32, device=no_f64).astype(tack.f64),
+            lambda: tack.empty_like(host, device=no_f64),
+            lambda: tack.array_from_ptr(host, (4,), tack.f64, device=no_f64),
+            lambda: tack.from_dlpack(host, device=no_f64)]
+    for make in made:
+        with pytest.raises(TypeError, match="tack.f64 arrays are not supported on"):
+            make()
+    with tack.device(no_f64):
+        with pytest.raises(TypeError, match="Use a supported type"):
+            tack.empty((4,), tack.f64)
+        assert tack.array(host.astype(np.float32)).dtype is tack.f32

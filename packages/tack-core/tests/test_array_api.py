@@ -238,6 +238,10 @@ def test_vtk_layout_understands_element_types(backend, monkeypatch):
 def test_component_precision_controls_scalar_arguments_and_capability_checks(backend):
     from tack.runtime.dispatch import get_backend
 
+    if not get_backend().supports_f64:
+        with pytest.raises(TypeError, match='not supported'):
+            tack.array(np.ones((4, 3), dtype=np.float64), dtype=tack.vec3(tack.f64))
+        return
     source = tack.array(np.ones((4, 3), dtype=np.float64), dtype=tack.vec3(tack.f64))
     output = tack.empty_like(source)
 
@@ -247,9 +251,5 @@ def test_component_precision_controls_scalar_arguments_and_capability_checks(bac
             output[i] = source[i] + epsilon
 
     epsilon = 2.0 ** -40
-    if not get_backend().supports_f64:
-        with pytest.raises(TypeError, match='not supported'):
-            add_epsilon(source, output, epsilon)
-    else:
-        add_epsilon(source, output, epsilon)
-        np.testing.assert_array_equal(output.numpy(), np.full((4, 3), 1.0 + epsilon))
+    add_epsilon(source, output, epsilon)
+    np.testing.assert_array_equal(output.numpy(), np.full((4, 3), 1.0 + epsilon))

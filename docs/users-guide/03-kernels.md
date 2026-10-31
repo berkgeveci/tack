@@ -352,7 +352,7 @@ The three modes are:
 You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
 them. Inspection applies the same checks as a call, so arguments a call
-would reject (an `f64` array on Metal, for example) raise here too, and
+would reject (an `i64` atomic on Metal, for example) raise here too, and
 on GPUs without texture hardware the source shows the software sampling
 the call would use. Templates and scalar arguments work as expected:
 

@@ -504,7 +504,9 @@ def bitwise_ops(data, out):
 Available casts: `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`,
 `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`.
 
-Note: `tack.f64()` is not supported on Metal (Apple GPUs lack double precision).
+Note: `tack.f64()` is not supported on Metal (Apple GPUs lack double precision),
+and an `f64` array can't be made there: `tack.empty(n, tack.f64)` raises
+`TypeError` with Metal as the default device.
 
 ### Precision and integer arithmetic
 
