@@ -9,3 +9,6 @@
 - Triangle strips read about four times faster: their cell data is copied to
   the triangles by a NumPy gather per array, not a `vtkIdList` filled one id
   at a time (2M triangles: 319 ms to 74 ms).
+- `generate_global_ids` over a `PartitionedDataSet` with a polyhedral piece:
+  it read faces' `rows`, which a polyhedral topology's faces (of any size) do
+  not have. It now takes their boundary points from the face lists.
