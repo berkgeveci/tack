@@ -917,6 +917,9 @@ build if two of them define the same name.
 
 ### What views offer
 
+[Views](../17-views.md) introduces them.
+
+
 Every view supports `for i in view` and `entity_id(i)`, the global id of
 the entity the loop is at. Names follow one rule per kind of answer:
 

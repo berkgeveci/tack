@@ -148,6 +148,7 @@ nav:
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
           - Cell Types and Bases: vis-guide/16-cells-and-bases.md
           - Physical Units: vis-guide/12-units.md
+          - "Views: How a Kernel Sees a Dataset": vis-guide/17-views.md
       - Work with Data:
           - Build Meshes: vis-guide/02-meshes.md
           - Point Clouds and Particles: vis-guide/08-point-clouds.md
