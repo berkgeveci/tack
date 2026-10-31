@@ -27,7 +27,7 @@
     
     
       
-        <title>Communicate Between Blocks - Tack</title>
+        <title>Pieces and Blocks - Tack</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#communicate-between-blocks" class="md-skip">
+        <a href="#pieces-and-blocks" class="md-skip">
           Skip to content
         </a>
       
@@ -130,7 +130,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Communicate Between Blocks
+              Pieces and Blocks
             
           </span>
         </div>
@@ -1141,6 +1141,34 @@
     
   
     Sharing Arrays
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../users-guide/18-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Communicate Between Blocks
   
 
     
@@ -2220,7 +2248,7 @@
   <span class="md-ellipsis">
     
   
-    Communicate Between Blocks
+    Pieces and Blocks
   
 
     
@@ -2238,7 +2266,7 @@
   <span class="md-ellipsis">
     
   
-    Communicate Between Blocks
+    Pieces and Blocks
   
 
     
@@ -2264,50 +2292,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#blocks-and-worlds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blocks and worlds
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#plans-ghosts-refreshed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Plans: ghosts refreshed
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#routing-points-to-their-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Routing: points to their blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sorting-over-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sorting over blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#blocks-from-a-datasets-pieces" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2319,21 +2303,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#over-mpi" class="md-nav__link">
+  <a href="#what-the-built-in-algorithms-use" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Over MPI
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#run-and-check" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run and check
+        What the built-in algorithms use
       
     </span>
   </a>
@@ -3789,50 +3762,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#blocks-and-worlds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blocks and worlds
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#plans-ghosts-refreshed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Plans: ghosts refreshed
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#routing-points-to-their-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Routing: points to their blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sorting-over-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sorting over blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#blocks-from-a-datasets-pieces" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3844,21 +3773,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#over-mpi" class="md-nav__link">
+  <a href="#what-the-built-in-algorithms-use" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Over MPI
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#run-and-check" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run and check
+        What the built-in algorithms use
       
     </span>
   </a>
@@ -3885,281 +3803,62 @@
   
 
 
-<h1 id="communicate-between-blocks">Communicate between blocks<a class="headerlink" href="#communicate-between-blocks" title="Permanent link">&para;</a></h1>
-<p>The algorithms that take a <code>PartitionedDataSet</code> -- ghost cells, global ids,
-probes and particles across pieces, regions, sorts by voxel or label -- are
-written on <code>tack.communication</code>, a small layer for moving Tack arrays between
-<em>blocks</em>. This chapter is for writing one of your own: an algorithm whose
-answer on a piece needs another piece's data.</p>
-<p>The model is DIY's (blocks, links, exchanges, collectives), with Tack arrays
-as the messages and plain dictionaries in place of callbacks. It runs the
-same in one process, with blocks on any of its devices, and over MPI ranks:
-an algorithm written on <code>Blocks</code> never asks which.</p>
-<h2 id="blocks-and-worlds">Blocks and worlds<a class="headerlink" href="#blocks-and-worlds" title="Permanent link">&para;</a></h2>
-<p>A <strong>block</strong> is a unit of work on one device, with a <strong>global id</strong>: in
-<code>tack.dataset</code>, a piece. <code>Blocks(devices, world)</code> makes this process's blocks,
-one per device given (several may share a device); global ids run over every
-rank's blocks, contiguous by rank, as VTK numbers a partitioned dataset's
-pieces. <code>blocks.local</code> is the range of this rank's, <code>blocks.count</code> the number
-in all, <code>blocks.rank_of(g)</code> and <code>blocks.device(g)</code> where a block lives.</p>
-<p>A <strong>world</strong> is the transport. <code>World()</code> is this process alone;
-<code>World(comm)</code> spans the ranks of an mpi4py communicator (Tack imports no MPI
-module itself). Every method takes and returns dictionaries keyed by global
-id, holding an entry for each of this rank's blocks. Every call is
-<strong>collective</strong>: each rank makes it, in the same order, even a rank with
-nothing to send -- the <code>Blocks</code>, <code>Plan</code> and <code>Routing</code> constructors included,
-which gather what every rank has.</p>
-<p><strong>Collectives</strong> combine small host values (numbers, NumPy arrays, anything
-picklable for <code>all_gather</code>) over every block: <code>all_reduce</code> by <code>"sum"</code>,
-<code>"min"</code> or <code>"max"</code>, <code>all_gather</code> into a list by global id, and
-<code>exclusive_scan</code>, each block's offset in a global numbering. They combine in
-order of global id, whichever rank holds which block, so a floating-point
-sum has the same bits however the blocks are shared out.</p>
-<p><strong><code>exchange</code></strong> sends messages -- each a dict of names to Tack arrays, on the
-sending block's device -- from any block to any block. It takes
-<code>{source: {destination: message}}</code> and returns
-<code>{destination: {source: message}}</code> for every block on this rank (an empty
-dict where nothing came), each message's arrays on the destination block's
-device. A sent array belongs to the receiver afterwards: where the receiver
-can address its memory, it gets that array itself, so the sender must not
-write to it again. <code>link_by_bounds</code> finds each block's neighbours by their
-boxes, touching or within a margin.</p>
-<!-- tack-check: blocks -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tack</span><span class="w"> </span><span class="kn">import</span> <span class="n">communication</span> <span class="k">as</span> <span class="n">tc</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-<span class="n">world</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">World</span><span class="p">()</span>                                   <span class="c1"># tc.World(MPI.COMM_WORLD) under mpiexec</span>
-<span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="s2">&quot;cpu&quot;</span><span class="p">],</span> <span class="n">world</span><span class="p">)</span>            <span class="c1"># two blocks on this rank</span>
-
-<span class="c1"># Block g holds g + 3 values: 10 g, 10 g + 1, ...</span>
-<span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="mf">10.0</span> <span class="o">*</span> <span class="n">g</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">g</span> <span class="o">+</span> <span class="mi">3</span><span class="p">))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-
-<span class="n">total</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
-<span class="n">largest</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">},</span> <span class="n">op</span><span class="o">=</span><span class="s2">&quot;max&quot;</span><span class="p">)</span>
-<span class="n">sizes</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">size</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
-<span class="n">starts</span><span class="p">,</span> <span class="n">count</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exclusive_scan</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">size</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
-
-<span class="n">every</span> <span class="o">=</span> <span class="p">[</span><span class="mf">10.0</span> <span class="o">*</span> <span class="n">g</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">g</span> <span class="o">+</span> <span class="mi">3</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">)]</span>
-<span class="k">assert</span> <span class="n">total</span> <span class="o">==</span> <span class="nb">sum</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">every</span><span class="p">)</span> <span class="ow">and</span> <span class="n">largest</span> <span class="o">==</span> <span class="n">every</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
-<span class="k">assert</span> <span class="n">sizes</span> <span class="o">==</span> <span class="p">[</span><span class="n">g</span> <span class="o">+</span> <span class="mi">3</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">)]</span> <span class="ow">and</span> <span class="n">count</span> <span class="o">==</span> <span class="nb">sum</span><span class="p">(</span><span class="n">sizes</span><span class="p">)</span>
-<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">starts</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">==</span> <span class="nb">sum</span><span class="p">(</span><span class="n">sizes</span><span class="p">[:</span><span class="n">g</span><span class="p">])</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">)</span>
-
-<span class="c1"># Each block sends its first value to the block before it, and its last to</span>
-<span class="c1"># the block after it: neighbours from boxes, one exchange for every block.</span>
-<span class="n">boxes</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">((</span><span class="nb">float</span><span class="p">(</span><span class="n">g</span><span class="p">),),</span> <span class="p">(</span><span class="n">g</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>       <span class="c1"># unit intervals</span>
-<span class="n">neighbours</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">link_by_bounds</span><span class="p">(</span><span class="n">boxes</span><span class="p">)</span>                          <span class="c1"># {g: [g - 1, g + 1]}</span>
-<span class="n">outgoing</span> <span class="o">=</span> <span class="p">{}</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="n">first</span><span class="p">,</span> <span class="n">last</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[[</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
-    <span class="n">outgoing</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">n</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;edge&quot;</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">first</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="n">g</span> <span class="k">else</span> <span class="n">last</span><span class="p">])}</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">neighbours</span><span class="p">[</span><span class="n">g</span><span class="p">]}</span>
-<span class="n">incoming</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">exchange</span><span class="p">(</span><span class="n">outgoing</span><span class="p">)</span>                 <span class="c1"># {destination: {source: message}}</span>
-
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="k">for</span> <span class="n">source</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">incoming</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">expected</span> <span class="o">=</span> <span class="n">every</span><span class="p">[</span><span class="n">source</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">source</span> <span class="o">&lt;</span> <span class="n">g</span> <span class="k">else</span> <span class="n">every</span><span class="p">[</span><span class="n">source</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">assert</span> <span class="n">message</span><span class="p">[</span><span class="s2">&quot;edge&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">expected</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="s2">&quot;total&quot;</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="s2">&quot;of&quot;</span><span class="p">,</span> <span class="n">count</span><span class="p">,</span> <span class="s2">&quot;values&quot;</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="plans-ghosts-refreshed">Plans: ghosts refreshed<a class="headerlink" href="#plans-ghosts-refreshed" title="Permanent link">&para;</a></h2>
-<p>Most exchanges repeat: the same elements of the same blocks, every step. A
-<code>Plan</code> keeps one: for each pair of blocks, the element indices the sender
-reads and those the receiver writes, in matching order (checked across
-ranks when the plan is made). <code>plan.run(values)</code> gathers, exchanges and
-scatters in place; <code>{g: {name: array}}</code> moves several arrays in one
-exchange. A block may send to itself, as a piece in a periodic box is its
-own neighbour.</p>
-<p>Here a line of cells is cut into blocks of <code>m</code> cells, each held with a
-ghost cell at either end, and diffused by a kernel that reads a cell's two
-neighbours. Before each step, the plan copies each block's edge cells into
-its neighbours' ghosts; the blocks then give exactly the whole line's
-values. To sample the result, <code>Routing</code> sends points to the block that
-holds them and their answers back:</p>
-<!-- tack-check: plan -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tack</span><span class="w"> </span><span class="kn">import</span> <span class="n">communication</span> <span class="k">as</span> <span class="n">tc</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-
-<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">diffuse</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
-        <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
-
-
-<span class="n">world</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">World</span><span class="p">()</span>                                   <span class="c1"># tc.World(MPI.COMM_WORLD) under mpiexec</span>
-<span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="s2">&quot;cpu&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">world</span><span class="p">)</span>
-<span class="n">m</span> <span class="o">=</span> <span class="mi">50</span>                                               <span class="c1"># cells per block</span>
-<span class="n">n</span> <span class="o">=</span> <span class="n">m</span> <span class="o">*</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span>                                 <span class="c1"># cells in all</span>
-
-<span class="c1"># Block g owns cells [g m, (g + 1) m), held at 1 .. m with a ghost each side:</span>
-<span class="c1"># 0 and m + 1, the neighbours&#39; edge cells (or a fixed zero at the ends).</span>
-<span class="n">start</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">n</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="mf">8.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
-<span class="n">u</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">g</span> <span class="o">*</span> <span class="n">m</span><span class="p">:(</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">m</span><span class="p">],</span> <span class="mi">1</span><span class="p">))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="n">v</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">m</span> <span class="o">+</span> <span class="mi">2</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">f64</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-
-<span class="c1"># The ghost exchange: each block sends its edge cells, and the neighbour</span>
-<span class="c1"># writes them into its ghost. Indices match in order, sends to receives.</span>
-<span class="n">sends</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="n">receives</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">g</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">sends</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">-</span> <span class="mi">1</span><span class="p">],</span> <span class="n">receives</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">g</span> <span class="o">&lt;</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">sends</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">receives</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">],</span> <span class="p">[</span><span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-<span class="n">ghosts</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Plan</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">sends</span><span class="p">,</span> <span class="n">receives</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
-    <span class="n">ghosts</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">u</span><span class="p">)</span>                                    <span class="c1"># ghosts from their owners</span>
-    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-        <span class="n">diffuse</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">g</span><span class="p">],</span> <span class="n">v</span><span class="p">[</span><span class="n">g</span><span class="p">])</span>
-    <span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="p">,</span> <span class="n">u</span>
-
-<span class="c1"># The same steps over the whole line, one array: the same bits.</span>
-<span class="n">whole</span><span class="p">,</span> <span class="n">other</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">2</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">f64</span><span class="p">)</span>
-<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">):</span>
-    <span class="n">diffuse</span><span class="p">(</span><span class="n">whole</span><span class="p">,</span> <span class="n">other</span><span class="p">)</span>
-    <span class="n">whole</span><span class="p">,</span> <span class="n">other</span> <span class="o">=</span> <span class="n">other</span><span class="p">,</span> <span class="n">whole</span>
-<span class="n">whole</span> <span class="o">=</span> <span class="n">whole</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">1</span><span class="p">:</span><span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">whole</span><span class="p">[</span><span class="mi">1</span> <span class="o">+</span> <span class="n">g</span> <span class="o">*</span> <span class="n">m</span><span class="p">:</span><span class="mi">1</span> <span class="o">+</span> <span class="p">(</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">m</span><span class="p">])</span>
-
-<span class="c1"># Sample the result at points each block chooses: each point goes to the</span>
-<span class="c1"># block whose cells hold it, which answers with its value there.</span>
-<span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="o">.</span><span class="n">start</span><span class="p">)</span>
-<span class="n">points</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="n">boxes</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">((</span><span class="n">g</span> <span class="o">*</span> <span class="n">m</span><span class="p">,),</span> <span class="p">((</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">m</span><span class="p">,))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">holds</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>                                     <span class="c1"># cells [g m, (g + 1) m)</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">g</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="p">(</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">m</span><span class="p">)</span>
-
-
-<span class="n">routing</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Routing</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">points</span><span class="p">,</span> <span class="n">boxes</span><span class="p">,</span> <span class="n">holds</span><span class="p">)</span>
-<span class="n">arrived</span> <span class="o">=</span> <span class="n">routing</span><span class="o">.</span><span class="n">send</span><span class="p">()</span>                             <span class="c1"># {g: (points, values)}</span>
-<span class="n">answers</span> <span class="o">=</span> <span class="p">{}</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="n">x</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">arrived</span><span class="p">[</span><span class="n">g</span><span class="p">]</span>
-    <span class="n">cells</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">])</span> <span class="o">-</span> <span class="n">g</span> <span class="o">*</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>  <span class="c1"># local index, after the ghost</span>
-    <span class="n">answers</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;u&quot;</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="n">cells</span><span class="p">])}</span>
-<span class="n">sampled</span> <span class="o">=</span> <span class="n">routing</span><span class="o">.</span><span class="n">reply</span><span class="p">(</span><span class="n">answers</span><span class="p">,</span> <span class="n">like</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;u&quot;</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">f64</span><span class="p">})</span>          <span class="c1"># in each block&#39;s order</span>
-
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">sampled</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s2">&quot;u&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">whole</span><span class="p">[</span><span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">points</span><span class="p">[</span><span class="n">g</span><span class="p">][:,</span> <span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)])</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;max&quot;</span><span class="p">,</span> <span class="n">whole</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="s2">&quot;sampled&quot;</span><span class="p">,</span> <span class="n">sampled</span><span class="p">[</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="o">.</span><span class="n">start</span><span class="p">][</span><span class="s2">&quot;u&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[:</span><span class="mi">3</span><span class="p">])</span>
-</code></pre></div>
-<h2 id="routing-points-to-their-blocks">Routing: points to their blocks<a class="headerlink" href="#routing-points-to-their-blocks" title="Permanent link">&para;</a></h2>
-<p><code>Routing(blocks, positions, boxes, holds)</code> sends each point to the block
-that holds it. Each block gives its points (an <code>(n, d)</code> host array), its box
-(<code>None</code> if it holds nothing), and a function <code>holds(g, x)</code> that block <code>g</code>
-is asked with the points inside its box: 0 where it does not hold a point,
-or a rank, <code>True</code> being 1. The point goes to the block of the highest rank,
-the lowest block on a tie -- so a mesh's cell that holds a point beats one
-that holds it only within a tolerance, and a point on a face two pieces
-share goes to the lower piece. <code>routing.destination[g]</code> is each point's
-block, -1 where none holds it.</p>
-<p><code>send(values)</code> moves the points, and any values with them, and returns what
-arrived at each block, in order of origin block and then of the points
-there. <code>reply(answers, like)</code> sends an answer for each arrived point back,
-in that order, and returns one per original point (zero where the point
-went nowhere). Coordinates travel as the bits of f64 values, so the block
-decides on exactly the point it was given. <code>probe</code> across pieces is this
-pattern, and particle advection runs it in rounds, routing each particle
-after every stretch it takes.</p>
-<h2 id="sorting-over-blocks">Sorting over blocks<a class="headerlink" href="#sorting-over-blocks" title="Permanent link">&para;</a></h2>
-<p><code>sort_by_key(blocks, keys, values)</code> sorts every block's integer keys
-together, carrying values along: block 0 ends with the smallest keys and
-the last block with the largest, each ascending, and <strong>every copy of a key
-ends on one block</strong>. That last property is what it is for: matching. Give
-each point a key -- a hash of its exact position, a voxel, a halo label, a
-global id -- sort, and the copies of each key meet on one block, which
-matches or reduces them there; the values say where each came from. It is a
-stable sample sort (DIY's): equal keys keep the order of their blocks, then
-their order within a block. Heavily repeated keys can leave blocks uneven.</p>
-<!-- tack-check: sort -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">tack</span><span class="w"> </span><span class="kn">import</span> <span class="n">communication</span> <span class="k">as</span> <span class="n">tc</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-<span class="n">world</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">World</span><span class="p">()</span>                                   <span class="c1"># tc.World(MPI.COMM_WORLD) under mpiexec</span>
-<span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="s2">&quot;cpu&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span> <span class="n">world</span><span class="p">)</span>
-
-<span class="c1"># Each block&#39;s keys, some on several blocks; the value says where each came</span>
-<span class="c1"># from: (block &lt;&lt; 40) | index, the identity Tack&#39;s dataset algorithms use.</span>
-<span class="n">keys</span><span class="p">,</span> <span class="n">origin</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="n">k</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">25</span> <span class="o">+</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">g</span><span class="p">)</span>
-    <span class="n">keys</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">)</span>
-    <span class="n">origin</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;origin&quot;</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">((</span><span class="n">g</span> <span class="o">&lt;&lt;</span> <span class="mi">40</span><span class="p">)</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">)}</span>
-
-<span class="n">ordered</span><span class="p">,</span> <span class="n">carried</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">sort_by_key</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">origin</span><span class="p">)</span>
-
-<span class="c1"># Block 0 has the smallest keys, the last block the largest, each ascending,</span>
-<span class="c1"># and every copy of a key is on one block: count them where they landed.</span>
-<span class="n">mine</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">ordered</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="n">every</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">(</span><span class="n">mine</span><span class="p">)</span>
-<span class="n">given</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">g</span><span class="p">)</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">25</span> <span class="o">+</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">g</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">)]</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">every</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">given</span><span class="p">)))</span>
-<span class="n">held</span> <span class="o">=</span> <span class="p">[</span><span class="nb">set</span><span class="p">(</span><span class="n">part</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">every</span><span class="p">]</span>
-<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="ow">not</span> <span class="p">(</span><span class="n">held</span><span class="p">[</span><span class="n">a</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">held</span><span class="p">[</span><span class="n">b</span><span class="p">])</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">held</span><span class="p">))</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">a</span><span class="p">))</span>
-
-<span class="c1"># Each value still names its key&#39;s block and index.</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="n">o</span> <span class="o">=</span> <span class="n">carried</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s2">&quot;origin&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
-    <span class="n">came</span> <span class="o">=</span> <span class="p">[</span><span class="n">given</span><span class="p">[</span><span class="n">s</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">o</span> <span class="o">&gt;&gt;</span> <span class="mi">40</span><span class="p">,</span> <span class="n">o</span> <span class="o">&amp;</span> <span class="p">((</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">40</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))]</span>
-    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">came</span><span class="p">,</span> <span class="n">mine</span><span class="p">[</span><span class="n">g</span><span class="p">])</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="s2">&quot;holds&quot;</span><span class="p">,</span> <span class="n">mine</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s2">&quot;keys,&quot;</span><span class="p">,</span> <span class="n">mine</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="s2">&quot;to&quot;</span><span class="p">,</span> <span class="n">mine</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
-</code></pre></div>
-<p>Ghost cells match boundary points this way, <code>generate_global_ids</code> numbers
-matched points, and <code>voxel_downsample</code> and <code>halo_catalog</code> bring each
-voxel's or halo's points together.</p>
+<h1 id="pieces-and-blocks">Pieces and blocks<a class="headerlink" href="#pieces-and-blocks" title="Permanent link">&para;</a></h1>
+<p>The algorithms that take a <code>PartitionedDataSet</code> are written on
+<code>tack.communication</code>, the layer in <code>tack</code> for moving arrays between <em>blocks</em>
+and combining values over them. The User's Guide's
+<a href="../../users-guide/18-communication/">Communicate Between Blocks</a> explains it
+with plain arrays: blocks and worlds, collectives, exchanges, <code>Plan</code>,
+<code>Routing</code>, <code>sort_by_key</code> and MPI. This page is about using it with a
+dataset in pieces, for an algorithm of your own whose answer on a piece
+needs another piece's data.</p>
 <h2 id="blocks-from-a-datasets-pieces">Blocks from a dataset's pieces<a class="headerlink" href="#blocks-from-a-datasets-pieces" title="Permanent link">&para;</a></h2>
 <p>An algorithm over a <code>PartitionedDataSet</code> makes one block per piece, in the
 pieces' order, in the dataset's world:</p>
-<div class="highlight"><pre><span></span><code><span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="n">piece</span><span class="o">.</span><span class="n">device</span> <span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">],</span> <span class="n">pieces</span><span class="o">.</span><span class="n">world</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">tack</span><span class="w"> </span><span class="kn">import</span> <span class="n">communication</span> <span class="k">as</span> <span class="n">tc</span>
+
+<span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="n">piece</span><span class="o">.</span><span class="n">device</span> <span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">],</span> <span class="n">pieces</span><span class="o">.</span><span class="n">world</span><span class="p">)</span>
 <span class="n">mine</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">,</span> <span class="n">pieces</span><span class="p">))</span>           <span class="c1"># global id -&gt; this rank&#39;s piece</span>
 </code></pre></div>
-<p>A piece's global id is then its index among every rank's pieces, the
-numbering ghost marks, global ids and <code>statistics</code> use. Positions are
-relative to each piece's origin, so compare boxes and points across pieces
-only where the pieces share one, as Tack's algorithms check they do
-(<code>partitioned.common_origin</code>).</p>
-<h2 id="over-mpi">Over MPI<a class="headerlink" href="#over-mpi" title="Permanent link">&para;</a></h2>
-<p>The examples above run under <code>mpiexec</code> unchanged but for the world:</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">mpi4py</span><span class="w"> </span><span class="kn">import</span> <span class="n">MPI</span>
-
-<span class="n">world</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">World</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="p">)</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code>mpiexec<span class="w"> </span>-n<span class="w"> </span><span class="m">3</span><span class="w"> </span>python<span class="w"> </span>plan.py
-</code></pre></div>
-<p>Each rank makes only its own blocks (here two each, so three ranks give six
-blocks and a longer line); the checks pass on any number of ranks. Messages
-between ranks are staged through host memory, or, with
-<code>World(comm, gpu_aware=True)</code> and an MPI that reads device memory, handed
-to MPI as the device arrays themselves. Make each rank's device
-(<code>tack.device(f"cuda:{local_rank}")</code>) before importing <code>mpi4py.MPI</code>, which
-starts MPI on the device current then. <code>World(comm)</code> communicates on a
-duplicate of <code>comm</code>, so its messages never meet the application's; make one
-per run.</p>
-<h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/validate.py<span class="w"> </span>--arch<span class="w"> </span>cpu
-uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>packages/tack-core/tests/test_communication.py
-</code></pre></div>
-<p><code>validate.py</code> runs this chapter's three examples in one process. The test
-suite runs every pattern on threads that stand in for ranks, and under
-<code>mpiexec -n 3</code> staged and GPU-aware (<code>--extra mpi</code>); the reference for each
-call is the <a href="../../reference/api/#communication-between-blocks">API page</a>, and
-what it guarantees is in the
-<a href="../../contracts/runtime-api/#communication-between-blocks">Runtime API contract</a>.</p>
+<p>A piece's global id is then its index among every rank's pieces, as VTK
+numbers a partitioned dataset's pieces, and the numbering that ghost marks,
+global ids and <code>statistics</code> use. Positions are relative to each piece's
+origin, so compare boxes and points across pieces only where the pieces
+share one, as Tack's algorithms check they do (<code>partitioned.common_origin</code>).</p>
+<h2 id="what-the-built-in-algorithms-use">What the built-in algorithms use<a class="headerlink" href="#what-the-built-in-algorithms-use" title="Permanent link">&para;</a></h2>
+<p>Each pattern of the User's Guide chapter has built-ins written on it, which
+are worth reading before writing one like them:</p>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Built-ins</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Collectives (<code>all_reduce</code>, <code>all_gather</code>, <code>exclusive_scan</code>)</td>
+<td><code>statistics</code> and <code>entropy</code> over pieces, <code>generate_global_ids</code>' numbering</td>
+</tr>
+<tr>
+<td><code>Plan</code></td>
+<td><code>ghost_cells</code>' and <code>ghost_points</code>' plans, which <code>update_ghosts</code> reruns; <code>generate_global_ids</code>' ids for copies, from their owners; AMR ghost cells and <code>average_down</code></td>
+</tr>
+<tr>
+<td><code>Routing</code></td>
+<td><code>probe</code> across pieces (the cell that holds a point outranks one within tolerance); particle advection and streamlines, in rounds</td>
+</tr>
+<tr>
+<td><code>sort_by_key</code></td>
+<td>ghost cells' boundary-point matching, <code>generate_global_ids</code>, <code>merge_pieces</code>, <code>voxel_downsample</code>, <code>halo_catalog</code>, <code>connected_components</code> over pieces</td>
+</tr>
+</tbody>
+</table>
+<p>Results that combine pieces do it in the pieces' global order, so they have
+the same bits however the pieces are shared out over ranks.
+<a href="../09-pieces-across/">Algorithms Across Pieces</a> runs them, and
+<a href="../15-write-a-filter/">Write a Filter</a> shows a reduction over pieces written
+with public names.</p>
 
 
 

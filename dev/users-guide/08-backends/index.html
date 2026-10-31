@@ -1348,6 +1348,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../18-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Communicate Between Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../15-debugging-and-timing/" class="md-nav__link">
         
   
@@ -2385,7 +2413,7 @@
   <span class="md-ellipsis">
     
   
-    Communicate Between Blocks
+    Pieces and Blocks
   
 
     
@@ -4057,7 +4085,9 @@ there are (also for <code>"hip"</code> and <code>"level_zero"</code>), and <code
 is the second. A bare <code>"cuda"</code> or <code>"hip"</code> is the GPU the thread already
 uses, as a framework that embeds Tack may have chosen, else the first.
 Each device compiles its own kernels, and a kernel's arrays must all be on
-one: <code>b = a.to_device(tack.device("cuda:1"))</code> copies through the host.</p>
+one: <code>b = a.to_device(tack.device("cuda:1"))</code> copies through the host. To
+split one problem over several devices, or MPI ranks, see
+<a href="../18-communication/">Communicate Between Blocks</a>.</p>
 <p>Options make a separate device: <code>tack.device("cpu", num_threads=1)</code> is a
 second CPU device with one thread. It shares memory with the default CPU
 device, so it runs kernels on CPU arrays made before it.</p>
