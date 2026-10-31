@@ -23,6 +23,7 @@ its packed scalars, and references to its arrays until it completes.
 
 import atexit
 import math
+import mmap
 import threading
 import weakref
 from collections import OrderedDict, deque
@@ -76,6 +77,11 @@ _OWNED_RESULTS = {
     b"newComputePipelineStateWithFunction:error:": {
         2: {"type": b"@"}, 3: {"type": b"^@", "type_modifier": b"o"}},
     b"newArgumentEncoderWithBufferIndex:": {2: {"type": b"Q"}},
+    # pyobjc passes a buffer object's own memory for its pointer (no copy); the
+    # deallocator is None (the memory's owner keeps it, see _wrap_host).
+    b"newBufferWithBytesNoCopy:length:options:deallocator:": {
+        2: {"type": b"n^v", "c_array_length_in_arg": 3, "null_accepted": True},
+        3: {"type": b"Q"}, 4: {"type": b"Q"}, 5: {"type": b"@?", "null_accepted": True}},
 }
 
 if Metal is not None:
@@ -169,6 +175,31 @@ class _BufferPool:
             self.held = 0
 
 
+#: The buffers Tack has handed outside (``MetalBuffer.share``), by the address
+#: of their memory: an address cannot be turned back into an MTLBuffer, so memory
+#: that comes back (a VTK array over a buffer Tack exported) is found here.
+_handed_out = weakref.WeakValueDictionary()
+
+
+def _wrap_host(device, host, nbytes):
+    """``(MTLBuffer, owner)`` over ``host`` (a NumPy array of another library's
+    memory) without a copy: the buffer Tack handed out at that address, or (memory
+    on page boundaries, a whole number of pages long) a new buffer over it, which
+    ``owner`` keeps alive. ``None`` where neither applies, for the caller to copy."""
+    address = host.ctypes.data
+    known = _handed_out.get(address)
+    if known is not None and known.nbytes >= nbytes:
+        return known.metal_buffer, known
+    page = mmap.PAGESIZE
+    if (host.flags.c_contiguous and host.nbytes >= nbytes > 0 and address % page == 0
+            and nbytes % page == 0):
+        buffer = device.newBufferWithBytesNoCopy_length_options_deallocator_(
+            host, nbytes, 0, None)
+        if buffer is not None:
+            return buffer, host
+    return None
+
+
 class MetalBuffer(DeviceBuffer):
     """Metal shared buffer — zero-copy on Apple Silicon unified memory.
 
@@ -245,9 +276,18 @@ class MetalBuffer(DeviceBuffer):
 
     def share(self):
         """Hand this memory outside Tack: wait for queued kernels now, and have
-        every later launch that uses it complete before returning."""
+        every later launch that uses it complete before returning. The buffer is
+        remembered by its address, so the same memory handed back (a VTK array
+        over it) wraps this MTLBuffer again (``_wrap_host``)."""
         self._shared = True
+        _handed_out[self.address] = self
         self._sync()
+
+    def host_view(self):
+        """This buffer's memory as a NumPy view, for another library to read on
+        the host without a copy (unified memory): shared first (``share``)."""
+        self.share()
+        return self._view
 
     @property
     def address(self) -> int:
@@ -696,8 +736,22 @@ class MetalBackend(GPUBackend):
         An MTLBuffer *object*, not an address: Metal owns the mapping
         between the two and there is no way back from an integer. Saying
         so costs a line and saves reading `AttributeError: 'int' object
-        has no attribute 'contents'` from four frames down.
+        has no attribute 'contents'` from four frames down. Or a NumPy
+        array of host memory (``_wrap_host``): a buffer Tack handed out, or
+        memory on whole pages, wrapped in place.
         """
+        nbytes = int(math.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize
+        owner = None
+        if isinstance(ptr, np.ndarray):
+            # Host memory (unified): a buffer Tack handed out, or page-aligned
+            # memory wrapped in place; anything else is copied by the caller.
+            found = _wrap_host(self._device, ptr, nbytes)
+            if found is None:
+                raise TypeError(
+                    "the Metal backend wraps host memory without a copy only where it "
+                    "is a buffer Tack handed out or lies on whole pages; copy it with "
+                    "tack.array()")
+            ptr, owner = found
         if not hasattr(ptr, "contents"):
             raise TypeError(
                 f"the Metal backend wraps an MTLBuffer object, not "
@@ -705,10 +759,10 @@ class MetalBackend(GPUBackend):
                 f"into an MTLBuffer; allocate with tack.empty() and copy "
                 f"into it with tack.copyto().")
         buf = MetalBuffer.__new__(MetalBuffer)
+        buf._owner = owner       # what keeps the memory under it alive
         buf._sync = _synchronize_all
         buf._shared = True       # another library's buffer, read without Tack
         buf._metal_buffer = ptr  # expects an MTLBuffer object
-        nbytes = int(math.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize
         raw = ptr.contents().as_buffer(nbytes)
         buf._view = np.frombuffer(raw, dtype=dtype.numpy_dtype).reshape(shape)
         return buf

@@ -242,13 +242,34 @@ def _shared(host, element):
     if (not isinstance(host, np.ndarray) or not host.flags.c_contiguous
             or host.dtype != np.dtype(scalar.numpy_dtype)):
         return None
+    from tack.runtime.dispatch import get_backend
+
+    if get_backend().name == "metal":
+        # Unified memory: a Metal array over VTK's, where Metal can wrap it in
+        # place (a buffer Tack handed VTK, or memory on whole pages); else the
+        # caller copies it to the device, so the dataset is on Metal throughout.
+        try:
+            return tack.array_from_ptr(host, (host.shape[0],), element, device="metal")
+        except TypeError:
+            return None
     return tack.array_from_ptr(host, (host.shape[0],), element, device="cpu")
+
+
+class _Held:
+    """A NumPy view of a Tack array's memory that holds the array: NumPy keeps this
+    object as the view's base, so a VTK array over the view keeps the Tack array,
+    and its buffer, alive."""
+
+    def __init__(self, view, array):
+        self.__array_interface__ = view.__array_interface__
+        self._view, self._array = view, array
 
 
 def _host_values(array):
     """A Tack array's values as a NumPy array: a view of its memory where the array
-    is on the CPU (DLPack), a copy otherwise. VTK arrays made from it share the
-    view and hold it, and so the Tack array."""
+    is on the CPU (DLPack) or on Metal (unified memory: its buffer's host view,
+    after the device is done with it), a copy otherwise. VTK arrays made from it
+    share the view and hold it, and so the Tack array."""
     import numpy as np
 
     from tack.arrays import to_host
@@ -256,7 +277,20 @@ def _host_values(array):
     if isinstance(array, tack.Array) and array.device.type == "cpu" and \
             getattr(array, "layout", "aos") == "aos":
         return np.from_dlpack(array)
+    if _on_metal(array):
+        view = array._buffer.host_view()
+        width = getattr(array, "_vector_n", None)
+        shape = (*array.shape, width) if width else tuple(array.shape)
+        return np.asarray(_Held(view.reshape(shape), array))
     return np.array(to_host(array))
+
+
+def _on_metal(values):
+    """Whether ``values`` is a stored interleaved array on Metal, whose memory is
+    host memory VTK can share."""
+    return (isinstance(values, tack.Array) and values.device.type == "metal"
+            and getattr(values, "layout", "aos") == "aos"
+            and hasattr(getattr(values, "_buffer", None), "host_view"))
 
 
 def _from_vtk(array, dtype=None):
@@ -553,7 +587,13 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     ``dtype=None``. The shared arrays are read-only to Tack and hold VTK's
     arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
     be shared -- an origin to subtract, a type to convert, triangle strips,
-    collapsed hexahedra, polyhedra -- is copied as before."""
+    collapsed hexahedra, polyhedra -- is copied as before.
+
+    With Metal the default device, ``copy=False`` gives Metal arrays instead, as
+    Apple silicon's unified memory allows with any VTK: the buffers a Metal
+    dataset handed VTK (``dataset_to_vtk(copy=False)``) come back as themselves,
+    memory on whole pages is wrapped in place, and anything else is copied to
+    Metal, so the dataset is on Metal throughout."""
     if origin is None and dtype == tack.f32:
         origin = _far_origin(grid)
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
@@ -986,7 +1026,7 @@ def _to_vtk_types(types, share=False):
 
     if isinstance(types, ConstantArray):
         return int(types.value.numpy().reshape(-1)[0])
-    if share and _stored_on_cpu(types) and types.dtype == tack.u8:
+    if share and _stored_on_host(types) and types.dtype == tack.u8:
         return vtkUnsignedCharArray(_host_values(types))
     return vtkUnsignedCharArray(np.ascontiguousarray(np.asarray(types), np.uint8))
 
@@ -1286,7 +1326,7 @@ def _vtk_points_of(data, share=False):
     from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkFloatArray, vtkPoints
 
     values = data.geometry.values
-    if share and not any(data.origin) and _stored_on_cpu(values):
+    if share and not any(data.origin) and _stored_on_host(values):
         positions = _host_values(values)
     else:
         positions = data.world_positions() if any(data.origin) else data.positions()
@@ -1296,11 +1336,11 @@ def _vtk_points_of(data, share=False):
     return points
 
 
-def _stored_on_cpu(values):
-    """Whether ``values`` is a stored (not implicit) interleaved array on the CPU,
-    whose memory VTK can share."""
+def _stored_on_host(values):
+    """Whether ``values`` is a stored (not implicit) interleaved array in host memory
+    VTK can share: on the CPU, or on Metal (unified memory)."""
     return (isinstance(values, tack.Array) and values.device.type == "cpu"
-            and getattr(values, "layout", "aos") == "aos")
+            and getattr(values, "layout", "aos") == "aos") or _on_metal(values)
 
 
 def _vtk_cells(offsets, connectivity, share=False):
@@ -1310,7 +1350,7 @@ def _vtk_cells(offsets, connectivity, share=False):
     from vtkmodules.vtkCommonCore import vtkTypeInt32Array, vtkTypeInt64Array
     from vtkmodules.vtkCommonDataModel import vtkCellArray
 
-    if (share and _stored_on_cpu(offsets) and _stored_on_cpu(connectivity)
+    if (share and _stored_on_host(offsets) and _stored_on_host(connectivity)
             and offsets.dtype == connectivity.dtype and offsets.dtype in (tack.i32, tack.i64)):
         # As typed VTK arrays: given NumPy arrays, the constructor converts them to
         # int64; given VTK arrays, it keeps them, 32-bit ones too.
@@ -1335,7 +1375,7 @@ def _to_vtk_values(values, share=False):
         return vtkConstantArray[dtype](values.size, values.value.numpy().reshape(-1)[0])
     if isinstance(values, CountingArray):
         return vtkAffineArray[values.dtype.numpy_dtype](values.size, values.step, values.start)
-    if share and _stored_on_cpu(values):
+    if share and _stored_on_host(values):
         return _host_values(values)
     return np.array(to_host(values))            # a copy: the grid owns its values
 
@@ -1417,7 +1457,11 @@ def dataset_to_vtk(data, copy=True, higher_order=False, cell_grid=False):
     ids too), ghost marks and global ids. The VTK arrays hold Tack's, and
     writes on either side reach the other. Implicit arrays go across as VTK's
     implicit ones either way; anything else -- arrays on a GPU, a polyhedral
-    topology's faces -- is copied as before.
+    topology's faces -- is copied as before. Metal arrays are shared too, with
+    any VTK: on Apple silicon their buffers are host memory, so VTK holds views
+    of them, after one wait for the device (``MetalBuffer.share``); launches
+    that use a shared buffer complete before returning, so VTK reads what Tack
+    wrote, and the buffers come back as themselves through ``vtk_to_dataset``.
 
     With ``higher_order``, a dataset of segments, quads or hexahedra (pixels and
     voxels too), or of triangles, tetrahedra or wedges, whose geometry or an ``H1``
@@ -1601,7 +1645,7 @@ def _dataset_to_vtk(data, copy=True):
                                   (grid.point_data, data.ghosts.points)):
             if marks is not None:
                 attributes[_GHOST_ARRAY] = vtkUnsignedCharArray(
-                    _host_values(marks) if share and _stored_on_cpu(marks)
+                    _host_values(marks) if share and _stored_on_host(marks)
                     else np.ascontiguousarray(marks.numpy(), np.uint8))
     if data.global_ids is not None:
         from vtkmodules.vtkCommonCore import vtkIdTypeArray
@@ -1610,7 +1654,7 @@ def _dataset_to_vtk(data, copy=True):
                                       (grid.point_data, data.global_ids.points,
                                        "GlobalPointIds")):
             if ids is not None:
-                array = vtkIdTypeArray(_host_values(ids) if share and _stored_on_cpu(ids)
+                array = vtkIdTypeArray(_host_values(ids) if share and _stored_on_host(ids)
                                        else np.ascontiguousarray(ids.numpy(), np.int64))
                 array.SetName(name)                 # vtkGenerateGlobalIds' names
                 attributes.SetGlobalIds(array)      # no pythonic form in 9.7.1

@@ -1176,7 +1176,9 @@ def array_from_ptr(ptr, shape, dtype, *, device=None, writable: bool = False) ->
     Args:
         ptr: device pointer (integer) or backend-specific buffer object.
              - CPU: integer address or numpy array
-             - Metal: MTLBuffer object (from PyObjC)
+             - Metal: MTLBuffer object (from PyObjC), or a NumPy array of
+               host memory: a buffer Tack handed out, or memory on whole
+               pages, wrapped in place (TypeError otherwise)
              - CUDA/HIP: device pointer as integer
              - Level Zero: device pointer as integer
         shape: the array's dimensions, counting elements
