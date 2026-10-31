@@ -120,7 +120,15 @@ linear sub-cells; exact crossings need cells of one family.
 
 ## Reading and writing other formats
 
-**VTK unstructured grids.** Linear cells read as the shapes above.
+**VTK unstructured grids.** Linear cells read as the shapes above. A grid with
+polyhedra reads as a `PolyhedralTopology`, every cell a polyhedron of its faces,
+since one topology holds either shapes or polyhedra for now (a topology holding
+both is planned). For a large mesh that mixes them, read it with
+`vtk_to_dataset(grid, polyhedral="split")`: a `PartitionedDataSet` of two
+pieces over the same points, the shaped cells as themselves and the polyhedra
+as polyhedra, each point owned by one of them so reductions count it once. A
+CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
+(with `copy=False`); as polyhedra throughout it would take tens of gigabytes.
 Higher-order cells read as `H1` fields of the grid's largest order, in any mix
 of shapes, dimensions and orders:
 
