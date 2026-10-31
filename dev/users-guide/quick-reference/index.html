@@ -4002,7 +4002,8 @@ and arbitrary Python objects belong on the host. Save decorated functions in a
 </tbody>
 </table>
 <p>Initialize every value before reading it. Shape comes first, then dtype, as in
-NumPy; the dtype defaults to f32. Array shape counts elements; the
+NumPy; the dtype defaults to f32 (<code>tack.set_default_float(tack.f64)</code> changes
+that). Array shape counts elements; the
 dtype describes one scalar, vector or matrix element. <code>numpy()</code> appends
 component dimensions, and <code>tack.copyto</code> expects them. <code>reshape</code> preserves the element type and shares storage;
 <code>copy</code> allocates independent storage. See <a href="../02-arrays-and-types/">Arrays and Types</a>.</p>

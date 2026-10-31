@@ -3880,7 +3880,8 @@ runtime-length vector values or swizzle constructors such as
 <code>v.rgb</code>/<code>tack.vec4(v, 1.0)</code>; construct the components explicitly.</p>
 <h2 id="vectors">Vectors<a class="headerlink" href="#vectors" title="Permanent link">&para;</a></h2>
 <p>Choose a vector element dtype through <code>vec2</code>, <code>vec3</code>, <code>vec4</code>, or <code>vec(n)</code>.
-The component dtype defaults to f32. The ordinary array constructors allocate
+The component dtype defaults to f32, the
+<a href="../02-arrays-and-types/#the-default-float-type">default float type</a>. The ordinary array constructors allocate
 its storage, and vector operations are scalarized at the IR level:</p>
 <div class="highlight"><pre><span></span><code><span class="n">v</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>
 

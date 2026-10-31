@@ -3266,6 +3266,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tackset_default_floatdtype-and-tackget_default_float" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.set_default_float(dtype) and tack.get_default_float()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#where-arrays-live-and-kernels-run" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4145,6 +4156,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tackset_default_floatdtype-and-tackget_default_float" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tack.set_default_float(dtype) and tack.get_default_float()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#where-arrays-live-and-kernels-run" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4640,6 +4662,32 @@ previous default stays.</p>
 <p>Returns the default device: the innermost <code>with</code> block's on this thread,
 else the one <code>set_default_device</code> chose, else the CPU.
 <code>tack.runtime.dispatch.get_backend()</code> returns the same device's <code>Backend</code>.</p>
+<h3 id="tackset_default_floatdtype-and-tackget_default_float"><code>tack.set_default_float(dtype)</code> and <code>tack.get_default_float()</code><a class="headerlink" href="#tackset_default_floatdtype-and-tackget_default_float" title="Permanent link">&para;</a></h3>
+<p>Defined in <code>packages/tack-core/src/tack/lang/types.py</code>. <code>set_default_float</code>
+makes <code>dtype</code> (<code>tack.f32</code> or <code>tack.f64</code>, or a NumPy float type) the default
+float type and returns it; <code>get_default_float</code> returns it.
+It is <code>f32</code> until set, and process-wide.</p>
+<p><strong>Current behavior:</strong></p>
+<ul>
+<li>It is the type of: <code>empty</code>, <code>zeros</code> and <code>ones</code> without a <code>dtype</code>; Python
+  floats in <code>array</code>, <code>full</code> and <code>arange</code>; the components of <code>vec</code>, <code>mat</code> and
+  <code>vec2</code> ... <code>mat4</code> without a component type; floats in <code>tack.arrays</code>'
+  implicit arrays (<code>ConstantArray</code>, <code>CountingArray</code>, <code>UniformCoordinates</code>,
+  <code>CartesianProduct</code>, <code>Function</code>, host values an array holds); and
+  <code>tack.dataset</code>'s constructors, sources and readers without a <code>dtype</code>
+  (<code>DataSet</code>, <code>uniform_grid</code>, <code>rectilinear_grid</code>, <code>point_cloud</code>, <code>wavelet</code>,
+  <code>tangle</code>, <code>amr_gaussian_pulse</code>, <code>vtk_to_dataset</code>, <code>mfem_to_dataset</code>,
+  <code>mfem_field</code>). It is read when each is called.</li>
+<li>A NumPy array keeps its type, a <code>*_like</code> its prototype's, and arrays
+  already made keep theirs. <code>vtk_to_dataset(dtype=None)</code> keeps VTK's types.</li>
+<li>Kernels are unchanged: scalar arguments, literals and casts are typed by
+  the rules of the language contract, which follow the arrays a call passes.
+  Library code chooses its types explicitly and doesn't depend on the
+  setting.</li>
+<li>Any other type raises <code>TypeError</code>. On a device without <code>f64</code> (Metal), an
+  array that the setting makes <code>f64</code> is refused where it is made, and the
+  message names the setting.</li>
+</ul>
 <h3 id="where-arrays-live-and-kernels-run">Where arrays live and kernels run<a class="headerlink" href="#where-arrays-live-and-kernels-run" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Every array records its device: <code>a.device</code> is a <code>tack.Device</code>. Every

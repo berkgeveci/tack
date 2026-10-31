@@ -9106,7 +9106,7 @@ algorithms that work on them are in <a href="../algorithms/">Algorithms</a>.</p>
     <span class="n">geometry</span><span class="p">,</span>
     <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">sets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">ghosts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">global_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -9172,10 +9172,12 @@ keep what they need (<code>tack.dataset.temporal</code>).</p>
 <span class="normal">538</span>
 <span class="normal">539</span>
 <span class="normal">540</span>
-<span class="normal">541</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topology</span><span class="p">,</span> <span class="n">geometry</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+<span class="normal">541</span>
+<span class="normal">542</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">topology</span><span class="p">,</span> <span class="n">geometry</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sets</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
              <span class="n">ghosts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">global_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">time</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
              <span class="n">time_unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">topology</span> <span class="o">=</span> <span class="n">topology</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">_geometry</span> <span class="o">=</span> <span class="n">_as_geometry</span><span class="p">(</span><span class="n">geometry</span><span class="p">,</span> <span class="n">topology</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">unit</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">origin</span>
@@ -9517,8 +9519,7 @@ groups, layouts) is derived there afresh, not copied.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">563</span>
-<span class="normal">564</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">564</span>
 <span class="normal">565</span>
 <span class="normal">566</span>
 <span class="normal">567</span>
@@ -9546,7 +9547,8 @@ groups, layouts) is derived there afresh, not copied.</p>
 <span class="normal">589</span>
 <span class="normal">590</span>
 <span class="normal">591</span>
-<span class="normal">592</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="normal">592</span>
+<span class="normal">593</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;This dataset on ``device``: itself if it is already there, else a copy --</span>
 <span class="sd">    the topology made from its arrays copied there, each field in the same</span>
 <span class="sd">    space on it, the sets by the same ids. What the topology derives (faces,</span>
@@ -9602,14 +9604,14 @@ An <code>L2</code> geometry has none per point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">740</span>
-<span class="normal">741</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">741</span>
 <span class="normal">742</span>
 <span class="normal">743</span>
 <span class="normal">744</span>
 <span class="normal">745</span>
 <span class="normal">746</span>
-<span class="normal">747</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">747</span>
+<span class="normal">748</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Every point&#39;s position as a host array, ``(num_points, 3)``: an ``H1``</span>
 <span class="sd">    geometry&#39;s values, relative to ``origin`` (``world_positions`` adds it).</span>
 <span class="sd">    An ``L2`` geometry has none per point.&quot;&quot;&quot;</span>
@@ -9647,8 +9649,7 @@ positions per point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">749</span>
-<span class="normal">750</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">750</span>
 <span class="normal">751</span>
 <span class="normal">752</span>
 <span class="normal">753</span>
@@ -9676,7 +9677,8 @@ positions per point.</p>
 <span class="normal">775</span>
 <span class="normal">776</span>
 <span class="normal">777</span>
-<span class="normal">778</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rebased</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+<span class="normal">778</span>
+<span class="normal">779</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rebased</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;This dataset with its geometry relative to ``origin`` instead: the same</span>
 <span class="sd">    world positions, each value moved by the difference of the two origins</span>
 <span class="sd">    (taken in double precision, added in the geometry&#39;s type). An image</span>
@@ -9731,10 +9733,10 @@ positions per point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">780</span>
-<span class="normal">781</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">781</span>
 <span class="normal">782</span>
-<span class="normal">783</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">world_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">783</span>
+<span class="normal">784</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">world_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Every point&#39;s position as a float64 host array, ``(num_points, 3)``:</span>
 <span class="sd">    ``origin`` plus ``positions()``, added in double precision.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span>
@@ -9764,8 +9766,7 @@ cell groups' subgroups of its members.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">785</span>
-<span class="normal">786</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">786</span>
 <span class="normal">787</span>
 <span class="normal">788</span>
 <span class="normal">789</span>
@@ -9780,7 +9781,8 @@ cell groups' subgroups of its members.</p>
 <span class="normal">798</span>
 <span class="normal">799</span>
 <span class="normal">800</span>
-<span class="normal">801</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">801</span>
+<span class="normal">802</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">domain_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">domain</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``DomainGroup``s of ``domain``: ``&quot;cells&quot;``, ``&quot;faces&quot;``, ``&quot;edges&quot;``, or</span>
 <span class="sd">    the name of a cell, face or edge set in ``sets`` -- a cell set&#39;s as the</span>
@@ -9823,8 +9825,7 @@ faces and edges have been derived; <code>extra</code> mixins and attributes last
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">803</span>
-<span class="normal">804</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">804</span>
 <span class="normal">805</span>
 <span class="normal">806</span>
 <span class="normal">807</span>
@@ -9871,7 +9872,8 @@ faces and edges have been derived; <code>extra</code> mixins and attributes last
 <span class="normal">848</span>
 <span class="normal">849</span>
 <span class="normal">850</span>
-<span class="normal">851</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">851</span>
+<span class="normal">852</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">domain_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="p">(),</span> <span class="o">**</span><span class="n">extra_attributes</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``group``&#39;s view: kind, shape, geometry, and for cells their incidence when</span>
 <span class="sd">    faces and edges have been derived; ``extra`` mixins and attributes last</span>
@@ -9963,82 +9965,82 @@ polylines only point nodes exist.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">924</span>
-<span class="normal">925</span>
-<span class="normal">926</span>
-<span class="normal">927</span>
-<span class="normal">928</span>
-<span class="normal">929</span>
-<span class="normal">930</span>
-<span class="normal">931</span>
-<span class="normal">932</span>
-<span class="normal">933</span>
-<span class="normal">934</span>
-<span class="normal">935</span>
-<span class="normal">936</span>
-<span class="normal">937</span>
-<span class="normal">938</span>
-<span class="normal">939</span>
-<span class="normal">940</span>
-<span class="normal">941</span>
-<span class="normal">942</span>
-<span class="normal">943</span>
-<span class="normal">944</span>
-<span class="normal">945</span>
-<span class="normal">946</span>
-<span class="normal">947</span>
-<span class="normal">948</span>
-<span class="normal">949</span>
-<span class="normal">950</span>
-<span class="normal">951</span>
-<span class="normal">952</span>
-<span class="normal">953</span>
-<span class="normal">954</span>
-<span class="normal">955</span>
-<span class="normal">956</span>
-<span class="normal">957</span>
-<span class="normal">958</span>
-<span class="normal">959</span>
-<span class="normal">960</span>
-<span class="normal">961</span>
-<span class="normal">962</span>
-<span class="normal">963</span>
-<span class="normal">964</span>
-<span class="normal">965</span>
-<span class="normal">966</span>
-<span class="normal">967</span>
-<span class="normal">968</span>
-<span class="normal">969</span>
-<span class="normal">970</span>
-<span class="normal">971</span>
-<span class="normal">972</span>
-<span class="normal">973</span>
-<span class="normal">974</span>
-<span class="normal">975</span>
-<span class="normal">976</span>
-<span class="normal">977</span>
-<span class="normal">978</span>
-<span class="normal">979</span>
-<span class="normal">980</span>
-<span class="normal">981</span>
-<span class="normal">982</span>
-<span class="normal">983</span>
-<span class="normal">984</span>
-<span class="normal">985</span>
-<span class="normal">986</span>
-<span class="normal">987</span>
-<span class="normal">988</span>
-<span class="normal">989</span>
-<span class="normal">990</span>
-<span class="normal">991</span>
-<span class="normal">992</span>
-<span class="normal">993</span>
-<span class="normal">994</span>
-<span class="normal">995</span>
-<span class="normal">996</span>
-<span class="normal">997</span>
-<span class="normal">998</span>
-<span class="normal">999</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 925</span>
+<span class="normal"> 926</span>
+<span class="normal"> 927</span>
+<span class="normal"> 928</span>
+<span class="normal"> 929</span>
+<span class="normal"> 930</span>
+<span class="normal"> 931</span>
+<span class="normal"> 932</span>
+<span class="normal"> 933</span>
+<span class="normal"> 934</span>
+<span class="normal"> 935</span>
+<span class="normal"> 936</span>
+<span class="normal"> 937</span>
+<span class="normal"> 938</span>
+<span class="normal"> 939</span>
+<span class="normal"> 940</span>
+<span class="normal"> 941</span>
+<span class="normal"> 942</span>
+<span class="normal"> 943</span>
+<span class="normal"> 944</span>
+<span class="normal"> 945</span>
+<span class="normal"> 946</span>
+<span class="normal"> 947</span>
+<span class="normal"> 948</span>
+<span class="normal"> 949</span>
+<span class="normal"> 950</span>
+<span class="normal"> 951</span>
+<span class="normal"> 952</span>
+<span class="normal"> 953</span>
+<span class="normal"> 954</span>
+<span class="normal"> 955</span>
+<span class="normal"> 956</span>
+<span class="normal"> 957</span>
+<span class="normal"> 958</span>
+<span class="normal"> 959</span>
+<span class="normal"> 960</span>
+<span class="normal"> 961</span>
+<span class="normal"> 962</span>
+<span class="normal"> 963</span>
+<span class="normal"> 964</span>
+<span class="normal"> 965</span>
+<span class="normal"> 966</span>
+<span class="normal"> 967</span>
+<span class="normal"> 968</span>
+<span class="normal"> 969</span>
+<span class="normal"> 970</span>
+<span class="normal"> 971</span>
+<span class="normal"> 972</span>
+<span class="normal"> 973</span>
+<span class="normal"> 974</span>
+<span class="normal"> 975</span>
+<span class="normal"> 976</span>
+<span class="normal"> 977</span>
+<span class="normal"> 978</span>
+<span class="normal"> 979</span>
+<span class="normal"> 980</span>
+<span class="normal"> 981</span>
+<span class="normal"> 982</span>
+<span class="normal"> 983</span>
+<span class="normal"> 984</span>
+<span class="normal"> 985</span>
+<span class="normal"> 986</span>
+<span class="normal"> 987</span>
+<span class="normal"> 988</span>
+<span class="normal"> 989</span>
+<span class="normal"> 990</span>
+<span class="normal"> 991</span>
+<span class="normal"> 992</span>
+<span class="normal"> 993</span>
+<span class="normal"> 994</span>
+<span class="normal"> 995</span>
+<span class="normal"> 996</span>
+<span class="normal"> 997</span>
+<span class="normal"> 998</span>
+<span class="normal"> 999</span>
+<span class="normal">1000</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">node_views</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">space</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Views over ``space``&#39;s nodes, each visited once: entity views -- points,</span>
 <span class="sd">    edges, quad faces, cells -- whose ``node_count(i)`` nodes have</span>
@@ -10141,8 +10143,7 @@ that give each cell a key, as <code>polyhedra.SizeBuckets</code> does.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1049</span>
-<span class="normal">1050</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1050</span>
 <span class="normal">1051</span>
 <span class="normal">1052</span>
 <span class="normal">1053</span>
@@ -10160,7 +10161,8 @@ that give each cell a key, as <code>polyhedra.SizeBuckets</code> does.</p>
 <span class="normal">1065</span>
 <span class="normal">1066</span>
 <span class="normal">1067</span>
-<span class="normal">1068</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">1068</span>
+<span class="normal">1069</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">launch_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">(),</span> <span class="n">keys</span><span class="o">=</span><span class="p">()):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The groups a kernel over ``domain`` launches once each, given the ``Field``s</span>
 <span class="sd">    it reads: the domain&#39;s groups, each split by the keys of the spaces among</span>
@@ -10371,7 +10373,7 @@ for the group from <code>group.keys</code>: launch it through <code>for_each</co
     <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
     <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
     <span class="n">direction</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
@@ -10396,9 +10398,7 @@ keeps its points. <code>unit</code> is the spatial unit (<code>DataSet.unit</cod
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1251</span>
-<span class="normal">1252</span>
-<span class="normal">1253</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1253</span>
 <span class="normal">1254</span>
 <span class="normal">1255</span>
 <span class="normal">1256</span>
@@ -10414,8 +10414,11 @@ keeps its points. <code>unit</code> is the spatial unit (<code>DataSet.unit</cod
 <span class="normal">1266</span>
 <span class="normal">1267</span>
 <span class="normal">1268</span>
-<span class="normal">1269</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">uniform_grid</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">direction</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                 <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">1269</span>
+<span class="normal">1270</span>
+<span class="normal">1271</span>
+<span class="normal">1272</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">uniform_grid</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">direction</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A dataset of ``dims`` points (one to three sizes) at ``origin + direction @</span>
 <span class="sd">    (ijk * spacing)``: VTK&#39;s image data, Viskores&#39; uniform data set. Nothing per</span>
 <span class="sd">    point is stored (``UniformCoordinates``). A size of 1 adds no cells, in any</span>
@@ -10430,6 +10433,7 @@ keeps its points. <code>unit</code> is the spatial unit (<code>DataSet.unit</cod
 <span class="sd">    dataset origin, moved in double precision, as a point cloud&#39;s origin</span>
 <span class="sd">    keeps its points. ``unit`` is the spatial unit (``DataSet.unit``), which</span>
 <span class="sd">    ``origin`` and ``spacing`` are in.&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="n">topology</span> <span class="o">=</span> <span class="n">grid_topology</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>   <span class="c1"># the sizes as given, before padding</span>
     <span class="k">return</span> <span class="n">DataSet</span><span class="p">(</span><span class="n">topology</span><span class="p">,</span> <span class="n">UniformCoordinates</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">spacing</span><span class="p">,</span> <span class="n">direction</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
                                                 <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span> <span class="n">unit</span><span class="o">=</span><span class="n">unit</span><span class="p">)</span>
@@ -10451,7 +10455,7 @@ keeps its points. <code>unit</code> is the spatial unit (<code>DataSet.unit</cod
     <span class="n">x</span><span class="p">,</span>
     <span class="n">y</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span>
     <span class="n">z</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
@@ -10467,18 +10471,20 @@ default that of axes given as device arrays, else the default device.
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1241</span>
-<span class="normal">1242</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1242</span>
 <span class="normal">1243</span>
 <span class="normal">1244</span>
 <span class="normal">1245</span>
 <span class="normal">1246</span>
 <span class="normal">1247</span>
-<span class="normal">1248</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rectilinear_grid</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">z</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">1248</span>
+<span class="normal">1249</span>
+<span class="normal">1250</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">rectilinear_grid</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">z</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A dataset of the grid whose lines run through ``x``, ``y`` and ``z``; see</span>
 <span class="sd">    ``grid_topology`` for axes of one point or none. It is on ``device``, by</span>
 <span class="sd">    default that of axes given as device arrays, else the default device.</span>
 <span class="sd">    ``unit`` is the spatial unit (``DataSet.unit``).&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="n">coordinates</span> <span class="o">=</span> <span class="n">CartesianProduct</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">DataSet</span><span class="p">(</span><span class="n">grid_topology</span><span class="p">(</span><span class="n">coordinates</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">coordinates</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">coordinates</span><span class="p">,</span>
                    <span class="n">unit</span><span class="o">=</span><span class="n">unit</span><span class="p">)</span>
@@ -10500,7 +10506,7 @@ default that of axes given as device arrays, else the default device.
     <span class="n">positions</span><span class="p">,</span>
     <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">units</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -10527,10 +10533,7 @@ is in, and <code>units</code> maps field names to their units.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1272</span>
-<span class="normal">1273</span>
-<span class="normal">1274</span>
-<span class="normal">1275</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1275</span>
 <span class="normal">1276</span>
 <span class="normal">1277</span>
 <span class="normal">1278</span>
@@ -10586,7 +10589,11 @@ is in, and <code>units</code> maps field names to their units.</p>
 <span class="normal">1328</span>
 <span class="normal">1329</span>
 <span class="normal">1330</span>
-<span class="normal">1331</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">point_cloud</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="normal">1331</span>
+<span class="normal">1332</span>
+<span class="normal">1333</span>
+<span class="normal">1334</span>
+<span class="normal">1335</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">point_cloud</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                 <span class="n">units</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A point cloud: a dataset of ``positions``, one vertex cell per point (types,</span>
 <span class="sd">    offsets and connectivity implicit, stored nowhere), with ``fields`` (a dict of</span>
@@ -10603,6 +10610,7 @@ is in, and <code>units</code> maps field names to their units.</p>
 <span class="sd">    become ``dtype`` too; integer fields (a LAS classification, intensities) keep</span>
 <span class="sd">    their type. ``unit`` is the spatial unit (``DataSet.unit``), which ``origin``</span>
 <span class="sd">    is in, and ``units`` maps field names to their units.&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">ids</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms._extract</span><span class="w"> </span><span class="kn">import</span> <span class="n">_vertex_cells</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.topology</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnstructuredTopology</span>
@@ -10716,7 +10724,7 @@ point field <code>tangle</code>.</p>
     <span class="n">frequency</span><span class="o">=</span><span class="p">(</span><span class="mf">60.0</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">,</span> <span class="mf">40.0</span><span class="p">),</span>
     <span class="n">magnitude</span><span class="o">=</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">18.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
     <span class="n">standard_deviation</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
@@ -10754,15 +10762,17 @@ default the default device).</p>
 <span class="normal">64</span>
 <span class="normal">65</span>
 <span class="normal">66</span>
-<span class="normal">67</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">wavelet</span><span class="p">(</span><span class="n">extent</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">spacing</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">center</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">maximum</span><span class="o">=</span><span class="mf">255.0</span><span class="p">,</span>
+<span class="normal">67</span>
+<span class="normal">68</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">wavelet</span><span class="p">(</span><span class="n">extent</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">spacing</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">center</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">maximum</span><span class="o">=</span><span class="mf">255.0</span><span class="p">,</span>
             <span class="n">frequency</span><span class="o">=</span><span class="p">(</span><span class="mf">60.0</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">,</span> <span class="mf">40.0</span><span class="p">),</span> <span class="n">magnitude</span><span class="o">=</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">18.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
-            <span class="n">standard_deviation</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <span class="n">standard_deviation</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;VTK&#39;s and Viskores&#39; wavelet on the grid of point indices ``extent`` (``n``:</span>
 <span class="sd">    -n to n on every axis, or ``x0, x1, y0, y1, z0, z1``), points at index times</span>
 <span class="sd">    ``spacing``: ``maximum * exp(-|a|^2 / (2 sd^2))`` plus ``magnitude`` times</span>
 <span class="sd">    sin, sin and cos of ``frequency * a``, where ``a`` is ``center`` minus the</span>
 <span class="sd">    point, each axis divided by its extent&#39;s length. It is on ``device`` (by</span>
 <span class="sd">    default the default device).&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="n">_extent</span><span class="p">(</span><span class="n">extent</span><span class="p">)</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">spacing</span><span class="p">,</span> <span class="nb">float</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,))</span>
     <span class="n">data</span> <span class="o">=</span> <span class="n">uniform_grid</span><span class="p">([</span><span class="nb">int</span><span class="p">(</span><span class="n">hi</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">-</span> <span class="n">lo</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)],</span>
@@ -10790,7 +10800,7 @@ default the default device).</p>
 
 
 <a href="#tack.dataset.tangle" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">tangle</span><span class="p">(</span><span class="n">dims</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">tangle</span><span class="p">(</span><span class="n">dims</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -10803,8 +10813,7 @@ default the default device).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/sources.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">83</span>
-<span class="normal">84</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">84</span>
 <span class="normal">85</span>
 <span class="normal">86</span>
 <span class="normal">87</span>
@@ -10816,11 +10825,14 @@ default the default device).</p>
 <span class="normal">93</span>
 <span class="normal">94</span>
 <span class="normal">95</span>
-<span class="normal">96</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">tangle</span><span class="p">(</span><span class="n">dims</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">96</span>
+<span class="normal">97</span>
+<span class="normal">98</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">tangle</span><span class="p">(</span><span class="n">dims</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Viskores&#39; tangle on ``dims`` points per axis over [0, 1]^3: the quartic</span>
 <span class="sd">    ``(x^4 - 5x^2 + y^4 - 5y^2 + z^4 - 5z^2 + 11.8) / 5 + 1/2`` of the point</span>
 <span class="sd">    mapped to [-3, 3]^3, the point field ``tangle``. It is on ``device`` (by</span>
 <span class="sd">    default the default device).&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="n">dims</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,))</span>
     <span class="k">if</span> <span class="p">(</span><span class="n">dims</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;tangle needs at least two points per axis&quot;</span><span class="p">)</span>
@@ -10851,7 +10863,7 @@ default the default device).</p>
     <span class="n">pulse_origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
     <span class="n">pulse_width</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>
     <span class="n">amplitude</span><span class="o">=</span><span class="mf">0.0001</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
@@ -10869,9 +10881,7 @@ centres. An <code>AMRDataSet</code>, its refined cells and points marked.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/sources.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 99</span>
-<span class="normal">100</span>
-<span class="normal">101</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">101</span>
 <span class="normal">102</span>
 <span class="normal">103</span>
 <span class="normal">104</span>
@@ -10919,9 +10929,12 @@ centres. An <code>AMRDataSet</code>, its refined cells and points marked.</p>
 <span class="normal">146</span>
 <span class="normal">147</span>
 <span class="normal">148</span>
-<span class="normal">149</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">amr_gaussian_pulse</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">root_spacing</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">refinement_ratio</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">amr_gaussian_pulse</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">root_spacing</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">refinement_ratio</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
                        <span class="n">pulse_origin</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">pulse_width</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>
-                       <span class="n">amplitude</span><span class="o">=</span><span class="mf">0.0001</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+                       <span class="n">amplitude</span><span class="o">=</span><span class="mf">0.0001</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A two-level AMR hierarchy with a Gaussian pulse, as VTK&#39;s</span>
 <span class="sd">    ``vtkAMRGaussianPulseSource`` makes it: a root image of 6 x 6 (x 6) points from</span>
 <span class="sd">    ``(-2, -2, 0)``, and two boxes refining parts of it by ``refinement_ratio``.</span>
@@ -10930,6 +10943,7 @@ centres. An <code>AMRDataSet</code>, its refined cells and points marked.</p>
 <span class="sd">    exp(-sum(((c - pulse_origin) / pulse_width)^2))`` over the first</span>
 <span class="sd">    ``dimension`` axes at each cell&#39;s centre ``c``, and ``Centroid``, the</span>
 <span class="sd">    centres. An ``AMRDataSet``, its refined cells and points marked.&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.amr</span><span class="w"> </span><span class="kn">import</span> <span class="n">AMRDataSet</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.spaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">Constant</span>
 
@@ -17898,8 +17912,7 @@ nodes (<code>DataSet.node_views</code>), taking arrays, not fields.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/dataset.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1071</span>
-<span class="normal">1072</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1072</span>
 <span class="normal">1073</span>
 <span class="normal">1074</span>
 <span class="normal">1075</span>
@@ -17927,7 +17940,8 @@ nodes (<code>DataSet.node_views</code>), taking arrays, not fields.</p>
 <span class="normal">1097</span>
 <span class="normal">1098</span>
 <span class="normal">1099</span>
-<span class="normal">1100</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">1100</span>
+<span class="normal">1101</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">for_each</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">domain</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run ``kernel(view, *args)`` once per shape in ``domain`` of ``data``.</span>
 
@@ -20160,7 +20174,7 @@ divide its size, or the array has more than 2 dimensions.</p>
 <a href="#tack.interop.vtk.vtk_to_dataset" class="headerlink" title="Permanent link">&para;</a></h4>
 <div class="doc-signature highlight"><pre><span></span><code><span class="nf">vtk_to_dataset</span><span class="p">(</span>
     <span class="n">grid</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="n">_DEFAULT_FLOAT</span><span class="p">,</span>
     <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -20175,7 +20189,8 @@ divide its size, or the array has more than 2 dimensions.</p>
 <code>vtkRectilinearGrid</code> or <code>vtkImageData</code> into a <code>tack.dataset.DataSet</code>: an image's points as
 <code>UniformCoordinates</code> (with its direction matrix), a rectilinear grid's as a
 <code>CartesianProduct</code>, a structured grid's as its explicit points.</p>
-<p>Points and floating-point arrays become fields of <code>dtype</code>; integer
+<p>Points and floating-point arrays become fields of <code>dtype</code>, by default the
+default float type (<code>tack.get_default_float()</code>, f32 unless set); integer
 arrays keep their type. Named point data become <code>H1</code> fields and named
 cell data <code>Constant</code> fields (a cell array named as a point array is
 <code>"&lt;name&gt; (cells)"</code>, with a warning); a <code>vtkGhostType</code> array becomes the ghost marks
@@ -20258,18 +20273,7 @@ Metal, so the dataset is on Metal throughout.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/__init__.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">504</span>
-<span class="normal">505</span>
-<span class="normal">506</span>
-<span class="normal">507</span>
-<span class="normal">508</span>
-<span class="normal">509</span>
-<span class="normal">510</span>
-<span class="normal">511</span>
-<span class="normal">512</span>
-<span class="normal">513</span>
-<span class="normal">514</span>
-<span class="normal">515</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">515</span>
 <span class="normal">516</span>
 <span class="normal">517</span>
 <span class="normal">518</span>
@@ -20362,14 +20366,29 @@ Metal, so the dataset is on Metal throughout.</p>
 <span class="normal">605</span>
 <span class="normal">606</span>
 <span class="normal">607</span>
-<span class="normal">608</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="normal">608</span>
+<span class="normal">609</span>
+<span class="normal">610</span>
+<span class="normal">611</span>
+<span class="normal">612</span>
+<span class="normal">613</span>
+<span class="normal">614</span>
+<span class="normal">615</span>
+<span class="normal">616</span>
+<span class="normal">617</span>
+<span class="normal">618</span>
+<span class="normal">619</span>
+<span class="normal">620</span>
+<span class="normal">621</span>
+<span class="normal">622</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_DEFAULT_FLOAT</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                    <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,</span>
 <span class="sd">    ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image&#39;s points as</span>
 <span class="sd">    ``UniformCoordinates`` (with its direction matrix), a rectilinear grid&#39;s as a</span>
 <span class="sd">    ``CartesianProduct``, a structured grid&#39;s as its explicit points.</span>
 
-<span class="sd">    Points and floating-point arrays become fields of ``dtype``; integer</span>
+<span class="sd">    Points and floating-point arrays become fields of ``dtype``, by default the</span>
+<span class="sd">    default float type (``tack.get_default_float()``, f32 unless set); integer</span>
 <span class="sd">    arrays keep their type. Named point data become ``H1`` fields and named</span>
 <span class="sd">    cell data ``Constant`` fields (a cell array named as a point array is</span>
 <span class="sd">    ``&quot;&lt;name&gt; (cells)&quot;``, with a warning); a ``vtkGhostType`` array becomes the ghost marks</span>
@@ -20458,6 +20477,8 @@ Metal, so the dataset is on Metal throughout.</p>
 <span class="sd">    Metal, so the dataset is on Metal throughout.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.runtime.dispatch</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_backend</span>
 
+    <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="n">_DEFAULT_FLOAT</span><span class="p">:</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">supports_f64</span><span class="p">:</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span>
     <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dtype</span> <span class="o">==</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">:</span>
@@ -20563,21 +20584,7 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/__init__.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1422</span>
-<span class="normal">1423</span>
-<span class="normal">1424</span>
-<span class="normal">1425</span>
-<span class="normal">1426</span>
-<span class="normal">1427</span>
-<span class="normal">1428</span>
-<span class="normal">1429</span>
-<span class="normal">1430</span>
-<span class="normal">1431</span>
-<span class="normal">1432</span>
-<span class="normal">1433</span>
-<span class="normal">1434</span>
-<span class="normal">1435</span>
-<span class="normal">1436</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1436</span>
 <span class="normal">1437</span>
 <span class="normal">1438</span>
 <span class="normal">1439</span>
@@ -20665,7 +20672,21 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 <span class="normal">1521</span>
 <span class="normal">1522</span>
 <span class="normal">1523</span>
-<span class="normal">1524</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">cell_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="normal">1524</span>
+<span class="normal">1525</span>
+<span class="normal">1526</span>
+<span class="normal">1527</span>
+<span class="normal">1528</span>
+<span class="normal">1529</span>
+<span class="normal">1530</span>
+<span class="normal">1531</span>
+<span class="normal">1532</span>
+<span class="normal">1533</span>
+<span class="normal">1534</span>
+<span class="normal">1535</span>
+<span class="normal">1536</span>
+<span class="normal">1537</span>
+<span class="normal">1538</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">cell_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of</span>
 <span class="sd">    images and rectilinear grids, its ratios the same along every axis, into a</span>
 <span class="sd">    ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into</span>
@@ -22432,7 +22453,7 @@ function's <code>fes</code> and <code>fec</code> attributes alive as long as it 
 
 
 <a href="#tack.interop.mfem.mfem_field" class="headerlink" title="Permanent link">&para;</a></h4>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">mfem_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">mesh</span><span class="p">,</span> <span class="n">gf</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">mfem_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">mesh</span><span class="p">,</span> <span class="n">gf</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -22477,13 +22498,15 @@ numbering by entity.</p>
 <span class="normal">501</span>
 <span class="normal">502</span>
 <span class="normal">503</span>
-<span class="normal">504</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">mfem_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">mesh</span><span class="p">,</span> <span class="n">gf</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">504</span>
+<span class="normal">505</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">mfem_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">mesh</span><span class="p">,</span> <span class="n">gf</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``gf``, an MFEM grid function on ``mesh``, as a field of ``data`` (the dataset</span>
 <span class="sd">    ``mfem_to_dataset`` made from ``mesh``). ``dofs=&quot;table&quot;`` keeps an ``H1`` field</span>
 <span class="sd">    of order 2 and up numbered as MFEM numbers it: its values as they are, in a</span>
 <span class="sd">    space numbered by MFEM&#39;s element-to-DOF table (``H1(..., dofs=table)``), on the</span>
 <span class="sd">    bases whose values are copied; by default they are permuted into Tack&#39;s</span>
 <span class="sd">    numbering by entity.&quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">H1</span><span class="p">,</span> <span class="n">L2</span><span class="p">,</span> <span class="n">Constant</span><span class="p">,</span> <span class="n">Field</span>
 
     <span class="k">if</span> <span class="n">dofs</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;table&quot;</span><span class="p">):</span>
@@ -22523,11 +22546,7 @@ numbering by entity.</p>
 
 <a href="#tack.interop.mfem.mfem_to_dataset" class="headerlink" title="Permanent link">&para;</a></h4>
 <div class="doc-signature highlight"><pre><span></span><code><span class="nf">mfem_to_dataset</span><span class="p">(</span>
-    <span class="n">mesh</span><span class="p">,</span>
-    <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span>
-    <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">mesh</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span>
 <span class="p">)</span>
 </code></pre></div>
 
@@ -22543,8 +22562,7 @@ become <code>fields["attribute"]</code>. <code>id_dtype</code> is the topology's
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/mfem.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">507</span>
-<span class="normal">508</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">508</span>
 <span class="normal">509</span>
 <span class="normal">510</span>
 <span class="normal">511</span>
@@ -22602,7 +22620,9 @@ become <code>fields["attribute"]</code>. <code>id_dtype</code> is the topology's
 <span class="normal">563</span>
 <span class="normal">564</span>
 <span class="normal">565</span>
-<span class="normal">566</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">mfem_to_dataset</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">566</span>
+<span class="normal">567</span>
+<span class="normal">568</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">mfem_to_dataset</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dofs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A ``tack.dataset.DataSet`` of an MFEM mesh and named grid functions on it.</span>
 
 <span class="sd">    The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved</span>
@@ -22611,6 +22631,7 @@ become <code>fields["attribute"]</code>. <code>id_dtype</code> is the topology's
 <span class="sd">    (``tack.dataset.ids``). ``dofs=&quot;table&quot;`` numbers a curved geometry and the</span>
 <span class="sd">    ``H1`` fields of order 2 and up as MFEM does (``mfem_field``).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">get_default_float</span><span class="p">()</span> <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dtype</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">L2</span><span class="p">,</span> <span class="n">Constant</span><span class="p">,</span> <span class="n">DataSet</span><span class="p">,</span> <span class="n">Field</span>
 
     <span class="k">if</span> <span class="n">dofs</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;table&quot;</span><span class="p">):</span>

@@ -1013,6 +1013,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Scalar Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-default-float-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The default float type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4207,6 +4224,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Scalar Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-default-float-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The default float type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4361,13 +4395,15 @@ contain 12 scalars, but a kernel reads a scalar from the former and a
 </tr>
 </tbody>
 </table>
-<p><code>vec2</code>, <code>vec3</code>, <code>vec4</code>, <code>mat2</code>, <code>mat3</code> and <code>mat4</code> default to f32 components.
+<p><code>vec2</code>, <code>vec3</code>, <code>vec4</code>, <code>mat2</code>, <code>mat3</code> and <code>mat4</code> default to f32 components
+(the default float type; see below).
 Use <code>vec(n, dtype)</code> for another width and <code>mat(rows, columns, dtype)</code> for a
 rectangular matrix (up to 4x4). These functions describe types; they do not
 allocate arrays.</p>
 <p>The shape comes first and the dtype second, as in NumPy. A dtype is a Tack
 type or anything NumPy accepts as one (<code>np.int32</code>, <code>"float64"</code>); without
-one, an allocation is f32. The same allocation functions work for every
+one, an allocation is f32 (the <a href="#the-default-float-type">default float type</a>).
+The same allocation functions work for every
 element type:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 1D array</span>
 <span class="n">data</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">1024</span><span class="p">,))</span>
@@ -4719,6 +4755,25 @@ every implicit array with its VTK and Viskores counterparts.</p>
 <p>GPU backends use <code>f32</code> by default. Python <code>float</code> scalar arguments are
 automatically promoted to <code>f64</code> when any array argument uses <code>f64</code>, preventing
 silent precision loss. Otherwise, float scalars default to <code>f32</code>.</p>
+<h3 id="the-default-float-type">The default float type<a class="headerlink" href="#the-default-float-type" title="Permanent link">&para;</a></h3>
+<p><code>f32</code> is the float type arrays get when nothing chooses one. A program that
+works in double precision throughout can make it <code>f64</code> once:</p>
+<div class="highlight"><pre><span></span><code><span class="n">tack</span><span class="o">.</span><span class="n">set_default_float</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">f64</span><span class="p">)</span>     <span class="c1"># tack.get_default_float() reads it</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>                 <span class="c1"># f64</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">())</span>    <span class="c1"># three f64 components</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">])</span>           <span class="c1"># f64: Python floats follow it</span>
+<span class="n">z</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">host_f32</span><span class="p">)</span>             <span class="c1"># f32: a NumPy array keeps its type</span>
+</code></pre></div>
+<p>It covers <code>empty</code>, <code>zeros</code> and <code>ones</code> without a <code>dtype</code>, Python floats in
+<code>array</code>, <code>full</code> and <code>arange</code>, <code>vec</code>/<code>mat</code> types without a component type,
+<code>tack.arrays</code>' implicit arrays, and <code>tack.dataset</code>'s constructors, sources and
+readers (<code>uniform_grid</code>, <code>DataSet</code>, <code>vtk_to_dataset</code>, <code>mfem_to_dataset</code>, ...).
+Kernels don't change: their precision follows the arrays they are given, so a
+kernel given f64 arrays computes in f64 either way. The setting is
+process-wide, like the default device, and arrays already made keep their
+type. Metal has no <code>f64</code>, so with <code>f64</code> the default there, an array made
+without a <code>dtype</code> raises <code>TypeError</code> naming the setting.</p>
 <h2 id="scalar-arguments">Scalar Arguments<a class="headerlink" href="#scalar-arguments" title="Permanent link">&para;</a></h2>
 <p>Kernels accept Python scalars directly — no need to wrap them in arrays:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
