@@ -483,8 +483,9 @@ class H1(Space):
         if self.order == 1:
             return views._H1Field
         if self.order == 2 and self.basis != bases.BERNSTEIN and self.dofs is None:
-            # Serendipity too: its views read the full order-2 space's values.
-            return views._H1Order2Field
+            # Serendipity's views read the full order-2 space's values.
+            return (views._SerendipityField if self.basis == bases.SERENDIPITY
+                    else views._H1Order2Field)
         return self._tabled(views.of_order(views._H1TensorField, self.order,
                                            self.basis == bases.BERNSTEIN))
 

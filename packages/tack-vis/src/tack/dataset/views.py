@@ -1269,7 +1269,12 @@ def point_address(kind, storage, ijk=True):
 
 class _Interpolated:
     """What the spaces with a basis share: ``value`` and ``parametric_gradient`` from
-    ``dof(i, j)``, which each space defines, and the shape's functions."""
+    ``dof(i, j)``, which each space defines, and the shape's functions.
+
+    Every field view of a shape with a reference element numbers a cell's nodes
+    alike: ``NODES`` of them (a class constant, set where the view class is made
+    when it depends on the shape, ``_node_count``), node ``k`` at
+    ``node_parametric(k)``, its value ``dof(c, k)`` stored at ``dof_index(c, k)``."""
 
     @tack.func
     def value(self, i, pc):
@@ -1314,11 +1319,20 @@ class _Interpolated:
 
 
 class _H1Field(_Interpolated):
-    """H1, order 1, Shared: one value per point, interpolated by the shape functions."""
+    """H1, order 1, Shared: one value per point, interpolated by the shape functions.
+    Its nodes are the cell's corners."""
+
+    @tack.func
+    def dof_index(self, i, j):
+        return self.point_id(i, j)
 
     @tack.func
     def dof(self, i, j):
         return self.point_value(i, j)
+
+    @tack.func
+    def node_parametric(self, j):
+        return self.parametric_point(j)
 
 
 class _Order2Range:
@@ -1442,6 +1456,10 @@ class _H1Order2Field(_QuadraticDofs, _Order2Range, _Interpolated):
         return self.get(self.dof_index(c, k))
 
     @tack.func
+    def node_parametric(self, k):
+        return self.quadratic_node(k)
+
+    @tack.func
     def value(self, c, pc):
         total = self.dof(c, 0) * self.quadratic_function(0, pc)
         for k in range(1, self.NUM_QUADRATIC):
@@ -1457,6 +1475,12 @@ class _H1Order2Field(_QuadraticDofs, _Order2Range, _Interpolated):
         return g
 
 
+class _SerendipityField(_H1Order2Field):
+    """H1, order 2, serendipity: read as the order-2 field whose face and interior
+    nodes the views compute (``_serendipity.full_values``), but its ``NODES`` are
+    the ones it stores, the corners and edges, which come first."""
+
+
 class _L2Field(_Interpolated):
     """L2, order 1, PerCell: each cell's own corner values, at ``offsets[cell]``."""
 
@@ -1470,16 +1494,26 @@ class _L2Field(_Interpolated):
     def dof(self, i, j):
         return self.get(self.dof_index(i, j))
 
+    @tack.func
+    def node_parametric(self, j):
+        return self.parametric_point(j)
+
 
 class _L2Order0Field:
     """L2, order 0, PerCell: one value per cell, at ``offsets[cell]`` -- the
     cells of order 0 in a variable-order L2 field."""
 
     ORDER = 0
+    NODES = 1
 
     @tack.func
     def dof_index(self, i, j):
         return self.offsets[self.entity_id(i)]
+
+    @tack.func
+    def node_parametric(self, j):
+        """The one node's: the cell's parametric center."""
+        return self.parametric_center()
 
     @tack.func
     def dof(self, i, j):
@@ -2757,8 +2791,14 @@ def of_order(mixin, order, bernstein=False):
     return _by_order[key]
 
 
-class _ConstantField:
-    """Constant (L2, order 0): one value per cell."""
+class _CellValue:
+    """One value per cell, at the cell's id: what ``Constant`` reads on every shape."""
+
+    NODES = 1
+
+    @tack.func
+    def dof_index(self, i, j):
+        return self.entity_id(i)
 
     @tack.func
     def dof(self, i, j):
@@ -2784,6 +2824,15 @@ class _ConstantField:
     @tack.func
     def flatness(self, i):
         return abs(self.dof(i, 0) - self.dof(i, 0))
+
+
+class _ConstantField(_CellValue):
+    """Constant (L2, order 0): one value per cell, its one node at the cell's
+    parametric center."""
+
+    @tack.func
+    def node_parametric(self, j):
+        return self.parametric_center()
 
 
 class _PolyhedralPointField:
@@ -2851,7 +2900,7 @@ class _PolylinePointField:
                 + pc[2] * self.get(self.line_point_id(c, t + 1)))
 
 
-class _PolyhedralCellField(_ConstantField):
+class _PolyhedralCellField(_CellValue):
     """Cell data (Constant) in a polyhedron: its value in every sub-tetrahedron."""
 
     @tack.func
@@ -3451,8 +3500,29 @@ def view_class(kind, shape, *mixins):
     if key not in _view_classes:
         _check_names(*mixins, kind, shape)
         name = "".join(m.__name__.strip("_") for m in mixins) + kind.__name__ + shape.__name__
-        _view_classes[key] = tack.device_class(type(name, (*mixins, kind, shape), {}))
+        _view_classes[key] = tack.device_class(type(name, (*mixins, kind, shape),
+                                                    _node_count(mixins, shape)))
     return _view_classes[key]
+
+
+def _node_count(mixins, shape):
+    """``{"NODES": n}`` for a field view whose node count follows its shape (the
+    corners at order 1, the quadratic nodes at order 2, ``(ORDER + 1)^d`` in a
+    tensor basis, the corners and edges in serendipity), else nothing: the simplex and wedge views and order 0 set
+    their own."""
+    if any(hasattr(m, "NODES") for m in mixins) or not hasattr(shape, "NUM_POINTS"):
+        return {}
+    for mixin in mixins:
+        for klass in mixin.__mro__:
+            if klass is _SerendipityField:
+                return {"NODES": shape.NUM_POINTS + shape.NUM_EDGES}
+            if klass is _H1Order2Field:
+                return {"NODES": shape.NUM_QUADRATIC}
+            if klass is _TensorBasis:
+                return {"NODES": (mixin.ORDER + 1) ** shape.DIMENSION}
+            if klass is _Interpolated:
+                return {"NODES": shape.NUM_POINTS}
+    return {}
 
 
 def _check_names(*bases):

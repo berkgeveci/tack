@@ -962,7 +962,7 @@ side `s` and its local face number.
 
 | Field view | Methods |
 |---|---|
-| `H1`, `L2`, `Constant` | `value(c, pc)`, `parametric_gradient(c, pc)` at parametric coordinates; `dof(c, k)` |
+| `H1`, `L2`, `Constant` | `value(c, pc)`, `parametric_gradient(c, pc)` at parametric coordinates; `corner_value(c, j)`; the field's nodes, on cells with a reference element: `NODES` per cell, node `k`'s value `dof(c, k)`, its place in the array `dof_index(c, k)` and its parametric coordinates `node_parametric(k)` ([Work at a field's nodes](../05-mesh-kernels.md#work-at-a-fields-nodes)) |
 | `Values` | `at(i)` |
 | `SideTraces` | `trace(f, s, j)`, `value(f, s, pc)` |
 

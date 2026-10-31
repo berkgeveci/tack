@@ -80,6 +80,54 @@ def sample(nodes, values):
             values[nodes.node_dof(i, j)] = x[0] * x[1]
 ```
 
+## Work at a field's nodes
+
+A field view numbers its own cell's nodes, whatever its space, order or
+shape: `NODES` of them (a constant, so a loop over them unrolls), node `k`
+at parametric coordinates `node_parametric(k)`, its value `dof(c, k)`,
+stored at `dof_index(c, k)` in the field's array. That is enough to compute
+a field of one space from fields of others without projecting first. To add
+an order-1 field `p` to an order-2 field `q` into a new order-2 field, read
+`p` through its own basis at each of `q`'s nodes:
+
+```python
+@tack.kernel
+def add_at_nodes(cells, p, q, out):
+    for c in cells:
+        for k in range(q.NODES):
+            out[q.dof_index(c, k)] = p.value(c, q.node_parametric(k)) + q.dof(c, k)
+
+
+p, q = data.fields["p"], data.fields["q"]      # H1 of order 1 and of order 2
+space = q.space
+out = tack.empty((space.size,), tack.f32)
+for group in data.launch_groups("cells", [p, q]):
+    add_at_nodes(data.domain_view("cells", group), p.view(group), q.view(group), out)
+s = td.Field(space, out)
+```
+
+The same kernel runs on every shape and every space: a hexahedron's 27
+quadratic nodes, a segment's 3, an order-3 tetrahedron's 20, an `L2` cell's
+own, a `Constant` cell's one at its centre. Cells that share a node write the
+same value to the same place, so the result does not depend on which one
+writes last. Here it equals `td.project(data, p, space)` plus `q`, since `p`
+lies in the order-2 space.
+
+`NODES` is the field's, not the shape's. The shape's `NUM_QUADRATIC` and
+`quadratic_node(k)`, which a view also has, are the quadratic element's
+nodes whatever the field: an order-1 field has fewer, an order-3 field
+more, and a segment none, so a loop over them writes nothing. A
+serendipity field's `NODES` are the corners and edges it stores, which come
+first; it computes the rest. In a Bernstein basis (`basis="bernstein"`),
+`dof(c, k)` is a coefficient, not the field's value at `node_parametric(k)`
+(the Greville point), so a kernel that writes values there writes a
+Lagrange interpolant's values into a Bernstein field: right only where they
+agree, as they do for multilinear fields.
+
+`for_each` over a space ([above](#visit-a-spaces-nodes)) visits each stored
+value once; a loop over a field view's nodes visits a shared node once per
+cell holding it, but has the cell's other fields at hand.
+
 ## Parametric and world coordinates have different meanings
 
 `cells.parametric_center()` returns a location in the cell's reference element.
