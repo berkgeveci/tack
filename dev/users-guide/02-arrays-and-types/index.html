@@ -4752,7 +4752,9 @@ For explicit control over the target type, use the Tack type cast functions:</p>
 </code></pre></div>
 <p>Available casts: <code>tack.i8()</code>, <code>tack.u8()</code>, <code>tack.i16()</code>, <code>tack.u16()</code>, <code>tack.i32()</code>, <code>tack.u32()</code>,
 <code>tack.i64()</code>, <code>tack.u64()</code>, <code>tack.f32()</code>, <code>tack.f64()</code>.</p>
-<p>Note: <code>tack.f64()</code> is not supported on Metal (Apple GPUs lack double precision).</p>
+<p>Note: <code>tack.f64()</code> is not supported on Metal (Apple GPUs lack double precision),
+and an <code>f64</code> array can't be made there: <code>tack.empty(n, tack.f64)</code> raises
+<code>TypeError</code> with Metal as the default device.</p>
 <h3 id="precision-and-integer-arithmetic">Precision and integer arithmetic<a class="headerlink" href="#precision-and-integer-arithmetic" title="Permanent link">&para;</a></h3>
 <p>Start with explicit input dtypes and cast where the computation needs a different
 precision. An <code>f64</code> output alone does not widen integer division: write

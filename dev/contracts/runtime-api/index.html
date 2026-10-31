@@ -4772,10 +4772,12 @@ The buffer belongs to the array's device (<code>a.device</code>; see
 <li>On the CPU, a fill of 256 KiB or more runs as a kernel through the
   dispatch, in parallel when the threading policy fans it out, and stores
   and refuses exactly what <code>ndarray.fill</code> would.</li>
-<li>Allocation doesn't check the dtype against <code>supported_dtypes</code>. An <code>f64</code>
-  array can be allocated on Metal, and the
+<li>An array is made only of a dtype in its device's <code>supported_dtypes</code>:
+  <code>empty</code> (and every constructor, copy and <code>to_device</code> built on it),
+  <code>array_from_ptr</code> and DLPack imports raise <code>TypeError</code> otherwise, so an
+  <code>f64</code> array cannot be made on Metal. The
   <a href="../backend-capabilities/#what-each-capability-gates">dispatch check</a>
-  rejects it when a kernel uses it.</li>
+  still rejects an array a kernel's backend cannot take.</li>
 <li>There is no <code>tack.fields()</code> function.</li>
 <li>Vector/matrix arrays expose their array shape and element dtype on
   both host and device. <code>numpy()</code> appends component dimensions.</li>
@@ -5612,7 +5614,7 @@ in Python subclasses <code>RuntimeError</code>.</p>
 </tr>
 <tr>
 <td><code>TypeError</code></td>
-<td>A device spec that is neither a string nor a <code>Device</code>, options with a <code>Device</code>, argument count or type, an integer outside 64 bits, an array dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving <code>f64</code>, <code>inspect</code> of a non-kernel, <code>@tack.func</code> on a non-function, a dtype argument that is neither a Tack type nor a NumPy dtype with a Tack type, <code>array</code>, <code>empty_like</code> or DLPack dtypes, an invalid <code>*_like</code> prototype, <code>concat</code> dtypes, <code>copyto</code> into a non-array, host element assignment or iteration, a non-<code>MTLBuffer</code> on Metal, an <code>array_from_ptr</code> pointer that isn't an address on CUDA, HIP or Level Zero</td>
+<td>A device spec that is neither a string nor a <code>Device</code>, options with a <code>Device</code>, argument count or type, an integer outside 64 bits, an array dtype unsupported by the backend (when made, and at dispatch), an unsupported atomic dtype or target, the MSL generator receiving <code>f64</code>, <code>inspect</code> of a non-kernel, <code>@tack.func</code> on a non-function, a dtype argument that is neither a Tack type nor a NumPy dtype with a Tack type, <code>array</code>, <code>empty_like</code> or DLPack dtypes, an invalid <code>*_like</code> prototype, <code>concat</code> dtypes, <code>copyto</code> into a non-array, host element assignment or iteration, a non-<code>MTLBuffer</code> on Metal, an <code>array_from_ptr</code> pointer that isn't an address on CUDA, HIP or Level Zero</td>
 <td>Dispatch (cold), inspection, host calls</td>
 </tr>
 <tr>

@@ -4179,7 +4179,7 @@ can be derived is derived, so two declarations can't disagree.</p>
 <tr>
 <td><code>supported_dtypes</code></td>
 <td>declared</td>
-<td>A <code>frozenset</code> of the scalar types accepted as array argument dtypes. Dispatch checks every array argument against this set</td>
+<td>A <code>frozenset</code> of the scalar types the device's arrays may have. Making an array of another type raises <code>TypeError</code>, and dispatch checks every array argument against this set</td>
 </tr>
 <tr>
 <td><code>supports_f64</code></td>

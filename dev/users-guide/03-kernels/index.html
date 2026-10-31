@@ -4325,7 +4325,7 @@ produces:</p>
 <p>You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
 them. Inspection applies the same checks as a call, so arguments a call
-would reject (an <code>f64</code> array on Metal, for example) raise here too, and
+would reject (an <code>i64</code> atomic on Metal, for example) raise here too, and
 on GPUs without texture hardware the source shows the software sampling
 the call would use. Templates and scalar arguments work as expected:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">device_class</span>

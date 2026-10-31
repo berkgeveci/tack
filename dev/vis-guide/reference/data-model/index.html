@@ -20236,7 +20236,8 @@ it has none, <code>"&lt;name&gt;#&lt;i&gt;"</code> for a name already taken).</p
 <p>VTK's <code>DATA_TIME_STEP</code> becomes the step's time (<code>time</code>), its unit
 unknown.</p>
 <p><code>dtype=None</code> keeps each floating-point array in its own type (f32 or f64),
-the points too; an image's geometry is then f64, as VTK's is.</p>
+the points too; an image's geometry is then f64, as VTK's is. On a default
+device without f64 (Metal), it is f32, which such a device's arrays take.</p>
 <p>With <code>copy=False</code> the dataset shares VTK's memory instead of copying it,
 as CPU arrays (whatever the default device): the points, data arrays, cell
 types, offsets and connectivity, ghost marks and global ids, wherever
@@ -20356,7 +20357,12 @@ Metal, so the dataset is on Metal throughout.</p>
 <span class="normal">600</span>
 <span class="normal">601</span>
 <span class="normal">602</span>
-<span class="normal">603</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="normal">603</span>
+<span class="normal">604</span>
+<span class="normal">605</span>
+<span class="normal">606</span>
+<span class="normal">607</span>
+<span class="normal">608</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                    <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,</span>
 <span class="sd">    ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image&#39;s points as</span>
@@ -20430,7 +20436,8 @@ Metal, so the dataset is on Metal throughout.</p>
 <span class="sd">    unknown.</span>
 
 <span class="sd">    ``dtype=None`` keeps each floating-point array in its own type (f32 or f64),</span>
-<span class="sd">    the points too; an image&#39;s geometry is then f64, as VTK&#39;s is.</span>
+<span class="sd">    the points too; an image&#39;s geometry is then f64, as VTK&#39;s is. On a default</span>
+<span class="sd">    device without f64 (Metal), it is f32, which such a device&#39;s arrays take.</span>
 
 <span class="sd">    With ``copy=False`` the dataset shares VTK&#39;s memory instead of copying it,</span>
 <span class="sd">    as CPU arrays (whatever the default device): the points, data arrays, cell</span>
@@ -20449,6 +20456,10 @@ Metal, so the dataset is on Metal throughout.</p>
 <span class="sd">    dataset handed VTK (``dataset_to_vtk(copy=False)``) come back as themselves,</span>
 <span class="sd">    memory on whole pages is wrapped in place, and anything else is copied to</span>
 <span class="sd">    Metal, so the dataset is on Metal throughout.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.runtime.dispatch</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_backend</span>
+
+    <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">supports_f64</span><span class="p">:</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span>
     <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dtype</span> <span class="o">==</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">:</span>
         <span class="n">origin</span> <span class="o">=</span> <span class="n">_far_origin</span><span class="p">(</span><span class="n">grid</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="n">polyhedral</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="n">orient</span><span class="p">,</span>
@@ -20552,12 +20563,7 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/__init__.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1417</span>
-<span class="normal">1418</span>
-<span class="normal">1419</span>
-<span class="normal">1420</span>
-<span class="normal">1421</span>
-<span class="normal">1422</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1422</span>
 <span class="normal">1423</span>
 <span class="normal">1424</span>
 <span class="normal">1425</span>
@@ -20654,7 +20660,12 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 <span class="normal">1516</span>
 <span class="normal">1517</span>
 <span class="normal">1518</span>
-<span class="normal">1519</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">cell_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="normal">1519</span>
+<span class="normal">1520</span>
+<span class="normal">1521</span>
+<span class="normal">1522</span>
+<span class="normal">1523</span>
+<span class="normal">1524</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">cell_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of</span>
 <span class="sd">    images and rectilinear grids, its ratios the same along every axis, into a</span>
 <span class="sd">    ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into</span>
