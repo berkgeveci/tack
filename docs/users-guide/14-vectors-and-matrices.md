@@ -39,7 +39,8 @@ runtime-length vector values or swizzle constructors such as
 ## Vectors
 
 Choose a vector element dtype through `vec2`, `vec3`, `vec4`, or `vec(n)`.
-The component dtype defaults to f32. The ordinary array constructors allocate
+The component dtype defaults to f32, the
+[default float type](02-arrays-and-types.md#the-default-float-type). The ordinary array constructors allocate
 its storage, and vector operations are scalarized at the IR level:
 
 ```python

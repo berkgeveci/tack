@@ -34,7 +34,8 @@ and arbitrary Python objects belong on the host. Save decorated functions in a
 | One 2×2 matrix per particle | `tack.empty((n,), tack.mat2())` | `numpy()` → `(n, 2, 2)` |
 
 Initialize every value before reading it. Shape comes first, then dtype, as in
-NumPy; the dtype defaults to f32. Array shape counts elements; the
+NumPy; the dtype defaults to f32 (`tack.set_default_float(tack.f64)` changes
+that). Array shape counts elements; the
 dtype describes one scalar, vector or matrix element. `numpy()` appends
 component dimensions, and `tack.copyto` expects them. `reshape` preserves the element type and shares storage;
 `copy` allocates independent storage. See [Arrays and Types](02-arrays-and-types.md).

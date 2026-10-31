@@ -471,13 +471,14 @@ def _supported():
     return get_backend().supported_dtypes
 
 
-def mfem_field(data, mesh, gf, dtype=tack.f32, dofs=None):
+def mfem_field(data, mesh, gf, dtype=None, dofs=None):
     """``gf``, an MFEM grid function on ``mesh``, as a field of ``data`` (the dataset
     ``mfem_to_dataset`` made from ``mesh``). ``dofs="table"`` keeps an ``H1`` field
     of order 2 and up numbered as MFEM numbers it: its values as they are, in a
     space numbered by MFEM's element-to-DOF table (``H1(..., dofs=table)``), on the
     bases whose values are copied; by default they are permuted into Tack's
     numbering by entity."""
+    dtype = tack.get_default_float() if dtype is None else dtype
     from tack.dataset import H1, L2, Constant, Field
 
     if dofs not in (None, "table"):
@@ -504,7 +505,7 @@ def mfem_field(data, mesh, gf, dtype=tack.f32, dofs=None):
     raise NotImplementedError(f"MFEM {family} order {order} has no space here yet")
 
 
-def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None, dofs=None):
+def mfem_to_dataset(mesh, fields=None, dtype=None, id_dtype=None, dofs=None):
     """A ``tack.dataset.DataSet`` of an MFEM mesh and named grid functions on it.
 
     The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved
@@ -513,6 +514,7 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None, dofs=None)
     (``tack.dataset.ids``). ``dofs="table"`` numbers a curved geometry and the
     ``H1`` fields of order 2 and up as MFEM does (``mfem_field``).
     """
+    dtype = tack.get_default_float() if dtype is None else dtype
     from tack.dataset import L2, Constant, DataSet, Field
 
     if dofs not in (None, "table"):

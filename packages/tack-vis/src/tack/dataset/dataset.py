@@ -521,9 +521,10 @@ class DataSet:
     keep what they need (``tack.dataset.temporal``)."""
 
     @on_inputs_device
-    def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32,
+    def __init__(self, topology, geometry, fields=None, sets=None, dtype=None,
                  ghosts=None, global_ids=None, origin=None, unit=None, time=None,
                  time_unit=None):
+        dtype = tack.get_default_float() if dtype is None else dtype
         self.topology = topology
         self._geometry = _as_geometry(geometry, topology, dtype, unit)
         self.origin = origin
@@ -1238,18 +1239,19 @@ def grid_topology(dims, id_dtype=None, device=None, offset=None):
     return StructuredTopology(axes, id_dtype=id_dtype, device=device, offset=offset)
 
 
-def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None, unit=None):
+def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=None, device=None, unit=None):
     """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``; see
     ``grid_topology`` for axes of one point or none. It is on ``device``, by
     default that of axes given as device arrays, else the default device.
     ``unit`` is the spatial unit (``DataSet.unit``)."""
+    dtype = tack.get_default_float() if dtype is None else dtype
     coordinates = CartesianProduct(x, y, z, dtype=dtype, device=device)
     return DataSet(grid_topology(coordinates.dims, device=coordinates.device), coordinates,
                    unit=unit)
 
 
 def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
-                 dtype=tack.f32, device=None, unit=None):
+                 dtype=None, device=None, unit=None):
     """A dataset of ``dims`` points (one to three sizes) at ``origin + direction @
     (ijk * spacing)``: VTK's image data, Viskores' uniform data set. Nothing per
     point is stored (``UniformCoordinates``). A size of 1 adds no cells, in any
@@ -1264,12 +1266,13 @@ def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), directio
     dataset origin, moved in double precision, as a point cloud's origin
     keeps its points. ``unit`` is the spatial unit (``DataSet.unit``), which
     ``origin`` and ``spacing`` are in."""
+    dtype = tack.get_default_float() if dtype is None else dtype
     topology = grid_topology(dims, device=device)   # the sizes as given, before padding
     return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype,
                                                 device=device), unit=unit)
 
 
-def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None, unit=None,
+def point_cloud(positions, fields=None, origin=None, dtype=None, device=None, unit=None,
                 units=None):
     """A point cloud: a dataset of ``positions``, one vertex cell per point (types,
     offsets and connectivity implicit, stored nowhere), with ``fields`` (a dict of
@@ -1286,6 +1289,7 @@ def point_cloud(positions, fields=None, origin=None, dtype=tack.f32, device=None
     become ``dtype`` too; integer fields (a LAS classification, intensities) keep
     their type. ``unit`` is the spatial unit (``DataSet.unit``), which ``origin``
     is in, and ``units`` maps field names to their units."""
+    dtype = tack.get_default_float() if dtype is None else dtype
     from tack.dataset import ids
     from tack.dataset.algorithms._extract import _vertex_cells
     from tack.dataset.topology import UnstructuredTopology

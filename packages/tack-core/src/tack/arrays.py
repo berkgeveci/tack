@@ -197,7 +197,8 @@ def _operand(values, device=None):
         return _Explicit(values)
     host = np.asarray(values)
     dtype = tack.i64 if host.dtype.kind in "iu" and host.size and \
-        np.abs(host).max() > 2**31 - 1 else (tack.i32 if host.dtype.kind in "iu" else tack.f32)
+        np.abs(host).max() > 2**31 - 1 else (tack.i32 if host.dtype.kind in "iu"
+                                              else tack.get_default_float())
     return _Explicit(_store(host, dtype, device))
 
 
@@ -226,14 +227,14 @@ def _store(host, dtype, device=None):
 class ConstantArray(_Implicit):
     """``size`` copies of ``value``: a scalar, or a vector (a sequence of components),
     as VTK's constant arrays of several components. ``dtype`` defaults to i32 for
-    integers and f32 otherwise; the value is kept in a one-element field of it,
+    integers and the default float type (``tack.get_default_float()``) otherwise; the value is kept in a one-element field of it,
     so it is exactly that type in the kernel, on ``device`` (by default the
     default device)."""
 
     def __init__(self, value, size, dtype=None, device=None):
         host = np.asarray(value)
         if dtype is None:
-            dtype = tack.i32 if host.dtype.kind in "iu" else tack.f32
+            dtype = tack.i32 if host.dtype.kind in "iu" else tack.get_default_float()
         self.value = _store(host.reshape(1, -1) if host.ndim else host.reshape(1), dtype,
                             device)
         _metadata(self, size, host.shape[0] if host.ndim else None, dtype)
@@ -247,7 +248,7 @@ class ConstantArray(_Implicit):
 class CountingArray(_Implicit):
     """``start + step * index`` for ``index < size`` (VTK's affine array): integers are
     ``dtype``, by default i32 unless a value needs i64 (ids past ``2**31 - 1``),
-    else f32."""
+    else the default float type."""
 
     def __init__(self, size, start=0, step=1, dtype=None):
         self.start = start
@@ -256,7 +257,7 @@ class CountingArray(_Implicit):
         if dtype is None and integral:
             reach = max(abs(start), abs(start + step * max(int(size) - 1, 0)))
             dtype = tack.i64 if reach > 2**31 - 1 else tack.i32
-        _metadata(self, size, None, dtype or tack.f32)
+        _metadata(self, size, None, dtype or tack.get_default_float())
 
     @tack.func
     def get(self, k):
@@ -271,9 +272,11 @@ class CountingArray(_Implicit):
 @tack.device_class
 class CartesianProduct(_Implicit):
     """The points of a grid whose lines run along the axes: ``(x[i], y[j], z[k])`` at
-    index ``i + nx * (j + ny * k)``. Only the three axes are stored."""
+    index ``i + nx * (j + ny * k)``. Only the three axes are stored, host axes in
+    ``dtype`` (by default the default float type)."""
 
-    def __init__(self, x, y=(0.0,), z=(0.0,), dtype=tack.f32, device=None):
+    def __init__(self, x, y=(0.0,), z=(0.0,), dtype=None, device=None):
+        dtype = tack.get_default_float() if dtype is None else dtype
         if device is None:      # host axes go where the device axes are
             device = next((a._device for a in (x, y, z) if isinstance(a, _DeviceArray)), None)
         self.xs, self.ys, self.zs = (self._axis(a, dtype, device) for a in (x, y, z))
@@ -337,12 +340,13 @@ class UniformCoordinates(_Implicit):
 
     ``dims`` has one to three sizes; ``origin`` and ``spacing`` as many values
     or three, the rest taken as 0 and 1, and ``direction`` is 3 x 3 or, for a
-    2D image, 2 x 2."""
+    2D image, 2 x 2. Positions are ``dtype``, by default the default float type."""
 
     ORIENTED = 0                              # compile-time: apply ``direction``
 
     def __init__(self, dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
-                 dtype=tack.f32, device=None):
+                 dtype=None, device=None):
+        dtype = tack.get_default_float() if dtype is None else dtype
         dims = tuple(int(d) for d in dims)
         if not 1 <= len(dims) <= 3:
             raise ValueError(f"an image has one to three sizes, not {dims!r}")
@@ -586,9 +590,11 @@ def _device_function(func):
 class Function(_Implicit):
     """``func(k)`` for ``k < size``: any ``@tack.func`` of the index, as VTK's
     ``vtkStdFunctionArray`` -- but evaluated in the kernel, on every backend. Its
-    values are ``dtype`` (and vectors of ``width``) as the function returns them."""
+    values are ``dtype`` (and vectors of ``width``) as the function returns them, by
+    default the default float type."""
 
-    def __init__(self, func, size, dtype=tack.f32, width=None):
+    def __init__(self, func, size, dtype=None, width=None):
+        dtype = tack.get_default_float() if dtype is None else dtype
         self.func = _device_function(func)
         _metadata(self, size, width, dtype)
 
