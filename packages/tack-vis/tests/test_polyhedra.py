@@ -1221,3 +1221,72 @@ def test_global_ids_over_polyhedral_and_shape_pieces():
         piece.fields["x"] = td.Field(td.H1(piece), tack.array(piece.positions()[:, 0]))
     pieces = td.generate_global_ids(td.PartitionedDataSet([left, right]))
     assert td.statistics(pieces, "x").n == 27 + 27 - 9
+
+
+def _mixed_vtu_grid():
+    """A VTK grid of hexahedra, wedges and polyhedra side by side, points merged, a
+    point field (x) and a cell field (each cell's id)."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    import vtkmodules.vtkCommonDataModel as dm
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkFiltersCore import vtkAppendFilter
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    append = vtkAppendFilter(merge_points=True)
+    for shift, kind in ((0, dm.VTK_HEXAHEDRON), (4, dm.VTK_POLYHEDRON), (-4, dm.VTK_WEDGE)):
+        block = vtkCellTypeSource(cell_type=kind, blocks_dimensions=(4, 4, 4))()
+        x = np.asarray(block.points.data).copy()
+        x[:, 0] += shift
+        block.points = vtkPoints(data=x)
+        append.AddInputData(block)
+    append.Update()
+    grid = append.GetOutput()
+    grid.point_data["T"] = np.asarray(grid.points.data)[:, 0].astype(np.float32)
+    grid.cell_data["c"] = np.arange(grid.number_of_cells, dtype=np.float32)
+    return grid
+
+
+@pytest.mark.parametrize("copy", [True, False])
+def test_split_reads_shapes_and_polyhedra_over_one_set_of_points(copy):
+    """``vtk_to_dataset(..., polyhedral="split")``: the shaped cells one piece and the
+    polyhedra another, over the same points (one positions array, one array per
+    point field), each point owned once, each cell its rows of the cell data; cut
+    as the whole read as polyhedra is."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = _mixed_vtu_grid()
+    types = np.asarray(grid.cell_types)
+    pieces = vtk_to_dataset(grid, polyhedral="split", copy=copy)
+    shaped, polyhedral = pieces[0], pieces[1]
+    assert isinstance(shaped.topology, td.UnstructuredTopology)
+    assert isinstance(polyhedral.topology, td.PolyhedralTopology)
+    assert shaped.geometry.values is polyhedral.geometry.values
+    assert shaped.fields["T"].values is polyhedral.fields["T"].values
+    assert td.statistics(pieces, "T").n == grid.number_of_points
+    np.testing.assert_array_equal(shaped.fields["c"].values.numpy(), np.flatnonzero(types != 42))
+    np.testing.assert_array_equal(polyhedral.fields["c"].values.numpy(),
+                                  np.flatnonzero(types == 42))
+    np.testing.assert_array_equal(polyhedral.global_ids.cells.numpy(),
+                                  np.flatnonzero(types == 42))
+    whole = vtk_to_dataset(grid, polyhedral=True)
+
+    def area(data):
+        return float(td.cell_geometry(data).measure.values.numpy().sum()) if data.num_cells else 0
+
+    for level in (-2.0, 2.0, 6.0):
+        np.testing.assert_allclose(sum(area(td.contour(p, "T", level)) for p in pieces),
+                                   area(td.contour(whole, "T", level)), rtol=1e-6)
+
+
+def test_split_of_one_kind_is_one_piece():
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    import vtkmodules.vtkCommonDataModel as dm
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    for kind, topology in ((dm.VTK_HEXAHEDRON, td.UnstructuredTopology),
+                           (dm.VTK_POLYHEDRON, td.PolyhedralTopology)):
+        pieces = vtk_to_dataset(vtkCellTypeSource(cell_type=kind, blocks_dimensions=(2, 2, 2))(),
+                                polyhedral="split")
+        assert len(pieces) == 1 and isinstance(pieces[0].topology, topology)
