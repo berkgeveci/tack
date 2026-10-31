@@ -2,7 +2,7 @@
 
 !!! info "This page is the source of truth"
 
-    Tack has five backends and the details differ in ways that matter. This
+    Tack has five backends, and a sixth as a prototype (Warp), and the details differ in ways that matter. This
     table is the canonical one — the README and the guides link here rather
     than restating it, because a capability table copied into three places
     drifts, and this one has.
@@ -16,6 +16,7 @@
 | **CUDA** | `cuda_gen.py` → CUDA C | NVRTC → PTX | `cuLaunchKernel` | `CUDABuffer` |
 | **HIP** | `hip_gen.py` → HIP C | hipRTC | `hipModuleLaunchKernel` | `HIPBuffer` |
 | **Level Zero** | `opencl_gen.py` → OpenCL C | `libocloc` → SPIR-V | `zeCommandListAppendLaunchKernel` | `L0Buffer` |
+| **Warp** (prototype) | `warp_gen.py` → `@wp.kernel` Python | Warp | `wp.launch` on Warp's current stream | `WarpBuffer` (`wp.array`) |
 
 `hip_gen.py` is a few statements: it subclasses the CUDA generator and swaps
 the `#include` and the texture handle type (`hipTextureObject_t`), because
@@ -33,6 +34,7 @@ wrong spelling still compiles as C.
 | **CUDA** | once queued on a stream | PTX, compiled by the driver at load |
 | **HIP** | once queued on a stream | the code object |
 | **Level Zero** | once queued on an asynchronous immediate command list | the native binary, and the SPIR-V to fall back on |
+| **Warp** (prototype) | once queued on Warp's current stream | nothing: Warp's own kernel cache keeps the compiled code |
 
 A queued launch is waited for where the host reads an array or calls
 `tack.sync()`, and its errors surface there. A launch that uses memory
@@ -53,6 +55,7 @@ Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
 | CUDA | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | HIP | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Level Zero | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| Warp (prototype) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 **Metal has no `f64`** — Apple GPUs do not implement double precision, so this
 is a hardware fact rather than a gap in Tack.
@@ -73,7 +76,7 @@ separately, so the two cannot disagree.
 ## Workgroup execution
 
 `supports_workgroups` is false on CPU and true on Metal, CUDA, HIP and
-Level Zero. Shared memory, barriers, local thread indices and block
+Level Zero, and on Warp's CUDA devices (not its CPU). Shared memory, barriers, local thread indices and block
 reductions require this capability. CPU rejects such kernels before
 compilation or execution; use `local_array` / `local_array_like` for
 private scratch storage instead.
@@ -96,9 +99,11 @@ pip install -e 'packages/tack-core[metal]'        # pyobjc-framework-Metal
 pip install -e 'packages/tack-core[cuda]'         # cuda-python; needs the NVIDIA driver
 pip install -e 'packages/tack-core[hip]'          # hip-python; needs ROCm
 pip install -e 'packages/tack-core[level_zero]'   # installs nothing — see below
+pip install -e 'packages/tack-core[warp]'         # warp-lang: the prototype Warp backend
 ```
 
-Two of these need a word.
+Two of these need a word; the Warp backend is described in
+[Backends](../users-guide/08-backends.md#warp-prototype).
 
 **HIP.** `hip-python`'s version tracks the ROCm release it binds to — 7.1.x
 against ROCm 7.1, 7.2.x against 7.2 — so the extra sets a lower bound rather

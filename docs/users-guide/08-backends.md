@@ -12,6 +12,7 @@ its own compilation pipeline and memory model.
 | CUDA | Linux/Windows | NVIDIA | CUDA C → NVRTC → PTX | `cuda-python>=13.2`, NVRTC 13 |
 | HIP | Linux | AMD (ROCm) | HIP C → hipRTC | `hip-python` |
 | Level Zero | Linux | Intel | OpenCL C → libocloc → SPIR-V | Level Zero runtime |
+| Warp (prototype) | Linux/Windows, Apple silicon | NVIDIA through Warp, or Warp's CPU | Python `@wp.kernel` → Warp | `warp-lang` |
 
 Every backend keeps what it compiles on disk, so a later process does not
 compile the same kernel again. See [The Kernel Cache](17-kernel-cache.md).
@@ -100,21 +101,21 @@ capabilities. A kernel that uses something a backend lacks is rejected with
 an error naming the kernel and the missing capability. It is never run
 with a different meaning.
 
-| | CPU | Metal | CUDA | HIP | Level Zero |
-|---|---|---|---|---|---|
-| `f64` arrays | yes | no | yes | yes | depends on the device |
-| Shared memory, barriers, `thread_id`, block reductions | no | yes | yes | yes | yes |
-| Atomic array types | all ten | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` | 32- and 64-bit ints, `f32`, `f64` | `i32`, `u32`, `f32` |
-| `sum`/`min`/`max` on the device | no (NumPy) | `f32` | `f32` | `f32` | `f32` |
-| 3D textures | software | hardware | hardware | hardware where the device has image support | hardware where the device has samplers |
-| Iterations per launch | no limit | 2^32 | device limit (max grid × 256) | device limit, at most 2^32 − 256 | device limit (max group count × group size) |
+| | CPU | Metal | CUDA | HIP | Level Zero | Warp (prototype) |
+|---|---|---|---|---|---|---|
+| `f64` arrays | yes | no | yes | yes | depends on the device | yes |
+| Shared memory, barriers, `thread_id`, block reductions | no | yes | yes | yes | yes | on a CUDA device |
+| Atomic array types | all ten | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` | 32- and 64-bit ints, `f32`, `f64` | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` |
+| `sum`/`min`/`max` on the device | no (NumPy) | `f32` | `f32` | `f32` | `f32` | no (NumPy) |
+| 3D textures | software | hardware | hardware | hardware where the device has image support | hardware where the device has samplers | no |
+| Iterations per launch | no limit | 2^32 | device limit (max grid × 256) | device limit, at most 2^32 − 256 | device limit (max group count × group size) | 2^31 − 1 |
 
 A launch past a backend's limit raises `ValueError` naming the kernel, the
 count and the limit; split the work across several calls.
 
 The [backend capability contract](../contracts/backend-capabilities.md) has
 the full matrix, what each capability rejects and when, and the subset that
-is portable to all five. In code, ask the backend rather than checking its
+is portable to all five supported backends. In code, ask the backend rather than checking its
 name:
 
 ```python
@@ -293,6 +294,55 @@ back to software trilinear since it has no sampler hardware.
 ```python
 tack.set_default_device("level_zero")
 ```
+
+## Warp (prototype)
+
+A sixth backend runs Tack kernels through [NVIDIA Warp](https://github.com/NVIDIA/warp),
+for running Tack, and `tack.dataset`'s filters, inside a program built on
+Warp. It is a **prototype**: CI runs its tests on Warp's CPU, and on CUDA
+its filters matched Tack's CUDA backend bit for bit (a probe to within
+2e-7), but it lacks parts of the language (below) and its interface may
+change. The whole suite runs on it with
+`PYTHONPATH=packages/tack-core/tests uv run pytest -p _warp_default`.
+
+```bash
+uv sync --extra warp       # or: pip install -e 'packages/tack-core[warp]'
+```
+
+```python
+tack.set_default_device("warp")
+```
+
+Each kernel variant becomes a `@wp.kernel` written from Tack's typed IR,
+which Warp compiles and caches; helpers keep Tack's semantics where Warp's
+differ (wrapping integers, floor `//` and `%`, NaN-preferring `min`/`max`,
+signed zeros, no fused multiply-add across statements). The device is Warp's
+default device when Tack first makes it: its first CUDA device, else its
+CPU. Arrays are `wp.array` buffers, and launches are queued on Warp's
+current stream, so a `wp.ScopedStream` around Tack calls applies.
+
+What works: every array type including `f64`; atomics on 32- and 64-bit
+integers, `f32` and `f64`; workgroups (shared memory, barriers,
+`thread_id`, block reductions) on a CUDA device; `array_from_ptr`; DLPack
+both ways (CUDA memory on Warp's device, or host memory on Warp's CPU);
+debug mode's bounds checks.
+
+What it lacks:
+
+- **`tack.inspect`**: there is no backend source to show; inspect the kernel
+  with arrays on another device.
+- **3D textures**: a kernel that samples one raises `RuntimeError`.
+- **Device reductions**: `sum`, `min`, `max` and `mean` reduce through NumPy,
+  as on the CPU.
+- **Disk-cached variants**: Warp's own kernel cache keeps the compiled code;
+  Tack's disk cache keeps only the lowered IR.
+- **Launches above 2^31 − 1 iterations** (Warp's 32-bit thread index).
+
+`tack.interop.warp` (in tack-vis, `uv sync --extra warp`, which adds
+warp-simdata) shares arrays with Warp both ways (`from_warp`, `to_warp`)
+and exchanges datasets with warp-simdata (`from_simdata`, `to_simdata`), most
+models without copies. See its
+[reference](../vis-guide/reference/data-model.md#interoperability).
 
 ## Error Messages
 
