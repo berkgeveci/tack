@@ -88,7 +88,10 @@ MFEM's two-material beam, fixed at one end:
 ## Adaptive refinement and curved surfaces
 
 - **ex6** (left): the star, refined where the error estimate is largest. The
-  mesh is nonconforming: the hanging nodes show in the cells' edges.
+  mesh is nonconforming: the hanging nodes show in the cells' edges. The
+  values agree across each T-junction, so the picture has no cracks, but
+  face-based algorithms treat the T-junctions as boundary for now
+  ([Nonconforming meshes](16-cells-and-bases.md#reading-and-writing-other-formats)).
 - **ex7** (right): the cube's quads snapped onto the sphere, as curved cells of
   order 3, with the solution of a surface PDE on them.
 

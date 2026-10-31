@@ -157,11 +157,27 @@ equispaced, Gauss–Legendre and positive bases), MFEM's older collections,
 nonconforming (AMR) meshes, periodic meshes (an `L2` geometry), and curved
 meshes. `mfem_grid_function` writes back.
 
+**Nonconforming meshes and T-junctions.** A nonconforming mesh's hanging
+vertices are points of the finer cells, and its fields come with every
+value MFEM keeps per element, the constrained ones included, so the values on
+the two sides of a T-junction agree: contours, slices, clips, probes,
+gradients and subdivision are as on a conforming mesh. What Tack does not yet
+know is that a coarse cell's edge or face and the finer ones covering it are
+the same interface. `faces()` gives each of them one side, as if it were on
+the boundary, so `boundary_faces`, `extract_surface`, `jump`, `upwind_flux`,
+`net_flux` and other face-based algorithms treat T-junctions as boundary. On
+MFEM's ex6 star after refinement, 1280 of the 1450 one-sided edges are
+T-junctions. An octree's leaves (`OctreeDataSet.leaves()`) are the same.
+
 See the [Data Model reference](reference/data-model.md) for each function.
 
 ## Planned
 
 For 0.8:
+
+- **T-junctions as interfaces:** `faces()` pairing a coarse face with the
+  finer faces that cover it, from MFEM's nonconforming mesh or an octree's
+  leaves, so face-based algorithms see their two sides.
 
 - **Higher-order pyramids:** VTK's quadratic (13 nodes), triquadratic (19),
   Lagrange and Bezier pyramids, and cell grids' `C2` and `pyramid19`. Their
