@@ -127,6 +127,34 @@ Returns the default device: the innermost `with` block's on this thread,
 else the one `set_default_device` chose, else the CPU.
 `tack.runtime.dispatch.get_backend()` returns the same device's `Backend`.
 
+### `tack.set_default_float(dtype)` and `tack.get_default_float()`
+
+Defined in `packages/tack-core/src/tack/lang/types.py`. `set_default_float`
+makes `dtype` (`tack.f32` or `tack.f64`, or a NumPy float type) the default
+float type and returns it; `get_default_float` returns it.
+It is `f32` until set, and process-wide.
+
+**Current behavior:**
+
+- It is the type of: `empty`, `zeros` and `ones` without a `dtype`; Python
+  floats in `array`, `full` and `arange`; the components of `vec`, `mat` and
+  `vec2` ... `mat4` without a component type; floats in `tack.arrays`'
+  implicit arrays (`ConstantArray`, `CountingArray`, `UniformCoordinates`,
+  `CartesianProduct`, `Function`, host values an array holds); and
+  `tack.dataset`'s constructors, sources and readers without a `dtype`
+  (`DataSet`, `uniform_grid`, `rectilinear_grid`, `point_cloud`, `wavelet`,
+  `tangle`, `amr_gaussian_pulse`, `vtk_to_dataset`, `mfem_to_dataset`,
+  `mfem_field`). It is read when each is called.
+- A NumPy array keeps its type, a `*_like` its prototype's, and arrays
+  already made keep theirs. `vtk_to_dataset(dtype=None)` keeps VTK's types.
+- Kernels are unchanged: scalar arguments, literals and casts are typed by
+  the rules of the language contract, which follow the arrays a call passes.
+  Library code chooses its types explicitly and doesn't depend on the
+  setting.
+- Any other type raises `TypeError`. On a device without `f64` (Metal), an
+  array that the setting makes `f64` is refused where it is made, and the
+  message names the setting.
+
 ### Where arrays live and kernels run
 
 - Every array records its device: `a.device` is a `tack.Device`. Every

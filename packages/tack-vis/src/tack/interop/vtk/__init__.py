@@ -501,14 +501,26 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
         raise
 
 
-def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
+class _DefaultFloat:
+    """``vtk_to_dataset``'s default ``dtype``, the default float type when it is
+    called (``dtype=None`` already means VTK's own types)."""
+
+    def __repr__(self):
+        return "tack.get_default_float()"
+
+
+_DEFAULT_FLOAT = _DefaultFloat()
+
+
+def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id_dtype=None,
                    origin=None, copy=True):
     """Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,
     ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
     ``UniformCoordinates`` (with its direction matrix), a rectilinear grid's as a
     ``CartesianProduct``, a structured grid's as its explicit points.
 
-    Points and floating-point arrays become fields of ``dtype``; integer
+    Points and floating-point arrays become fields of ``dtype``, by default the
+    default float type (``tack.get_default_float()``, f32 unless set); integer
     arrays keep their type. Named point data become ``H1`` fields and named
     cell data ``Constant`` fields (a cell array named as a point array is
     ``"<name> (cells)"``, with a warning); a ``vtkGhostType`` array becomes the ghost marks
@@ -597,6 +609,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     Metal, so the dataset is on Metal throughout."""
     from tack.runtime.dispatch import get_backend
 
+    if dtype is _DEFAULT_FLOAT:
+        dtype = tack.get_default_float()
     if dtype is None and not get_backend().supports_f64:
         dtype = tack.f32
     if origin is None and dtype == tack.f32:

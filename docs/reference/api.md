@@ -13,6 +13,7 @@ belong on the host or in a kernel, use the [quick reference](../users-guide/quic
 | Move an array | `a.to_device("cpu")`, `a.device` | `a` itself if its memory is usable there, else a copy |
 | Check indices | `tack.set_debug(True)` | Every kernel launched afterwards checks its indices |
 | Allocate an output | `tack.empty((n,))` | New f32 array with unspecified contents |
+| Work in double precision | `tack.set_default_float(tack.f64)` | Arrays without a `dtype` (and Python floats) are f64 |
 | Allocate with another dtype | `tack.empty((n,), tack.i32)` | Any Tack type or NumPy dtype (`np.int32`, `"int32"`) |
 | Allocate zeros, ones or a value | `tack.zeros((n,))`, `tack.ones((n,))`, `tack.full((n,), 2.5)` | New array, filled on the device |
 | Match storage without copying | `tack.empty_like(prototype)` | Same shape and element dtype; no values read or initialized |
@@ -28,7 +29,8 @@ belong on the host or in a kernel, use the [quick reference](../users-guide/quic
 | Wait for device work | `tack.sync()` | Waits for queued launches on every device; returns `None` |
 | Inspect a kernel | `tack.inspect(kernel, *args, mode="source")` | Generated source as a string; does not execute the kernel |
 
-Without a `dtype`, an allocation is f32; values from Python make f32 from
+Without a `dtype`, an allocation is f32 (the default float type,
+`tack.set_default_float`); values from Python make it from
 floats and i32 from ints (i64 if a value needs it), and a NumPy array keeps
 its own dtype, so a float64 array becomes f64.
 
@@ -74,6 +76,10 @@ See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
 ### Creating arrays
 
 ::: tack.empty
+
+::: tack.set_default_float
+
+::: tack.get_default_float
 
 ::: tack.zeros
 

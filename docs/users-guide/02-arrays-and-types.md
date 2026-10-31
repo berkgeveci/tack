@@ -69,14 +69,16 @@ contain 12 scalars, but a kernel reads a scalar from the former and a
 | `tack.empty((n,), tack.vec3())` | `(n,)` | Three f32 components | `(n, 3)` |
 | `tack.empty((n,), tack.mat3())` | `(n,)` | 3x3 f32 matrix | `(n, 3, 3)` |
 
-`vec2`, `vec3`, `vec4`, `mat2`, `mat3` and `mat4` default to f32 components.
+`vec2`, `vec3`, `vec4`, `mat2`, `mat3` and `mat4` default to f32 components
+(the default float type; see below).
 Use `vec(n, dtype)` for another width and `mat(rows, columns, dtype)` for a
 rectangular matrix (up to 4x4). These functions describe types; they do not
 allocate arrays.
 
 The shape comes first and the dtype second, as in NumPy. A dtype is a Tack
 type or anything NumPy accepts as one (`np.int32`, `"float64"`); without
-one, an allocation is f32. The same allocation functions work for every
+one, an allocation is f32 (the [default float type](#the-default-float-type)).
+The same allocation functions work for every
 element type:
 
 ```python
@@ -459,6 +461,30 @@ Tack provides these scalar types:
 GPU backends use `f32` by default. Python `float` scalar arguments are
 automatically promoted to `f64` when any array argument uses `f64`, preventing
 silent precision loss. Otherwise, float scalars default to `f32`.
+
+### The default float type
+
+`f32` is the float type arrays get when nothing chooses one. A program that
+works in double precision throughout can make it `f64` once:
+
+```python
+tack.set_default_float(tack.f64)     # tack.get_default_float() reads it
+
+x = tack.zeros((n,))                 # f64
+v = tack.empty((n,), tack.vec3())    # three f64 components
+y = tack.array([0.1, 0.2])           # f64: Python floats follow it
+z = tack.array(host_f32)             # f32: a NumPy array keeps its type
+```
+
+It covers `empty`, `zeros` and `ones` without a `dtype`, Python floats in
+`array`, `full` and `arange`, `vec`/`mat` types without a component type,
+`tack.arrays`' implicit arrays, and `tack.dataset`'s constructors, sources and
+readers (`uniform_grid`, `DataSet`, `vtk_to_dataset`, `mfem_to_dataset`, ...).
+Kernels don't change: their precision follows the arrays they are given, so a
+kernel given f64 arrays computes in f64 either way. The setting is
+process-wide, like the default device, and arrays already made keep their
+type. Metal has no `f64`, so with `f64` the default there, an array made
+without a `dtype` raises `TypeError` naming the setting.
 
 ## Scalar Arguments
 

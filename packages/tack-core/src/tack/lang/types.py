@@ -84,6 +84,37 @@ _NAME_TO_TYPE = {
 }
 
 
+_default_float = f32
+
+
+def get_default_float() -> ScalarType:
+    """The floating-point type an array gets when nothing chooses one: f32 unless
+    `set_default_float` changed it."""
+    return _default_float
+
+
+def set_default_float(dtype) -> ScalarType:
+    """Make ``dtype`` (``tack.f32`` or ``tack.f64``, or a NumPy float type) the
+    floating-point type arrays get when nothing chooses one, and return it.
+
+    It is what ``tack.empty``, ``zeros`` and ``ones`` allocate without a
+    ``dtype``, what Python floats become in ``tack.array``, ``full`` and
+    ``arange``, the component type of ``tack.vec3()`` and the other vector and
+    matrix types without one, and the float type of implicit arrays and of
+    ``tack.dataset``'s constructors and readers. A NumPy array keeps its own
+    type, and kernels are unchanged: their precision follows the arrays they
+    are given. Process-wide, as the default device is; arrays already made keep
+    their type. Metal has no f64, so with ``f64`` there, an array made without
+    a ``dtype`` raises ``TypeError``.
+    """
+    global _default_float
+    dtype = as_dtype(dtype)
+    if dtype not in (f32, f64):
+        raise TypeError(f"the default float type is tack.f32 or tack.f64, not {dtype}")
+    _default_float = dtype
+    return dtype
+
+
 def from_numpy_dtype(dtype: np.dtype) -> ScalarType:
     """Convert a numpy dtype to a Tack scalar type."""
     dtype = np.dtype(dtype)
@@ -140,22 +171,28 @@ class ElementType:
         return f"tack.mat({self.shape[0]}, {self.shape[1]}, {self.scalar_dtype})"
 
 
-@lru_cache(maxsize=None, typed=True)
-def vec(n: int, dtype: ScalarType = f32) -> ElementType:
-    """The type of an n-component vector; no storage is allocated."""
-    return ElementType(dtype, (n,))
+def vec(n: int, dtype: ScalarType | None = None) -> ElementType:
+    """The type of an n-component vector; no storage is allocated. Its components
+    are ``dtype``, by default the default float type (`get_default_float`)."""
+    return _element(_default_float if dtype is None else dtype, (n,))
 
 
-@lru_cache(maxsize=None, typed=True)
-def mat(rows: int, columns: int, dtype: ScalarType = f32) -> ElementType:
-    """The type of a row-major matrix element, up to 4x4.
+def mat(rows: int, columns: int, dtype: ScalarType | None = None) -> ElementType:
+    """The type of a row-major matrix element, up to 4x4; its components are
+    ``dtype``, by default the default float type (`get_default_float`).
 
     In a kernel, ``tack.mat(row, ...)`` builds a matrix from its rows instead.
     """
-    return ElementType(dtype, (rows, columns))
+    return _element(_default_float if dtype is None else dtype, (rows, columns))
 
 
-def vec2(dtype: ScalarType = f32) -> ElementType:
+@lru_cache(maxsize=None, typed=True)
+def _element(dtype: ScalarType, shape: tuple[int, ...]) -> ElementType:
+    """One `ElementType` object per (component type, shape)."""
+    return ElementType(dtype, shape)
+
+
+def vec2(dtype: ScalarType | None = None) -> ElementType:
     """A two-component vector element type; in a kernel, ``tack.vec2(...)`` builds one.
 
     In kernels it takes 2 scalars, one scalar for every component, or one
@@ -164,7 +201,7 @@ def vec2(dtype: ScalarType = f32) -> ElementType:
     return vec(2, dtype)
 
 
-def vec3(dtype: ScalarType = f32) -> ElementType:
+def vec3(dtype: ScalarType | None = None) -> ElementType:
     """A three-component vector element type; in a kernel, ``tack.vec3(...)`` builds one.
 
     In kernels it takes 3 scalars, one scalar for every component, or one
@@ -173,7 +210,7 @@ def vec3(dtype: ScalarType = f32) -> ElementType:
     return vec(3, dtype)
 
 
-def vec4(dtype: ScalarType = f32) -> ElementType:
+def vec4(dtype: ScalarType | None = None) -> ElementType:
     """A four-component vector element type; in a kernel, ``tack.vec4(...)`` builds one.
 
     In kernels it takes 4 scalars, one scalar for every component, or one
@@ -182,7 +219,7 @@ def vec4(dtype: ScalarType = f32) -> ElementType:
     return vec(4, dtype)
 
 
-def mat2(dtype: ScalarType = f32) -> ElementType:
+def mat2(dtype: ScalarType | None = None) -> ElementType:
     """A 2x2 matrix element type; in a kernel, ``tack.mat2(...)`` builds one.
 
     In kernels it takes 2 rows (lists of scalars or vectors) or 4
@@ -191,7 +228,7 @@ def mat2(dtype: ScalarType = f32) -> ElementType:
     return mat(2, 2, dtype)
 
 
-def mat3(dtype: ScalarType = f32) -> ElementType:
+def mat3(dtype: ScalarType | None = None) -> ElementType:
     """A 3x3 matrix element type; in a kernel, ``tack.mat3(...)`` builds one.
 
     In kernels it takes 3 rows (lists of scalars or vectors) or 9
@@ -200,7 +237,7 @@ def mat3(dtype: ScalarType = f32) -> ElementType:
     return mat(3, 3, dtype)
 
 
-def mat4(dtype: ScalarType = f32) -> ElementType:
+def mat4(dtype: ScalarType | None = None) -> ElementType:
     """A 4x4 matrix element type; in a kernel, ``tack.mat4(...)`` builds one.
 
     In kernels it takes 4 rows (lists of scalars or vectors) or 16
