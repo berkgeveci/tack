@@ -52,6 +52,186 @@ uses the same layout. A field with a matching length on another topology is
 still a different association. Wrap values with the correct space when they
 are created; do not repair an association by guessing from array length later.
 
+## How the values are stored
+
+A field is one array of values; what each value means comes from the space,
+and the space reads the topology to say which value belongs to which cell.
+This section gives the exact layout of each: what to write when you fill an
+array yourself, or hand one to Tack from a solver.
+
+### The mesh: points, cells, edges and faces
+
+Points are numbered `0` to `num_points - 1`. The geometry is an `H1` field of
+order 1: one 3-vector per point, in point order (`data.positions()` gives
+them on the host). An image's or a rectilinear grid's positions are computed
+from the point's index rather than stored.
+
+An `UnstructuredTopology` is three arrays, VTK's layout:
+
+| Array | Length | Holds |
+|---|---|---|
+| `types` | `num_cells` | each cell's VTK cell type (`12` a hexahedron, `10` a tetrahedron, ...) |
+| `offsets` | `num_cells + 1` | where each cell's points start in `connectivity`; the last entry is its length |
+| `connectivity` | `offsets[num_cells]` | the cells' point ids, one cell after another |
+
+Cell `c`'s corners are `connectivity[offsets[c]:offsets[c + 1]]`, in its
+shape's corner order, which is VTK's ([Cell Types and Bases](16-cells-and-bases.md)).
+For a hexahedron that is the bottom face counterclockwise, then the top face
+above it. Any of the three may be an implicit array: a mesh of one cell type
+needs no stored `types` or `offsets`.
+
+A `StructuredTopology` stores nothing. On a grid of `nx × ny × nz` points,
+point `(i, j, k)` is `i + nx * (j + ny * k)`, cell `(i, j, k)` is
+`i + (nx - 1) * (j + (ny - 1) * k)`, and its corners are a hexahedron's
+(a quad's in 2D): `(i, j, k)`, `(i + 1, j, k)`, `(i + 1, j + 1, k)`,
+`(i, j + 1, k)`, then the same four at `k + 1`.
+
+Edges and faces are derived when something needs them (`topology.edges()`,
+`topology.faces()`) and numbered the same way every time. Edge `e`'s points
+are `edges().rows[e]`, lower id first. Face `f`'s are `faces().rows[f]`, in
+the order its side-0 cell (`faces().sides[f]`) goes around it outward.
+
+### Where each value is
+
+| Space | Values | Value of ... is at |
+|---|---|---|
+| `H1(data)` (order 1), `Values(data, "points")` | `num_points` | point `p`: `p` |
+| `Constant(data)`, `L2(data, order=0)`, `Values(data, "cells")` | `num_cells` | cell `c`: `c` |
+| `Values(data, "faces")`, `Values(data, "edges")` | one per face or edge | face or edge `f`: `f`, its id in `faces()` or `edges()` |
+| `L2(data, order=1)` | one per cell corner | cell `c`'s corner `j`: `offsets[c] + j`, `j` in connectivity order |
+| `L2(data, order=p)`, `p ≥ 2` (or `basis="gauss_legendre"`) | each cell's nodes | cell `c`'s node `n`: `offsets[c] + n` (`layout="blocks"`), or `n * num_cells + c` (`"cells"`) |
+| `H1(data, order=p)`, `p ≥ 2` | points, then edges, faces, cell interiors | below |
+| `SideTraces(data)` | 8 per face | face `f`, side `s`, point `j` of its row: `(f * 2 + s) * 4 + j` |
+
+So an `H1` field of order 1 is a value array of `num_points` entries and the
+topology's connectivity: cell `c`'s values are the values at its corner
+points. An `L2` field of order 1 shares the topology's `offsets` (its
+`space.offsets` *is* that array) and holds a value for each entry of the
+connectivity, so a point shared by four cells has four values.
+
+### A cell's nodes in order
+
+Above order 1, and for `L2` on Gauss–Legendre nodes, a cell's nodes are
+numbered on a *lattice* in its reference element (`bases.lattice_ijk(shape,
+p)` lists them):
+
+- **Segments, quads, hexahedra** (pixels, voxels): `(i, j, k)`, each from 0 to
+  `p`, numbered `n = i + (p + 1) * (j + (p + 1) * k)`, the first index fastest.
+  `i` runs from corner 0 toward corner 1, `j` toward corner 3, `k` toward
+  corner 4. Node `i` along an axis sits at the basis' `i`-th 1D node
+  (Gauss–Lobatto, equispaced or Gauss–Legendre); a Bernstein space keeps its
+  `i`-th coefficient there instead.
+- **Triangles and tetrahedra:** `(i, j, k)` with `i + j + k ≤ p`, at
+  `(i, j, k) / p`, the first index fastest: a triangle of order 2 is
+  `(0,0), (1,0), (2,0), (0,1), (1,1), (0,2)`. `i` runs toward corner 1, `j`
+  toward corner 2, `k` toward corner 3.
+- **Wedges:** the triangle's lattice in each of `p + 1` layers, the triangle
+  fastest, the layers from the bottom triangle (corners 0, 1, 2) to the top.
+
+`L2` of order 1 is the exception: its values are at the corners, in
+connectivity order, not on the lattice. On a hexahedron, value 2 is corner 2,
+`(1, 1, 0)`; lattice node 2 of order 1 would be `(0, 1, 0)`.
+
+### `H1` above order 1: numbered by entity
+
+Shared values are stored once, by the entity that holds them, so the cells
+around an edge or face find the same value:
+
+1. **Points:** `num_points` values, by point id, as at order 1.
+2. **Edges:** `p - 1` values per edge, in edge-id order. Edge `e`'s node `k`
+   (1 to `p - 1`, counted from its lower point id, `edges().rows[e][0]`) is at
+   `num_points + e * (p - 1) + (k - 1)`.
+3. **Faces** (meshes of solids): in face-id order, `(p - 1)²` values on a quad
+   face and `(p - 1)(p - 2) / 2` on a triangle face (order 2: one on each quad
+   face, none on triangles). Quad face `f`'s node `(u, v)`, each 1 to `p - 1`,
+   is its `(v - 1) * (p - 1) + (u - 1)`-th value, `u` running from
+   `faces().rows[f][0]` toward `rows[f][1]` and `v` toward `rows[f][3]`. A
+   triangle face's nodes follow the triangle lattice from `rows[f][0]` toward
+   `rows[f][1]` and `rows[f][2]`.
+4. **Cell interiors:** in cell order, each cell's interior lattice nodes
+   (every index from 1 to `p - 1` on a tensor shape), in lattice order:
+   `(p - 1)³` on a hexahedron, `(p - 1)²` on a quad of a 2D mesh, `p - 1` on
+   a segment, `(p - 1)(p - 2)(p - 3) / 6` on a tetrahedron, `(p - 1)²(p - 2) / 2`
+   on a wedge.
+
+Faces and cells of different kinds hold different counts, so each one's
+block starts where the previous one's ends. A 2D mesh has points, edges and
+cell interiors. `basis="serendipity"` keeps the points and the edges alone.
+`H1(data, order=p, dofs=table)` numbers the values by your table instead: a
+row per cell, each of its lattice nodes' value index.
+
+<!-- tack-check: layouts -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+
+@tack.func
+def code(x):                       # each position's coordinates, readable at a glance
+    return x[0] + 10.0 * x[1] + 100.0 * x[2]
+
+
+# Two hexahedra side by side: 12 points at x = 0, 0.5, 1; y and z = 0, 1.
+grid = td.uniform_grid((3, 2, 2), spacing=(0.5, 1.0, 1.0))
+data = td.DataSet(td.UnstructuredTopology(
+    types=np.full(2, 12, np.uint8), offsets=np.array([0, 8, 16]),
+    connectivity=np.array([0, 1, 4, 3, 6, 7, 10, 9, 1, 2, 5, 4, 7, 8, 11, 10]),
+    num_points=12), grid.positions())
+x = data.positions()
+
+
+def values(space):
+    return td.interpolate(data, code, space).values.numpy()
+
+
+# H1 order 1: one value per point, by point id.
+assert np.allclose(values(td.H1(data)), x @ [1, 10, 100])
+
+# L2 order 1: each cell's corners in connectivity order, at the topology's offsets.
+corners = data.topology.connectivity.numpy()
+assert np.allclose(values(td.L2(data, order=1)), x[corners] @ [1, 10, 100])
+
+# L2 order 2: 27 nodes a cell, the first index fastest: x, then y, then z.
+l2 = values(td.L2(data, order=2))
+assert l2.size == 54 and np.allclose(l2[:4], [0.0, 0.25, 0.5, 5.0])
+
+# H1 order 2: points, then edges, quad faces and cell interiors.
+h1 = values(td.H1(data, order=2))
+edges, faces = data.topology.edges(), data.topology.faces()
+assert h1.size == 12 + edges.num_edges + faces.num_faces + 2 == 45
+low, high = edges.rows.numpy()[0]
+assert np.isclose(h1[12], (x[low] + x[high]) @ [1, 10, 100] / 2)   # edge 0's midpoint
+assert np.allclose(h1[-2:], [55.25, 55.75])                         # the cell centres
+print("H1 order 2:", h1.size, "values; L2 order 2:", l2.size)
+```
+
+### Vectors
+
+A vector field holds one vector per value, its components together:
+`tack.empty((space.size,), tack.vec3())` stores value 0's `x, y, z`, then
+value 1's, and `numpy()` gives `(space.size, 3)`. `layout="soa"` keeps each
+component in an array of its own instead
+([Arrays and Types](../users-guide/02-arrays-and-types.md)).
+
+### Finding a value in code
+
+In a kernel, a field's view finds the values for you: `corner_value(c, j)`
+is cell `c`'s value at its corner `j`, `value(c, pc)` the field at parametric
+coordinates `pc`, and above order 1 `dof_index(c, n)` is where its node `n` is
+stored (at order 1, a corner's value is at its point, `point_id(c, j)`). A
+view numbers an `H1` order-2 cell's nodes as VTK's quadratic cells do --
+corners, then edges, then faces and the centre -- and every other order on
+the lattice above. A kernel never computes these indices itself ([Write Mesh Algorithms](05-mesh-kernels.md)). On the host,
+`space.offsets`, `space.indices()` and `space.blocks(values)` give an `L2`
+field's values per cell, and `td.interpolate` fills any space from a function
+of position. Derived edge and face ids are stable for a topology, but not
+across topologies: match values between meshes by position or global id, not
+by edge or face number.
+
 ## Construct an L2 field
 
 The [complete independent-spaces example](../examples/data_spaces.py) builds
