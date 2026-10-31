@@ -1883,6 +1883,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../16-cells-and-bases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../12-units/" class="md-nav__link">
         
   
@@ -4173,48 +4201,13 @@ checks these counts and evaluates a genuinely quadratic temperature through
 its own basis. <code>data.num_points</code> remains 12; use <code>field.space.size</code> to allocate
 that field's coefficient array.</p>
 <h2 id="what-tack-currently-implements">What Tack currently implements<a class="headerlink" href="#what-tack-currently-implements" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Representation</th>
-<th>Current scope</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>H1 order 1</td>
-<td>Point values; basis evaluation on shape-based cells</td>
-</tr>
-<tr>
-<td>H1 order 2</td>
-<td>Tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels</td>
-</tr>
-<tr>
-<td>H1 and L2 of any order</td>
-<td>Segments, quads, pixels, hexahedra and voxels; Gauss–Lobatto, equispaced or (L2) Gauss–Legendre nodes</td>
-</tr>
-<tr>
-<td>L2 orders 0 and 1</td>
-<td>Shape-based cells; order may vary by cell</td>
-</tr>
-<tr>
-<td>Constant</td>
-<td>Cell data on the supported topology families</td>
-</tr>
-<tr>
-<td>Values</td>
-<td>Entity-associated data, without a basis</td>
-</tr>
-<tr>
-<td>SideTraces</td>
-<td>Two-sided face evaluations on supported 3D shape-based cells</td>
-</tr>
-<tr>
-<td>H2, H(curl), H(div) bases</td>
-<td>Not currently provided</td>
-</tr>
-</tbody>
-</table>
+<p><code>H1</code> and <code>L2</code> of any order, on every shape with a reference element but the
+pyramid (order 1 there), in Gauss–Lobatto, equispaced, Gauss–Legendre (<code>L2</code>),
+Bernstein and serendipity bases; <code>Constant</code>, <code>Values</code> and <code>SideTraces</code>; and
+point and cell data on polylines, polygons and polyhedra, linear on their
+pieces. H2, H(curl) and H(div) are not provided. <a href="../16-cells-and-bases/">Cell Types and
+Bases</a> lists every shape and basis, what each supports,
+how VTK's and MFEM's cells map to them, and what is planned.</p>
 <p>Point/cell association can exist on polyhedra without a reference-element
 basis. Always check the particular algorithm's support. Tack uses a subset
 of <a href="https://mfem.org/tutorial/examples/">MFEM's finite-element concepts</a>, not

@@ -16,7 +16,7 @@
         <link rel="prev" href="../01-datasets/">
       
       
-        <link rel="next" href="../12-units/">
+        <link rel="next" href="../16-cells-and-bases/">
       
       
         
@@ -1982,6 +1982,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../16-cells-and-bases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -4741,17 +4769,15 @@ an expensive expression if reuse makes that worthwhile, then measure the whole
 pipeline. An implicit wrapper around a mutable buffer observes its current
 values; a materialized result is a previous computation until recomputed.</p>
 <h2 id="know-the-present-higher-order-limits">Know the present higher-order limits<a class="headerlink" href="#know-the-present-higher-order-limits" title="Permanent link">&para;</a></h2>
-<p>Order-2 H1 is supported on tetrahedra, hexahedra, voxels and wedges, and on
-their faces' shapes: triangles, quads and pixels. L2 can
-vary its order by cell, which the dispatcher handles by launching groups of
-compatible order. This does not make every filter a higher-order geometric
-algorithm: filters that keep whole cells (<code>extract_cells</code>, <code>threshold</code>,
+<p><a href="../16-cells-and-bases/">Cell Types and Bases</a> lists which spaces, orders and
+bases each shape takes. Filters that keep whole cells (<code>extract_cells</code>,
 <code>split</code>, <code>remove_ghosts</code>) keep higher-order fields and a curved geometry at
-their order, and <code>extract_surface</code> keeps a solid's order-2 fields and geometry
-at order 2 (its surface's nodes are the solid's), but filters that make new
-cells (a contour, a clip) carry corner values. The
-<a href="../reference/dataset-api/#spaces">reference</a> records the supported layouts
-and <a href="../reference/dataset-api/#algorithms-and-filters">filter propagation rules</a>.</p>
+their order, and <code>extract_surface</code> keeps a solid's fields and
+geometry on its surface. The cutting filters (<code>contour</code>, <code>slice</code>, <code>clip</code>,
+<code>threshold</code>) cut curved and high-order cells on linear sub-cells, their
+crossings at the field's roots; <code>subdivide</code> gives those sub-cells. The
+<a href="../reference/dataset-api/#spaces">reference</a> records the supported layouts and
+<a href="../reference/dataset-api/#algorithms-and-filters">filter propagation rules</a>.</p>
 <h2 id="run-and-reproduce-the-figure">Run and reproduce the figure<a class="headerlink" href="#run-and-reproduce-the-figure" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_fields.py<span class="w"> </span>--check
 uv<span class="w"> </span>run<span class="w"> </span>--with<span class="w"> </span>matplotlib<span class="w"> </span>python<span class="w"> </span>docs/examples/data_fields.py<span class="w"> </span>--check<span class="w"> </span>--output<span class="w"> </span>spaces.png
