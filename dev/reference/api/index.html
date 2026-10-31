@@ -16477,17 +16477,36 @@ depend on the thread schedule and cannot be reproduced by a reference.</p>
     <table>
       <thead>
         <tr>
-          <th>Type</th>
+<th>Name</th>          <th>Type</th>
           <th>Description</th>
         </tr>
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td>
+<td></td>            <td>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>The generated code as a string.</p>
+                <p>The generated code as a string, for the device the call would run</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>on</code></td>            <td>
+                  <code>``dispatch.launch_backend``, as ``Kernel.__call__`` chooses</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>the</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>default device if it can address the arrays, otherwise theirs.</p>
               </div>
             </td>
           </tr>
@@ -16539,7 +16558,9 @@ depend on the thread schedule and cannot be reproduced by a reference.</p>
 <span class="normal">157</span>
 <span class="normal">158</span>
 <span class="normal">159</span>
-<span class="normal">160</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">inspect</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;source&quot;</span><span class="p">):</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">inspect</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;source&quot;</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Return generated code for a kernel without executing it.</span>
 
 <span class="sd">    Args:</span>
@@ -16552,7 +16573,9 @@ depend on the thread schedule and cannot be reproduced by a reference.</p>
 <span class="sd">                          vendor compilers optimize past anything Tack sees</span>
 
 <span class="sd">    Returns:</span>
-<span class="sd">        The generated code as a string.</span>
+<span class="sd">        The generated code as a string, for the device the call would run</span>
+<span class="sd">        on (``dispatch.launch_backend``, as ``Kernel.__call__`` chooses): the</span>
+<span class="sd">        default device if it can address the arrays, otherwise theirs.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.lang.kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">Kernel</span>
     <span class="n">bound_to</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="s1">&#39;__self__&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>

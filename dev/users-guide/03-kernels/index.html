@@ -4322,6 +4322,11 @@ produces:</p>
 </tr>
 </tbody>
 </table>
+<p>The code is for the device the call would run on: the default device if it
+can address the arguments' arrays, otherwise theirs, chosen when <code>inspect</code> is
+called, as each call chooses. To see another backend's code, pass arrays on
+that device (<code>tack.empty((n,), device="metal")</code>); a <code>with tack.device(...)</code>
+block alone does not move a call whose arrays its device cannot address.</p>
 <p>You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
 them. Inspection applies the same checks as a call, so arguments a call
