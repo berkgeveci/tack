@@ -2027,6 +2027,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../05-mesh-kernels/" class="md-nav__link">
         
   
@@ -3988,7 +4016,10 @@ every element, gradients, DG jumps face by face, and integrals.</p>
 <h2 id="adaptive-refinement-and-curved-surfaces">Adaptive refinement and curved surfaces<a class="headerlink" href="#adaptive-refinement-and-curved-surfaces" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>ex6</strong> (left): the star, refined where the error estimate is largest. The
-  mesh is nonconforming: the hanging nodes show in the cells' edges.</li>
+  mesh is nonconforming: the hanging nodes show in the cells' edges. The
+  values agree across each T-junction, so the picture has no cracks, but
+  face-based algorithms treat the T-junctions as boundary for now
+  (<a href="../16-cells-and-bases/#reading-and-writing-other-formats">Nonconforming meshes</a>).</li>
 <li><strong>ex7</strong> (right): the cube's quads snapped onto the sphere, as curved cells of
   order 3, with the solution of a surface PDE on them.</li>
 </ul>

@@ -10,7 +10,7 @@ import tack
 import tack.dataset as td
 from tack import communication as tc
 from tack.algorithms import exclusive_scan, histogram
-from tack.arrays import ConstantArray, CountingArray, materialize, size_of
+from tack.arrays import ConstantArray, CountingArray, dtype_of, size_of, to_host
 from tack.dataset import units
 
 
@@ -32,7 +32,9 @@ def elevation(data, low_point, high_point, range):
     direction = np.asarray(high_point, float) - np.asarray(data.origin) - low
     n = size_of(data.geometry.values)               # an implicit array has no .shape
     out = tack.empty((n,), data.dtype, device=data.device)
-    _elevations(materialize(data.geometry.values), *map(float, low), *map(float, direction),
+    # An implicit array goes to the kernel as it is: an image's positions are
+    # computed as the kernel reads them, never stored.
+    _elevations(data.geometry.values, *map(float, low), *map(float, direction),
                 float(direction @ direction), float(range[0]), float(range[1] - range[0]),
                 out)
     return td.Field(data.geometry.space, out)
@@ -106,8 +108,8 @@ def _cell_jump(faces, values, out):
 def jump(data, name):
     """A cell field's difference across each face: td.jump."""
     field = data.fields[name]
-    values = materialize(field.values)
-    out = tack.empty((data.topology.faces().num_faces,), values.dtype, device=data.device)
+    values = field.values                           # stored or implicit: kernels index both
+    out = tack.empty((data.topology.faces().num_faces,), dtype_of(values), device=data.device)
     td.for_each(_cell_jump, data, "faces", values, out)
     # A difference of degrees Celsius is in kelvin; unknown stays unknown.
     return td.Field(td.Values(data, "faces"), out, units.delta(field.unit))
@@ -181,7 +183,7 @@ def entropy(pieces, name, bins=10):
 
 
 def _host(values):
-    return None if values is None else np.asarray(materialize(values).numpy())
+    return None if values is None else np.asarray(to_host(values))
 
 
 def _same_arrays(a, b):

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://berkgeveci.github.io/tack/dev/vis-guide/05-mesh-kernels/">
       
       
-        <link rel="prev" href="../04-filters/">
+        <link rel="prev" href="../17-views/">
       
       
         <link rel="next" href="../15-write-a-filter/">
@@ -2026,6 +2026,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -2126,6 +2154,17 @@
     <span class="md-ellipsis">
       
         Visit a space's nodes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#work-at-a-fields-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Work at a field's nodes
       
     </span>
   </a>
@@ -3911,6 +3950,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#work-at-a-fields-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Work at a field's nodes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#parametric-and-world-coordinates-have-different-meanings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3987,7 +4037,8 @@
 
 <h1 id="write-mesh-algorithms">Write mesh algorithms<a class="headerlink" href="#write-mesh-algorithms" title="Permanent link">&para;</a></h1>
 <p>Use <code>td.for_each</code> when an operation is naturally expressed per cell, face or
-edge. Tack supplies a view of the mesh and compatible views of its fields.
+edge. Tack supplies a view of the mesh and compatible views of its fields;
+<a href="../17-views/">Views</a> explains what they are and where they come from.
 Your kernel can use geometry and interpolation without manually switching on
 cell type or maintaining a connectivity parser for every representation.</p>
 <p>An operation on each value of a field alone, such as scaling it, needs no
@@ -4052,6 +4103,47 @@ value goes in the space's array, and <code>nodes.node_position(i, j)</code>:</p>
             <span class="n">x</span> <span class="o">=</span> <span class="n">nodes</span><span class="o">.</span><span class="n">node_position</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
             <span class="n">values</span><span class="p">[</span><span class="n">nodes</span><span class="o">.</span><span class="n">node_dof</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
 </code></pre></div>
+<h2 id="work-at-a-fields-nodes">Work at a field's nodes<a class="headerlink" href="#work-at-a-fields-nodes" title="Permanent link">&para;</a></h2>
+<p>A field view numbers its own cell's nodes, whatever its space, order or
+shape: <code>NODES</code> of them (a constant, so a loop over them unrolls), node <code>k</code>
+at parametric coordinates <code>node_parametric(k)</code>, its value <code>dof(c, k)</code>,
+stored at <code>dof_index(c, k)</code> in the field's array. That is enough to compute
+a field of one space from fields of others without projecting first. To add
+an order-1 field <code>p</code> to an order-2 field <code>q</code> into a new order-2 field, read
+<code>p</code> through its own basis at each of <code>q</code>'s nodes:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">add_at_nodes</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">NODES</span><span class="p">):</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">q</span><span class="o">.</span><span class="n">dof_index</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)]</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">value</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">q</span><span class="o">.</span><span class="n">node_parametric</span><span class="p">(</span><span class="n">k</span><span class="p">))</span> <span class="o">+</span> <span class="n">q</span><span class="o">.</span><span class="n">dof</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+
+
+<span class="n">p</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">],</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;q&quot;</span><span class="p">]</span>      <span class="c1"># H1 of order 1 and of order 2</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">space</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">space</span><span class="o">.</span><span class="n">size</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">p</span><span class="p">,</span> <span class="n">q</span><span class="p">]):</span>
+    <span class="n">add_at_nodes</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">p</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">q</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+<span class="n">s</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+</code></pre></div>
+<p>The same kernel runs on every shape and every space: a hexahedron's 27
+quadratic nodes, a segment's 3, an order-3 tetrahedron's 20, an <code>L2</code> cell's
+own, a <code>Constant</code> cell's one at its centre. Cells that share a node write the
+same value to the same place, so the result does not depend on which one
+writes last. Here it equals <code>td.project(data, p, space)</code> plus <code>q</code>, since <code>p</code>
+lies in the order-2 space.</p>
+<p><code>NODES</code> is the field's, not the shape's. The shape's <code>NUM_QUADRATIC</code> and
+<code>quadratic_node(k)</code>, which a view also has, are the quadratic element's
+nodes whatever the field: an order-1 field has fewer, an order-3 field
+more, and a segment none, so a loop over them writes nothing. A
+serendipity field's <code>NODES</code> are the corners and edges it stores, which come
+first; it computes the rest. In a Bernstein basis (<code>basis="bernstein"</code>),
+<code>dof(c, k)</code> is a coefficient, not the field's value at <code>node_parametric(k)</code>
+(the Greville point), so a kernel that writes values there writes a
+Lagrange interpolant's values into a Bernstein field: right only where they
+agree, as they do for multilinear fields.</p>
+<p><code>for_each</code> over a space (<a href="#visit-a-spaces-nodes">above</a>) visits each stored
+value once; a loop over a field view's nodes visits a shared node once per
+cell holding it, but has the cell's other fields at hand.</p>
 <h2 id="parametric-and-world-coordinates-have-different-meanings">Parametric and world coordinates have different meanings<a class="headerlink" href="#parametric-and-world-coordinates-have-different-meanings" title="Permanent link">&para;</a></h2>
 <p><code>cells.parametric_center()</code> returns a location in the cell's reference element.
 <code>temperature.value(c, pc)</code> evaluates the field there, and

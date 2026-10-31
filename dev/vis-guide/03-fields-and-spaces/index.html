@@ -1813,6 +1813,89 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#how-the-values-are-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the values are stored
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the values are stored">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-mesh-points-cells-edges-and-faces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The mesh: points, cells, edges and faces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-each-value-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where each value is
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-cells-nodes-in-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A cell's nodes in order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h1-above-order-1-numbered-by-entity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H1 above order 1: numbered by entity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vectors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vectors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#finding-a-value-in-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding a value in code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#construct-an-l2-field" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2289,6 +2372,34 @@
     
   
     Filter and Analyze
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
   
 
     
@@ -4012,6 +4123,89 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#how-the-values-are-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the values are stored
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the values are stored">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-mesh-points-cells-edges-and-faces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The mesh: points, cells, edges and faces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-each-value-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where each value is
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-cells-nodes-in-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A cell's nodes in order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#h1-above-order-1-numbered-by-entity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        H1 above order 1: numbered by entity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vectors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vectors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#finding-a-value-in-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding a value in code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#construct-an-l2-field" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4342,6 +4536,227 @@ ordinary array can assign different values to every cell.</p>
 uses the same layout. A field with a matching length on another topology is
 still a different association. Wrap values with the correct space when they
 are created; do not repair an association by guessing from array length later.</p>
+<h2 id="how-the-values-are-stored">How the values are stored<a class="headerlink" href="#how-the-values-are-stored" title="Permanent link">&para;</a></h2>
+<p>A field is one array of values; what each value means comes from the space,
+and the space reads the topology to say which value belongs to which cell.
+This section gives the exact layout of each: what to write when you fill an
+array yourself, or hand one to Tack from a solver.</p>
+<h3 id="the-mesh-points-cells-edges-and-faces">The mesh: points, cells, edges and faces<a class="headerlink" href="#the-mesh-points-cells-edges-and-faces" title="Permanent link">&para;</a></h3>
+<p>Points are numbered <code>0</code> to <code>num_points - 1</code>. The geometry is an <code>H1</code> field of
+order 1: one 3-vector per point, in point order (<code>data.positions()</code> gives
+them on the host). An image's or a rectilinear grid's positions are computed
+from the point's index rather than stored.</p>
+<p>An <code>UnstructuredTopology</code> is three arrays, VTK's layout:</p>
+<table>
+<thead>
+<tr>
+<th>Array</th>
+<th>Length</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>types</code></td>
+<td><code>num_cells</code></td>
+<td>each cell's VTK cell type (<code>12</code> a hexahedron, <code>10</code> a tetrahedron, ...)</td>
+</tr>
+<tr>
+<td><code>offsets</code></td>
+<td><code>num_cells + 1</code></td>
+<td>where each cell's points start in <code>connectivity</code>; the last entry is its length</td>
+</tr>
+<tr>
+<td><code>connectivity</code></td>
+<td><code>offsets[num_cells]</code></td>
+<td>the cells' point ids, one cell after another</td>
+</tr>
+</tbody>
+</table>
+<p>Cell <code>c</code>'s corners are <code>connectivity[offsets[c]:offsets[c + 1]]</code>, in its
+shape's corner order, which is VTK's (<a href="../16-cells-and-bases/">Cell Types and Bases</a>).
+For a hexahedron that is the bottom face counterclockwise, then the top face
+above it. Any of the three may be an implicit array: a mesh of one cell type
+needs no stored <code>types</code> or <code>offsets</code>.</p>
+<p>A <code>StructuredTopology</code> stores nothing. On a grid of <code>nx × ny × nz</code> points,
+point <code>(i, j, k)</code> is <code>i + nx * (j + ny * k)</code>, cell <code>(i, j, k)</code> is
+<code>i + (nx - 1) * (j + (ny - 1) * k)</code>, and its corners are a hexahedron's
+(a quad's in 2D): <code>(i, j, k)</code>, <code>(i + 1, j, k)</code>, <code>(i + 1, j + 1, k)</code>,
+<code>(i, j + 1, k)</code>, then the same four at <code>k + 1</code>.</p>
+<p>Edges and faces are derived when something needs them (<code>topology.edges()</code>,
+<code>topology.faces()</code>) and numbered the same way every time. Edge <code>e</code>'s points
+are <code>edges().rows[e]</code>, lower id first. Face <code>f</code>'s are <code>faces().rows[f]</code>, in
+the order its side-0 cell (<code>faces().sides[f]</code>) goes around it outward.</p>
+<h3 id="where-each-value-is">Where each value is<a class="headerlink" href="#where-each-value-is" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Space</th>
+<th>Values</th>
+<th>Value of ... is at</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>H1(data)</code> (order 1), <code>Values(data, "points")</code></td>
+<td><code>num_points</code></td>
+<td>point <code>p</code>: <code>p</code></td>
+</tr>
+<tr>
+<td><code>Constant(data)</code>, <code>L2(data, order=0)</code>, <code>Values(data, "cells")</code></td>
+<td><code>num_cells</code></td>
+<td>cell <code>c</code>: <code>c</code></td>
+</tr>
+<tr>
+<td><code>Values(data, "faces")</code>, <code>Values(data, "edges")</code></td>
+<td>one per face or edge</td>
+<td>face or edge <code>f</code>: <code>f</code>, its id in <code>faces()</code> or <code>edges()</code></td>
+</tr>
+<tr>
+<td><code>L2(data, order=1)</code></td>
+<td>one per cell corner</td>
+<td>cell <code>c</code>'s corner <code>j</code>: <code>offsets[c] + j</code>, <code>j</code> in connectivity order</td>
+</tr>
+<tr>
+<td><code>L2(data, order=p)</code>, <code>p ≥ 2</code> (or <code>basis="gauss_legendre"</code>)</td>
+<td>each cell's nodes</td>
+<td>cell <code>c</code>'s node <code>n</code>: <code>offsets[c] + n</code> (<code>layout="blocks"</code>), or <code>n * num_cells + c</code> (<code>"cells"</code>)</td>
+</tr>
+<tr>
+<td><code>H1(data, order=p)</code>, <code>p ≥ 2</code></td>
+<td>points, then edges, faces, cell interiors</td>
+<td>below</td>
+</tr>
+<tr>
+<td><code>SideTraces(data)</code></td>
+<td>8 per face</td>
+<td>face <code>f</code>, side <code>s</code>, point <code>j</code> of its row: <code>(f * 2 + s) * 4 + j</code></td>
+</tr>
+</tbody>
+</table>
+<p>So an <code>H1</code> field of order 1 is a value array of <code>num_points</code> entries and the
+topology's connectivity: cell <code>c</code>'s values are the values at its corner
+points. An <code>L2</code> field of order 1 shares the topology's <code>offsets</code> (its
+<code>space.offsets</code> <em>is</em> that array) and holds a value for each entry of the
+connectivity, so a point shared by four cells has four values.</p>
+<h3 id="a-cells-nodes-in-order">A cell's nodes in order<a class="headerlink" href="#a-cells-nodes-in-order" title="Permanent link">&para;</a></h3>
+<p>Above order 1, and for <code>L2</code> on Gauss–Legendre nodes, a cell's nodes are
+numbered on a <em>lattice</em> in its reference element (<code>bases.lattice_ijk(shape,
+p)</code> lists them):</p>
+<ul>
+<li><strong>Segments, quads, hexahedra</strong> (pixels, voxels): <code>(i, j, k)</code>, each from 0 to
+  <code>p</code>, numbered <code>n = i + (p + 1) * (j + (p + 1) * k)</code>, the first index fastest.
+  <code>i</code> runs from corner 0 toward corner 1, <code>j</code> toward corner 3, <code>k</code> toward
+  corner 4. Node <code>i</code> along an axis sits at the basis' <code>i</code>-th 1D node
+  (Gauss–Lobatto, equispaced or Gauss–Legendre); a Bernstein space keeps its
+  <code>i</code>-th coefficient there instead.</li>
+<li><strong>Triangles and tetrahedra:</strong> <code>(i, j, k)</code> with <code>i + j + k ≤ p</code>, at
+  <code>(i, j, k) / p</code>, the first index fastest: a triangle of order 2 is
+  <code>(0,0), (1,0), (2,0), (0,1), (1,1), (0,2)</code>. <code>i</code> runs toward corner 1, <code>j</code>
+  toward corner 2, <code>k</code> toward corner 3.</li>
+<li><strong>Wedges:</strong> the triangle's lattice in each of <code>p + 1</code> layers, the triangle
+  fastest, the layers from the bottom triangle (corners 0, 1, 2) to the top.</li>
+</ul>
+<p><code>L2</code> of order 1 is the exception: its values are at the corners, in
+connectivity order, not on the lattice. On a hexahedron, value 2 is corner 2,
+<code>(1, 1, 0)</code>; lattice node 2 of order 1 would be <code>(0, 1, 0)</code>.</p>
+<h3 id="h1-above-order-1-numbered-by-entity"><code>H1</code> above order 1: numbered by entity<a class="headerlink" href="#h1-above-order-1-numbered-by-entity" title="Permanent link">&para;</a></h3>
+<p>Shared values are stored once, by the entity that holds them, so the cells
+around an edge or face find the same value:</p>
+<ol>
+<li><strong>Points:</strong> <code>num_points</code> values, by point id, as at order 1.</li>
+<li><strong>Edges:</strong> <code>p - 1</code> values per edge, in edge-id order. Edge <code>e</code>'s node <code>k</code>
+   (1 to <code>p - 1</code>, counted from its lower point id, <code>edges().rows[e][0]</code>) is at
+   <code>num_points + e * (p - 1) + (k - 1)</code>.</li>
+<li><strong>Faces</strong> (meshes of solids): in face-id order, <code>(p - 1)²</code> values on a quad
+   face and <code>(p - 1)(p - 2) / 2</code> on a triangle face (order 2: one on each quad
+   face, none on triangles). Quad face <code>f</code>'s node <code>(u, v)</code>, each 1 to <code>p - 1</code>,
+   is its <code>(v - 1) * (p - 1) + (u - 1)</code>-th value, <code>u</code> running from
+   <code>faces().rows[f][0]</code> toward <code>rows[f][1]</code> and <code>v</code> toward <code>rows[f][3]</code>. A
+   triangle face's nodes follow the triangle lattice from <code>rows[f][0]</code> toward
+   <code>rows[f][1]</code> and <code>rows[f][2]</code>.</li>
+<li><strong>Cell interiors:</strong> in cell order, each cell's interior lattice nodes
+   (every index from 1 to <code>p - 1</code> on a tensor shape), in lattice order:
+   <code>(p - 1)³</code> on a hexahedron, <code>(p - 1)²</code> on a quad of a 2D mesh, <code>p - 1</code> on
+   a segment, <code>(p - 1)(p - 2)(p - 3) / 6</code> on a tetrahedron, <code>(p - 1)²(p - 2) / 2</code>
+   on a wedge.</li>
+</ol>
+<p>Faces and cells of different kinds hold different counts, so each one's
+block starts where the previous one's ends. A 2D mesh has points, edges and
+cell interiors. <code>basis="serendipity"</code> keeps the points and the edges alone.
+<code>H1(data, order=p, dofs=table)</code> numbers the values by your table instead: a
+row per cell, each of its lattice nodes' value index.</p>
+<!-- tack-check: layouts -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">code</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>                       <span class="c1"># each position&#39;s coordinates, readable at a glance</span>
+    <span class="k">return</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mf">10.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+
+<span class="c1"># Two hexahedra side by side: 12 points at x = 0, 0.5, 1; y and z = 0, 1.</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">DataSet</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">UnstructuredTopology</span><span class="p">(</span>
+    <span class="n">types</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">),</span> <span class="n">offsets</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">]),</span>
+    <span class="n">connectivity</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">10</span><span class="p">]),</span>
+    <span class="n">num_points</span><span class="o">=</span><span class="mi">12</span><span class="p">),</span> <span class="n">grid</span><span class="o">.</span><span class="n">positions</span><span class="p">())</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">values</span><span class="p">(</span><span class="n">space</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">code</span><span class="p">,</span> <span class="n">space</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+
+
+<span class="c1"># H1 order 1: one value per point, by point id.</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span> <span class="n">x</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">])</span>
+
+<span class="c1"># L2 order 1: each cell&#39;s corners in connectivity order, at the topology&#39;s offsets.</span>
+<span class="n">corners</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">)),</span> <span class="n">x</span><span class="p">[</span><span class="n">corners</span><span class="p">]</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">])</span>
+
+<span class="c1"># L2 order 2: 27 nodes a cell, the first index fastest: x, then y, then z.</span>
+<span class="n">l2</span> <span class="o">=</span> <span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="k">assert</span> <span class="n">l2</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">54</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">l2</span><span class="p">[:</span><span class="mi">4</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">])</span>
+
+<span class="c1"># H1 order 2: points, then edges, quad faces and cell interiors.</span>
+<span class="n">h1</span> <span class="o">=</span> <span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="n">edges</span><span class="p">,</span> <span class="n">faces</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">edges</span><span class="p">(),</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>
+<span class="k">assert</span> <span class="n">h1</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">12</span> <span class="o">+</span> <span class="n">edges</span><span class="o">.</span><span class="n">num_edges</span> <span class="o">+</span> <span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">45</span>
+<span class="n">low</span><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="n">edges</span><span class="o">.</span><span class="n">rows</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">h1</span><span class="p">[</span><span class="mi">12</span><span class="p">],</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">low</span><span class="p">]</span> <span class="o">+</span> <span class="n">x</span><span class="p">[</span><span class="n">high</span><span class="p">])</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>   <span class="c1"># edge 0&#39;s midpoint</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">h1</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:],</span> <span class="p">[</span><span class="mf">55.25</span><span class="p">,</span> <span class="mf">55.75</span><span class="p">])</span>                         <span class="c1"># the cell centres</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;H1 order 2:&quot;</span><span class="p">,</span> <span class="n">h1</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s2">&quot;values; L2 order 2:&quot;</span><span class="p">,</span> <span class="n">l2</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="vectors">Vectors<a class="headerlink" href="#vectors" title="Permanent link">&para;</a></h3>
+<p>A vector field holds one vector per value, its components together:
+<code>tack.empty((space.size,), tack.vec3())</code> stores value 0's <code>x, y, z</code>, then
+value 1's, and <code>numpy()</code> gives <code>(space.size, 3)</code>. <code>layout="soa"</code> keeps each
+component in an array of its own instead
+(<a href="../../users-guide/02-arrays-and-types/">Arrays and Types</a>).</p>
+<h3 id="finding-a-value-in-code">Finding a value in code<a class="headerlink" href="#finding-a-value-in-code" title="Permanent link">&para;</a></h3>
+<p>In a kernel, a field's view finds the values for you: <code>corner_value(c, j)</code>
+is cell <code>c</code>'s value at its corner <code>j</code>, and <code>value(c, pc)</code> the field at
+parametric coordinates <code>pc</code>. Every <code>H1</code>, <code>L2</code> and <code>Constant</code> view also numbers
+the cell's own nodes: <code>NODES</code> of them, node <code>k</code> at <code>node_parametric(k)</code>, its
+value <code>dof(c, k)</code>, stored at <code>dof_index(c, k)</code>
+(<a href="../05-mesh-kernels/#work-at-a-fields-nodes">Work at a field's nodes</a>). At
+order 1 the nodes are the corners, and at order 0 one node at the cell's
+centre. An <code>H1</code> order-2 cell's nodes are numbered as VTK's quadratic cells
+do -- corners, then edges, then faces and the centre -- and every other order
+on the lattice above. A kernel never computes these indices itself
+(<a href="../05-mesh-kernels/">Write Mesh Algorithms</a>). On the host, <code>space.offsets</code>
+gives where each cell's <code>L2</code> values start; <code>space.indices()</code> and
+<code>space.blocks(values)</code> give them as one row per cell, which needs every cell
+to hold the same number of values, so on a mixed mesh read <code>space.offsets</code>.
+<code>td.interpolate</code> fills any space from a function of position. Derived edge and
+face ids are stable for a topology, but not across topologies: match values
+between meshes by position or global id, not by edge or face number.</p>
 <h2 id="construct-an-l2-field">Construct an L2 field<a class="headerlink" href="#construct-an-l2-field" title="Permanent link">&para;</a></h2>
 <p>The <a href="../../examples/data_spaces.py">complete independent-spaces example</a> builds
 L2 pressure and quadratic H1 temperature on the same two hexes. This section

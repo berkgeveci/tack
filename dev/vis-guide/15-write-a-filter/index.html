@@ -2029,6 +2029,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../05-mesh-kernels/" class="md-nav__link">
         
   
@@ -4037,7 +4065,9 @@ piece.</p>
     <span class="n">direction</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">high_point</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span> <span class="o">-</span> <span class="n">low</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>               <span class="c1"># an implicit array has no .shape</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-    <span class="n">_elevations</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">low</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">direction</span><span class="p">),</span>
+    <span class="c1"># An implicit array goes to the kernel as it is: an image&#39;s positions are</span>
+    <span class="c1"># computed as the kernel reads them, never stored.</span>
+    <span class="n">_elevations</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">low</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">direction</span><span class="p">),</span>
                 <span class="nb">float</span><span class="p">(</span><span class="n">direction</span> <span class="o">@</span> <span class="n">direction</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="nb">range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="nb">range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="nb">range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
                 <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
@@ -4055,9 +4085,11 @@ piece.</p>
   kernel refuses arrays from two devices.</li>
 <li><strong>Arrays may be implicit.</strong> An image's geometry is a <code>UniformCoordinates</code>
   array, which computes positions instead of storing them, and has no
-  <code>.shape</code>. <code>size_of</code> gives its length, and <code>materialize</code> gives a stored
-  array for a kernel that takes plain arrays. A kernel can also index it directly, since implicit
-  arrays are indexable in kernels.</li>
+  <code>.shape</code>: <code>size_of</code> gives its length. Pass it to a kernel as it is, since
+  kernels index implicit arrays (<code>positions[i]</code>, <code>len(positions)</code>); the
+  kernel computes each position as it reads it. <code>materialize</code> stores every
+  value, which an image of a billion points cannot afford: keep it for code
+  that needs stored memory, such as a pointer handed to another library.</li>
 <li>The result is a <code>Field</code> on the geometry's space, one value per point.</li>
 </ul>
 <h2 id="a-subset-of-cells-threshold">A subset of cells: <code>threshold</code><a class="headerlink" href="#a-subset-of-cells-threshold" title="Permanent link">&para;</a></h2>
@@ -4145,8 +4177,8 @@ instead.</p>
 <span class="k">def</span><span class="w"> </span><span class="nf">jump</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A cell field&#39;s difference across each face: td.jump.&quot;&quot;&quot;</span>
     <span class="n">field</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-    <span class="n">values</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span><span class="o">.</span><span class="n">num_faces</span><span class="p">,),</span> <span class="n">values</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">values</span>                           <span class="c1"># stored or implicit: kernels index both</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span><span class="o">.</span><span class="n">num_faces</span><span class="p">,),</span> <span class="n">dtype_of</span><span class="p">(</span><span class="n">values</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_cell_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="c1"># A difference of degrees Celsius is in kelvin; unknown stays unknown.</span>
     <span class="k">return</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">units</span><span class="o">.</span><span class="n">delta</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">))</span>

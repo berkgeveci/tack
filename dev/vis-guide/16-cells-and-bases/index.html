@@ -2153,6 +2153,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../05-mesh-kernels/" class="md-nav__link">
         
   
@@ -4397,13 +4425,31 @@ basis above it.</p>
 equispaced, Gauss–Legendre and positive bases), MFEM's older collections,
 nonconforming (AMR) meshes, periodic meshes (an <code>L2</code> geometry), and curved
 meshes. <code>mfem_grid_function</code> writes back.</p>
+<p><strong>Nonconforming meshes and T-junctions.</strong> A nonconforming mesh's hanging
+vertices are points of the finer cells, and its fields come with every
+value MFEM keeps per element, the constrained ones included, so the values on
+the two sides of a T-junction agree: contours, slices, clips, probes,
+gradients and subdivision are as on a conforming mesh. What Tack does not yet
+know is that a coarse cell's edge or face and the finer ones covering it are
+the same interface. <code>faces()</code> gives each of them one side, as if it were on
+the boundary, so <code>boundary_faces</code>, <code>extract_surface</code>, <code>jump</code>, <code>upwind_flux</code>,
+<code>net_flux</code> and other face-based algorithms treat T-junctions as boundary. On
+MFEM's ex6 star after refinement, 1280 of the 1450 one-sided edges are
+T-junctions. An octree's leaves (<code>OctreeDataSet.leaves()</code>) are the same.</p>
 <p>See the <a href="../reference/data-model/">Data Model reference</a> for each function.</p>
 <h2 id="planned">Planned<a class="headerlink" href="#planned" title="Permanent link">&para;</a></h2>
 <p>For 0.8:</p>
 <ul>
-<li><strong>Higher-order pyramids:</strong> VTK's quadratic (13 nodes), triquadratic (19),
+<li>
+<p><strong>T-junctions as interfaces:</strong> <code>faces()</code> pairing a coarse face with the
+  finer faces that cover it, from MFEM's nonconforming mesh or an octree's
+  leaves, so face-based algorithms see their two sides.</p>
+</li>
+<li>
+<p><strong>Higher-order pyramids:</strong> VTK's quadratic (13 nodes), triquadratic (19),
   Lagrange and Bezier pyramids, and cell grids' <code>C2</code> and <code>pyramid19</code>. Their
-  bases are rational, so they come with:</li>
+  bases are rational, so they come with:</p>
+</li>
 <li><strong>Rational Bezier cells:</strong> VTK's Bezier cells with weights other than 1.</li>
 <li><strong><code>H(curl)</code> and <code>H(div)</code></strong> at order 1, with Piola maps, on every shape but
   the pyramid. These are cell grids' <code>HCURL</code> and <code>HDIV</code>, now left out.</li>

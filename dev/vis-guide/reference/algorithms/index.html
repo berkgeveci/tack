@@ -2027,6 +2027,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../05-mesh-kernels/" class="md-nav__link">
         
   
@@ -7910,7 +7938,7 @@ between the lattice values does.</p>
     <span class="n">weights</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">count</span><span class="p">,),</span> <span class="n">precision</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">count</span><span class="p">:</span>
         <span class="n">_resolve_points</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">point_runs</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span>
-                        <span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">connectivity</span><span class="p">,</span>
+                        <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">connectivity</span><span class="p">,</span>
                         <span class="n">members</span><span class="p">,</span> <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n_conn</span><span class="p">:</span>
         <span class="n">_centroid_entries</span><span class="p">(</span><span class="n">connectivity</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
@@ -8386,7 +8414,8 @@ left out. The geometry must be <code>H1</code>.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/feature_edges.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">104</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">103</span>
+<span class="normal">104</span>
 <span class="normal">105</span>
 <span class="normal">106</span>
 <span class="normal">107</span>
@@ -8464,8 +8493,7 @@ left out. The geometry must be <code>H1</code>.</p>
 <span class="normal">179</span>
 <span class="normal">180</span>
 <span class="normal">181</span>
-<span class="normal">182</span>
-<span class="normal">183</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">182</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">feature_edges</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">angle</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">boundary</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">feature</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">non_manifold</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                   <span class="n">manifold</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A surface&#39;s edges of the kinds asked for, as line cells on the same points,</span>
@@ -8516,7 +8544,7 @@ left out. The geometry must be <code>H1</code>.</p>
                 <span class="n">order</span> <span class="o">=</span> <span class="n">_table</span><span class="p">((</span><span class="s2">&quot;round&quot;</span><span class="p">,</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="p">),</span> <span class="n">_ROUND</span><span class="p">[</span><span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="p">])</span>
                 <span class="n">_shape_loops</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">order</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">loops</span><span class="p">)</span>
     <span class="n">total</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">loops</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-    <span class="n">positions</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">_point_values</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">))</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="n">_point_values</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
     <span class="n">keys</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">total</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">idt</span><span class="p">))</span>
     <span class="n">owners</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">total</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i64</span><span class="p">)</span>
     <span class="n">normals</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n_cells</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
@@ -8944,7 +8972,7 @@ point gets a ring and no quads; tubes are open at their ends.</p>
     <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">4</span> <span class="o">*</span> <span class="n">quads</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
     <span class="n">line_of</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">quads</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">lines</span><span class="p">:</span>
-        <span class="n">positions</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span>
         <span class="n">by</span> <span class="o">=</span> <span class="n">radii</span><span class="o">.</span><span class="n">values</span> <span class="k">if</span> <span class="n">radii</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
         <span class="n">_rings</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">chain</span><span class="p">,</span> <span class="n">lines</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">radius</span><span class="p">),</span> <span class="n">by</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">radii</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">),</span>
                <span class="n">sides</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="n">sides</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">normals</span><span class="p">,</span> <span class="n">source</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">line_of</span><span class="p">)</span>
@@ -9070,8 +9098,8 @@ anything in a dense field.</p>
     <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span> <span class="o">*</span> <span class="mi">18</span> <span class="o">*</span> <span class="n">res</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
         <span class="n">by</span> <span class="o">=</span> <span class="n">sizes</span><span class="o">.</span><span class="n">values</span> <span class="k">if</span> <span class="n">sizes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-        <span class="n">_arrows</span><span class="p">(</span><span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">),</span>
-                <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sizes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">),</span> <span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">by</span><span class="p">),</span> <span class="n">res</span><span class="p">,</span>
+        <span class="n">_arrows</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sizes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">),</span> <span class="n">by</span><span class="p">,</span> <span class="n">res</span><span class="p">,</span>
                 <span class="mf">2.0</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="n">res</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">source</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">)</span>
     <span class="n">types</span><span class="p">,</span> <span class="n">offsets</span> <span class="o">=</span> <span class="n">uniform_cells</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">shapes</span><span class="o">.</span><span class="n">TRIANGLE</span><span class="p">),</span> <span class="n">n</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">res</span><span class="p">,</span> <span class="n">idt</span><span class="p">)</span>
     <span class="n">topology</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="n">total</span><span class="p">)</span>
@@ -10307,7 +10335,7 @@ positions themselves.</p>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-        <span class="n">_affine</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">out</span><span class="p">)</span>
+        <span class="n">_affine</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">out</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">out</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">origin</span>
@@ -10421,24 +10449,24 @@ is then in that space too.</p>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">factors</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_by</span> <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_by</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">scale_by</span><span class="p">])</span>
     <span class="k">if</span> <span class="n">factors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">factors</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
+        <span class="n">factors</span> <span class="o">=</span> <span class="n">ConstantArray</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">factors</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">factors</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">factors</span><span class="o">.</span><span class="n">space</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">geometry</span><span class="o">.</span><span class="n">space</span> <span class="ow">or</span> <span class="n">width_of</span><span class="p">(</span><span class="n">factors</span><span class="o">.</span><span class="n">values</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;scale_by must be a scalar field in the geometry&#39;s space&quot;</span><span class="p">)</span>
-        <span class="n">factors</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">factors</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+        <span class="n">factors</span> <span class="o">=</span> <span class="n">factors</span><span class="o">.</span><span class="n">values</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="n">Field</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
             <span class="n">moving</span> <span class="o">=</span> <span class="n">_warp_by_field</span> <span class="k">if</span> <span class="n">width_of</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="k">else</span> <span class="n">_warp_in_plane</span>
-            <span class="n">moving</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">materialize</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">factors</span><span class="p">,</span>
+            <span class="n">moving</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">factors</span><span class="p">,</span>
                    <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;a constant direction is three numbers&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-            <span class="n">_warp_constant</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">d</span><span class="p">),</span> <span class="n">factors</span><span class="p">,</span>
+            <span class="n">_warp_constant</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">d</span><span class="p">),</span> <span class="n">factors</span><span class="p">,</span>
                            <span class="nb">float</span><span class="p">(</span><span class="n">scale</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span> <span class="n">space</span><span class="o">=</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -11391,7 +11419,9 @@ origin in double precision.</p>
 <span class="normal">36</span>
 <span class="normal">37</span>
 <span class="normal">38</span>
-<span class="normal">39</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">point_elevation</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">low_point</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">high_point</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="nb">range</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each geometry value&#39;s position along the line from ``low_point`` to</span>
 <span class="sd">    ``high_point``, clamped to it and mapped to ``range`` (VTK&#39;s</span>
@@ -11406,7 +11436,9 @@ origin in double precision.</p>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_scalars</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-        <span class="n">_elevations</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">low</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">direction</span><span class="p">),</span>
+        <span class="c1"># The geometry as it is: an image&#39;s or a grid&#39;s positions are computed as</span>
+        <span class="c1"># they are read, never stored.</span>
+        <span class="n">_elevations</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">low</span><span class="p">),</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">direction</span><span class="p">),</span>
                     <span class="n">length2</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="nb">range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="nb">range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="nb">range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -11465,7 +11497,7 @@ positions, taken relative to the dataset's origin in double precision.</p>
 <span class="sd">    geometry&#39;s space and type, negative inside the function&#39;s region. On an</span>
 <span class="sd">    ``H1`` geometry that is one value per point. The function is in world</span>
 <span class="sd">    positions, taken relative to the dataset&#39;s origin in double precision.&quot;&quot;&quot;</span>
-    <span class="n">positions</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span>             <span class="c1"># an image&#39;s computed as they are read</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
@@ -12646,7 +12678,7 @@ vector's (an unknown one is not checked).</p>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">arrays</span><span class="o">.</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">fields</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">fields</span><span class="p">))</span>
     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">fields</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-            <span class="n">_set_component</span><span class="p">(</span><span class="n">materialize</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">k</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+            <span class="n">_set_component</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">unit</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>

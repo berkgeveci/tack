@@ -2027,6 +2027,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../05-mesh-kernels/" class="md-nav__link">
         
   
@@ -5820,6 +5848,7 @@ launched. A view is put together from mixins (entity kind, shape, geometry,
 incidence, space, storage), which share one namespace. A view refuses to
 build if two of them define the same name.</p>
 <h3 id="what-views-offer">What views offer<a class="headerlink" href="#what-views-offer" title="Permanent link">&para;</a></h3>
+<p><a href="../../17-views/">Views</a> introduces them.</p>
 <p>Every view supports <code>for i in view</code> and <code>entity_id(i)</code>, the global id of
 the entity the loop is at. Names follow one rule per kind of answer:</p>
 <ul>
@@ -5889,7 +5918,7 @@ side <code>s</code> and its local face number.</p>
 <tbody>
 <tr>
 <td><code>H1</code>, <code>L2</code>, <code>Constant</code></td>
-<td><code>value(c, pc)</code>, <code>parametric_gradient(c, pc)</code> at parametric coordinates; <code>dof(c, k)</code></td>
+<td><code>value(c, pc)</code>, <code>parametric_gradient(c, pc)</code> at parametric coordinates; <code>corner_value(c, j)</code>; the field's nodes, on cells with a reference element: <code>NODES</code> per cell, node <code>k</code>'s value <code>dof(c, k)</code>, its place in the array <code>dof_index(c, k)</code> and its parametric coordinates <code>node_parametric(k)</code> (<a href="../../05-mesh-kernels/#work-at-a-fields-nodes">Work at a field's nodes</a>)</td>
 </tr>
 <tr>
 <td><code>Values</code></td>

@@ -2251,6 +2251,34 @@
   
   
     <li class="md-nav__item">
+      <a href="17-views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Views: How a Kernel Sees a Dataset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="05-mesh-kernels/" class="md-nav__link">
         
   
@@ -4233,6 +4261,10 @@ an approximation to a sphere. This example needs no VTK installation.</p>
 <td>Choose between threshold, clip, contour and slice; carry fields and compute derivatives</td>
 </tr>
 <tr>
+<td><a href="17-views/">Views</a></td>
+<td>Understand how a kernel sees cells and fields, the basis of every filter and of your own</td>
+</tr>
+<tr>
 <td><a href="05-mesh-kernels/">Write Mesh Algorithms</a></td>
 <td>Add cell and face kernels with correct ids, subsets and orientation</td>
 </tr>
@@ -4479,7 +4511,8 @@ section shows.</p>
 <h2 id="writing-your-own-algorithm">Writing your own algorithm<a class="headerlink" href="#writing-your-own-algorithm" title="Permanent link">&para;</a></h2>
 <p><code>for_each(kernel, data, domain, *args)</code> runs a kernel over <code>"cells"</code>,
 <code>"faces"</code>, <code>"edges"</code> or a named set. A mesh may mix shapes, so it runs the
-kernel once per shape. Each launch gets that shape's <em>view</em> of the cells,
+kernel once per shape. Each launch gets that shape's <em>view</em> of the cells
+(<a href="17-views/">Views</a> explains them),
 and every <code>Field</code> argument becomes its view for the same cells. The kernel
 is compiled for each shape, so a hexahedron's loop knows it has eight
 corners.</p>
