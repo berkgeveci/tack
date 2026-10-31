@@ -10,7 +10,7 @@ import tack
 import tack.dataset as td
 from tack import communication as tc
 from tack.algorithms import exclusive_scan, histogram
-from tack.arrays import ConstantArray, CountingArray, size_of
+from tack.arrays import ConstantArray, CountingArray, dtype_of, size_of, to_host
 from tack.dataset import units
 
 
@@ -108,8 +108,8 @@ def _cell_jump(faces, values, out):
 def jump(data, name):
     """A cell field's difference across each face: td.jump."""
     field = data.fields[name]
-    values = materialize(field.values)
-    out = tack.empty((data.topology.faces().num_faces,), values.dtype, device=data.device)
+    values = field.values                           # stored or implicit: kernels index both
+    out = tack.empty((data.topology.faces().num_faces,), dtype_of(values), device=data.device)
     td.for_each(_cell_jump, data, "faces", values, out)
     # A difference of degrees Celsius is in kelvin; unknown stays unknown.
     return td.Field(td.Values(data, "faces"), out, units.delta(field.unit))
@@ -183,7 +183,7 @@ def entropy(pieces, name, bins=10):
 
 
 def _host(values):
-    return None if values is None else np.asarray(materialize(values).numpy())
+    return None if values is None else np.asarray(to_host(values))
 
 
 def _same_arrays(a, b):
