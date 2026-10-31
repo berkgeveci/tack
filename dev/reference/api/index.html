@@ -13738,9 +13738,7 @@ texture and no other texture can be handed it.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1239</span>
-<span class="normal">1240</span>
-<span class="normal">1241</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1241</span>
 <span class="normal">1242</span>
 <span class="normal">1243</span>
 <span class="normal">1244</span>
@@ -13769,7 +13767,9 @@ texture and no other texture can be handed it.</p>
 <span class="normal">1267</span>
 <span class="normal">1268</span>
 <span class="normal">1269</span>
-<span class="normal">1270</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_array</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">interp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;linear&#39;</span><span class="p">):</span>
+<span class="normal">1270</span>
+<span class="normal">1271</span>
+<span class="normal">1272</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_array</span><span class="p">:</span> <span class="n">Array</span><span class="p">,</span> <span class="n">shape_3d</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">interp</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;linear&#39;</span><span class="p">):</span>
     <span class="c1"># Every hardware path builds a single-channel 32-bit float image,</span>
     <span class="c1"># so f64 data would be reinterpreted rather than converted.</span>
     <span class="k">if</span> <span class="n">source_array</span><span class="o">.</span><span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">f32</span><span class="p">:</span>
@@ -13836,9 +13836,7 @@ texture and no other texture can be handed it.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1272</span>
-<span class="normal">1273</span>
-<span class="normal">1274</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1274</span>
 <span class="normal">1275</span>
 <span class="normal">1276</span>
 <span class="normal">1277</span>
@@ -13846,7 +13844,9 @@ texture and no other texture can be handed it.</p>
 <span class="normal">1279</span>
 <span class="normal">1280</span>
 <span class="normal">1281</span>
-<span class="normal">1282</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="normal">1282</span>
+<span class="normal">1283</span>
+<span class="normal">1284</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy the array&#39;s current data into the texture.</span>
 
 <span class="sd">    Sampling after this sees the array as it is now, on every backend.</span>
@@ -13881,9 +13881,9 @@ texture and no other texture can be handed it.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-core/src/tack/lang/array.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1288</span>
-<span class="normal">1289</span>
-<span class="normal">1290</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">w</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1290</span>
+<span class="normal">1291</span>
+<span class="normal">1292</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">w</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Sample at normalized coordinates. Only usable inside @tack.kernel.&quot;&quot;&quot;</span>
     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Texture3D.sample() can only be used inside a @tack.kernel&quot;</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -13952,7 +13952,9 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
               <div class="doc-md-description">
                 <p>device pointer (integer) or backend-specific buffer object.
  - CPU: integer address or numpy array
- - Metal: MTLBuffer object (from PyObjC)
+ - Metal: MTLBuffer object (from PyObjC), or a NumPy array of
+   host memory: a buffer Tack handed out, or memory on whole
+   pages, wrapped in place (TypeError otherwise)
  - CUDA/HIP: device pointer as integer
  - Level Zero: device pointer as integer</p>
               </div>
@@ -14108,7 +14110,9 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
 <span class="normal">1217</span>
 <span class="normal">1218</span>
 <span class="normal">1219</span>
-<span class="normal">1220</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array_from_ptr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">writable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
+<span class="normal">1220</span>
+<span class="normal">1221</span>
+<span class="normal">1222</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">array_from_ptr</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">writable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Array</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap existing device memory as a Tack array without copying.</span>
 
 <span class="sd">    Use this for interop with external libraries (pycuda, cupy, Catalyst)</span>
@@ -14124,7 +14128,9 @@ TypeError if a CUDA, HIP or Level Zero pointer is not an address.</p>
 <span class="sd">    Args:</span>
 <span class="sd">        ptr: device pointer (integer) or backend-specific buffer object.</span>
 <span class="sd">             - CPU: integer address or numpy array</span>
-<span class="sd">             - Metal: MTLBuffer object (from PyObjC)</span>
+<span class="sd">             - Metal: MTLBuffer object (from PyObjC), or a NumPy array of</span>
+<span class="sd">               host memory: a buffer Tack handed out, or memory on whole</span>
+<span class="sd">               pages, wrapped in place (TypeError otherwise)</span>
 <span class="sd">             - CUDA/HIP: device pointer as integer</span>
 <span class="sd">             - Level Zero: device pointer as integer</span>
 <span class="sd">        shape: the array&#39;s dimensions, counting elements</span>

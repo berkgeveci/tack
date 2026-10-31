@@ -11594,8 +11594,8 @@ point each kept point is (<code>cell_ids</code> does the same for cells).</p>
 </tr>
 <tr>
 <td><a href="#tack.dataset.algorithms.convert.convert"><code>convert</code></a></td>
-<td>a field, or the geometry, in another unit</td>
-<td>dataset</td>
+<td>a field, or a dataset's field or geometry, in another unit</td>
+<td>field, dataset</td>
 <td>—</td>
 <td>—</td>
 </tr>
@@ -12677,36 +12677,24 @@ Viskores' LogValues -- taken as <code>min_value</code>. The field must be a pure
 
     <div class="doc doc-contents first">
 
-        <p><code>data</code> with <code>field</code> (a name) in <code>unit</code>, or with the geometry in <code>unit</code>
-when <code>field</code> is <code>None</code>: a new dataset, the values scaled (and offset,
-as from degrees Celsius to kelvin) on the device, the topology, sets, marks
-and other fields kept.</p>
+        <p><code>data</code> -- a <code>Field</code>, or a dataset -- in <code>unit</code>. A field gives a new
+field in the same space, its values scaled (and offset, as from degrees
+Celsius to kelvin) on the device. A dataset gives a new dataset with
+<code>field</code> (a name) in <code>unit</code>, or its geometry when <code>field</code> is <code>None</code>,
+the topology, sets, marks and other fields kept.</p>
 <p>The field's unit, or the spatial unit, must be known (<code>Field.unit</code>,
 <code>DataSet.unit</code>) and of <code>unit</code>'s dimensions. Converting the geometry
 scales the origin too, in double precision on the host, so survey
 coordinates in US survey feet become metres without losing digits; an
-image stays an image and a rectilinear grid keeps its axes. Integer fields
-are refused unless the conversion is a relabelling (<code>"1000*m"</code> to
-<code>"km"</code>).</p>
+image stays an image and a rectilinear grid keeps its axes. Positions are
+the dataset's to convert: the geometry field alone would leave the origin
+in the old unit. Integer fields are refused unless the conversion is a
+relabelling (<code>"1000*m"</code> to <code>"km"</code>).</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/convert.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">45</span>
 <span class="normal">46</span>
 <span class="normal">47</span>
 <span class="normal">48</span>
@@ -12748,23 +12736,42 @@ are refused unless the conversion is a relabelling (<code>"1000*m"</code> to
 <span class="normal">84</span>
 <span class="normal">85</span>
 <span class="normal">86</span>
-<span class="normal">87</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span>
+<span class="normal">95</span>
+<span class="normal">96</span>
+<span class="normal">97</span>
+<span class="normal">98</span>
+<span class="normal">99</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` with ``field`` (a name) in ``unit``, or with the geometry in ``unit``</span>
-<span class="sd">    when ``field`` is ``None``: a new dataset, the values scaled (and offset,</span>
-<span class="sd">    as from degrees Celsius to kelvin) on the device, the topology, sets, marks</span>
-<span class="sd">    and other fields kept.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` -- a ``Field``, or a dataset -- in ``unit``. A field gives a new</span>
+<span class="sd">    field in the same space, its values scaled (and offset, as from degrees</span>
+<span class="sd">    Celsius to kelvin) on the device. A dataset gives a new dataset with</span>
+<span class="sd">    ``field`` (a name) in ``unit``, or its geometry when ``field`` is ``None``,</span>
+<span class="sd">    the topology, sets, marks and other fields kept.</span>
 
 <span class="sd">    The field&#39;s unit, or the spatial unit, must be known (``Field.unit``,</span>
 <span class="sd">    ``DataSet.unit``) and of ``unit``&#39;s dimensions. Converting the geometry</span>
 <span class="sd">    scales the origin too, in double precision on the host, so survey</span>
 <span class="sd">    coordinates in US survey feet become metres without losing digits; an</span>
-<span class="sd">    image stays an image and a rectilinear grid keeps its axes. Integer fields</span>
-<span class="sd">    are refused unless the conversion is a relabelling (``&quot;1000*m&quot;`` to</span>
-<span class="sd">    ``&quot;km&quot;``).&quot;&quot;&quot;</span>
+<span class="sd">    image stays an image and a rectilinear grid keeps its axes. Positions are</span>
+<span class="sd">    the dataset&#39;s to convert: the geometry field alone would leave the origin</span>
+<span class="sd">    in the old unit. Integer fields are refused unless the conversion is a</span>
+<span class="sd">    relabelling (``&quot;1000*m&quot;`` to ``&quot;km&quot;``).&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms._moving</span><span class="w"> </span><span class="kn">import</span> <span class="n">_moved</span>
 
     <span class="n">target</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">canonical</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">Field</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;convert of a field takes no field name: give the dataset and &quot;</span>
+                            <span class="s2">&quot;the name, or the field alone&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_converted</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="s2">&quot;the field&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">factor</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">conversion</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">offset</span><span class="p">:</span>
@@ -12790,17 +12797,8 @@ are refused unless the conversion is a relabelling (<code>"1000*m"</code> to
     <span class="k">if</span> <span class="n">field</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no field </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">: the dataset has &quot;</span>
                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">repr</span><span class="p">,</span><span class="w"> </span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">))</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;none&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">given</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
-    <span class="n">factor</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">conversion</span><span class="p">(</span><span class="n">given</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">factor</span> <span class="o">==</span> <span class="mf">1.0</span> <span class="ow">and</span> <span class="n">offset</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
-        <span class="n">values</span> <span class="o">=</span> <span class="n">given</span><span class="o">.</span><span class="n">values</span>
-    <span class="k">elif</span> <span class="n">arrays</span><span class="o">.</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">given</span><span class="o">.</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="n">numpy_dtype</span><span class="o">.</span><span class="n">kind</span> <span class="o">!=</span> <span class="s2">&quot;f&quot;</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;field </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2"> holds integers, which cannot hold its values in &quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">target</span><span class="si">!r}</span><span class="s2">: give it floating-point values first&quot;</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">values</span> <span class="o">=</span> <span class="n">_times</span><span class="p">(</span><span class="n">given</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">factor</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
     <span class="n">fields</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
-    <span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">given</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+    <span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">_converted</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">],</span> <span class="n">target</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;field </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">keep_marks</span>
 
     <span class="k">return</span> <span class="n">keep_marks</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">DataSet</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span>

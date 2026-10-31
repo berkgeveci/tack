@@ -20220,45 +20220,16 @@ given), and floating-point arrays are shared at their own precision with
 arrays alive; what VTK changes in them afterwards, Tack sees. What cannot
 be shared -- an origin to subtract, a type to convert, triangle strips,
 collapsed hexahedra, polyhedra -- is copied as before.</p>
+<p>With Metal the default device, <code>copy=False</code> gives Metal arrays instead, as
+Apple silicon's unified memory allows with any VTK: the buffers a Metal
+dataset handed VTK (<code>dataset_to_vtk(copy=False)</code>) come back as themselves,
+memory on whole pages is wrapped in place, and anything else is copied to
+Metal, so the dataset is on Metal throughout.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/__init__.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">470</span>
-<span class="normal">471</span>
-<span class="normal">472</span>
-<span class="normal">473</span>
-<span class="normal">474</span>
-<span class="normal">475</span>
-<span class="normal">476</span>
-<span class="normal">477</span>
-<span class="normal">478</span>
-<span class="normal">479</span>
-<span class="normal">480</span>
-<span class="normal">481</span>
-<span class="normal">482</span>
-<span class="normal">483</span>
-<span class="normal">484</span>
-<span class="normal">485</span>
-<span class="normal">486</span>
-<span class="normal">487</span>
-<span class="normal">488</span>
-<span class="normal">489</span>
-<span class="normal">490</span>
-<span class="normal">491</span>
-<span class="normal">492</span>
-<span class="normal">493</span>
-<span class="normal">494</span>
-<span class="normal">495</span>
-<span class="normal">496</span>
-<span class="normal">497</span>
-<span class="normal">498</span>
-<span class="normal">499</span>
-<span class="normal">500</span>
-<span class="normal">501</span>
-<span class="normal">502</span>
-<span class="normal">503</span>
-<span class="normal">504</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">504</span>
 <span class="normal">505</span>
 <span class="normal">506</span>
 <span class="normal">507</span>
@@ -20317,7 +20288,47 @@ collapsed hexahedra, polyhedra -- is copied as before.</p>
 <span class="normal">560</span>
 <span class="normal">561</span>
 <span class="normal">562</span>
-<span class="normal">563</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span>
+<span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span>
+<span class="normal">571</span>
+<span class="normal">572</span>
+<span class="normal">573</span>
+<span class="normal">574</span>
+<span class="normal">575</span>
+<span class="normal">576</span>
+<span class="normal">577</span>
+<span class="normal">578</span>
+<span class="normal">579</span>
+<span class="normal">580</span>
+<span class="normal">581</span>
+<span class="normal">582</span>
+<span class="normal">583</span>
+<span class="normal">584</span>
+<span class="normal">585</span>
+<span class="normal">586</span>
+<span class="normal">587</span>
+<span class="normal">588</span>
+<span class="normal">589</span>
+<span class="normal">590</span>
+<span class="normal">591</span>
+<span class="normal">592</span>
+<span class="normal">593</span>
+<span class="normal">594</span>
+<span class="normal">595</span>
+<span class="normal">596</span>
+<span class="normal">597</span>
+<span class="normal">598</span>
+<span class="normal">599</span>
+<span class="normal">600</span>
+<span class="normal">601</span>
+<span class="normal">602</span>
+<span class="normal">603</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                    <span class="n">origin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,</span>
 <span class="sd">    ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image&#39;s points as</span>
@@ -20403,7 +20414,13 @@ collapsed hexahedra, polyhedra -- is copied as before.</p>
 <span class="sd">    ``dtype=None``. The shared arrays are read-only to Tack and hold VTK&#39;s</span>
 <span class="sd">    arrays alive; what VTK changes in them afterwards, Tack sees. What cannot</span>
 <span class="sd">    be shared -- an origin to subtract, a type to convert, triangle strips,</span>
-<span class="sd">    collapsed hexahedra, polyhedra -- is copied as before.&quot;&quot;&quot;</span>
+<span class="sd">    collapsed hexahedra, polyhedra -- is copied as before.</span>
+
+<span class="sd">    With Metal the default device, ``copy=False`` gives Metal arrays instead, as</span>
+<span class="sd">    Apple silicon&#39;s unified memory allows with any VTK: the buffers a Metal</span>
+<span class="sd">    dataset handed VTK (``dataset_to_vtk(copy=False)``) come back as themselves,</span>
+<span class="sd">    memory on whole pages is wrapped in place, and anything else is copied to</span>
+<span class="sd">    Metal, so the dataset is on Metal throughout.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dtype</span> <span class="o">==</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">:</span>
         <span class="n">origin</span> <span class="o">=</span> <span class="n">_far_origin</span><span class="p">(</span><span class="n">grid</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">_vtk_to_dataset</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">polyhedral</span><span class="o">=</span><span class="n">polyhedral</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="n">orient</span><span class="p">,</span>
@@ -20470,7 +20487,11 @@ cell types, offsets and connectivity (ids of one width, as VTK keeps 32-bit
 ids too), ghost marks and global ids. The VTK arrays hold Tack's, and
 writes on either side reach the other. Implicit arrays go across as VTK's
 implicit ones either way; anything else -- arrays on a GPU, a polyhedral
-topology's faces -- is copied as before.</p>
+topology's faces -- is copied as before. Metal arrays are shared too, with
+any VTK: on Apple silicon their buffers are host memory, so VTK holds views
+of them, after one wait for the device (<code>MetalBuffer.share</code>); launches
+that use a shared buffer complete before returning, so VTK reads what Tack
+wrote, and the buffers come back as themselves through <code>vtk_to_dataset</code>.</p>
 <p>With <code>higher_order</code>, a dataset of segments, quads or hexahedra (pixels and
 voxels too), or of triangles, tetrahedra or wedges, whose geometry or an <code>H1</code>
 field is above order 1 becomes VTK Lagrange cells (<code>VTK_LAGRANGE_CURVE</code>,
@@ -20503,47 +20524,7 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/__init__.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1377</span>
-<span class="normal">1378</span>
-<span class="normal">1379</span>
-<span class="normal">1380</span>
-<span class="normal">1381</span>
-<span class="normal">1382</span>
-<span class="normal">1383</span>
-<span class="normal">1384</span>
-<span class="normal">1385</span>
-<span class="normal">1386</span>
-<span class="normal">1387</span>
-<span class="normal">1388</span>
-<span class="normal">1389</span>
-<span class="normal">1390</span>
-<span class="normal">1391</span>
-<span class="normal">1392</span>
-<span class="normal">1393</span>
-<span class="normal">1394</span>
-<span class="normal">1395</span>
-<span class="normal">1396</span>
-<span class="normal">1397</span>
-<span class="normal">1398</span>
-<span class="normal">1399</span>
-<span class="normal">1400</span>
-<span class="normal">1401</span>
-<span class="normal">1402</span>
-<span class="normal">1403</span>
-<span class="normal">1404</span>
-<span class="normal">1405</span>
-<span class="normal">1406</span>
-<span class="normal">1407</span>
-<span class="normal">1408</span>
-<span class="normal">1409</span>
-<span class="normal">1410</span>
-<span class="normal">1411</span>
-<span class="normal">1412</span>
-<span class="normal">1413</span>
-<span class="normal">1414</span>
-<span class="normal">1415</span>
-<span class="normal">1416</span>
-<span class="normal">1417</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1417</span>
 <span class="normal">1418</span>
 <span class="normal">1419</span>
 <span class="normal">1420</span>
@@ -20601,7 +20582,51 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 <span class="normal">1472</span>
 <span class="normal">1473</span>
 <span class="normal">1474</span>
-<span class="normal">1475</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">cell_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="normal">1475</span>
+<span class="normal">1476</span>
+<span class="normal">1477</span>
+<span class="normal">1478</span>
+<span class="normal">1479</span>
+<span class="normal">1480</span>
+<span class="normal">1481</span>
+<span class="normal">1482</span>
+<span class="normal">1483</span>
+<span class="normal">1484</span>
+<span class="normal">1485</span>
+<span class="normal">1486</span>
+<span class="normal">1487</span>
+<span class="normal">1488</span>
+<span class="normal">1489</span>
+<span class="normal">1490</span>
+<span class="normal">1491</span>
+<span class="normal">1492</span>
+<span class="normal">1493</span>
+<span class="normal">1494</span>
+<span class="normal">1495</span>
+<span class="normal">1496</span>
+<span class="normal">1497</span>
+<span class="normal">1498</span>
+<span class="normal">1499</span>
+<span class="normal">1500</span>
+<span class="normal">1501</span>
+<span class="normal">1502</span>
+<span class="normal">1503</span>
+<span class="normal">1504</span>
+<span class="normal">1505</span>
+<span class="normal">1506</span>
+<span class="normal">1507</span>
+<span class="normal">1508</span>
+<span class="normal">1509</span>
+<span class="normal">1510</span>
+<span class="normal">1511</span>
+<span class="normal">1512</span>
+<span class="normal">1513</span>
+<span class="normal">1514</span>
+<span class="normal">1515</span>
+<span class="normal">1516</span>
+<span class="normal">1517</span>
+<span class="normal">1518</span>
+<span class="normal">1519</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">dataset_to_vtk</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">higher_order</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">cell_grid</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy a ``tack.dataset.DataSet`` into a new VTK dataset; an ``AMRDataSet`` of</span>
 <span class="sd">    images and rectilinear grids, its ratios the same along every axis, into a</span>
 <span class="sd">    ``vtkOverlappingAMR`` (its marks as ``vtkGhostType`` arrays), any other into</span>
@@ -20644,7 +20669,11 @@ within each. It needs <code>vtkDGCell.SetCellSpec</code>, newer than VTK 9.7.1.<
 <span class="sd">    ids too), ghost marks and global ids. The VTK arrays hold Tack&#39;s, and</span>
 <span class="sd">    writes on either side reach the other. Implicit arrays go across as VTK&#39;s</span>
 <span class="sd">    implicit ones either way; anything else -- arrays on a GPU, a polyhedral</span>
-<span class="sd">    topology&#39;s faces -- is copied as before.</span>
+<span class="sd">    topology&#39;s faces -- is copied as before. Metal arrays are shared too, with</span>
+<span class="sd">    any VTK: on Apple silicon their buffers are host memory, so VTK holds views</span>
+<span class="sd">    of them, after one wait for the device (``MetalBuffer.share``); launches</span>
+<span class="sd">    that use a shared buffer complete before returning, so VTK reads what Tack</span>
+<span class="sd">    wrote, and the buffers come back as themselves through ``vtk_to_dataset``.</span>
 
 <span class="sd">    With ``higher_order``, a dataset of segments, quads or hexahedra (pixels and</span>
 <span class="sd">    voxels too), or of triangles, tetrahedra or wedges, whose geometry or an ``H1``</span>

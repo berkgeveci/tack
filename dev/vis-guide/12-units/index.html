@@ -3900,6 +3900,10 @@ from an unknown unit is guessed.</p>
 <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">metres</span><span class="o">.</span><span class="n">world_positions</span><span class="p">(),</span> <span class="n">image</span><span class="o">.</span><span class="n">world_positions</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1200</span> <span class="o">/</span> <span class="mi">3937</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">kelvin</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">celsius</span> <span class="o">+</span> <span class="mf">273.15</span><span class="p">)</span>
 
+<span class="c1"># A field converts on its own too, into a field in the same space.</span>
+<span class="n">fahrenheit</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="n">image</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">],</span> <span class="s2">&quot;degF&quot;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">fahrenheit</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">celsius</span> <span class="o">*</span> <span class="mi">9</span> <span class="o">/</span> <span class="mi">5</span> <span class="o">+</span> <span class="mi">32</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">)</span>
+
 <span class="c1"># Derived quantities derive their units; a difference of degrees Celsius is in</span>
 <span class="c1"># kelvin, so a temperature gradient is in kelvin per foot.</span>
 <span class="k">assert</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;K/ftUS&quot;</span>
@@ -4068,13 +4072,16 @@ they must be relative to one origin: probe's points, pieces of a
 refuse two known units, naming both and <code>convert</code>. An unknown unit cannot be
 checked, so it is not refused.</p>
 <h2 id="converting">Converting<a class="headerlink" href="#converting" title="Permanent link">&para;</a></h2>
-<p><code>convert(data, unit)</code> gives the dataset with its geometry in <code>unit</code>, and
-<code>convert(data, unit, field=name)</code> with that field in it: a new dataset, the
-values scaled (and offset, from degrees Celsius to kelvin, say) on the device,
-everything else kept. The geometry's conversion scales the origin on the host
-in double precision, so survey coordinates keep their digits; an image stays
-an image and a rectilinear grid keeps its axes. The unit converted from must
-be known. Integer fields convert only by relabelling (<code>"1000*m"</code> to <code>"km"</code>).</p>
+<p><code>convert(field, unit)</code> gives a field in <code>unit</code>: a new field in the same space,
+its values scaled (and offset, from degrees Celsius to kelvin, say) on the
+device. <code>convert(data, unit, field=name)</code> does the same to a dataset's field
+and gives the dataset with it, everything else kept, and <code>convert(data, unit)</code>
+gives the dataset with its geometry in <code>unit</code>. The geometry's conversion
+scales the origin on the host in double precision, so survey coordinates keep
+their digits; an image stays an image and a rectilinear grid keeps its axes.
+Positions are the dataset's to convert, not the geometry field's alone, which
+would leave the origin in the old unit. The unit converted from must be
+known. Integer fields convert only by relabelling (<code>"1000*m"</code> to <code>"km"</code>).</p>
 
 
 
