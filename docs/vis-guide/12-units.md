@@ -39,6 +39,10 @@ assert isinstance(metres.geometry.values, tack.arrays.UniformCoordinates)  # sti
 assert np.allclose(metres.world_positions(), image.world_positions() * 1200 / 3937)
 assert np.allclose(kelvin.fields["T"].values.numpy(), celsius + 273.15)
 
+# A field converts on its own too, into a field in the same space.
+fahrenheit = td.convert(image.fields["T"], "degF")
+assert np.allclose(fahrenheit.values.numpy(), celsius * 9 / 5 + 32, atol=1e-4)
+
 # Derived quantities derive their units; a difference of degrees Celsius is in
 # kelvin, so a temperature gradient is in kelvin per foot.
 assert td.gradients(image, "T").unit == "K/ftUS"
@@ -153,10 +157,13 @@ checked, so it is not refused.
 
 ## Converting
 
-`convert(data, unit)` gives the dataset with its geometry in `unit`, and
-`convert(data, unit, field=name)` with that field in it: a new dataset, the
-values scaled (and offset, from degrees Celsius to kelvin, say) on the device,
-everything else kept. The geometry's conversion scales the origin on the host
-in double precision, so survey coordinates keep their digits; an image stays
-an image and a rectilinear grid keeps its axes. The unit converted from must
-be known. Integer fields convert only by relabelling (`"1000*m"` to `"km"`).
+`convert(field, unit)` gives a field in `unit`: a new field in the same space,
+its values scaled (and offset, from degrees Celsius to kelvin, say) on the
+device. `convert(data, unit, field=name)` does the same to a dataset's field
+and gives the dataset with it, everything else kept, and `convert(data, unit)`
+gives the dataset with its geometry in `unit`. The geometry's conversion
+scales the origin on the host in double precision, so survey coordinates keep
+their digits; an image stays an image and a rectilinear grid keeps its axes.
+Positions are the dataset's to convert, not the geometry field's alone, which
+would leave the origin in the old unit. The unit converted from must be
+known. Integer fields convert only by relabelling (`"1000*m"` to `"km"`).

@@ -1,4 +1,4 @@
-"""``convert``: a field, or the geometry, in another unit."""
+"""``convert``: a field, or a dataset's field or geometry, in another unit."""
 
 import numpy as np
 
@@ -28,23 +28,44 @@ def _times(values, factor, offset):
     return out
 
 
+def _converted(given, target, what):
+    """``given`` in ``target`` (canonical): its values scaled and offset on the
+    device, or as they are where the conversion is a relabelling."""
+    factor, offset = units.conversion(given.unit, target)
+    if factor == 1.0 and offset == 0.0:
+        values = given.values
+    elif arrays.dtype_of(given.values).numpy_dtype.kind != "f":
+        raise TypeError(f"{what} holds integers, which cannot hold its values in "
+                        f"{target!r}: give it floating-point values first")
+    else:
+        values = _times(given.values, factor, offset)
+    return Field(given.space, values, target)
+
+
 @on_inputs_device
 def convert(data, unit, field=None):
-    """``data`` with ``field`` (a name) in ``unit``, or with the geometry in ``unit``
-    when ``field`` is ``None``: a new dataset, the values scaled (and offset,
-    as from degrees Celsius to kelvin) on the device, the topology, sets, marks
-    and other fields kept.
+    """``data`` -- a ``Field``, or a dataset -- in ``unit``. A field gives a new
+    field in the same space, its values scaled (and offset, as from degrees
+    Celsius to kelvin) on the device. A dataset gives a new dataset with
+    ``field`` (a name) in ``unit``, or its geometry when ``field`` is ``None``,
+    the topology, sets, marks and other fields kept.
 
     The field's unit, or the spatial unit, must be known (``Field.unit``,
     ``DataSet.unit``) and of ``unit``'s dimensions. Converting the geometry
     scales the origin too, in double precision on the host, so survey
     coordinates in US survey feet become metres without losing digits; an
-    image stays an image and a rectilinear grid keeps its axes. Integer fields
-    are refused unless the conversion is a relabelling (``"1000*m"`` to
-    ``"km"``)."""
+    image stays an image and a rectilinear grid keeps its axes. Positions are
+    the dataset's to convert: the geometry field alone would leave the origin
+    in the old unit. Integer fields are refused unless the conversion is a
+    relabelling (``"1000*m"`` to ``"km"``)."""
     from tack.dataset.algorithms._moving import _moved
 
     target = units.canonical(unit)
+    if isinstance(data, Field):
+        if field is not None:
+            raise TypeError("convert of a field takes no field name: give the dataset and "
+                            "the name, or the field alone")
+        return _converted(data, target, "the field")
     if field is None:
         factor, offset = units.conversion(data.unit, target)
         if offset:
@@ -70,17 +91,8 @@ def convert(data, unit, field=None):
     if field not in data.fields:
         raise KeyError(f"no field {field!r}: the dataset has "
                        f"{', '.join(map(repr, data.fields)) or 'none'}")
-    given = data.fields[field]
-    factor, offset = units.conversion(given.unit, target)
-    if factor == 1.0 and offset == 0.0:
-        values = given.values
-    elif arrays.dtype_of(given.values).numpy_dtype.kind != "f":
-        raise TypeError(f"field {field!r} holds integers, which cannot hold its values in "
-                        f"{target!r}: give it floating-point values first")
-    else:
-        values = _times(given.values, factor, offset)
     fields = dict(data.fields)
-    fields[field] = Field(given.space, values, target)
+    fields[field] = _converted(data.fields[field], target, f"field {field!r}")
     from tack.dataset.ghosts import keep_marks
 
     return keep_marks(data, DataSet(data.topology, data.geometry, fields=fields,

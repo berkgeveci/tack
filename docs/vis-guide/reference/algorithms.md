@@ -297,7 +297,7 @@ New fields computed from a dataset's fields.
 | [`cross`](#tack.dataset.algorithms.cross.cross) | the cross product of two 3-vector fields | dataset | — | CrossProduct |
 | [`composite`](#tack.dataset.algorithms.composite.composite) | scalar fields as the components of a vector field | dataset | — | CompositeVectors |
 | [`log_values`](#tack.dataset.algorithms.log_values.log_values) | the logarithm of a field, in any base | dataset | — | LogValues |
-| [`convert`](#tack.dataset.algorithms.convert.convert) | a field, or the geometry, in another unit | dataset | — | — |
+| [`convert`](#tack.dataset.algorithms.convert.convert) | a field, or a dataset's field or geometry, in another unit | field, dataset | — | — |
 
 ::: tack.dataset.algorithms.gradients.gradients
     options: {show_root_full_path: false}

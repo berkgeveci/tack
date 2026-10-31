@@ -346,7 +346,7 @@ a unit. See [Physical Units](../12-units.md).
 | `Field(..., unit=)`, `field.unit` | the values' unit, or `None` |
 | `DataSet(..., unit=)`, `data.unit` | the spatial unit, the geometry field's; `uniform_grid`, `rectilinear_grid` and `point_cloud` take `unit=`, `point_cloud` also `units={name: unit}` |
 | `OctreeDataSet(..., units={name: unit})`, `octree.unit`, `octree.units` | the fields' units, and the roots' spatial unit |
-| `convert(data, unit, field=None)` | the geometry (origin scaled in double precision; images stay images) or a field in `unit`, scaled and offset on the device |
+| `convert(data, unit, field=None)` | a `Field` in `unit` (a new field in the same space), or a dataset with its geometry (origin scaled in double precision; images stay images) or a named field in `unit`, scaled and offset on the device |
 | `Statistics.unit`, `.weight_unit`, `.unit_of(name)` | the field's and the weights' units, and each statistic's (variances in the square, `sum` times the weights') |
 | `interpolate(..., unit=)` | the function's values' unit, which its code does not say |
 | quantities as parameters | lengths (`"10 cm"`, `(0.1, "m")`, a unyt or pint quantity) converted to the spatial unit, isovalues and thresholds to the field's, step sizes to the particles' time unit; a mass, density or velocity given as one quantity brings its unit (see [Physical Units](../12-units.md#quantities-as-parameters)) |
