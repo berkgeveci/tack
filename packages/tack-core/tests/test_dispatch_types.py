@@ -105,22 +105,15 @@ class TestCheckDispatchTypes:
 # --- End-to-end: Metal rejects f64 ---
 
 def test_metal_rejects_f64_array():
-    """Metal backend should reject f64 arrays with a clear error."""
+    """Metal refuses an f64 array with a clear error, where it is made: no
+    kernel there could take it."""
     try:
         tack.set_default_device("metal")
     except Exception:
         pytest.skip("Metal not available")
 
-    data = tack.empty((10,), tack.f64)
-    out = tack.empty((10,), tack.f64)
-
-    @tack.kernel
-    def kern(data, out):
-        for i in range(data.shape[0]):
-            out[i] = data[i]
-
     with pytest.raises(TypeError, match="f64.*not supported.*Metal"):
-        kern(data, out)
+        tack.empty((10,), tack.f64)
 
 
 # --- End-to-end: CPU accepts all types ---
