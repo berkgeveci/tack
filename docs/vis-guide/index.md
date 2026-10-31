@@ -67,6 +67,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Fields and Spaces](03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
 | [Physical Units](12-units.md) | Give fields and positions units, keep them through filters, convert |
 | [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
+| [Views](17-views.md) | Understand how a kernel sees cells and fields, the basis of every filter and of your own |
 | [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
 | [Write a Filter](15-write-a-filter.md) | Write a filter of your own that keeps origins, units, ghost marks and hidden cells as the built-ins do |
 | [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
@@ -267,7 +268,8 @@ section shows.
 
 `for_each(kernel, data, domain, *args)` runs a kernel over `"cells"`,
 `"faces"`, `"edges"` or a named set. A mesh may mix shapes, so it runs the
-kernel once per shape. Each launch gets that shape's *view* of the cells,
+kernel once per shape. Each launch gets that shape's *view* of the cells
+([Views](17-views.md) explains them),
 and every `Field` argument becomes its view for the same cells. The kernel
 is compiled for each shape, so a hexahedron's loop knows it has eight
 corners.
