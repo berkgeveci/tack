@@ -48,7 +48,7 @@ def _wedges(hexes):
 
 
 def _mesh(name):
-    hexes = lambda: td.extract_cells(td.uniform_grid((3, 3, 3)), np.arange(8))  # noqa: E731
+    hexes = lambda: td.extract_cells(td.uniform_grid((3, 3, 3)), np.arange(8))
     return {"segments": lambda: td.uniform_grid((6,)),
             "quads": lambda: td.uniform_grid((4, 4)),
             "hexahedra": lambda: td.uniform_grid((3, 3, 3)),
