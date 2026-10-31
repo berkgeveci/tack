@@ -1208,3 +1208,16 @@ def test_a_cell_not_star_shaped_from_its_cell_point_is_refused(backend):
     data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 16, pts, orient=True), pts)
     with pytest.raises(NotImplementedError, match="1 of the 1 cells are not star-shaped"):
         td.CellLocator(data)
+
+
+def test_global_ids_over_polyhedral_and_shape_pieces():
+    """A grid split by cell type, shape cells in one piece and polyhedra in the
+    other (how a VTU mixing them is read): ``generate_global_ids`` matches the
+    points they share across the polyhedral piece's faces of any size, so a
+    reduction counts each point once."""
+    left = td.uniform_grid((3, 3, 3))
+    right = td.as_polyhedra(td.uniform_grid((3, 3, 3), origin=(2, 0, 0)))
+    for piece in (left, right):
+        piece.fields["x"] = td.Field(td.H1(piece), tack.array(piece.positions()[:, 0]))
+    pieces = td.generate_global_ids(td.PartitionedDataSet([left, right]))
+    assert td.statistics(pieces, "x").n == 27 + 27 - 9

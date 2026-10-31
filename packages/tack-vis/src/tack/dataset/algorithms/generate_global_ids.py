@@ -103,6 +103,23 @@ def _marks(piece):
             np.zeros(piece.num_points, np.uint8) if points is None else points.numpy())
 
 
+def _boundary_points(topology):
+    """The points on ``topology``'s boundary faces, sorted: from the faces' rows (four
+    ids a face, padded with -1), or a polyhedral topology's faces, of any size."""
+    faces = topology.faces()
+    boundary = arrays.to_host(faces.boundary()).astype(np.int64)
+    if hasattr(faces, "rows"):
+        chosen = arrays.to_host(faces.rows).reshape(-1, 4)[boundary]
+    else:
+        from tack.dataset.polyhedra import _ranges
+
+        offsets = arrays.to_host(topology.face_offsets).astype(np.int64)
+        chosen = arrays.to_host(topology.face_points)[
+            _ranges(offsets[boundary], offsets[boundary + 1] - offsets[boundary])]
+    chosen = np.unique(chosen)
+    return chosen[chosen >= 0].astype(np.int64)
+
+
 def _point_owners(blocks, pieces, marks, tolerance=0.0):
     """Each piece's owned points (a bool each), the plan bringing its other points'
     ids from their owners, and which of its points another piece also holds."""
@@ -115,10 +132,7 @@ def _point_owners(blocks, pieces, marks, tolerance=0.0):
             # in it, so every point is matched.
             chosen = np.arange(piece.num_points, dtype=np.int64)
         else:
-            faces = piece.topology.faces()
-            rows = arrays.to_host(faces.rows).reshape(-1, 4)
-            chosen = np.unique(rows[arrays.to_host(faces.boundary()).astype(np.int64)])
-            chosen = chosen[chosen >= 0].astype(np.int64)
+            chosen = _boundary_points(piece.topology)
         flags = (marks[g][1][chosen] & Ghosts.DUPLICATEPOINT).astype(np.uint8)
         entries[g] = (chosen, piece.positions()[chosen], flags)
     partners = _matching.match_positions(blocks, entries, tolerance)

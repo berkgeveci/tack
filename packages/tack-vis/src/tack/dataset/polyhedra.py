@@ -468,31 +468,27 @@ class PolyhedralTopology(_Topology):
                 raise ValueError("orient needs the points' positions, for the sign of each "
                                  "component's volume")
             cells = _orient_cells(cells, np.asarray(positions, float))
-        known, face_points, face_offsets = {}, [], [0]
-        cell_offsets, cell_faces, sides = [0], [], []
-        same_way = 0
-        for faces in cells:
-            for ring in faces:
-                key = tuple(sorted(ring))
-                f = known.get(key)
-                if f is None:
-                    f = known[key] = len(face_offsets) - 1
-                    face_points.extend(ring)
-                    face_offsets.append(len(face_points))
-                    side = 0
-                else:
-                    if not _opposite(face_points[face_offsets[f]:face_offsets[f + 1]], ring):
-                        same_way += 1
-                    side = 1
-                cell_faces.append(f)
-                sides.append(side)
-            cell_offsets.append(len(cell_faces))
+        rings = [ring for faces in cells for ring in faces]
+        cell_offsets = np.concatenate([[0], np.cumsum([len(faces) for faces in cells])])
+        ring_offsets = np.concatenate([[0], np.cumsum([len(ring) for ring in rings])])
+        ring_points = np.fromiter((p for ring in rings for p in ring), np.int64,
+                                  int(ring_offsets[-1]))
+        return cls._from_rings(cell_offsets, ring_offsets, ring_points, num_points,
+                               id_dtype=id_dtype)
+
+    @classmethod
+    def _from_rings(cls, cell_offsets, ring_offsets, ring_points, num_points, id_dtype=None):
+        """``from_cell_faces`` (without ``orient``) on flat host arrays: cell ``c``'s
+        faces are rings ``cell_offsets[c]`` to ``cell_offsets[c + 1]``, ring ``r``'s
+        points ``ring_points[ring_offsets[r]:ring_offsets[r + 1]]``. The faces are
+        the same, in the same order, as the cell-by-cell walk gives (``_match_rings``)."""
+        face_offsets, face_points, cell_faces, sides, same_way = _match_rings(
+            np.asarray(ring_offsets, np.int64), np.asarray(ring_points, np.int64))
         if same_way:
             raise ValueError(f"{same_way} shared faces are wound the same way by both their "
                              "cells; from_cell_faces(..., orient=True) makes them consistent")
-        return cls(np.array(face_offsets, np.int64), np.array(face_points, np.int64),
-                   np.array(cell_offsets, np.int64), np.array(cell_faces, np.int64),
-                   np.array(sides, np.uint8), num_points=num_points, id_dtype=id_dtype)
+        return cls(face_offsets, face_points, np.asarray(cell_offsets, np.int64), cell_faces,
+                   sides, num_points=num_points, id_dtype=id_dtype)
 
     def arrays(self):
         """The five defining arrays as host arrays, in constructor order."""
@@ -866,6 +862,62 @@ class PolylineTopology(_Topology):
 
 
 # ── Orienting face lists ────────────────────────────────────────────
+
+def _ranges(starts, counts):
+    """The indices ``starts[i]`` to ``starts[i] + counts[i]``, every range in order."""
+    counts = np.asarray(counts, np.int64)
+    total = int(counts.sum())
+    if not total:
+        return np.zeros(0, np.int64)
+    ends = np.cumsum(counts)
+    return np.repeat(np.asarray(starts, np.int64) - (ends - counts), counts) + np.arange(total)
+
+
+def _match_rings(ring_offsets, ring_points):
+    """Rings (faces as each cell lists them) matched by point set, in whole-array steps:
+    ``(face_offsets, face_points, ring_face, ring_side, same_way)``. A face is the
+    first ring of its point set and is numbered in that ring's order; every later
+    ring of the set is side 1 of it, and ``same_way`` counts those that do not go
+    round it the other way. Rings are grouped by size, so each group is a 2D array:
+    points sorted within each ring, rows sorted, runs of equal rows the copies of one
+    face (exact, not hashed); the orientation check rotates each copy to start at
+    its face's first point and compares it, reversed, with the face."""
+    sizes = np.diff(ring_offsets)
+    n = sizes.size
+    owner = np.arange(n)                         # each ring's face's first ring
+    for size in np.unique(sizes):
+        rings = np.flatnonzero(sizes == size)
+        rows = ring_points[_ranges(ring_offsets[rings], np.full(rings.size, size))]
+        rows = np.sort(rows.reshape(rings.size, size), axis=1)
+        order = np.lexsort(rows.T[::-1])        # by sorted points; equal rows by ring
+        ordered = rows[order]
+        new = np.ones(rings.size, bool)
+        new[1:] = np.any(ordered[1:] != ordered[:-1], axis=1)
+        first = order[np.flatnonzero(new)[np.cumsum(new) - 1]]
+        owner[rings[order]] = rings[first]
+    is_face = owner == np.arange(n)
+    faces = np.flatnonzero(is_face)              # in ring order: the walk's numbering
+    number = np.full(n, -1, np.int64)
+    number[faces] = np.arange(faces.size)
+    ring_face = number[owner]
+    face_sizes = sizes[faces]
+    face_offsets = np.concatenate([[0], np.cumsum(face_sizes)]).astype(np.int64)
+    face_points = ring_points[_ranges(ring_offsets[faces], face_sizes)]
+    same_way = 0
+    copies = np.flatnonzero(~is_face)
+    for size in np.unique(sizes[copies]):
+        walked = copies[sizes[copies] == size]
+        stored = owner[walked]
+        w = ring_points[_ranges(ring_offsets[walked], np.full(walked.size, size))]
+        s = ring_points[_ranges(ring_offsets[stored], np.full(walked.size, size))]
+        w, s = w.reshape(-1, size), s.reshape(-1, size)
+        hits = w == s[:, :1]
+        start = np.argmax(hits, axis=1)          # where the face's first point is
+        back = (start[:, None] - np.arange(size)[None, :]) % size
+        opposite = hits.any(axis=1) & np.all(np.take_along_axis(w, back, axis=1) == s, axis=1)
+        same_way += int(np.count_nonzero(~opposite))
+    return (face_offsets, face_points, ring_face, (~is_face).astype(np.uint8), same_way)
+
 
 def _opposite(stored, walked):
     """Whether ``walked`` goes round the same polygon as ``stored`` the other way."""
