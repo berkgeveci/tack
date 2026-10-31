@@ -1810,6 +1810,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Choose where values live">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields-that-share-a-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields that share a name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4120,6 +4137,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Choose where values live">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fields-that-share-a-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields that share a name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4536,6 +4570,57 @@ ordinary array can assign different values to every cell.</p>
 uses the same layout. A field with a matching length on another topology is
 still a different association. Wrap values with the correct space when they
 are created; do not repair an association by guessing from array length later.</p>
+<h3 id="fields-that-share-a-name">Fields that share a name<a class="headerlink" href="#fields-that-share-a-name" title="Permanent link">&para;</a></h3>
+<p>A dataset's fields are named, and two may share a name in different spaces:
+a pressure at the points and a pressure per cell, as VTK keeps point data and
+cell data apart. The space tells them apart. <code>data.fields["p", td.Constant]</code>
+is the cell one; the space itself (<code>td.H1(data)</code>) works as well as its kind.
+Where one field has a name, the name alone finds it. Where two do, the name
+alone is refused, never guessed, so code that worked on one file cannot
+quietly read the other field on the next:</p>
+<!-- tack-check: fields-by-space -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>
+<span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)))</span>
+<span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,)))</span>
+
+<span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">]</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">)</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">]</span>
+<span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">refused</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">refused</span><span class="p">)</span>                                 <span class="c1"># &#39;p&#39; names 2 fields, in H1(order=1) and ...</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">AssertionError</span><span class="p">(</span><span class="s2">&quot;a name two fields share must be refused&quot;</span><span class="p">)</span>
+
+<span class="n">gradient</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">))</span>        <span class="c1"># algorithms take (name, space) too</span>
+<span class="n">kept</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">),</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="s2">&quot;p&quot;</span><span class="p">)</span>   <span class="c1"># a name keeps both</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">kept</span><span class="o">.</span><span class="n">fields</span><span class="p">))</span>                           <span class="c1"># [(&#39;p&#39;, H1(order=1)), (&#39;p&#39;, Constant())]</span>
+</code></pre></div>
+<ul>
+<li><strong>Putting a field in.</strong> <code>data.fields["p"] = f</code> makes <code>f</code> the one field
+  called <code>"p"</code>, as with a dictionary. <code>data.fields["p", td.Constant] = f</code>
+  puts it beside fields of that name in other spaces, replacing the one in
+  its own.</li>
+<li><strong>Keys.</strong> Iterating <code>data.fields</code> gives each field's name, or <code>(name,
+  space)</code> for a name fields share, so every key finds its field and
+  <code>dict(data.fields)</code> keeps them all. <code>data.fields.named("p")</code> lists every
+  field called <code>"p"</code>; <code>data.fields.entries()</code> gives each field with its name.</li>
+<li><strong>Filters.</strong> <code>fields="p"</code> selects every field of that name, and
+  <code>fields=[("p", td.Constant)]</code> the one. A filter that puts fields in one
+  space, as <code>probe</code> puts them all at the target's points, would make the
+  two <code>"p"</code>s two point fields of one name; it asks which instead (VTK's
+  probe keeps the point one), so pass <code>fields=</code>.</li>
+<li><strong>VTK.</strong> <code>vtk_to_dataset</code> reads a point array and a cell array of one name
+  as two fields of that name, and <code>dataset_to_vtk</code> writes them back the same
+  way. Two point fields of one name, which VTK cannot keep, are refused.</li>
+</ul>
 <h2 id="how-the-values-are-stored">How the values are stored<a class="headerlink" href="#how-the-values-are-stored" title="Permanent link">&para;</a></h2>
 <p>A field is one array of values; what each value means comes from the space,
 and the space reads the topology to say which value belongs to which cell.

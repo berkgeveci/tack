@@ -10140,8 +10140,7 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/subdivide.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1328</span>
-<span class="normal">1329</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1329</span>
 <span class="normal">1330</span>
 <span class="normal">1331</span>
 <span class="normal">1332</span>
@@ -10160,7 +10159,8 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 <span class="normal">1345</span>
 <span class="normal">1346</span>
 <span class="normal">1347</span>
-<span class="normal">1348</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">1348</span>
+<span class="normal">1349</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">subdivide</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s cells cut into ``level`` steps along each parametric axis -- linear</span>
 <span class="sd">    hexahedra, quads or lines on each cell&#39;s lattice -- and its fields evaluated at</span>
@@ -10171,7 +10171,7 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 <span class="sd">    computed once (on an ``L2`` geometry each cell&#39;s points are its own). ``H1`` and ``L2`` fields become point data (an ``L2`` field&#39;s</span>
 <span class="sd">    value at a shared point from one of its cells); cell fields go to every</span>
 <span class="sd">    sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.&quot;&quot;&quot;</span>
-    <span class="n">names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">fields</span><span class="p">)</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="n">selected</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
     <span class="n">level</span> <span class="o">=</span> <span class="n">default_level</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">))</span> <span class="k">if</span> <span class="n">level</span> <span class="ow">is</span> <span class="kc">None</span> \
         <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">level</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
@@ -10438,8 +10438,8 @@ is then in that space too.</p>
 <span class="sd">    is then in that space too.&quot;&quot;&quot;</span>
     <span class="n">geometry</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">)):</span>
-        <span class="n">direction</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">direction</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">direction</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">direction</span><span class="p">,</span> <span class="n">Field</span><span class="p">)</span> <span class="ow">or</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">direction</span><span class="p">):</span>
+        <span class="n">direction</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">direction</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">direction</span><span class="p">)</span> <span class="k">else</span> <span class="n">direction</span>
         <span class="n">direction</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">direction</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">width_of</span><span class="p">(</span><span class="n">direction</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;direction must be a 3-vector field in the geometry&#39;s space &quot;</span>
@@ -10447,7 +10447,7 @@ is then in that space too.</p>
         <span class="k">if</span> <span class="n">direction</span><span class="o">.</span><span class="n">space</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">:</span>
             <span class="n">geometry</span> <span class="o">=</span> <span class="n">_lifted</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">geometry</span><span class="p">,</span> <span class="n">direction</span><span class="o">.</span><span class="n">space</span><span class="p">)</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
-    <span class="n">factors</span> <span class="o">=</span> <span class="p">(</span><span class="n">scale_by</span> <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale_by</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">scale_by</span><span class="p">])</span>
+    <span class="n">factors</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">scale_by</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">scale_by</span><span class="p">)</span> <span class="k">else</span> <span class="n">scale_by</span>
     <span class="k">if</span> <span class="n">factors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">factors</span> <span class="o">=</span> <span class="n">ConstantArray</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -12782,61 +12782,62 @@ relabelling (<code>"1000*m"</code> to <code>"km"</code>).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/convert.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span>
-<span class="normal">50</span>
-<span class="normal">51</span>
-<span class="normal">52</span>
-<span class="normal">53</span>
-<span class="normal">54</span>
-<span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span>
-<span class="normal">61</span>
-<span class="normal">62</span>
-<span class="normal">63</span>
-<span class="normal">64</span>
-<span class="normal">65</span>
-<span class="normal">66</span>
-<span class="normal">67</span>
-<span class="normal">68</span>
-<span class="normal">69</span>
-<span class="normal">70</span>
-<span class="normal">71</span>
-<span class="normal">72</span>
-<span class="normal">73</span>
-<span class="normal">74</span>
-<span class="normal">75</span>
-<span class="normal">76</span>
-<span class="normal">77</span>
-<span class="normal">78</span>
-<span class="normal">79</span>
-<span class="normal">80</span>
-<span class="normal">81</span>
-<span class="normal">82</span>
-<span class="normal">83</span>
-<span class="normal">84</span>
-<span class="normal">85</span>
-<span class="normal">86</span>
-<span class="normal">87</span>
-<span class="normal">88</span>
-<span class="normal">89</span>
-<span class="normal">90</span>
-<span class="normal">91</span>
-<span class="normal">92</span>
-<span class="normal">93</span>
-<span class="normal">94</span>
-<span class="normal">95</span>
-<span class="normal">96</span>
-<span class="normal">97</span>
-<span class="normal">98</span>
-<span class="normal">99</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 45</span>
+<span class="normal"> 46</span>
+<span class="normal"> 47</span>
+<span class="normal"> 48</span>
+<span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` -- a ``Field``, or a dataset -- in ``unit``. A field gives a new</span>
 <span class="sd">    field in the same space, its values scaled (and offset, as from degrees</span>
@@ -12880,13 +12881,14 @@ relabelling (<code>"1000*m"</code> to <code>"km"</code>).</p>
         <span class="n">out</span><span class="o">.</span><span class="n">_geometry</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
         <span class="n">out</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span> <span class="o">*</span> <span class="n">factor</span>
         <span class="k">return</span> <span class="n">out</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;convert takes a field&#39;s name, not </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;convert takes a field&#39;s name (or name and space), not </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">field</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no field </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">: the dataset has &quot;</span>
                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">repr</span><span class="p">,</span><span class="w"> </span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">))</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;none&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">fields</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
-    <span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">_converted</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">],</span> <span class="n">target</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;field </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">fields</span><span class="p">[</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">key_of</span><span class="p">(</span><span class="n">field</span><span class="p">)]</span> <span class="o">=</span> <span class="n">_converted</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">],</span> <span class="n">target</span><span class="p">,</span>
+                                                   <span class="sa">f</span><span class="s2">&quot;field </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">keep_marks</span>
 
     <span class="k">return</span> <span class="n">keep_marks</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">DataSet</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span>
@@ -16195,7 +16197,7 @@ difference of the two, in double precision.</p>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;sph_interpolate needs the target&#39;s points: an H1 geometry&quot;</span><span class="p">)</span>
     <span class="n">smoothing</span> <span class="o">=</span> <span class="n">_per_particle</span><span class="p">(</span><span class="n">particles</span><span class="p">,</span> <span class="n">smoothing_length</span><span class="p">,</span> <span class="s2">&quot;smoothing_length&quot;</span><span class="p">)</span>
-    <span class="n">reserved</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">(</span><span class="n">smoothing_length</span><span class="p">,</span> <span class="n">mass</span><span class="p">,</span> <span class="n">density</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">str</span><span class="p">)}</span>
+    <span class="n">reserved</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">(</span><span class="n">smoothing_length</span><span class="p">,</span> <span class="n">mass</span><span class="p">,</span> <span class="n">density</span><span class="p">)</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">v</span><span class="p">)}</span>
     <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="n">fields</span> <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">particles</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
              <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">reserved</span> <span class="ow">or</span> <span class="n">fields</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">num_points</span>
@@ -16490,7 +16492,7 @@ halos in order of label across them, each <code>mbp</code> an index in the piece
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">particles</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;halo_catalog needs the particles&#39; positions: an H1 geometry&quot;</span><span class="p">)</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">num_points</span>
-    <span class="n">labels_field</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">region</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">region</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">region</span>
+    <span class="n">labels_field</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">region</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">region</span><span class="p">)</span> <span class="k">else</span> <span class="n">region</span>
     <span class="n">labels</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">_point_values</span><span class="p">(</span><span class="n">labels_field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">dtype</span>
     <span class="n">positions</span> <span class="o">=</span> <span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">_point_values</span><span class="p">(</span><span class="n">particles</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
@@ -16554,7 +16556,7 @@ halos in order of label across them, each <code>mbp</code> an index in the piece
         <span class="n">out</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">unit</span><span class="p">)</span>
     <span class="n">out</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;com&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">H1</span><span class="p">(</span><span class="n">out</span><span class="p">),</span> <span class="n">com</span><span class="p">,</span> <span class="n">particles</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">velocity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">field</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">velocity</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">velocity</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">velocity</span>
+        <span class="n">field</span> <span class="o">=</span> <span class="n">particles</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">velocity</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">velocity</span><span class="p">)</span> <span class="k">else</span> <span class="n">velocity</span>
         <span class="n">v</span> <span class="o">=</span> <span class="n">_taken</span><span class="p">(</span><span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">_point_values</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">n</span><span class="p">)),</span> <span class="n">order</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
         <span class="n">mean</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">halos</span><span class="p">,),</span> <span class="n">v</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
         <span class="n">dispersion</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">halos</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
@@ -17338,7 +17340,7 @@ exchange moves all the point fields, one all the cell fields.</p>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">Array</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;update_ghosts writes the values in place; </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> holds &quot;</span>
                                 <span class="sa">f</span><span class="s2">&quot;a </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">, not a Tack array&quot;</span><span class="p">)</span>
-            <span class="n">by_kind</span><span class="p">[</span><span class="n">kind</span><span class="p">][</span><span class="n">g</span><span class="p">][</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">by_kind</span><span class="p">[</span><span class="n">kind</span><span class="p">][</span><span class="n">g</span><span class="p">][</span><span class="n">field_label</span><span class="p">(</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">values</span>
     <span class="k">for</span> <span class="n">kind</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">by_kind</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
             <span class="n">plans</span><span class="p">[</span><span class="n">kind</span><span class="p">]</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
