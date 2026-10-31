@@ -181,16 +181,13 @@ that field's coefficient array.
 
 ## What Tack currently implements
 
-| Representation | Current scope |
-|---|---|
-| H1 order 1 | Point values; basis evaluation on shape-based cells |
-| H1 order 2 | Tetrahedra, hexahedra, voxels, wedges, triangles, quads and pixels |
-| H1 and L2 of any order | Segments, quads, pixels, hexahedra and voxels; Gauss–Lobatto, equispaced or (L2) Gauss–Legendre nodes |
-| L2 orders 0 and 1 | Shape-based cells; order may vary by cell |
-| Constant | Cell data on the supported topology families |
-| Values | Entity-associated data, without a basis |
-| SideTraces | Two-sided face evaluations on supported 3D shape-based cells |
-| H2, H(curl), H(div) bases | Not currently provided |
+`H1` and `L2` of any order, on every shape with a reference element but the
+pyramid (order 1 there), in Gauss–Lobatto, equispaced, Gauss–Legendre (`L2`),
+Bernstein and serendipity bases; `Constant`, `Values` and `SideTraces`; and
+point and cell data on polylines, polygons and polyhedra, linear on their
+pieces. H2, H(curl) and H(div) are not provided. [Cell Types and
+Bases](16-cells-and-bases.md) lists every shape and basis, what each supports,
+how VTK's and MFEM's cells map to them, and what is planned.
 
 Point/cell association can exist on polyhedra without a reference-element
 basis. Always check the particular algorithm's support. Tack uses a subset

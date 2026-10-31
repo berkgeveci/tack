@@ -476,17 +476,15 @@ values; a materialized result is a previous computation until recomputed.
 
 ## Know the present higher-order limits
 
-Order-2 H1 is supported on tetrahedra, hexahedra, voxels and wedges, and on
-their faces' shapes: triangles, quads and pixels. L2 can
-vary its order by cell, which the dispatcher handles by launching groups of
-compatible order. This does not make every filter a higher-order geometric
-algorithm: filters that keep whole cells (`extract_cells`, `threshold`,
+[Cell Types and Bases](16-cells-and-bases.md) lists which spaces, orders and
+bases each shape takes. Filters that keep whole cells (`extract_cells`,
 `split`, `remove_ghosts`) keep higher-order fields and a curved geometry at
-their order, and `extract_surface` keeps a solid's order-2 fields and geometry
-at order 2 (its surface's nodes are the solid's), but filters that make new
-cells (a contour, a clip) carry corner values. The
-[reference](reference/dataset-api.md#spaces) records the supported layouts
-and [filter propagation rules](reference/dataset-api.md#algorithms-and-filters).
+their order, and `extract_surface` keeps a solid's fields and
+geometry on its surface. The cutting filters (`contour`, `slice`, `clip`,
+`threshold`) cut curved and high-order cells on linear sub-cells, their
+crossings at the field's roots; `subdivide` gives those sub-cells. The
+[reference](reference/dataset-api.md#spaces) records the supported layouts and
+[filter propagation rules](reference/dataset-api.md#algorithms-and-filters).
 
 ## Run and reproduce the figure
 
