@@ -128,6 +128,7 @@ nav:
       - Run and Diagnose:
           - Backends: users-guide/08-backends.md
           - Sharing Arrays: users-guide/16-interoperability.md
+          - Communicate Between Blocks: users-guide/18-communication.md
           - Debugging and Timing: users-guide/15-debugging-and-timing.md
           - The Kernel Cache: users-guide/17-kernel-cache.md
       - Worked Examples:
@@ -159,7 +160,7 @@ nav:
       - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md
-          - Communicate Between Blocks: vis-guide/14-communication.md
+          - Pieces and Blocks: vis-guide/14-communication.md
       - Worked Examples: vis-guide/examples.md
       - Gallery: vis-guide/gallery.md
       - MFEM Gallery: vis-guide/mfem-gallery.md

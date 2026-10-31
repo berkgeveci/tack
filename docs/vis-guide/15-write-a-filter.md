@@ -159,7 +159,8 @@ the output's cells are the input's faces (an extracted surface), and
   `World(comm)` to the `PartitionedDataSet`.
 - Algorithms that need neighbours' data rather than a reduction (exchanges,
   ghost plans, routing points to pieces) are in
-  [Communicate Between Blocks](14-communication.md).
+  [Pieces and Blocks](14-communication.md), which links the User's Guide's
+  chapter on `tack.communication`.
 
 ## What to keep, and what forgetting it gives
 
@@ -187,5 +188,5 @@ and a ghosted piece, and a threshold with bounds in degrees Celsius and
 kelvin to the built-in's. [Download the complete program](../examples/data_filters.py).
 
 Continue with [Sample and Connect Simulations](06-pipelines.md) to connect
-filters into a workflow, or [Communicate Between Blocks](14-communication.md)
+filters into a workflow, or [Pieces and Blocks](14-communication.md)
 to write one that exchanges data between pieces.

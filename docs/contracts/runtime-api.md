@@ -453,7 +453,7 @@ See [Interoperability](../design/interoperability.md).
 ## Communication between blocks
 
 Defined in `packages/tack-core/src/tack/communication/`. A guide:
-[Communicate Between Blocks](../vis-guide/14-communication.md).
+[Communicate Between Blocks](../users-guide/18-communication.md).
 
 **Blocks and worlds.** `Blocks(devices, world=None)` holds this rank's
 blocks, one per entry of `devices`. Global ids run over every rank's

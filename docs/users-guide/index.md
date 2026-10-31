@@ -37,6 +37,7 @@ the [quick reference](quick-reference.md) nearby as you write your own program.
 | Understand a discontinuous solution or a face flux | [Fields and Spaces](../vis-guide/03-fields-and-spaces.md) |
 | Sample a mesh at measurement locations | [Probing](../vis-guide/06-pipelines.md#sample-at-physical-positions) |
 | Share memory with another library | [Sharing arrays](16-interoperability.md) |
+| Split work over several GPUs or MPI ranks | [Communicate between blocks](18-communication.md) |
 | Investigate wrong results or slow calls | [Debugging and Timing](15-debugging-and-timing.md) |
 
 If you already write GPU kernels, read [Kernels](03-kernels.md),
@@ -80,6 +81,7 @@ simulation's working arrays to a dataset.
 |---|---|
 | [Backends](08-backends.md) | Setup, capabilities, queued launches and device differences |
 | [Sharing arrays](16-interoperability.md) | NumPy copies, external pointers, DLPack and VTK |
+| [Communicate between blocks](18-communication.md) | Work split over devices and MPI ranks: collectives, exchanges, ghost plans, routing and sorting |
 | [Debugging and timing](15-debugging-and-timing.md) | Independent checks, bounds checks, numerical tolerance and warm measurements |
 | [The Kernel Cache](17-kernel-cache.md) | Compiled kernels kept on disk, settings and MPI jobs |
 
