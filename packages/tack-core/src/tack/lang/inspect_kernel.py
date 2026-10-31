@@ -128,7 +128,9 @@ def inspect(kernel, *args, mode="source"):
                           vendor compilers optimize past anything Tack sees
 
     Returns:
-        The generated code as a string.
+        The generated code as a string, for the device the call would run
+        on (``dispatch.launch_backend``, as ``Kernel.__call__`` chooses): the
+        default device if it can address the arrays, otherwise theirs.
     """
     from tack.lang.kernel import Kernel
     bound_to = getattr(kernel, '__self__', None)
