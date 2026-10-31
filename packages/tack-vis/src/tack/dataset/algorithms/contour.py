@@ -345,7 +345,7 @@ def _contour_vertices(data, field, levels, nlevels, several, merge_points, field
     weights = tack.empty((n,), arrays.dtype_of(field.values))
     sources = tack.empty((n,), idt)
     which = tack.empty((n,), tack.i32)
-    positions = arrays.materialize(data.geometry.values)
+    positions = data.geometry.values
     for group in groups:
         emit = _chain_crossings if group.shape is shapes.PolyLine else _line_crossings
         emit(data.domain_view("cells", group), values, positions, levels, nlevels, starts,
@@ -910,7 +910,7 @@ def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
     vertex_of_pair = tack.empty((pairs,), odt)
     if count:
         _iso_vertices(names, order, offsets, values, levels, nlevels,
-                      arrays.materialize(data.geometry.values), weights, positions, ends,
+                      data.geometry.values, weights, positions, ends,
                       vertex_of_pair, count)
     if pairs:
         _renumber_vertices(vertices, vertex_of_pair)
@@ -1379,7 +1379,7 @@ def _contour_lines(data, field, levels, nlevels, several, fields=None):
     weights = tack.empty((nfv,), values.dtype)
     positions = tack.empty((nfv,), tack.vec(3, data.dtype))
     hits = tack.empty((nfv,), idt)
-    geometry = arrays.materialize(data.geometry.values)
+    geometry = data.geometry.values
     if lines:
         _side_crossings(side_points, values, geometry, levels, nlevels, ends, weights,
                         positions, hits)

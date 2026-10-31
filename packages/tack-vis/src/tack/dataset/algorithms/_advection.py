@@ -580,7 +580,7 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     if not isinstance(geometry.space, H1):
         raise TypeError("advection needs an H1 geometry: positions at its nodes")
     velocity = _velocity(data, field)
-    positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
+    positions = _as_vectors(geometry.values, data.dtype)
     from tack.dataset.polyhedra import PolylineTopology
 
     if (isinstance(data.topology, PolylineTopology)

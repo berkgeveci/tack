@@ -382,7 +382,7 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
     weights = tack.empty((count,), precision)
     if count:
         _resolve_points(keys, order, point_runs, slots, values,
-                        arrays.materialize(data.geometry.values), float(value), connectivity,
+                        data.geometry.values, float(value), connectivity,
                         members, ends, weights, count)
     if n_conn:
         _centroid_entries(connectivity, count)

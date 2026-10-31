@@ -235,8 +235,9 @@ def _kinds(present):
 
 
 def _as_vectors(values, dtype):
-    """``values`` (3-vectors) as an array of the dataset's precision."""
-    if values.scalar_dtype == dtype:
+    """``values`` (3-vectors) as an array of the dataset's precision: themselves if
+    they are of it, implicit ones (an image's positions) included."""
+    if arrays.dtype_of(values) == dtype:
         return values
     out = tack.empty((arrays.size_of(values),), tack.vec(3, dtype))
     if arrays.size_of(values):
@@ -697,7 +698,7 @@ def mesh_search(data, locator, positions=None, strict=True, neighbors=False):
             return None
     if positions is None:
         # A curved geometry's points come first among its values: the corners.
-        positions = _as_vectors(arrays.materialize(geometry.values), data.dtype)
+        positions = _as_vectors(geometry.values, data.dtype)
     found = cells_by_id(data, positions, strict=strict)
     if found is None or (curved is not None and not isinstance(found[0], (_FlatCells,
                                                                           _GridCells))):

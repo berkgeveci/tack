@@ -132,7 +132,7 @@ def tubes(data, radius, sides=12, radius_by=None, fields=None):
     connectivity = tack.empty((4 * quads,), idt)
     line_of = tack.empty((quads,), data.id_dtype)
     if lines:
-        positions = arrays.materialize(data.geometry.values)
+        positions = data.geometry.values
         by = radii.values if radii is not None else tack.empty((1,), data.dtype)
         _rings(offsets, chain, lines, positions, float(radius), by, int(radii is not None),
                sides, 2.0 * math.pi / sides, out, normals, source, connectivity, line_of)
