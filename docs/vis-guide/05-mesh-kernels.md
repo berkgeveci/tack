@@ -1,7 +1,8 @@
 # Write mesh algorithms
 
 Use `td.for_each` when an operation is naturally expressed per cell, face or
-edge. Tack supplies a view of the mesh and compatible views of its fields.
+edge. Tack supplies a view of the mesh and compatible views of its fields;
+[Views](17-views.md) explains what they are and where they come from.
 Your kernel can use geometry and interpolation without manually switching on
 cell type or maintaining a connectivity parser for every representation.
 

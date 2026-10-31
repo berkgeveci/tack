@@ -154,6 +154,7 @@ nav:
           - AMR Hierarchies: vis-guide/10-amr.md
           - Octrees: vis-guide/11-octrees.md
           - Filter and Analyze: vis-guide/04-filters.md
+          - "Views: How a Kernel Sees a Dataset": vis-guide/17-views.md
           - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
           - Write a Filter: vis-guide/15-write-a-filter.md
           - Sample and Connect Simulations: vis-guide/06-pipelines.md
