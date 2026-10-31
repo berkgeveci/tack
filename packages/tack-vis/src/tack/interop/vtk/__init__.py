@@ -459,46 +459,91 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
     pixels as quads). VTK keeps a face once per cell, each copy outward for its
     cell, so copies are matched by their point sets: the first found is the face,
     its cell side 0, and a second copy -- which must go round the other way -- is
-    side 1. Read on the host, cell by cell.
+    side 1. Read on the host in whole-array steps: a polyhedron's faces gathered by
+    ranges, every other cell type's through its class's face table applied to all
+    its cells at once (``_face_tables``).
     """
     import numpy as np
 
     from tack.dataset import PolyhedralTopology
+    from tack.dataset.polyhedra import _ranges
 
-    types = np.asarray(grid.cell_types)
-    locations, faces = grid.polyhedron_face_locations, grid.polyhedron_faces
-    if locations is not None and faces is not None:
-        loc_offsets = np.asarray(locations.offsets_array)
-        loc_faces = np.asarray(locations.connectivity_array)
-        face_offsets = np.asarray(faces.offsets_array)
-        face_conn = np.asarray(faces.connectivity_array)
-    cells = []
-    for c in range(grid.number_of_cells):
-        if types[c] == 42:
-            listed = [face_conn[face_offsets[f]:face_offsets[f + 1]]
-                      for f in loc_faces[loc_offsets[c]:loc_offsets[c + 1]]]
+    n = grid.number_of_cells
+    types = np.asarray(grid.cell_types) if n else np.zeros(0, np.uint8)
+    cells = grid.GetCells()
+    offsets = np.asarray(cells.offsets_array).astype(np.int64)
+    connectivity = np.asarray(cells.connectivity_array).astype(np.int64)
+    faces_of = np.zeros(n, np.int64)                       # each cell's ring count
+    parts = []                                             # (cells, ring sizes, ring points)
+    for kind in np.unique(types):
+        members = np.flatnonzero(types == kind)
+        if kind == 42:                                     # VTK_POLYHEDRON: its own faces
+            locations, faces = grid.polyhedron_face_locations, grid.polyhedron_faces
+            loc_offsets = np.asarray(locations.offsets_array).astype(np.int64)
+            loc_faces = np.asarray(locations.connectivity_array).astype(np.int64)
+            face_offsets = np.asarray(faces.offsets_array).astype(np.int64)
+            face_conn = np.asarray(faces.connectivity_array).astype(np.int64)
+            count = loc_offsets[members + 1] - loc_offsets[members]
+            listed = loc_faces[_ranges(loc_offsets[members], count)]
+            sizes = face_offsets[listed + 1] - face_offsets[listed]
+            points = face_conn[_ranges(face_offsets[listed], sizes)]
         else:
-            cell = grid.GetCell(c)                     # no pythonic form in 9.7.1
-            if cell.cell_dimension != 3:
-                raise ValueError(f"cell {c} is not 3D: a polyhedral topology is of 3D cells")
-            listed = []
-            for k in range(cell.number_of_faces):
-                face = cell.GetFace(k)
-                ids = [face.GetPointId(i) for i in range(face.number_of_points)]
-                if face.cell_type == 8:                        # a pixel, as a quad
-                    ids = [ids[0], ids[1], ids[3], ids[2]]
-                listed.append(ids)
-        cells.append(listed)
-    positions = _vtk_points(grid) if orient else None
+            corners = int(offsets[members[0] + 1] - offsets[members[0]])
+            tables = _face_tables(int(kind), corners, int(members[0]))
+            rows = connectivity[_ranges(offsets[members], np.full(members.size, corners))]
+            rows = rows.reshape(members.size, corners)
+            count = np.full(members.size, len(tables), np.int64)
+            sizes = np.tile([len(table) for table in tables], members.size)
+            points = np.concatenate([rows[:, table] for table in tables], axis=1).reshape(-1)
+        faces_of[members] = count
+        parts.append((members, count, sizes, points))
+    cell_offsets = np.concatenate([[0], np.cumsum(faces_of)]).astype(np.int64)
+    ring_sizes = np.zeros(int(cell_offsets[-1]), np.int64)
+    for members, count, sizes, _ in parts:
+        ring_sizes[_ranges(cell_offsets[members], count)] = sizes
+    ring_offsets = np.concatenate([[0], np.cumsum(ring_sizes)]).astype(np.int64)
+    ring_points = np.zeros(int(ring_offsets[-1]), np.int64)
+    for members, count, sizes, points in parts:
+        rings = _ranges(cell_offsets[members], count)
+        ring_points[_ranges(ring_offsets[rings], sizes)] = points
     try:
-        return PolyhedralTopology.from_cell_faces(cells, grid.number_of_points,
-                                                  positions=positions, orient=orient,
+        if not orient:
+            return PolyhedralTopology._from_rings(cell_offsets, ring_offsets, ring_points,
+                                                  grid.number_of_points, id_dtype=id_dtype)
+        listed = [[ring_points[ring_offsets[r]:ring_offsets[r + 1]].tolist()
+                   for r in range(cell_offsets[c], cell_offsets[c + 1])] for c in range(n)]
+        return PolyhedralTopology.from_cell_faces(listed, grid.number_of_points,
+                                                  positions=_vtk_points(grid), orient=True,
                                                   id_dtype=id_dtype)
     except ValueError as error:
         if "wound the same way" in str(error) and not orient:
             raise ValueError(f"{error}. VTK winds every polyhedron face outward for its "
                              "cell; vtk_to_dataset(..., orient=True) repairs the input") from None
         raise
+
+
+def _face_tables(kind, corners, first):
+    """VTK cell type ``kind``'s faces as lists of local corner numbers, from a cell of
+    that type whose point ids are its corners' numbers (a pixel face as a quad);
+    ``first`` names the grid's first cell of the type in the error a cell that is
+    not 3D raises."""
+    from vtkmodules.vtkCommonDataModel import vtkGenericCell
+
+    cell = vtkGenericCell()
+    cell.SetCellType(kind)
+    cell.point_ids.SetNumberOfIds(corners)
+    for i in range(corners):
+        cell.point_ids.SetId(i, i)
+    if cell.cell_dimension != 3:
+        raise ValueError(f"cell {first} is not 3D: a polyhedral topology is of 3D cells")
+    tables = []
+    for k in range(cell.number_of_faces):
+        face = cell.GetFace(k)
+        ids = [face.GetPointId(i) for i in range(face.number_of_points)]
+        if face.cell_type == 8:                            # a pixel, as a quad
+            ids = [ids[0], ids[1], ids[3], ids[2]]
+        tables.append(ids)
+    return tables
 
 
 class _DefaultFloat:
@@ -793,13 +838,51 @@ def _polydata_as_grid(polydata):
     if len(source) == polydata.number_of_cells:  # no strips or poly vertices: the same cells
         grid.GetCellData().ShallowCopy(polydata.GetCellData())
     else:
-        ids = vtkIdList()
-        ids.SetNumberOfIds(len(source))
-        for i, s in enumerate(source.tolist()):
-            ids.SetId(i, s)
-        grid.GetCellData().CopyAllocate(polydata.GetCellData(), len(source))
-        grid.GetCellData().CopyData(polydata.GetCellData(), ids, 0)
+        _take_cell_data(polydata.GetCellData(), grid.GetCellData(), source)
     return grid
+
+
+def _take_cell_data(source, target, rows):
+    """``target`` (empty) given ``source``'s arrays at ``rows``, each its own class,
+    name, component names and information (``UNITS_LABEL``), and active where
+    ``source``'s was: a NumPy gather per array, where ``CopyData`` takes a
+    ``vtkIdList`` filled one id at a time. An array that is not numeric (strings) is
+    copied by ``InsertTuples`` through such a list."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import vtkIdList
+
+    listed = None
+    for i in range(source.GetNumberOfArrays()):
+        array = source.GetAbstractArray(i)
+        out = array.NewInstance()
+        out.SetName(array.GetName())
+        out.SetNumberOfComponents(array.GetNumberOfComponents())
+        for k in range(array.GetNumberOfComponents()):
+            if array.HasAComponentName() and array.GetComponentName(k):
+                out.SetComponentName(k, array.GetComponentName(k))
+        out.SetNumberOfTuples(len(rows))
+        out.CopyInformation(array.GetInformation(), 1)
+        if array.IsNumeric():
+            values, taken = np.asarray(array), np.asarray(out)
+            if values.dtype.kind == "S":            # a vtkCharArray, read as bytes
+                values, taken = values.view(np.int8), taken.view(np.int8)
+            taken[...] = values[rows]
+        else:
+            if listed is None:
+                listed = vtkIdList()
+                listed.SetNumberOfIds(len(rows))
+                for k, row in enumerate(rows.tolist()):
+                    listed.SetId(k, row)
+                into = vtkIdList()
+                into.SetNumberOfIds(len(rows))
+                for k in range(len(rows)):
+                    into.SetId(k, k)
+            out.InsertTuples(into, listed, array)
+        target.AddArray(out)
+    for kind in range(source.NUM_ATTRIBUTES):
+        active = source.GetAbstractAttribute(kind)
+        if active is not None and active.GetName():
+            target.SetActiveAttribute(active.GetName(), kind)
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
