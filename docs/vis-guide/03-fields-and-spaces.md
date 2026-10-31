@@ -220,17 +220,22 @@ component in an array of its own instead
 ### Finding a value in code
 
 In a kernel, a field's view finds the values for you: `corner_value(c, j)`
-is cell `c`'s value at its corner `j`, `value(c, pc)` the field at parametric
-coordinates `pc`, and above order 1 `dof_index(c, n)` is where its node `n` is
-stored (at order 1, a corner's value is at its point, `point_id(c, j)`). A
-view numbers an `H1` order-2 cell's nodes as VTK's quadratic cells do --
-corners, then edges, then faces and the centre -- and every other order on
-the lattice above. A kernel never computes these indices itself ([Write Mesh Algorithms](05-mesh-kernels.md)). On the host,
-`space.offsets`, `space.indices()` and `space.blocks(values)` give an `L2`
-field's values per cell, and `td.interpolate` fills any space from a function
-of position. Derived edge and face ids are stable for a topology, but not
-across topologies: match values between meshes by position or global id, not
-by edge or face number.
+is cell `c`'s value at its corner `j`, and `value(c, pc)` the field at
+parametric coordinates `pc`. Every `H1`, `L2` and `Constant` view also numbers
+the cell's own nodes: `NODES` of them, node `k` at `node_parametric(k)`, its
+value `dof(c, k)`, stored at `dof_index(c, k)`
+([Work at a field's nodes](05-mesh-kernels.md#work-at-a-fields-nodes)). At
+order 1 the nodes are the corners, and at order 0 one node at the cell's
+centre. An `H1` order-2 cell's nodes are numbered as VTK's quadratic cells
+do -- corners, then edges, then faces and the centre -- and every other order
+on the lattice above. A kernel never computes these indices itself
+([Write Mesh Algorithms](05-mesh-kernels.md)). On the host, `space.offsets`
+gives where each cell's `L2` values start; `space.indices()` and
+`space.blocks(values)` give them as one row per cell, which needs every cell
+to hold the same number of values, so on a mixed mesh read `space.offsets`.
+`td.interpolate` fills any space from a function of position. Derived edge and
+face ids are stable for a topology, but not across topologies: match values
+between meshes by position or global id, not by edge or face number.
 
 ## Construct an L2 field
 
