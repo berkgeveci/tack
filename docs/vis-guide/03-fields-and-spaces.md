@@ -52,6 +52,54 @@ uses the same layout. A field with a matching length on another topology is
 still a different association. Wrap values with the correct space when they
 are created; do not repair an association by guessing from array length later.
 
+### Fields that share a name
+
+A dataset's fields are named, and two may share a name in different spaces:
+a pressure at the points and a pressure per cell, as VTK keeps point data and
+cell data apart. The space tells them apart. `data.fields["p", td.Constant]`
+is the cell one; the space itself (`td.H1(data)`) works as well as its kind.
+Where one field has a name, the name alone finds it. Where two do, the name
+alone is refused, never guessed, so code that worked on one file cannot
+quietly read the other field on the next:
+
+<!-- tack-check: fields-by-space -->
+```python
+import numpy as np
+import pytest
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+data = td.uniform_grid((3, 3, 3))
+x = data.positions()
+data.fields["p"] = td.Field(td.H1(data), tack.array(x[:, 0].astype(np.float32)))
+data.fields["p", td.Constant] = td.Field(td.Constant(data), tack.zeros((data.num_cells,)))
+
+assert isinstance(data.fields["p", td.H1].space, td.H1)
+with pytest.raises(KeyError, match="names 2 fields"):
+    data.fields["p"]
+
+gradient = td.gradients(data, ("p", td.H1))        # algorithms take (name, space) too
+kept = td.threshold(data, ("p", td.H1), 0.5, 2.0, fields="p")   # a name keeps both
+print(list(kept.fields))                           # [('p', H1(order=1)), ('p', Constant())]
+```
+
+- **Putting a field in.** `data.fields["p"] = f` makes `f` the one field
+  called `"p"`, as with a dictionary. `data.fields["p", td.Constant] = f`
+  puts it beside fields of that name in other spaces, replacing the one in
+  its own.
+- **Keys.** Iterating `data.fields` gives each field's name, or `(name,
+  space)` for a name fields share, so every key finds its field and
+  `dict(data.fields)` keeps them all. `data.fields.named("p")` lists every
+  field called `"p"`; `data.fields.entries()` gives each field with its name.
+- **Filters.** `fields="p"` selects every field of that name, and
+  `fields=[("p", td.Constant)]` the one.
+- **VTK.** `vtk_to_dataset` reads a point array and a cell array of one name
+  as two fields of that name, and `dataset_to_vtk` writes them back the same
+  way. Two point fields of one name, which VTK cannot keep, are refused.
+
 ## How the values are stored
 
 A field is one array of values; what each value means comes from the space,

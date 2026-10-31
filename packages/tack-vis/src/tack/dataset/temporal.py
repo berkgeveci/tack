@@ -31,7 +31,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.dataset import units
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, field_name, is_field_key
 from tack.dataset.partitioned import PartitionedDataSet
 
 __all__ = ["Advection", "Pathlines", "RunningStatistics", "Streaklines", "TimeDerivative",
@@ -153,7 +153,7 @@ class _Streamed:
     dataset (each piece its own state)."""
 
     def __init__(self, fields):
-        self.fields = [fields] if isinstance(fields, str) else list(fields)
+        self.fields = [fields] if is_field_key(fields) else list(fields)
         if not self.fields:
             raise ValueError("name at least one field")
         self._states = None
@@ -287,7 +287,7 @@ class RunningStatistics(_Streamed):
             square = units.derived((units.delta(unit), 2))
             for suffix, values_out, u in zip(("mean", "variance", "min", "max"), copies,
                                              (unit, square, unit, unit)):
-                out[f"{name}_{suffix}"] = Field(field.space, values_out, u)
+                out[f"{field_name(name)}_{suffix}"] = Field(field.space, values_out, u)
         from tack.dataset.ghosts import keep_marks
 
         return keep_marks(data, DataSet(data.topology, data.geometry, fields=out,
@@ -344,7 +344,7 @@ class TimeDerivative(_Streamed):
             if arrays.size_of(values):
                 _rate(values, before, 1.0 / dt, rate)
             unit = units.derived(units.delta(field.unit), (data.time_unit, -1))
-            out[f"{name}_dt"] = Field(field.space, rate, unit)
+            out[f"{field_name(name)}_dt"] = Field(field.space, rate, unit)
         from tack.dataset.ghosts import keep_marks
 
         return keep_marks(data, DataSet(data.topology, data.geometry, fields=out,

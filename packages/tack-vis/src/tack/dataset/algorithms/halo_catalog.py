@@ -21,7 +21,7 @@ from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.algorithms.sph import _per_particle
 from tack.dataset.buckets import bucket_order
 from tack.dataset.carry import _point_values
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, is_field_key
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.point_locator import periodic_box
@@ -321,7 +321,7 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
     if not isinstance(particles.geometry.space, H1):
         raise TypeError("halo_catalog needs the particles' positions: an H1 geometry")
     n = particles.num_points
-    labels_field = particles.fields[region] if isinstance(region, str) else region
+    labels_field = particles.fields[region] if is_field_key(region) else region
     labels = arrays.materialize(_point_values(labels_field.values, n))
     dtype = particles.dtype
     positions = arrays.materialize(_point_values(particles.geometry.values, n))
@@ -385,7 +385,7 @@ def halo_catalog(particles, region="point_region", mass=1.0, velocity=None, cent
         out.fields[name] = Field(points, values, unit)
     out.fields["com"] = Field(H1(out), com, particles.unit)
     if velocity is not None:
-        field = particles.fields[velocity] if isinstance(velocity, str) else velocity
+        field = particles.fields[velocity] if is_field_key(velocity) else velocity
         v = _taken(arrays.materialize(_point_values(field.values, n)), order, n)
         mean = tack.empty((halos,), v.dtype)
         dispersion = tack.empty((halos,), dtype)
@@ -417,10 +417,10 @@ def _catalog_pieces(data, region, mass, velocity, center, softening, G, periodic
     from tack.dataset.carry import _take
 
     for what, value in (("region", region), ("velocity", velocity)):
-        if value is not None and not isinstance(value, str):
+        if value is not None and not is_field_key(value):
             raise TypeError(f"halo_catalog of a PartitionedDataSet takes {what} by name: a "
                             "Field belongs to one partition's topology")
-    by_name = isinstance(mass, str)
+    by_name = is_field_key(mass)
     if not by_name and not isinstance(mass, (int, float, np.integer, np.floating)):
         raise TypeError("halo_catalog of a PartitionedDataSet takes mass by name or as a "
                         "number")

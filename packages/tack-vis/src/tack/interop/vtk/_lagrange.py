@@ -354,8 +354,7 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
         array = grid.cell_data[name]
         values = np.asarray(array)
         values = values.reshape(values.shape[0], -1)
-        data.fields[name if name not in data.fields else f"{name} (cells)"] = Field(
-            Constant(data), float_fields(values), unit_of(array))
+        data.fields[name] = Field(Constant(data), float_fields(values), unit_of(array))
     return data
 
 
@@ -440,14 +439,19 @@ def to_vtk(data, order, bezier=False, quadratic=False):
                    None) if bezier else vtk_type
     grid.cells = (written, vtkCellArray(offsets=offsets,
                                         connectivity=connectivity.astype(np.int64)))
-    for name, field in data.fields.items():
+    from tack.interop.vtk import _once
+
+    written = set()
+    for name, field in data.fields.entries():
         if isinstance(field.space, H1) or (isinstance(field.space, Values)
                                            and field.space.on == "points"):
+            _once(written, "point", name, data)
             grid.point_data[name] = project(data, field, space).values.numpy()
         elif isinstance(field.space, Constant) or (isinstance(field.space, Values)
                                                    and field.space.on == "cells"):
             from tack import arrays
 
+            _once(written, "cell", name, data)
             grid.cell_data[name] = arrays.materialize(field.values).numpy()
     return grid
 
@@ -478,11 +482,16 @@ def _to_quadratic_vtk(data, shape, lagrange):
     offsets = np.arange(0, (data.num_cells + 1) * per_cell, per_cell, dtype=np.int64)
     grid.cells = (vtk_type, vtkCellArray(offsets=offsets,
                                          connectivity=connectivity.astype(np.int64)))
-    for name, field in data.fields.items():
+    from tack.interop.vtk import _once
+
+    written = set()
+    for name, field in data.fields.entries():
         if isinstance(field.space, H1) or (isinstance(field.space, Values)
                                            and field.space.on == "points"):
+            _once(written, "point", name, data)
             grid.point_data[name] = project(data, field, space).values.numpy()
         elif isinstance(field.space, Constant) or (isinstance(field.space, Values)
                                                    and field.space.on == "cells"):
+            _once(written, "cell", name, data)
             grid.cell_data[name] = arrays.materialize(field.values).numpy()
     return grid

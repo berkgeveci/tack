@@ -8,7 +8,7 @@ from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms._extract import _keep_points, _vertices
 from tack.dataset.carry import _point_values, selected
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, field_label
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
 from tack.dataset.point_locator import squared_length
@@ -195,12 +195,14 @@ def _downsample_pieces(data, size, sizes, keep, fields):
     pieces = list(data)
     blocks = tc.Blocks([piece.device for piece in pieces], data.world)
     names = [selected(piece, fields) for piece in pieces]
-    every = blocks.all_gather({g: [name for name in chosen if _on_points(piece.fields[name])]
-                               for g, piece, chosen in zip(blocks.local, pieces, names)})
+    names = [[name for name in chosen if _on_points(piece.fields[name])]
+             for piece, chosen in zip(pieces, names)]
+    every = blocks.all_gather({g: [field_label(name) for name in chosen]
+                               for g, chosen in zip(blocks.local, names)})
     if any(chosen != every[0] for chosen in every):
         raise ValueError(f"voxel_downsample of a PartitionedDataSet needs the same point "
                          f"fields on every piece, not {every}")
-    names = every[0] if every else []
+    names = names[0] if names else []
     owned, positions = {}, {}
     for g, piece in zip(blocks.local, pieces):
         if not isinstance(piece.geometry.space, H1):
@@ -240,7 +242,7 @@ def _downsample_pieces(data, size, sizes, keep, fields):
                     field = arrays.materialize(_point_values(piece.fields[name].values,
                                                              piece.num_points))
                     if _floating(field):
-                        values[g]["f." + name] = take_rows(field, at)
+                        values[g]["f." + field_label(name)] = take_rows(field, at)
     sorted_keys, sorted_values = tc.sort_by_key(blocks, keys, values)
 
     outgoing = {}
@@ -307,7 +309,7 @@ def _downsample_pieces(data, size, sizes, keep, fields):
                 field = piece.fields[name]
                 values = arrays.materialize(_point_values(field.values, piece.num_points))
                 if _floating(values):
-                    kept = _joined_arrays([m["f." + name] for m in received], values.dtype)
+                    kept = _joined_arrays([m["f." + field_label(name)] for m in received], values.dtype)
                 else:
                     kept = take_rows(values, firsts) if firsts.size else \
                         tack.empty((0,), values.dtype)

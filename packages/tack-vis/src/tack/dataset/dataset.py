@@ -27,6 +27,8 @@ such space among ``args``, and the kernel runs once per subgroup, each
 launch specialized to its keys.
 """
 
+from collections.abc import MutableMapping
+
 import numpy as np
 
 import tack
@@ -491,6 +493,203 @@ def _space_nodes(space, geometry):
     return cache[key]
 
 
+def _split_key(key):
+    """A field's key as ``(name, selector)``: a name alone, or ``(name, space)``,
+    the space a ``Space`` or a kind of space (``H1``, ``Constant``, ...)."""
+    if isinstance(key, str):
+        return key, None
+    if (isinstance(key, tuple) and len(key) == 2 and isinstance(key[0], str)
+            and (isinstance(key[1], Space)
+                 or (isinstance(key[1], type) and issubclass(key[1], Space)))):
+        return key
+    raise TypeError(f"a field is named by a string, or (name, space) with a space or "
+                    f"a kind of space, not {key!r}")
+
+
+def _space_key(space, arrays_alike=False):
+    """What makes two spaces the same space: their kind and parameters, an array
+    parameter (an order per cell) by identity, as ``Space`` interns them, or as
+    alike when ``arrays_alike`` (a space carried to another topology copies its
+    arrays)."""
+    return type(space), tuple(sorted(
+        (k, ("array", None if arrays_alike else id(v)) if hasattr(v, "shape") else v)
+        for k, v in space.params.items()))
+
+
+def _same_space(a, b):
+    """Within a topology, spaces are interned, so the same space is the same object;
+    across topologies (a field carried by a filter), the same kind and parameters."""
+    if a is b or a.topology is b.topology:
+        return a is b
+    return _space_key(a, True) == _space_key(b, True)
+
+
+def _fits(space, selector):
+    """Whether a field in ``space`` is one ``selector`` asks for."""
+    if selector is None:
+        return True
+    if isinstance(selector, type):
+        return isinstance(space, selector)
+    return _same_space(space, selector)
+
+
+def field_name(key):
+    """The name in a field's key (a name, or ``(name, space)``)."""
+    return _split_key(key)[0]
+
+
+def field_label(key):
+    """A field's key as a string, alike on every rank: its name, or ``"name in
+    space"``, for messages between pieces, which carry no spaces."""
+    name, selector = _split_key(key)
+    if selector is None:
+        return name
+    return f"{name} in {selector.__name__ if isinstance(selector, type) else repr(selector)}"
+
+
+def is_field_key(value):
+    """Whether ``value`` names one field (a name, or ``(name, space)``), as an
+    algorithm's field argument may, rather than being a list of them."""
+    try:
+        _split_key(value)
+    except TypeError:
+        return False
+    return True
+
+
+class Fields(MutableMapping):
+    """``data.fields``: a dataset's fields by name and space. Fields may share a
+    name in different spaces -- a point array and a cell array called ``"p"``, as
+    VTK has them -- so ``fields["p", td.Constant]`` (or the space itself) picks one,
+    and ``fields["p"]`` is the one ``"p"`` there is, refused where there are
+    several, never a guess.
+
+    Its keys are the names, but ``(name, space)`` for a name fields share, so each
+    key is a lookup, ``dict(fields)`` loses nothing, and every key is a key
+    ``DataSet(fields=...)`` takes. ``fields["p"] = f`` makes ``f`` the one field
+    called ``"p"``, as a dict would; ``fields["p", space] = f`` puts it beside the
+    fields of that name in other spaces, replacing the one in its own (spaces
+    compared by kind and parameters, so one carried to another topology still
+    matches). ``named(name)`` gives every field of a name, ``entries()`` each field
+    with its name."""
+
+    def __init__(self, topology, fields=None):
+        self._topology = topology
+        self._entries = []              # [name, field], in the order put in
+        if fields is None:
+            return
+        # Every entry of a mapping is kept, by its name and its field's own space (a
+        # filter that moved a field to another space keeps its key); two of a name
+        # in one space would be one, so they are refused.
+        for key, field in (fields.items() if hasattr(fields, "items") else fields):
+            name = self._checked(_split_key(key)[0], field)
+            if any(n == name and _same_space(f.space, field.space)
+                   for n, f in self._entries):
+                raise ValueError(f"two fields {name!r} in {field.space!r}: give them "
+                                 "different names, or choose one with fields=")
+            self._entries.append([name, field])
+
+    def _checked(self, name, field):
+        if not isinstance(field, Field):
+            raise TypeError(f"field {name!r} is a tack.dataset.Field, not "
+                            f"{type(field).__name__}")
+        if field.space.topology is not self._topology:
+            raise ValueError(f"field {name!r} is on another topology")
+        return name
+
+    def _matches(self, key):
+        name, selector = _split_key(key)
+        return [i for i, (n, f) in enumerate(self._entries)
+                if n == name and _fits(f.space, selector)]
+
+    def _index(self, key):
+        found = self._matches(key)
+        if not found:
+            raise KeyError(f"no field {key!r}: the dataset has {self._listed()}")
+        if len(found) > 1:
+            spaces = " and ".join(repr(self._entries[i][1].space) for i in found)
+            raise KeyError(f"{key!r} names {len(found)} fields, in {spaces}: give the "
+                           f"space, as fields[{_split_key(key)[0]!r}, td.Constant] or "
+                           "the space itself")
+        return found[0]
+
+    def _listed(self):
+        return ", ".join(map(repr, self)) or "none"
+
+    def __getitem__(self, key):
+        return self._entries[self._index(key)][1]
+
+    def __setitem__(self, key, field):
+        name, selector = _split_key(key)
+        self._checked(name, field)
+        if not _fits(field.space, selector):
+            raise ValueError(f"field {key!r} is in {field.space!r}")
+        if selector is None:
+            # A name alone: this field is the one of that name, where the first was.
+            at = [i for i, (n, _) in enumerate(self._entries) if n == name]
+            if at:
+                self._entries[at[0]] = [name, field]
+                for i in reversed(at[1:]):
+                    del self._entries[i]
+                return
+        for entry in self._entries:
+            if entry[0] == name and _same_space(entry[1].space, field.space):
+                entry[1] = field
+                return
+        self._entries.append([name, field])
+
+    def __delitem__(self, key):
+        del self._entries[self._index(key)]
+
+    def __contains__(self, key):
+        return bool(self._matches(key))
+
+    def __iter__(self):
+        counts = {}
+        for name, _ in self._entries:
+            counts[name] = counts.get(name, 0) + 1
+        return iter([name if counts[name] == 1 else (name, field.space)
+                     for name, field in self._entries])
+
+    def __len__(self):
+        return len(self._entries)
+
+    def get(self, key, default=None):
+        return self[key] if key in self else default
+
+    _missing = object()
+
+    def pop(self, key, default=_missing):
+        if key not in self and default is not self._missing:
+            return default
+        field = self[key]
+        del self[key]
+        return field
+
+    def key_of(self, key):
+        """The key this mapping lists for the field ``key`` names: ``"p"`` for
+        ``("p", td.H1)`` where that is the one ``"p"``, the space itself where a
+        name is shared, so a copy of the mapping takes a new value for it."""
+        index = self._index(key)
+        return next(k for i, k in enumerate(self) if i == index)
+
+    def _all(self, key):
+        """Every field ``key`` selects (a name every field of that name), refusing none."""
+        return [self._entries[i][1] for i in self._matches(key)]
+
+    def named(self, name):
+        """Every field called ``name``, in the order they were put in."""
+        return [field for n, field in self._entries if n == name]
+
+    def entries(self):
+        """Each field with its name, ``(name, field)``: a name more than once where
+        fields share it (what a writer that names arrays by kind wants)."""
+        return [(name, field) for name, field in self._entries]
+
+    def __repr__(self):
+        return f"Fields({{{', '.join(f'{k!r}: {f.space!r}' for k, f in self.items())}}})"
+
+
 class DataSet:
     """A topology, a geometry, named fields and named sets. The geometry is a
     ``Field`` in ``H1`` or ``L2`` of 3-vectors -- or positions per point (a host
@@ -530,10 +729,7 @@ class DataSet:
         self.origin = origin
         self.time = time
         self.time_unit = time_unit
-        self.fields = dict(fields or {})
-        for name, field in self.fields.items():
-            if field.space.topology is not topology:
-                raise ValueError(f"field {name!r} is on another topology")
+        self.fields = fields
         self.sets = sets
         # Set by a filter that dropped its input's ghost marks (ghosts.drop_marks).
         self._ghosts_lost = False
@@ -550,7 +746,7 @@ class DataSet:
         held = [parts.get("topology")]
         if parts.get("_geometry") is not None:
             held.append(parts["_geometry"].values)
-        held.extend(field.values for field in parts.get("fields", {}).values())
+        held.extend(field.values for field in parts.get("_fields", {}).values())
         held.extend(s.ids for s in (parts.get("_sets") or {}).values())
         held.append(parts.get("_ghosts"))
         held.append(parts.get("_global_ids"))
@@ -602,6 +798,16 @@ class DataSet:
     @sets.setter
     def sets(self, sets):
         self._sets = Sets(self.topology, sets)
+
+    @property
+    def fields(self):
+        """Its fields by name and space (``Fields``): ``fields["p"]``, or
+        ``fields["p", td.Constant]`` where a point and a cell field share a name."""
+        return self._fields
+
+    @fields.setter
+    def fields(self, fields):
+        self._fields = Fields(self.topology, fields)
 
     def _kind(self, domain):
         """The entities ``domain`` -- a domain or a set's name -- iterates over."""

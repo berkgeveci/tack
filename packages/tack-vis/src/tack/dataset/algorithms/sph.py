@@ -20,7 +20,7 @@ from tack.dataset import units
 from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms.outliers import _locator
 from tack.dataset.carry import _point_values
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, is_field_key
 from tack.dataset.spaces import H1, Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -167,7 +167,7 @@ def _per_particle(data, value, what):
         out = tack.empty((n,), data.dtype)
         out.fill(float(value))
         return out
-    field = data.fields[value] if isinstance(value, str) else value
+    field = data.fields[value] if is_field_key(value) else value
     on_points = (isinstance(field.space, H1) and field.space.order == 1) or (
         isinstance(field.space, Values) and field.space.on == "points")
     if not on_points or field.space.topology is not data.topology:
@@ -228,7 +228,7 @@ def sph_interpolate(particles, target, fields=None, kernel="cubic", smoothing_le
     if not isinstance(target.geometry.space, H1):
         raise TypeError("sph_interpolate needs the target's points: an H1 geometry")
     smoothing = _per_particle(particles, smoothing_length, "smoothing_length")
-    reserved = {v for v in (smoothing_length, mass, density) if isinstance(v, str)}
+    reserved = {v for v in (smoothing_length, mass, density) if is_field_key(v)}
     names = [name for name in (fields if fields is not None else particles.fields)
              if name not in reserved or fields is not None]
     n = particles.num_points
@@ -317,7 +317,7 @@ def sph_density(particles, kernel="cubic", smoothing_length="h", mass="mass", di
 def _unit_of(particles, value):
     """The unit of a per-particle argument: a field's, by name or object; a
     number's is unknown (``_given`` takes a quantity's unit first)."""
-    if isinstance(value, str):
+    if is_field_key(value):
         return particles.fields[value].unit
     return value.unit if isinstance(value, Field) else None
 
@@ -326,7 +326,7 @@ def _given(particles, value, what):
     """A per-particle argument and its unit: a field (by name or object) as given
     with its unit, a quantity (``"2e30 kg"``, ``(1.0, "Msun")``) as its number
     and unit, a number as given with no unit."""
-    if isinstance(value, Field) or (isinstance(value, str) and value in particles.fields):
+    if isinstance(value, Field) or (is_field_key(value) and value in particles.fields):
         return value, _unit_of(particles, value)
     number, unit = units.number_and_unit(value)
     return number, unit
@@ -335,7 +335,7 @@ def _given(particles, value, what):
 def _smoothing(particles, value):
     """The smoothing length: a field as given, a length converted to the spatial
     unit (``"0.5 kpc"``), a number as given."""
-    if isinstance(value, Field) or (isinstance(value, str) and value in particles.fields):
+    if isinstance(value, Field) or (is_field_key(value) and value in particles.fields):
         return value
     return _length(particles, value, "the smoothing length")
 

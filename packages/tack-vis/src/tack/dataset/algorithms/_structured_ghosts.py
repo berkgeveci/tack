@@ -23,7 +23,7 @@ from tack.arrays import CartesianProduct, UniformCoordinates
 from tack.communication._kernels import scatter
 from tack.dataset import _matching
 from tack.dataset.algorithms.split import _block_geometry
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, field_label
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
 from tack.dataset.sets import Set
@@ -121,9 +121,11 @@ def structured_ghost_cells(blocks, pieces, layers, names, kind_of):
             for name in names:
                 field = piece.fields[name]
                 if kind_of(field) == "points":
-                    spread.setdefault("points", {})[name] = placed(field.values, np_, point_index)
+                    spread.setdefault("points", {})[field_label(name)] = placed(field.values, np_,
+                                                                              point_index)
                 else:
-                    spread.setdefault("cells", {})[name] = placed(field.values, nc, cell_index)
+                    spread.setdefault("cells", {})[field_label(name)] = placed(field.values, nc,
+                                                                             cell_index)
             marks = piece.ghosts
             spread.setdefault("cells", {})["\0marks"] = placed(
                 tack.zeros((piece.num_cells,), tack.u8) if marks is None or marks.cells is None
@@ -166,10 +168,11 @@ def structured_ghost_cells(blocks, pieces, layers, names, kind_of):
                 if kind_of(field) == "points":
                     data.fields[name] = Field(H1(data) if isinstance(space, H1)
                                               else Values(data, "points"),
-                                              spread["points"][name], field.unit)
+                                              spread["points"][field_label(name)], field.unit)
                 else:
                     data.fields[name] = Field(Constant(data) if isinstance(space, Constant)
-                                              else Values(data, "cells"), spread["cells"][name],
+                                              else Values(data, "cells"),
+                                              spread["cells"][field_label(name)],
                                               field.unit)
             if "\0ids" in spread["points"] or "\0ids" in spread["cells"]:
                 data.global_ids = GlobalIds(cells=spread["cells"].get("\0ids"),

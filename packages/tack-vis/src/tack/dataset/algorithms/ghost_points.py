@@ -34,7 +34,7 @@ from tack.dataset.algorithms._common import _length
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.algorithms.ghost_cells import _carried, _joined, _kind
 from tack.dataset.carry import _point_values, _take
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, field_label
 from tack.dataset.ghosts import Ghosts
 from tack.dataset.global_ids import GlobalIds
 from tack.dataset.partitioned import PartitionedDataSet, common_origin
@@ -361,7 +361,7 @@ def _messages(blocks, pieces, hosts, sends, sides, names):
                 "cell_marks": tack.array(cell_marks[index], tack.u8, device=device),
             }
             for name in names:
-                message["field." + name] = _take(piece.fields[name].values, chosen)
+                message["field." + field_label(name)] = _take(piece.fields[name].values, chosen)
             ids = piece.global_ids
             for kind in ("points", "cells"):
                 if ids is not None and getattr(ids, kind) is not None:
@@ -401,7 +401,7 @@ def _appended(g, piece, received, names, numbered, blocks):
         out.ghosts = Ghosts(cells=cell_marks, points=point_marks)
         for name in names:
             field = piece.fields[name]
-            values = _joined([field.values] + [message["field." + name]
+            values = _joined([field.values] + [message["field." + field_label(name)]
                                                for _, message in sources])
             space = field.space
             if _kind(field) == "points":

@@ -11,7 +11,7 @@ import tack
 from tack import arrays
 from tack.dataset import shapes, units
 from tack.dataset.algorithms._common import _field, _with_basis
-from tack.dataset.dataset import Field
+from tack.dataset.dataset import Field, is_field_key
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.runtime.dispatch import on_inputs_device
 
@@ -369,7 +369,7 @@ def _names(data, fields):
         return [name for name, field in data.fields.items()
                 if isinstance(field.space, (H1, L2, Constant))
                 or (isinstance(field.space, Values) and field.space.on in ("points", "cells"))]
-    names = [fields] if isinstance(fields, str) else list(fields)
+    names = [fields] if is_field_key(fields) else list(fields)
     for name in names:
         _field(data, name)
     return names

@@ -1299,7 +1299,7 @@ def test_a_fresh_surface_in_passes_is_the_same_surface(backend, monkeypatch):
                                                    data.topology.connectivity,
                                                    num_points=data.num_points),
                            data.geometry.values)
-        fresh.fields["c"] = data.fields["c"]
+        fresh.fields["c"] = td.Field(td.Constant(fresh), data.fields["c"].values)
         parts = module._fresh_boundary(fresh, None)
         for name in ("types", "offsets", "connectivity"):
             np.testing.assert_array_equal(getattr(parts.topology, name).numpy(),

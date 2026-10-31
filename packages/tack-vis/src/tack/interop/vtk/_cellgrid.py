@@ -486,7 +486,11 @@ def to_cell_grid(data):
 
     shape = attribute("shape", 3, shape_attribute=True)
     shared(shape, data.geometry, "coordinates", 3, offset=np.asarray(data.origin))
-    for name, field in data.fields.items():
+    from tack.interop.vtk import _once
+
+    written = set()
+    for name, field in data.fields.entries():
+        _once(written, "cell grid attribute", name, data)   # one namespace in a cell grid
         space = field.space
         width = arrays.width_of(field.values) or 1
         if isinstance(space, Values) and space.on == "points":
