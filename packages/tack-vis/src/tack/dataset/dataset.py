@@ -585,8 +585,11 @@ class Fields(MutableMapping):
             name = self._checked(_split_key(key)[0], field)
             if any(n == name and _same_space(f.space, field.space)
                    for n, f in self._entries):
-                raise ValueError(f"two fields {name!r} in {field.space!r}: give them "
-                                 "different names, or choose one with fields=")
+                raise ValueError(
+                    f"two fields {name!r} would be in {field.space!r} (a filter that puts "
+                    f"fields in one space, as probe puts them at the points): choose one "
+                    f"with fields=[({name!r}, td.H1)] or ({name!r}, td.Constant), or "
+                    "rename one")
             self._entries.append([name, field])
 
     def _checked(self, name, field):

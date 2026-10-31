@@ -75,7 +75,7 @@ def test_a_dataset_takes_its_fields_keys_back():
     copy = td.DataSet(data.topology, data.geometry, fields=dict(data.fields))
     assert copy.fields.entries() == data.fields.entries()
     point = data.fields["p", td.H1]
-    with pytest.raises(ValueError, match="two fields 'p' in H1"):
+    with pytest.raises(ValueError, match="two fields 'p' would be in H1"):
         td.DataSet(data.topology, data.geometry, fields={"p": point, ("p", td.H1): point})
 
 
@@ -92,6 +92,19 @@ def test_filters_carry_every_field_of_a_name():
     # The cell field's values are the kept cells' ids.
     ids = np.asarray(td.cell_centers(data).values.numpy())
     assert one.fields["p"].values.numpy().size == kept.num_cells < ids.shape[0]
+
+
+def test_fields_that_would_meet_in_one_space_are_chosen_not_guessed():
+    """A probe puts every field at the target's points: a point and a cell field of
+    one name would be two point fields there, so it asks which, as VTK (which keeps
+    the point one) does not."""
+    data = _data()
+    points = np.array([[0.5, 0.5, 0.5], [2.25, 1.5, 1.75]])
+    with pytest.raises(ValueError, match=r"choose one with fields=\[\('p', td.H1\)\]"):
+        td.probe(data, points)
+    probed = td.probe(data, points, fields=[("p", td.Constant), "q"])
+    np.testing.assert_array_equal(probed.fields["p"].values.numpy(), [0, 11])
+    np.testing.assert_allclose(probed.fields["q"].values.numpy(), points[:, 1])
 
 
 def test_algorithms_take_a_name_and_a_space():

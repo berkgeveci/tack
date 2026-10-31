@@ -95,7 +95,10 @@ print(list(kept.fields))                           # [('p', H1(order=1)), ('p', 
   `dict(data.fields)` keeps them all. `data.fields.named("p")` lists every
   field called `"p"`; `data.fields.entries()` gives each field with its name.
 - **Filters.** `fields="p"` selects every field of that name, and
-  `fields=[("p", td.Constant)]` the one.
+  `fields=[("p", td.Constant)]` the one. A filter that puts fields in one
+  space, as `probe` puts them all at the target's points, would make the
+  two `"p"`s two point fields of one name; it asks which instead (VTK's
+  probe keeps the point one), so pass `fields=`.
 - **VTK.** `vtk_to_dataset` reads a point array and a cell array of one name
   as two fields of that name, and `dataset_to_vtk` writes them back the same
   way. Two point fields of one name, which VTK cannot keep, are refused.
