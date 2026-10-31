@@ -58,7 +58,7 @@ The base class raises `NotImplementedError` for all three.
 | `ordinal` | declared | Which of the type's devices the backend drives (`Device.index`). Always 0 for now |
 | `display_name` | declared | How messages spell the backend, if different from `name` |
 | `label` | derived | `display_name or name`. Use it in messages |
-| `supported_dtypes` | declared | A `frozenset` of the scalar types accepted as array argument dtypes. Dispatch checks every array argument against this set |
+| `supported_dtypes` | declared | A `frozenset` of the scalar types the device's arrays may have. Making an array of another type raises `TypeError`, and dispatch checks every array argument against this set |
 | `supports_f64` | derived | `f64 in supported_dtypes` |
 | `supports_device_reductions` | declared | True when `Array.sum()`, `min()` and `max()` can run on the device. When false they run in NumPy on the host. It selects a path and never rejects anything |
 | `supports_workgroups` | declared | Native workgroup execution for `shared`, `shared_like`, `barrier`, `thread_id` and `block_sum`/`block_min`/`block_max`. It does **not** promise uniform participation, atomic support or safe partial workgroups |

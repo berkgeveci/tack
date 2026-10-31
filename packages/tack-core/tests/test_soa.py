@@ -83,7 +83,7 @@ def test_constructors_take_a_layout(backend):
     p = tack.zeros((3,), tack.vec2(), layout="soa")
     assert tack.empty_like(p).layout == "soa" and tack.ones_like(p).layout == "soa"
     assert tack.zeros_like(p, layout="aos").layout == "aos"
-    assert tack.full_like(p, 7.0, dtype=tack.f64).layout == "soa"
+    assert tack.full_like(p, 7, dtype=tack.i32).layout == "soa"
     assert tack.zeros((3,), tack.vec2()).layout == "aos" and tack.zeros((3,)).layout == "aos"
 
 

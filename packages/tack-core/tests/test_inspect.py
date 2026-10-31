@@ -116,11 +116,11 @@ def test_inspect_rejects_dtypes_dispatch_would(monkeypatch, mode):
 
     tack.set_default_device("cpu")
     backend = get_backend()
-    monkeypatch.setattr(backend, "supported_dtypes",
-                        backend.supported_dtypes - {tack.f64})
-    x = tack.empty((4,), tack.f64)
+    x = tack.empty((4,), tack.f64)              # made while the device has f64
     out = tack.empty((4,), tack.f64)
     tack.copyto(x, np.zeros(4))
+    monkeypatch.setattr(backend, "supported_dtypes",
+                        backend.supported_dtypes - {tack.f64})
 
     @tack.kernel
     def copy(x, out):

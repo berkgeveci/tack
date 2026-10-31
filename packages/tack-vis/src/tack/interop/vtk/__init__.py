@@ -575,7 +575,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     unknown.
 
     ``dtype=None`` keeps each floating-point array in its own type (f32 or f64),
-    the points too; an image's geometry is then f64, as VTK's is.
+    the points too; an image's geometry is then f64, as VTK's is. On a default
+    device without f64 (Metal), it is f32, which such a device's arrays take.
 
     With ``copy=False`` the dataset shares VTK's memory instead of copying it,
     as CPU arrays (whatever the default device): the points, data arrays, cell
@@ -594,6 +595,10 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     dataset handed VTK (``dataset_to_vtk(copy=False)``) come back as themselves,
     memory on whole pages is wrapped in place, and anything else is copied to
     Metal, so the dataset is on Metal throughout."""
+    from tack.runtime.dispatch import get_backend
+
+    if dtype is None and not get_backend().supports_f64:
+        dtype = tack.f32
     if origin is None and dtype == tack.f32:
         origin = _far_origin(grid)
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,

@@ -1267,8 +1267,9 @@ def test_faces_by_buckets_are_the_sorted_derivation(backend):
 
     from tack.dataset.topology import Faces
 
-    meshes = [vd.to_tack(vd.ALL[name]()) for name in ("3d_explicit_5", "3d_explicit_zoo",
-                                                         "3d_explicit_4")]
+    meshes = [vd.to_tack(vd.ALL[name](), tack.f32) for name in ("3d_explicit_5",
+                                                                  "3d_explicit_zoo",
+                                                                  "3d_explicit_4")]
     meshes += [td.tetrahedralize(td.uniform_grid((5, 4, 3))), _star_of_tetrahedra()]
     for data in meshes:
         t = data.topology
