@@ -213,7 +213,7 @@ def clip_polyhedra(data, values, iso, inside, fields):
     ends = tack.empty((count,), tack.vec(2, idt))
     weights = tack.empty((count,), weight_dtype)
     if count:
-        _point_runs(keys, order, runs, values, arrays.materialize(data.geometry.values), iso,
+        _point_runs(keys, order, runs, values, data.geometry.values, iso,
                     ends, weights, point_of, count)
 
     # Cells: each kept one's faces left and caps.

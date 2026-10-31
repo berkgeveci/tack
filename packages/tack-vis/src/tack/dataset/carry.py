@@ -115,7 +115,7 @@ def _take_rows(values, ids, out):
 def _take(values, ids):
     out = _like(values, ids.shape[0])
     if ids.shape[0]:
-        _take_rows(materialize(values), ids, out)
+        _take_rows(values, ids, out)
     return out
 
 
@@ -194,7 +194,7 @@ def _apply(values, how, oriented=False, field=None):
         extra = how.averages[0].shape[0] - 1 if how.averages is not None else 0
         out = _like(values, n + extra)
         if n:
-            _interpolate_rows(materialize(values), how.ends, how.weights, out)
+            _interpolate_rows(values, how.ends, how.weights, out)
             if how.exact is not None and field is not None:
                 how.exact(field, out)
         if extra:

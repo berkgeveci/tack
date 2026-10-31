@@ -3,7 +3,7 @@
 import numpy as np
 
 import tack
-from tack.arrays import UniformCoordinates, materialize, size_of
+from tack.arrays import UniformCoordinates, size_of
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.algorithms._moving import _moved
 from tack.runtime.dispatch import on_inputs_device
@@ -57,7 +57,7 @@ def transform(data, matrix, fields=None):
     n = size_of(values)
     out = _vectors(n, data.dtype)
     if n:
-        _affine(materialize(data.geometry.values), *map(float, m.reshape(-1)), out)
+        _affine(data.geometry.values, *map(float, m.reshape(-1)), out)
     out = _moved(data, out, fields)
     if origin is not None:
         out.origin = origin

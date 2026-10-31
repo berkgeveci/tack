@@ -52,9 +52,11 @@ piece.
   kernel refuses arrays from two devices.
 - **Arrays may be implicit.** An image's geometry is a `UniformCoordinates`
   array, which computes positions instead of storing them, and has no
-  `.shape`. `size_of` gives its length, and `materialize` gives a stored
-  array for a kernel that takes plain arrays. A kernel can also index it directly, since implicit
-  arrays are indexable in kernels.
+  `.shape`: `size_of` gives its length. Pass it to a kernel as it is, since
+  kernels index implicit arrays (`positions[i]`, `len(positions)`); the
+  kernel computes each position as it reads it. `materialize` stores every
+  value, which an image of a billion points cannot afford: keep it for code
+  that needs stored memory, such as a pointer handed to another library.
 - The result is a `Field` on the geometry's space, one value per point.
 
 ## A subset of cells: `threshold`

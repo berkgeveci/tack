@@ -28,7 +28,7 @@ def _arrows(positions, vectors, scale, by, scales, res, step, out, source, conne
     # Point i's arrow: a shaft (two rings), the head's base ring, its tip and the
     # shaft's base centre, 3 res + 2 points; as triangles, the shaft's sides, the
     # head's base, its cone and the shaft's base, 6 res, wound outward.
-    for i in range(positions.shape[0]):
+    for i in range(len(positions)):
         v = vectors[i]
         length = v.norm()
         t = tack.vec3(0.0, 0.0, 1.0)
@@ -112,8 +112,8 @@ def glyphs(data, vectors, scale=1.0, scale_by=None, resolution=8, fields=None):
     connectivity = tack.empty((n * 18 * res,), idt)
     if n:
         by = sizes.values if sizes is not None else tack.empty((1,), data.dtype)
-        _arrows(arrays.materialize(data.geometry.values), arrays.materialize(field.values),
-                float(scale), int(sizes is not None), arrays.materialize(by), res,
+        _arrows(data.geometry.values, field.values,
+                float(scale), int(sizes is not None), by, res,
                 2.0 * math.pi / res, out, source, connectivity)
     types, offsets = uniform_cells(int(shapes.TRIANGLE), n * 6 * res, idt)
     topology = UnstructuredTopology(types, offsets, connectivity, num_points=total)

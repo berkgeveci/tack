@@ -3,7 +3,7 @@
 import numpy as np
 
 import tack
-from tack.arrays import materialize, size_of
+from tack.arrays import size_of
 from tack.dataset.algorithms._common import _scalars
 from tack.dataset.dataset import Field
 from tack.runtime.dispatch import on_inputs_device
@@ -34,6 +34,8 @@ def point_elevation(data, low_point=(0, 0, 0), high_point=(0, 0, 1), range=(0.0,
     n = size_of(data.geometry.values)
     out = _scalars(n, data.dtype)
     if n:
-        _elevations(materialize(data.geometry.values), *map(float, low), *map(float, direction),
+        # The geometry as it is: an image's or a grid's positions are computed as
+        # they are read, never stored.
+        _elevations(data.geometry.values, *map(float, low), *map(float, direction),
                     length2, float(range[0]), float(range[1] - range[0]), out)
     return Field(data.geometry.space, out)

@@ -8,7 +8,6 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.arrays import materialize
 from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import _table, _vectors
 from tack.dataset.buckets import key_order, run_offsets
@@ -152,7 +151,7 @@ def feature_edges(data, angle=30.0, boundary=True, feature=True, non_manifold=Tr
                 order = _table(("round", group.shape), _ROUND[group.shape])
                 _shape_loops(data.domain_view("cells", group), order, offsets, loops)
     total = int(loops.shape[0])
-    positions = materialize(_point_values(data.geometry.values, data.num_points))
+    positions = _point_values(data.geometry.values, data.num_points)
     keys = tack.empty((total,), tack.vec(2, idt))
     owners = tack.empty((total,), tack.i64)
     normals = _vectors(n_cells, data.dtype)

@@ -2,7 +2,7 @@
 
 import tack
 from tack import arrays
-from tack.arrays import materialize, width_of
+from tack.arrays import width_of
 from tack.dataset import units
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _vectors
 from tack.dataset.dataset import Field
@@ -13,7 +13,7 @@ __all__ = ['composite']
 
 @tack.kernel
 def _set_component(values, component, out):
-    for i in range(values.shape[0]):
+    for i in range(len(values)):
         out[i][component] = values[i]
 
 
@@ -33,5 +33,5 @@ def composite(data, *fields):
     out = _vectors(n, arrays.dtype_of(fields[0].values), len(fields))
     for k, f in enumerate(fields):
         if n:
-            _set_component(materialize(f.values), k, out)
+            _set_component(f.values, k, out)
     return Field(space, out, unit)

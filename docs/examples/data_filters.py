@@ -10,7 +10,7 @@ import tack
 import tack.dataset as td
 from tack import communication as tc
 from tack.algorithms import exclusive_scan, histogram
-from tack.arrays import ConstantArray, CountingArray, materialize, size_of
+from tack.arrays import ConstantArray, CountingArray, size_of
 from tack.dataset import units
 
 
@@ -32,7 +32,9 @@ def elevation(data, low_point, high_point, range):
     direction = np.asarray(high_point, float) - np.asarray(data.origin) - low
     n = size_of(data.geometry.values)               # an implicit array has no .shape
     out = tack.empty((n,), data.dtype, device=data.device)
-    _elevations(materialize(data.geometry.values), *map(float, low), *map(float, direction),
+    # An implicit array goes to the kernel as it is: an image's positions are
+    # computed as the kernel reads them, never stored.
+    _elevations(data.geometry.values, *map(float, low), *map(float, direction),
                 float(direction @ direction), float(range[0]), float(range[1] - range[0]),
                 out)
     return td.Field(data.geometry.space, out)
