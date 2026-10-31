@@ -293,6 +293,30 @@ def test_convert_a_field_on_the_device():
         td.convert(data, "m", field="w")
 
 
+def test_convert_a_field_alone():
+    """A field converts on its own, as a dataset's does: a new field in the same
+    space, the original untouched; the dataset's form is the same conversion."""
+    data = _hexes(tack.device("cpu"))
+    celsius = td.Field(td.H1(data), tack.array(np.linspace(0, 100, data.num_points)
+                                               .astype(np.float32)), "degC")
+    kelvin = td.convert(celsius, "K")
+    assert isinstance(kelvin, td.Field) and kelvin.unit == "K" and kelvin.space is celsius.space
+    np.testing.assert_allclose(kelvin.values.numpy(),
+                               np.linspace(0, 100, data.num_points) + 273.15, rtol=1e-6)
+    assert celsius.unit == "°C" and celsius.values.numpy()[0] == 0.0
+    inside = td.DataSet(data.topology, data.geometry, fields={"t": celsius}, unit="m")
+    np.testing.assert_array_equal(td.convert(inside, "K", field="t").fields["t"].values.numpy(),
+                                  kelvin.values.numpy())
+    counts = td.Field(td.Constant(data), tack.array(np.arange(8, dtype=np.int32)), "1000*m")
+    assert td.convert(counts, "km").values is counts.values          # a relabelling
+    with pytest.raises(TypeError, match="the field holds integers"):
+        td.convert(counts, "m")
+    with pytest.raises(ValueError, match="unit is unknown"):
+        td.convert(td.Field(td.H1(data), celsius.values), "K")
+    with pytest.raises(TypeError, match="takes no field name"):
+        td.convert(celsius, "K", field="t")
+
+
 # -- the octree ------------------------------------------------------------------------
 
 def test_octree_units_reach_its_leaves_and_probes():
