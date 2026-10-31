@@ -295,7 +295,7 @@ buffer's host access waits for every live Metal backend (`_backends`,
 `_synchronize_all`), not the one it was made on, in case more than one
 exists (a backend constructed directly, as tests do). Memory
 handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
-launch using it completes before returning. Waiting after every launch cost
+launch using it completes before returning. Shared buffers are remembered by address (`_handed_out`), and `wrap_ptr` also takes a NumPy array of host memory (`_wrap_host`): a buffer Tack handed out comes back as itself, memory on whole pages through `newBufferWithBytesNoCopy`, anything else is refused for the caller to copy. The VTK interop's `copy=False` shares Metal arrays this way, with any VTK (`test_vtk_shared_metal.py`). Waiting after every launch cost
 about 0.3 ms each. `test_metal.py` covers order across batches, per-launch
 scalars and host writes. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
