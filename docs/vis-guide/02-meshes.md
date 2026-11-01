@@ -1,107 +1,35 @@
 # Build meshes
 
-Build a dataset from a topology and a geometry field. This chapter constructs
-each representation from its inputs, using `td.DataSet(topology, geometry)`
-throughout. The inputs might come from a simulation, a reader, a procedural
-model, or arrays you wrote yourself. [Factory methods](#factory-methods-as-shortcuts)
-then provide shortcuts for common combinations.
+Construct the representation you chose in [Topology and Geometry](topology-and-geometry.md).
+Each recipe builds topology, attaches a coordinate field, and checks the result.
+All positions are 3-vectors, including planar data. The
+[complete program](../examples/data_meshes.py) provides NumPy, Tack and `td`
+imports and selects a backend.
 
-The snippets assume NumPy, Tack and `tack.dataset` imported as `np`, `tack`
-and `td`, with a default device set. The [complete mesh-construction program](../examples/data_meshes.py)
-and [mixed-cell tour](../examples/datasets.py) can be downloaded and run.
+Start a script with:
 
-## Topology defines corners, geometry defines positions
+```python
+import numpy as np
 
-In this chapter, a topological point is a **corner vertex**. Cell shapes specify
-the local corner convention, and the topology maps those corners to global
-vertex ids. A space can add field nodes on edges, faces and interiors without
-altering this corner topology. The geometry then supplies a coordinate mapping
-in its own space; it is not a mandatory XYZ array stored by the topology.
+import tack
+import tack.dataset as td
 
-A hexahedral topology therefore does not say whether the mesh is a uniform
-image, stretched along coordinate axes, curvilinear, or curved through a
-higher-order geometry. Those descriptions depend on the coordinate field.
-See [the dataset model](01-datasets.md#corners-are-not-all-of-a-fields-nodes)
-for the distinction between corner ids and field DOFs.
-
-## Choose a representation
-
-| Input | Topology to construct | Geometry values |
-|---|---|---|
-| Point dimensions, origin and spacing | `StructuredTopology` | `UniformCoordinates` |
-| Three coordinate axes | `StructuredTopology` | `CartesianProduct` |
-| A logical grid with explicit corner positions | `StructuredTopology` | A `tack.Array` with vector elements |
-| Cell types, offsets and corner ids | `UnstructuredTopology` | A `tack.Array` with vector elements |
-| A list of face rings for each cell | `PolyhedralTopology` | A `tack.Array` with vector elements |
-| A point ring for each polygon | `PolygonalTopology` | A `tack.Array` with vector elements |
-| A point chain for each line | `PolylineTopology` | A `tack.Array` with vector elements |
-
-In each first-order example below, wrap the coordinates in
-`td.Field(td.H1(topology), coordinates)` to define geometry, then assemble the
-dataset. All planar examples still use 3-vector coordinates.
-
-These choices affect algorithm support. A hexahedron has a reference element
-for evaluating shape functions and gradients. An arbitrary polyhedron has
-faces and points, but no parametric reference element: its fields are linear
-on the sub-tetrahedra Tack cuts it into, so it holds point and cell values
-only, and must be star-shaped from its points' mean to be probed
-([Polyhedra and Polygons](18-polyhedra.md)). The [filter chapter](04-filters.md)
-gives a task-oriented support table.
+tack.set_default_device("cpu")
+```
 
 ## Image, rectilinear and curvilinear data
 
-Tack uses **`StructuredTopology` for both image data and rectilinear grids**.
-It stores the logical point dimensions and derives a cell's corners from
-indices, without an explicit connectivity row for every cell. There is no
-separate `ImageTopology` or `RectilinearTopology` class.
-
-What differs is the geometry field's **values**:
-
-| Dataset kind | Topology | Geometry space | Geometry values |
-|---|---|---|---|
-| Uniform image data | `StructuredTopology` | H1 order 1 | `UniformCoordinates`: origin, spacing, optional direction |
-| Rectilinear grid | `StructuredTopology` | H1 order 1 | `CartesianProduct`: three coordinate axes |
-| Curvilinear structured grid | `StructuredTopology` | H1 order 1 | Explicit 3-vector positions for its corner vertices |
-| Linear unstructured mesh | `UnstructuredTopology` | H1 order 1 | Usually explicit corner positions |
-| Supported curved finite-element mesh | Its original corner topology | H1 order 2 | Coordinate coefficients on the geometry's higher-order nodes |
-
 ### UniformCoordinates: image geometry as a formula
 
-For logical indices `(i, j, k)`, `UniformCoordinates` evaluates:
-
-```text
-position(i,j,k) = origin + direction @ ([i,j,k] * spacing)
-```
-
-This represents VTK-style image geometry, including a direction matrix for
-an oriented image. With `nx * ny * nz` corners it needs only constant-size
-coordinate metadata, not three stored components per corner. The matching
-structured topology obtains the cell's corner ids from its dimensions.
-
-Build the topology, geometry field and dataset explicitly:
+Supply logical point dimensions, origin and spacing. Positions remain implicit:
 
 ```python
 --8<-- "docs/examples/data_meshes.py:uniform"
 ```
 
-“Image data” here describes sampling geometry. Temperature, labels or RGB
-values remain separate named fields, each with its own space and storage.
-An image's geometry being implicit does not make all of its solution values
-implicit as well.
-
 ### CartesianProduct: rectilinear geometry from axis arrays
 
-For a rectilinear grid, `CartesianProduct` evaluates:
-
-```text
-position(i,j,k) = [x_axis[i], y_axis[j], z_axis[k]]
-```
-
-Spacing can vary along each axis, but each coordinate depends on only one
-logical index. Storing `nx + ny + nz` axis values describes `nx * ny * nz`
-corner positions. The full Cartesian product is evaluated on demand.
-`CartesianProduct` stores the axes on the backend rather than allocating an
-expanded XYZ array. Assemble it with a structured topology and geometry space:
+Supply one coordinate array per axis; no expanded XYZ array is needed:
 
 ```python
 --8<-- "docs/examples/data_meshes.py:rectilinear"
@@ -109,23 +37,14 @@ expanded XYZ array. Assemble it with a structured topology and geometry space:
 
 ### Explicit positions: bend the grid without changing connectivity
 
-A curvilinear structured grid retains structured corner incidence but supplies
-each corner's 3-vector position explicitly. The coordinate field is still
-first-order H1; its physical cells need not be axis-aligned. This is different
-from an order-2 geometry, whose mapping also uses non-corner DOFs.
-
-Generate the corner positions directly, upload them as vector elements,
-and associate them with the structured topology:
+Keep logical incidence and supply the corner positions explicitly:
 
 ```python
 --8<-- "docs/examples/data_meshes.py:curvilinear"
 ```
 
-The three examples have the same point dimensions and corner numbering.
-They differ in their geometry values. A topology can also be reused by
-multiple datasets with different geometry fields. Algorithms that read
-geometry through a domain view use the same interface for implicit and
-explicit coordinates.
+For the geometry formulas and the difference between curvilinear and curved
+geometry, see [the model](topology-and-geometry.md#image-rectilinear-and-curvilinear-data).
 
 ## Structured dimensions count points
 
@@ -267,3 +186,12 @@ The second checks the mixed mesh and its fields.
 [Download the mesh-construction program](../examples/data_meshes.py).
 
 Next, choose how values live on these entities in [Fields and Spaces](03-fields-and-spaces.md).
+
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
+
+    <span id="topology-defines-corners-geometry-defines-positions" data-guide-forward="../topology-and-geometry/#topology-defines-corners-geometry-defines-positions"></span>
+    [Topology defines corners, geometry defines positions](topology-and-geometry.md#topology-defines-corners-geometry-defines-positions).
+
+    <span id="choose-a-representation" data-guide-forward="../topology-and-geometry/#choose-a-representation"></span>
+    [Choose a representation](topology-and-geometry.md#choose-a-representation).

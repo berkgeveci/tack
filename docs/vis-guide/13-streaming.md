@@ -38,14 +38,13 @@ assert summary.time == 2.0 and change.fields["T_dt"].unit == "K/s"
 assert np.all(summary.fields["T_min"].values.numpy() <= summary.fields["T_mean"].values.numpy())
 ```
 
+
 ## Time on a dataset
 
-`DataSet(..., time=, time_unit=)` (or setting `data.time`, `data.time_unit`):
-a double on the host or `None`, in a unit of time or `None`. Every filter keeps
-both; `probe` gives back its target, with the target's time. The pieces of a
-`PartitionedDataSet` and the boxes of an `AMRDataSet` are at one time
-(compared in one unit, so 1 s and 1000 ms agree); an octree's is its roots'.
-The VTK interop maps VTK's `DATA_TIME_STEP` both ways; VTK has no time unit.
+The [model](12-units.md#time-on-a-dataset) defines `time` and `time_unit`,
+including timestamps on pieces and hierarchies. In a streaming loop, feed
+one step at a time in increasing physical time; an individual filter may
+also require an unchanged mesh. The sections below state those requirements.
 
 ## Running statistics
 

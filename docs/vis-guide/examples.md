@@ -5,7 +5,7 @@ a simulation solver. They run with NumPy and a Tack backend; figures are optiona
 
 | Example | Numerical check | Chapter |
 |---|---|---|
-| [data_spaces.py](../examples/data_spaces.py) | Construct L2 and quadratic H1 fields; node diagrams, a DG jump and basis profiles | [Field construction](03-fields-and-spaces.md#construct-an-l2-field) |
+| [data_spaces.py](../examples/data_spaces.py) | Construct L2 and quadratic H1 fields; node diagrams, a DG jump and basis profiles | [Field construction](create-fields.md#construct-an-l2-field) |
 | [data_meshes.py](../examples/data_meshes.py) | Grid counts, cube volume, polygon area and chain length | [Build Meshes](02-meshes.md) |
 | [data_fields.py](../examples/data_fields.py) | Point/cell projection, a material jump and exact affine gradients | [Fields and Spaces](03-fields-and-spaces.md) |
 | [data_analysis.py](../examples/data_analysis.py) | Threshold/clip volumes, contour area, sampled values and analytic rotation | [Filter and Analyze](04-filters.md) |
@@ -24,3 +24,13 @@ uv run --with matplotlib python docs/examples/data_analysis.py --output filters.
 
 The [pipeline chapter](06-pipelines.md) connects these operations to
 probing, streamline integration and external tools.
+
+## Choose a reading route
+
+Begin with [the four model chapters](introduction.md#a-first-reading), or
+use [advanced routes](introduction.md#advanced-routes) for FE/DG input,
+solver storage and custom filters. [Analyze Adaptive Data](adaptive-data.md)
+contains the checked AMR and octree examples. The
+[polyhedra chapter](18-polyhedra.md#a-concave-cell-checked) checks a concave
+cell against analytic results. Higher-order examples remain in
+[data_high_order.py](../examples/data_high_order.py).

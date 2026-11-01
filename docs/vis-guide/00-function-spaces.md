@@ -1,4 +1,4 @@
-# Function spaces and degrees of freedom
+# Function spaces and higher-order geometry
 
 Before choosing an array layout, decide what kind of function the data should
 represent. A continuous temperature, a pressure that may jump between cells,
@@ -6,7 +6,8 @@ and a material label can live on the same mesh without using the same sample
 locations, number of values or interpolation rule. A **space** makes that
 choice explicit for each field.
 
-This chapter introduces the finite-element vocabulary used by Tack. You do
+This optional chapter develops the finite-element vocabulary introduced in
+[Fields and Spaces](03-fields-and-spaces.md). You do
 not need to assemble a finite-element system to use it: the same choices
 determine what a contour, probe or gradient can mean.
 
@@ -113,8 +114,9 @@ physical interface location. This is the representation used for linear
 discontinuous Galerkin data in Tack.
 
 With `order=0`, one coefficient supplies a constant value inside each cell.
-L2 order 0 can still jump from one cell to the next. Tack currently supports
-L2 orders 0 and 1, including an order chosen per cell on supported topologies.
+L2 order 0 can still jump from one cell to the next. Uniform higher orders
+are supported as listed in [Cell Types and Bases](16-cells-and-bases.md).
+When order is a per-cell array, its currently supported entries are 0 and 1.
 
 ### Constant: one independent constant per cell
 
@@ -153,8 +155,7 @@ The topology's cells reference corner pairs `(0, 1)` and `(1, 2)`.
 | L2 order 1 | 4 | Each cell has its own two endpoint values |
 | L2 order 0 / Constant | 2 | One value per cell |
 
-The H1 order-2 row illustrates the counting principle; Tack's current
-order-2 implementation supports the 3D shapes listed below, not line cells.
+These line-cell spaces are supported; the table illustrates actual DOF counts.
 
 For the supported example of **two hexahedra sharing one face**, the topology
 has 12 corners. An order-2 hex has 27 nodes; the shared face contributes nine
@@ -170,30 +171,237 @@ Green diamonds are single H1 DOFs shared by both cells. The L2 markers at
 the interface are drawn slightly apart for visibility; their physical
 positions coincide and the geometry remains connected.
 
-Follow [Construct an L2 field](03-fields-and-spaces.md#construct-an-l2-field)
-and [Construct a quadratic H1 field](03-fields-and-spaces.md#construct-a-quadratic-h1-field)
+Follow [Construct an L2 field](create-fields.md#construct-an-l2-field)
+and [Construct a quadratic H1 field](create-fields.md#construct-a-quadratic-h1-field)
 for allocation, initialization, node ordering and checked evaluations.
 
-The [independent-spaces program](01-datasets.md#each-field-has-its-own-space)
+The [independent-spaces program](#each-field-has-its-own-space)
 checks these counts and evaluates a genuinely quadratic temperature through
 its own basis. `data.num_points` remains 12; use `field.space.size` to allocate
 that field's coefficient array.
 
 ## What Tack currently implements
 
-`H1` and `L2` of any order, on every shape with a reference element but the
-pyramid (order 1 there), in Gauss–Lobatto, equispaced, Gauss–Legendre (`L2`),
-Bernstein and serendipity bases; `Constant`, `Values` and `SideTraces`; and
-point and cell data on polylines, polygons and polyhedra, linear on their
-pieces. H2, H(curl) and H(div) are not provided. [Cell Types and
-Bases](16-cells-and-bases.md) lists every shape and basis, what each supports,
-how VTK's and MFEM's cells map to them, and what is planned.
+The [capability catalog](16-cells-and-bases.md#what-each-shape-supports) is the
+authority for supported shape/space/basis combinations. Higher uniform orders
+are available on segments, triangles, quads, tetrahedra, hexahedra and wedges,
+subject to basis restrictions. Vertex and pyramid retain their listed
+low-order support. H2, H(curl) and H(div) are not currently provided.
 
-Polyhedra and polygons have no reference element: their fields are linear
-on the pieces each cell is cut into, which holds point and cell values but
-not the spaces above ([Polyhedra and Polygons](18-polyhedra.md)). Tack uses a subset
-of [MFEM's finite-element concepts](https://mfem.org/tutorial/examples/), not
-its full collection of spaces, discretization orders or solver machinery.
+[Polyhedra, polygons and lines](18-polyhedra.md) use piecewise-linear
+reconstructions rather than a single reference element.
 
-Continue with [Understand a Dataset](01-datasets.md) for how these pieces fit
-together, or [Fields and Spaces](03-fields-and-spaces.md) for projection and traces.
+## The MFEM model: mesh, space, grid function
+
+In MFEM, a `Mesh` supplies elements and their incidence. A finite-element
+collection specifies a family, order and basis; a `FiniteElementSpace` on the
+mesh determines the local-to-global DOF maps and component layout. A
+`GridFunction` couples that space with coefficients. This is why an MFEM field
+is more than an array of values attached to the mesh's vertices. See
+[MFEM's grid-function explanation](https://mfem.org/pri-dual-vec/).
+
+Tack follows that separation for the supported parts of its data model:
+
+| MFEM concept | Tack counterpart | Responsibility |
+|---|---|---|
+| Mesh element types and vertex connectivity | `data.topology` | Corner incidence and derived entities |
+| Finite-element family, order and layout on the mesh | Each field's `space` | Basis, DOF ownership and local-to-global addressing |
+| Grid function | `td.Field(space, values)` | Coefficients interpreted through that space |
+| Mesh nodes describing geometry | `data.geometry`, itself a `td.Field` | Reference-to-physical coordinate mapping |
+
+This is a conceptual correspondence, not a claim that Tack implements all
+MFEM finite-element families or its parallel true-DOF and constraint machinery.
+The present importer supports the H1/L2 families and orders described below.
+
+### Corners are not all of a field's nodes
+
+A linear hexahedron's topology names eight corners. A quadratic H1 field on
+that same cell needs 27 nodal coefficients: corners, edge midpoints, face
+centers and a cell-interior node. Its space obtains shared edge and face
+incidence from the topology and builds the field's DOF map. The topology still
+has the original eight corners for that cell; the field has not refined it.
+
+Consequently, `data.num_points` counts topological vertices. It need not equal
+`field.space.size`, and it need not be the number of geometry coefficients
+on a curved or discontinuous mesh. Use the field's space when allocating its
+values or interpreting their layout.
+
+## Each field has its own space
+
+One mesh can carry all of the following at once:
+
+| Field on two adjacent hexahedra | Space | Logical values |
+|---|---|---:|
+| Geometry | H1 order 1, 3-vector positions | 12 vectors |
+| Temperature | H1 order 2 | 45 scalars |
+| Pressure | L2 order 1 | 16 scalars |
+| Material parameter | Constant | 2 scalars |
+
+The fields share **topology**, not necessarily a space, order, coefficient
+count or storage representation. Compatible fields may deliberately share
+one interned space object; “each field has its own space” means that the
+choice belongs to the field, rather than being fixed once for the dataset.
+
+For step-by-step recipes and node diagrams, see
+[Construct an L2 field](create-fields.md#construct-an-l2-field) and
+[Construct a quadratic H1 field](create-fields.md#construct-a-quadratic-h1-field).
+The program below combines them on one dataset, using `uniform_grid` as a
+shortcut for the mesh setup so we can focus on independent field spaces.
+Temperature represents
+`x² + 2y + 3z`; pressure is `x` in cell 0 and `x + 2` in cell 1, with a jump
+at their shared face. Geometry remains an implicit uniform coordinate array
+in first-order H1:
+
+For the independent example, start a script with:
+
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+```
+
+```python
+--8<-- "docs/examples/data_spaces.py:sample"
+```
+
+```python
+--8<-- "docs/examples/data_spaces.py:l2-kernel"
+```
+
+```python
+--8<-- "docs/examples/data_spaces.py:spaces"
+```
+
+`interpolate` evaluates the temperature function at the **physical positions
+of that space's interpolation nodes**, through the geometry; it does not
+replace `data.geometry`. The original geometry, temperature and pressure
+continue to use their separate spaces.
+
+An evaluation combines two maps. The geometry gives physical position from
+reference coordinates, while the solution field uses its own basis and DOFs
+at those reference coordinates. A field view supplied to `for_each` preserves
+that distinction even when geometry and solution orders differ.
+
+```python
+--8<-- "docs/examples/data_spaces.py:evaluate"
+```
+
+The quadratic field's center values are `[2.5625, 3.0625]`. Replacing it by an
+order-1 projection gives `[2.625, 3.125]`: the topology and geometry are unchanged,
+but the field approximation changed. The complete example also checks the
+physical gradients against `[0.5, 2, 3]` and `[1.5, 2, 3]`.
+
+```bash
+uv run python docs/examples/data_spaces.py --arch cpu --check
+```
+
+[Download the independent-spaces program](../examples/data_spaces.py).
+
+## Geometry is a field, too
+
+The coordinate mapping has a family, order and values just as a solution does.
+Straight cells can use order-1 H1 geometry with explicit corner positions or
+implicit coordinates. A supported curved mesh uses H1 order-2 coordinate
+coefficients; a solution on it may still use a different order.
+
+With L2 geometry, neighbouring cells can assign separate positions to their
+local corners while sharing corner ids in the topology. This can represent
+gaps or detached cells without changing the incidence. Contour and slice
+respect each cell's geometry; not every algorithm supports that representation.
+
+The geometry's values can be a `UniformCoordinates`, a `CartesianProduct`,
+or explicit position storage. Those are **value-array representations**, not
+different finite-element spaces. Image and rectilinear geometry are explained
+in [Build Meshes](02-meshes.md#image-rectilinear-and-curvilinear-data).
+
+For origins and world positions, see
+[Coordinates, Units and Time](12-units.md#relative-and-world-positions).
+
+## Higher orders
+
+The following independent example uses [data_high_order.py](../examples/data_high_order.py).
+Set up its field before the basis comparisons:
+
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+```
+
+```python
+--8<-- "docs/examples/data_high_order.py:functions"
+```
+
+```python
+--8<-- "docs/examples/data_high_order.py:spaces"
+```
+
+On segments, quads and hexahedra (pixels and voxels too) a space may have any
+order. `basis=` names its polynomials: Lagrange polynomials on the products
+of 1D nodes along each axis, `"gauss_lobatto"` (the default, MFEM's for H1 and
+Nek5000's), `"equispaced"` (VTK's Lagrange cells, Exodus, gmsh) or, for `L2`
+alone, `"gauss_legendre"` (MFEM's default for DG), which has no nodes at a
+cell's ends to share. Up to order 2 the first two are the same nodes.
+
+`basis="bernstein"` holds the Bernstein polynomials' coefficients instead of
+values at nodes: control points, for a geometry. They bound the cell's field or
+shape (it lies within their convex hull) and are what VTK's Bezier cells store.
+A corner's coefficient is its value, and an edge's or a face's depends on that
+entity alone, so they are shared as nodal values are. `interpolate` and
+`project` fill a Bernstein space from values at the equispaced nodes, and every
+filter sees the same polynomials as the equispaced Lagrange space of the order.
+Bernstein spaces are on segments, quads, hexahedra, triangles, tetrahedra and
+wedges. `dataset_to_vtk(..., higher_order=True)` writes a dataset with them as
+VTK Bezier cells, and `vtk_to_dataset` reads Bezier cells back into them.
+
+```python
+--8<-- "docs/examples/data_high_order.py:bernstein"
+```
+
+`basis="serendipity"` (order 2) is the full order-2 space less its values at quad
+faces' centres and cells' insides, which its functions determine from the
+corners and edges: VTK's quad8, hex20 and wedge15 cells, and Exodus's and
+Abaqus's quadratic elements. On triangles and tetrahedra it is the full space.
+It holds every quadratic of position on straight cells, and `vtk_to_dataset`
+reads VTK's quadratic cells into it (the quadratic triangle and tetrahedron into
+the full order-2 space); `dataset_to_vtk(..., higher_order="quadratic")` writes
+them back.
+
+A space numbers its values by entity -- points, then each edge's, face's and
+cell's -- so cells sharing an edge or face share its values. `dofs=` numbers
+them by an element-to-DOF table instead, as MFEM and VTK's cell grids store
+them: a row per cell giving each of its nodes' value index, in Tack's node order
+for the shape, the corners at the cell's points. `H1(data, order=3,
+dofs=table)` holds the same polynomials as `H1(data, order=3)`, numbered as the
+table says, so data numbered that way is used as it comes; every filter reads it,
+and a filter's output numbers its values by entity again.
+
+
+
+
+
+An order-4 `H1` space on 64 hexahedra holds `17³ = 4913` values: each edge,
+face and cell interior has its own, and cells turned any way read a shared
+edge or face's values alike. A polynomial of degree 4 in each coordinate is
+represented exactly, so the cubic comes back anywhere it is probed. Positions
+can be a field of such a space too: a curved geometry, whose cells are located
+and evaluated as they are, not as their corners make them.
+
+
+## Continue with an advanced task
+
+[Create nodal or DG fields](create-fields.md), [attach a solver's layouts](field-storage.md),
+[import MFEM/VTK data](connect-simulation-data.md), or
+[cut curved and higher-order fields](04-filters.md#cut-higher-order-fields-and-curved-geometry).
+
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
+
+    <span id="function-spaces-and-degrees-of-freedom" data-guide-forward="#function-spaces-and-higher-order-geometry"></span>
+    [Function spaces and degrees of freedom](00-function-spaces.md#function-spaces-and-higher-order-geometry).

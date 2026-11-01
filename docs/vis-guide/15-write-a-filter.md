@@ -190,6 +190,6 @@ The check holds each rewrite to its built-in, on the image, its tetrahedra
 and a ghosted piece, and a threshold with bounds in degrees Celsius and
 kelvin to the built-in's. [Download the complete program](../examples/data_filters.py).
 
-Continue with [Sample and Connect Simulations](06-pipelines.md) to connect
+Continue with [Sample and Trace Fields](06-pipelines.md) to connect
 filters into a workflow, or [Pieces and Blocks](14-communication.md)
 to write one that exchanges data between pieces.

@@ -121,8 +121,16 @@ and Q = 1 in every cell.
 
 `statistics` summarizes **stored field samples**, not a volume integral.
 An arithmetic mean of point temperatures is not a volume-weighted mean on
-a stretched mesh. Choose cell measures and a suitable quadrature when the
-quantity you need is a physical integral. The function returns Python values
++a stretched mesh. For a cell-based density, `statistics(..., weights="volume")`
++weights by cell measure: its `sum` is mass and its `mean` is the volume-weighted
++density. A field name can supply other weights. [Analyze Adaptive Data](adaptive-data.md#weights)
++checks the distinction on leaves of different sizes.
++
++For the integral of a reconstructed field inside cells, use `integrate` and
++its documented quadrature rather than a raw sample sum. Projecting into
++`Constant` computes a cell average through that same integration, whereas
++`average="nodes"` requests a different operation. [Create and Convert Fields](create-fields.md#projection-is-an-algorithmic-choice)
++checks those choices. The function returns Python values
 and therefore waits for the device work it reads.
 
 ## Cell quality
@@ -193,6 +201,77 @@ open_top = td.uniform_grid((4, 4))
 assert td.feature_edges(open_top).num_cells == 12           # its boundary
 ```
 
+## Cut higher-order fields and curved geometry
+
+This separate advanced recipe uses the [complete high-order program](../examples/data_high_order.py).
+Start it with the following setup, rather than the first-order `data` above:
+
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+```
+
+```python
+--8<-- "docs/examples/data_high_order.py:functions"
+```
+
+```python
+--8<-- "docs/examples/data_high_order.py:spaces"
+```
+
+Filters that cut -- `contour`, `slice`, `slice_plane` -- cut a field above
+order 1, or a curved geometry, on linear sub-cells of the cells the cut can
+reach: those whose Bernstein coefficients (which bound the field over the
+cell) straddle the value.
+
+```python
+--8<-- "docs/examples/data_high_order.py:contour"
+```
+
+By default a cell is cut into as many steps along each axis as the field's
+or geometry's order, and `tolerance=` asks for the fewest steps whose
+estimated error is within it. Each crossing of a sub-cell's edge is where the
+field itself takes the value along that edge, found from the field's own
+values, so every vertex lies on the true surface (to rounding) at any number
+of steps; the steps decide only how finely the surface is faceted.
+`exact=False` puts it where the straight line between the lattice values does,
+and `subdivision=1, exact=False` is the cells' corners alone. A point where
+sub-cells of neighbouring cells meet is computed once, so the surface has no
+cracks, and every piece of a partitioned dataset holding it computes the same
+bits, so pieces' surfaces carry ghost marks and merge into the whole's.
+`td.subdivide` gives the linear sub-cells of every cell, for export
+or for a filter that takes linear cells only:
+
+```python
+--8<-- "docs/examples/data_high_order.py:curved"
+```
+
+`clip` and `threshold` cut the same way, but keep what they need not cut: the
+cells whose Bernstein coefficients lie wholly on the kept side stay as they are,
+curved and of their order, and only the cells the bound cannot decide go to
+linear sub-cells. The result is a `PartitionedDataSet` of the two parts, whole
+cells first:
+
+```python
+--8<-- "docs/examples/data_high_order.py:clip"
+```
+
+The parts share the lattice points of the faces between them, where a linear
+sub-face lies against a curved face. The whole cells' corners there are the
+whole part's: the cut part's copies are marked `DUPLICATEPOINT`, so reductions
+over the two (`owned_values`, `statistics`) count each once. A dataset of straight cells and order-1
+fields clips and thresholds as before, into one `DataSet`.
+
+MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges
+come across through `tack.interop.mfem`, and VTK's Lagrange cells (curves,
+quads, hexahedra, triangles, tetrahedra, wedges) through `vtk_to_dataset`
+(`dataset_to_vtk(..., higher_order=True)` writes them). Pyramids support order 1; consult the capability table for shape restrictions.
+
+
 ## Check algorithm support before building a pipeline
 
 | Task | Shape-based | Polyhedral / polygonal | Polyline |
@@ -225,4 +304,4 @@ interpolated velocity, flow derivatives, probe validity and analytic rotation.
 [Download the complete program](../examples/data_analysis.py).
 
 Continue with [Mesh Kernels](05-mesh-kernels.md) to implement an operation,
-or [Sample and Connect Simulations](06-pipelines.md) to connect stages.
+or [Sample and Trace Fields](06-pipelines.md) to connect stages.

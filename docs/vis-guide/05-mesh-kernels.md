@@ -34,7 +34,7 @@ a hex and five for a pyramid; the source stays the same.
 This corner mean is a teaching algorithm. It is not a cell's average,
 except for a linear field on a tetrahedron or an image's box; `td.project`
 into `td.Constant(data)` gives the average, by quadrature through each cell's
-map ([Projection is an algorithmic choice](03-fields-and-spaces.md#projection-is-an-algorithmic-choice)).
+map ([Projection is an algorithmic choice](create-fields.md#projection-is-an-algorithmic-choice)).
 
 ## Use global ids for global output
 
