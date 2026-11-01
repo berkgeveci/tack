@@ -439,7 +439,10 @@ def _ghost_marks(attributes, share=False):
 
 #: Per VTK 3D shape: three corners whose edges from corner 0 span a positive frame in
 #: a cell wound as VTK winds it, and the corner order that turns the cell inside out
-#: (its own inverse), checked against VTK's cells (``test_vtk_interop``).
+#: (its own inverse), checked against VTK's cells, faces and Verdict's signed volume. The
+#: wedge's (0, 1, 2) goes counterclockwise seen from (3, 4, 5): VTK's code always had
+#: it so, though its documentation said the reverse until 2026-03-04 (VTK 74e900958d),
+#: which is why files with every wedge inside out are common.
 _ORIENTATION = {10: ((1, 2, 3), (0, 2, 1, 3)),                      # tetrahedron
                 12: ((1, 3, 4), (0, 3, 2, 1, 4, 7, 6, 5)),          # hexahedron
                 13: ((1, 2, 3), (0, 2, 1, 3, 5, 4)),                # wedge
@@ -545,9 +548,12 @@ def _oriented_connectivity(grid, orient, cells=None):
 
         names = {10: "tetrahedra", 12: "hexahedra", 13: "wedges", 14: "pyramids"}
         listed = ", ".join(f"{cells.size} {names[k]}" for k, (cells, _) in inverted.items())
+        why = ("; VTK's documentation gave the wedge the reverse order until March 2026 "
+               "(its code never did), so writers that followed it write wedges this way"
+               if 13 in inverted else "")
         warnings.warn(f"{count} cells are inside out ({listed}): their corners are in the "
                       "reverse of VTK's order, so their volumes are negative and their faces "
-                      "point inward; vtk_to_dataset(..., orient=True) turns them outward",
+                      f"point inward{why}; vtk_to_dataset(..., orient=True) turns them outward",
                       stacklevel=4)
         return None
     repaired = np.array(connectivity)

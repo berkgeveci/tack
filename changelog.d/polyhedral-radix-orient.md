@@ -6,7 +6,9 @@
   every cell, the volume decides -- and warns, naming `orient=True`, which now
   turns them outward too. A tangled cell, negative at some corners but not
   inside out, is left. A CFD mesh's 66,606 inside-out wedges took 0.3 s to find
-  among 21M cells.
+  among 21M cells. Wedges are the common case: VTK's documentation gave their
+  corner order the reverse of its code until March 2026, and writers that
+  followed it wrote them inside out.
 
 ### Fixed
 

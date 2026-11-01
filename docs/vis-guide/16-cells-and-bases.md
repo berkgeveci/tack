@@ -133,7 +133,10 @@ CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
 Cells whose corners are in the reverse of VTK's order -- inside out, with negative
 volumes and inward faces, as some converters write prisms -- are found on every
 read and named in a warning; `vtk_to_dataset(grid, orient=True)` turns them
-outward. Read as polyhedra, such cells make the faces they share refused, so a
+outward. Wedges are the usual case: VTK's documentation described the wedge's
+corner order the reverse of how its code (faces, parametric coordinates, Verdict's
+volume) has always used it, until March 2026, so writers that followed the
+documentation wrote every wedge inside out. Read as polyhedra, such cells make the faces they share refused, so a
 mesh with them needs `orient=True` there.
 Higher-order cells read as `H1` fields of the grid's largest order, in any mix
 of shapes, dimensions and orders:
