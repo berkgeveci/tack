@@ -4085,7 +4085,8 @@ piece.</p>
   kernel refuses arrays from two devices.</li>
 <li><strong>Arrays may be implicit.</strong> An image's geometry is a <code>UniformCoordinates</code>
   array, which computes positions instead of storing them, and has no
-  <code>.shape</code>: <code>size_of</code> gives its length. Pass it to a kernel as it is, since
+  <code>.shape</code>: <code>size_of</code> or <code>len</code> gives its length, and <code>positions[i]</code> reads one
+  position on the host as it does from a stored array. Pass it to a kernel as it is, since
   kernels index implicit arrays (<code>positions[i]</code>, <code>len(positions)</code>); the
   kernel computes each position as it reads it. <code>materialize</code> stores every
   value, which an image of a billion points cannot afford: keep it for code
