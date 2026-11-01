@@ -1026,7 +1026,10 @@ def _refined_family(data, flags, level, fields, elsewhere, cut, dimension, cell_
     linear = UnstructuredTopology(types, offsets, conn, num_points=points, id_dtype=idt)
     point_fields = {}
     for name, field in fields.items():
-        if not isinstance(field.space, (H1, L2)) or field.space.varies:
+        # A space marked evaluated has no stored values to trace: it is computed where it
+        # is read, here at each lattice point by its value.
+        evaluated = getattr(field.space, "evaluated", False)
+        if not (isinstance(field.space, (H1, L2)) or evaluated) or field.space.varies:
             continue
         out = tack.empty((points,), _element(field.values))
         if count:
