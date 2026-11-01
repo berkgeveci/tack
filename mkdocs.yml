@@ -145,6 +145,7 @@ nav:
       - The Data Model:
           - Function Space Fundamentals: vis-guide/00-function-spaces.md
           - Understand a Dataset: vis-guide/01-datasets.md
+          - Finite-volume Data and Fluxes: vis-guide/18-finite-volume.md
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
           - Cell Types and Bases: vis-guide/16-cells-and-bases.md
           - Physical Units: vis-guide/12-units.md
