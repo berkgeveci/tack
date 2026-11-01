@@ -4168,15 +4168,15 @@
 
 
 <h1 id="introduction">Introduction<a class="headerlink" href="#introduction" title="Permanent link">&para;</a></h1>
-<p><code>tack.dataset</code> (the <code>tack-vis</code> package) holds meshes and point clouds and the
-fields on them, and the algorithms that work on both: contour, slice, clip,
-threshold, external faces, gradients, projections between spaces,
+<p><code>tack.dataset</code> (the <code>tack-vis</code> package) holds meshes and point clouds and
+the fields on them, and the algorithms that work on both: contour, slice,
+clip, threshold, external faces, gradients, projections between spaces,
 streamlines, point-cloud cleaning and gridding, SPH interpolation, halo
 finding and the rest. Like VTK and Viskores, it works on structured grids,
-unstructured meshes of the linear cells, polyhedra, polygons, polylines and
-point clouds. Unlike them, the algorithms are ordinary Tack kernels, so they
-run on every backend, and the kernels you write yourself see a mesh the way
-the built-in ones do.</p>
+unstructured meshes, polyhedra, polygons, polylines and point clouds. Unlike
+them, the algorithms are ordinary Tack kernels, so they run on every
+backend, and the kernels you write yourself see a mesh the way the built-in
+ones do.</p>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>cpu<span class="w">      </span><span class="c1"># in a clone; both packages are installed</span>
 </code></pre></div>
 <p>This overview is a tour; the chapters below develop the data model and complete
