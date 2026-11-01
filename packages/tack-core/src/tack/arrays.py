@@ -82,14 +82,40 @@ class _Implicit:
         return self._dtype
 
     # Python's indexing protocol, so a kernel indexes any array as it does a
-    # stored one: ``a[k]`` is ``get(k)``, ``len(a)`` its length.
+    # stored one: ``a[k]`` is ``get(k)``, ``len(a)`` its length; and the host does
+    # too, as it reads one element of an Array.
     @tack.func
     def __getitem__(self, k):
         return self.get(k)
 
+    @__getitem__.host
+    def __getitem__(self, k):
+        """Value ``k``, read from the host: a Python number, or a NumPy array of a
+        vector's components, computed by a one-thread kernel where the array is
+        (each read is a launch, so many values are read with ``to_host``).
+        Negative ``k`` counts from the end."""
+        if not isinstance(k, (int, np.integer)) or isinstance(k, bool):
+            raise TypeError(f"an implicit array takes one integer index on the host, not "
+                            f"{k!r}; to read many values use tack.arrays.to_host()")
+        n = self._size
+        if not -n <= int(k) < n:
+            raise IndexError(f"index {k} is out of range for an implicit array of {n} values")
+        out = tack.empty((1,), element_type(self), device=self._device)
+        _read_one(self, int(k) % n, out)
+        value = out.numpy()[0]
+        return value.item() if self._width is None else value
+
     @tack.func
     def __len__(self):
         return self.length
+
+    @__len__.host
+    def __len__(self):
+        return self._size
+
+    def __iter__(self):
+        raise TypeError("an implicit array is not iterated by element from the host; "
+                        "iterate over tack.arrays.to_host()")
 
     @property
     def _device(self):
@@ -764,6 +790,13 @@ def element_type(values):
 def to_host(values):
     """The values as a host array: ``(size,)`` for scalars, ``(size, width)`` for vectors."""
     return values.numpy()
+
+
+@tack.kernel
+def _read_one(values, k, out):
+    # Value k of an implicit array, for its host __getitem__.
+    for i in range(1):
+        out[i] = values[k]
 
 
 @tack.kernel

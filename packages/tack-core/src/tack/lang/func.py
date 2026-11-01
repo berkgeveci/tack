@@ -11,6 +11,7 @@ result variable, and the call expression evaluates to that variable.
 import ast
 import inspect
 import textwrap
+import types
 import weakref
 
 
@@ -57,6 +58,10 @@ def read_source(func, kind: str) -> str:
 class Func:
     """A captured device-side function, ready for AST inlining."""
 
+    #: What calling it from Python runs, where it has one (``host``); without one,
+    #: calling it from Python raises.
+    _host = None
+
     def __init__(self, func):
         self.func = func
         self.name = func.__name__
@@ -74,7 +79,24 @@ class Func:
             self._funcdef.args.args[0].arg == 'self'
         )
 
+    def host(self, implementation):
+        """Give this function a host implementation, which calling it from Python runs,
+        as a method bound to its instance; kernels still inline the device body. As a
+        decorator under the same name, ``@name.host``, so Python's protocols (``obj[i]``,
+        ``len(obj)``) work on the host and in kernels alike."""
+        self._host = implementation
+        return self
+
+    def __get__(self, instance, owner=None):
+        # Only a function with a host implementation binds to its instance: every
+        # other one stays the Func that templates collect, as before.
+        if instance is None or self._host is None:
+            return self
+        return types.MethodType(self._host, instance)
+
     def __call__(self, *args, **kwargs):
+        if self._host is not None:
+            return self._host(*args, **kwargs)
         raise RuntimeError(
             f"@tack.func '{self.name}' cannot be called from Python. "
             "It can only be called from within a @tack.kernel."

@@ -223,3 +223,32 @@ def test_computed_and_read_only_arrays_refuse_writes(backend):
         with pytest.raises(ValueError, match="'dst.base.values' may be written, but its "
                                              "array is read-only"):
             _fill(arrays.View(read_only, 0, 4), 4)
+
+
+def test_implicit_arrays_index_from_the_host_as_arrays_do():
+    """``a[k]`` and ``len(a)`` on the host, as on a stored Array: one value, computed
+    where the array is, a Python number for scalars and a NumPy array for vectors;
+    kernels still index them through the same ``__getitem__``."""
+    from tack import arrays as ta
+
+    stored = tack.array(np.arange(6, dtype=np.float32) * 1.5)
+    cases = [ta.ConstantArray(2.5, 4), ta.ConstantArray([1.0, 2.0, 3.0], 3),
+             ta.CountingArray(5, start=3, step=2),
+             ta.UniformCoordinates((3, 2, 2), origin=(1, 0, 0), spacing=(0.5, 1, 1)),
+             ta.CartesianProduct([0.0, 1.0, 3.0], [0.0, 2.0]),
+             ta.Permutation(stored, tack.array(np.array([5, 0, 3], np.int32)))]
+    for values in cases:
+        host = np.asarray(ta.to_host(values))
+        assert len(values) == host.shape[0]
+        for k in (0, len(values) - 1, -1):
+            got = values[k]
+            if host.ndim == 1:
+                assert isinstance(got, (int, float)) and got == host[k]
+            else:
+                np.testing.assert_array_equal(got, host[k])
+        with pytest.raises(IndexError, match="out of range"):
+            values[len(values)]
+        with pytest.raises(TypeError, match="one integer index"):
+            values[0:2]
+        with pytest.raises(TypeError, match="not iterated"):
+            iter(values)
