@@ -4340,7 +4340,15 @@ mix of one dimension. Each family is refined alone, and the parts are joined
 where they share lattice points. On such a mix, crossings are placed on the
 linear sub-cells; exact crossings need cells of one family.</p>
 <h2 id="reading-and-writing-other-formats">Reading and writing other formats<a class="headerlink" href="#reading-and-writing-other-formats" title="Permanent link">&para;</a></h2>
-<p><strong>VTK unstructured grids.</strong> Linear cells read as the shapes above.
+<p><strong>VTK unstructured grids.</strong> Linear cells read as the shapes above. A grid with
+polyhedra reads as a <code>PolyhedralTopology</code>, every cell a polyhedron of its faces,
+since one topology holds either shapes or polyhedra for now (a topology holding
+both is planned). For a large mesh that mixes them, read it with
+<code>vtk_to_dataset(grid, polyhedral="split")</code>: a <code>PartitionedDataSet</code> of two
+pieces over the same points, the shaped cells as themselves and the polyhedra
+as polyhedra, each point owned by one of them so reductions count it once. A
+CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
+(with <code>copy=False</code>); as polyhedra throughout it would take tens of gigabytes.
 Higher-order cells read as <code>H1</code> fields of the grid's largest order, in any mix
 of shapes, dimensions and orders:</p>
 <table>
