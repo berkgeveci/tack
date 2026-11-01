@@ -1,5 +1,8 @@
 ### Added
 
+- `world_gradient(cells, u, c, pc)`, the device function `gradients` uses:
+  a field's gradient in the world at a parametric point, for kernels that
+  need it where `gradients` does not put it.
 - `world_hessian(cells, u, c, pc)`: a field's second derivatives in the world
   at a parametric point of a solid cell, for kernels. By the chain rule
   through the geometry: the field view's new `parametric_hessian` less the

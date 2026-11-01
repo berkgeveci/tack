@@ -16,7 +16,10 @@ __all__ = ['gradients']
 
 
 @tack.func
-def _world_gradient(cells, u, c, pc):
+def world_gradient(cells, u, c, pc):
+    """`u`'s gradient in the world at parametric `pc` of cell `c`: its
+    parametric gradient through the geometry's Jacobian. For kernels that need a
+    field's gradient where `gradients` does not put it."""
     # d(u)/d(x) from d(u)/d(pc), through the geometry's Jacobian J. A solid's is
     # J^-T d(u)/d(pc). A 2D cell's lies in its tangent plane, spanned by J's
     # columns a and b: g = alpha a + beta b with g . a and g . b the parametric
@@ -36,6 +39,9 @@ def _world_gradient(cells, u, c, pc):
         det = aa * bb - ab * ab
         g = ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
     return g
+
+
+_world_gradient = world_gradient
 
 
 @tack.func

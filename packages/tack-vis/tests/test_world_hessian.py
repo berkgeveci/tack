@@ -9,7 +9,6 @@ import pytest
 import tack
 import tack.dataset as td
 from tack.dataset import shapes
-from tack.dataset.algorithms.gradients import _world_gradient
 from tack.dataset.topology import uniform_cells
 
 
@@ -30,8 +29,8 @@ def _differenced(cells, u, out, step):
         d = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
         for k in range(3):
             e = tack.vec3(1.0 if k == 0 else 0.0, 1.0 if k == 1 else 0.0, 1.0 if k == 2 else 0.0)
-            ahead = _world_gradient(cells, u, c, pc + step * e)
-            behind = _world_gradient(cells, u, c, pc - step * e)
+            ahead = td.world_gradient(cells, u, c, pc + step * e)
+            behind = td.world_gradient(cells, u, c, pc - step * e)
             d += ((ahead - behind) / (2.0 * step)).outer_product(e)
         h = d @ cells.geometry_jacobian(c, pc).inverse()
         i = cells.entity_id(c)
@@ -210,7 +209,7 @@ def _jets(cells, u, out):
         e = cells.entity_id(c)
         out[13 * e] = v - u.value(c, pc)
         for a in range(3):
-            out[13 * e + 1 + a] = g[a] - _world_gradient(cells, u, c, pc)[a]
+            out[13 * e + 1 + a] = g[a] - td.world_gradient(cells, u, c, pc)[a]
             for b in range(3):
                 out[13 * e + 4 + 3 * a + b] = h[a, b]
 
@@ -224,3 +223,21 @@ def test_jets_are_the_value_gradient_and_hessian(f64_backend, make, space):
     out = out.numpy().reshape(-1, 13)
     np.testing.assert_allclose(out[:, :4], 0.0, atol=1e-10)
     np.testing.assert_allclose(out[:, 4:].reshape(-1, 3, 3), _run(data, _hessians), atol=1e-10)
+
+
+@tack.kernel
+def _gradients_at_centers(cells, u, out):
+    for c in cells:
+        g = td.world_gradient(cells, u, c, cells.parametric_center())
+        e = cells.entity_id(c)
+        for a in range(3):
+            out[3 * e + a] = g[a]
+
+
+def test_world_gradient_is_what_gradients_gives(f64_backend):
+    data = _bent(_tetrahedra, 2)
+    data.fields["u"] = td.interpolate(data, _p3, td.H1(data, order=2))
+    out = tack.zeros((3 * data.num_cells,), data.dtype)
+    td.for_each(_gradients_at_centers, data, "cells", data.fields["u"], out)
+    np.testing.assert_allclose(out.numpy().reshape(-1, 3), td.gradients(data, "u", at="cells").values.numpy(),
+                               atol=1e-12)

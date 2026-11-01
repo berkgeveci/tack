@@ -156,6 +156,8 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 
 ::: tack.dataset.for_each
 
+::: tack.dataset.world_gradient
+
 ::: tack.dataset.world_hessian
 
 ::: tack.dataset.world_jet
