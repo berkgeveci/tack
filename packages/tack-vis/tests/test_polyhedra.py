@@ -1243,6 +1243,9 @@ def _mixed_vtu_grid():
     grid = append.GetOutput()
     grid.point_data["T"] = np.asarray(grid.points.data)[:, 0].astype(np.float32)
     grid.cell_data["c"] = np.arange(grid.number_of_cells, dtype=np.float32)
+    # A point array and a cell array of one name, as solvers write their averages.
+    grid.point_data["p"] = np.ones(grid.number_of_points, np.float32)
+    grid.cell_data["p"] = np.full(grid.number_of_cells, 2.0, np.float32)
     return grid
 
 
@@ -1268,6 +1271,9 @@ def test_split_reads_shapes_and_polyhedra_over_one_set_of_points(copy):
                                   np.flatnonzero(types == 42))
     np.testing.assert_array_equal(polyhedral.global_ids.cells.numpy(),
                                   np.flatnonzero(types == 42))
+    for piece in pieces:                         # both "p"s, each in its own space
+        assert piece.fields["p", td.H1].values.numpy().tolist() == [1.0] * grid.number_of_points
+        assert set(piece.fields["p", td.Constant].values.numpy().tolist()) == {2.0}
     whole = vtk_to_dataset(grid, polyhedral=True)
 
     def area(data):

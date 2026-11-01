@@ -581,14 +581,15 @@ def _split_polyhedra(grid, options):
 
     topology = _polyhedral_topology(grid, orient=options["orient"],
                                     id_dtype=options["id_dtype"], cells=polyhedra)
-    fields = {name: Field(H1(topology), f.values, f.unit) for name, f in first.fields.items()
-              if isinstance(f.space, H1)}
+    # The point fields are the shaped piece's arrays; a cell field may share a point
+    # field's name, as VTK's arrays do (two fields of one name in two spaces).
+    fields = [(name, Field(H1(topology), f.values, f.unit))
+              for name, f in first.fields.entries() if isinstance(f.space, H1)]
     rows = vtkCellData()
     _take_cell_data(grid.GetCellData(), rows, polyhedra)
     share = not options["copy"]
-    for name, field in _attributes_to_fields(rows, Constant(topology), options["dtype"],
-                                             share).items():
-        fields[_cell_field_name(name, fields)] = field
+    fields += list(_attributes_to_fields(rows, Constant(topology), options["dtype"],
+                                         share).items())
 
     # Ownership: the shaped cells' points are theirs, the rest the polyhedra's.
     n = grid.number_of_points
