@@ -670,17 +670,33 @@ the dataset's named fields.
 
 | Conversion | Meaning | What to check |
 |---|---|---|
-| H1 → Constant | Mean of each cell's corner values | Not a general volume integral |
+| H1 → Constant | Each cell's average: its integral over the cell divided by the cell's measure | `average="nodes"` for VTK's mean of the cell's nodes |
 | Constant → H1 | Mean of incident cell values at each point | Material discontinuities become shared values |
 | H1 → L2 of sufficient order | Evaluate the continuous field at each cell's local nodes | Values remain equal on shared interfaces |
 | L2 → H1 | Evaluate from adjacent cells, then average | Jumps can be smoothed |
 | Constant → L2(order=1) | Repeat a cell's value at its own corners | Discontinuities remain |
 
-For the affine temperature `x + 2y + 3z` on the two regular cells, corner
-means are `[2.75, 3.25]`, the exact center values. That convenient property
-does not establish conservation for general fields or distorted cells.
+For the affine temperature `x + 2y + 3z` on the two regular cells, the
+averages are `[2.75, 3.25]`, the center values.
 
-Polyhedral, polygonal and polyline topologies support point/cell projection.
+A cell's average and the mean of its nodes are different numbers. A cell's
+value from `project` is the average: the field integrated over the cell
+through the cell's own map, divided by the cell's measure. So each value
+times its cell's measure sums to `integrate`'s integral, for a field of any
+order on curved cells too. VTK's vtkPointDataToCellData and Viskores'
+CellAverage take the mean of the cell's points instead. With
+`average="nodes"`, `project` does the same: the mean of the field's own
+values in the cell, its `NODES`. The two agree for a linear field on a
+tetrahedron or on the boxes of an image. They differ elsewhere:
+
+- On a pyramid, the apex weighs a quarter of a linear field's average, not a
+  fifth.
+- A distorted hexahedron's corners do not weigh alike.
+- At higher order, x² on the unit cube averages to 1/3. Its corners' mean is
+  1/2, and its 27 order-2 nodes' mean is 0.42.
+
+Polyhedral, polygonal and polyline topologies support point/cell projection:
+a cell's average is exact for a field linear on the pieces it is cut into.
 `L2`, higher-order projection and traces require the shape-based path. In
 particular, being able to attach point values to a polyhedron does not imply
 that it supplies shape-function evaluation for every algorithm.

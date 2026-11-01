@@ -242,8 +242,9 @@ cell, `td.L2(data)` for each cell's own copies.
 
 Projecting into a space that can hold the field exactly gives it back
 exactly: a linear point field into `L2`, or into order-2 `H1`. Otherwise
-`project` averages the way VTK does: a point takes the mean of the cells
-around it, and a cell the mean of its corners.
+`project` averages: a point takes the mean of the cells around it, as VTK
+does, and a cell the field's average over the cell (`average="nodes"` gives
+VTK's mean of the cell's nodes instead).
 
 ## Sets
 

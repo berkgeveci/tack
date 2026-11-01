@@ -965,18 +965,21 @@ def test_to_cells_averages_each_cells_points(backend, make):
     scalar = rng.uniform(-1, 1, data.num_points)
     vector = rng.uniform(-1, 1, (data.num_points, 3))
     rows = _cell_points(data)
-    out = alg.project(data, td.Field(td.H1(data), _scalars(scalar)), td.Constant(data))
+    out = alg.project(data, td.Field(td.H1(data), _scalars(scalar)), td.Constant(data),
+                      average="nodes")
     assert out.space is td.Constant(data)
     np.testing.assert_allclose(out.values.numpy(), [scalar[r].mean() for r in rows],
                                atol=1e-6)
-    out = alg.project(data, td.Field(td.Values(data, "points"), _vectors(vector)), td.Constant(data))
+    out = alg.project(data, td.Field(td.Values(data, "points"), _vectors(vector)), td.Constant(data),
+                      average="nodes")
     np.testing.assert_allclose(out.values.numpy(),
                                [vector[r].mean(axis=0) for r in rows], atol=1e-6)
 
 
 def test_to_cells_of_every_space(backend):
-    """A DG field averages its own corners; a cell constant is itself; an
-    order-2 field averages its corner values; an order per cell is followed."""
+    """A DG field averages as its continuous twin; a cell constant is itself; an
+    order-2 field averages over the cell, or over all its nodes; an order per
+    cell is followed."""
     data = _two_hexes_and_a_pyramid()
     u = _height(data)
     expected = alg.project(data, u, td.Constant(data)).values.numpy()
@@ -993,12 +996,20 @@ def test_to_cells_of_every_space(backend):
                                np.where(orders == 1, expected, centers), atol=1e-5)
     grid = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1])
     quadratic = td.H1(grid, order=2)
-    values = np.zeros(quadratic.size)
-    values[:grid.num_points] = _height(grid).values.numpy()       # the points' values
-    values[grid.num_points:] = 100.0                                 # the rest: not read
-    np.testing.assert_allclose(
-        alg.project(grid, td.Field(quadratic, _scalars(values)), td.Constant(grid)).values.numpy(),
-        alg.project(grid, _height(grid), td.Constant(grid)).values.numpy(), atol=1e-5)
+    raised = alg.project(grid, _height(grid), quadratic)             # the same field
+    np.testing.assert_allclose(alg.project(grid, raised, td.Constant(grid)).values.numpy(),
+                               alg.project(grid, _height(grid), td.Constant(grid)).values.numpy(),
+                               atol=1e-5)
+    values = raised.values.numpy().copy()
+    values[grid.num_points:] = 100.0                                 # every other node
+    bumped = td.Field(quadratic, _scalars(values))
+    corners = alg.project(grid, _height(grid), td.Constant(grid)).values.numpy()
+    np.testing.assert_allclose(           # 8 corners and 19 nodes of 100
+        alg.project(grid, bumped, td.Constant(grid), average="nodes").values.numpy(),
+        (8 * corners + 19 * 100.0) / 27, rtol=1e-6)
+    np.testing.assert_allclose(           # Simpson's weights: 1/216 a corner
+        alg.project(grid, bumped, td.Constant(grid)).values.numpy(),
+        (8 * corners + 208 * 100.0) / 216, rtol=1e-6)
 
 
 def test_to_cells_refuses(backend):
@@ -1017,8 +1028,8 @@ def test_to_cells_is_vtks(f64_backend, kind):
     grid.point_data["p"] = np.random.default_rng(5).uniform(-1, 1, grid.number_of_points)
     want = np.asarray(vtk.vtkPointDataToCellData()(grid).cell_data["p"])
     data = vtk_to_dataset(grid, dtype=tack.f64)
-    np.testing.assert_allclose(alg.project(data, data.fields["p"], td.Constant(data)).values.numpy(), want,
-                               atol=1e-12)
+    np.testing.assert_allclose(alg.project(data, data.fields["p"], td.Constant(data),
+                                           average="nodes").values.numpy(), want, atol=1e-12)
 
 
 @needs_vtk

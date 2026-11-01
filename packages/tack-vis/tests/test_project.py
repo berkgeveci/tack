@@ -1,7 +1,7 @@
 """``project``: a field into another space of its topology. Exact where the target
 holds the source (a continuous field into a higher order, anything of order up
-to 1 into order-1 L2), averaged as VTK averages otherwise; the shortcuts
-``to_points``, ``to_cells`` and ``discontinuous`` are projections."""
+to 1 into order-1 L2), averaged otherwise: onto points as VTK averages, onto
+cells by each cell's average (``average="nodes"``: VTK's mean of its nodes)."""
 
 import numpy as np
 import pytest
@@ -318,3 +318,114 @@ def test_interpolate_unused_points_and_refusals(backend):
         td.interpolate(data, _quadratic_of, td.H1(_hexes()))
     with pytest.raises(TypeError, match="@tack.func"):
         td.interpolate(data, lambda x: x, td.H1(data))
+
+
+# ── A cell's one value: its average, or its nodes' mean ─────────────
+
+@tack.func
+def _square_of_x(p):
+    return p.x * p.x
+
+
+@pytest.mark.parametrize("space", ["H1 2", "H1 3", "L2 2", "bernstein 3"])
+def test_into_cells_is_each_cells_average(backend, space):
+    """x² on the unit cube, in a space that holds it exactly: its average is 1/3,
+    which its corners' mean (1/2) and its nodes' mean are not (but for Bernstein
+    coefficients: each basis function has the same integral)."""
+    data = td.uniform_grid((2, 2, 2))
+    kind, order = space.split()
+    space = (td.L2(data, order=int(order)) if kind == "L2"
+             else td.H1(data, order=int(order), **({"basis": kind} if kind == "bernstein" else {})))
+    f = td.interpolate(data, _square_of_x, space)
+    for target in (td.Constant(data), td.L2(data, order=0), td.Values(data, "cells")):
+        assert td.project(data, f, target).values.numpy() == pytest.approx([1 / 3], rel=1e-6)
+    nodes = td.project(data, f, td.Constant(data), average="nodes").values.numpy()[0]
+    assert nodes == pytest.approx(1 / 3, rel=1e-6) if kind == "bernstein" else nodes > 0.35
+
+
+def _one_cell(vtk_type, corners):
+    corners = np.asarray(corners, np.float64)
+    topology = td.UnstructuredTopology(np.array([vtk_type], np.uint8), np.array([0, len(corners)]),
+                                       np.arange(len(corners)))
+    return td.DataSet(topology, corners)
+
+
+DISTORTED = {
+    "hexahedron": (12, [[0, 0, 0], [2, 0, 0], [2.5, 1.5, 0], [0, 1, 0],
+                        [0, 0, 1], [1, 0, 1.5], [1, 1, 1], [0, 1, 1.2]]),
+    "wedge": (13, [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1.5, 0, 1.2], [0, 1.3, 0.8]]),
+    "pyramid": (14, [[0, 0, 0], [1, 0, 0], [1.2, 1.1, 0], [0, 1, 0], [0.3, 0.4, 1]]),
+    "quad": (9, [[0, 0, 0], [2, 0, 0], [2.5, 1.5, 0], [0, 1, 0]]),
+    "tetra": (10, [[0, 0, 0], [2, 0, 0], [0.5, 1.5, 0], [0.2, 0.3, 1.1]]),
+}
+
+
+@pytest.mark.parametrize("shape", DISTORTED)
+def test_a_distorted_cells_average_is_its_integral_over_its_measure(backend, shape):
+    """Through the cell's own map: a pyramid's apex weighs a quarter, not a fifth,
+    and a distorted hexahedron's corners do not weigh alike."""
+    data = _one_cell(*DISTORTED[shape])
+    x = data.positions()
+    data.fields["f"] = td.Field(td.H1(data), _scalars(_linear(x)))
+    data.fields["z"] = td.Field(td.H1(data), _scalars(x[:, 2]))
+    whole = td.integrate(data)
+    for name in "fz":
+        average = td.project(data, name, td.Constant(data)).values.numpy()[0]
+        assert average == pytest.approx(whole.values[name] / whole.measure, rel=1e-5)
+        nodes = td.project(data, name, td.Constant(data), average="nodes").values.numpy()[0]
+        assert nodes == pytest.approx(data.fields[name].values.numpy().mean(), rel=1e-6)
+    if shape == "pyramid":                       # z: the apex's height times a quarter
+        assert td.project(data, "z", td.Constant(data)).values.numpy()[0] == pytest.approx(0.25)
+
+
+def test_polyhedra_average_over_their_pieces(backend):
+    """A polyhedron's average is exact for a linear field: a pyramid's apex
+    weighs a quarter; ``average="nodes"`` is its distinct points' mean."""
+    data = td.as_polyhedra(_one_cell(*DISTORTED["pyramid"]))
+    data.fields["z"] = td.Field(td.H1(data), _scalars(data.positions()[:, 2]))
+    assert td.project(data, "z", td.Constant(data)).values.numpy()[0] == pytest.approx(0.25,
+                                                                                       rel=1e-5)
+    assert td.project(data, "z", td.Constant(data),
+                      average="nodes").values.numpy()[0] == pytest.approx(0.2)
+
+
+# VTK's higher-order cells: quadratic triangle, quad (8), tetrahedron, hexahedron
+# (20), wedge (15), triquadratic hexahedron (27), Lagrange hexahedron of order 3.
+_VTK_CELLS = [(22, 2), (23, 2), (24, 2), (25, 2), (26, 2), (29, 2), (72, 3)]
+
+
+@pytest.mark.parametrize("vtk_type, order", _VTK_CELLS)
+def test_vtks_higher_order_cells_average_as_vtk_with_nodes(f64_backend, vtk_type, order):
+    """``average="nodes"`` is vtkPointDataToCellData on every point a cell has; the
+    default is the average, whose integral over the mesh is the field's."""
+    sources = pytest.importorskip("vtkmodules.vtkFiltersSources")
+    from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkPoints
+    from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    solid = vtk_type not in (22, 23)
+    grid = sources.vtkCellTypeSource(cell_type=vtk_type, cell_order=order,
+                                     blocks_dimensions=(2, 2, 2) if solid else (2, 2, 1))()
+    p = np.asarray(grid.points.data, np.float64)
+    p = p + 0.04 * np.c_[np.sin(p[:, 1]), np.sin(p[:, 2]), np.sin(p[:, 0])]   # bent
+    grid.points = vtkPoints(data=p)
+    grid.point_data["u"] = vtkDoubleArray(p[:, 0] ** 2 - p[:, 1] * p[:, 2] + 0.3 * p[:, 2])
+    want = np.asarray(vtkPointDataToCellData()(grid).cell_data["u"])
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    np.testing.assert_allclose(
+        td.project(data, "u", td.Constant(data), average="nodes").values.numpy(), want,
+        rtol=1e-12)
+    averages = td.project(data, "u", td.Constant(data)).values.numpy()
+    measures = td.cell_geometry(data).measure.values.numpy()
+    whole = td.integrate(data)
+    assert np.dot(averages, measures) == pytest.approx(whole.values["u"], rel=1e-10)
+    assert not np.allclose(averages, want, rtol=1e-6)
+
+
+def test_average_is_for_one_value_a_cell(backend):
+    data = _hexes_with_f()
+    with pytest.raises(ValueError, match="average is one of"):
+        td.project(data, "f", td.Constant(data), average="corners")
+    with pytest.raises(ValueError, match="one value"):
+        td.project(data, "f", td.H1(data, order=2), average="nodes")
