@@ -40,8 +40,9 @@ an approximation to a sphere. This example needs no VTK installation.
 ### A first reading
 
 Begin with the [Data Model Overview](data-model-overview.md) for the kinds
-of meshes, refined data and particles Tack represents, and how FE, FV, SPH
-and future FD support fit them.
+of meshes, refined data and particles Tack represents, and how finite element
+(FE), finite volume (FV), smoothed particle hydrodynamics (SPH), and future
+finite difference (FD) support fit them.
 
 Then read [Understand a Dataset](01-datasets.md),
 [Topology and Geometry](topology-and-geometry.md),
@@ -62,7 +63,8 @@ advanced FE theory and layout formulas are optional.
 
 ### Advanced routes
 
-For FE/DG input, read [Function Spaces and Higher-order Geometry](00-function-spaces.md),
+For FE or discontinuous Galerkin (DG) input, read
+[Function Spaces and Higher-order Geometry](00-function-spaces.md),
 the [capability catalog](16-cells-and-bases.md), and
 [Create and Convert Fields](create-fields.md). For solver memory, use
 [Arrays, Storage and Layouts](field-storage.md) and
