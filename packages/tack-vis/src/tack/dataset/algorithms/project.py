@@ -273,9 +273,7 @@ def _onto_points(data, field, values):
 def _quadratic_count(space, shape):
     """The order-2 nodes a space stores on a ``shape`` cell, in the quadratic shapes'
     order: all of them, or serendipity's corners and edges (the first ones)."""
-    if space.basis == bases.SERENDIPITY:
-        return shape.NUM_POINTS + shape.NUM_EDGES
-    return shape.NUM_QUADRATIC
+    return space.quadratic_count(shape)
 
 
 def _onto_nodes(data, field, space, values):

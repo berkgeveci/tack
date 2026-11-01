@@ -98,6 +98,10 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 
 ::: tack.dataset.SideTraces
 
+::: tack.dataset.HDiv
+
+::: tack.dataset.HCurl
+
 ::: tack.dataset.bases
     options: {members: [FAMILIES, BERNSTEIN, nodes, weights, bernstein, dof_tables, tensor_shape]}
 
@@ -161,6 +165,14 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 ::: tack.dataset.world_hessian
 
 ::: tack.dataset.world_jet
+
+::: tack.dataset.hdiv_value
+
+::: tack.dataset.hdiv_div
+
+::: tack.dataset.hcurl_value
+
+::: tack.dataset.hcurl_curl
 
 ## Filters of your own
 

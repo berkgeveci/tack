@@ -623,6 +623,20 @@ class H1(Space):
             return np.flatnonzero(kind <= bases.EDGE).astype(np.int32)
         return np.arange(len(kind), dtype=np.int32)
 
+    def reads_any_order(self, shape):
+        """Whether views read this space on ``shape`` cells as a basis of any order, with
+        ``stored_nodes(shape)`` as its nodes, rather than as the quadratic shapes'
+        functions, with ``quadratic_count(shape)`` nodes in their order."""
+        return self._any_order(shape)
+
+    def quadratic_count(self, shape):
+        """The order-2 nodes this space stores on a ``shape`` cell read as the quadratic
+        shapes' functions, in their order: all of them, or serendipity's corners and edges
+        (the first ones)."""
+        if self.basis == bases.SERENDIPITY:
+            return shape.NUM_POINTS + shape.NUM_EDGES
+        return shape.NUM_QUADRATIC
+
     def _any_order(self, shape):
         """Whether views read this space on ``shape`` cells as a basis of any order --
         above order 2, or at 2 in a Bernstein basis or on a shape with such bases
