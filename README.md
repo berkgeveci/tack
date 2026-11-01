@@ -390,7 +390,7 @@ as `grid.step(0.1)` and reaches the object's arrays through `self`.
 ## Datasets and Visualization
 
 `tack.dataset` (in tack-vis) holds meshes and the fields on them -- structured
-grids, unstructured meshes of the linear cells, polyhedra, polygons and
+grids, unstructured meshes, polyhedra, polygons and
 polylines -- and the algorithms that work on them: contour, slice, clip,
 threshold, external faces, gradients, projections between spaces,
 streamlines and more. They are Tack kernels, so they run on every backend,
