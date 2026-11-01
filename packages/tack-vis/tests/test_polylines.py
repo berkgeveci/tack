@@ -106,7 +106,15 @@ def test_averages_and_extraction(backend):
     data = _lines()
     data.fields["s"] = td.Field(td.H1(data), _scalars(X[:, 0]))
     data.fields["c"] = td.Field(td.Constant(data), _scalars([10.0, 20.0, 30.0, 40.0]))
-    np.testing.assert_allclose(td.project(data, "s", td.Constant(data)).values.numpy(), [1.5, 4, 7, 9.5])
+    # The first chain has two segments of length sqrt(1.25), then sqrt(2).
+    # Integrate linear x by its segment midpoints, then divide by total length.
+    short, long = np.sqrt(1.25), np.sqrt(2.0)
+    first_average = (short * 0.5 + short * 1.5 + long * 2.5) / (2 * short + long)
+    np.testing.assert_allclose(td.project(data, "s", td.Constant(data)).values.numpy(),
+                               [first_average, 4, 7, 9.5], rtol=1e-6)
+    np.testing.assert_allclose(
+        td.project(data, "s", td.Constant(data), average="nodes").values.numpy(),
+        [1.5, 4, 7, 9.5])
     point_values = td.project(data, "c", td.H1(data)).values.numpy()
     assert point_values[3] == pytest.approx(15.0)                     # shared by 0 and 1
     kept = td.threshold(data, "c", 25, 45)
