@@ -12,7 +12,7 @@ from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import corner_layout
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ['gradients']
+__all__ = ['gradients', 'world_gradient']
 
 
 @tack.func
