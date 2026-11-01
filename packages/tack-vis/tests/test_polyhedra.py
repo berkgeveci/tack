@@ -1296,3 +1296,110 @@ def test_split_of_one_kind_is_one_piece():
         pieces = vtk_to_dataset(vtkCellTypeSource(cell_type=kind, blocks_dimensions=(2, 2, 2))(),
                                 polyhedral="split")
         assert len(pieces) == 1 and isinstance(pieces[0].topology, topology)
+
+
+def _inside_out_wedges():
+    """VTK's wedges, and the same with each wedge's corners in the reverse order (as
+    some converters write prisms), on the same points."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    import vtkmodules.vtkCommonDataModel as dm
+    from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    upright = vtkCellTypeSource(cell_type=dm.VTK_WEDGE, blocks_dimensions=(3, 2, 2))()
+    offsets = np.asarray(upright.cells.offsets_array)
+    corners = np.asarray(upright.cells.connectivity_array).reshape(-1, 6)[:, [0, 2, 1, 3, 5, 4]]
+    flipped = vtkUnstructuredGrid()
+    flipped.SetPoints(upright.GetPoints())
+    flipped.cells = (dm.VTK_WEDGE, vtkCellArray(offsets=offsets, connectivity=corners.reshape(-1)))
+    return upright, flipped
+
+
+def test_inside_out_cells_warn_and_orient_turns_them_outward():
+    from tack.interop.vtk import vtk_to_dataset
+
+    upright, flipped = _inside_out_wedges()
+    expected = td.cell_geometry(vtk_to_dataset(upright)).measure.values.numpy()
+    assert (expected > 0).all()
+    with pytest.warns(UserWarning, match=r"24 cells are inside out \(24 wedges\)"):
+        as_written = vtk_to_dataset(flipped)
+    assert (td.cell_geometry(as_written).measure.values.numpy() < 0).all()
+    repaired = vtk_to_dataset(flipped, orient=True)
+    np.testing.assert_allclose(td.cell_geometry(repaired).measure.values.numpy(), expected,
+                               rtol=1e-6)
+
+
+def test_orient_repairs_shapes_before_matching_polyhedral_faces():
+    """Read as polyhedra, inside-out wedges stacked on upright ones wind the triangles
+    they share the same way: refused without ``orient``, and with it the inside-out
+    ones are turned outward and the faces match, without the cell-by-cell walk."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkFiltersCore import vtkAppendFilter
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    upright, flipped = _inside_out_wedges()
+    x = np.asarray(flipped.points.data).copy()
+    x[:, 2] += 2                                           # on top, sharing z = 2
+    flipped.points = vtkPoints(data=x)
+    append = vtkAppendFilter(merge_points=True)
+    append.AddInputData(upright)
+    append.AddInputData(flipped)
+    append.Update()
+    grid = append.GetOutput()
+    with pytest.warns(UserWarning, match="inside out"), \
+            pytest.raises(ValueError, match="wound the same way"):
+        vtk_to_dataset(grid, polyhedral=True)
+    data = vtk_to_dataset(grid, polyhedral=True, orient=True)
+    assert data.num_cells == grid.number_of_cells
+
+
+def test_a_tangled_cell_is_not_turned():
+    """A hexahedron negative at corner 0 but of positive volume (corner 0 pushed
+    inside) is tangled, not inside out: no warning, and its corners stay."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    import warnings
+
+    import vtkmodules.vtkCommonDataModel as dm
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    x = np.array([[0.45, 0.45, 0.45], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+                  [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], np.float64)
+    grid = vtkUnstructuredGrid()
+    grid.points = vtkPoints(data=x)
+    grid.cells = (dm.VTK_HEXAHEDRON, vtkCellArray(offsets=np.array([0, 8]),
+                                                  connectivity=np.arange(8)))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        data = vtk_to_dataset(grid, orient=True)
+    np.testing.assert_array_equal(data.topology.connectivity.numpy(), np.arange(8))
+
+
+def test_inside_out_polyhedra_warn_and_orient_turns_them_outward():
+    """Polyhedra whose every face is listed inward agree with each other, so matching
+    passes them; their negative volumes are what shows them, in a warning, and
+    ``orient=True`` turns them outward."""
+    pytest.importorskip("vtkmodules.vtkCommonDataModel")
+    import vtkmodules.vtkCommonDataModel as dm
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = vtkCellTypeSource(cell_type=dm.VTK_POLYHEDRON, blocks_dimensions=(3, 2, 2))()
+    expected = td.cell_geometry(vtk_to_dataset(grid)).measure.values.numpy()
+    faces = grid.polyhedron_faces
+    offsets = np.asarray(faces.offsets_array)
+    points = np.asarray(faces.connectivity_array)
+    for f in range(len(offsets) - 1):                    # every face listed the other way
+        points[offsets[f]:offsets[f + 1]] = points[offsets[f]:offsets[f + 1]][::-1].copy()
+    grid.Modified()
+    with pytest.warns(UserWarning, match=f"{grid.number_of_cells} polyhedra are inside out"):
+        as_written = vtk_to_dataset(grid)
+    assert (td.cell_geometry(as_written).measure.values.numpy() < 0).all()
+    repaired = vtk_to_dataset(grid, orient=True)
+    np.testing.assert_allclose(td.cell_geometry(repaired).measure.values.numpy(), expected,
+                               rtol=1e-6)

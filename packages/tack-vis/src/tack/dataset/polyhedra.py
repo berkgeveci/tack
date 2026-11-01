@@ -482,8 +482,11 @@ class PolyhedralTopology(_Topology):
         faces are rings ``cell_offsets[c]`` to ``cell_offsets[c + 1]``, ring ``r``'s
         points ``ring_points[ring_offsets[r]:ring_offsets[r + 1]]``. The faces are
         the same, in the same order, as the cell-by-cell walk gives (``_match_rings``)."""
+        ring_points = np.asarray(ring_points)
+        if ring_points.dtype not in (np.int32, np.int64):
+            ring_points = ring_points.astype(np.int64)
         face_offsets, face_points, cell_faces, sides, same_way = _match_rings(
-            np.asarray(ring_offsets, np.int64), np.asarray(ring_points, np.int64))
+            np.asarray(ring_offsets, np.int64), ring_points)
         if same_way:
             raise ValueError(f"{same_way} shared faces are wound the same way by both their "
                              "cells; from_cell_faces(..., orient=True) makes them consistent")
@@ -873,6 +876,38 @@ def _ranges(starts, counts):
     return np.repeat(np.asarray(starts, np.int64) - (ends - counts), counts) + np.arange(total)
 
 
+def _packed_order(ring_points, starts, size):
+    """``(order, (high, low))`` for rings of 3 or 4 points starting at ``starts``: each
+    ring's points sorted (a min/max network over the columns) and packed two to a
+    64-bit key, ``order`` the stable permutation sorting the rings by those keys
+    (two radix passes of ``tack.algorithms.argsort`` on the CPU, low key first),
+    and the keys in that order."""
+    from tack.algorithms import argsort
+
+    column = [ring_points[starts + k].astype(np.uint64) for k in range(size)]
+    if size == 3:
+        column.append(np.zeros(starts.size, np.uint64))
+    a, b, c, d = column
+
+    def swap(x, y):
+        return np.minimum(x, y), np.maximum(x, y)
+
+    a, b = swap(a, b)
+    c, d = swap(c, d)
+    a, c = swap(a, c)
+    b, d = swap(b, d)
+    b, c = swap(b, c)
+    if size == 3:                                # the zero padding sorted first: drop it
+        a, b, c, d = b, c, d, np.zeros(starts.size, np.uint64)
+    high, low = (a << np.uint64(32)) | b, (c << np.uint64(32)) | d
+    del a, b, c, d, column
+    cpu = tack.device("cpu")
+    first = argsort(tack.array(low, device=cpu)).numpy()
+    second = argsort(tack.array(high[first], device=cpu)).numpy()
+    order = first[second]
+    return order, (high[order], low[order])
+
+
 def _match_rings(ring_offsets, ring_points):
     """Rings (faces as each cell lists them) matched by point set, in whole-array steps:
     ``(face_offsets, face_points, ring_face, ring_side, same_way)``. A face is the
@@ -885,14 +920,25 @@ def _match_rings(ring_offsets, ring_points):
     sizes = np.diff(ring_offsets)
     n = sizes.size
     owner = np.arange(n)                         # each ring's face's first ring
+    packable = ring_points.size == 0 or int(ring_points.max()) < 2**32
     for size in np.unique(sizes):
         rings = np.flatnonzero(sizes == size)
-        rows = ring_points[_ranges(ring_offsets[rings], np.full(rings.size, size))]
-        rows = np.sort(rows.reshape(rings.size, size), axis=1)
-        order = np.lexsort(rows.T[::-1])        # by sorted points; equal rows by ring
-        ordered = rows[order]
-        new = np.ones(rings.size, bool)
-        new[1:] = np.any(ordered[1:] != ordered[:-1], axis=1)
+        if 3 <= size <= 4 and packable:
+            # Triangles and quads, almost every face: the sorted points packed into
+            # two 64-bit keys, ordered by two stable radix sorts (np.lexsort took
+            # 68 s on 125M quads; this, a few).
+            order, keys = _packed_order(ring_points, ring_offsets[rings], size)
+            new = np.ones(rings.size, bool)
+            new[1:] = (keys[0][1:] != keys[0][:-1]) | (keys[1][1:] != keys[1][:-1])
+            del keys
+        else:
+            rows = ring_points[_ranges(ring_offsets[rings], np.full(rings.size, size))]
+            rows = np.sort(rows.reshape(rings.size, size), axis=1)
+            order = np.lexsort(rows.T[::-1])    # by sorted points; equal rows by ring
+            ordered = rows[order]
+            new = np.ones(rings.size, bool)
+            new[1:] = np.any(ordered[1:] != ordered[:-1], axis=1)
+            del rows, ordered
         first = order[np.flatnonzero(new)[np.cumsum(new) - 1]]
         owner[rings[order]] = rings[first]
     is_face = owner == np.arange(n)
@@ -908,6 +954,21 @@ def _match_rings(ring_offsets, ring_points):
     for size in np.unique(sizes[copies]):
         walked = copies[sizes[copies] == size]
         stored = owner[walked]
+        if size <= 4:
+            # By columns: the same test without gathering whole rows.
+            w = [ring_points[ring_offsets[walked] + k] for k in range(size)]
+            s = [ring_points[ring_offsets[stored] + k] for k in range(size)]
+            found = np.zeros(walked.size, bool)
+            opposite = np.zeros(walked.size, bool)
+            for k in range(size):
+                here = (w[k] == s[0]) & ~found    # the first of the face's first point
+                ok = here.copy()
+                for j in range(1, size):
+                    ok &= w[(k - j) % size] == s[j]
+                opposite |= ok
+                found |= here
+            same_way += int(np.count_nonzero(~opposite))
+            continue
         w = ring_points[_ranges(ring_offsets[walked], np.full(walked.size, size))]
         s = ring_points[_ranges(ring_offsets[stored], np.full(walked.size, size))]
         w, s = w.reshape(-1, size), s.reshape(-1, size)
