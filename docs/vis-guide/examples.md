@@ -27,7 +27,7 @@ probing, streamline integration and external tools.
 
 ## Choose a reading route
 
-Begin with [the four model chapters](introduction.md#a-first-reading), or
+Begin with [the overview and four model chapters](introduction.md#a-first-reading), or
 use [advanced routes](introduction.md#advanced-routes) for FE/DG input,
 solver storage and custom filters. [Analyze Adaptive Data](adaptive-data.md)
 contains the checked AMR and octree examples. The

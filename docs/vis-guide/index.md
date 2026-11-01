@@ -140,7 +140,9 @@ two without translation:
 
 ## How this guide is organized
 
-1. **The Data Model** starts with [one small dataset](01-datasets.md), then
+1. **The Data Model** opens with [what Tack can represent](data-model-overview.md),
+   crossing mesh families with FE, FV, SPH and future FD support.
+   It then develops [one small dataset](01-datasets.md) and
    separates [topology and geometry](topology-and-geometry.md),
    [field meaning](03-fields-and-spaces.md), and [coordinates, units and time](12-units.md).
    Representation chapters cover polyhedra, point clouds, pieces, AMR and octrees.

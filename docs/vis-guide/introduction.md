@@ -39,7 +39,11 @@ an approximation to a sphere. This example needs no VTK installation.
 
 ### A first reading
 
-Read [Understand a Dataset](01-datasets.md),
+Begin with the [Data Model Overview](data-model-overview.md) for the kinds
+of meshes, refined data and particles Tack represents, and how FE, FV, SPH
+and future FD support fit them.
+
+Then read [Understand a Dataset](01-datasets.md),
 [Topology and Geometry](topology-and-geometry.md),
 [Fields and Spaces](03-fields-and-spaces.md), then
 [Coordinates, Units and Time](12-units.md). These share one small example;

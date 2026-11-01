@@ -144,6 +144,7 @@ nav:
       - vis-guide/index.md
       - Introduction: vis-guide/introduction.md
       - The Data Model:
+          - Overview: vis-guide/data-model-overview.md
           - Understand a Dataset: vis-guide/01-datasets.md
           - Topology and Geometry: vis-guide/topology-and-geometry.md
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md

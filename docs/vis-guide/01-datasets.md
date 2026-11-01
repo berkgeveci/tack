@@ -5,6 +5,9 @@ whether its entries belong to points, cells or faces, or how to evaluate a
 temperature between them. Tack keeps that meaning with the values so filters
 can use it consistently.
 
+The [Data Model Overview](data-model-overview.md) maps mesh families and
+numerical methods. This chapter follows one ordinary mesh in detail.
+
 Start with the [quick start](introduction.md#quick-start) to run a contour.
 This chapter explains its objects. The next chapters develop topology and
 geometry, fields, then coordinates, units and time.
