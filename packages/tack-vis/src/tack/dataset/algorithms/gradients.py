@@ -12,11 +12,14 @@ from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import corner_layout
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ['gradients']
+__all__ = ['gradients', 'world_gradient']
 
 
 @tack.func
-def _world_gradient(cells, u, c, pc):
+def world_gradient(cells, u, c, pc):
+    """`u`'s gradient in the world at parametric `pc` of cell `c`: its
+    parametric gradient through the geometry's Jacobian. For kernels that need a
+    field's gradient where `gradients` does not put it."""
     # d(u)/d(x) from d(u)/d(pc), through the geometry's Jacobian J. A solid's is
     # J^-T d(u)/d(pc). A 2D cell's lies in its tangent plane, spanned by J's
     # columns a and b: g = alpha a + beta b with g . a and g . b the parametric
@@ -36,6 +39,38 @@ def _world_gradient(cells, u, c, pc):
         det = aa * bb - ab * ab
         g = ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
     return g
+
+
+_world_gradient = world_gradient
+
+
+@tack.func
+def world_hessian(cells, u, c, pc):
+    """`u`'s second derivatives in the world at parametric `pc` of solid cell `c`, a
+    symmetric 3x3 matrix: by the chain rule through the geometry, the parametric
+    Hessian less the geometry's curvature along the world gradient, taken to world
+    axes on both sides by the inverse Jacobian. Analytic from the basis on every
+    shape's order 1 and 2 and on tensor shapes and simplices of any order;
+    fourth-order differences of the parametric gradient on wedges above order 2.
+    Zero on surfaces, lines and vertices."""
+    _, _, h = world_jet(cells, u, c, pc)
+    return h
+
+
+@tack.func
+def world_jet(cells, u, c, pc):
+    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of solid
+    cell `c`, from the field view's `parametric_jet`, one pass over the cell's values:
+    what a kernel needing several of them reads once. As `world_hessian`; on surfaces,
+    lines and vertices the gradient and Hessian are zero."""
+    v, pg, ph = u.parametric_jet(c, pc)
+    g = tack.vec3(0.0, 0.0, 0.0)
+    h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    if cells.DIMENSION == 3:
+        inverse = cells.geometry_jacobian(c, pc).inverse()
+        g = inverse.transpose() @ pg
+        h = inverse.transpose() @ (ph - cells.geometry_curvature(c, pc, g)) @ inverse
+    return v, g, h
 
 
 @tack.kernel
