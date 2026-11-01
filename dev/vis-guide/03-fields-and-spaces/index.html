@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://berkgeveci.github.io/tack/dev/vis-guide/03-fields-and-spaces/">
       
       
-        <link rel="prev" href="../18-finite-volume/">
+        <link rel="prev" href="../topology-and-geometry/">
       
       
-        <link rel="next" href="../16-cells-and-bases/">
+        <link rel="next" href="../12-units/">
       
       
         
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#fields-spaces-and-implicit-arrays" class="md-skip">
+        <a href="#fields-and-spaces" class="md-skip">
           Skip to content
         </a>
       
@@ -1686,14 +1686,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../00-function-spaces/" class="md-nav__link">
+      <a href="../data-model-overview/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Function Space Fundamentals
+    Overview
   
 
     
@@ -1742,14 +1742,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../18-finite-volume/" class="md-nav__link">
+      <a href="../topology-and-geometry/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Finite-volume Data and Fluxes
+    Topology and Geometry
   
 
     
@@ -1838,252 +1838,13 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Choose where values live">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#fields-that-share-a-name" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Fields that share a name
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-the-values-are-stored" class="md-nav__link">
+  <a href="#association-and-reconstruction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How the values are stored
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How the values are stored">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#the-mesh-points-cells-edges-and-faces" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The mesh: points, cells, edges and faces
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#where-each-value-is" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Where each value is
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-cells-nodes-in-order" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A cell's nodes in order
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#h1-above-order-1-numbered-by-entity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        H1 above order 1: numbered by entity
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#vectors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Vectors
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#every-value-of-a-cell-at-any-order" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Every value of a cell, at any order
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#finding-values-on-the-host" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Finding values on the host
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#construct-an-l2-field" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Construct an L2 field
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Construct an L2 field">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#initialize-each-cells-coefficients" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Initialize each cell's coefficients
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#copy-coefficients-from-an-existing-solver-array" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Copy coefficients from an existing solver array
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-constant-inside-each-cell-l2-order-0" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A constant inside each cell: L2 order 0
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#evaluate-and-check-the-discontinuity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evaluate and check the discontinuity
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#construct-a-quadratic-h1-field" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Construct a quadratic H1 field
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Construct a quadratic H1 field">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#sample-at-the-fields-nodes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sample at the field's nodes
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#evaluate-through-the-quadratic-basis" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evaluate through the quadratic basis
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#higher-orders" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Higher orders
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Higher orders">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#where-a-cells-values-sit" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Where a cell's values sit
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#a-material-interface-exposes-the-difference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A material interface exposes the difference
+        Association and reconstruction
       
     </span>
   </a>
@@ -2091,10 +1852,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#projection-is-an-algorithmic-choice" class="md-nav__link">
+  <a href="#sharing-and-independent-cell-values" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Projection is an algorithmic choice
+        Sharing and independent cell values
       
     </span>
   </a>
@@ -2102,10 +1863,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#read-both-sides-of-a-face" class="md-nav__link">
+  <a href="#basis-order-and-value-width" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Read both sides of a face
+        Basis, order and value width
       
     </span>
   </a>
@@ -2113,49 +1874,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#values-can-be-computed-instead-of-stored" class="md-nav__link">
+  <a href="#face-values-and-orientation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Values can be computed instead of stored
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Values can be computed instead of stored">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#geometrys-space-and-its-implicit-array-are-different-layers" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Geometry's space and its implicit array are different layers
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#other-implicit-coefficient-arrays" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Other implicit coefficient arrays
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#know-the-present-higher-order-limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Know the present higher-order limits
+        Face values and orientation
       
     </span>
   </a>
@@ -2163,10 +1885,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-and-reproduce-the-figure" class="md-nav__link">
+  <a href="#a-space-belongs-to-a-topology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run and reproduce the figure
+        A space belongs to a topology
       
     </span>
   </a>
@@ -2189,14 +1911,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../16-cells-and-bases/" class="md-nav__link">
+      <a href="../12-units/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Cell Types and Bases
+    Coordinates, Units and Time
   
 
     
@@ -2209,6 +1931,58 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_6" id="__nav_3_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Representations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Representations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2224,7 +1998,7 @@
   <span class="md-ellipsis">
     
   
-    Polyhedra and Polygons
+    Polyhedra, Polygons and Lines
   
 
     
@@ -2245,14 +2019,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../12-units/" class="md-nav__link">
+      <a href="../point-cloud-model/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Physical Units
+    Point Clouds and Particles
   
 
     
@@ -2261,6 +2035,214 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../collections-and-partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collections and Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_7" id="__nav_3_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further Detail
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Further Detail
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Spaces and Higher-order Geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays, Storage and Layouts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2335,6 +2317,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_1" id="__nav_3_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create and Connect
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Create and Connect
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../02-meshes/" class="md-nav__link">
         
@@ -2364,14 +2398,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../08-point-clouds/" class="md-nav__link">
+      <a href="../create-fields/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Point Clouds and Particles
+    Create and Convert Fields
   
 
     
@@ -2392,14 +2426,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../10-amr/" class="md-nav__link">
+      <a href="../connect-simulation-data/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    AMR Hierarchies
+    Connect Simulation Data
   
 
     
@@ -2413,21 +2447,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../11-octrees/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_2" id="__nav_3_4_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Octrees
+    Analyze and Transform
   
 
     
@@ -2435,11 +2493,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analyze and Transform
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2468,6 +2534,206 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Trace Fields
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../18-finite-volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finite-volume Data and Fluxes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-point-clouds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analyze Adaptive Data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_3" id="__nav_3_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Your Own Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Your Own Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2553,57 +2819,9 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../06-pipelines/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Sample and Connect Simulations
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../13-streaming/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Stream Steps
-  
-
-    
-  </span>
-  
-  
-
-      </a>
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2987,6 +3205,90 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../16-cells-and-bases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/interop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Units and Quantities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3093,6 +3395,34 @@
     
   
     Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/view-composition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    View Storage and Composition
   
 
     
@@ -4204,252 +4534,13 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Choose where values live">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#fields-that-share-a-name" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Fields that share a name
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-the-values-are-stored" class="md-nav__link">
+  <a href="#association-and-reconstruction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How the values are stored
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How the values are stored">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#the-mesh-points-cells-edges-and-faces" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The mesh: points, cells, edges and faces
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#where-each-value-is" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Where each value is
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-cells-nodes-in-order" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A cell's nodes in order
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#h1-above-order-1-numbered-by-entity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        H1 above order 1: numbered by entity
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#vectors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Vectors
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#every-value-of-a-cell-at-any-order" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Every value of a cell, at any order
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#finding-values-on-the-host" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Finding values on the host
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#construct-an-l2-field" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Construct an L2 field
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Construct an L2 field">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#initialize-each-cells-coefficients" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Initialize each cell's coefficients
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#copy-coefficients-from-an-existing-solver-array" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Copy coefficients from an existing solver array
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-constant-inside-each-cell-l2-order-0" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A constant inside each cell: L2 order 0
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#evaluate-and-check-the-discontinuity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evaluate and check the discontinuity
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#construct-a-quadratic-h1-field" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Construct a quadratic H1 field
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Construct a quadratic H1 field">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#sample-at-the-fields-nodes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sample at the field's nodes
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#evaluate-through-the-quadratic-basis" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evaluate through the quadratic basis
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#higher-orders" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Higher orders
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Higher orders">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#where-a-cells-values-sit" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Where a cell's values sit
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#a-material-interface-exposes-the-difference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A material interface exposes the difference
+        Association and reconstruction
       
     </span>
   </a>
@@ -4457,10 +4548,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#projection-is-an-algorithmic-choice" class="md-nav__link">
+  <a href="#sharing-and-independent-cell-values" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Projection is an algorithmic choice
+        Sharing and independent cell values
       
     </span>
   </a>
@@ -4468,10 +4559,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#read-both-sides-of-a-face" class="md-nav__link">
+  <a href="#basis-order-and-value-width" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Read both sides of a face
+        Basis, order and value width
       
     </span>
   </a>
@@ -4479,49 +4570,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#values-can-be-computed-instead-of-stored" class="md-nav__link">
+  <a href="#face-values-and-orientation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Values can be computed instead of stored
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Values can be computed instead of stored">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#geometrys-space-and-its-implicit-array-are-different-layers" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Geometry's space and its implicit array are different layers
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#other-implicit-coefficient-arrays" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Other implicit coefficient arrays
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#know-the-present-higher-order-limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Know the present higher-order limits
+        Face values and orientation
       
     </span>
   </a>
@@ -4529,10 +4581,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-and-reproduce-the-figure" class="md-nav__link">
+  <a href="#a-space-belongs-to-a-topology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run and reproduce the figure
+        A space belongs to a topology
       
     </span>
   </a>
@@ -4559,921 +4611,200 @@
   
 
 
-<h1 id="fields-spaces-and-implicit-arrays">Fields, spaces and implicit arrays<a class="headerlink" href="#fields-spaces-and-implicit-arrays" title="Permanent link">&para;</a></h1>
-<p>A field's space determines which values can disagree and how to evaluate them
-inside a cell. Moving between spaces changes that interpretation. It can
-introduce averaging even when the geometry and topology remain the same.
-Start with <a href="../00-function-spaces/">Function Spaces and Degrees of Freedom</a>
-for the meaning of H1, H2, L2 and polynomial order. This chapter applies those
-ideas to Tack's field and array representations.</p>
-<p>For construction recipes, jump to <a href="#construct-an-l2-field">L2 fields</a> or
-<a href="#construct-a-quadratic-h1-field">quadratic H1 fields</a>. Both use the same
-mesh and have runnable examples below.</p>
+<h1 id="fields-and-spaces">Fields and spaces<a class="headerlink" href="#fields-and-spaces" title="Permanent link">&para;</a></h1>
+<p>A field gives values meaning on a topology. Its <strong>space</strong> identifies where
+they belong and, when it supplies a basis, how they define a function inside
+cells. Its <strong>array</strong> supplies coefficients; its <strong>unit</strong> describes the quantity.</p>
+<p>On the <a href="../01-datasets/#a-simpler-first-order-field">two-cell dataset</a>,
+temperature has twelve shared point values and material has two cell values.
+The choice belongs to each field, not to the mesh as a whole.</p>
 <h2 id="choose-where-values-live">Choose where values live<a class="headerlink" href="#choose-where-values-live" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Space</th>
-<th>Ownership</th>
-<th>Use it for</th>
+<th>Quantity</th>
+<th>Common space</th>
+<th>Interpretation</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>td.H1(data, order=1)</code></td>
-<td>One shared value per corner vertex</td>
-<td>A continuous first-order nodal temperature or velocity</td>
+<td>Shared point temperature</td>
+<td><code>H1(data)</code></td>
+<td>First-order reconstruction from shared corners</td>
 </tr>
 <tr>
-<td><code>td.H1(data, order=2)</code></td>
-<td>Shared corner, edge and supported face/interior nodes</td>
-<td>A higher-order H1 approximation; not an H2 space</td>
+<td>Material or cell average represented as constant</td>
+<td><code>Constant(data)</code></td>
+<td>Independent constant function in each cell</td>
 </tr>
 <tr>
-<td><code>td.H1(data, order=p, basis=...)</code></td>
-<td>From order 3, on segments, quads and hexahedra: <code>p - 1</code> per edge, <code>(p - 1)²</code> per face, <code>(p - 1)^d</code> per cell; on triangles, tetrahedra and wedges with <code>basis="equispaced"</code> or <code>"bernstein"</code> (Bernstein coefficients, from order 2)</td>
-<td>Spectral-element and MFEM fields of any order, VTK's and gmsh's Lagrange simplices and wedges</td>
+<td>Discontinuous nodal solution</td>
+<td><code>L2(data, order=1)</code></td>
+<td>Each cell has its own corner coefficients</td>
 </tr>
 <tr>
-<td><code>td.L2(data, order=p, basis=...)</code></td>
-<td>From order 2 (or on Gauss–Legendre nodes): each cell's own <code>(p + 1)^d</code> values (<code>C(p + d, d)</code> on a simplex, equispaced)</td>
-<td>DG fields of any order</td>
+<td>Face pressure or label</td>
+<td><code>Values(data, "faces")</code></td>
+<td>Attribute; no cell-interior basis</td>
 </tr>
 <tr>
-<td><code>td.Constant(data)</code></td>
-<td>One value per cell</td>
-<td>Cell averages, material parameters</td>
+<td>Normal velocity or integrated flux</td>
+<td><code>Values(data, "faces", oriented=True)</code></td>
+<td>Signed along the stored normal</td>
 </tr>
 <tr>
-<td><code>td.L2(data)</code></td>
-<td>Each cell's own corner values</td>
-<td>Discontinuous solution fields</td>
-</tr>
-<tr>
-<td><code>td.Values(data, "faces")</code></td>
-<td>One value per face, without an interpolation basis</td>
-<td>Face areas, labels or fluxes</td>
-</tr>
-<tr>
-<td><code>td.Values(data, "points" / "cells" / "edges")</code></td>
-<td>One value per named entity kind</td>
-<td>Entity attributes that need no basis</td>
-</tr>
-<tr>
-<td><code>td.SideTraces(data)</code></td>
-<td>Values per face, per side, per face corner</td>
-<td>Two-sided evaluation, by projecting into it</td>
+<td>Point, cell or edge attribute</td>
+<td><code>Values(data, on)</code></td>
+<td>Association without a declared basis</td>
 </tr>
 </tbody>
 </table>
-<p>For <code>L2(order=0)</code> the value is constant per cell; <code>L2(order=1)</code> uses each
-cell's own corners. <code>H1(order=2)</code> adds higher-order degrees of freedom on
-supported shapes; <a href="#higher-orders">higher orders</a> add more of them on the
-tensor shapes. <code>Values</code> describes association without promising any
-interpolation between entities.</p>
-<p><code>tack.empty((field.space.size,), tack.vec3())</code> allocates one
-3-vector per DOF; <code>td.Field(field.space, values)</code> gives those values their
-mesh meaning. The array has shape <code>(field.space.size,)</code> and downloads as
-<code>(field.space.size, 3)</code>.</p>
-<p>The field's coefficient count is <code>field.space.size</code>. It agrees with
-<code>data.num_points</code> for H1 order 1, but not generally for other spaces. A
-vector field has one vector per space DOF, so the scalar component storage
-has that count times the vector width.</p>
-<p><code>Constant</code> means a separate constant function in each cell. <code>ConstantArray</code>
-means an array with one repeated value, regardless of space. These two
-independent choices can be combined: an H1 field with a <code>ConstantArray</code> is
-a spatially constant H1 function, while a <code>Constant</code> field backed by an
-ordinary array can assign different values to every cell.</p>
-<p>Spaces belong to a topology and are interned there: repeated <code>td.H1(data)</code>
-uses the same layout. A field with a matching length on another topology is
-still a different association. Wrap values with the correct space when they
-are created; do not repair an association by guessing from array length later.</p>
-<h3 id="fields-that-share-a-name">Fields that share a name<a class="headerlink" href="#fields-that-share-a-name" title="Permanent link">&para;</a></h3>
-<p>A dataset's fields are named, and two may share a name in different spaces:
-a pressure at the points and a pressure per cell, as VTK keeps point data and
-cell data apart. The space tells them apart. <code>data.fields["p", td.Constant]</code>
-is the cell one; the space itself (<code>td.H1(data)</code>) works as well as its kind.
-Where one field has a name, the name alone finds it. Where two do, the name
-alone is refused, never guessed, so code that worked on one file cannot
-quietly read the other field on the next:</p>
-<!-- tack-check: fields-by-space -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>
-<span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)))</span>
-<span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,)))</span>
-
-<span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">]</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">)</span>
-<span class="k">try</span><span class="p">:</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">]</span>
-<span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">refused</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">refused</span><span class="p">)</span>                                 <span class="c1"># &#39;p&#39; names 2 fields, in H1(order=1) and ...</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="k">raise</span> <span class="ne">AssertionError</span><span class="p">(</span><span class="s2">&quot;a name two fields share must be refused&quot;</span><span class="p">)</span>
-
-<span class="n">gradient</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">))</span>        <span class="c1"># algorithms take (name, space) too</span>
-<span class="n">kept</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">),</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="s2">&quot;p&quot;</span><span class="p">)</span>   <span class="c1"># a name keeps both</span>
-<span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">kept</span><span class="o">.</span><span class="n">fields</span><span class="p">))</span>                           <span class="c1"># [(&#39;p&#39;, H1(order=1)), (&#39;p&#39;, Constant())]</span>
-</code></pre></div>
-<ul>
-<li><strong>Putting a field in.</strong> <code>data.fields["p"] = f</code> makes <code>f</code> the one field
-  called <code>"p"</code>, as with a dictionary. <code>data.fields["p", td.Constant] = f</code>
-  puts it beside fields of that name in other spaces, replacing the one in
-  its own.</li>
-<li><strong>Keys.</strong> Iterating <code>data.fields</code> gives each field's name, or <code>(name,
-  space)</code> for a name fields share, so every key finds its field and
-  <code>dict(data.fields)</code> keeps them all. <code>data.fields.named("p")</code> lists every
-  field called <code>"p"</code>; <code>data.fields.entries()</code> gives each field with its name.</li>
-<li><strong>Filters.</strong> <code>fields="p"</code> selects every field of that name, and
-  <code>fields=[("p", td.Constant)]</code> the one. A filter that puts fields in one
-  space, as <code>probe</code> puts them all at the target's points, would make the
-  two <code>"p"</code>s two point fields of one name; it asks which instead (VTK's
-  probe keeps the point one), so pass <code>fields=</code>.</li>
-<li><strong>VTK.</strong> <code>vtk_to_dataset</code> reads a point array and a cell array of one name
-  as two fields of that name, and <code>dataset_to_vtk</code> writes them back the same
-  way. Two point fields of one name, which VTK cannot keep, are refused.</li>
-</ul>
-<h2 id="how-the-values-are-stored">How the values are stored<a class="headerlink" href="#how-the-values-are-stored" title="Permanent link">&para;</a></h2>
-<p>A field is one array of values; what each value means comes from the space,
-and the space reads the topology to say which value belongs to which cell.
-This section gives the exact layout of each: what to write when you fill an
-array yourself, or hand one to Tack from a solver.</p>
-<h3 id="the-mesh-points-cells-edges-and-faces">The mesh: points, cells, edges and faces<a class="headerlink" href="#the-mesh-points-cells-edges-and-faces" title="Permanent link">&para;</a></h3>
-<p>Points are numbered <code>0</code> to <code>num_points - 1</code>. The geometry is an <code>H1</code> field of
-order 1: one 3-vector per point, in point order (<code>data.positions()</code> gives
-them on the host). An image's or a rectilinear grid's positions are computed
-from the point's index rather than stored.</p>
-<p>An <code>UnstructuredTopology</code> is three arrays, VTK's layout:</p>
+<h2 id="association-and-reconstruction">Association and reconstruction<a class="headerlink" href="#association-and-reconstruction" title="Permanent link">&para;</a></h2>
+<p>Association says which entities own values. Reconstruction says what a
+value between them means. Point samples do not uniquely specify that choice.
+H1 order 1 chooses linear interpolation on triangles/tetrahedra, bilinear
+on quads and trilinear on hexes. It is useful for visualization of structured
+samples regardless of the simulation's discretization method.</p>
+<p>A point sample at a cell center and a cell average are different quantities.
+Constant can give either a piecewise-constant reconstruction but does not
+convert one to the other. Face association alone does not identify normal
+velocity versus flux already multiplied by area. The
+<a href="../18-finite-volume/">FV workflow</a> makes the distinction at each operation.</p>
+<p><code>Values</code> declares no basis. Some current algorithms add an interpretation:
+the shared algorithm helper reads point Values as H1 order 1 and cell Values
+as Constant. Check the operation's semantics; association alone does not
+suppress interpolation everywhere.</p>
+<h2 id="sharing-and-independent-cell-values">Sharing and independent cell values<a class="headerlink" href="#sharing-and-independent-cell-values" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Array</th>
-<th>Length</th>
-<th>Holds</th>
+<th>Space on the two-cell mesh</th>
+<th style="text-align: right;">Coefficients</th>
+<th>Shared face</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>types</code></td>
-<td><code>num_cells</code></td>
-<td>each cell's VTK cell type (<code>12</code> a hexahedron, <code>10</code> a tetrahedron, ...)</td>
+<td><code>H1(data)</code></td>
+<td style="text-align: right;">12</td>
+<td>Four shared face-corner coefficients</td>
 </tr>
 <tr>
-<td><code>offsets</code></td>
-<td><code>num_cells + 1</code></td>
-<td>where each cell's points start in <code>connectivity</code>; the last entry is its length</td>
-</tr>
-<tr>
-<td><code>connectivity</code></td>
-<td><code>offsets[num_cells]</code></td>
-<td>the cells' point ids, one cell after another</td>
-</tr>
-</tbody>
-</table>
-<p>Cell <code>c</code>'s corners are <code>connectivity[offsets[c]:offsets[c + 1]]</code>, in its
-shape's corner order, which is VTK's (<a href="../16-cells-and-bases/">Cell Types and Bases</a>).
-For a hexahedron that is the bottom face counterclockwise, then the top face
-above it. Any of the three may be an implicit array: a mesh of one cell type
-needs no stored <code>types</code> or <code>offsets</code>.</p>
-<p>A <code>StructuredTopology</code> stores nothing. On a grid of <code>nx × ny × nz</code> points,
-point <code>(i, j, k)</code> is <code>i + nx * (j + ny * k)</code>, cell <code>(i, j, k)</code> is
-<code>i + (nx - 1) * (j + (ny - 1) * k)</code>, and its corners are a hexahedron's
-(a quad's in 2D): <code>(i, j, k)</code>, <code>(i + 1, j, k)</code>, <code>(i + 1, j + 1, k)</code>,
-<code>(i, j + 1, k)</code>, then the same four at <code>k + 1</code>.</p>
-<p>Edges and faces are derived when something needs them (<code>topology.edges()</code>,
-<code>topology.faces()</code>) and numbered the same way every time. Edge <code>e</code>'s points
-are <code>edges().rows[e]</code>, lower id first. Face <code>f</code>'s are <code>faces().rows[f]</code>, in
-the order its side-0 cell (<code>faces().sides[f]</code>) goes around it outward.</p>
-<h3 id="where-each-value-is">Where each value is<a class="headerlink" href="#where-each-value-is" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Space</th>
-<th>Values</th>
-<th>Value of ... is at</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>H1(data)</code> (order 1), <code>Values(data, "points")</code></td>
-<td><code>num_points</code></td>
-<td>point <code>p</code>: <code>p</code></td>
-</tr>
-<tr>
-<td><code>Constant(data)</code>, <code>L2(data, order=0)</code>, <code>Values(data, "cells")</code></td>
-<td><code>num_cells</code></td>
-<td>cell <code>c</code>: <code>c</code></td>
-</tr>
-<tr>
-<td><code>Values(data, "faces")</code>, <code>Values(data, "edges")</code></td>
-<td>one per face or edge</td>
-<td>face or edge <code>f</code>: <code>f</code>, its id in <code>faces()</code> or <code>edges()</code></td>
+<td><code>Constant(data)</code></td>
+<td style="text-align: right;">2</td>
+<td>One independent value on each side</td>
 </tr>
 <tr>
 <td><code>L2(data, order=1)</code></td>
-<td>one per cell corner</td>
-<td>cell <code>c</code>'s corner <code>j</code>: <code>offsets[c] + j</code>, <code>j</code> in connectivity order</td>
-</tr>
-<tr>
-<td><code>L2(data, order=p)</code>, <code>p ≥ 2</code> (or <code>basis="gauss_legendre"</code>)</td>
-<td>each cell's nodes</td>
-<td>cell <code>c</code>'s node <code>n</code>: <code>offsets[c] + n</code> (<code>layout="blocks"</code>), or <code>n * num_cells + c</code> (<code>"cells"</code>)</td>
-</tr>
-<tr>
-<td><code>H1(data, order=p)</code>, <code>p ≥ 2</code></td>
-<td>points, then edges, faces, cell interiors</td>
-<td>below</td>
-</tr>
-<tr>
-<td><code>SideTraces(data)</code></td>
-<td>8 per face</td>
-<td>face <code>f</code>, side <code>s</code>, point <code>j</code> of its row: <code>(f * 2 + s) * 4 + j</code></td>
+<td style="text-align: right;">16</td>
+<td>Four independent corner coefficients on each side</td>
 </tr>
 </tbody>
 </table>
-<p>So an <code>H1</code> field of order 1 is a value array of <code>num_points</code> entries and the
-topology's connectivity: cell <code>c</code>'s values are the values at its corner
-points. An <code>L2</code> field of order 1 shares the topology's <code>offsets</code> (its
-<code>space.offsets</code> <em>is</em> that array) and holds a value for each entry of the
-connectivity, so a point shared by four cells has four values.</p>
-<h3 id="a-cells-nodes-in-order">A cell's nodes in order<a class="headerlink" href="#a-cells-nodes-in-order" title="Permanent link">&para;</a></h3>
-<p>Above order 1, and for <code>L2</code> on Gauss–Legendre nodes, a cell's nodes are
-numbered on a <em>lattice</em> in its reference element (<code>bases.lattice_ijk(shape,
-p)</code> lists them):</p>
-<ul>
-<li><strong>Segments, quads, hexahedra</strong> (pixels, voxels): <code>(i, j, k)</code>, each from 0 to
-  <code>p</code>, numbered <code>n = i + (p + 1) * (j + (p + 1) * k)</code>, the first index fastest.
-  <code>i</code> runs from corner 0 toward corner 1, <code>j</code> toward corner 3, <code>k</code> toward
-  corner 4. Node <code>i</code> along an axis sits at the basis' <code>i</code>-th 1D node
-  (Gauss–Lobatto, equispaced or Gauss–Legendre); a Bernstein space keeps its
-  <code>i</code>-th coefficient there instead.</li>
-<li><strong>Triangles and tetrahedra:</strong> <code>(i, j, k)</code> with <code>i + j + k ≤ p</code>, at
-  <code>(i, j, k) / p</code>, the first index fastest: a triangle of order 2 is
-  <code>(0,0), (1,0), (2,0), (0,1), (1,1), (0,2)</code>. <code>i</code> runs toward corner 1, <code>j</code>
-  toward corner 2, <code>k</code> toward corner 3.</li>
-<li><strong>Wedges:</strong> the triangle's lattice in each of <code>p + 1</code> layers, the triangle
-  fastest, the layers from the bottom triangle (corners 0, 1, 2) to the top.</li>
-</ul>
-<p><code>L2</code> of order 1 is the exception: its values are at the corners, in
-connectivity order, not on the lattice. On a hexahedron, value 2 is corner 2,
-<code>(1, 1, 0)</code>; lattice node 2 of order 1 would be <code>(0, 1, 0)</code>.</p>
-<h3 id="h1-above-order-1-numbered-by-entity"><code>H1</code> above order 1: numbered by entity<a class="headerlink" href="#h1-above-order-1-numbered-by-entity" title="Permanent link">&para;</a></h3>
-<p>Shared values are stored once, by the entity that holds them, so the cells
-around an edge or face find the same value:</p>
-<ol>
-<li><strong>Points:</strong> <code>num_points</code> values, by point id, as at order 1.</li>
-<li><strong>Edges:</strong> <code>p - 1</code> values per edge, in edge-id order. Edge <code>e</code>'s node <code>k</code>
-   (1 to <code>p - 1</code>, counted from its lower point id, <code>edges().rows[e][0]</code>) is at
-   <code>num_points + e * (p - 1) + (k - 1)</code>.</li>
-<li><strong>Faces</strong> (meshes of solids): in face-id order, <code>(p - 1)²</code> values on a quad
-   face and <code>(p - 1)(p - 2) / 2</code> on a triangle face (order 2: one on each quad
-   face, none on triangles). Quad face <code>f</code>'s node <code>(u, v)</code>, each 1 to <code>p - 1</code>,
-   is its <code>(v - 1) * (p - 1) + (u - 1)</code>-th value, <code>u</code> running from
-   <code>faces().rows[f][0]</code> toward <code>rows[f][1]</code> and <code>v</code> toward <code>rows[f][3]</code>. A
-   triangle face's nodes follow the triangle lattice from <code>rows[f][0]</code> toward
-   <code>rows[f][1]</code> and <code>rows[f][2]</code>.</li>
-<li><strong>Cell interiors:</strong> in cell order, each cell's interior lattice nodes
-   (every index from 1 to <code>p - 1</code> on a tensor shape), in lattice order:
-   <code>(p - 1)³</code> on a hexahedron, <code>(p - 1)²</code> on a quad of a 2D mesh, <code>p - 1</code> on
-   a segment, <code>(p - 1)(p - 2)(p - 3) / 6</code> on a tetrahedron, <code>(p - 1)²(p - 2) / 2</code>
-   on a wedge.</li>
-</ol>
-<p>Faces and cells of different kinds hold different counts, so each one's
-block starts where the previous one's ends. A 2D mesh has points, edges and
-cell interiors. <code>basis="serendipity"</code> keeps the points and the edges alone.
-<code>H1(data, order=p, dofs=table)</code> numbers the values by your table instead: a
-row per cell, each of its lattice nodes' value index.</p>
-<!-- tack-check: layouts -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-
-<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">code</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>                       <span class="c1"># each position&#39;s coordinates, readable at a glance</span>
-    <span class="k">return</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mf">10.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-
-
-<span class="c1"># Two hexahedra side by side: 12 points at x = 0, 0.5, 1; y and z = 0, 1.</span>
-<span class="n">grid</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
-<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">DataSet</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">UnstructuredTopology</span><span class="p">(</span>
-    <span class="n">types</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">),</span> <span class="n">offsets</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">]),</span>
-    <span class="n">connectivity</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">10</span><span class="p">]),</span>
-    <span class="n">num_points</span><span class="o">=</span><span class="mi">12</span><span class="p">),</span> <span class="n">grid</span><span class="o">.</span><span class="n">positions</span><span class="p">())</span>
-<span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">values</span><span class="p">(</span><span class="n">space</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">code</span><span class="p">,</span> <span class="n">space</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
-
-
-<span class="c1"># H1 order 1: one value per point, by point id.</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span> <span class="n">x</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">])</span>
-
-<span class="c1"># L2 order 1: each cell&#39;s corners in connectivity order, at the topology&#39;s offsets.</span>
-<span class="n">corners</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">)),</span> <span class="n">x</span><span class="p">[</span><span class="n">corners</span><span class="p">]</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">])</span>
-
-<span class="c1"># L2 order 2: 27 nodes a cell, the first index fastest: x, then y, then z.</span>
-<span class="n">l2</span> <span class="o">=</span> <span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
-<span class="k">assert</span> <span class="n">l2</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">54</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">l2</span><span class="p">[:</span><span class="mi">4</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">])</span>
-
-<span class="c1"># H1 order 2: points, then edges, quad faces and cell interiors.</span>
-<span class="n">h1</span> <span class="o">=</span> <span class="n">values</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
-<span class="n">edges</span><span class="p">,</span> <span class="n">faces</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">edges</span><span class="p">(),</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>
-<span class="k">assert</span> <span class="n">h1</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">12</span> <span class="o">+</span> <span class="n">edges</span><span class="o">.</span><span class="n">num_edges</span> <span class="o">+</span> <span class="n">faces</span><span class="o">.</span><span class="n">num_faces</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">45</span>
-<span class="n">low</span><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="n">edges</span><span class="o">.</span><span class="n">rows</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">h1</span><span class="p">[</span><span class="mi">12</span><span class="p">],</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">low</span><span class="p">]</span> <span class="o">+</span> <span class="n">x</span><span class="p">[</span><span class="n">high</span><span class="p">])</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">]</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>   <span class="c1"># edge 0&#39;s midpoint</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">h1</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:],</span> <span class="p">[</span><span class="mf">55.25</span><span class="p">,</span> <span class="mf">55.75</span><span class="p">])</span>                         <span class="c1"># the cell centres</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;H1 order 2:&quot;</span><span class="p">,</span> <span class="n">h1</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s2">&quot;values; L2 order 2:&quot;</span><span class="p">,</span> <span class="n">l2</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="vectors">Vectors<a class="headerlink" href="#vectors" title="Permanent link">&para;</a></h3>
-<p>A vector field holds one vector per value, its components together:
-<code>tack.empty((space.size,), tack.vec3())</code> stores value 0's <code>x, y, z</code>, then
-value 1's, and <code>numpy()</code> gives <code>(space.size, 3)</code>. <code>layout="soa"</code> keeps each
-component in an array of its own instead
-(<a href="../../users-guide/02-arrays-and-types/">Arrays and Types</a>).</p>
-<h3 id="every-value-of-a-cell-at-any-order">Every value of a cell, at any order<a class="headerlink" href="#every-value-of-a-cell-at-any-order" title="Permanent link">&para;</a></h3>
-<p>A field's view numbers its cell's own values, whatever the space, order or
-shape: <code>NODES</code> of them (a constant, so a loop over them unrolls), node <code>k</code> at
-parametric coordinates <code>node_parametric(k)</code>, its value <code>dof(c, k)</code>, stored at
-<code>dof_index(c, k)</code> in the field's array. At order 1 the nodes are the corners,
-at order 0 one node at the cell's centre; an <code>H1</code> order-2 cell numbers them as
-VTK's quadratic cells do -- corners, then edges, then faces and the centre --
-and every other order on the lattice above. So one kernel reads every value
-of a cell on any mesh, here each cell's largest:</p>
-<!-- tack-check: cell-nodes -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-
-<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">largest_value</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>                                  <span class="c1"># every shape, space and order</span>
-        <span class="n">top</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">dof</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">NODES</span><span class="p">):</span>                  <span class="c1"># the cell&#39;s own values</span>
-            <span class="n">top</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">dof</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
-        <span class="n">out</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">c</span><span class="p">)]</span> <span class="o">=</span> <span class="n">top</span>
-
-
-<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">height</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mf">3.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-
-
-<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
-<span class="n">centres</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">height</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">)))</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
-<span class="k">for</span> <span class="n">space</span> <span class="ow">in</span> <span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">)):</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">)</span>
-    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">largest_value</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">height</span><span class="p">,</span> <span class="n">space</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
-    <span class="c1"># A linear field is largest at a cell&#39;s far corner: its centre value plus</span>
-    <span class="c1"># (1 + 2 + 3) / 4; a Constant cell&#39;s one node is its centre.</span>
-    <span class="n">expected</span> <span class="o">=</span> <span class="n">centres</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">)</span> <span class="k">else</span> <span class="n">centres</span> <span class="o">+</span> <span class="mf">1.5</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">expected</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;largest values:&quot;</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[:</span><span class="mi">3</span><span class="p">])</span>
-</code></pre></div>
-<p>The same view gives values elsewhere in the cell: <code>corner_value(c, j)</code> at its
-corner <code>j</code>, <code>value(c, pc)</code> at parametric coordinates <code>pc</code>. Reading another
-field at these nodes, <code>p.value(c, q.node_parametric(k))</code>, computes a field of
-one space from fields of others without projecting first:
-<a href="../05-mesh-kernels/#work-at-a-fields-nodes">Work at a field's nodes</a> adds an
-order-1 field to an order-2 one that way. A kernel never computes storage
-indices itself (<a href="../05-mesh-kernels/">Write Mesh Algorithms</a>).</p>
-<h3 id="finding-values-on-the-host">Finding values on the host<a class="headerlink" href="#finding-values-on-the-host" title="Permanent link">&para;</a></h3>
-<p><code>space.offsets</code> gives where each cell's <code>L2</code> values start; <code>space.indices()</code>
-and <code>space.blocks(values)</code> give them as one row per cell, so they refuse cells
-holding different numbers of values (a mixed mesh, an order per cell): read
-<code>space.offsets</code> there. <code>td.interpolate</code> fills any space from a function of
-position. Derived edge and face ids are stable for a topology, but not across
-topologies: match values between meshes by position or global id, not by
-edge or face number.</p>
-<h2 id="construct-an-l2-field">Construct an L2 field<a class="headerlink" href="#construct-an-l2-field" title="Permanent link">&para;</a></h2>
-<p>The <a href="../../examples/data_spaces.py">complete independent-spaces example</a> builds
-L2 pressure and quadratic H1 temperature on the same two hexes. This section
-constructs pressure directly; <a href="#construct-a-quadratic-h1-field">the next section</a>
-constructs temperature. The snippets assume NumPy, Tack and <code>tack.dataset</code>
-imported as <code>np</code>, <code>tack</code> and <code>td</code>, with a default device set.</p>
-<p>Use <code>uniform_grid</code> as a shortcut for the mesh setup here; <a href="../02-meshes/">Build Meshes</a>
-shows its explicit topology and geometry construction:</p>
-<div class="highlight"><pre><span></span><code>    <span class="c1"># Shortcut mesh setup: two adjacent hexes in the unit cube.</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
-</code></pre></div>
-<p>Each hex has eight corners. <code>td.L2(data, order=1)</code> assigns a separate value
-to each of them: 16 coefficients, even though the topology has only 12 vertices.
-The four corners on the shared face each have <strong>two</strong> pressure coefficients.
-They occupy the same physical positions and may have different values. See
-<a href="../00-function-spaces/#count-dofs-separately-from-corners">the node-sharing diagram</a>.</p>
-<h3 id="initialize-each-cells-coefficients">Initialize each cell's coefficients<a class="headerlink" href="#initialize-each-cells-coefficients" title="Permanent link">&para;</a></h3>
-<p>Construct pressure as <code>p = x</code> in cell 0 and <code>p = x + 2</code> in cell 1.
-It varies inside both cells and has a jump of 2 at x = 0.5. An L2 field need
-not be constant inside a cell.</p>
-<p>The space supplies <code>offsets</code>: coefficient <code>j</code> of cell <code>c</code> is stored at
-<code>offsets[c] + j</code>. For these two hexes, the offsets are <code>[0, 8, 16]</code>:</p>
-<table>
-<thead>
-<tr>
-<th>Cell</th>
-<th>Storage slots</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0</td>
-<td>0 through 7</td>
-<td>Its own corner values, in the cell's local corner order</td>
-</tr>
-<tr>
-<td>1</td>
-<td>8 through 15</td>
-<td>Its own corner values, including its side of the shared face</td>
-</tr>
-</tbody>
-</table>
-<p>The initialization kernel walks each cell's corners and writes its block.
-Every coefficient has one writer. Using offsets also works when cells have
-different corner counts; multiplying the cell id by eight would not.</p>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">initialize_pressure</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>
-        <span class="n">cell_id</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
-        <span class="n">first</span> <span class="o">=</span> <span class="n">offsets</span><span class="p">[</span><span class="n">cell_id</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">NUM_POINTS</span><span class="p">):</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">corner_position</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
-            <span class="n">values</span><span class="p">[</span><span class="n">first</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">cell_id</span>
-</code></pre></div>
-<p>Allocate the values and attach their space:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">pressure_space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">pressure</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">pressure_space</span><span class="o">.</span><span class="n">size</span><span class="p">,))</span>
-    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">initialize_pressure</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">pressure_space</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">pressure</span><span class="p">)</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;pressure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">pressure_space</span><span class="p">,</span> <span class="n">pressure</span><span class="p">)</span>
-</code></pre></div>
-<p><code>td.for_each</code> supplies the geometry-aware cell view, so <code>corner_position</code>
-returns physical coordinates. The resulting <code>Field</code> contains the original
-cell-local coefficients; no shared-point averaging is involved.</p>
-<h3 id="copy-coefficients-from-an-existing-solver-array">Copy coefficients from an existing solver array<a class="headerlink" href="#copy-coefficients-from-an-existing-solver-array" title="Permanent link">&para;</a></h3>
-<p>If you already have nodal DG coefficients in this order, upload them directly.
-For this particular pair of hexes, this constructs the same pressure field:</p>
-<div class="highlight"><pre><span></span><code>    <span class="c1"># Each row follows that hex&#39;s local corner order: 0, 1, ..., 7.</span>
-    <span class="n">per_cell</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
-        <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>   <span class="c1"># cell 0: p = x</span>
-        <span class="p">[</span><span class="mf">2.5</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">],</span>   <span class="c1"># cell 1: p = x + 2</span>
-    <span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-    <span class="n">uploaded_pressure</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">pressure_space</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">per_cell</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
-</code></pre></div>
-<p>The two eight-value rows describe the cells' local nodes, not eight globally
-unique points each. Flattening these rows preserves both interface values.
-For a mixed-cell mesh, use <code>pressure_space.offsets</code> and the appropriate local
-corner order to assemble the blocks; a rectangular <code>(num_cells, 8)</code> array is
-specific to the all-hex example. Coefficients in another basis need conversion
-before this upload, as in <a href="../01-datasets/#importing-mfem-preserves-the-separation">MFEM import</a>.</p>
-<h3 id="a-constant-inside-each-cell-l2-order-0">A constant inside each cell: L2 order 0<a class="headerlink" href="#a-constant-inside-each-cell-l2-order-0" title="Permanent link">&para;</a></h3>
-<p>Choose order 0 for one independent coefficient per cell:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">cell_space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">cell_pressure</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">cell_space</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">))</span>
-</code></pre></div>
-<p>Here <code>cell_space.size</code> is two. Values 1 and 3 are constant inside their own
-cells and differ across the interface. <code>td.Constant(data)</code> is another
-representation of that piecewise-constant function meaning; it also supports
-topologies without reference elements.</p>
-<h3 id="evaluate-and-check-the-discontinuity">Evaluate and check the discontinuity<a class="headerlink" href="#evaluate-and-check-the-discontinuity" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>    <span class="n">pressure_centers</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;pressure&quot;</span><span class="p">)</span>
-    <span class="n">pressure_gradient</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;pressure&quot;</span><span class="p">)</span>
-    <span class="n">pressure_jump</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">jump</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;pressure&quot;</span><span class="p">)</span>
-    <span class="c1"># Centers: [0.25, 2.75]; gradients: [1, 0, 0]; interface jump magnitude: 2.</span>
-</code></pre></div>
-<p>For the varying order-1 pressure, the cell centers hold <code>[0.25, 2.75]</code> and
-both physical gradients are <code>[1, 0, 0]</code>. The one interior face has jump
-magnitude 2; <code>jump</code>'s sign follows its side ordering. The runnable check
-compares the uploaded coefficients with the kernel-initialized ones as well.
-These are cell-interior gradients; the interface discontinuity is represented
-separately by the jump.</p>
-<h2 id="construct-a-quadratic-h1-field">Construct a quadratic H1 field<a class="headerlink" href="#construct-a-quadratic-h1-field" title="Permanent link">&para;</a></h2>
-<p>On the same mesh, construct <code>T = x² + 2y + 3z</code> using <code>td.H1(data, order=2)</code>.
-The geometry stays first-order H1 and still has 12 corner positions.
-Temperature has 45 global nodal coefficients, including nodes away from corners.</p>
-<p><img alt="A quadratic hex has eight corner nodes, twelve edge midpoints, six face centers and one cell-interior node" src="../../assets/quadratic-hex-nodes.svg" /></p>
-<p>A single quadratic hex uses three nodes per reference coordinate direction:
-the tensor-product layout has <code>3 × 3 × 3 = 27</code> nodes. Two adjacent hexes share
-nine on their common face: its four corners, four edge midpoints and face center. Thus
-<code>27 + 27 - 9 = 45</code> global DOFs. Count the two-cell mesh by entity as follows:</p>
-<table>
-<thead>
-<tr>
-<th>Location</th>
-<th style="text-align: right;">Global temperature DOFs</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Topological corner vertices</td>
-<td style="text-align: right;">12</td>
-</tr>
-<tr>
-<td>Edge midpoints</td>
-<td style="text-align: right;">20</td>
-</tr>
-<tr>
-<td>Face centers</td>
-<td style="text-align: right;">11</td>
-</tr>
-<tr>
-<td>Cell interiors</td>
-<td style="text-align: right;">2</td>
-</tr>
-<tr>
-<td><strong>Total</strong></td>
-<td style="text-align: right;"><strong>45</strong></td>
-</tr>
-</tbody>
-</table>
-<p>These are field nodes on the original two cells. They do not subdivide the
-mesh, change corner connectivity, or make its geometry quadratic.</p>
-<h3 id="sample-at-the-fields-nodes">Sample at the field's nodes<a class="headerlink" href="#sample-at-the-fields-nodes" title="Permanent link">&para;</a></h3>
-<p>First define the function to sample:</p>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">quadratic_temperature</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">+</span> <span class="mf">3.0</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span>
-</code></pre></div>
-<p><code>interpolate</code> evaluates it at every node of the temperature space, where
-the geometry puts each one, and returns the field:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">temperature_space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-    <span class="c1"># The function at all 45 temperature nodes, not just the 12 corners.</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;temperature&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">quadratic_temperature</span><span class="p">,</span>
-                                                <span class="n">temperature_space</span><span class="p">)</span>
-</code></pre></div>
-<p>The space builds local-to-global addressing for shared corners, edges and
-faces. Its node numbering is not simply 27 consecutive entries per cell.
-<code>interpolate</code> writes a shared node once, from the first cell that has it,
-rather than from every adjacent cell, and stores no node positions: each is
-evaluated through the geometry as it is needed. To see where the nodes are,
-project the geometry into the space
-(<code>td.project(data, data.geometry, temperature_space)</code>); that does not change
-<code>data.geometry</code>.</p>
-<p>Interpolating differs from projecting a first-order <strong>solution</strong> into a
-quadratic space: that conversion retains the original first-order function.
-To represent this quadratic, interpolate it as above, or supply the
-original quadratic coefficients in Tack's nodal basis and ordering.</p>
-<h3 id="evaluate-through-the-quadratic-basis">Evaluate through the quadratic basis<a class="headerlink" href="#evaluate-through-the-quadratic-basis" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>    <span class="n">at_centers</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-    <span class="n">gradient</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-    <span class="n">linearized</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
-    <span class="n">linear_centers</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">linearized</span><span class="p">)</span>
-</code></pre></div>
-<p>At the two cell centers, quadratic evaluation gives <code>[2.5625, 3.0625]</code> and
-physical gradients <code>[0.5, 2, 3]</code> and <code>[1.5, 2, 3]</code>. Projecting this temperature
-down to H1 order 1 gives center values <code>[2.625, 3.125]</code>. The latter keeps the
-corner values but changes the function between them.</p>
-<p><img alt="Actual field evaluations: L2 pressure varies within each cell and has two traces at the interface; quadratic H1 temperature retains curvature that its order-1 projection loses" src="../../assets/field-basis-profiles.svg" /></p>
-<p>Both profiles are evaluated through the fields' actual bases along
-<code>y = z = 0.5</code>, including the two separate L2 traces at x = 0.5. The dotted
-vertical pressure segment marks the jump, not an interpolated connection.
-The geometry and topology are identical for every curve. Quadratic H1
-enforces shared values; it does not generally enforce matching derivatives
-or <a href="../00-function-spaces/#h2-is-different-from-second-order-h1">H² conformity</a>.</p>
-<p>Run the complete program and reproduce all three diagrams:</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_spaces.py<span class="w"> </span>--check
-uv<span class="w"> </span>run<span class="w"> </span>--with<span class="w"> </span>matplotlib<span class="w"> </span>python<span class="w"> </span>docs/examples/data_spaces.py<span class="w"> </span>--check<span class="w"> </span>--figures<span class="w"> </span>/tmp/tack-space-figures
-</code></pre></div>
-<p>The optional plotting step writes standalone SVG and PNG files. The numerical
-checks run without Matplotlib.</p>
-<h2 id="higher-orders">Higher orders<a class="headerlink" href="#higher-orders" title="Permanent link">&para;</a></h2>
-<p>On segments, quads and hexahedra (pixels and voxels too) a space may have any
-order. <code>basis=</code> names its polynomials: Lagrange polynomials on the products
-of 1D nodes along each axis, <code>"gauss_lobatto"</code> (the default, MFEM's for H1 and
-Nek5000's), <code>"equispaced"</code> (VTK's Lagrange cells, Exodus, gmsh) or, for <code>L2</code>
-alone, <code>"gauss_legendre"</code> (MFEM's default for DG), which has no nodes at a
-cell's ends to share. Up to order 2 the first two are the same nodes.</p>
-<p><code>basis="bernstein"</code> holds the Bernstein polynomials' coefficients instead of
-values at nodes: control points, for a geometry. They bound the cell's field or
-shape (it lies within their convex hull) and are what VTK's Bezier cells store.
-A corner's coefficient is its value, and an edge's or a face's depends on that
-entity alone, so they are shared as nodal values are. <code>interpolate</code> and
-<code>project</code> fill a Bernstein space from values at the equispaced nodes, and every
-filter sees the same polynomials as the equispaced Lagrange space of the order.
-Bernstein spaces are on segments, quads, hexahedra, triangles, tetrahedra and
-wedges. <code>dataset_to_vtk(..., higher_order=True)</code> writes a dataset with them as
-VTK Bezier cells, and <code>vtk_to_dataset</code> reads Bezier cells back into them.</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">bezier</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">basis</span><span class="o">=</span><span class="s2">&quot;bernstein&quot;</span><span class="p">)</span>       <span class="c1"># coefficients, not values</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;b&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">bezier</span><span class="p">)</span>   <span class="c1"># the same polynomial as &quot;u&quot;</span>
-    <span class="n">low</span><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;b&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;b&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">bezier</span><span class="p">,</span> <span class="s2">&quot;coefficients from&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">low</span><span class="p">),</span> <span class="mi">3</span><span class="p">),</span> <span class="s2">&quot;to&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">high</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
-</code></pre></div>
-<p><code>basis="serendipity"</code> (order 2) is the full order-2 space less its values at quad
-faces' centres and cells' insides, which its functions determine from the
-corners and edges: VTK's quad8, hex20 and wedge15 cells, and Exodus's and
-Abaqus's quadratic elements. On triangles and tetrahedra it is the full space.
-It holds every quadratic of position on straight cells, and <code>vtk_to_dataset</code>
-reads VTK's quadratic cells into it (the quadratic triangle and tetrahedron into
-the full order-2 space); <code>dataset_to_vtk(..., higher_order="quadratic")</code> writes
-them back.</p>
-<p>A space numbers its values by entity -- points, then each edge's, face's and
-cell's -- so cells sharing an edge or face share its values. <code>dofs=</code> numbers
-them by an element-to-DOF table instead, as MFEM and VTK's cell grids store
-them: a row per cell giving each of its nodes' value index, in Tack's node order
-for the shape, the corners at the cell's points. <code>H1(data, order=3,
-dofs=table)</code> holds the same polynomials as <code>H1(data, order=3)</code>, numbered as the
-table says, so data numbered that way is used as it comes; every filter reads it,
-and a filter's output numbers its values by entity again.</p>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">blob</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="c1"># A smooth field: its level sets are curved surfaces inside every cell.</span>
-    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span>
-
-
-<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">bend</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="c1"># A bend of the mesh: its cells&#39; faces curve.</span>
-    <span class="k">return</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span><span class="p">]</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code>    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))</span>
-    <span class="n">space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>                  <span class="c1"># Gauss-Lobatto nodes by default</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">space</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">space</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="s2">&quot;values on&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>An order-4 <code>H1</code> space on 64 hexahedra holds <code>17³ = 4913</code> values: each edge,
-face and cell interior has its own, and cells turned any way read a shared
-edge or face's values alike. A polynomial of degree 4 in each coordinate is
-represented exactly, so the cubic comes back anywhere it is probed. Positions
-can be a field of such a space too: a curved geometry, whose cells are located
-and evaluated as they are, not as their corners make them.</p>
-<p>Filters that cut -- <code>contour</code>, <code>slice</code>, <code>slice_plane</code> -- cut a field above
-order 1, or a curved geometry, on linear sub-cells of the cells the cut can
-reach: those whose Bernstein coefficients (which bound the field over the
-cell) straddle the value.</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">coarse</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>      <span class="c1"># the cells&#39; corners</span>
-    <span class="n">fine</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span>                       <span class="c1"># 4 steps, the field&#39;s order</span>
-    <span class="n">within</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>    <span class="c1"># as many steps as that takes</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">coarse</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="n">fine</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="n">within</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;triangles&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>By default a cell is cut into as many steps along each axis as the field's
-or geometry's order, and <code>tolerance=</code> asks for the fewest steps whose
-estimated error is within it. Each crossing of a sub-cell's edge is where the
-field itself takes the value along that edge, found from the field's own
-values, so every vertex lies on the true surface (to rounding) at any number
-of steps; the steps decide only how finely the surface is faceted.
-<code>exact=False</code> puts it where the straight line between the lattice values does,
-and <code>subdivision=1, exact=False</code> is the cells' corners alone. A point where
-sub-cells of neighbouring cells meet is computed once, so the surface has no
-cracks, and every piece of a partitioned dataset holding it computes the same
-bits, so pieces' surfaces carry ghost marks and merge into the whole's.
-<code>td.subdivide</code> gives the linear sub-cells of every cell, for export
-or for a filter that takes linear cells only:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">curved</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))</span>
-    <span class="n">curved</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="n">bend</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">vec3</span><span class="p">())</span>
-    <span class="n">cut</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">slice_plane</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
-    <span class="n">linear</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">subdivide</span><span class="p">(</span><span class="n">curved</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>                        <span class="c1"># 27 hexahedra a cell</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">cut</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;triangles;&quot;</span><span class="p">,</span> <span class="n">linear</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;linear cells&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p><code>clip</code> and <code>threshold</code> cut the same way, but keep what they need not cut: the
-cells whose Bernstein coefficients lie wholly on the kept side stay as they are,
-curved and of their order, and only the cells the bound cannot decide go to
-linear sub-cells. The result is a <code>PartitionedDataSet</code> of the two parts, whole
-cells first:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">whole</span><span class="p">,</span> <span class="n">part</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;u&quot;</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span><span class="o">.</span><span class="n">partitions</span>         <span class="c1"># a PartitionedDataSet</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">whole</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;whole cells at order&quot;</span><span class="p">,</span> <span class="n">whole</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;u&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span><span class="p">,</span> <span class="s2">&quot;and&quot;</span><span class="p">,</span>
-          <span class="n">part</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;linear pieces&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>The parts share the lattice points of the faces between them, where a linear
-sub-face lies against a curved face. The whole cells' corners there are the
-whole part's: the cut part's copies are marked <code>DUPLICATEPOINT</code>, so reductions
-over the two (<code>owned_values</code>, <code>statistics</code>) count each once. A dataset of straight cells and order-1
-fields clips and thresholds as before, into one <code>DataSet</code>.</p>
-<p>MFEM fields of any order on quads, hexahedra, triangles, tetrahedra and wedges
-come across through <code>tack.interop.mfem</code>, and VTK's Lagrange cells (curves,
-quads, hexahedra, triangles, tetrahedra, wedges) through <code>vtk_to_dataset</code>
-(<code>dataset_to_vtk(..., higher_order=True)</code> writes them). Pyramids stop at order 2
-for now.</p>
-<h3 id="where-a-cells-values-sit">Where a cell's values sit<a class="headerlink" href="#where-a-cells-values-sit" title="Permanent link">&para;</a></h3>
-<p>An <code>L2</code> field of a tensor basis has a layout. <code>"blocks"</code> keeps each cell's
-values together, as MFEM and VTK store them; <code>"cells"</code> stores value <code>n</code> of
-every cell together, so that GPU threads working on neighbouring cells read
-neighbouring memory. The default, <code>"auto"</code>, picks <code>"cells"</code> for order 3 and up
-on a GPU and <code>"blocks"</code> everywhere else, because each is the faster one where
-it is picked: at order 6 cell-fastest reads 2.3 times and writes 3.6 times
-faster on an RTX 4060 Ti, and blocks read about 1.6 times and write about twice
-as fast on a CPU.</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">dg</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">basis</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">)</span>             <span class="c1"># &quot;auto&quot;: by device</span>
-    <span class="n">across</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">basis</span><span class="o">=</span><span class="s2">&quot;gauss_legendre&quot;</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">)</span>
-    <span class="n">p</span><span class="p">,</span> <span class="n">q</span> <span class="o">=</span> <span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">blob</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">(</span><span class="n">dg</span><span class="p">,</span> <span class="n">across</span><span class="p">))</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">dg</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span> <span class="n">across</span><span class="o">.</span><span class="n">layout</span><span class="p">,</span> <span class="n">dg</span><span class="o">.</span><span class="n">blocks</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</code></pre></div>
-<p>Every operation gives the same answer in either layout; only the order of
-<code>field.values</code> differs. <code>space.blocks(values)</code> reads them per cell, <code>(cells,
-values a cell)</code>, whatever the layout, and <code>space.indices()</code> says where each is.
-Moving a dataset to another device may change an <code>"auto"</code> layout, and
-<code>to_device</code> reorders the values. MFEM and the VTK interop take and give either.
-Set <code>TACK_L2_LAYOUT=cells</code> (or <code>blocks</code>) to run everything one way.</p>
-<h2 id="a-material-interface-exposes-the-difference">A material interface exposes the difference<a class="headerlink" href="#a-material-interface-exposes-the-difference" title="Permanent link">&para;</a></h2>
-<p>The <a href="../01-datasets/">two-cell example</a> has material 1 on the left and 3 on the
-right. Converting it to shared point data gives value 2 on the common face.
-Converting it to <code>L2</code> preserves both sides of the discontinuity:</p>
-<p><img alt="Cell values, averaged shared point values, and separate corner values" src="../../assets/data-spaces.png" /></p>
-<p>The figure is generated from the example's values along the bottom front edge;
-the dashed line is the shared face at x = 0.5. The middle ramp is an effect of
-projection and interpolation, not an interface resolved by the original data.
-H1 and L2 both use order 1 in this figure.</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">cell_temperature</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
-    <span class="n">point_material</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;material&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
-    <span class="n">separate_material</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;material&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
-    <span class="n">gradient</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>The returned objects are fields. Assign one to <code>data.fields[name]</code> if later
-filters should carry it. Computing <code>point_material</code> alone does not add it to
-the dataset's named fields.</p>
-<h2 id="projection-is-an-algorithmic-choice">Projection is an algorithmic choice<a class="headerlink" href="#projection-is-an-algorithmic-choice" title="Permanent link">&para;</a></h2>
-<p><code>project(data, field, target_space)</code> is the one operation: <code>td.H1(data)</code>,
-<code>td.Constant(data)</code> and <code>td.L2(data)</code> are the common target spaces.</p>
-<table>
-<thead>
-<tr>
-<th>Conversion</th>
-<th>Meaning</th>
-<th>What to check</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>H1 → Constant</td>
-<td>Each cell's average: its integral over the cell divided by the cell's measure</td>
-<td><code>average="nodes"</code> for VTK's mean of the cell's nodes</td>
-</tr>
-<tr>
-<td>Constant → H1</td>
-<td>Mean of incident cell values at each point</td>
-<td>Material discontinuities become shared values</td>
-</tr>
-<tr>
-<td>H1 → L2 of sufficient order</td>
-<td>Evaluate the continuous field at each cell's local nodes</td>
-<td>Values remain equal on shared interfaces</td>
-</tr>
-<tr>
-<td>L2 → H1</td>
-<td>Evaluate from adjacent cells, then average</td>
-<td>Jumps can be smoothed</td>
-</tr>
-<tr>
-<td>Constant → L2(order=1)</td>
-<td>Repeat a cell's value at its own corners</td>
-<td>Discontinuities remain</td>
-</tr>
-</tbody>
-</table>
-<p>For the affine temperature <code>x + 2y + 3z</code> on the two regular cells, the
-averages are <code>[2.75, 3.25]</code>, the center values.</p>
-<p>A cell's average and the mean of its nodes are different numbers. A cell's
-value from <code>project</code> is the average: the field integrated over the cell
-through the cell's own map, divided by the cell's measure. So each value
-times its cell's measure sums to <code>integrate</code>'s integral, for a field of any
-order on curved cells too. VTK's vtkPointDataToCellData and Viskores'
-CellAverage take the mean of the cell's points instead. With
-<code>average="nodes"</code>, <code>project</code> does the same: the mean of the field's own
-values in the cell, its <code>NODES</code>. The two agree for a linear field on a
-tetrahedron or on the boxes of an image. They differ elsewhere:</p>
-<ul>
-<li>On a pyramid, the apex weighs a quarter of a linear field's average, not a
-  fifth.</li>
-<li>A distorted hexahedron's corners do not weigh alike.</li>
-<li>At higher order, x² on the unit cube averages to 1/3. Its corners' mean is
-  1/2, and its 27 order-2 nodes' mean is 0.42.</li>
-</ul>
-<p>Polyhedral, polygonal and polyline topologies support point/cell projection:
-a cell's average is exact for a field linear on the pieces it is cut into.
-<code>L2</code>, higher-order projection and traces require the shape-based path. In
-particular, being able to attach point values to a polyhedron does not imply
-that it supplies shape-function evaluation for every algorithm.</p>
-<h2 id="read-both-sides-of-a-face">Read both sides of a face<a class="headerlink" href="#read-both-sides-of-a-face" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>    <span class="n">face_values</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;material&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">SideTraces</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
-    <span class="n">material_jump</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">jump</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;material&quot;</span><span class="p">)</span>
-    <span class="n">continuous_jump</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">jump</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>Projecting into <code>SideTraces</code> evaluates each cell at its faces' corners, keeping the two sides
-separate and aligned in the face's ordering. <code>jump</code> evaluates a difference
-at each face center: side 1 minus side 0, or zero at a boundary.</p>
-<p>The material has one nonzero jump of magnitude 2. The affine H1 temperature
-has zero jump. The sign of a material jump depends on the face's side ordering;
-its magnitude does not. A face normal points out of side 0. These conventions
-matter when assembling a flux and are developed in <a href="../05-mesh-kernels/">Mesh Kernels</a>.</p>
-<p>For a normal-oriented face quantity, use <code>Values(data, "faces", oriented=True)</code>.
-A filter that reverses a carried face then negates the value. Area and labels
-are ordinary, unoriented face values and should not change sign.</p>
-<h2 id="values-can-be-computed-instead-of-stored">Values can be computed instead of stored<a class="headerlink" href="#values-can-be-computed-instead-of-stored" title="Permanent link">&para;</a></h2>
-<p>Uniform-grid coordinates need only dimensions, origin and spacing; allocating
-three scalars for every point would be redundant. An implicit value array
-provides a <code>get(k)</code> expression that Tack inlines into the consuming kernel.</p>
-<h3 id="geometrys-space-and-its-implicit-array-are-different-layers">Geometry's space and its implicit array are different layers<a class="headerlink" href="#geometrys-space-and-its-implicit-array-are-different-layers" title="Permanent link">&para;</a></h3>
-<p>Both an image and a rectilinear grid have an order-1 H1 geometry field. Its
-space says how a cell's nodal positions define a coordinate mapping; its
-implicit value array says how to obtain each nodal position. The two layers
-can change independently:</p>
-<table>
-<thead>
-<tr>
-<th>Geometry values</th>
-<th>Information retained</th>
-<th>How one nodal position is obtained</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>UniformCoordinates</code></td>
-<td>Dimensions, origin, spacing and direction</td>
-<td>Evaluate the uniform-grid coordinate formula</td>
-</tr>
-<tr>
-<td><code>CartesianProduct</code></td>
-<td>Three backend axis arrays</td>
-<td>Gather one coordinate from each axis</td>
-</tr>
-<tr>
-<td>Explicit <code>tack.Array</code> with dtype <code>tack.vec3(...)</code></td>
-<td>One stored 3-vector per geometry DOF</td>
-<td>Read the vector</td>
-</tr>
-</tbody>
-</table>
-<p>Calling <code>materialize</code> on image coordinates changes their storage into an
-explicit value array; it does not change H1 order, add cells, or turn
-<code>StructuredTopology</code> into <code>UnstructuredTopology</code>. Calling <code>to_host</code> creates
-a host snapshot without replacing the geometry's value representation.
-See the <a href="../02-meshes/#image-rectilinear-and-curvilinear-data">geometry formulas and topology combinations</a>.</p>
-<p>Do not infer a function space from an array class. A <code>CartesianProduct</code>
-describes a way to compute 3-vectors; <code>H1</code> describes how coefficients are
-associated and interpolated on a topology. <code>td.Field</code> couples these two
-choices, with a check that the value count matches the space.</p>
-<h3 id="other-implicit-coefficient-arrays">Other implicit coefficient arrays<a class="headerlink" href="#other-implicit-coefficient-arrays" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;constant&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">ConstantArray</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">))</span>
-    <span class="n">explicit</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;constant&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
-    <span class="n">snapshot</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">to_host</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;constant&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
-</code></pre></div>
-<p>Here <code>ConstantArray</code> stores the constant and count, not 12 separate values.
-<code>materialize</code> computes storage on the default device. <code>to_host</code> evaluates and
-downloads a snapshot. Neither changes the original field's representation.</p>
-<table>
-<thead>
-<tr>
-<th>Implicit array</th>
-<th>Useful when</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>UniformCoordinates</code>, <code>CartesianProduct</code></td>
-<td>Coordinates follow a uniform or rectilinear grid</td>
-</tr>
-<tr>
-<td><code>ConstantArray</code>, <code>CountingArray</code></td>
-<td>Values are constant or a sequence</td>
-</tr>
-<tr>
-<td><code>Permutation</code>, <code>View</code>, <code>Strided</code></td>
-<td>Values are selected or reorganized without a new value buffer</td>
-</tr>
-<tr>
-<td><code>ExtractComponent</code>, <code>Components</code></td>
-<td>Scalar components and vector values need to be connected</td>
-</tr>
-<tr>
-<td><code>Transform</code>, <code>Function</code>, <code>Cast</code></td>
-<td>A device function or conversion can compute values on demand</td>
-</tr>
-</tbody>
-</table>
-<p>Operands can themselves be implicit arrays. This keeps intermediates out of
-storage, but the expression still does work whenever it is read. Materialize
-an expensive expression if reuse makes that worthwhile, then measure the whole
-pipeline. An implicit wrapper around a mutable buffer observes its current
-values; a materialized result is a previous computation until recomputed.</p>
-<h2 id="know-the-present-higher-order-limits">Know the present higher-order limits<a class="headerlink" href="#know-the-present-higher-order-limits" title="Permanent link">&para;</a></h2>
-<p><a href="../16-cells-and-bases/">Cell Types and Bases</a> lists which spaces, orders and
-bases each shape takes. Filters that keep whole cells (<code>extract_cells</code>,
-<code>split</code>, <code>remove_ghosts</code>) keep higher-order fields and a curved geometry at
-their order, and <code>extract_surface</code> keeps a solid's fields and
-geometry on its surface. The cutting filters (<code>contour</code>, <code>slice</code>, <code>clip</code>,
-<code>threshold</code>) cut curved and high-order cells on linear sub-cells, their
-crossings at the field's roots; <code>subdivide</code> gives those sub-cells. The
-<a href="../reference/dataset-api/#spaces">reference</a> records the supported layouts and
-<a href="../reference/dataset-api/#algorithms-and-filters">filter propagation rules</a>.</p>
-<h2 id="run-and-reproduce-the-figure">Run and reproduce the figure<a class="headerlink" href="#run-and-reproduce-the-figure" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_fields.py<span class="w"> </span>--check
-uv<span class="w"> </span>run<span class="w"> </span>--with<span class="w"> </span>matplotlib<span class="w"> </span>python<span class="w"> </span>docs/examples/data_fields.py<span class="w"> </span>--check<span class="w"> </span>--output<span class="w"> </span>spaces.png
-</code></pre></div>
-<p><a href="../../examples/data_fields.py">Download the complete program</a>.
-Continue with <a href="../04-filters/">Filtering and Analysis</a>.</p>
+<p>H1 can represent continuous temperature. L2 permits different values at the
+same interface location, as DG needs. Constant preserves a material jump.
+Connectivity and geometry remain the same in all three cases.</p>
+<p><img alt="Cell constants, shared point values and independent cell-local values" src="../../assets/data-spaces.png" /></p>
+<p>The middle ramp is introduced by averaging and interpolation; it is not a
+transition resolved by the original two material values.
+<a href="../create-fields/#a-material-interface-exposes-the-difference">Create and Convert Fields</a>
+checks the operations producing this figure.</p>
+<h2 id="basis-order-and-value-width">Basis, order and value width<a class="headerlink" href="#basis-order-and-value-width" title="Permanent link">&para;</a></h2>
+<p>A basis evaluates a field from coefficients. Order controls the local
+approximation, sharing controls how cells meet, and value width distinguishes
+scalar and vector coefficients. Storage layout is another independent choice.</p>
+<p>H1 order 2 adds field nodes on edges and, for supported shapes, faces and
+interiors. These are not new corner vertices or subdivided cells. The two
+hexes need 45 shared quadratic coefficients while retaining twelve vertices.
+A vector has one vector per coefficient, not additional mesh points.</p>
+<p>The <a href="../00-function-spaces/">optional function-space chapter</a> develops the
+basis formula, regularity, DOF counts and higher-order geometry.
+<a href="../16-cells-and-bases/">Cell Types and Bases</a> records supported combinations.
+Attaching a field does not guarantee every operation supports that combination.</p>
+<h2 id="face-values-and-orientation">Face values and orientation<a class="headerlink" href="#face-values-and-orientation" title="Permanent link">&para;</a></h2>
+<p>Normal components and integrated fluxes change sign under face reversal.
+Declare <code>oriented=True</code> so a filter reversing a carried face negates them.
+Leave pressure, area and labels unoriented. The flag cannot verify an imported
+solver's sign convention or face numbering.</p>
+<p><code>SideTraces(data)</code> keeps both cells' values at face corners. The
+<a href="../create-fields/#read-both-sides-of-a-face">trace recipe</a> compares material
+and continuous-temperature jumps. Face ids and sides come from
+<a href="../topology-and-geometry/#points-edges-faces-and-cells">topology</a>.</p>
+<h2 id="a-space-belongs-to-a-topology">A space belongs to a topology<a class="headerlink" href="#a-space-belongs-to-a-topology" title="Permanent link">&para;</a></h2>
+<p>Allocate using <code>field.space.size</code>. Equal lengths on different meshes do not
+make fields interchangeable. Spaces are interned on their topology: repeated
+requests for the same space reuse its layout. Fields can share that space
+while keeping their own values and units.</p>
+<p>Fields can share a name in different spaces. If the name is ambiguous, select
+<code>(name, space)</code> explicitly. The <a href="../create-fields/#fields-that-share-a-name">selection recipe</a>
+shows insertion, iteration, filtering and VTK round trips.</p>
+<p><code>Constant(data)</code> describes a piecewise-constant function; <code>ConstantArray</code>
+supplies one repeated array value. Stored and implicit arrays can supply a
+space without changing its meaning. See <a href="../field-storage/">Arrays, Storage and Layouts</a>
+when attaching solver storage or writing advanced kernels.</p>
+<p>Continue with <a href="../12-units/">Coordinates, Units and Time</a>, or
+<a href="../create-fields/">Create and Convert Fields</a> to put these choices to work.</p>
+<details class="info">
+<summary>Related detailed sections</summary>
+<p>These topics are developed in their own chapters.</p>
+<p><span id="fields-spaces-and-implicit-arrays" data-guide-forward="#fields-and-spaces"></span>
+<a href="./#fields-and-spaces">Fields, spaces and implicit arrays</a>.</p>
+<p><span id="fields-that-share-a-name" data-guide-forward="../create-fields/#fields-that-share-a-name"></span>
+<a href="../create-fields/#fields-that-share-a-name">Fields that share a name</a>.</p>
+<p><span id="construct-an-l2-field" data-guide-forward="../create-fields/#construct-an-l2-field"></span>
+<a href="../create-fields/#construct-an-l2-field">Construct an L2 field</a>.</p>
+<p><span id="initialize-each-cells-coefficients" data-guide-forward="../create-fields/#initialize-each-cells-coefficients"></span>
+<a href="../create-fields/#initialize-each-cells-coefficients">Initialize each cell's coefficients</a>.</p>
+<p><span id="copy-coefficients-from-an-existing-solver-array" data-guide-forward="../create-fields/#copy-coefficients-from-an-existing-solver-array"></span>
+<a href="../create-fields/#copy-coefficients-from-an-existing-solver-array">Copy coefficients from an existing solver array</a>.</p>
+<p><span id="a-constant-inside-each-cell-l2-order-0" data-guide-forward="../create-fields/#a-constant-inside-each-cell-l2-order-0"></span>
+<a href="../create-fields/#a-constant-inside-each-cell-l2-order-0">A constant inside each cell: L2 order 0</a>.</p>
+<p><span id="evaluate-and-check-the-discontinuity" data-guide-forward="../create-fields/#evaluate-and-check-the-discontinuity"></span>
+<a href="../create-fields/#evaluate-and-check-the-discontinuity">Evaluate and check the discontinuity</a>.</p>
+<p><span id="construct-a-quadratic-h1-field" data-guide-forward="../create-fields/#construct-a-quadratic-h1-field"></span>
+<a href="../create-fields/#construct-a-quadratic-h1-field">Construct a quadratic H1 field</a>.</p>
+<p><span id="sample-at-the-fields-nodes" data-guide-forward="../create-fields/#sample-at-the-fields-nodes"></span>
+<a href="../create-fields/#sample-at-the-fields-nodes">Sample at the field's nodes</a>.</p>
+<p><span id="evaluate-through-the-quadratic-basis" data-guide-forward="../create-fields/#evaluate-through-the-quadratic-basis"></span>
+<a href="../create-fields/#evaluate-through-the-quadratic-basis">Evaluate through the quadratic basis</a>.</p>
+<p><span id="a-material-interface-exposes-the-difference" data-guide-forward="../create-fields/#a-material-interface-exposes-the-difference"></span>
+<a href="../create-fields/#a-material-interface-exposes-the-difference">A material interface exposes the difference</a>.</p>
+<p><span id="projection-is-an-algorithmic-choice" data-guide-forward="../create-fields/#projection-is-an-algorithmic-choice"></span>
+<a href="../create-fields/#projection-is-an-algorithmic-choice">Projection is an algorithmic choice</a>.</p>
+<p><span id="read-both-sides-of-a-face" data-guide-forward="../create-fields/#read-both-sides-of-a-face"></span>
+<a href="../create-fields/#read-both-sides-of-a-face">Read both sides of a face</a>.</p>
+<p><span id="run-and-reproduce-the-figure" data-guide-forward="../create-fields/#run-and-reproduce-the-figure"></span>
+<a href="../create-fields/#run-and-reproduce-the-figure">Run and reproduce the figure</a>.</p>
+<p><span id="how-the-values-are-stored" data-guide-forward="../field-storage/#how-the-values-are-stored"></span>
+<a href="../field-storage/#how-the-values-are-stored">How the values are stored</a>.</p>
+<p><span id="the-mesh-points-cells-edges-and-faces" data-guide-forward="../field-storage/#the-mesh-points-cells-edges-and-faces"></span>
+<a href="../field-storage/#the-mesh-points-cells-edges-and-faces">The mesh: points, cells, edges and faces</a>.</p>
+<p><span id="where-each-value-is" data-guide-forward="../field-storage/#where-each-value-is"></span>
+<a href="../field-storage/#where-each-value-is">Where each value is</a>.</p>
+<p><span id="a-cells-nodes-in-order" data-guide-forward="../field-storage/#a-cells-nodes-in-order"></span>
+<a href="../field-storage/#a-cells-nodes-in-order">A cell's nodes in order</a>.</p>
+<p><span id="h1-above-order-1-numbered-by-entity" data-guide-forward="../field-storage/#h1-above-order-1-numbered-by-entity"></span>
+<a href="../field-storage/#h1-above-order-1-numbered-by-entity">H1 above order 1: numbered by entity</a>.</p>
+<p><span id="vectors" data-guide-forward="../field-storage/#vectors"></span>
+<a href="../field-storage/#vectors">Vectors</a>.</p>
+<p><span id="every-value-of-a-cell-at-any-order" data-guide-forward="../field-storage/#every-value-of-a-cell-at-any-order"></span>
+<a href="../field-storage/#every-value-of-a-cell-at-any-order">Every value of a cell, at any order</a>.</p>
+<p><span id="finding-values-on-the-host" data-guide-forward="../field-storage/#finding-values-on-the-host"></span>
+<a href="../field-storage/#finding-values-on-the-host">Finding values on the host</a>.</p>
+<p><span id="where-a-cells-values-sit" data-guide-forward="../field-storage/#where-a-cells-values-sit"></span>
+<a href="../field-storage/#where-a-cells-values-sit">Where a cell's values sit</a>.</p>
+<p><span id="values-can-be-computed-instead-of-stored" data-guide-forward="../field-storage/#values-can-be-computed-instead-of-stored"></span>
+<a href="../field-storage/#values-can-be-computed-instead-of-stored">Values can be computed instead of stored</a>.</p>
+<p><span id="geometrys-space-and-its-implicit-array-are-different-layers" data-guide-forward="../field-storage/#geometrys-space-and-its-implicit-array-are-different-layers"></span>
+<a href="../field-storage/#geometrys-space-and-its-implicit-array-are-different-layers">Geometry's space and its implicit array are different layers</a>.</p>
+<p><span id="other-implicit-coefficient-arrays" data-guide-forward="../field-storage/#other-implicit-coefficient-arrays"></span>
+<a href="../field-storage/#other-implicit-coefficient-arrays">Other implicit coefficient arrays</a>.</p>
+<p><span id="higher-orders" data-guide-forward="../00-function-spaces/#higher-orders"></span>
+<a href="../00-function-spaces/#higher-orders">Higher orders</a>.</p>
+<p><span id="know-the-present-higher-order-limits" data-guide-forward="../16-cells-and-bases/#what-each-shape-supports"></span>
+<a href="../16-cells-and-bases/#what-each-shape-supports">Know the present higher-order limits</a>.</p>
+</details>
 
 
 
@@ -5551,6 +4882,8 @@ Continue with <a href="../04-filters/">Filtering and Analysis</a>.</p>
     
     
       <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/guide-section-links.js"></script>
       
     
   </body>

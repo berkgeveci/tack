@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://berkgeveci.github.io/tack/dev/vis-guide/12-units/">
       
       
-        <link rel="prev" href="../18-polyhedra/">
+        <link rel="prev" href="../03-fields-and-spaces/">
       
       
-        <link rel="next" href="../02-meshes/">
+        <link rel="next" href="../18-polyhedra/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Physical Units - Tack</title>
+        <title>Coordinates, Units and Time - Tack</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#physical-units" class="md-skip">
+        <a href="#coordinates-units-and-time" class="md-skip">
           Skip to content
         </a>
       
@@ -130,7 +130,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Physical Units
+              Coordinates, Units and Time
             
           </span>
         </div>
@@ -1686,14 +1686,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../00-function-spaces/" class="md-nav__link">
+      <a href="../data-model-overview/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Function Space Fundamentals
+    Overview
   
 
     
@@ -1742,14 +1742,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../18-finite-volume/" class="md-nav__link">
+      <a href="../topology-and-geometry/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Finite-volume Data and Fluxes
+    Topology and Geometry
   
 
     
@@ -1795,62 +1795,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../16-cells-and-bases/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cell Types and Bases
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../18-polyhedra/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Polyhedra and Polygons
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -1870,7 +1814,7 @@
   <span class="md-ellipsis">
     
   
-    Physical Units
+    Coordinates, Units and Time
   
 
     
@@ -1888,7 +1832,7 @@
   <span class="md-ellipsis">
     
   
-    Physical Units
+    Coordinates, Units and Time
   
 
     
@@ -1914,10 +1858,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#where-units-come-from" class="md-nav__link">
+  <a href="#relative-and-world-positions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Where units come from
+        Relative and world positions
       
     </span>
   </a>
@@ -1925,10 +1869,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-keeps-a-unit" class="md-nav__link">
+  <a href="#far-from-zero-the-origin" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What keeps a unit
+        Far from zero: the origin
       
     </span>
   </a>
@@ -1936,10 +1880,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#derived-units" class="md-nav__link">
+  <a href="#units-are-on-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Derived units
+        Units are on fields
       
     </span>
   </a>
@@ -1947,10 +1891,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quantities-as-parameters" class="md-nav__link">
+  <a href="#time-on-a-dataset" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quantities as parameters
+        Time on a dataset
       
     </span>
   </a>
@@ -1958,21 +1902,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mismatches-are-refused" class="md-nav__link">
+  <a href="#metadata-and-pipeline-results" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Mismatches are refused
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#converting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Converting
+        Metadata and pipeline results
       
     </span>
   </a>
@@ -1982,6 +1915,322 @@
     </ul>
   
 </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_6" id="__nav_3_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Representations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Representations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../18-polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra, Polygons and Lines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../point-cloud-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../collections-and-partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collections and Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_7" id="__nav_3_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further Detail
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Further Detail
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Spaces and Higher-order Geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays, Storage and Layouts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
       
     </li>
   
@@ -2057,6 +2306,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_1" id="__nav_3_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create and Connect
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Create and Connect
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../02-meshes/" class="md-nav__link">
         
@@ -2086,14 +2387,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../08-point-clouds/" class="md-nav__link">
+      <a href="../create-fields/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Point Clouds and Particles
+    Create and Convert Fields
   
 
     
@@ -2114,14 +2415,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../10-amr/" class="md-nav__link">
+      <a href="../connect-simulation-data/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    AMR Hierarchies
+    Connect Simulation Data
   
 
     
@@ -2135,21 +2436,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../11-octrees/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_2" id="__nav_3_4_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Octrees
+    Analyze and Transform
   
 
     
@@ -2157,11 +2482,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analyze and Transform
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2190,6 +2523,206 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Trace Fields
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../18-finite-volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finite-volume Data and Fluxes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-point-clouds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analyze Adaptive Data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_3" id="__nav_3_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Your Own Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Your Own Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2275,57 +2808,9 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../06-pipelines/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Sample and Connect Simulations
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../13-streaming/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Stream Steps
-  
-
-    
-  </span>
-  
-  
-
-      </a>
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2709,6 +3194,90 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../16-cells-and-bases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/interop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Units and Quantities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2815,6 +3384,34 @@
     
   
     Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/view-composition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    View Storage and Composition
   
 
     
@@ -3918,10 +4515,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#where-units-come-from" class="md-nav__link">
+  <a href="#relative-and-world-positions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Where units come from
+        Relative and world positions
       
     </span>
   </a>
@@ -3929,10 +4526,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-keeps-a-unit" class="md-nav__link">
+  <a href="#far-from-zero-the-origin" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What keeps a unit
+        Far from zero: the origin
       
     </span>
   </a>
@@ -3940,10 +4537,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#derived-units" class="md-nav__link">
+  <a href="#units-are-on-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Derived units
+        Units are on fields
       
     </span>
   </a>
@@ -3951,10 +4548,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quantities-as-parameters" class="md-nav__link">
+  <a href="#time-on-a-dataset" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quantities as parameters
+        Time on a dataset
       
     </span>
   </a>
@@ -3962,21 +4559,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mismatches-are-refused" class="md-nav__link">
+  <a href="#metadata-and-pipeline-results" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Mismatches are refused
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#converting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Converting
+        Metadata and pipeline results
       
     </span>
   </a>
@@ -4003,225 +4589,89 @@
   
 
 
-<h1 id="physical-units">Physical Units<a class="headerlink" href="#physical-units" title="Permanent link">&para;</a></h1>
-<p>A field's values are numbers; what they measure is its <strong>unit</strong>. Tack keeps
-units on fields, not arrays: an array is storage and a field is meaning, so
-kernels, devices and implicit arrays never see a unit. A unit is a string such
-as <code>"m/s"</code>, <code>"K"</code> or <code>"Msun/kpc**3"</code>, kept in <a href="https://unyt.readthedocs.io">unyt</a>'s
-canonical spelling, so <code>"m/s"</code>, <code>"m*s**-1"</code> and <code>"m/s^1"</code> are one unit. <code>None</code>
-is <strong>unknown</strong>, which is not the same as <code>"dimensionless"</code>: nothing derived
-from an unknown unit is guessed.</p>
-<p>The <strong>spatial unit</strong> is the geometry field's (<code>data.unit</code>), and the dataset's
-<code>origin</code> is in it.</p>
-<!-- tack-check: units -->
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
-
-<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
-
-<span class="c1"># A raster at State Plane coordinates, in US survey feet, with a temperature.</span>
-<span class="n">image</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;ftUS&quot;</span><span class="p">)</span>
-<span class="n">image</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1_400_000.0</span><span class="p">,</span> <span class="mf">600_000.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
-<span class="n">celsius</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">,</span> <span class="n">image</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-<span class="n">image</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">image</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">celsius</span><span class="p">),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;degC&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">image</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="n">image</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
-
-<span class="c1"># Filters that keep a quantity keep its unit, and the spatial unit with it.</span>
-<span class="n">cut</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="mf">15.0</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">cut</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="n">cut</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">cut</span><span class="o">.</span><span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;ftUS&quot;</span> <span class="ow">and</span> <span class="n">cut</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;°C&quot;</span>
-
-<span class="c1"># convert scales on the device; the origin converts in double precision.</span>
-<span class="n">metres</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;m&quot;</span><span class="p">)</span>
-<span class="n">kelvin</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="n">metres</span><span class="p">,</span> <span class="s2">&quot;K&quot;</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="s2">&quot;T&quot;</span><span class="p">)</span>
-<span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metres</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">UniformCoordinates</span><span class="p">)</span>  <span class="c1"># still an image</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">metres</span><span class="o">.</span><span class="n">world_positions</span><span class="p">(),</span> <span class="n">image</span><span class="o">.</span><span class="n">world_positions</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1200</span> <span class="o">/</span> <span class="mi">3937</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">kelvin</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">celsius</span> <span class="o">+</span> <span class="mf">273.15</span><span class="p">)</span>
-
-<span class="c1"># A field converts on its own too, into a field in the same space.</span>
-<span class="n">fahrenheit</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="n">image</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;T&quot;</span><span class="p">],</span> <span class="s2">&quot;degF&quot;</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">fahrenheit</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">celsius</span> <span class="o">*</span> <span class="mi">9</span> <span class="o">/</span> <span class="mi">5</span> <span class="o">+</span> <span class="mi">32</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">)</span>
-
-<span class="c1"># Derived quantities derive their units; a difference of degrees Celsius is in</span>
-<span class="c1"># kelvin, so a temperature gradient is in kelvin per foot.</span>
-<span class="k">assert</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;K/ftUS&quot;</span>
-<span class="n">stats</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">statistics</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;mean&quot;</span><span class="p">),</span> <span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;population_variance&quot;</span><span class="p">))</span>
-<span class="k">assert</span> <span class="n">stats</span><span class="o">.</span><span class="n">unit_of</span><span class="p">(</span><span class="s2">&quot;population_variance&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;K**2&quot;</span>
-
-<span class="c1"># Parameters take quantities: a threshold in degrees Celsius on a field in</span>
-<span class="c1"># kelvin, a radius in metres on positions in feet.</span>
-<span class="n">warm</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">kelvin</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="s2">&quot;20 degC&quot;</span><span class="p">,</span> <span class="s2">&quot;30 degC&quot;</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">warm</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold</span><span class="p">(</span><span class="n">kelvin</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="mf">293.15</span><span class="p">,</span> <span class="mf">303.15</span><span class="p">)</span><span class="o">.</span><span class="n">num_cells</span>
-<span class="n">cloud</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">point_cloud</span><span class="p">(</span><span class="n">image</span><span class="o">.</span><span class="n">world_positions</span><span class="p">(),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;ftUS&quot;</span><span class="p">)</span>
-<span class="n">coarse</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="s2">&quot;10 m&quot;</span><span class="p">)</span>             <span class="c1"># 32.8 US survey feet</span>
-<span class="k">assert</span> <span class="n">coarse</span><span class="o">.</span><span class="n">num_points</span> <span class="o">==</span> <span class="n">td</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="mi">10</span> <span class="o">*</span> <span class="mi">3937</span> <span class="o">/</span> <span class="mi">1200</span><span class="p">)</span><span class="o">.</span><span class="n">num_points</span>
-
-<span class="c1"># Positions in two different units do not meet.</span>
-<span class="k">try</span><span class="p">:</span>
-    <span class="n">td</span><span class="o">.</span><span class="n">probe</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">point_cloud</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">1_400_010.0</span><span class="p">,</span> <span class="mf">600_010.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">]]),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m&quot;</span><span class="p">))</span>
-<span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;refused:&quot;</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="where-units-come-from">Where units come from<a class="headerlink" href="#where-units-come-from" title="Permanent link">&para;</a></h2>
-<ul>
-<li><code>Field(space, values, unit=)</code>; <code>DataSet(..., unit=)</code>, <code>uniform_grid</code>,
-  <code>rectilinear_grid</code> and <code>point_cloud</code> take <code>unit=</code> for the geometry, and
-  <code>point_cloud(..., units={name: unit})</code> for its fields. A geometry <code>Field</code>
-  brings its own unit.</li>
-<li><code>OctreeDataSet(..., units={name: unit})</code> (and <code>from_cells</code>): octree fields
-  are arrays, so their units are a mapping; the spatial unit is the roots'.</li>
-<li>The VTK interop reads and writes each array's <code>UNITS_LABEL</code>, the one unit
-  VTK 9.7.1 keeps: on point and cell data, the points' array, a rectilinear
-  grid's axes and a HyperTreeGrid's arrays and axes. VTK has nowhere to keep
-  an image's spatial unit. A label that is no unit (VTK's labels are free
-  text) is dropped with a warning; <code>^</code> is read as a power, as LLNL units and
-  VTK write it.</li>
-</ul>
-<p>Code units are scaled units, <code>"3.0857e21*cm"</code>, which need no registry of
-their own. Besides unyt's units, Tack knows the US survey foot, <code>ftUS</code>
-(1200/3937 m): State Plane coordinates and older LiDAR use it, and it differs
-from the international foot by 2 parts per million, metres at survey
-coordinates.</p>
-<h2 id="what-keeps-a-unit">What keeps a unit<a class="headerlink" href="#what-keeps-a-unit" title="Permanent link">&para;</a></h2>
-<p>Filters carry fields through <code>carry</code>, so every field a filter takes along
-keeps its unit: clip, slice, threshold, extracts, contour (with
-<code>contour_value</code> in the contoured field's unit), tetrahedralize, shrink, warp,
-transform, probe, pieces, ghost cells, merging and <code>to_device</code>. So do the
-filters whose result is the same quantity: <code>project</code>, <code>values_at_centers</code>,
-traces, <code>magnitude</code>, <code>voxel_downsample</code>'s means, SPH interpolation, and
-<code>cell_centers</code> and <code>face_centers</code> (positions, in the spatial unit).</p>
-<p>Cylindrical and spherical coordinates give an unknown spatial unit, since an
-angle and lengths are no one unit.</p>
-<h2 id="derived-units">Derived units<a class="headerlink" href="#derived-units" title="Permanent link">&para;</a></h2>
-<p>Filters that compute a new quantity derive its unit from their inputs':</p>
-<table>
-<thead>
-<tr>
-<th>Filter</th>
-<th>Unit</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>gradients</code></td>
-<td>the field's per spatial unit; <code>flow_quantities</code>' divergence and vorticity the gradient's, the Q-criterion its square</td>
-</tr>
-<tr>
-<td><code>jump</code></td>
-<td>the field's</td>
-</tr>
-<tr>
-<td><code>dot</code>, <code>cross</code></td>
-<td>the product of the two, by its SI name where it has one (<code>N</code> times <code>m</code> is <code>J</code>)</td>
-</tr>
-<tr>
-<td><code>composite</code></td>
-<td>the fields' one unit (two known units are refused)</td>
-</tr>
-<tr>
-<td><code>log_values</code></td>
-<td>a pure number, of a pure number (a dimensioned field is refused)</td>
-</tr>
-<tr>
-<td><code>cell_geometry</code></td>
-<td>measures in the spatial unit to the cells' dimension (<code>m**3</code>, <code>m**2</code>, <code>m</code>), centroids in it</td>
-</tr>
-<tr>
-<td><code>face_geometry</code>, <code>edge_lengths</code></td>
-<td>areas in the spatial unit to the faces' dimension (an edge's length on a surface), unit normals pure numbers; lengths in it</td>
-</tr>
-<tr>
-<td><code>net_flux</code>, <code>divergence</code>, <code>perot</code></td>
-<td>the flux's; it over the cells' measure; the faces' components'</td>
-</tr>
-<tr>
-<td><code>statistics</code></td>
-<td><code>Statistics.unit</code> and <code>weight_unit</code>, and <code>unit_of(name)</code> for each number: the mean, extremes and deviations in the field's unit, the variances in its square, <code>sum</code> times the weights', skewness and kurtosis pure numbers</td>
-</tr>
-<tr>
-<td><code>deposit</code></td>
-<td>counts pure numbers, sums, means and extremes in the field's; <code>per_volume</code> over the cells' measure (<code>1/m**3</code>, <code>kg/m**3</code>)</td>
-</tr>
-<tr>
-<td><code>sph_density</code>, <code>sph_interpolate</code></td>
-<td>the mass per volume; the field's, times <code>m / (rho L^d)</code> (a pure number for consistent units)</td>
-</tr>
-<tr>
-<td><code>halo_catalog</code>, <code>outliers</code>, <code>point_normals</code></td>
-<td>masses in the mass field's, radii and centres and mean distances in the spatial unit; normals pure numbers</td>
-</tr>
-<tr>
-<td><code>advect</code>, <code>streamlines</code></td>
-<td><code>time</code> in the spatial unit over the velocity's</td>
-</tr>
-<tr>
-<td><code>interpolate(..., unit=)</code></td>
-<td>what the caller says: a function's code does not say its unit</td>
-</tr>
-</tbody>
-</table>
-<p>A difference of values with an offset zero -- degrees Celsius or Fahrenheit --
-is in the absolute unit of the same size, kelvin or Rankine: gradients, jumps,
-variances and deviations. Such values are not multiplied (<code>dot</code> refuses them):
-convert to kelvin first. Labels, ids, flags and counts that are not
-quantities (<code>region</code>, <code>cell_ids</code>, <code>outlier</code>, <code>neighbors</code>) have no unit, and a
-result computed from a bare number -- <code>upwind_flux</code>'s constant velocity, a
-mass given as one number, the potential's <code>G</code> -- is unknown.</p>
-<h2 id="quantities-as-parameters">Quantities as parameters<a class="headerlink" href="#quantities-as-parameters" title="Permanent link">&para;</a></h2>
-<p>A parameter in a unit takes a quantity: a string such as <code>"10 cm"</code>, a pair
-<code>(value, unit)</code> (the value a number or an array), or a unyt or pint quantity.
-It is converted to what the parameter is compared with; a plain number is
-taken to be in that unit already, as before.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Converted to</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>voxel_downsample</code>'s size; <code>radius=</code> of <code>outliers</code>, <code>connected_components</code>, <code>point_normals</code>, <code>ghost_points</code>; <code>periodic=</code> boxes; <code>PointLocator</code>'s bin size and <code>neighbors</code>' radius; SPH smoothing lengths given as one number; the halo catalogue's softening; <code>slice_plane</code>'s origin and distances</td>
-<td>the spatial unit</td>
-</tr>
-<tr>
-<td><code>threshold</code>'s and <code>threshold_points</code>' bounds, <code>contour</code>'s values, <code>clip</code>'s value by a field</td>
-<td>the field's unit, offsets included (<code>"20 degC"</code> on a field in kelvin)</td>
-</tr>
-<tr>
-<td><code>advect</code>'s and <code>streamlines</code>' step size</td>
-<td>the spatial unit over the velocity's</td>
-</tr>
-<tr>
-<td>a mass or density given as one number to SPH or the halo catalogue, <code>upwind_flux</code>'s velocity</td>
-<td>none: the quantity brings its unit, so the result has one (<code>mass=(1e10, "Msun")</code> makes densities in <code>Msun/kpc**3</code>)</td>
-</tr>
-</tbody>
-</table>
-<p>A quantity needs a unit to convert to: one given for a dataset or field of
-unknown unit is refused, as is one for an implicit function's values, which
-have none. A string that names a field (<code>smoothing_length="h"</code>) is the
-field.</p>
-<h2 id="mismatches-are-refused">Mismatches are refused<a class="headerlink" href="#mismatches-are-refused" title="Permanent link">&para;</a></h2>
-<p>Positions compared or moved between datasets must be in one spatial unit, as
-they must be relative to one origin: probe's points, pieces of a
-<code>PartitionedDataSet</code>, the boxes of an <code>AMRDataSet</code> and an octree's probe
-refuse two known units, naming both and <code>convert</code>. An unknown unit cannot be
-checked, so it is not refused.</p>
-<h2 id="converting">Converting<a class="headerlink" href="#converting" title="Permanent link">&para;</a></h2>
-<p><code>convert(field, unit)</code> gives a field in <code>unit</code>: a new field in the same space,
-its values scaled (and offset, from degrees Celsius to kelvin, say) on the
-device. <code>convert(data, unit, field=name)</code> does the same to a dataset's field
-and gives the dataset with it, everything else kept, and <code>convert(data, unit)</code>
-gives the dataset with its geometry in <code>unit</code>. The geometry's conversion
-scales the origin on the host in double precision, so survey coordinates keep
-their digits; an image stays an image and a rectilinear grid keeps its axes.
-Positions are the dataset's to convert, not the geometry field's alone, which
-would leave the origin in the old unit. The unit converted from must be
-known. Integer fields convert only by relabelling (<code>"1000*m"</code> to <code>"km"</code>).</p>
+<h1 id="coordinates-units-and-time">Coordinates, units and time<a class="headerlink" href="#coordinates-units-and-time" title="Permanent link">&para;</a></h1>
+<p>Knowing where values live is not enough: physical interpretation also needs
+a coordinate frame, units and the time of the dataset. These belong to the
+data, while conversions and temporal state are explicit operations.</p>
+<h2 id="relative-and-world-positions">Relative and world positions<a class="headerlink" href="#relative-and-world-positions" title="Permanent link">&para;</a></h2>
+<p>A dataset's <code>origin</code> is three doubles on the host. Geometry values give
+positions relative to it. Kernels see those relative positions, keeping
+nearby detail accurate in single precision even far from world zero.
+<code>positions()</code> returns relative corner positions for supported H1 geometry;
+<code>world_positions()</code> adds the origin in double precision.</p>
+<p>The origin inside an image's <code>UniformCoordinates</code> formula is separate: it
+locates the grid in the dataset's relative frame. Adding the dataset origin
+gives world coordinates. <code>rebased(origin)</code> can change that frame while
+preserving the world positions and implicit image representation.</p>
+<p>Parameters that are physical positions, such as probe points, seeds and
+implicit-function origins, use world coordinates and are moved to the dataset
+frame before the device calculation. Pieces whose positions meet need a
+consistent frame. Higher-order geometry has more coefficients than corner
+positions; <a href="../00-function-spaces/#geometry-is-a-field-too">geometry's space</a>
+determines their meaning.</p>
+<h2 id="far-from-zero-the-origin">Far from zero: the origin<a class="headerlink" href="#far-from-zero-the-origin" title="Permanent link">&para;</a></h2>
+<p>A survey in projected coordinates sits hundreds of kilometres from zero,
+and single precision has about seven digits: at 4,580,000 m its spacing is
+half a metre. So a dataset's positions are an <strong>origin</strong>, three doubles on
+the host, plus values in the geometry's type. <code>point_cloud</code> given
+double-precision positions picks the lower corner of their box, in whole
+units, as the origin; the values are then offsets of at most the tile's
+size, and keep millimetres in single precision. Kernels see only the
+offsets. <code>positions()</code> gives them; <code>world_positions()</code> gives the world
+coordinates back in double precision.</p>
+<p>Filters keep the origin, and anything given in world coordinates (a probe
+point, a seed, an implicit function, a viewpoint) is moved to it in double
+precision. A grid to deposit onto is rebased to the same origin, as shown in the <a href="../08-point-clouds/#clean-thin-and-grid-a-lidar-tile">LiDAR recipe</a>.
+Pieces whose positions meet share one origin.</p>
+<h2 id="units-are-on-fields">Units are on fields<a class="headerlink" href="#units-are-on-fields" title="Permanent link">&para;</a></h2>
+<p><code>Field(..., unit="K")</code> describes temperature. <code>data.unit</code> describes spatial
+coordinates, including the dataset origin. Arrays themselves have no physical
+unit. Canonical spellings are supplied by unyt; <code>None</code> means unknown, which
+differs from <code>"dimensionless"</code>.</p>
+<p>Filters keeping a quantity keep its unit. New quantities derive units:
+temperature gradient is temperature per length, cell volume is length cubed,
+and a difference of Celsius temperatures is in kelvin. Knowing a unit does
+not identify whether a face array holds normal velocity or integrated flux.</p>
+<p>Compatible physical quantities may still need conversion before being
+combined. A quantity-valued parameter can be converted to the field's unit;
+plain numbers are interpreted in that unit. See <a href="../reference/units/">the unit reference</a>
+for the complete rules and <a href="../connect-simulation-data/#convert-units-before-combining-data">the conversion recipe</a>
+for checked examples. Convert a dataset's spatial unit through the dataset
+so its origin changes with its geometry coefficients.</p>
+<h2 id="time-on-a-dataset">Time on a dataset<a class="headerlink" href="#time-on-a-dataset" title="Permanent link">&para;</a></h2>
+<p><code>DataSet(..., time=, time_unit=)</code> (or setting <code>data.time</code>, <code>data.time_unit</code>):
+a double on the host or <code>None</code>, in a unit of time or <code>None</code>. Every filter keeps
+both; <code>probe</code> gives back its target, with the target's time. The pieces of a
+<code>PartitionedDataSet</code> and the boxes of an <code>AMRDataSet</code> are at one time
+(compared in one unit, so 1 s and 1000 ms agree); an octree's is its roots'.
+The VTK interop maps VTK's <code>DATA_TIME_STEP</code> both ways; VTK has no time unit.</p>
+<h2 id="metadata-and-pipeline-results">Metadata and pipeline results<a class="headerlink" href="#metadata-and-pipeline-results" title="Permanent link">&para;</a></h2>
+<p>A returned dataset carries the frame and metadata according to the operation's
+rules. It can share topology or storage with its input. Sharing is not a deep
+snapshot, and an old contour does not recompute when a simulation changes.
+<a href="../connect-simulation-data/">Connect Simulation Data</a> explains the update and
+buffer-lifetime decisions; <a href="../13-streaming/">Stream Steps</a> explains cached history.</p>
+<p>You now have the common model. Choose <a href="../introduction/#choose-a-task">a task</a>,
+read about <a href="../collections-and-partitions/">collections</a>, or continue into
+<a href="../00-function-spaces/">spaces and higher-order geometry</a>.</p>
+<details class="info">
+<summary>Related detailed sections</summary>
+<p>These topics are developed in their own chapters.</p>
+<p><span id="physical-units" data-guide-forward="#coordinates-units-and-time"></span>
+<a href="./#coordinates-units-and-time">Physical Units</a>.</p>
+<p><span id="where-units-come-from" data-guide-forward="../reference/units/#where-units-come-from"></span>
+<a href="../reference/units/#where-units-come-from">Where units come from</a>.</p>
+<p><span id="what-keeps-a-unit" data-guide-forward="../reference/units/#what-keeps-a-unit"></span>
+<a href="../reference/units/#what-keeps-a-unit">What keeps a unit</a>.</p>
+<p><span id="derived-units" data-guide-forward="../reference/units/#derived-units"></span>
+<a href="../reference/units/#derived-units">Derived units</a>.</p>
+<p><span id="quantities-as-parameters" data-guide-forward="../reference/units/#quantities-as-parameters"></span>
+<a href="../reference/units/#quantities-as-parameters">Quantities as parameters</a>.</p>
+<p><span id="mismatches-are-refused" data-guide-forward="../reference/units/#mismatches-are-refused"></span>
+<a href="../reference/units/#mismatches-are-refused">Mismatches are refused</a>.</p>
+<p><span id="converting" data-guide-forward="../connect-simulation-data/#converting"></span>
+<a href="../connect-simulation-data/#converting">Converting</a>.</p>
+</details>
 
 
 
@@ -4299,6 +4749,8 @@ known. Integer fields convert only by relabelling (<code>"1000*m"</code> to <cod
     
     
       <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/guide-section-links.js"></script>
       
     
   </body>

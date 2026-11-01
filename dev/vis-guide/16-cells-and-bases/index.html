@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://berkgeveci.github.io/tack/dev/vis-guide/16-cells-and-bases/">
       
       
-        <link rel="prev" href="../03-fields-and-spaces/">
+        <link rel="prev" href="../reference/data-model/">
       
       
-        <link rel="next" href="../18-polyhedra/">
+        <link rel="next" href="../reference/interop/">
       
       
         
@@ -1626,8 +1626,6 @@
                 
   
   
-    
-  
   
   
     
@@ -1643,11 +1641,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
         
           
           <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="">
@@ -1668,7 +1666,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1686,14 +1684,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../00-function-spaces/" class="md-nav__link">
+      <a href="../data-model-overview/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Function Space Fundamentals
+    Overview
   
 
     
@@ -1742,14 +1740,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../18-finite-volume/" class="md-nav__link">
+      <a href="../topology-and-geometry/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Finite-volume Data and Fluxes
+    Topology and Geometry
   
 
     
@@ -1795,44 +1793,17 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cell Types and Bases
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../12-units/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Cell Types and Bases
+    Coordinates, Units and Time
   
 
     
@@ -1841,107 +1812,62 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#cell-shapes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cell shapes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#spaces" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Spaces
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-each-shape-supports" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What each shape supports
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#bases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bases
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#mixing-shapes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Mixing shapes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reading-and-writing-other-formats" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reading and writing other formats
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#planned" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Planned
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_6" id="__nav_3_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Representations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Representations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1957,7 +1883,7 @@
   <span class="md-ellipsis">
     
   
-    Polyhedra and Polygons
+    Polyhedra, Polygons and Lines
   
 
     
@@ -1978,14 +1904,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../12-units/" class="md-nav__link">
+      <a href="../point-cloud-model/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Physical Units
+    Point Clouds and Particles
   
 
     
@@ -1994,6 +1920,214 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../collections-and-partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collections and Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_7" id="__nav_3_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further Detail
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Further Detail
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Spaces and Higher-order Geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays, Storage and Layouts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2068,6 +2202,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_1" id="__nav_3_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create and Connect
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Create and Connect
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../02-meshes/" class="md-nav__link">
         
@@ -2097,14 +2283,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../08-point-clouds/" class="md-nav__link">
+      <a href="../create-fields/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Point Clouds and Particles
+    Create and Convert Fields
   
 
     
@@ -2125,14 +2311,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../10-amr/" class="md-nav__link">
+      <a href="../connect-simulation-data/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    AMR Hierarchies
+    Connect Simulation Data
   
 
     
@@ -2146,21 +2332,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../11-octrees/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_2" id="__nav_3_4_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Octrees
+    Analyze and Transform
   
 
     
@@ -2168,11 +2378,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analyze and Transform
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2201,6 +2419,206 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Trace Fields
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../18-finite-volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finite-volume Data and Fluxes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-point-clouds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analyze Adaptive Data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_3" id="__nav_3_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Your Own Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Your Own Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2286,57 +2704,9 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../06-pipelines/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Sample and Connect Simulations
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../13-streaming/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Stream Steps
-  
-
-    
-  </span>
-  
-  
-
-      </a>
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2585,6 +2955,8 @@
                 
   
   
+    
+  
   
   
     
@@ -2600,11 +2972,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_9" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_9" checked>
         
           
           <label class="md-nav__link" for="__nav_3_9" id="__nav_3_9_label" tabindex="">
@@ -2625,7 +2997,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_9_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_9_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3_9">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2707,6 +3079,214 @@
     
   
     Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cell-shapes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell shapes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-each-shape-supports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What each shape supports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mixing-shapes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mixing shapes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-and-writing-other-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading and writing other formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#planned" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planned
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/interop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Units and Quantities
   
 
     
@@ -2826,6 +3406,34 @@
     
   
     Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/view-composition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    View Storage and Composition
   
 
     
@@ -4027,7 +4635,7 @@
 
 <h1 id="cell-types-and-bases">Cell types and bases<a class="headerlink" href="#cell-types-and-bases" title="Permanent link">&para;</a></h1>
 <p>Every cell, every space and every basis Tack supports today, in one place, and
-what is planned. <a href="../00-function-spaces/">Function Space Fundamentals</a> explains
+what is planned. <a href="../00-function-spaces/">Function Spaces and Higher-order Geometry</a> explains
 what a space and a basis are, and <a href="../03-fields-and-spaces/">Fields and Spaces</a>
 how to make and convert fields in them.</p>
 <h2 id="cell-shapes">Cell shapes<a class="headerlink" href="#cell-shapes" title="Permanent link">&para;</a></h2>
@@ -4396,119 +5004,9 @@ mix of one dimension. Each family is refined alone, and the parts are joined
 where they share lattice points. On such a mix, crossings are placed on the
 linear sub-cells; exact crossings need cells of one family.</p>
 <h2 id="reading-and-writing-other-formats">Reading and writing other formats<a class="headerlink" href="#reading-and-writing-other-formats" title="Permanent link">&para;</a></h2>
-<p><strong>VTK unstructured grids.</strong> Linear cells read as the shapes above. A grid with
-polyhedra reads as a <code>PolyhedralTopology</code>, every cell a polyhedron of its faces,
-since one topology holds either shapes or polyhedra for now (a topology holding
-both is planned). For a large mesh that mixes them, read it with
-<code>vtk_to_dataset(grid, polyhedral="split")</code>: a <code>PartitionedDataSet</code> of two
-pieces over the same points, the shaped cells as themselves and the polyhedra
-as polyhedra, each point owned by one of them so reductions count it once. A
-CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
-(with <code>copy=False</code>); read as polyhedra throughout, 27 seconds and 19 GB.</p>
-<p>Cells whose corners are in the reverse of VTK's order -- inside out, with negative
-volumes and inward faces, as some converters write prisms -- are found on every
-read and named in a warning; <code>vtk_to_dataset(grid, orient=True)</code> turns them
-outward. Wedges are the usual case: VTK's documentation described the wedge's
-corner order the reverse of how its code (faces, parametric coordinates, Verdict's
-volume) has always used it, until March 2026, so writers that followed the
-documentation wrote every wedge inside out. Read as polyhedra, such cells make the faces they share refused, so a
-mesh with them needs <code>orient=True</code> there.
-Higher-order cells read as <code>H1</code> fields of the grid's largest order, in any mix
-of shapes, dimensions and orders:</p>
-<table>
-<thead>
-<tr>
-<th>VTK cells</th>
-<th>Read as</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Lagrange (68-73: curve, triangle, quadrilateral, tetrahedron, hexahedron, wedge)</td>
-<td>equispaced <code>H1</code> of their order</td>
-</tr>
-<tr>
-<td>Bezier (75-80)</td>
-<td><code>H1(basis="bernstein")</code></td>
-</tr>
-<tr>
-<td>quadratic edge, triangle, tetrahedron (21, 22, 24)</td>
-<td><code>H1</code> of order 2</td>
-</tr>
-<tr>
-<td>quadratic quad, hexahedron, wedge (23, 25, 26: quad8, hex20, wedge15)</td>
-<td>serendipity, or the full order-2 space beside other cells</td>
-</tr>
-<tr>
-<td>biquadratic quad, triquadratic hexahedron, biquadratic-quadratic wedge (28, 29, 32)</td>
-<td><code>H1</code> of order 2</td>
-</tr>
-<tr>
-<td>quadratic-linear quad and wedge, biquadratic-quadratic hexahedron (30, 31, 33)</td>
-<td><code>H1</code> of order 2 (exact: their spaces lie in it)</td>
-</tr>
-<tr>
-<td>biquadratic triangle (34), cubic line (35)</td>
-<td><code>H1</code> of order 3 (exact)</td>
-</tr>
-<tr>
-<td>quadratic, triquadratic, Lagrange and Bezier pyramids (27, 37, 74, 81), quadratic polygons (36)</td>
-<td>refused</td>
-</tr>
-</tbody>
-</table>
-<p><code>dataset_to_vtk(..., higher_order=...)</code> writes Lagrange, Bezier or VTK's
-classic quadratic cells.</p>
-<p><strong>VTK cell grids</strong> (<code>vtkCellGrid</code>, <code>.dg</code> files). These need a VTK newer than
-9.7.1.</p>
-<table>
-<thead>
-<tr>
-<th>Cell grid basis</th>
-<th>Read as</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>HGRAD C1</code>, shared</td>
-<td><code>H1</code> order 1 (copied)</td>
-</tr>
-<tr>
-<td><code>HGRAD C1</code>, per cell</td>
-<td><code>L2</code> order 1 (copied)</td>
-</tr>
-<tr>
-<td><code>constant</code></td>
-<td><code>Constant</code></td>
-</tr>
-<tr>
-<td><code>HGRAD C2</code>, <code>I2</code>, <code>A</code> (any order), <code>G</code> (Gauss points), Bezier</td>
-<td>resampled by VTK onto Tack's equispaced space of that order: <code>H1</code> shared, <code>L2</code> per cell (exact)</td>
-</tr>
-<tr>
-<td><code>HCURL</code>, <code>HDIV</code>, and pyramids' bases other than <code>C1</code></td>
-<td>left out, with a warning</td>
-</tr>
-</tbody>
-</table>
-<p><code>dataset_to_vtk(data, cell_grid=True)</code> writes <code>C1</code> at order 1 and VTK's <code>A</code>
-basis above it.</p>
-<p><strong>MFEM.</strong> <code>mfem_to_dataset</code> reads H1 and L2 collections of any order (Gauss–Lobatto,
-equispaced, Gauss–Legendre and positive bases), MFEM's older collections,
-nonconforming (AMR) meshes, periodic meshes (an <code>L2</code> geometry), and curved
-meshes. <code>mfem_grid_function</code> writes back.</p>
-<p><strong>Nonconforming meshes and T-junctions.</strong> A nonconforming mesh's hanging
-vertices are points of the finer cells, and its fields come with every
-value MFEM keeps per element, the constrained ones included, so the values on
-the two sides of a T-junction agree: contours, slices, clips, probes,
-gradients and subdivision are as on a conforming mesh. What Tack does not yet
-know is that a coarse cell's edge or face and the finer ones covering it are
-the same interface. <code>faces()</code> gives each of them one side, as if it were on
-the boundary, so <code>boundary_faces</code>, <code>extract_surface</code>, <code>jump</code>, <code>upwind_flux</code>,
-<code>net_flux</code> and other face-based algorithms treat T-junctions as boundary. On
-MFEM's ex6 star after refinement, 1280 of the 1450 one-sided edges are
-T-junctions. An octree's leaves (<code>OctreeDataSet.leaves()</code>) are the same.</p>
-<p>See the <a href="../reference/data-model/">Data Model reference</a> for each function.</p>
+<p>The <a href="../reference/interop/#reading-and-writing-other-formats">interop catalog</a>
+lists VTK, cell-grid and MFEM mappings, including nonconforming interfaces.
+<a href="../connect-simulation-data/">Connect Simulation Data</a> shows importing and sharing.</p>
 <h2 id="planned">Planned<a class="headerlink" href="#planned" title="Permanent link">&para;</a></h2>
 <p>For 0.8:</p>
 <ul>
@@ -4615,6 +5113,8 @@ them).</p>
     
     
       <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/guide-section-links.js"></script>
       
     
   </body>

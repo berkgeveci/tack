@@ -305,7 +305,31 @@
          <lastmod>2026-11-01</lastmod>
     </url>
     <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/adaptive-data/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/collections-and-partitions/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/connect-simulation-data/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/create-fields/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/data-model-overview/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/examples/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/field-storage/</loc>
          <lastmod>2026-11-01</lastmod>
     </url>
     <url>
@@ -321,11 +345,23 @@
          <lastmod>2026-11-01</lastmod>
     </url>
     <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/point-cloud-model/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/topology-and-geometry/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/design/dataset-api/</loc>
          <lastmod>2026-11-01</lastmod>
     </url>
     <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/design/polyhedra/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/design/view-composition/</loc>
          <lastmod>2026-11-01</lastmod>
     </url>
     <url>
@@ -338,6 +374,14 @@
     </url>
     <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/reference/dataset-api/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/reference/interop/</loc>
+         <lastmod>2026-11-01</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/reference/units/</loc>
          <lastmod>2026-11-01</lastmod>
     </url>
 </urlset>

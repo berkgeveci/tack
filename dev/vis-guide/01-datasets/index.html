@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://berkgeveci.github.io/tack/dev/vis-guide/01-datasets/">
       
       
-        <link rel="prev" href="../00-function-spaces/">
+        <link rel="prev" href="../data-model-overview/">
       
       
-        <link rel="next" href="../18-finite-volume/">
+        <link rel="next" href="../topology-and-geometry/">
       
       
         
@@ -1686,14 +1686,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../00-function-spaces/" class="md-nav__link">
+      <a href="../data-model-overview/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Function Space Fundamentals
+    Overview
   
 
     
@@ -1785,78 +1785,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#array-storage-and-field-meaning" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Array storage and field meaning
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-mfem-model-mesh-space-grid-function" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The MFEM model: mesh, space, grid function
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="The MFEM model: mesh, space, grid function">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#corners-are-not-all-of-a-fields-nodes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Corners are not all of a field's nodes
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#each-field-has-its-own-space" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Each field has its own space
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#geometry-is-a-field-too" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Geometry is a field, too
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#importing-mfem-preserves-the-separation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Importing MFEM preserves the separation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#a-simpler-first-order-field" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1868,10 +1796,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#inspect-without-losing-track-of-transfers" class="md-nav__link">
+  <a href="#array-storage-and-field-meaning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Inspect without losing track of transfers
+        Array storage and field meaning
       
     </span>
   </a>
@@ -1879,10 +1807,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-a-pipeline-changes" class="md-nav__link">
+  <a href="#inspect-without-changing-the-representation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What a pipeline changes
+        Inspect without changing the representation
       
     </span>
   </a>
@@ -1890,10 +1818,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-and-check" class="md-nav__link">
+  <a href="#continue-through-the-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run and check
+        Continue through the model
       
     </span>
   </a>
@@ -1916,14 +1844,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../18-finite-volume/" class="md-nav__link">
+      <a href="../topology-and-geometry/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Finite-volume Data and Fluxes
+    Topology and Geometry
   
 
     
@@ -1972,14 +1900,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../16-cells-and-bases/" class="md-nav__link">
+      <a href="../12-units/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Cell Types and Bases
+    Coordinates, Units and Time
   
 
     
@@ -1992,6 +1920,58 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_6" id="__nav_3_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Representations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Representations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2007,7 +1987,7 @@
   <span class="md-ellipsis">
     
   
-    Polyhedra and Polygons
+    Polyhedra, Polygons and Lines
   
 
     
@@ -2028,14 +2008,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../12-units/" class="md-nav__link">
+      <a href="../point-cloud-model/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Physical Units
+    Point Clouds and Particles
   
 
     
@@ -2044,6 +2024,214 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../collections-and-partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collections and Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-amr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AMR Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-octrees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Octrees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3_7" id="__nav_3_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further Detail
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Further Detail
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-function-spaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Spaces and Higher-order Geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arrays, Storage and Layouts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2118,6 +2306,58 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_1" id="__nav_3_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create and Connect
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Create and Connect
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../02-meshes/" class="md-nav__link">
         
@@ -2147,14 +2387,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../08-point-clouds/" class="md-nav__link">
+      <a href="../create-fields/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Point Clouds and Particles
+    Create and Convert Fields
   
 
     
@@ -2175,14 +2415,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../10-amr/" class="md-nav__link">
+      <a href="../connect-simulation-data/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    AMR Hierarchies
+    Connect Simulation Data
   
 
     
@@ -2196,21 +2436,45 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
               
                 
   
   
   
   
-    <li class="md-nav__item">
-      <a href="../11-octrees/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_2" id="__nav_3_4_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Octrees
+    Analyze and Transform
   
 
     
@@ -2218,11 +2482,19 @@
   
   
 
-      </a>
-    </li>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analyze and Transform
   
 
-              
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2251,6 +2523,206 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample and Trace Fields
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../18-finite-volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finite-volume Data and Fluxes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-point-clouds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Process Point Clouds and Particles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analyze Adaptive Data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../13-streaming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stream Steps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4_3" id="__nav_3_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write Your Own Algorithms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Write Your Own Algorithms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2336,57 +2808,9 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../06-pipelines/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Sample and Connect Simulations
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../13-streaming/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Stream Steps
-  
-
-    
-  </span>
-  
-  
-
-      </a>
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2770,6 +3194,90 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../16-cells-and-bases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cell Types and Bases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/interop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset Interoperability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Units and Quantities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2876,6 +3384,34 @@
     
   
     Polyhedra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design/view-composition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    View Storage and Composition
   
 
     
@@ -3990,78 +4526,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#array-storage-and-field-meaning" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Array storage and field meaning
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-mfem-model-mesh-space-grid-function" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The MFEM model: mesh, space, grid function
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="The MFEM model: mesh, space, grid function">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#corners-are-not-all-of-a-fields-nodes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Corners are not all of a field's nodes
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#each-field-has-its-own-space" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Each field has its own space
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#geometry-is-a-field-too" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Geometry is a field, too
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#importing-mfem-preserves-the-separation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Importing MFEM preserves the separation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#a-simpler-first-order-field" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4073,10 +4537,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#inspect-without-losing-track-of-transfers" class="md-nav__link">
+  <a href="#array-storage-and-field-meaning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Inspect without losing track of transfers
+        Array storage and field meaning
       
     </span>
   </a>
@@ -4084,10 +4548,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-a-pipeline-changes" class="md-nav__link">
+  <a href="#inspect-without-changing-the-representation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What a pipeline changes
+        Inspect without changing the representation
       
     </span>
   </a>
@@ -4095,10 +4559,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-and-check" class="md-nav__link">
+  <a href="#continue-through-the-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run and check
+        Continue through the model
       
     </span>
   </a>
@@ -4126,398 +4590,141 @@
 
 
 <h1 id="understand-a-dataset">Understand a dataset<a class="headerlink" href="#understand-a-dataset" title="Permanent link">&para;</a></h1>
-<p>A scientific visualization pipeline starts with a mesh and values that mean
-something on that mesh: temperature at points, material per cell, flux through
-faces. <code>tack.dataset</code> keeps those relationships explicit so the same field can be
-interpolated, filtered and sampled without each stage inventing its
-own connectivity and indexing rules.</p>
-<p>Start with the <a href="../introduction/#quick-start">visualization quick start</a>
-if you want to run a filter first. This chapter explains the objects it uses.
-The <a href="../00-function-spaces/">function-space fundamentals</a> explain H1, L2,
-polynomial order and degrees of freedom before the code examples below.</p>
+<p>A dataset connects numbers to places. A temperature array alone does not say
+whether its entries belong to points, cells or faces, or how to evaluate a
+temperature between them. Tack keeps that meaning with the values so filters
+can use it consistently.</p>
+<p>The <a href="../data-model-overview/">Data Model Overview</a> maps mesh families and
+numerical methods. This chapter follows one ordinary mesh in detail.</p>
+<p>Start with the <a href="../introduction/#quick-start">quick start</a> to run a contour.
+This chapter explains its objects. The next chapters develop topology and
+geometry, fields, then coordinates, units and time.</p>
 <h2 id="four-parts-of-one-dataset">Four parts of one dataset<a class="headerlink" href="#four-parts-of-one-dataset" title="Permanent link">&para;</a></h2>
-<pre class="mermaid"><code>flowchart LR
-    D[DataSet] --&gt; T[Topology: cell shapes and corner incidence]
-    D --&gt; G[Geometry field]
-    D --&gt; U[Temperature field]
-    D --&gt; P[Pressure field]
-    D --&gt; S[Named sets]
-    G --&gt; GS[H1 order 1 plus coordinate values]
-    U --&gt; US[H1 order 2 plus temperature coefficients]
-    P --&gt; PS[L2 order 1 plus pressure coefficients]
-    GS -. defined on .-&gt; T
-    US -. defined on .-&gt; T
-    PS -. defined on .-&gt; T</code></pre>
-<p><strong>Topology</strong> describes cell shapes, their corner vertices and how cells meet.
-It does not prescribe one coefficient array shared by every field. Faces,
-edges and incidence tables are derived when needed and retained for later use;
-spaces can use these entities to construct their own DOF layouts.</p>
-<p><strong>Geometry</strong> maps reference-cell coordinates to physical positions through
-its own space and coordinate values. A structured topology alone does not
-imply equally spaced or axis-aligned coordinates. A uniform grid can compute
-its nodal positions from dimensions, origin and spacing; a curved mesh can
-store coordinate coefficients at additional geometry nodes. Even a planar
-mesh uses 3-vectors for positions.</p>
-<p><strong>Fields</strong> combine a space with values. The space determines which entities own
-the values and how to evaluate them between sample locations. <strong>Sets</strong> name
-selections such as a boundary or a material region, without creating another
-mesh. A cell or face set can also be a kernel's iteration domain.</p>
-<h2 id="array-storage-and-field-meaning">Array storage and field meaning<a class="headerlink" href="#array-storage-and-field-meaning" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Object</th>
-<th>Responsibility</th>
+<th>Part</th>
+<th>Question it answers</th>
 <th>Example</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>tack.Array</code></td>
-<td>Storage on a backend</td>
-<td>A buffer of temperatures or velocities</td>
+<td>Topology</td>
+<td>Which entities exist and how do they connect?</td>
+<td>Two cells share four vertices and one face</td>
 </tr>
-<tr>
-<td><code>td.Field</code></td>
-<td>Meaning of values on a topology</td>
-<td>Temperature in <code>td.H1(data)</code></td>
-</tr>
-</tbody>
-</table>
-<p>Here <code>td</code> is the conventional alias for <code>tack.dataset</code>. A raw buffer knows its
-element dtype and shape; it does not know whether its entries are point
-temperatures or cell averages. For example, <code>tack.empty((space.size,),
-tack.vec3())</code> allocates one vector per DOF. <code>td.Field(td.H1(data), values)</code> supplies that information.</p>
-<p>A NumPy array is useful input, but it is not itself a valid <code>td.Field</code> value
-array: use <code>tack.array(host, dtype=...)</code> to copy it into backend storage.
-The <code>DataSet</code> constructor also accepts a host array of positions and creates
-H1 geometry for you. <a href="../02-meshes/">Build Meshes</a> first constructs topology
-and geometry explicitly, then explains this shorter form.</p>
-<h2 id="the-mfem-model-mesh-space-grid-function">The MFEM model: mesh, space, grid function<a class="headerlink" href="#the-mfem-model-mesh-space-grid-function" title="Permanent link">&para;</a></h2>
-<p>In MFEM, a <code>Mesh</code> supplies elements and their incidence. A finite-element
-collection specifies a family, order and basis; a <code>FiniteElementSpace</code> on the
-mesh determines the local-to-global DOF maps and component layout. A
-<code>GridFunction</code> couples that space with coefficients. This is why an MFEM field
-is more than an array of values attached to the mesh's vertices. See
-<a href="https://mfem.org/pri-dual-vec/">MFEM's grid-function explanation</a>.</p>
-<p>Tack follows that separation for the supported parts of its data model:</p>
-<table>
-<thead>
-<tr>
-<th>MFEM concept</th>
-<th>Tack counterpart</th>
-<th>Responsibility</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Mesh element types and vertex connectivity</td>
-<td><code>data.topology</code></td>
-<td>Corner incidence and derived entities</td>
-</tr>
-<tr>
-<td>Finite-element family, order and layout on the mesh</td>
-<td>Each field's <code>space</code></td>
-<td>Basis, DOF ownership and local-to-global addressing</td>
-</tr>
-<tr>
-<td>Grid function</td>
-<td><code>td.Field(space, values)</code></td>
-<td>Coefficients interpreted through that space</td>
-</tr>
-<tr>
-<td>Mesh nodes describing geometry</td>
-<td><code>data.geometry</code>, itself a <code>td.Field</code></td>
-<td>Reference-to-physical coordinate mapping</td>
-</tr>
-</tbody>
-</table>
-<p>This is a conceptual correspondence, not a claim that Tack implements all
-MFEM finite-element families or its parallel true-DOF and constraint machinery.
-The present importer supports the H1/L2 families and orders described below.</p>
-<h3 id="corners-are-not-all-of-a-fields-nodes">Corners are not all of a field's nodes<a class="headerlink" href="#corners-are-not-all-of-a-fields-nodes" title="Permanent link">&para;</a></h3>
-<p>A linear hexahedron's topology names eight corners. A quadratic H1 field on
-that same cell needs 27 nodal coefficients: corners, edge midpoints, face
-centers and a cell-interior node. Its space obtains shared edge and face
-incidence from the topology and builds the field's DOF map. The topology still
-has the original eight corners for that cell; the field has not refined it.</p>
-<p>Consequently, <code>data.num_points</code> counts topological vertices. It need not equal
-<code>field.space.size</code>, and it need not be the number of geometry coefficients
-on a curved or discontinuous mesh. Use the field's space when allocating its
-values or interpreting their layout.</p>
-<h2 id="each-field-has-its-own-space">Each field has its own space<a class="headerlink" href="#each-field-has-its-own-space" title="Permanent link">&para;</a></h2>
-<p>One mesh can carry all of the following at once:</p>
-<table>
-<thead>
-<tr>
-<th>Field on two adjacent hexahedra</th>
-<th>Space</th>
-<th style="text-align: right;">Logical values</th>
-</tr>
-</thead>
-<tbody>
 <tr>
 <td>Geometry</td>
-<td>H1 order 1, 3-vector positions</td>
-<td style="text-align: right;">12 vectors</td>
+<td>Where are those entities?</td>
+<td>Coordinates of the twelve vertices</td>
 </tr>
 <tr>
-<td>Temperature</td>
-<td>H1 order 2</td>
-<td style="text-align: right;">45 scalars</td>
+<td>Fields</td>
+<td>What do values mean on those entities?</td>
+<td>Temperature at points; material per cell</td>
 </tr>
 <tr>
-<td>Pressure</td>
-<td>L2 order 1</td>
-<td style="text-align: right;">16 scalars</td>
-</tr>
-<tr>
-<td>Material parameter</td>
-<td>Constant</td>
-<td style="text-align: right;">2 scalars</td>
+<td>Sets</td>
+<td>Which entities form a named selection?</td>
+<td>The boundary faces</td>
 </tr>
 </tbody>
 </table>
-<p>The fields share <strong>topology</strong>, not necessarily a space, order, coefficient
-count or storage representation. Compatible fields may deliberately share
-one interned space object; “each field has its own space” means that the
-choice belongs to the field, rather than being fixed once for the dataset.</p>
-<p>For step-by-step recipes and node diagrams, see
-<a href="../03-fields-and-spaces/#construct-an-l2-field">Construct an L2 field</a> and
-<a href="../03-fields-and-spaces/#construct-a-quadratic-h1-field">Construct a quadratic H1 field</a>.
-The program below combines them on one dataset, using <code>uniform_grid</code> as a
-shortcut for the mesh setup so we can focus on independent field spaces.
-Temperature represents
-<code>x² + 2y + 3z</code>; pressure is <code>x</code> in cell 0 and <code>x + 2</code> in cell 1, with a jump
-at their shared face. Geometry remains an implicit uniform coordinate array
-in first-order H1:</p>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">quadratic_temperature</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">+</span> <span class="mf">3.0</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">initialize_pressure</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>
-        <span class="n">cell_id</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
-        <span class="n">first</span> <span class="o">=</span> <span class="n">offsets</span><span class="p">[</span><span class="n">cell_id</span><span class="p">]</span>
-        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">NUM_POINTS</span><span class="p">):</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">corner_position</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
-            <span class="n">values</span><span class="p">[</span><span class="n">first</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">cell_id</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code>    <span class="c1"># Shortcut mesh setup: two adjacent hexes in the unit cube.</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
-    <span class="n">temperature_space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-    <span class="c1"># The function at all 45 temperature nodes, not just the 12 corners.</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;temperature&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">quadratic_temperature</span><span class="p">,</span>
-                                                <span class="n">temperature_space</span><span class="p">)</span>
-    <span class="c1"># Where those nodes are, for the checks and the drawing below.</span>
-    <span class="n">temperature_nodes</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">temperature_space</span><span class="p">)</span>
-    <span class="n">pressure_space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">pressure</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">pressure_space</span><span class="o">.</span><span class="n">size</span><span class="p">,))</span>
-    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">initialize_pressure</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">pressure_space</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">pressure</span><span class="p">)</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;pressure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">pressure_space</span><span class="p">,</span> <span class="n">pressure</span><span class="p">)</span>
-    <span class="n">material_space</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;material&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span>
-        <span class="n">material_space</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">arrays</span><span class="o">.</span><span class="n">ConstantArray</span><span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">material_space</span><span class="o">.</span><span class="n">size</span><span class="p">))</span>
-    <span class="c1"># Geometry keeps its own order-1 H1 space and UniformCoordinates values.</span>
-</code></pre></div>
-<p><code>interpolate</code> evaluates the temperature function at the <strong>physical positions
-of that space's interpolation nodes</strong>, through the geometry; it does not
-replace <code>data.geometry</code>. The original geometry, temperature and pressure
-continue to use their separate spaces.</p>
-<p>An evaluation combines two maps. The geometry gives physical position from
-reference coordinates, while the solution field uses its own basis and DOFs
-at those reference coordinates. A field view supplied to <code>for_each</code> preserves
-that distinction even when geometry and solution orders differ.</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">at_centers</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-    <span class="n">gradient</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-    <span class="n">linearized</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
-    <span class="n">linear_centers</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">linearized</span><span class="p">)</span>
-</code></pre></div>
-<p>The quadratic field's center values are <code>[2.5625, 3.0625]</code>. Replacing it by an
-order-1 projection gives <code>[2.625, 3.125]</code>: the topology and geometry are unchanged,
-but the field approximation changed. The complete example also checks the
-physical gradients against <code>[0.5, 2, 3]</code> and <code>[1.5, 2, 3]</code>.</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_spaces.py<span class="w"> </span>--arch<span class="w"> </span>cpu<span class="w"> </span>--check
-</code></pre></div>
-<p><a href="../../examples/data_spaces.py">Download the independent-spaces program</a>.</p>
-<h2 id="geometry-is-a-field-too">Geometry is a field, too<a class="headerlink" href="#geometry-is-a-field-too" title="Permanent link">&para;</a></h2>
-<p>The coordinate mapping has a family, order and values just as a solution does.
-Straight cells can use order-1 H1 geometry with explicit corner positions or
-implicit coordinates. A supported curved mesh uses H1 order-2 coordinate
-coefficients; a solution on it may still use a different order.</p>
-<p>With L2 geometry, neighbouring cells can assign separate positions to their
-local corners while sharing corner ids in the topology. This can represent
-gaps or detached cells without changing the incidence. Contour and slice
-respect each cell's geometry; not every algorithm supports that representation.</p>
-<p>The geometry's values can be a <code>UniformCoordinates</code>, a <code>CartesianProduct</code>,
-or explicit position storage. Those are <strong>value-array representations</strong>, not
-different finite-element spaces. Image and rectilinear geometry are explained
-in <a href="../02-meshes/#image-rectilinear-and-curvilinear-data">Build Meshes</a>.</p>
-<p>The geometry's values are relative to the dataset's <code>origin</code>, three doubles
-kept on the host. Survey data far from zero keeps its precision in single
-precision that way: a point cloud at UTM coordinates stores millimetres as
-offsets from a nearby origin, which single precision resolves, where its raw
-eastings would be rounded to a quarter metre.</p>
-<div class="highlight"><pre><span></span><code><span class="n">cloud</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">point_cloud</span><span class="p">(</span><span class="n">lidar_xyz</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;classification&quot;</span><span class="p">:</span> <span class="n">classes</span><span class="p">})</span>  <span class="c1"># float64 xyz</span>
-<span class="n">cloud</span><span class="o">.</span><span class="n">origin</span>             <span class="c1"># the lower corner of the box, rounded down</span>
-<span class="n">cloud</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>        <span class="c1"># float32 offsets from it, what kernels see</span>
-<span class="n">cloud</span><span class="o">.</span><span class="n">world_positions</span><span class="p">()</span>  <span class="c1"># float64 again</span>
-<span class="n">ground</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">threshold_points</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="s2">&quot;classification&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>            <span class="c1"># keeps the origin</span>
-</code></pre></div>
-<p>Filters keep the origin, and arguments that are positions -- implicit
-functions, probe points, seeds -- are given in world coordinates and moved by
-the origin in double precision. The <a href="../reference/dataset-api/#origins-and-point-clouds">dataset API
-reference</a> lists what
-converts.</p>
-<h2 id="importing-mfem-preserves-the-separation">Importing MFEM preserves the separation<a class="headerlink" href="#importing-mfem-preserves-the-separation" title="Permanent link">&para;</a></h2>
-<p><code>mfem_to_dataset(mesh, fields={...})</code> constructs topology from the elements'
-corner lists, then converts geometry and each supplied grid function through
-their own spaces. It does not flatten every solution onto the mesh vertices.</p>
-<table>
-<thead>
-<tr>
-<th>MFEM input</th>
-<th>Current Tack mapping</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Straight geometry</td>
-<td>H1 order-1 coordinate field</td>
-</tr>
-<tr>
-<td>Supported order-2 curved mesh nodes</td>
-<td>H1 order-2 coordinate field</td>
-</tr>
-<tr>
-<td>H1 order-1 grid function</td>
-<td>H1 order 1</td>
-</tr>
-<tr>
-<td>H1 order-2 grid function</td>
-<td>H1 order 2, evaluated at supported quadratic nodes</td>
-</tr>
-<tr>
-<td>L2 order-0 grid function</td>
-<td>Constant</td>
-</tr>
-<tr>
-<td>L2 order-1 grid function</td>
-<td>L2 order 1, evaluated at each cell's corners</td>
-</tr>
-<tr>
-<td>Element attributes</td>
-<td>An integer Constant field named <code>attribute</code></td>
-</tr>
-</tbody>
-</table>
-<p>Basis conversion matters: MFEM's L2 interpolation nodes need not be its cell
-corners. The importer evaluates the MFEM field to obtain Tack's corner-based
-coefficients rather than treating the source coefficient vector as corner
-data. The supported order-1 spaces agree on tetrahedra, hexahedra and wedges;
-on pyramids the corner representation interpolates MFEM's different basis.
-Unsupported collections or orders are refused. Current order-2 pyramid bases
-and geometry above order 2 are not imported.</p>
-<p>The <a href="../06-pipelines/#exchange-whole-datasets-with-vtk">pipeline chapter</a> and
-<a href="../reference/dataset-api/#interoperability">reference</a> describe the entry points.</p>
+<pre class="mermaid"><code>flowchart LR
+    D[DataSet] --&gt; T[Topology]
+    D --&gt; G[Geometry field]
+    D --&gt; F[Named fields]
+    D --&gt; S[Named sets]
+    G --&gt; X[Coordinate values and their space]
+    F --&gt; V[Solution values and their spaces]
+    X -. associated with .-&gt; T
+    V -. associated with .-&gt; T</code></pre>
+<p>Geometry is a field too: its values are coordinates and its space says how
+to obtain positions inside cells. For the first example, one coordinate
+vector at each corner is enough. You can understand the model before learning
+the mathematics of higher-order coordinate mappings.</p>
 <h2 id="a-simpler-first-order-field">A simpler first-order field<a class="headerlink" href="#a-simpler-first-order-field" title="Permanent link">&para;</a></h2>
-<p>The smaller <code>data_fields.py</code> example uses the same two adjacent half-width
-cubes, but temperature is now the affine function <code>x + 2y + 3z</code> in order-1
-H1. The two cells carry material values 1 and 3. This is the example used
-for the projection and discontinuity figures later in the guide.</p>
-<p>The following kernel evaluates temperature directly from the grid's implicit
-coordinates. No host coordinate array is needed for this step:</p>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">temperature_at_points</span><span class="p">(</span><span class="n">xyz</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
-        <span class="n">x</span> <span class="o">=</span> <span class="n">xyz</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
-        <span class="n">out</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">y</span> <span class="o">+</span> <span class="mf">3.0</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">z</span>
-</code></pre></div>
-<p>Allocate the values and attach them to their spaces:</p>
-<div class="highlight"><pre><span></span><code>    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
-    <span class="n">temperature</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">,))</span>
-    <span class="n">temperature_at_points</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">temperature</span><span class="p">)</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;temperature&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">temperature</span><span class="p">)</span>
+<p>Two half-width cubes fill the unit cube. They share a face, so together they
+have twelve vertices, rather than sixteen. Give them point temperature
+<code>x + 2y + 3z</code>, a material value of 1 or 3 per cell, and a boundary selection:</p>
+<!-- tack-check: first-dataset -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
-    <span class="n">material</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">)</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;material&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">material</span><span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m&quot;</span><span class="p">)</span>
+<span class="n">xyz</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">positions</span><span class="p">()</span>  <span class="c1"># Explicit host snapshot for this small example.</span>
+<span class="n">temperature</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">xyz</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">xyz</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">xyz</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">)</span>
+<span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;temperature&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">temperature</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;K&quot;</span><span class="p">)</span>
+<span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;material&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]))</span>
+<span class="n">data</span><span class="o">.</span><span class="n">sets</span><span class="p">[</span><span class="s2">&quot;boundary&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">boundary_faces</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+<span class="k">assert</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span> <span class="o">==</span> <span class="mi">12</span> <span class="ow">and</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">==</span> <span class="mi">2</span>
+<span class="k">assert</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;temperature&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">12</span>
+<span class="k">assert</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s2">&quot;material&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">2</span>
+<span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;temperature&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+                           <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">,</span> <span class="s2">&quot;points,&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p><code>H1</code> shares one value at a point among its incident cells. <code>Constant</code> gives
-each cell its own value, constant throughout that cell. They refer to the
-topology of <code>data</code>, so a field from another dataset's topology is rejected even
-when it has the same number of values. The field length must also match the
-space's size; matching a shape alone does not establish the association.</p>
-<p>The example assumes the imports <code>numpy as np</code>, <code>tack</code>, and <code>tack.dataset as td</code>,
-with <code>tack.set_default_device("cpu")</code> before construction. The complete source below
-includes them and runs independently.</p>
-<h2 id="inspect-without-losing-track-of-transfers">Inspect without losing track of transfers<a class="headerlink" href="#inspect-without-losing-track-of-transfers" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Expression</th>
-<th>What you get</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>data.num_points</code>, <code>data.num_cells</code></td>
-<td>Counts for the mesh</td>
-</tr>
-<tr>
-<td><code>data.fields["temperature"]</code></td>
-<td>The associated <code>td.Field</code></td>
-</tr>
-<tr>
-<td><code>data.fields["temperature"].space</code></td>
-<td>Its space, including the topology</td>
-</tr>
-<tr>
-<td><code>data.fields["temperature"].values</code></td>
-<td>The stored or implicit value array</td>
-</tr>
-<tr>
-<td><code>data.positions()</code></td>
-<td>A host array of corner positions for H1 geometry</td>
-</tr>
-<tr>
-<td><code>tack.arrays.to_host(field.values)</code></td>
-<td>A host snapshot; vectors have one row per value</td>
-</tr>
-<tr>
-<td><code>tack.arrays.materialize(field.values)</code></td>
-<td>Device storage; computes implicit values if necessary</td>
-</tr>
-</tbody>
-</table>
-<p><code>positions()</code> returns the topological corners, including when H1 geometry has
-higher-order nodes; it refuses L2 geometry. Use
-<code>tack.arrays.to_host(data.geometry.values)</code> to inspect all of geometry's
-coefficients in their space's ordering.</p>
-<p>Use host snapshots for diagnostics, independent checks and file output. Keep
-values in fields between filters and kernels. On GPU backends a host read waits
-for the queued work it needs, so repeated inspection in a timestep loop can
-dominate its cost.</p>
-<h2 id="what-a-pipeline-changes">What a pipeline changes<a class="headerlink" href="#what-a-pipeline-changes" title="Permanent link">&para;</a></h2>
-<p>Algorithms return new datasets, fields or summaries; they do not edit the input
-dataset in place. A returned dataset may share topology or value storage with
-its input when no copy is needed. Treat it as a new pipeline result, not as a
-deep copy of every buffer. Editing an existing values buffer can therefore be
-visible through more than one dataset that refers to it.</p>
-<p>For a time-dependent simulation, retain the mesh and update its working fields.
-Run the analysis stages again for the new values; an old contour is a previous
-result, not a live view that recomputes itself. Rebuild spatial locators after
-moving geometry.
-The <a href="../06-pipelines/">pipeline chapter</a> makes these boundaries explicit.</p>
-<h2 id="run-and-check">Run and check<a class="headerlink" href="#run-and-check" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>docs/examples/data_fields.py<span class="w"> </span>--arch<span class="w"> </span>cpu<span class="w"> </span>--check
-</code></pre></div>
-<p>The check compares point values with the analytic formula, cell temperatures
-with <code>[2.75, 3.25]</code>, and gradients with <code>[1, 2, 3]</code>. It also checks projection
-and face jumps, developed in <a href="../03-fields-and-spaces/">Fields and Spaces</a>.</p>
-<p><a href="../../examples/data_fields.py">Download the complete example</a>.
-Continue with <a href="../02-meshes/">Building Meshes</a>, or move directly to
-<a href="../03-fields-and-spaces/">Fields and Spaces</a> if your mesh already comes from a reader.</p>
+<p><code>H1(data)</code> chooses shared first-order point values. <code>Constant(data)</code> chooses
+an independent constant in each cell. Material can jump across the shared
+face while temperature remains continuous. Both use the same mesh.</p>
+<p>The grid factory assembles topology and geometry. <a href="../02-meshes/">Build Meshes</a>
+shows their explicit construction. The <a href="../../examples/data_fields.py">complete field program</a>
+fills temperature in a kernel directly from implicit coordinates, without
+downloading positions.</p>
+<h2 id="array-storage-and-field-meaning">Array storage and field meaning<a class="headerlink" href="#array-storage-and-field-meaning" title="Permanent link">&para;</a></h2>
+<p><code>tack.Array</code> supplies values on a backend. <code>td.Field(space, values, unit=...)</code>
+adds their association and interpretation. Matching lengths on two meshes
+do not establish matching associations. A field's topology and coefficient
+count must match its space.</p>
+<p>The temperature's count equals <code>data.num_points</code> here because it is H1 order 1.
+Allocate other fields using <code>field.space.size</code>, which need not be the number
+of mesh corners. Scalar/vector width, space and storage are separate choices.</p>
+<h2 id="inspect-without-changing-the-representation">Inspect without changing the representation<a class="headerlink" href="#inspect-without-changing-the-representation" title="Permanent link">&para;</a></h2>
+<p>Counts, names and spaces describe data without copying its values.
+<code>field.values</code> is its stored or implicit array. <code>values.numpy()</code> on stored
+arrays and <code>tack.arrays.to_host(values)</code> produce host snapshots; a GPU read
+waits for the work it needs. <code>data.positions()</code> is a host snapshot too.
+Use readbacks at inspection or output checkpoints.</p>
+<p>An implicit array computes values rather than storing every entry. This
+grid computes coordinates from dimensions and spacing. Downloading them
+does not replace that representation. <a href="../field-storage/">Arrays, Storage and Layouts</a>
+explains inspection and materialization in detail.</p>
+<h2 id="continue-through-the-model">Continue through the model<a class="headerlink" href="#continue-through-the-model" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="../topology-and-geometry/">Topology and Geometry</a>: connectivity and positions.</li>
+<li><a href="../03-fields-and-spaces/">Fields and Spaces</a>: associations and reconstruction.</li>
+<li><a href="../12-units/">Coordinates, Units and Time</a>: frames and physical quantities.</li>
+</ol>
+<p>Then choose a <a href="../collections-and-partitions/">representation</a> or
+<a href="../introduction/#choose-a-task">task</a>. The optional
+<a href="../00-function-spaces/#each-field-has-its-own-space">independent-spaces example</a>
+adds quadratic temperature and discontinuous pressure to this same mesh.</p>
+<details class="info">
+<summary>Related detailed sections</summary>
+<p>These topics are developed in their own chapters.</p>
+<p><span id="the-mfem-model-mesh-space-grid-function" data-guide-forward="../00-function-spaces/#the-mfem-model-mesh-space-grid-function"></span>
+<a href="../00-function-spaces/#the-mfem-model-mesh-space-grid-function">The MFEM model: mesh, space, grid function</a>.</p>
+<p><span id="corners-are-not-all-of-a-fields-nodes" data-guide-forward="../00-function-spaces/#corners-are-not-all-of-a-fields-nodes"></span>
+<a href="../00-function-spaces/#corners-are-not-all-of-a-fields-nodes">Corners are not all of a field's nodes</a>.</p>
+<p><span id="each-field-has-its-own-space" data-guide-forward="../00-function-spaces/#each-field-has-its-own-space"></span>
+<a href="../00-function-spaces/#each-field-has-its-own-space">Each field has its own space</a>.</p>
+<p><span id="geometry-is-a-field-too" data-guide-forward="../00-function-spaces/#geometry-is-a-field-too"></span>
+<a href="../00-function-spaces/#geometry-is-a-field-too">Geometry is a field, too</a>.</p>
+<p><span id="importing-mfem-preserves-the-separation" data-guide-forward="../connect-simulation-data/#import-mfem-fields"></span>
+<a href="../connect-simulation-data/#import-mfem-fields">Importing MFEM preserves the separation</a>.</p>
+<p><span id="what-a-pipeline-changes" data-guide-forward="../connect-simulation-data/#keep-a-simulations-state-in-the-pipeline"></span>
+<a href="../connect-simulation-data/#keep-a-simulations-state-in-the-pipeline">What a pipeline changes</a>.</p>
+<p><span id="inspect-without-losing-track-of-transfers" data-guide-forward="../field-storage/#inspect-without-losing-track-of-transfers"></span>
+<a href="../field-storage/#inspect-without-losing-track-of-transfers">Inspect without losing track of transfers</a>.</p>
+<p><span id="run-and-check" data-guide-forward="../create-fields/#run-and-reproduce-the-figure"></span>
+<a href="../create-fields/#run-and-reproduce-the-figure">Run and check</a>.</p>
+</details>
 
 
 
@@ -4595,6 +4802,8 @@ Continue with <a href="../02-meshes/">Building Meshes</a>, or move directly to
     
     
       <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/guide-section-links.js"></script>
       
     
   </body>
