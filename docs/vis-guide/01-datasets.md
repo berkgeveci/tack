@@ -6,7 +6,7 @@ faces. `tack.dataset` keeps those relationships explicit so the same field can b
 interpolated, filtered and sampled without each stage inventing its
 own connectivity and indexing rules.
 
-Start with the [visualization quick start](index.md#quick-start)
+Start with the [visualization quick start](introduction.md#quick-start)
 if you want to run a filter first. This chapter explains the objects it uses.
 The [function-space fundamentals](00-function-spaces.md) explain H1, L2,
 polynomial order and degrees of freedom before the code examples below.

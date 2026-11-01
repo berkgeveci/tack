@@ -136,8 +136,9 @@ core's kernels and templates, because a filter of your own sees a mesh
 through the same views the built-ins use. The
 [Visualization Guide](vis-guide/index.md) goes in this order:
 
-1. **[Visualization and Tack](vis-guide/introduction.md):** what visualization
-   does with data, and where Tack vis comes from.
+1. **[The guide's opening page](vis-guide/index.md):** what visualization
+   does with data, and where Tack vis comes from; then the
+   [Introduction](vis-guide/introduction.md), a tour with a runnable example.
 2. **The data model:** function spaces, datasets, fields, cell types and
    bases, physical units.
 3. **Working with data:** building meshes, point clouds, AMR and octrees,
