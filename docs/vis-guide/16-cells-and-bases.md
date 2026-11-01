@@ -43,7 +43,7 @@ linear on pieces: on a polyline's segments, on the triangles that fan a polygon
 from its points' mean, and on the sub-tetrahedra that fan a polyhedron's faces
 from their means and the cell's. So linear fields are exact there, and
 `integrate`, `probe`, `gradients` and the cutting filters all work on these
-pieces.
+pieces ([Polyhedra and Polygons](18-polyhedra.md)).
 
 ## Spaces
 

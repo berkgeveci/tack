@@ -42,10 +42,11 @@ dataset. All planar examples still use 3-vector coordinates.
 
 These choices affect algorithm support. A hexahedron has a reference element
 for evaluating shape functions and gradients. An arbitrary polyhedron has
-faces and points, but no parametric reference element. It can be contoured,
-thresholded or measured, while locating particles and computing basis gradients
-currently require shape-based cells. The [filter chapter](04-filters.md) gives
-a task-oriented support table.
+faces and points, but no parametric reference element: its fields are linear
+on the sub-tetrahedra Tack cuts it into, so it holds point and cell values
+only, and must be star-shaped from its points' mean to be probed
+([Polyhedra and Polygons](18-polyhedra.md)). The [filter chapter](04-filters.md)
+gives a task-oriented support table.
 
 ## Image, rectilinear and curvilinear data
 

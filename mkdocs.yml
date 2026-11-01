@@ -147,6 +147,7 @@ nav:
           - Understand a Dataset: vis-guide/01-datasets.md
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
           - Cell Types and Bases: vis-guide/16-cells-and-bases.md
+          - Polyhedra and Polygons: vis-guide/18-polyhedra.md
           - Physical Units: vis-guide/12-units.md
       - Work with Data:
           - Build Meshes: vis-guide/02-meshes.md
