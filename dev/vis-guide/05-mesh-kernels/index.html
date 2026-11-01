@@ -1740,6 +1740,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../18-finite-volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finite-volume Data and Fluxes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../03-fields-and-spaces/" class="md-nav__link">
         
   
@@ -4155,6 +4183,8 @@ Jacobian mapping. Use <code>td.gradients</code> for the built-in physical calcul
 use <a href="../06-pipelines/#sample-at-physical-positions">probing</a> when query positions
 are given in world coordinates.</p>
 <h2 id="compute-one-oriented-flux-per-face">Compute one oriented flux per face<a class="headerlink" href="#compute-one-oriented-flux-per-face" title="Permanent link">&para;</a></h2>
+<p>For a complete cell/face workflow with units, conservation checks and Perot
+velocity reconstruction, see <a href="../18-finite-volume/">Finite-volume Data and Fluxes</a>.</p>
 <p>A face has side 0 and possibly side 1. Its normal points out of side 0;
 <code>faces.num_sides(f) == 1</code> identifies a boundary face. Reading a neighbouring
 cell must be guarded when that side is absent.</p>
