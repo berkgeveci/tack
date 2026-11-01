@@ -189,8 +189,9 @@ pieces. H2, H(curl) and H(div) are not provided. [Cell Types and
 Bases](16-cells-and-bases.md) lists every shape and basis, what each supports,
 how VTK's and MFEM's cells map to them, and what is planned.
 
-Point/cell association can exist on polyhedra without a reference-element
-basis. Always check the particular algorithm's support. Tack uses a subset
+Polyhedra and polygons have no reference element: their fields are linear
+on the pieces each cell is cut into, which holds point and cell values but
+not the spaces above ([Polyhedra and Polygons](18-polyhedra.md)). Tack uses a subset
 of [MFEM's finite-element concepts](https://mfem.org/tutorial/examples/), not
 its full collection of spaces, discretization orders or solver machinery.
 

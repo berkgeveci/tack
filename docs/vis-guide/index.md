@@ -142,7 +142,8 @@ two without translation:
 
 1. **The data model:** [Function Space Fundamentals](00-function-spaces.md),
    [Understand a Dataset](01-datasets.md), [Fields and Spaces](03-fields-and-spaces.md),
-   [Cell Types and Bases](16-cells-and-bases.md) and [Physical Units](12-units.md).
+   [Cell Types and Bases](16-cells-and-bases.md), [Polyhedra and Polygons](18-polyhedra.md)
+   and [Physical Units](12-units.md).
 2. **Working with data:** building meshes, point clouds, AMR and octrees,
    the filters, writing your own, sampling and connecting simulations, and
    streaming steps.
