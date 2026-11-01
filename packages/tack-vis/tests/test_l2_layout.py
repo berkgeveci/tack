@@ -183,3 +183,22 @@ def test_mfem_reads_and_writes_either_layout(f64_backend, monkeypatch):
                                    _cubic_at(points), atol=1e-10)
         back = mfem_grid_function(data, data.fields["u"], mesh)
         np.testing.assert_array_equal(back.GetDataArray(), gf.GetDataArray())
+
+
+def test_rows_a_cell_need_cells_of_one_size():
+    """``indices`` and ``blocks`` give a row a cell: on cells holding different numbers
+    of values (a tetrahedron's 4 corners and a hexahedron's 8, or an order per cell)
+    they are refused, naming ``offsets``, rather than cutting the values into rows
+    of the average size."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1],
+                       [1, 1, 1], [0, 1, 1], [2, 0, 0]], np.float32)
+    data = td.DataSet(td.UnstructuredTopology(
+        np.array([td.shapes.TETRA, td.shapes.HEXAHEDRON], np.uint8), np.array([0, 4, 12]),
+        np.array([1, 8, 2, 5, 0, 1, 2, 3, 4, 5, 6, 7]), num_points=9), points)
+    for space in (td.L2(data), td.L2(data, order=np.array([0, 1], np.int32))):
+        with pytest.raises(ValueError, match="read space.offsets"):
+            space.indices()
+        with pytest.raises(ValueError, match="read space.offsets"):
+            space.blocks(np.zeros(space.size))
+    np.testing.assert_array_equal(np.asarray(tack.arrays.to_host(td.L2(data).offsets)),
+                                  [0, 4, 12])
