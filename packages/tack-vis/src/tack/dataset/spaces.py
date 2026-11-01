@@ -790,11 +790,26 @@ class L2(Space):
                 and not any(bases.simplex_shape(g.shape) or bases.wedge_shape(g.shape)
                             for g in groups))
 
+    def _per_cell(self, what):
+        """The number of values every cell holds, for ``what`` (``indices``,
+        ``blocks``), which give a row a cell: cells holding different numbers (a
+        mixed mesh, an order per cell) are refused, with where to read them."""
+        n = self.topology.num_cells
+        offsets = np.asarray(arrays.to_host(self.offsets)).reshape(-1)
+        counts = np.unique(np.diff(offsets[:n + 1]))
+        if counts.size > 1:
+            raise ValueError(
+                f"{what} gives a row of values a cell, but these cells hold "
+                f"{', '.join(map(str, counts))} values: read space.offsets instead, cell "
+                "c's values at offsets[c]:offsets[c + 1]")
+        return self.size // max(n, 1)
+
     def indices(self):
         """A host ``(num_cells, values a cell)`` array: where each cell's value ``n`` is
-        in this space's values (blocks of one size only)."""
+        in this space's values. Every cell must hold the same number of values;
+        on a mixed mesh read ``offsets``."""
         n = self.topology.num_cells
-        per_cell = self.size // max(n, 1)
+        per_cell = self._per_cell("indices()")
         if self.layout == "cells":
             return np.arange(per_cell)[None, :] * n + np.arange(n)[:, None]
         offsets = np.asarray(arrays.to_host(self.offsets)).reshape(-1)
@@ -803,10 +818,11 @@ class L2(Space):
     def blocks(self, values):
         """``values`` (a host array of a field of this space) as ``(num_cells, values a
         cell, ...)``, each cell's in node order, whatever the layout. Blocks of one
-        size only (a tensor basis, or corner values of one shape)."""
+        size only (a tensor basis, or corner values of one shape); on a mixed mesh
+        read ``offsets``."""
         values = np.asarray(values)
         n = self.topology.num_cells
-        per_cell = self.size // max(n, 1)
+        per_cell = self._per_cell("blocks()")
         if self.layout == "cells":
             return np.moveaxis(values.reshape((per_cell, n, *values.shape[1:])), 0, 1)
         return values.reshape((n, per_cell, *values.shape[1:]))

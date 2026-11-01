@@ -285,8 +285,9 @@ do -- corners, then edges, then faces and the centre -- and every other order
 on the lattice above. A kernel never computes these indices itself
 ([Write Mesh Algorithms](05-mesh-kernels.md)). On the host, `space.offsets`
 gives where each cell's `L2` values start; `space.indices()` and
-`space.blocks(values)` give them as one row per cell, which needs every cell
-to hold the same number of values, so on a mixed mesh read `space.offsets`.
+`space.blocks(values)` give them as one row per cell, so they refuse cells
+holding different numbers of values (a mixed mesh, an order per cell): read
+`space.offsets` there.
 `td.interpolate` fills any space from a function of position. Derived edge and
 face ids are stable for a topology, but not across topologies: match values
 between meshes by position or global id, not by edge or face number.
