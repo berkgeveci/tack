@@ -119,7 +119,7 @@ flat array of `tuples * components` values.
 
 Level Zero sharing with VTK needs a shared context. Call
 `tack.interop.vtk.init_level_zero()` before creating arrays, using a VTK build
-that exposes the necessary handles. The [Visualization](../vis-guide/introduction.md#vtk-interop)
+that exposes the necessary handles. The [Visualization](../vis-guide/connect-simulation-data.md#exchange-whole-datasets-with-vtk)
 chapter describes that setup; a system VTK wheel does not necessarily offer
 every device-interoperability path.
 

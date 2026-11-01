@@ -1,8 +1,8 @@
-# Polyhedra and polygons
+# Polyhedra, polygons and lines
 
 A hexahedron is a map of a reference cube, and its fields are built on that
-cube: [Function Space Fundamentals](00-function-spaces.md) is about such
-reference elements and the bases on them. A polyhedron has no reference
+cube. [Fields and Spaces](03-fields-and-spaces.md) introduces that model;
+[the optional theory chapter](00-function-spaces.md) develops its bases. A polyhedron has no reference
 element. It is a list of faces, each a ring of points, with any number of
 faces and points. A polygon is a ring of points, and a polyline a chain.
 This page says what a field on these cells is, what a cell must be for
@@ -31,7 +31,7 @@ consequences that matter:
   it from the same face point, so the two cells agree on it, even where the
   face is not planar.
 
-In the terms of [Function Space Fundamentals](00-function-spaces.md), this is
+In the terms of [Function Spaces and Higher-order Geometry](00-function-spaces.md), this is
 order-1 `H1` on a finer mesh whose extra nodes are not free: they are means
 of the cell's points. That is why a polyhedron holds what it holds:
 
@@ -43,7 +43,7 @@ of the cell's points. That is why a polyhedron holds what it holds:
 
 A refused space raises `NotImplementedError` naming the reference element.
 Projecting between point and cell values works both ways
-([Fields and Spaces](03-fields-and-spaces.md#projection-is-an-algorithmic-choice)).
+([Create and convert fields](create-fields.md#projection-is-an-algorithmic-choice)).
 
 ## What a cell must be
 
@@ -177,3 +177,9 @@ path.
 
 The reasoning behind these choices, and the measurements, are in the
 [polyhedra design record](design/polyhedra.md).
+
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
+
+    <span id="polyhedra-and-polygons" data-guide-forward="#polyhedra-polygons-and-lines"></span>
+    [Polyhedra and polygons](18-polyhedra.md#polyhedra-polygons-and-lines).

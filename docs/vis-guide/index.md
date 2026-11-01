@@ -98,7 +98,7 @@ two without translation:
 - ghost marks in VTK's `vtkGhostType` bits, global ids, partitioned
   datasets, AMR (`vtkOverlappingAMR`) and octrees (`vtkHyperTreeGrid`);
 - interop both ways, sharing memory rather than copying where it can
-  ([VTK interop](introduction.md#vtk-interop)), so VTK, ParaView and their
+  ([VTK interop](connect-simulation-data.md#exchange-whole-datasets-with-vtk)), so VTK, ParaView and their
   renderers draw what Tack computes. Tack has no renderer of its own.
 
 **From Viskores** it keeps the execution model:
@@ -129,7 +129,7 @@ two without translation:
   of any order and basis. This is the finite-element view of MFEM and of
   VTK's cell grids, and it is what lets one model hold a linear mesh, a
   discontinuous Galerkin solution and a curved order-4 geometry
-  ([Function Space Fundamentals](00-function-spaces.md)).
+  ([Function Spaces and Higher-order Geometry](00-function-spaces.md)).
 - **Positions keep their precision.** A dataset's points are an origin plus
   values, so coordinates far from zero stay accurate in `f32` on a GPU.
 - **Units and time are part of the data**: fields carry physical units
@@ -140,17 +140,19 @@ two without translation:
 
 ## How this guide is organized
 
-1. **The data model:** [Function Space Fundamentals](00-function-spaces.md),
-   [Understand a Dataset](01-datasets.md), [Fields and Spaces](03-fields-and-spaces.md),
-   [Cell Types and Bases](16-cells-and-bases.md), [Polyhedra and Polygons](18-polyhedra.md)
-   and [Physical Units](12-units.md).
-2. **Working with data:** building meshes, point clouds, AMR and octrees,
-   the filters, writing your own, sampling and connecting simulations, and
-   streaming steps.
-3. **Data in pieces:** partitioned datasets, algorithms across pieces, and
-   how they communicate.
-4. **Examples and galleries**, and the **reference**, generated from the
-   source.
+1. **The Data Model** opens with [what Tack can represent](data-model-overview.md),
+   crossing mesh families with FE, FV, SPH and future FD support.
+   It then develops [one small dataset](01-datasets.md) and
+   separates [topology and geometry](topology-and-geometry.md),
+   [field meaning](03-fields-and-spaces.md), and [coordinates, units and time](12-units.md).
+   Representation chapters cover polyhedra, point clouds, pieces, AMR and octrees.
+2. **Work with Data** gives complete tasks: build and connect data, filter,
+   sample, trace, balance face fluxes, process particles and stream steps.
+3. **Further Detail and Reference** serve advanced readers: function-space
+   mathematics, arbitrary-order geometry, exact layouts, interop mappings,
+   units, public APIs and implementation design.
+4. **Data in Pieces** develops ghost ownership and distributed algorithms.
+   **Examples and galleries** provide runnable programs and pictures.
 
-The [Introduction](introduction.md) is a tour of all of it with a runnable
-example; start there if you would rather see code first.
+The [Introduction](introduction.md) offers a quick start and routes for both
+new readers and experienced solver or kernel authors.

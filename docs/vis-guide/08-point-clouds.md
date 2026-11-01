@@ -1,13 +1,11 @@
-# Point clouds and particles
+# Process point clouds and particles
 
-A point cloud is a dataset whose cells are its points: one vertex cell per
-point, stored nowhere. LiDAR surveys, SPH particles, N-body particles and
-tracers from a simulation are all point clouds, with fields per point. The
-filters that work on points (`threshold_points`, `probe`'s target,
-`statistics`, `transform`) work on them as on any dataset, and a
-**point locator** adds the filters that need each point's neighbours:
-cleaning and thinning, normals, clusters, deposition onto a grid, SPH
-interpolation and cosmology halos.
+
+Clean, thin, grid or summarize positions and their per-point fields. Start with
+the [point-cloud model](point-cloud-model.md) for representation and
+[Coordinates, Units and Time](12-units.md#far-from-zero-the-origin) for precision
+far from zero. The recipes below use complete marked examples with their own
+imports and backend setup.
 
 | Task | Algorithm |
 |---|---|
@@ -24,23 +22,6 @@ interpolation and cosmology halos.
 The [reference](reference/dataset-api.md#origins-and-point-clouds) has every
 argument. Each filter is deterministic, with no atomics in its sums: the
 same input gives the same values every run.
-
-## Far from zero: the origin
-
-A survey in projected coordinates sits hundreds of kilometres from zero,
-and single precision has about seven digits: at 4,580,000 m its spacing is
-half a metre. So a dataset's positions are an **origin**, three doubles on
-the host, plus values in the geometry's type. `point_cloud` given
-double-precision positions picks the lower corner of their box, in whole
-units, as the origin; the values are then offsets of at most the tile's
-size, and keep millimetres in single precision. Kernels see only the
-offsets. `positions()` gives them; `world_positions()` gives the world
-coordinates back in double precision.
-
-Filters keep the origin, and anything given in world coordinates (a probe
-point, a seed, an implicit function, a viewpoint) is moved to it in double
-precision. A grid to deposit onto is rebased to the same origin, as below. Pieces
-whose positions meet share one origin.
 
 ## Clean, thin and grid a LiDAR tile
 
@@ -229,3 +210,12 @@ A cloud cut into pieces, by a simulation's ranks or a survey's tiles, needs
 each piece's neighbours from the others. `ghost_points` gives them, and
 clusters, catalogues, outliers, voxels and deposits take the pieces: see
 [Point clouds in pieces](09-pieces-across.md#point-clouds-in-pieces).
+
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
+
+    <span id="point-clouds-and-particles" data-guide-forward="#process-point-clouds-and-particles"></span>
+    [Point clouds and particles](08-point-clouds.md#process-point-clouds-and-particles).
+
+    <span id="far-from-zero-the-origin" data-guide-forward="../12-units/#far-from-zero-the-origin"></span>
+    [Far from zero: the origin](12-units.md#far-from-zero-the-origin).

@@ -1,306 +1,140 @@
 # Understand a dataset
 
-A scientific visualization pipeline starts with a mesh and values that mean
-something on that mesh: temperature at points, material per cell, flux through
-faces. `tack.dataset` keeps those relationships explicit so the same field can be
-interpolated, filtered and sampled without each stage inventing its
-own connectivity and indexing rules.
+A dataset connects numbers to places. A temperature array alone does not say
+whether its entries belong to points, cells or faces, or how to evaluate a
+temperature between them. Tack keeps that meaning with the values so filters
+can use it consistently.
 
-Start with the [visualization quick start](introduction.md#quick-start)
-if you want to run a filter first. This chapter explains the objects it uses.
-The [function-space fundamentals](00-function-spaces.md) explain H1, L2,
-polynomial order and degrees of freedom before the code examples below.
+The [Data Model Overview](data-model-overview.md) maps mesh families and
+numerical methods. This chapter follows one ordinary mesh in detail.
+
+Start with the [quick start](introduction.md#quick-start) to run a contour.
+This chapter explains its objects. The next chapters develop topology and
+geometry, fields, then coordinates, units and time.
 
 ## Four parts of one dataset
 
+| Part | Question it answers | Example |
+|---|---|---|
+| Topology | Which entities exist and how do they connect? | Two cells share four vertices and one face |
+| Geometry | Where are those entities? | Coordinates of the twelve vertices |
+| Fields | What do values mean on those entities? | Temperature at points; material per cell |
+| Sets | Which entities form a named selection? | The boundary faces |
+
 ```mermaid
 flowchart LR
-    D[DataSet] --> T[Topology: cell shapes and corner incidence]
+    D[DataSet] --> T[Topology]
     D --> G[Geometry field]
-    D --> U[Temperature field]
-    D --> P[Pressure field]
+    D --> F[Named fields]
     D --> S[Named sets]
-    G --> GS[H1 order 1 plus coordinate values]
-    U --> US[H1 order 2 plus temperature coefficients]
-    P --> PS[L2 order 1 plus pressure coefficients]
-    GS -. defined on .-> T
-    US -. defined on .-> T
-    PS -. defined on .-> T
+    G --> X[Coordinate values and their space]
+    F --> V[Solution values and their spaces]
+    X -. associated with .-> T
+    V -. associated with .-> T
 ```
 
-**Topology** describes cell shapes, their corner vertices and how cells meet.
-It does not prescribe one coefficient array shared by every field. Faces,
-edges and incidence tables are derived when needed and retained for later use;
-spaces can use these entities to construct their own DOF layouts.
-
-**Geometry** maps reference-cell coordinates to physical positions through
-its own space and coordinate values. A structured topology alone does not
-imply equally spaced or axis-aligned coordinates. A uniform grid can compute
-its nodal positions from dimensions, origin and spacing; a curved mesh can
-store coordinate coefficients at additional geometry nodes. Even a planar
-mesh uses 3-vectors for positions.
-
-**Fields** combine a space with values. The space determines which entities own
-the values and how to evaluate them between sample locations. **Sets** name
-selections such as a boundary or a material region, without creating another
-mesh. A cell or face set can also be a kernel's iteration domain.
-
-## Array storage and field meaning
-
-| Object | Responsibility | Example |
-|---|---|---|
-| `tack.Array` | Storage on a backend | A buffer of temperatures or velocities |
-| `td.Field` | Meaning of values on a topology | Temperature in `td.H1(data)` |
-
-Here `td` is the conventional alias for `tack.dataset`. A raw buffer knows its
-element dtype and shape; it does not know whether its entries are point
-temperatures or cell averages. For example, `tack.empty((space.size,),
-tack.vec3())` allocates one vector per DOF. `td.Field(td.H1(data), values)` supplies that information.
-
-A NumPy array is useful input, but it is not itself a valid `td.Field` value
-array: use `tack.array(host, dtype=...)` to copy it into backend storage.
-The `DataSet` constructor also accepts a host array of positions and creates
-H1 geometry for you. [Build Meshes](02-meshes.md) first constructs topology
-and geometry explicitly, then explains this shorter form.
-
-## The MFEM model: mesh, space, grid function
-
-In MFEM, a `Mesh` supplies elements and their incidence. A finite-element
-collection specifies a family, order and basis; a `FiniteElementSpace` on the
-mesh determines the local-to-global DOF maps and component layout. A
-`GridFunction` couples that space with coefficients. This is why an MFEM field
-is more than an array of values attached to the mesh's vertices. See
-[MFEM's grid-function explanation](https://mfem.org/pri-dual-vec/).
-
-Tack follows that separation for the supported parts of its data model:
-
-| MFEM concept | Tack counterpart | Responsibility |
-|---|---|---|
-| Mesh element types and vertex connectivity | `data.topology` | Corner incidence and derived entities |
-| Finite-element family, order and layout on the mesh | Each field's `space` | Basis, DOF ownership and local-to-global addressing |
-| Grid function | `td.Field(space, values)` | Coefficients interpreted through that space |
-| Mesh nodes describing geometry | `data.geometry`, itself a `td.Field` | Reference-to-physical coordinate mapping |
-
-This is a conceptual correspondence, not a claim that Tack implements all
-MFEM finite-element families or its parallel true-DOF and constraint machinery.
-The present importer supports the H1/L2 families and orders described below.
-
-### Corners are not all of a field's nodes
-
-A linear hexahedron's topology names eight corners. A quadratic H1 field on
-that same cell needs 27 nodal coefficients: corners, edge midpoints, face
-centers and a cell-interior node. Its space obtains shared edge and face
-incidence from the topology and builds the field's DOF map. The topology still
-has the original eight corners for that cell; the field has not refined it.
-
-Consequently, `data.num_points` counts topological vertices. It need not equal
-`field.space.size`, and it need not be the number of geometry coefficients
-on a curved or discontinuous mesh. Use the field's space when allocating its
-values or interpreting their layout.
-
-## Each field has its own space
-
-One mesh can carry all of the following at once:
-
-| Field on two adjacent hexahedra | Space | Logical values |
-|---|---|---:|
-| Geometry | H1 order 1, 3-vector positions | 12 vectors |
-| Temperature | H1 order 2 | 45 scalars |
-| Pressure | L2 order 1 | 16 scalars |
-| Material parameter | Constant | 2 scalars |
-
-The fields share **topology**, not necessarily a space, order, coefficient
-count or storage representation. Compatible fields may deliberately share
-one interned space object; “each field has its own space” means that the
-choice belongs to the field, rather than being fixed once for the dataset.
-
-For step-by-step recipes and node diagrams, see
-[Construct an L2 field](03-fields-and-spaces.md#construct-an-l2-field) and
-[Construct a quadratic H1 field](03-fields-and-spaces.md#construct-a-quadratic-h1-field).
-The program below combines them on one dataset, using `uniform_grid` as a
-shortcut for the mesh setup so we can focus on independent field spaces.
-Temperature represents
-`x² + 2y + 3z`; pressure is `x` in cell 0 and `x + 2` in cell 1, with a jump
-at their shared face. Geometry remains an implicit uniform coordinate array
-in first-order H1:
-
-```python
---8<-- "docs/examples/data_spaces.py:sample"
-```
-
-```python
---8<-- "docs/examples/data_spaces.py:l2-kernel"
-```
-
-```python
---8<-- "docs/examples/data_spaces.py:spaces"
-```
-
-`interpolate` evaluates the temperature function at the **physical positions
-of that space's interpolation nodes**, through the geometry; it does not
-replace `data.geometry`. The original geometry, temperature and pressure
-continue to use their separate spaces.
-
-An evaluation combines two maps. The geometry gives physical position from
-reference coordinates, while the solution field uses its own basis and DOFs
-at those reference coordinates. A field view supplied to `for_each` preserves
-that distinction even when geometry and solution orders differ.
-
-```python
---8<-- "docs/examples/data_spaces.py:evaluate"
-```
-
-The quadratic field's center values are `[2.5625, 3.0625]`. Replacing it by an
-order-1 projection gives `[2.625, 3.125]`: the topology and geometry are unchanged,
-but the field approximation changed. The complete example also checks the
-physical gradients against `[0.5, 2, 3]` and `[1.5, 2, 3]`.
-
-```bash
-uv run python docs/examples/data_spaces.py --arch cpu --check
-```
-
-[Download the independent-spaces program](../examples/data_spaces.py).
-
-## Geometry is a field, too
-
-The coordinate mapping has a family, order and values just as a solution does.
-Straight cells can use order-1 H1 geometry with explicit corner positions or
-implicit coordinates. A supported curved mesh uses H1 order-2 coordinate
-coefficients; a solution on it may still use a different order.
-
-With L2 geometry, neighbouring cells can assign separate positions to their
-local corners while sharing corner ids in the topology. This can represent
-gaps or detached cells without changing the incidence. Contour and slice
-respect each cell's geometry; not every algorithm supports that representation.
-
-The geometry's values can be a `UniformCoordinates`, a `CartesianProduct`,
-or explicit position storage. Those are **value-array representations**, not
-different finite-element spaces. Image and rectilinear geometry are explained
-in [Build Meshes](02-meshes.md#image-rectilinear-and-curvilinear-data).
-
-The geometry's values are relative to the dataset's `origin`, three doubles
-kept on the host. Survey data far from zero keeps its precision in single
-precision that way: a point cloud at UTM coordinates stores millimetres as
-offsets from a nearby origin, which single precision resolves, where its raw
-eastings would be rounded to a quarter metre.
-
-```python
-cloud = td.point_cloud(lidar_xyz, fields={"classification": classes})  # float64 xyz
-cloud.origin             # the lower corner of the box, rounded down
-cloud.positions()        # float32 offsets from it, what kernels see
-cloud.world_positions()  # float64 again
-ground = td.threshold_points(cloud, "classification", 2, 2)            # keeps the origin
-```
-
-Filters keep the origin, and arguments that are positions -- implicit
-functions, probe points, seeds -- are given in world coordinates and moved by
-the origin in double precision. The [dataset API
-reference](reference/dataset-api.md#origins-and-point-clouds) lists what
-converts.
-
-## Importing MFEM preserves the separation
-
-`mfem_to_dataset(mesh, fields={...})` constructs topology from the elements'
-corner lists, then converts geometry and each supplied grid function through
-their own spaces. It does not flatten every solution onto the mesh vertices.
-
-| MFEM input | Current Tack mapping |
-|---|---|
-| Straight geometry | H1 order-1 coordinate field |
-| Supported order-2 curved mesh nodes | H1 order-2 coordinate field |
-| H1 order-1 grid function | H1 order 1 |
-| H1 order-2 grid function | H1 order 2, evaluated at supported quadratic nodes |
-| L2 order-0 grid function | Constant |
-| L2 order-1 grid function | L2 order 1, evaluated at each cell's corners |
-| Element attributes | An integer Constant field named `attribute` |
-
-Basis conversion matters: MFEM's L2 interpolation nodes need not be its cell
-corners. The importer evaluates the MFEM field to obtain Tack's corner-based
-coefficients rather than treating the source coefficient vector as corner
-data. The supported order-1 spaces agree on tetrahedra, hexahedra and wedges;
-on pyramids the corner representation interpolates MFEM's different basis.
-Unsupported collections or orders are refused. Current order-2 pyramid bases
-and geometry above order 2 are not imported.
-
-The [pipeline chapter](06-pipelines.md#exchange-whole-datasets-with-vtk) and
-[reference](reference/dataset-api.md#interoperability) describe the entry points.
+Geometry is a field too: its values are coordinates and its space says how
+to obtain positions inside cells. For the first example, one coordinate
+vector at each corner is enough. You can understand the model before learning
+the mathematics of higher-order coordinate mappings.
 
 ## A simpler first-order field
 
-The smaller `data_fields.py` example uses the same two adjacent half-width
-cubes, but temperature is now the affine function `x + 2y + 3z` in order-1
-H1. The two cells carry material values 1 and 3. This is the example used
-for the projection and discontinuity figures later in the guide.
+Two half-width cubes fill the unit cube. They share a face, so together they
+have twelve vertices, rather than sixteen. Give them point temperature
+`x + 2y + 3z`, a material value of 1 or 3 per cell, and a boundary selection:
 
-The following kernel evaluates temperature directly from the grid's implicit
-coordinates. No host coordinate array is needed for this step:
-
+<!-- tack-check: first-dataset -->
 ```python
---8<-- "docs/examples/data_fields.py:sample"
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+data = td.uniform_grid((3, 2, 2), spacing=(0.5, 1.0, 1.0), unit="m")
+xyz = data.positions()  # Explicit host snapshot for this small example.
+temperature = tack.array(xyz[:, 0] + 2 * xyz[:, 1] + 3 * xyz[:, 2], dtype=tack.f32)
+data.fields["temperature"] = td.Field(td.H1(data), temperature, unit="K")
+data.fields["material"] = td.Field(td.Constant(data), tack.array([1.0, 3.0]))
+data.sets["boundary"] = td.boundary_faces(data)
+
+assert data.num_points == 12 and data.num_cells == 2
+assert data.fields["temperature"].space.size == 12
+assert data.fields["material"].space.size == 2
+np.testing.assert_allclose(td.gradients(data, "temperature").values.numpy(),
+                           np.tile([1, 2, 3], (2, 1)))
+print(data.num_points, "points,", data.num_cells, "cells")
 ```
 
-Allocate the values and attach them to their spaces:
+`H1(data)` chooses shared first-order point values. `Constant(data)` chooses
+an independent constant in each cell. Material can jump across the shared
+face while temperature remains continuous. Both use the same mesh.
 
-```python
---8<-- "docs/examples/data_fields.py:build"
-```
+The grid factory assembles topology and geometry. [Build Meshes](02-meshes.md)
+shows their explicit construction. The [complete field program](../examples/data_fields.py)
+fills temperature in a kernel directly from implicit coordinates, without
+downloading positions.
 
-`H1` shares one value at a point among its incident cells. `Constant` gives
-each cell its own value, constant throughout that cell. They refer to the
-topology of `data`, so a field from another dataset's topology is rejected even
-when it has the same number of values. The field length must also match the
-space's size; matching a shape alone does not establish the association.
+## Array storage and field meaning
 
-The example assumes the imports `numpy as np`, `tack`, and `tack.dataset as td`,
-with `tack.set_default_device("cpu")` before construction. The complete source below
-includes them and runs independently.
+`tack.Array` supplies values on a backend. `td.Field(space, values, unit=...)`
+adds their association and interpretation. Matching lengths on two meshes
+do not establish matching associations. A field's topology and coefficient
+count must match its space.
 
-## Inspect without losing track of transfers
+The temperature's count equals `data.num_points` here because it is H1 order 1.
+Allocate other fields using `field.space.size`, which need not be the number
+of mesh corners. Scalar/vector width, space and storage are separate choices.
 
-| Expression | What you get |
-|---|---|
-| `data.num_points`, `data.num_cells` | Counts for the mesh |
-| `data.fields["temperature"]` | The associated `td.Field` |
-| `data.fields["temperature"].space` | Its space, including the topology |
-| `data.fields["temperature"].values` | The stored or implicit value array |
-| `data.positions()` | A host array of corner positions for H1 geometry |
-| `tack.arrays.to_host(field.values)` | A host snapshot; vectors have one row per value |
-| `tack.arrays.materialize(field.values)` | Device storage; computes implicit values if necessary |
+## Inspect without changing the representation
 
-`positions()` returns the topological corners, including when H1 geometry has
-higher-order nodes; it refuses L2 geometry. Use
-`tack.arrays.to_host(data.geometry.values)` to inspect all of geometry's
-coefficients in their space's ordering.
+Counts, names and spaces describe data without copying its values.
+`field.values` is its stored or implicit array. `values.numpy()` on stored
+arrays and `tack.arrays.to_host(values)` produce host snapshots; a GPU read
+waits for the work it needs. `data.positions()` is a host snapshot too.
+Use readbacks at inspection or output checkpoints.
 
-Use host snapshots for diagnostics, independent checks and file output. Keep
-values in fields between filters and kernels. On GPU backends a host read waits
-for the queued work it needs, so repeated inspection in a timestep loop can
-dominate its cost.
+An implicit array computes values rather than storing every entry. This
+grid computes coordinates from dimensions and spacing. Downloading them
+does not replace that representation. [Arrays, Storage and Layouts](field-storage.md)
+explains inspection and materialization in detail.
 
-## What a pipeline changes
+## Continue through the model
 
-Algorithms return new datasets, fields or summaries; they do not edit the input
-dataset in place. A returned dataset may share topology or value storage with
-its input when no copy is needed. Treat it as a new pipeline result, not as a
-deep copy of every buffer. Editing an existing values buffer can therefore be
-visible through more than one dataset that refers to it.
+1. [Topology and Geometry](topology-and-geometry.md): connectivity and positions.
+2. [Fields and Spaces](03-fields-and-spaces.md): associations and reconstruction.
+3. [Coordinates, Units and Time](12-units.md): frames and physical quantities.
 
-For a time-dependent simulation, retain the mesh and update its working fields.
-Run the analysis stages again for the new values; an old contour is a previous
-result, not a live view that recomputes itself. Rebuild spatial locators after
-moving geometry.
-The [pipeline chapter](06-pipelines.md) makes these boundaries explicit.
+Then choose a [representation](collections-and-partitions.md) or
+[task](introduction.md#choose-a-task). The optional
+[independent-spaces example](00-function-spaces.md#each-field-has-its-own-space)
+adds quadratic temperature and discontinuous pressure to this same mesh.
 
-## Run and check
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
 
-```bash
-uv run python docs/examples/data_fields.py --arch cpu --check
-```
+    <span id="the-mfem-model-mesh-space-grid-function" data-guide-forward="../00-function-spaces/#the-mfem-model-mesh-space-grid-function"></span>
+    [The MFEM model: mesh, space, grid function](00-function-spaces.md#the-mfem-model-mesh-space-grid-function).
 
-The check compares point values with the analytic formula, cell temperatures
-with `[2.75, 3.25]`, and gradients with `[1, 2, 3]`. It also checks projection
-and face jumps, developed in [Fields and Spaces](03-fields-and-spaces.md).
+    <span id="corners-are-not-all-of-a-fields-nodes" data-guide-forward="../00-function-spaces/#corners-are-not-all-of-a-fields-nodes"></span>
+    [Corners are not all of a field's nodes](00-function-spaces.md#corners-are-not-all-of-a-fields-nodes).
 
-[Download the complete example](../examples/data_fields.py).
-Continue with [Building Meshes](02-meshes.md), or move directly to
-[Fields and Spaces](03-fields-and-spaces.md) if your mesh already comes from a reader.
+    <span id="each-field-has-its-own-space" data-guide-forward="../00-function-spaces/#each-field-has-its-own-space"></span>
+    [Each field has its own space](00-function-spaces.md#each-field-has-its-own-space).
+
+    <span id="geometry-is-a-field-too" data-guide-forward="../00-function-spaces/#geometry-is-a-field-too"></span>
+    [Geometry is a field, too](00-function-spaces.md#geometry-is-a-field-too).
+
+    <span id="importing-mfem-preserves-the-separation" data-guide-forward="../connect-simulation-data/#import-mfem-fields"></span>
+    [Importing MFEM preserves the separation](connect-simulation-data.md#import-mfem-fields).
+
+    <span id="what-a-pipeline-changes" data-guide-forward="../connect-simulation-data/#keep-a-simulations-state-in-the-pipeline"></span>
+    [What a pipeline changes](connect-simulation-data.md#keep-a-simulations-state-in-the-pipeline).
+
+    <span id="inspect-without-losing-track-of-transfers" data-guide-forward="../field-storage/#inspect-without-losing-track-of-transfers"></span>
+    [Inspect without losing track of transfers](field-storage.md#inspect-without-losing-track-of-transfers).
+
+    <span id="run-and-check" data-guide-forward="../create-fields/#run-and-reproduce-the-figure"></span>
+    [Run and check](create-fields.md#run-and-reproduce-the-figure).

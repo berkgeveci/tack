@@ -1,31 +1,18 @@
 # Introduction
 
-`tack.dataset` (the `tack-vis` package) holds meshes and point clouds and
-the fields on them, and the algorithms that work on both: contour, slice,
-clip, threshold, external faces, gradients, projections between spaces,
-streamlines, point-cloud cleaning and gridding, SPH interpolation, halo
-finding and the rest. Like VTK and Viskores, it works on structured grids,
-unstructured meshes, polyhedra, polygons, polylines and point clouds. Unlike
-them, the algorithms are ordinary Tack kernels, so they run on every
-backend, and the kernels you write yourself see a mesh the way the built-in
-ones do.
+Tack connects simulation and instrument data to analysis on CPUs and GPUs.
+Use the quick start to run a filter, then choose a reading route below.
+The [background](index.md) explains the visualization, VTK and Viskores context.
 
 ```bash
-uv sync --extra cpu      # in a clone; both packages are installed
+uv sync --extra cpu
 ```
-
-This overview is a tour; the chapters below develop the data model and complete
-workflows. The [Dataset API reference](reference/dataset-api.md) has the
-model and full support tables, [Algorithms](reference/algorithms.md) every
-algorithm's parameters, and [Data Model](reference/data-model.md) every
-class's.
 
 ## Quick start
 
 For this first example, use `uniform_grid`, a **shortcut factory** that
 assembles a structured topology and uniform geometry for you. Add a scalar
-field, then extract an isosurface. [Building a dataset](#building-a-dataset)
-below shows how to construct these pieces explicitly for several mesh types.
+field, then extract an isosurface. [Build Meshes](02-meshes.md) shows how to construct these pieces explicitly for several mesh types.
 
 ```python
 import tack
@@ -50,43 +37,54 @@ an approximation to a sphere. This example needs no VTK installation.
 
 ## Learn data and visualization
 
-| Chapter | Start here when you want to… |
+### A first reading
+
+Begin with the [Data Model Overview](data-model-overview.md) for the kinds
+of meshes, refined data and particles Tack represents, and how finite element
+(FE), finite volume (FV), smoothed particle hydrodynamics (SPH), and future
+finite difference (FD) support fit them.
+
+Then read [Understand a Dataset](01-datasets.md),
+[Topology and Geometry](topology-and-geometry.md),
+[Fields and Spaces](03-fields-and-spaces.md), then
+[Coordinates, Units and Time](12-units.md). These share one small example;
+advanced FE theory and layout formulas are optional.
+
+### Find your representation
+
+| Your data | Model chapter | Next task |
+|---|---|---|
+| Uniform, rectilinear or unstructured mesh | [Topology and Geometry](topology-and-geometry.md) | [Build Meshes](02-meshes.md) |
+| Polyhedra, polygons or paths | [Their piecewise model](18-polyhedra.md) | [Build Meshes](02-meshes.md#construct-polyhedra-from-face-rings) |
+| Particles or survey points | [Point Clouds](point-cloud-model.md) | [Process Point Clouds](08-point-clouds.md) |
+| Domain in pieces | [Collections and Partitions](collections-and-partitions.md) | [Data in Pieces](07-partitioned.md) |
+| Refined boxes | [AMR Hierarchies](10-amr.md) | [Analyze Adaptive Data](adaptive-data.md) |
+| Tree-based refinement | [Octrees](11-octrees.md) | [Analyze Adaptive Data](adaptive-data.md#construct-and-summarize-an-octree) |
+
+### Advanced routes
+
+For FE or discontinuous Galerkin (DG) input, read
+[Function Spaces and Higher-order Geometry](00-function-spaces.md),
+the [capability catalog](16-cells-and-bases.md), and
+[Create and Convert Fields](create-fields.md). For solver memory, use
+[Arrays, Storage and Layouts](field-storage.md) and
+[Connect Simulation Data](connect-simulation-data.md). Kernel authors can
+go through [Views](17-views.md), [Mesh Algorithms](05-mesh-kernels.md) and
+[Write a Filter](15-write-a-filter.md), with
+[view composition](design/view-composition.md) available for deeper inspection.
+
+## Choose a task
+
+| Goal | Chapter |
 |---|---|
-| [Function Space Fundamentals](00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
-| [Understand a Dataset](01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
-| [Finite-volume Data and Fluxes](18-finite-volume.md) | Work with cell averages, oriented face fluxes, conservation balances and Perot reconstruction |
-| [Build Meshes](02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
-| [Point Clouds and Particles](08-point-clouds.md) | Clean and grid LiDAR, resample SPH particles, find halos |
-| [AMR Hierarchies](10-amr.md) | Hold levels of refined boxes, images or not; reduce and filter them |
-| [Octrees](11-octrees.md) | Hold tree-based AMR (RAMSES, HyperTreeGrids); weighted statistics |
-| [Fields and Spaces](03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
-| [Physical Units](12-units.md) | Give fields and positions units, keep them through filters, convert |
-| [Filter and Analyze](04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
-| [Views](17-views.md) | Understand how a kernel sees cells and fields, the basis of every filter and of your own |
-| [Write Mesh Algorithms](05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
-| [Write a Filter](15-write-a-filter.md) | Write a filter of your own that keeps origins, units, ghost marks and hidden cells as the built-ins do |
-| [Sample and Connect Simulations](06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
-| [Streaming Steps](13-streaming.md) | Analyze a simulation step by step, in situ: running statistics, time derivatives, pathlines |
-| [Work with Data in Pieces](07-partitioned.md) | Filter and reduce a dataset cut into pieces, with ghost cells |
-| [Algorithms Across Pieces](09-pieces-across.md) | Pieces from VTK, on several devices or MPI ranks; probes, particles, regions and point clouds across them |
-| [Pieces and Blocks](14-communication.md) | Write an algorithm over pieces on `tack.communication`, and which built-ins use which pattern |
-| [Worked Examples](examples.md) | Run complete programs with analytic checks |
-
-The [Dataset API reference](reference/dataset-api.md) describes every class
-and algorithm; [Algorithms](reference/algorithms.md) and
-[Data Model](reference/data-model.md) give each one's signature, parameters
-and methods, from its docstring. The design records, [Dataset API](design/dataset-api.md) and
-[Polyhedra](design/polyhedra.md), say how the model came to be. Kernels
-themselves -- the language, arrays, backends -- are in the core
-[User's Guide](../users-guide/index.md).
-
-For a first reading, follow the fundamentals, dataset and mesh chapters,
-then the field and filter chapters.
-For finite-volume simulation output, [Finite-volume Data and Fluxes](18-finite-volume.md)
-is an alternative entry point organized around cells, faces and conservation.
-The [field-space comparison](03-fields-and-spaces.md#a-material-interface-exposes-the-difference)
-and [filter comparison](04-filters.md#select-cells-cut-cells-or-extract-a-surface)
-show why two plausible images can represent different numerical operations.
+| Construct or attach data | [Build Meshes](02-meshes.md), [Create Fields](create-fields.md), [Connect Simulation Data](connect-simulation-data.md) |
+| Extract geometry and derive quantities | [Filter and Analyze](04-filters.md) |
+| Probe, voxelize or integrate steady paths | [Sample and Trace Fields](06-pipelines.md) |
+| Balance face fluxes and reconstruct velocity | [Finite-volume Data and Fluxes](18-finite-volume.md) |
+| Clean, grid or summarize particles | [Process Point Clouds](08-point-clouds.md) |
+| Process refined representations | [Analyze Adaptive Data](adaptive-data.md) |
+| Follow changing fields | [Stream Steps](13-streaming.md) |
+| Write kernels and complete filters | [Write Mesh Algorithms](05-mesh-kernels.md), [Write a Filter](15-write-a-filter.md) |
 
 ## Common conventions
 
@@ -98,302 +96,52 @@ Fields passed to an algorithm belong to that dataset's topology. `dot`,
 `tack.arrays.Cast(field.values, tack.f32)` converts values when needed. Integer
 inputs to magnitude, logarithms and statistics compute in floating point.
 
-## The model
-
-A `DataSet` is four things:
-
-| Part | What it is | Example |
-|---|---|---|
-| `topology` | the cells and how they connect | `UnstructuredTopology`, `StructuredTopology`, `PolyhedralTopology` |
-| `geometry` | where the points are: a field of 3-vectors | positions per point, or the implicit coordinates of a grid |
-| `fields` | named fields, each a *space* and its values | `Field(H1(data), values)` |
-| `sets` | named selections of points, cells or faces | the boundary faces |
-
-A *space* says which degrees of freedom define a field and how to evaluate
-it. H1 order 1 shares corner values; H1 order 2 adds shared higher-order
-nodes. `Constant` is a separate constant per cell; L2 can keep each cell's
-own coefficients. `Values(data, on)` describes attributes without a basis.
-Every field chooses its own space on the common topology, including geometry.
-The [dataset chapter](01-datasets.md#each-field-has-its-own-space) demonstrates
-12 corner positions, 45 quadratic temperature values and 16 discontinuous
-pressure values on the same two cells.
-
-A field's values are a `tack.Array` with a scalar or vector element dtype,
-or an implicit array that computes values on demand. Uniform coordinates
-need only dimensions, origin, spacing and direction metadata.
-
-Geometry may also live in L2, giving each cell its own positions. Contour and
-slice preserve the resulting gaps; clipping requires shared H1 geometry.
-Changing an L2 geometry's values refreshes subsequent face-geometry results.
-
-## Building a dataset
-
-A dataset can be assembled from simulation arrays, a file reader, generated
-coordinates, or another source. The construction follows the same pattern:
-
-1. Create a topology describing cells and their corner incidence.
-2. Create a geometry field: a space on that topology plus coordinate values.
-3. Pass both to `td.DataSet`, then attach solution fields and named sets.
-
-The following recipes build their topology and geometry explicitly. They
-assume `import numpy as np`, `import tack`, `import tack.dataset as td`, and
-an initialized backend. The complete [mesh-construction program](../examples/data_meshes.py)
-and [unstructured tour](../examples/datasets.py) include that setup.
-
-=== "Uniform image"
-
-    Construct structured incidence and compute corner positions from origin,
-    spacing and logical indices. The geometry is an H1 field whose values
-    are implicit `UniformCoordinates`.
-
-    ```python
-    --8<-- "docs/examples/data_meshes.py:uniform"
-    ```
-
-=== "Rectilinear"
-
-    Construct structured incidence and compute corner positions from three
-    coordinate axes. The geometry uses `CartesianProduct` values in H1.
-
-    ```python
-    --8<-- "docs/examples/data_meshes.py:rectilinear"
-    ```
-
-=== "Curvilinear"
-
-    Construct structured incidence and supply explicit positions at its
-    corners. These positions bend the grid while retaining logical connectivity.
-
-    ```python
-    --8<-- "docs/examples/data_meshes.py:curvilinear"
-    ```
-
-=== "Unstructured"
-
-    Supply the cell types, offsets and corner ids explicitly, along with an
-    H1 coordinate field. This example has a hexahedron and a pyramid sharing
-    a face. The cell type numbers follow VTK's convention; VTK is not required.
-
-    ```python
-    --8<-- "docs/examples/datasets.py:unstructured"
-    ```
-
-All four recipes use the same `DataSet(topology, geometry)` constructor.
-The [mesh chapter](02-meshes.md#image-rectilinear-and-curvilinear-data)
-explains their coordinate representations and also builds
-[polyhedral](02-meshes.md#construct-polyhedra-from-face-rings),
-[polygonal and polyline](02-meshes.md#polygons-and-polylines-are-different-objects)
-datasets from their own connectivity and geometry.
-
-The rest of this tour uses `mesh`, the hex-and-pyramid dataset from the
-Unstructured tab. Attach height in H1 and a material constant per cell:
-
-```python
---8<-- "docs/examples/datasets.py:fields"
-```
-
-### Factory methods are shortcuts
-
-Once the pieces are familiar, `uniform_grid` and `rectilinear_grid` save the
-repeated topology and geometry setup. These calls construct the same uniform
-and rectilinear datasets as the explicit recipes above:
-
-```python
---8<-- "docs/examples/data_meshes.py:grids"
-```
-
-`DataSet(topology, positions)` is another convenience: when given coordinate
-values rather than a `Field`, it wraps them in H1 order-1 geometry.
-`wavelet` and `tangle` are sample-data factories that also initialize known
-scalar fields, useful for trying filters. They are examples of data sources;
-a dataset's topology and geometry do not depend on where its values originated.
-
-`vtk_to_dataset` and `tack.interop.mfem` import datasets from VTK and MFEM.
-Neither library is required for the constructions above. In a checkout,
-`uv sync --extra cpu --extra interop` installs the optional readers where
-supported. See [dataset interoperability](06-pipelines.md#exchange-whole-datasets-with-vtk).
-
-## Algorithms
-
-Every algorithm is in `tack.dataset.algorithms`, re-exported from `tack.dataset`,
-and they share one set of conventions:
-
-- the dataset comes first;
-- a field argument is a `Field` or the name of one of the dataset's fields;
-- an algorithm that makes a dataset takes `fields=` (all by default, a name,
-  a list, or `[]`) and carries those fields onto its output;
-- one that computes a field returns a `Field`, or a named tuple of them;
-- summaries (`statistics`, `entropy`) return Python values.
-
-```python
---8<-- "docs/examples/datasets.py:pipeline"
-```
-
-Fields come along by how the output's entities come from the input's. Point
-data is interpolated onto a contour's points, and cell data goes to the
-pieces each cell was cut into. A kept cell keeps its values.
-
-## Moving fields between spaces
-
-`project(data, field, space)` gives a field in another space of the same
-mesh: `td.H1(data)` for point values, `td.Constant(data)` for one value per
-cell, `td.L2(data)` for each cell's own copies.
-
-```python
---8<-- "docs/examples/datasets.py:spaces"
-```
-
-Projecting into a space that can hold the field exactly gives it back
-exactly: a linear point field into `L2`, or into order-2 `H1`. Otherwise
-`project` averages: a point takes the mean of the cells around it, as VTK
-does, and a cell the field's average over the cell (`average="nodes"` gives
-VTK's mean of the cell's nodes instead).
-
-## Sets
-
-A `Set` selects points, cells or faces. Builders such as `boundary_faces`
-return one; name it in `data.sets` to keep it. Filters carry sets the way
-they carry fields:
-
-```python
---8<-- "docs/examples/datasets.py:sets"
-```
-
-The name of a cell or face set is also a place to run a kernel, as the next
-section shows.
-
-## Writing your own algorithm
-
-`for_each(kernel, data, domain, *args)` runs a kernel over `"cells"`,
-`"faces"`, `"edges"` or a named set. A mesh may mix shapes, so it runs the
-kernel once per shape. Each launch gets that shape's *view* of the cells
-([Views](17-views.md) explains them),
-and every `Field` argument becomes its view for the same cells. The kernel
-is compiled for each shape, so a hexahedron's loop knows it has eight
-corners.
-
-`for_each` is for kernels that need the mesh: a cell's corners, a face's two
-sides, positions. A kernel that needs only a field's values, each on its own,
-is an ordinary kernel over `field.values`, looping over `range(len(values))`.
-That is also the loop over points, which are not a `for_each` domain: point
-data is one value per point. Implicit values, such as a uniform grid's
-coordinates, are indexed the same way.
-
-```python
---8<-- "docs/examples/datasets.py:kernel"
-```
-
-A view's methods follow one naming rule per kind of answer, so a name says
-what comes back:
-
-| Ends in | Gives | Examples |
-|---|---|---|
-| `_id` | a global id | `entity_id(c)`, `point_id(c, j)`, `face_id(c, k)`, `side_point_id(c, k, j)` |
-| `_position` | a position | `position(c, pc)`, `corner_position(c, j)`, `side_position(c, k, j)` |
-| `_corner` | a shape's local corner number | `edge_corner(e, k)`, `face_corner(f, k)` |
-| `num_` (prefix) | a count | `num_points`, `num_faces(c)`, `side_num_points(c, k)` |
-
-A field view gives `value(c, pc)` at parametric coordinates,
-`parametric_gradient(c, pc)` and `corner_value(c, j)`.
-
-Face-based kernels walk each cell's faces outward, and the same code serves
-every kind of cell. They need the faces, which are derived on first use, so
-ask for them before the launch:
-
-```python
---8<-- "docs/examples/datasets.py:faces"
-```
-
-## Polyhedra, polygons and lines
-
-A polyhedral cell has no reference element: no shape functions and no
-parametric coordinates. Instead, each face is fanned into triangles from
-the mean of its points, and the triangles into tetrahedra from the mean of
-the cell's points; point data is linear on each tetrahedron. Gradients,
-cell centers, probing, advection and streamlines run on polyhedra that way
-(gradients by Green–Gauss over the fanned faces), exactly for linear
-fields. Polygons are fanned into triangles from their points' mean the
-same way, so probing and advection run on them, and probing locates on a
-polyline's segments. The algorithms that need a reference element (`L2` and
-order-2 spaces, side traces) refuse a polyhedral mesh and say so. The ones that
-work from points and faces run on both kinds: contour (by López's face
-walk), slice, threshold, external faces, cell and face geometry,
-divergence, and moving data between points and cells. A 2D mesh contours into lines, and
-streamlines are polylines, one per seed:
-
-```python
---8<-- "docs/examples/datasets.py:lines"
-```
-
-The [reference](reference/dataset-api.md#algorithms-and-filters) has a
-table of which algorithm runs on which topology.
-
-## 64-bit ids
-
-A topology keeps its ids in `i32` unless it is too large or asked for `i64`
-(`id_dtype=tack.i64`). Kernels specialize on the id type, so a small mesh
-pays nothing for large ones. VTK's 64-bit ids come in as the narrowest type
-that holds them.
-
 ## Running the examples
-
-The whole example is [`docs/examples/datasets.py`](../examples/datasets.py);
-`--check` runs its assertions.
-
-The new chapter examples can be checked together with the rest of the guide:
 
 ```bash
 uv run python docs/examples/validate.py --arch cpu
 ```
 
-They cover mesh counts and measures, continuous/discontinuous fields, analytic
-gradients, flux balance, exact clipping volumes and flow integration. Their
-optional comparison figures use Matplotlib, independently of VTK.
+The [worked examples](examples.md) have numerical checks; the
+[gallery](gallery.md) and [MFEM gallery](mfem-gallery.md) show their results.
+The complete [mixed-dataset tour](../examples/datasets.py) remains available
+as a runnable program. Reference readers can go directly to
+[Dataset API](reference/dataset-api.md), [Algorithms](reference/algorithms.md),
+[Data Model](reference/data-model.md), [format mappings](reference/interop.md)
+or [units](reference/units.md).
 
-## VTK interop
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
 
-`tack.interop.vtk` converts whole datasets:
-- `vtk_to_dataset` reads a `vtkUnstructuredGrid`, `vtkRectilinearGrid` or
-  `vtkImageData`, including polyhedra and polylines;
-- `dataset_to_vtk` writes the matching VTK type back.
+    <span id="the-model" data-guide-forward="../01-datasets/#four-parts-of-one-dataset"></span>
+    [The model](01-datasets.md#four-parts-of-one-dataset).
 
-```python
-from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+    <span id="sets" data-guide-forward="../01-datasets/#a-simpler-first-order-field"></span>
+    [Sets](01-datasets.md#a-simpler-first-order-field).
 
-data = vtk_to_dataset(grid)               # point data -> H1, cell data -> Constant
-grid = dataset_to_vtk(td.contour(data, "pressure", 0.5))
-```
+    <span id="building-a-dataset" data-guide-forward="../02-meshes/#image-rectilinear-and-curvilinear-data"></span>
+    [Building a dataset](02-meshes.md#image-rectilinear-and-curvilinear-data).
 
-Arrays exchange through DLPack, sharing storage where the device allows:
+    <span id="factory-methods-are-shortcuts" data-guide-forward="../02-meshes/#factory-methods-as-shortcuts"></span>
+    [Factory methods are shortcuts](02-meshes.md#factory-methods-as-shortcuts).
 
-```python
-from tack.interop.vtk import array_to_vtk, vtk_to_array
+    <span id="64-bit-ids" data-guide-forward="../02-meshes/#plan-ids-and-derived-connectivity"></span>
+    [64-bit ids](02-meshes.md#plan-ids-and-derived-connectivity).
 
-values = vtk_to_array(vtk_array)            # a tack.Array sharing VTK's storage
-vtk_array = array_to_vtk(values)
-```
+    <span id="algorithms" data-guide-forward="../04-filters/#select-cells-cut-cells-or-extract-a-surface"></span>
+    [Algorithms](04-filters.md#select-cells-cut-cells-or-extract-a-surface).
 
-VTK's tuples and components become an array shape: a `(1000, 3)` scalar array
-represents 1000 tuples of three components, and an array of `vec3` elements
-exports as 1000 tuples of three as well. `vtk_to_array(array,
-flatten=True)` and `array_to_vtk(values, n_components=3)` use the flat
-interleaved layout instead. This requires a VTK build exposing
-`vtkmodules.util.dlpack_support`. Not every VTK installation provides device
-arrays. See [Sharing arrays with other libraries](../users-guide/16-interoperability.md) for
-lifetime and read-only rules.
+    <span id="moving-fields-between-spaces" data-guide-forward="../create-fields/#projection-is-an-algorithmic-choice"></span>
+    [Moving fields between spaces](create-fields.md#projection-is-an-algorithmic-choice).
 
-### Level Zero
+    <span id="writing-your-own-algorithm" data-guide-forward="../05-mesh-kernels/#separate-an-algorithm-from-storage-layout"></span>
+    [Writing your own algorithm](05-mesh-kernels.md#separate-an-algorithm-from-storage-layout).
 
-Level Zero device pointers need a shared allocation context. With a compatible
-VTK/Viskores Kokkos-SYCL build, initialize before allocating arrays:
+    <span id="polyhedra-polygons-and-lines" data-guide-forward="../18-polyhedra/#a-field-is-linear-on-the-cells-pieces"></span>
+    [Polyhedra, polygons and lines](18-polyhedra.md#a-field-is-linear-on-the-cells-pieces).
 
-```python
-from tack.interop.vtk import init_level_zero
+    <span id="vtk-interop" data-guide-forward="../connect-simulation-data/#exchange-whole-datasets-with-vtk"></span>
+    [VTK interop](connect-simulation-data.md#exchange-whole-datasets-with-vtk).
 
-init_level_zero()     # instead of tack.set_default_device("level_zero")
-```
-
-The VTK DLPack support must provide `level_zero_handles()`. Fields created in a
-separate Tack context cannot be exchanged through this path. For another library,
-`tack.device("level_zero", external_context={"driver": ..., "device": ...,
-"context": ...})` makes a device in its context; Tack never destroys an adopted context.
+    <span id="level-zero" data-guide-forward="../connect-simulation-data/#level-zero"></span>
+    [Level Zero](connect-simulation-data.md#level-zero).

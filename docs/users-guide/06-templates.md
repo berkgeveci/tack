@@ -516,4 +516,4 @@ instance dimensions and arrays describe this particular simulation.
 The cell-set sketches above show a more generic use: pass different topology
 implementations to one kernel. They illustrate a protocol; `tack.dataset` is the built-in
 mesh API that follows it, with a template per shape and per topology (see
-[the Visualization Guide](../vis-guide/introduction.md#writing-your-own-algorithm)).
+[the Visualization Guide](../vis-guide/05-mesh-kernels.md#separate-an-algorithm-from-storage-layout)).

@@ -1,19 +1,10 @@
-# Sample and connect simulations
+# Sample and trace fields
 
-A useful visualization pipeline connects a simulation's fields to a scientific
-question and an output. Keep the data's space and lifetime explicit at each
-stage: a streamline needs an interpolated velocity, and a file writer needs
-host-accessible data in its format.
-
-```mermaid
-flowchart LR
-    A[Simulation or reader] --> B[Dataset and named fields]
-    B --> C[Derived fields and selections]
-    C --> D[Contour, slice or boundary]
-    D --> G
-    C --> F[Probe or integrate trajectories]
-    C --> G[Export a dataset]
-```
+Read a field at physical positions, estimate covered volume on an image, or
+follow a steady velocity. These operations use the field's chosen
+[reconstruction](03-fields-and-spaces.md), and produce different kinds of
+results. For buffers, readers and timestep updates, use
+[Connect Simulation Data](connect-simulation-data.md).
 
 ## Sample at physical positions
 
@@ -175,76 +166,6 @@ evidence of low speed. These functions sample one steady field. A pathline
 through a changing simulation requires a time-dependent integration strategy;
 repeating a steady streamline calculation does not by itself provide one.
 
-## Keep a simulation's state in the pipeline
-
-A common pattern is to retain topology and geometry, attach each working field
-once, update its values with simulation kernels, and run the analysis stages
-at selected timesteps. Intermediate datasets hold results of those stages;
-they are not a graph that recomputes automatically when an input changes.
-
-| What changed | What needs attention |
-|---|---|
-| Values in an existing simulation field | Re-run dependent filters, samples and summaries |
-| A field was replaced by a new buffer | Update the named `td.Field` attachment |
-| Point positions changed | Rebuild locators |
-| Connectivity changed | Construct a corresponding topology, spaces and associations |
-
-Prefer kernels that compute through `data.geometry.values` to downloading all
-positions just to form a derived field on the host. Keep readback at checkpoints
-or output boundaries. A named field holding simulation storage can share its
-allocation: follow the same ownership and synchronization rules as any other
-shared buffer.
-
-## Exchange whole datasets with VTK
-
-With `tack-vis` and VTK installed, `vtk_to_dataset` reads VTK image, rectilinear,
-structured, unstructured or polygonal (`vtkPolyData`) data. Point fields become H1, cell fields Constant; geometry
-and connectivity are converted into the dataset model. `dataset_to_vtk` creates
-the matching VTK dataset for visualization or writing to a file.
-
-For a contour, the VTK result is an unstructured triangle mesh. The following
-fragment assumes `surface` was produced by `td.contour`:
-
-```python
-from tack.interop.vtk import dataset_to_vtk
-from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter
-
-vtkXMLUnstructuredGridWriter(file_name="surface.vtu")(dataset_to_vtk(surface))
-```
-
-Tack uses VTK's pythonic API (VTK 9.7.1 or later) in its interop and
-examples: keyword constructors, properties, a writer or filter called on
-its input. A contour's cells come across as VTK's own implicit arrays: its
-cell types a `vtkConstantArray`, its offsets a `vtkAffineArray`.
-
-These whole-dataset conversions copy arrays and provide a straightforward
-host boundary. Zero-copy array exchange is a separate route using
-`array_to_vtk`, `vtk_to_array` and a DLPack-enabled VTK build. A standard VTK
-wheel sufficient for file I/O may not expose that route. Level Zero sharing
-also needs a shared allocation context. See [Sharing Arrays](../users-guide/16-interoperability.md).
-
-MFEM meshes and grid functions enter through `tack.interop.mfem`; supported
-spaces include H1 orders 1 and 2 and L2 orders 0 and 1 on every shape it
-maps, and H1 and L2 of any order with curved geometry of any order on quads,
-hexahedra, triangles, tetrahedra and wedges; `mfem_grid_function` gives a field back. Check the [interop reference](reference/dataset-api.md#interoperability)
-for signatures and the current mapping limits.
-
-## Measure the boundaries you actually use
-
-| Stage | Host interaction to account for |
-|---|---|
-| Construct from NumPy or a reader | Input upload and topology setup |
-| Derive faces, edges or a locator | First-use work and retained auxiliary storage |
-| Extract variable-size geometry | Count readbacks and output allocation |
-| Return a scalar summary | Device wait and result readback |
-| Probe or integrate | Locator setup, query upload; streamlines also read path lengths for output allocation |
-| Export to VTK or a file | Array copies and writer time |
-
-Queued GPU launches preserve Tack's program order, but host reads synchronize.
-Call `tack.sync()` before stopping a timer when the next operation is not a
-readback. Separate first-use compilation from repeated work, and include the
-output stage when reporting application time. See [Debugging and Timing](../users-guide/15-debugging-and-timing.md).
-
 ## Complete programs to run next
 
 ```bash
@@ -255,3 +176,18 @@ uv run python docs/examples/datasets.py --arch cpu --check
 The [analysis program](../examples/data_analysis.py) covers probing and flow,
 and the [dataset tour](../examples/datasets.py) connects mixed meshes,
 spaces, sets and streamlines.
+
+??? info "Related detailed sections"
+    These topics are developed in their own chapters.
+
+    <span id="sample-and-connect-simulations" data-guide-forward="#sample-and-trace-fields"></span>
+    [Sample and connect simulations](06-pipelines.md#sample-and-trace-fields).
+
+    <span id="keep-a-simulations-state-in-the-pipeline" data-guide-forward="../connect-simulation-data/#keep-a-simulations-state-in-the-pipeline"></span>
+    [Keep a simulation's state in the pipeline](connect-simulation-data.md#keep-a-simulations-state-in-the-pipeline).
+
+    <span id="exchange-whole-datasets-with-vtk" data-guide-forward="../connect-simulation-data/#exchange-whole-datasets-with-vtk"></span>
+    [Exchange whole datasets with VTK](connect-simulation-data.md#exchange-whole-datasets-with-vtk).
+
+    <span id="measure-the-boundaries-you-actually-use" data-guide-forward="../connect-simulation-data/#measure-the-boundaries-you-actually-use"></span>
+    [Measure the boundaries you actually use](connect-simulation-data.md#measure-the-boundaries-you-actually-use).

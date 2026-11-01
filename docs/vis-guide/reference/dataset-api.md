@@ -335,7 +335,7 @@ cells apart without changing the topology. A geometry of order 2 is curved.
 
 **Fields.** `data.fields` holds the fields by name and space: two fields may
 share a name in different spaces, as VTK's point and cell arrays do
-([Fields that share a name](../03-fields-and-spaces.md#fields-that-share-a-name)).
+([Fields that share a name](../create-fields.md#fields-that-share-a-name)).
 
 | | |
 |---|---|
@@ -357,7 +357,7 @@ of that name.
 string kept in unyt's canonical spelling (`"m/s"`, `"m*s**-1"` and `"m/s^1"`
 are one unit; `"1"` is `"dimensionless"`), or `None` for unknown. The spatial
 unit is the geometry's, `data.unit`, and `origin` is in it. Kernels never see
-a unit. See [Physical Units](../12-units.md).
+a unit. See [Coordinates, Units and Time](../12-units.md).
 
 | | |
 |---|---|
@@ -367,14 +367,14 @@ a unit. See [Physical Units](../12-units.md).
 | `convert(data, unit, field=None)` | a `Field` in `unit` (a new field in the same space), or a dataset with its geometry (origin scaled in double precision; images stay images) or a named field in `unit`, scaled and offset on the device |
 | `Statistics.unit`, `.weight_unit`, `.unit_of(name)` | the field's and the weights' units, and each statistic's (variances in the square, `sum` times the weights') |
 | `interpolate(..., unit=)` | the function's values' unit, which its code does not say |
-| quantities as parameters | lengths (`"10 cm"`, `(0.1, "m")`, a unyt or pint quantity) converted to the spatial unit, isovalues and thresholds to the field's, step sizes to the particles' time unit; a mass, density or velocity given as one quantity brings its unit (see [Physical Units](../12-units.md#quantities-as-parameters)) |
+| quantities as parameters | lengths (`"10 cm"`, `(0.1, "m")`, a unyt or pint quantity) converted to the spatial unit, isovalues and thresholds to the field's, step sizes to the particles' time unit; a mass, density or velocity given as one quantity brings its unit (see [Units and quantities reference](units.md#quantities-as-parameters)) |
 | `tack.dataset.units` | `canonical`, `conversion` (factor and offset), `same`, `compatible`, `common`, `derived` (products of powers), `delta` (degrees Celsius to kelvin for differences), `named` (`Pa*m**3` as `J`); the registry is unyt's plus `ftUS`, the US survey foot |
 
 Filters that keep a quantity keep its unit (everything `carry` takes along,
 `project`, `values_at_centers`, traces, `magnitude`, means, centres in the
 spatial unit); those that compute one derive it (gradients, products,
 measures, fluxes, statistics, deposits, SPH, particle times: the table in
-[Physical Units](../12-units.md#derived-units)). Positions in two known spatial units do not meet:
+[Units and quantities reference](units.md#derived-units)). Positions in two known spatial units do not meet:
 probe's points, pieces, AMR boxes and octree probes refuse them. The VTK
 interop maps each array's `UNITS_LABEL`.
 

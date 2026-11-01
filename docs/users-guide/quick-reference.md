@@ -59,8 +59,8 @@ them in order. A workgroup barrier cannot synchronize the whole grid. See
 
 | Need | Start with |
 |---|---|
-| Build discontinuous nodal coefficients | [Construct an L2 field](../vis-guide/03-fields-and-spaces.md#construct-an-l2-field) |
-| Initialize quadratic nodal values | [Construct a quadratic H1 field](../vis-guide/03-fields-and-spaces.md#construct-a-quadratic-h1-field) |
+| Build discontinuous nodal coefficients | [Construct an L2 field](../vis-guide/create-fields.md#construct-an-l2-field) |
+| Initialize quadratic nodal values | [Construct a quadratic H1 field](../vis-guide/create-fields.md#construct-a-quadratic-h1-field) |
 | Continuous, per-cell or discontinuous values | [Fields and Spaces](../vis-guide/03-fields-and-spaces.md) |
 | Select whole cells or cut a region | [Filter and Analyze](../vis-guide/04-filters.md) |
 | Work per cell or face without hard-coding connectivity | [Write Mesh Algorithms](../vis-guide/05-mesh-kernels.md) |

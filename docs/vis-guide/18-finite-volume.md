@@ -190,7 +190,7 @@ For partitioned data, perform the required ghost refresh before
 neighbor-dependent work and count owned entities once when reducing the
 whole mesh. See [Data in Pieces](07-partitioned.md). Coarse/fine T-junction
 faces are currently treated as boundary by face-based algorithms; their
-pairing is planned. The [cell/basis guide](16-cells-and-bases.md#reading-and-writing-other-formats)
+pairing is planned. The [cell/basis guide](reference/interop.md#reading-and-writing-other-formats)
 describes this limit. Additional choices about limiting, boundary conditions
 and conservative remapping belong to the numerical method.
 

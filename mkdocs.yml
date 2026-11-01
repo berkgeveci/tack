@@ -69,6 +69,7 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets:
       check_paths: true
+      dedent_subsections: true
   - pymdownx.tabbed:
       alternate_style: true
       slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
@@ -143,24 +144,36 @@ nav:
       - vis-guide/index.md
       - Introduction: vis-guide/introduction.md
       - The Data Model:
-          - Function Space Fundamentals: vis-guide/00-function-spaces.md
+          - Overview: vis-guide/data-model-overview.md
           - Understand a Dataset: vis-guide/01-datasets.md
-          - Finite-volume Data and Fluxes: vis-guide/18-finite-volume.md
+          - Topology and Geometry: vis-guide/topology-and-geometry.md
           - Fields and Spaces: vis-guide/03-fields-and-spaces.md
-          - Cell Types and Bases: vis-guide/16-cells-and-bases.md
-          - Polyhedra and Polygons: vis-guide/18-polyhedra.md
-          - Physical Units: vis-guide/12-units.md
+          - Coordinates, Units and Time: vis-guide/12-units.md
+          - Data Representations:
+              - Polyhedra, Polygons and Lines: vis-guide/18-polyhedra.md
+              - Point Clouds and Particles: vis-guide/point-cloud-model.md
+              - Collections and Partitions: vis-guide/collections-and-partitions.md
+              - AMR Hierarchies: vis-guide/10-amr.md
+              - Octrees: vis-guide/11-octrees.md
+          - Further Detail:
+              - Function Spaces and Higher-order Geometry: vis-guide/00-function-spaces.md
+              - Arrays, Storage and Layouts: vis-guide/field-storage.md
       - Work with Data:
-          - Build Meshes: vis-guide/02-meshes.md
-          - Point Clouds and Particles: vis-guide/08-point-clouds.md
-          - AMR Hierarchies: vis-guide/10-amr.md
-          - Octrees: vis-guide/11-octrees.md
-          - Filter and Analyze: vis-guide/04-filters.md
-          - "Views: How a Kernel Sees a Dataset": vis-guide/17-views.md
-          - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
-          - Write a Filter: vis-guide/15-write-a-filter.md
-          - Sample and Connect Simulations: vis-guide/06-pipelines.md
-          - Stream Steps: vis-guide/13-streaming.md
+          - Create and Connect:
+              - Build Meshes: vis-guide/02-meshes.md
+              - Create and Convert Fields: vis-guide/create-fields.md
+              - Connect Simulation Data: vis-guide/connect-simulation-data.md
+          - Analyze and Transform:
+              - Filter and Analyze: vis-guide/04-filters.md
+              - Sample and Trace Fields: vis-guide/06-pipelines.md
+              - Finite-volume Data and Fluxes: vis-guide/18-finite-volume.md
+              - Process Point Clouds and Particles: vis-guide/08-point-clouds.md
+              - Analyze Adaptive Data: vis-guide/adaptive-data.md
+              - Stream Steps: vis-guide/13-streaming.md
+          - Write Your Own Algorithms:
+              - "Views: How a Kernel Sees a Dataset": vis-guide/17-views.md
+              - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
+              - Write a Filter: vis-guide/15-write-a-filter.md
       - Data in Pieces:
           - Work with Data in Pieces: vis-guide/07-partitioned.md
           - Algorithms Across Pieces: vis-guide/09-pieces-across.md
@@ -172,9 +185,13 @@ nav:
           - Dataset API: vis-guide/reference/dataset-api.md
           - Algorithms: vis-guide/reference/algorithms.md
           - Data Model: vis-guide/reference/data-model.md
+          - Cell Types and Bases: vis-guide/16-cells-and-bases.md
+          - Dataset Interoperability: vis-guide/reference/interop.md
+          - Units and Quantities: vis-guide/reference/units.md
       - Design:
           - Dataset API: vis-guide/design/dataset-api.md
           - Polyhedra: vis-guide/design/polyhedra.md
+          - View Storage and Composition: vis-guide/design/view-composition.md
   - Design and Implementation:
       - design/index.md
       - Principles: design/principles.md
@@ -218,3 +235,6 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/berkgeveci/tack
+
+extra_javascript:
+  - assets/guide-section-links.js
