@@ -17,7 +17,7 @@ QUICKSTARTS = (
     "users-guide/01-getting-started", "users-guide/02-arrays-and-types",
     "users-guide/11-reductions-and-scans", "users-guide/12-execution-model",
     "users-guide/14-vectors-and-matrices", "users-guide/15-debugging-and-timing",
-    "users-guide/16-interoperability", "vis-guide/index",
+    "users-guide/16-interoperability", "vis-guide/introduction",
 )
 GUIDES = ("users-guide", "vis-guide")
 
@@ -35,7 +35,7 @@ def check_quickstarts():
             code = blocks[0]
             if "import tack" not in code or "tack.set_default_device" not in code:
                 raise RuntimeError(f"The first Python example in {page.name} is not standalone")
-            if name == "vis-guide/index":
+            if name == "vis-guide/introduction":
                 code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'
             script = Path(temporary) / f"{name.replace('/', '-')}.py"
             script.write_text(code, encoding="utf-8")
