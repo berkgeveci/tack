@@ -437,6 +437,126 @@ def _ghost_marks(attributes, share=False):
     return tack.array(np.ascontiguousarray(host, np.uint8), tack.u8)
 
 
+#: Per VTK 3D shape: three corners whose edges from corner 0 span a positive frame in
+#: a cell wound as VTK winds it, and the corner order that turns the cell inside out
+#: (its own inverse), checked against VTK's cells (``test_vtk_interop``).
+_ORIENTATION = {10: ((1, 2, 3), (0, 2, 1, 3)),                      # tetrahedron
+                12: ((1, 3, 4), (0, 3, 2, 1, 4, 7, 6, 5)),          # hexahedron
+                13: ((1, 2, 3), (0, 2, 1, 3, 5, 4)),                # wedge
+                14: ((1, 3, 4), (0, 3, 2, 1, 4))}                   # pyramid
+
+
+@tack.kernel
+def _suspect_frames(types, offsets, connectivity, positions, flags):
+    # The screen of _oriented_connectivity, a cell a thread: 1 where a tetrahedron's,
+    # hexahedron's, wedge's or pyramid's frame at corner 0 (_ORIENTATION's edges) is
+    # negative or nearly flat, which only the volume then decides.
+    for c in range(flags.shape[0]):
+        kind = types[c]
+        flag = 0
+        if kind == 10 or kind == 12 or kind == 13 or kind == 14:
+            s = offsets[c]
+            second = 2
+            third = 3
+            if kind == 12 or kind == 14:
+                second = 3
+                third = 4
+            origin = positions[connectivity[s]]
+            a = positions[connectivity[s + 1]] - origin
+            b = positions[connectivity[s + second]] - origin
+            d = positions[connectivity[s + third]] - origin
+            frame = a.dot(b.cross(d))
+            if frame < 1e-4 * tack.sqrt(a.dot(a) * b.dot(b) * d.dot(d)):
+                flag = 1
+        flags[c] = flag
+
+
+def _suspects(types, offsets, connectivity, x):
+    """``_suspect_frames`` over every cell, on the CPU device, reading VTK's arrays where
+    they lie: each cell's flag."""
+    import numpy as np
+
+    cpu = tack.device("cpu")
+
+    def wrapped(host, dtype, shape=None):
+        host = np.ascontiguousarray(host)
+        return tack.array_from_ptr(host, shape or host.shape, dtype, device=cpu)
+
+    from tack.lang.types import from_numpy_dtype
+
+    flags = tack.empty((types.size,), tack.u8, device=cpu)
+    _suspect_frames(wrapped(types.astype(np.uint8, copy=False), tack.u8),
+                    wrapped(offsets, tack.i64),
+                    wrapped(connectivity, from_numpy_dtype(connectivity.dtype)),
+                    wrapped(x, tack.vec(3, from_numpy_dtype(x.dtype)), (x.shape[0],)), flags)
+    return flags.numpy().astype(bool)
+
+
+def _oriented_connectivity(grid, orient, cells=None):
+    """The grid's connectivity with its inside-out cells turned outward, or ``None``
+    where there is nothing to change. A cell is inside out when its corners are in
+    the reverse of VTK's order for its shape (as some converters write prisms): the
+    determinant at corner 0 is negative -- cheap, over every tetrahedron,
+    hexahedron, wedge and pyramid -- and so is its volume summed over its faces,
+    computed for those alone; a tangled cell, negative at some corners but not
+    inside out, is left. Without ``orient`` they are counted in a warning that
+    names ``orient=True``, and nothing changes. ``cells`` (ids) limits the check to
+    those cells."""
+    import numpy as np
+
+    chosen = (np.arange(grid.number_of_cells, dtype=np.int64) if cells is None
+              else np.asarray(cells, np.int64))
+    types = np.asarray(grid.cell_types)[chosen] if chosen.size else np.zeros(0, np.uint8)
+    kinds = [k for k in _ORIENTATION if (types == k).any()] if types.size else []
+    if not kinds:
+        return None
+    stored = grid.GetCells()
+    offsets = np.asarray(stored.offsets_array).astype(np.int64)
+    connectivity = np.asarray(stored.connectivity_array)
+    x = _vtk_points(grid)
+    if x.dtype not in (np.float32, np.float64):
+        x = x.astype(np.float64)
+    flagged = _suspects(np.asarray(grid.cell_types), offsets, connectivity, x)
+    inverted = {}
+    for kind in kinds:
+        cells = chosen[types == kind]
+        corners = int(offsets[cells[0] + 1] - offsets[cells[0]])
+        suspect = cells[flagged[cells]]
+        if not suspect.size:
+            continue
+        rows = connectivity[offsets[suspect][:, None] + np.arange(corners)]
+        corner = x[rows].astype(np.float64)                         # (cells, corners, 3)
+        centre = corner.mean(axis=1)
+        volume = np.zeros(suspect.size)
+        for ring in _face_tables(kind, corners, int(suspect[0])):
+            ring_x = corner[:, ring] - centre[:, None]
+            middle = ring_x.mean(axis=1)
+            for j in range(len(ring)):
+                volume += np.einsum("ij,ij->i", middle,
+                                    np.cross(ring_x[:, j], ring_x[:, (j + 1) % len(ring)]))
+        inside_out = suspect[volume < 0]
+        if inside_out.size:
+            inverted[kind] = (inside_out, corners)
+    if not inverted:
+        return None
+    count = sum(cells.size for cells, _ in inverted.values())
+    if not orient:
+        import warnings
+
+        names = {10: "tetrahedra", 12: "hexahedra", 13: "wedges", 14: "pyramids"}
+        listed = ", ".join(f"{cells.size} {names[k]}" for k, (cells, _) in inverted.items())
+        warnings.warn(f"{count} cells are inside out ({listed}): their corners are in the "
+                      "reverse of VTK's order, so their volumes are negative and their faces "
+                      "point inward; vtk_to_dataset(..., orient=True) turns them outward",
+                      stacklevel=4)
+        return None
+    repaired = np.array(connectivity)
+    for kind, (cells, corners) in inverted.items():
+        rows = offsets[cells][:, None] + np.arange(corners)
+        repaired[rows] = repaired[rows][:, list(_ORIENTATION[kind][1])]
+    return repaired
+
+
 #: Cells whose face lists are placed at once: bounds the index arrays.
 _CELLS_AT_ONCE = 1 << 22
 
@@ -467,7 +587,9 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
     offsets = np.asarray(stored.offsets_array).astype(np.int64)
     # Point ids in 32 bits where they fit: the face lists are the largest arrays.
     ids = np.int32 if grid.number_of_points < 2**31 else np.int64
-    connectivity = np.asarray(stored.connectivity_array)
+    connectivity = _oriented_connectivity(grid, orient, cells=chosen)
+    if connectivity is None:
+        connectivity = np.asarray(stored.connectivity_array)
     faces_of = np.zeros(n, np.int64)                       # each cell's ring count
     listed_parts = []                                      # polyhedra: (cells, count, sizes, points)
     fixed_parts = []                                       # one shape: (cells, face sizes, block)
@@ -515,9 +637,14 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
             ring_points[starts[i:i + _CELLS_AT_ONCE, None] + width] = block[i:i + _CELLS_AT_ONCE]
     del fixed_parts, listed_parts
     try:
-        if not orient:
+        try:
+            # With orient, the shaped cells are outward already: the faces usually agree,
+            # and the cell-by-cell walk below is needed only where polyhedra do not.
             return PolyhedralTopology._from_rings(cell_offsets, ring_offsets, ring_points,
                                                   grid.number_of_points, id_dtype=id_dtype)
+        except ValueError as error:
+            if not orient or "wound the same way" not in str(error):
+                raise
         listed = [[ring_points[ring_offsets[r]:ring_offsets[r + 1]].tolist()
                    for r in range(cell_offsets[c], cell_offsets[c + 1])] for c in range(n)]
         return PolyhedralTopology.from_cell_faces(listed, grid.number_of_points,
@@ -682,8 +809,14 @@ def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id
     an ``UnstructuredTopology``, one with larger polygons a ``PolygonalTopology``,
     lines a ``PolylineTopology``, and polylines or polygons beside other cells
     are refused.
-    With ``orient``, inconsistently wound polyhedra are repaired first
-    (``PolyhedralTopology.from_cell_faces``); without it they are refused.
+    Tetrahedra, hexahedra, wedges and pyramids whose corners are in the reverse of
+    VTK's order (inside out: a negative volume, faces pointing inward, as some
+    converters write prisms) are found on every read, by a kernel, and named in a
+    warning; with ``orient`` they are turned outward (``_oriented_connectivity``).
+    A tangled cell, negative at some corners but not inside out, is left.
+    With ``orient``, inconsistently wound polyhedra are repaired too
+    (``PolyhedralTopology.from_cell_faces``), where faces still disagree once the
+    shaped cells are outward; without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
     ``i32`` unless the grid is too large for it (``tack.dataset.ids``).
 
@@ -1118,6 +1251,9 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
                                   for t in unknown)
                 raise ValueError(f"VTK cell types {unknown} ({names}) are not shapes Tack "
                                  "has")
+            repaired = _oriented_connectivity(grid, orient)
+            if repaired is not None:
+                connectivity = repaired                     # turned outward: VTK's own stays
             if 12 in present:
                 collapsed = _collapsed_hexahedra(types, offsets, connectivity)
                 if collapsed is not None:

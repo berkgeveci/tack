@@ -128,7 +128,13 @@ both is planned). For a large mesh that mixes them, read it with
 pieces over the same points, the shaped cells as themselves and the polyhedra
 as polyhedra, each point owned by one of them so reductions count it once. A
 CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
-(with `copy=False`); as polyhedra throughout it would take tens of gigabytes.
+(with `copy=False`); read as polyhedra throughout, 27 seconds and 19 GB.
+
+Cells whose corners are in the reverse of VTK's order -- inside out, with negative
+volumes and inward faces, as some converters write prisms -- are found on every
+read and named in a warning; `vtk_to_dataset(grid, orient=True)` turns them
+outward. Read as polyhedra, such cells make the faces they share refused, so a
+mesh with them needs `orient=True` there.
 Higher-order cells read as `H1` fields of the grid's largest order, in any mix
 of shapes, dimensions and orders:
 
