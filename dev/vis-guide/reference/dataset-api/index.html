@@ -1824,6 +1824,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../18-polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra and Polygons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../12-units/" class="md-nav__link">
         
   
@@ -4876,12 +4904,12 @@ and <code>Constant</code>, as source and as target.</p>
 </tr>
 <tr>
 <td><code>Constant</code>, order-0 <code>L2</code></td>
-<td>the mean of the cell's corner values (vtkPointDataToCellData)</td>
+<td>the source's average over the cell: its integral over the measure (<code>average="nodes"</code>: the mean of its nodes, as vtkPointDataToCellData)</td>
 <td>the source is constant in the cell</td>
 </tr>
 <tr>
 <td>order-1 <code>L2</code> (or an order per cell)</td>
-<td>the source's value at each corner (the corner mean at order 0)</td>
+<td>the source's value at each corner (the cell's average at order 0)</td>
 <td>the source's order is at most 1</td>
 </tr>
 <tr>

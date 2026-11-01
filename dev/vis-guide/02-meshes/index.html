@@ -1824,6 +1824,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../18-polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra and Polygons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../12-units/" class="md-nav__link">
         
   
@@ -4247,10 +4275,11 @@ for the distinction between corner ids and field DOFs.</p>
 dataset. All planar examples still use 3-vector coordinates.</p>
 <p>These choices affect algorithm support. A hexahedron has a reference element
 for evaluating shape functions and gradients. An arbitrary polyhedron has
-faces and points, but no parametric reference element. It can be contoured,
-thresholded or measured, while locating particles and computing basis gradients
-currently require shape-based cells. The <a href="../04-filters/">filter chapter</a> gives
-a task-oriented support table.</p>
+faces and points, but no parametric reference element: its fields are linear
+on the sub-tetrahedra Tack cuts it into, so it holds point and cell values
+only, and must be star-shaped from its points' mean to be probed
+(<a href="../18-polyhedra/">Polyhedra and Polygons</a>). The <a href="../04-filters/">filter chapter</a>
+gives a task-oriented support table.</p>
 <h2 id="image-rectilinear-and-curvilinear-data">Image, rectilinear and curvilinear data<a class="headerlink" href="#image-rectilinear-and-curvilinear-data" title="Permanent link">&para;</a></h2>
 <p>Tack uses <strong><code>StructuredTopology</code> for both image data and rectilinear grids</strong>.
 It stores the logical point dimensions and derives a cell's corners from

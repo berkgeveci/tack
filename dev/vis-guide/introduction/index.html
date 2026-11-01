@@ -2048,6 +2048,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../18-polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra and Polygons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../12-units/" class="md-nav__link">
         
   
@@ -4514,14 +4542,15 @@ pieces each cell was cut into. A kept cell keeps its values.</p>
 mesh: <code>td.H1(data)</code> for point values, <code>td.Constant(data)</code> for one value per
 cell, <code>td.L2(data)</code> for each cell's own copies.</p>
 <div class="highlight"><pre><span></span><code>    <span class="n">on_points</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="s2">&quot;material&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">mesh</span><span class="p">))</span>       <span class="c1"># Constant -&gt; H1: averaged</span>
-    <span class="n">on_cells</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">mesh</span><span class="p">))</span>           <span class="c1"># H1 -&gt; Constant: corner means</span>
+    <span class="n">on_cells</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">mesh</span><span class="p">))</span>           <span class="c1"># H1 -&gt; Constant: cell averages</span>
     <span class="n">dg</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">mesh</span><span class="p">))</span>     <span class="c1"># each cell&#39;s own corner values</span>
     <span class="n">slope</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">gradients</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">)</span>             <span class="c1"># a 3-vector per cell</span>
 </code></pre></div>
 <p>Projecting into a space that can hold the field exactly gives it back
 exactly: a linear point field into <code>L2</code>, or into order-2 <code>H1</code>. Otherwise
-<code>project</code> averages the way VTK does: a point takes the mean of the cells
-around it, and a cell the mean of its corners.</p>
+<code>project</code> averages: a point takes the mean of the cells around it, as VTK
+does, and a cell the field's average over the cell (<code>average="nodes"</code> gives
+VTK's mean of the cell's nodes instead).</p>
 <h2 id="sets">Sets<a class="headerlink" href="#sets" title="Permanent link">&para;</a></h2>
 <p>A <code>Set</code> selects points, cells or faces. Builders such as <code>boundary_faces</code>
 return one; name it in <code>data.sets</code> to keep it. Filters carry sets the way

@@ -1824,6 +1824,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../18-polyhedra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Polyhedra and Polygons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../12-units/" class="md-nav__link">
         
   
@@ -4092,8 +4120,10 @@ It can read a stored value or evaluate an implicit array.</p>
 with further grouping for varying space order or size buckets. <code>NUM_POINTS</code>
 is consequently a constant for this kernel specialization. It is eight for
 a hex and five for a pyramid; the source stays the same.</p>
-<p>This corner mean is a teaching algorithm. It is not a general quadrature
-rule for integrating a field over an arbitrary cell.</p>
+<p>This corner mean is a teaching algorithm. It is not a cell's average,
+except for a linear field on a tetrahedron or an image's box; <code>td.project</code>
+into <code>td.Constant(data)</code> gives the average, by quadrature through each cell's
+map (<a href="../03-fields-and-spaces/#projection-is-an-algorithmic-choice">Projection is an algorithmic choice</a>).</p>
 <h2 id="use-global-ids-for-global-output">Use global ids for global output<a class="headerlink" href="#use-global-ids-for-global-output" title="Permanent link">&para;</a></h2>
 <p>The loop variable <code>c</code> belongs to its view. On structured cells it can represent
 several indices rather than an ordinary integer. Pass it to view methods;
