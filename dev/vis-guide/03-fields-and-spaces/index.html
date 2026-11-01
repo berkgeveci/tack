@@ -1608,7 +1608,7 @@
   <span class="md-ellipsis">
     
   
-    Visualization and Tack
+    Introduction
   
 
     
@@ -1897,10 +1897,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#finding-a-value-in-code" class="md-nav__link">
+  <a href="#every-value-of-a-cell-at-any-order" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Finding a value in code
+        Every value of a cell, at any order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#finding-values-on-the-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding values on the host
       
     </span>
   </a>
@@ -4224,10 +4235,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#finding-a-value-in-code" class="md-nav__link">
+  <a href="#every-value-of-a-cell-at-any-order" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Finding a value in code
+        Every value of a cell, at any order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#finding-values-on-the-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding values on the host
       
     </span>
   </a>
@@ -4824,25 +4846,64 @@ row per cell, each of its lattice nodes' value index.</p>
 value 1's, and <code>numpy()</code> gives <code>(space.size, 3)</code>. <code>layout="soa"</code> keeps each
 component in an array of its own instead
 (<a href="../../users-guide/02-arrays-and-types/">Arrays and Types</a>).</p>
-<h3 id="finding-a-value-in-code">Finding a value in code<a class="headerlink" href="#finding-a-value-in-code" title="Permanent link">&para;</a></h3>
-<p>In a kernel, a field's view finds the values for you: <code>corner_value(c, j)</code>
-is cell <code>c</code>'s value at its corner <code>j</code>, and <code>value(c, pc)</code> the field at
-parametric coordinates <code>pc</code>. Every <code>H1</code>, <code>L2</code> and <code>Constant</code> view also numbers
-the cell's own nodes: <code>NODES</code> of them, node <code>k</code> at <code>node_parametric(k)</code>, its
-value <code>dof(c, k)</code>, stored at <code>dof_index(c, k)</code>
-(<a href="../05-mesh-kernels/#work-at-a-fields-nodes">Work at a field's nodes</a>). At
-order 1 the nodes are the corners, and at order 0 one node at the cell's
-centre. An <code>H1</code> order-2 cell's nodes are numbered as VTK's quadratic cells
-do -- corners, then edges, then faces and the centre -- and every other order
-on the lattice above. A kernel never computes these indices itself
-(<a href="../05-mesh-kernels/">Write Mesh Algorithms</a>). On the host, <code>space.offsets</code>
-gives where each cell's <code>L2</code> values start; <code>space.indices()</code> and
-<code>space.blocks(values)</code> give them as one row per cell, so they refuse cells
+<h3 id="every-value-of-a-cell-at-any-order">Every value of a cell, at any order<a class="headerlink" href="#every-value-of-a-cell-at-any-order" title="Permanent link">&para;</a></h3>
+<p>A field's view numbers its cell's own values, whatever the space, order or
+shape: <code>NODES</code> of them (a constant, so a loop over them unrolls), node <code>k</code> at
+parametric coordinates <code>node_parametric(k)</code>, its value <code>dof(c, k)</code>, stored at
+<code>dof_index(c, k)</code> in the field's array. At order 1 the nodes are the corners,
+at order 0 one node at the cell's centre; an <code>H1</code> order-2 cell numbers them as
+VTK's quadratic cells do -- corners, then edges, then faces and the centre --
+and every other order on the lattice above. So one kernel reads every value
+of a cell on any mesh, here each cell's largest:</p>
+<!-- tack-check: cell-nodes -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">td</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">largest_value</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>                                  <span class="c1"># every shape, space and order</span>
+        <span class="n">top</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">dof</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">NODES</span><span class="p">):</span>                  <span class="c1"># the cell&#39;s own values</span>
+            <span class="n">top</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">top</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">dof</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">c</span><span class="p">)]</span> <span class="o">=</span> <span class="n">top</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">height</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mf">3.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+
+<span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">uniform_grid</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">spacing</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+<span class="n">centres</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">height</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">)))</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">space</span> <span class="ow">in</span> <span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">H1</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span> <span class="n">td</span><span class="o">.</span><span class="n">L2</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">data</span><span class="p">)):</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">f32</span><span class="p">)</span>
+    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">largest_value</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">height</span><span class="p">,</span> <span class="n">space</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+    <span class="c1"># A linear field is largest at a cell&#39;s far corner: its centre value plus</span>
+    <span class="c1"># (1 + 2 + 3) / 4; a Constant cell&#39;s one node is its centre.</span>
+    <span class="n">expected</span> <span class="o">=</span> <span class="n">centres</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">td</span><span class="o">.</span><span class="n">Constant</span><span class="p">)</span> <span class="k">else</span> <span class="n">centres</span> <span class="o">+</span> <span class="mf">1.5</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_allclose</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">expected</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;largest values:&quot;</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[:</span><span class="mi">3</span><span class="p">])</span>
+</code></pre></div>
+<p>The same view gives values elsewhere in the cell: <code>corner_value(c, j)</code> at its
+corner <code>j</code>, <code>value(c, pc)</code> at parametric coordinates <code>pc</code>. Reading another
+field at these nodes, <code>p.value(c, q.node_parametric(k))</code>, computes a field of
+one space from fields of others without projecting first:
+<a href="../05-mesh-kernels/#work-at-a-fields-nodes">Work at a field's nodes</a> adds an
+order-1 field to an order-2 one that way. A kernel never computes storage
+indices itself (<a href="../05-mesh-kernels/">Write Mesh Algorithms</a>).</p>
+<h3 id="finding-values-on-the-host">Finding values on the host<a class="headerlink" href="#finding-values-on-the-host" title="Permanent link">&para;</a></h3>
+<p><code>space.offsets</code> gives where each cell's <code>L2</code> values start; <code>space.indices()</code>
+and <code>space.blocks(values)</code> give them as one row per cell, so they refuse cells
 holding different numbers of values (a mixed mesh, an order per cell): read
-<code>space.offsets</code> there.
-<code>td.interpolate</code> fills any space from a function of position. Derived edge and
-face ids are stable for a topology, but not across topologies: match values
-between meshes by position or global id, not by edge or face number.</p>
+<code>space.offsets</code> there. <code>td.interpolate</code> fills any space from a function of
+position. Derived edge and face ids are stable for a topology, but not across
+topologies: match values between meshes by position or global id, not by
+edge or face number.</p>
 <h2 id="construct-an-l2-field">Construct an L2 field<a class="headerlink" href="#construct-an-l2-field" title="Permanent link">&para;</a></h2>
 <p>The <a href="../../examples/data_spaces.py">complete independent-spaces example</a> builds
 L2 pressure and quadratic H1 temperature on the same two hexes. This section
