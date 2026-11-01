@@ -200,3 +200,27 @@ def test_surfaces_have_none(backend):
     data = td.uniform_grid((5, 4))
     data.fields["u"] = td.interpolate(data, _p2, td.H1(data, order=2))
     assert not _run(data, _hessians).any()
+
+
+@tack.kernel
+def _jets(cells, u, out):
+    for c in cells:
+        pc = cells.parametric_center()
+        v, g, h = td.world_jet(cells, u, c, pc)
+        e = cells.entity_id(c)
+        out[13 * e] = v - u.value(c, pc)
+        for a in range(3):
+            out[13 * e + 1 + a] = g[a] - _world_gradient(cells, u, c, pc)[a]
+            for b in range(3):
+                out[13 * e + 4 + 3 * a + b] = h[a, b]
+
+
+@pytest.mark.parametrize(("make", "space"), [(c[1], c[2]) for c in EXACT[::2]], ids=[c[0] for c in EXACT[::2]])
+def test_jets_are_the_value_gradient_and_hessian(f64_backend, make, space):
+    data = make()
+    data.fields["u"] = td.interpolate(data, _p2, space(data))
+    out = tack.zeros((13 * data.num_cells,), data.dtype)
+    td.for_each(_jets, data, "cells", data.fields["u"], out)
+    out = out.numpy().reshape(-1, 13)
+    np.testing.assert_allclose(out[:, :4], 0.0, atol=1e-10)
+    np.testing.assert_allclose(out[:, 4:].reshape(-1, 3, 3), _run(data, _hessians), atol=1e-10)

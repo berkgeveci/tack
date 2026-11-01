@@ -1324,6 +1324,24 @@ class _Interpolated:
         return h
 
     @tack.func
+    def parametric_jet(self, c, pc):
+        """The value, parametric gradient and parametric Hessian at ``pc``, from one pass over
+        the cell's values (each read once), relative to the first as the gradient's."""
+        value = pc[0] - pc[0]
+        grad = tack.vec3(0.0, 0.0, 0.0)
+        hess = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        first = value
+        for j in range(self.NUM_POINTS):
+            v = self.dof(c, j)
+            if j == 0:
+                first = v
+            d = v - first
+            value += d * self.shape_function(j, pc)
+            grad += d * self.shape_gradient(j, pc)
+            hess += d * self.shape_hessian(j, pc)
+        return first + value, grad, hess
+
+    @tack.func
     def corner_value(self, i, j):
         """The value at the cell's corner ``j``: at order 1 the values are the
         corners', so it is value ``j`` itself."""
@@ -1511,6 +1529,24 @@ class _H1Order2Field(_QuadraticDofs, _Order2Range, _Interpolated):
             h += (self.dof(c, k) - u0) * self.quadratic_hessian(k, pc)
         return h
 
+    @tack.func
+    def parametric_jet(self, c, pc):
+        """The value, parametric gradient and parametric Hessian at ``pc``, from one pass over
+        the cell's values (each read once), relative to the first as the gradient's."""
+        value = pc[0] - pc[0]
+        grad = tack.vec3(0.0, 0.0, 0.0)
+        hess = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        first = value
+        for k in range(self.NUM_QUADRATIC):
+            v = self.dof(c, k)
+            if k == 0:
+                first = v
+            d = v - first
+            value += d * self.quadratic_function(k, pc)
+            grad += d * self.quadratic_gradient(k, pc)
+            hess += d * self.quadratic_hessian(k, pc)
+        return first + value, grad, hess
+
 
 class _SerendipityField(_H1Order2Field):
     """H1, order 2, serendipity: read as the order-2 field whose face and interior
@@ -1571,6 +1607,10 @@ class _L2Order0Field:
     @tack.func
     def parametric_hessian(self, i, pc):
         return tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+
+    @tack.func
+    def parametric_jet(self, i, pc):
+        return self.value(i, pc), tack.vec3(0.0, 0.0, 0.0), tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 
     @tack.func
     def value_range(self, i):
@@ -1924,6 +1964,34 @@ class _TensorBasis(_TensorRange, _TensorPolynomials):
         for n in range(2, (self.ORDER + 1) ** self.DIMENSION):
             h += (self.dof(c, n) - first) * self.node_hessian(n, lx, ly, lz, dx, dy, dz, sx, sy, sz)
         return h
+
+    @tack.func
+    def parametric_jet(self, c, pc):
+        """The value, parametric gradient and parametric Hessian at ``pc``, from one pass over
+        the cell's values (each read once), relative to the first as the gradient's."""
+        lx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        ly = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        lz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        dz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        sx = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        sy = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        sz = tack.local_array_like(self.basis_nodes, self.ORDER + 1)
+        self.tensor_factors(pc, lx, ly, lz, dx, dy, dz, sx, sy, sz)
+        value = pc[0] - pc[0]
+        grad = tack.vec3(0.0, 0.0, 0.0)
+        hess = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        first = value
+        for n in range((self.ORDER + 1) ** self.DIMENSION):
+            v = self.dof(c, n)
+            if n == 0:
+                first = v
+            d = v - first
+            value += d * self.node_weight(n, lx, ly, lz)
+            grad += d * self.node_gradient(n, lx, ly, lz, dx, dy, dz)
+            hess += d * self.node_hessian(n, lx, ly, lz, dx, dy, dz, sx, sy, sz)
+        return first + value, grad, hess
 
 
 class _TensorDofs:
@@ -2386,6 +2454,28 @@ class _SimplexBasis(_SimplexPolynomials):
         return out
 
     @tack.func
+    def parametric_jet(self, c, pc):
+        """The value, parametric gradient and parametric Hessian at ``pc``, from one pass over
+        the cell's values (each read once), relative to the first as the gradient's."""
+        f = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        g = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        h = tack.local_array_like(self.simplex_bernstein, (self.DIMENSION + 1) * (self.ORDER + 1))
+        self.simplex_factors2(pc, f, g, h)
+        value = pc[0] - pc[0]
+        grad = tack.vec3(0.0, 0.0, 0.0)
+        hess = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        first = value
+        for n in range(self.NODES):
+            v = self.dof(c, n)
+            if n == 0:
+                first = v
+            d = v - first
+            value += d * self.simplex_weight(n, f)
+            grad += d * self.simplex_gradient(n, f, g)
+            hess += d * self.simplex_hessian(n, f, g, h)
+        return first + value, grad, hess
+
+    @tack.func
     def corner_value(self, c, j):
         return self.dof(c, self.corner_node[j])
 
@@ -2760,6 +2850,10 @@ class _WedgeBasis(_WedgePolynomials):
         return 0.5 * (d + d.transpose())
 
     @tack.func
+    def parametric_jet(self, c, pc):
+        return self.value(c, pc), self.parametric_gradient(c, pc), self.parametric_hessian(c, pc)
+
+    @tack.func
     def corner_value(self, c, j):
         return self.dof(c, self.corner_node[j])
 
@@ -3097,6 +3191,10 @@ class _CellValue:
     @tack.func
     def parametric_hessian(self, i, pc):
         return tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+
+    @tack.func
+    def parametric_jet(self, i, pc):
+        return self.value(i, pc), tack.vec3(0.0, 0.0, 0.0), tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 
     @tack.func
     def value_range(self, i):

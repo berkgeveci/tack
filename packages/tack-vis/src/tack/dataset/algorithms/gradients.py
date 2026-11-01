@@ -47,12 +47,24 @@ def world_hessian(cells, u, c, pc):
     shape's order 1 and 2 and on tensor shapes and simplices of any order;
     fourth-order differences of the parametric gradient on wedges above order 2.
     Zero on surfaces, lines and vertices."""
+    _, _, h = world_jet(cells, u, c, pc)
+    return h
+
+
+@tack.func
+def world_jet(cells, u, c, pc):
+    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of solid
+    cell `c`, from the field view's `parametric_jet`, one pass over the cell's values:
+    what a kernel needing several of them reads once. As `world_hessian`; on surfaces,
+    lines and vertices the gradient and Hessian are zero."""
+    v, pg, ph = u.parametric_jet(c, pc)
+    g = tack.vec3(0.0, 0.0, 0.0)
     h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
     if cells.DIMENSION == 3:
         inverse = cells.geometry_jacobian(c, pc).inverse()
-        g = inverse.transpose() @ u.parametric_gradient(c, pc)
-        h = inverse.transpose() @ (u.parametric_hessian(c, pc) - cells.geometry_curvature(c, pc, g)) @ inverse
-    return h
+        g = inverse.transpose() @ pg
+        h = inverse.transpose() @ (ph - cells.geometry_curvature(c, pc, g)) @ inverse
+    return v, g, h
 
 
 @tack.kernel

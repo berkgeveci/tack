@@ -9,3 +9,9 @@
   and from the bases at any order on tensor shapes (Lagrange and Bernstein)
   and simplices (equispaced and Bernstein); wedges above order 2 difference
   their parametric gradients.
+- `world_jet(cells, u, c, pc)`: a scalar field's value, world gradient and
+  world Hessian together, from the field views' new `parametric_jet`, which
+  reads each of the cell's values once. Each read of an `H1` value of order 3
+  or more resolves where its node is stored, about two thousand lines of
+  generated CUDA, so a kernel that needs several of the three compiles that
+  once.
