@@ -222,8 +222,8 @@ and `Constant`, as source and as target.
 | Into | Each value is | Exact when |
 |---|---|---|
 | `H1` (order 1 or 2) | the mean, over the cells around the node, of the source evaluated there | the source is continuous: a lower order comes across exactly |
-| `Constant`, order-0 `L2` | the mean of the cell's corner values (vtkPointDataToCellData) | the source is constant in the cell |
-| order-1 `L2` (or an order per cell) | the source's value at each corner (the corner mean at order 0) | the source's order is at most 1 |
+| `Constant`, order-0 `L2` | the source's average over the cell: its integral over the measure (`average="nodes"`: the mean of its nodes, as vtkPointDataToCellData) | the source is constant in the cell |
+| order-1 `L2` (or an order per cell) | the source's value at each corner (the cell's average at order 0) | the source's order is at most 1 |
 | `SideTraces` | each side's value from its cell | always |
 
 Where cells disagree -- cell data, DG data -- the `H1` mean is VTK's

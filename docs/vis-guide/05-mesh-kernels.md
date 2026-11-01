@@ -31,8 +31,10 @@ with further grouping for varying space order or size buckets. `NUM_POINTS`
 is consequently a constant for this kernel specialization. It is eight for
 a hex and five for a pyramid; the source stays the same.
 
-This corner mean is a teaching algorithm. It is not a general quadrature
-rule for integrating a field over an arbitrary cell.
+This corner mean is a teaching algorithm. It is not a cell's average,
+except for a linear field on a tetrahedron or an image's box; `td.project`
+into `td.Constant(data)` gives the average, by quadrature through each cell's
+map ([Projection is an algorithmic choice](03-fields-and-spaces.md#projection-is-an-algorithmic-choice)).
 
 ## Use global ids for global output
 

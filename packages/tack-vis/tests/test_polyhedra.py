@@ -966,7 +966,8 @@ def test_averages_on_voronoi_columns_are_vtks(backend):
     grid.cell_data["c"] = c.astype(np.float32)
     to_cells = vtkPointDataToCellData()(grid)
     to_points = vtkCellDataToPointData()(grid)
-    ours = td.algorithms.project(data, td.Field(td.H1(data), _scalars(p)), td.Constant(data))
+    ours = td.algorithms.project(data, td.Field(td.H1(data), _scalars(p)), td.Constant(data),
+                                 average="nodes")
     np.testing.assert_allclose(ours.values.numpy(),
                                np.asarray(to_cells.cell_data["p"]),
                                rtol=1e-5, atol=1e-6)

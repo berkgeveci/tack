@@ -215,12 +215,19 @@ def _tables(data, shape, n):
     return p, w
 
 
-def _points_per_axis(data, field_order):
+_TENSOR = (shapes.Line, shapes.Pixel, shapes.Quad, shapes.Voxel, shapes.Hexahedron)
+
+
+def _points_per_axis(data, field_order, shape=None):
     """Enough Gauss points an axis for a field of ``field_order`` on ``data``'s
     geometry: the integrand's degree along an axis is at most the field's plus the
     measure element's (the dimension times the geometry's order), and a collapsed
-    rule loses one more an axis."""
+    rule loses one more an axis. Given a ``shape`` that is a tensor product (no
+    collapse), the fewest that are exact there: the measure element's degree along
+    an axis is one less, and a rule of n points is exact to degree 2 n - 1."""
     g = _order(data.geometry.space)
+    if shape in _TENSOR:
+        return max(1, (field_order + shape.DIMENSION * g + 1) // 2)
     dimension = data.topology.dimension
     return max(1, (field_order + dimension * g + dimension) // 2 + 1)
 

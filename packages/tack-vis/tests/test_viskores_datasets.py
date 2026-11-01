@@ -311,7 +311,7 @@ def test_filters_are_vtks(name):
     np.testing.assert_allclose(td.cell_centers(data).values.numpy(),
                                [centers.GetPoint(i) for i in range(centers.number_of_points)],
                                rtol=1e-6, atol=1e-12)                # VTK's are f32
-    np.testing.assert_allclose(td.project(data, "s", td.Constant(data)).values.numpy(),
+    np.testing.assert_allclose(td.project(data, "s", td.Constant(data), average="nodes").values.numpy(),
                                np.asarray(vtkPointDataToCellData()(vtk_data).cell_data["s"]),
                                rtol=1e-12)
     np.testing.assert_allclose(td.project(data, "c", td.H1(data)).values.numpy(),

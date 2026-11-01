@@ -50,7 +50,7 @@ def run(arch="cpu", check=False):
 
     # --8<-- [start:spaces]
     on_points = td.project(mesh, "material", td.H1(mesh))       # Constant -> H1: averaged
-    on_cells = td.project(mesh, "height", td.Constant(mesh))           # H1 -> Constant: corner means
+    on_cells = td.project(mesh, "height", td.Constant(mesh))           # H1 -> Constant: cell averages
     dg = td.project(mesh, "height", td.L2(mesh))     # each cell's own corner values
     slope = td.gradients(mesh, "height")             # a 3-vector per cell
     # --8<-- [end:spaces]
@@ -120,7 +120,7 @@ def run(arch="cpu", check=False):
         np.testing.assert_allclose(surface.fields["RTData"].values.numpy(), 157.0,
                                    atol=1e-3)
         np.testing.assert_allclose(on_points.values.numpy()[[0, 4, 8]], [1.0, 1.5, 2.0])
-        np.testing.assert_allclose(on_cells.values.numpy(), [0.5, (4 + 1.6) / 5],
+        np.testing.assert_allclose(on_cells.values.numpy(), [0.5, 1 + 0.6 / 4],  # the apex: a quarter
                                    rtol=1e-6)
         assert dg.values.shape[0] == 8 + 5
         np.testing.assert_allclose(tack.arrays.to_host(slope.values)[0], [0, 0, 1],

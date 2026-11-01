@@ -1,13 +1,19 @@
 """``project``: a field in another space of the same topology -- the one way to move
-a field between spaces, of which ``to_points``, ``to_cells`` and ``discontinuous``
-are shortcuts."""
+a field between spaces."""
 
 
 import tack
-from tack.arrays import dtype_of, materialize
-from tack.dataset import bases, ids
+from tack.arrays import CartesianProduct, CountingArray, UniformCoordinates, dtype_of, materialize
+from tack.dataset import bases, ids, shapes
 from tack.dataset.algorithms._common import _field, _with_basis
 from tack.dataset.algorithms._links import _average_cell_values, _average_links
+from tack.dataset.algorithms.integrate import (
+    _element,
+    _no_reference_values,
+    _order,
+    _points_per_axis,
+    _tables,
+)
 from tack.dataset.algorithms.traces import traces
 from tack.dataset.buckets import bucket_order
 from tack.dataset.carry import _like, _take
@@ -21,14 +27,55 @@ __all__ = ['project']
 
 # ── Onto cells ──────────────────────────────────────────────────────
 
+@tack.func
+def _node_mean(u, c):
+    # The mean of the field's own values in the cell, as vtkPointDataToCellData takes
+    # it: every point a VTK cell has, of any order.
+    total = u.dof(c, 0)
+    for k in range(1, u.NODES):
+        total += u.dof(c, k)
+    return total / u.NODES
+
+
+@tack.func
+def _corner_mean(cells, u, c):
+    # The mean of the cell's corner values: its average where the field is linear
+    # along each axis of a cell its map does not distort.
+    total = u.corner_value(c, 0)
+    for j in range(1, cells.NUM_POINTS):
+        total += u.corner_value(c, j)
+    return total / cells.NUM_POINTS
+
+
+@tack.func
+def _integral_mean(cells, u, c, points, weights):
+    # The field's integral over the cell divided by the cell's measure, by quadrature
+    # through the cell's own map; a cell without measure takes its nodes' mean.
+    m = weights[0] * 0.0
+    total = u.value(c, points[0]) * 0.0
+    for q in range(weights.shape[0]):
+        d = weights[q] * _element(cells.geometry_jacobian(c, points[q]), cells.DIMENSION)
+        m += d
+        total += d * u.value(c, points[q])
+    return total / m if m > 0.0 else _node_mean(u, c)
+
+
 @tack.kernel
-def _cell_means(cells, u, out):
-    # The mean of the cell's corner values, as vtkPointDataToCellData takes it.
+def _node_means(cells, u, place, out):
     for c in cells:
-        total = u.corner_value(c, 0)
-        for j in range(1, cells.NUM_POINTS):
-            total += u.corner_value(c, j)
-        out[cells.entity_id(c)] = total / cells.NUM_POINTS
+        out[place[cells.entity_id(c)]] = _node_mean(u, c)
+
+
+@tack.kernel
+def _corner_means(cells, u, place, out):
+    for c in cells:
+        out[place[cells.entity_id(c)]] = _corner_mean(cells, u, c)
+
+
+@tack.kernel
+def _integral_means(cells, u, points, weights, place, out):
+    for c in cells:
+        out[place[cells.entity_id(c)]] = _integral_mean(cells, u, c, points, weights)
 
 
 @tack.kernel
@@ -51,17 +98,11 @@ def _lattice_cell_nodes(cells, u, t, offsets, out):
 
 @tack.kernel
 def _cell_nodes(cells, u, t, offsets, out):
-    # An L2 cell's values: its corner mean at order 0, else its corners' values.
+    # An order-1 L2 cell's values: the source's at its corners.
     for c in cells:
         first = offsets[cells.entity_id(c)]
-        if t.ORDER == 0:
-            total = u.corner_value(c, 0)
-            for j in range(1, cells.NUM_POINTS):
-                total += u.corner_value(c, j)
-            out[first] = total / cells.NUM_POINTS
-        else:
-            for j in range(cells.NUM_POINTS):
-                out[first + j] = u.value(c, cells.parametric_point(j))
+        for j in range(cells.NUM_POINTS):
+            out[first + j] = u.value(c, cells.parametric_point(j))
 
 
 @tack.kernel
@@ -83,6 +124,59 @@ def _distinct_point_means(cells, values, out):
         for j in range(1, n):
             total += values[cells.point_id(c, j)]
         out[cells.entity_id(c)] = total / n
+
+
+@tack.kernel
+def _divided(integrals, measures, out, n):
+    # A cell's integral over its measure, where it has one (out keeps the rest).
+    for c in range(n):
+        if measures[c] > 0.0:
+            out[c] = integrals[c] / measures[c]
+
+
+# Shapes whose straight (order-1) map is affine: a field linear along each axis
+# averages to its corners' mean there, as on any box of an image or rectilinear grid.
+_AFFINE = (shapes.Vertex, shapes.Line, shapes.Triangle, shapes.Tetra, shapes.Pixel,
+           shapes.Voxel)
+
+_AVERAGES = ("integral", "nodes")
+
+
+def _onto_cells(data, field, groups, place, out, average):
+    """Each cell of ``groups`` (launch groups for ``field``) its one value of
+    ``field``, at ``out[place[cell]]``: by ``average``, the field's integral over the
+    cell divided by the cell's measure, or the mean of the field's nodes."""
+    source = field.space
+    straight = _order(data.geometry.space) <= 1
+    boxes = isinstance(data.geometry.values, (UniformCoordinates, CartesianProduct))
+    for group in groups:
+        if not group.count:
+            continue
+        cells, u = data.domain_view("cells", group), field.view(group)
+        if average == "nodes":
+            _node_means(cells, u, place, out)
+            continue
+        order = int(group.keys[source]) if source.varies else _order(source)
+        if order <= 1 and (boxes or (straight and group.shape in _AFFINE)):
+            _corner_means(cells, u, place, out)       # the same average, without quadrature
+        else:
+            n = _points_per_axis(data, order, group.shape)
+            _integral_means(cells, u, *_tables(data, group.shape, n), place, out)
+
+
+def _polyhedral_means(data, field, average):
+    """Each polyhedron's, polygon's or polyline's one value of a point field: its
+    integral, linear on the cell's pieces, over its measure, or its distinct
+    points' mean (also where a cell has no measure)."""
+    from tack.dataset.algorithms.cell_geometry import cell_geometry
+
+    values = materialize(field.values)
+    out = _like(values, data.num_cells)
+    for_each(_distinct_point_means, data, "cells", values, out)
+    if average == "integral" and data.num_cells:
+        measures = materialize(cell_geometry(data).measure.values)
+        _divided(_no_reference_values(data, field), measures, out, data.num_cells)
+    return out
 
 
 # ── Onto points and nodes ───────────────────────────────────────────
@@ -221,8 +315,15 @@ def _onto_nodes(data, field, space, values):
 
 # ── The entry point ─────────────────────────────────────────────────
 
+def _one_value_a_cell(space):
+    """Whether ``space`` holds one value in some cell: ``Constant``, order-0 ``L2``,
+    or an ``L2`` with an order per cell."""
+    return isinstance(space, Constant) or (isinstance(space, L2) and (space.varies
+                                                                     or space.order == 0))
+
+
 @on_inputs_device
-def project(data, field, space):
+def project(data, field, space, *, average="integral"):
     """``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:
     a new field. Values on points or cells count as order-1 ``H1`` and
     ``Constant``, both as source and as target.
@@ -232,7 +333,12 @@ def project(data, field, space):
     continuous field of lower order comes across exactly), and an average where
     cells disagree -- a cell field's, as vtkCellDataToPointData takes it, or a DG
     field's corner values. Into ``Constant`` (or order-0 ``L2``), each cell takes
-    the mean of its corner values, as vtkPointDataToCellData does. Into order-1
+    the source's average over it, its integral divided by the cell's measure, by
+    quadrature through the cell's own map: exact for any order, basis and curved
+    geometry. ``average="nodes"`` takes instead the mean of the source's own
+    values in the cell (its ``NODES``), as vtkPointDataToCellData and Viskores'
+    CellAverage do: the same on a linear field over a tetrahedron or a box, not
+    on a pyramid, a distorted cell or a field of higher order. Into order-1
     ``L2``, each cell takes the source's values at its corners, exactly whatever
     the source's order is up to 1. Into ``SideTraces``, each face side the
     source's values from its cell (``traces``). Sums run in a fixed order, so
@@ -240,18 +346,26 @@ def project(data, field, space):
 
     Values on faces or edges have no basis to project, and are refused as a
     source or target. On polyhedra, polygons and polylines -- no reference
-    element -- only cell values and point values project, one into the other,
-    each cell averaging over its distinct points. The values must be floating
-    point, scalars or vectors, except from order-1 ``H1`` into order-1 ``L2``,
-    which copies them and takes integers too.
+    element -- only cell values and point values project, one into the other:
+    a cell's average is its integral, linear on the pieces the cell is cut
+    into, over its measure (``average="nodes"``: the mean over its distinct
+    points). The values must be floating point, scalars or vectors, except from
+    order-1 ``H1`` into order-1 ``L2``, which copies them and takes integers too.
     """
+    if average not in _AVERAGES:
+        raise ValueError(f"average is one of {', '.join(map(repr, _AVERAGES))}, "
+                         f"not {average!r}")
     field = _with_basis(data, _field(data, field))
     source = field.space
     if space.topology is not data.topology:
         raise ValueError("project moves a field between spaces of one topology")
     if isinstance(space, Values) and space.on in ("points", "cells"):
-        projected = project(data, field, H1(data) if space.on == "points" else Constant(data))
+        projected = project(data, field, H1(data) if space.on == "points" else Constant(data),
+                            average=average)
         return Field(space, projected.values, field.unit)
+    if average != "integral" and not _one_value_a_cell(space):
+        raise ValueError(f"average chooses how a cell's one value is taken, into Constant or "
+                         f"order-0 L2; {space!r} has none")
     for which, s in (("from", source), ("into", space)):
         if not s.interpolated:
             raise TypeError(f"project works {which} a space with a basis, or values on the "
@@ -281,15 +395,13 @@ def project(data, field, space):
 
     if _bernstein.is_bernstein(space):
         # Into the equispaced nodes, then their Bernstein coefficients.
-        nodal = project(data, field, _bernstein.lagrange_companion(space))
+        nodal = project(data, field, _bernstein.lagrange_companion(space), average=average)
         return _bernstein.from_lagrange(data, nodal, space)
     if not getattr(data.topology, "reference_cells", True):
         if isinstance(space, H1) and space.order == 1 and isinstance(source, Constant):
             return Field(space, _onto_points(data, field, values), field.unit)
         if isinstance(space, Constant) and isinstance(source, H1) and source.order == 1:
-            out = _like(values, data.num_cells)
-            for_each(_distinct_point_means, data, "cells", materialize(values), out)
-            return Field(space, out, field.unit)
+            return Field(space, _polyhedral_means(data, field, average), field.unit)
         reference_cells(data.topology, f"project from {source!r} to {space!r}")
     if isinstance(space, H1):
         if space.order == 1:
@@ -298,12 +410,17 @@ def project(data, field, space):
     out = _like(values, space.size)
     if isinstance(space, Constant) or (isinstance(space, L2) and not space.varies
                                        and space.order == 0):
-        for group in data.launch_groups("cells", [field]):
-            if group.count:
-                _cell_means(data.domain_view("cells", group), field.view(group), out)
+        _onto_cells(data, field, data.launch_groups("cells", [field]),
+                    CountingArray(data.num_cells, dtype=data.id_dtype), out, average)
         return Field(space, out, field.unit)
     target = Field(space, out)
-    for group in data.launch_groups("cells", [field, target]):
+    groups = data.launch_groups("cells", [field, target])
+    if space.varies:
+        # An order per cell: the order-0 cells' one value each, then the others'.
+        _onto_cells(data, field, [g for g in groups if g.keys[space] == 0], space.offsets,
+                    out, average)
+        groups = [g for g in groups if g.keys[space] != 0]
+    for group in groups:
         if group.count:
             kernel = _cell_nodes
             if getattr(space, "tensor", False):
