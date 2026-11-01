@@ -437,6 +437,10 @@ def _ghost_marks(attributes, share=False):
     return tack.array(np.ascontiguousarray(host, np.uint8), tack.u8)
 
 
+#: Cells whose face lists are placed at once: bounds the index arrays.
+_CELLS_AT_ONCE = 1 << 22
+
+
 def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
     """A ``vtkUnstructuredGrid`` as a ``PolyhedralTopology``, every cell a polyhedron.
 
@@ -461,9 +465,12 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
     types = np.asarray(grid.cell_types)[chosen] if n else np.zeros(0, np.uint8)
     stored = grid.GetCells()
     offsets = np.asarray(stored.offsets_array).astype(np.int64)
-    connectivity = np.asarray(stored.connectivity_array).astype(np.int64)
+    # Point ids in 32 bits where they fit: the face lists are the largest arrays.
+    ids = np.int32 if grid.number_of_points < 2**31 else np.int64
+    connectivity = np.asarray(stored.connectivity_array)
     faces_of = np.zeros(n, np.int64)                       # each cell's ring count
-    parts = []                                             # (cells, ring sizes, ring points)
+    listed_parts = []                                      # polyhedra: (cells, count, sizes, points)
+    fixed_parts = []                                       # one shape: (cells, face sizes, block)
     for kind in np.unique(types):
         local = np.flatnonzero(types == kind)              # among the chosen cells
         members = chosen[local]                            # the grid's ids
@@ -472,30 +479,41 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
             loc_offsets = np.asarray(locations.offsets_array).astype(np.int64)
             loc_faces = np.asarray(locations.connectivity_array).astype(np.int64)
             face_offsets = np.asarray(faces.offsets_array).astype(np.int64)
-            face_conn = np.asarray(faces.connectivity_array).astype(np.int64)
+            face_conn = np.asarray(faces.connectivity_array)
             count = loc_offsets[members + 1] - loc_offsets[members]
             listed = loc_faces[_ranges(loc_offsets[members], count)]
             sizes = face_offsets[listed + 1] - face_offsets[listed]
-            points = face_conn[_ranges(face_offsets[listed], sizes)]
+            points = face_conn[_ranges(face_offsets[listed], sizes)].astype(ids)
+            faces_of[local] = count
+            listed_parts.append((local, count, sizes, points))
         else:
+            # A cell type's faces read from its corners by columns, a block of one
+            # row a cell: no index arrays as long as all the ring points.
             corners = int(offsets[members[0] + 1] - offsets[members[0]])
             tables = _face_tables(int(kind), corners, int(members[0]))
-            rows = connectivity[_ranges(offsets[members], np.full(members.size, corners))]
-            rows = rows.reshape(members.size, corners)
-            count = np.full(members.size, len(tables), np.int64)
-            sizes = np.tile([len(table) for table in tables], members.size)
-            points = np.concatenate([rows[:, table] for table in tables], axis=1).reshape(-1)
-        faces_of[local] = count
-        parts.append((local, count, sizes, points))
+            column = [connectivity[offsets[members] + k].astype(ids) for k in range(corners)]
+            block = np.stack([column[i] for table in tables for i in table], axis=1)
+            del column
+            faces_of[local] = len(tables)
+            fixed_parts.append((local, [len(table) for table in tables], block))
     cell_offsets = np.concatenate([[0], np.cumsum(faces_of)]).astype(np.int64)
     ring_sizes = np.zeros(int(cell_offsets[-1]), np.int64)
-    for members, count, sizes, _ in parts:
-        ring_sizes[_ranges(cell_offsets[members], count)] = sizes
+    for local, count, sizes, _ in listed_parts:
+        ring_sizes[_ranges(cell_offsets[local], count)] = sizes
+    for local, face_sizes, _ in fixed_parts:
+        ring_sizes[cell_offsets[local][:, None] + np.arange(len(face_sizes))] = face_sizes
     ring_offsets = np.concatenate([[0], np.cumsum(ring_sizes)]).astype(np.int64)
-    ring_points = np.zeros(int(ring_offsets[-1]), np.int64)
-    for members, count, sizes, points in parts:
-        rings = _ranges(cell_offsets[members], count)
+    del ring_sizes
+    ring_points = np.zeros(int(ring_offsets[-1]), ids)
+    for local, count, sizes, points in listed_parts:
+        rings = _ranges(cell_offsets[local], count)
         ring_points[_ranges(ring_offsets[rings], sizes)] = points
+    for local, _, block in fixed_parts:
+        starts = ring_offsets[cell_offsets[local]]         # each cell's first ring point
+        width = np.arange(block.shape[1])
+        for i in range(0, local.size, _CELLS_AT_ONCE):     # bounded index arrays
+            ring_points[starts[i:i + _CELLS_AT_ONCE, None] + width] = block[i:i + _CELLS_AT_ONCE]
+    del fixed_parts, listed_parts
     try:
         if not orient:
             return PolyhedralTopology._from_rings(cell_offsets, ring_offsets, ring_points,

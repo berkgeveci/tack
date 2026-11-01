@@ -482,8 +482,11 @@ class PolyhedralTopology(_Topology):
         faces are rings ``cell_offsets[c]`` to ``cell_offsets[c + 1]``, ring ``r``'s
         points ``ring_points[ring_offsets[r]:ring_offsets[r + 1]]``. The faces are
         the same, in the same order, as the cell-by-cell walk gives (``_match_rings``)."""
+        ring_points = np.asarray(ring_points)
+        if ring_points.dtype not in (np.int32, np.int64):
+            ring_points = ring_points.astype(np.int64)
         face_offsets, face_points, cell_faces, sides, same_way = _match_rings(
-            np.asarray(ring_offsets, np.int64), np.asarray(ring_points, np.int64))
+            np.asarray(ring_offsets, np.int64), ring_points)
         if same_way:
             raise ValueError(f"{same_way} shared faces are wound the same way by both their "
                              "cells; from_cell_faces(..., orient=True) makes them consistent")
