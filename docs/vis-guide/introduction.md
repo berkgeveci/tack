@@ -10,11 +10,6 @@ point clouds. Unlike them, the algorithms are ordinary Tack kernels, so they
 run on every backend, and the kernels you write yourself see a mesh the way
 the built-in ones do.
 
-New to scientific visualization, or wondering how this relates to VTK and
-Viskores? Start with the [Visualization Guide's opening page](index.md): what
-visualization does with data, where `tack.dataset` comes from, and what it
-changes.
-
 ```bash
 uv sync --extra cpu      # in a clone; both packages are installed
 ```
@@ -57,7 +52,6 @@ an approximation to a sphere. This example needs no VTK installation.
 
 | Chapter | Start here when you want to… |
 |---|---|
-| [Visualization Guide](index.md) | Learn what visualization does, and how `tack.dataset` relates to VTK and Viskores |
 | [Function Space Fundamentals](00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
 | [Understand a Dataset](01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
 | [Build Meshes](02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |

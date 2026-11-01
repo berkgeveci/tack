@@ -271,26 +271,70 @@ value 1's, and `numpy()` gives `(space.size, 3)`. `layout="soa"` keeps each
 component in an array of its own instead
 ([Arrays and Types](../users-guide/02-arrays-and-types.md)).
 
-### Finding a value in code
+### Every value of a cell, at any order
 
-In a kernel, a field's view finds the values for you: `corner_value(c, j)`
-is cell `c`'s value at its corner `j`, and `value(c, pc)` the field at
-parametric coordinates `pc`. Every `H1`, `L2` and `Constant` view also numbers
-the cell's own nodes: `NODES` of them, node `k` at `node_parametric(k)`, its
-value `dof(c, k)`, stored at `dof_index(c, k)`
-([Work at a field's nodes](05-mesh-kernels.md#work-at-a-fields-nodes)). At
-order 1 the nodes are the corners, and at order 0 one node at the cell's
-centre. An `H1` order-2 cell's nodes are numbered as VTK's quadratic cells
-do -- corners, then edges, then faces and the centre -- and every other order
-on the lattice above. A kernel never computes these indices itself
-([Write Mesh Algorithms](05-mesh-kernels.md)). On the host, `space.offsets`
-gives where each cell's `L2` values start; `space.indices()` and
-`space.blocks(values)` give them as one row per cell, so they refuse cells
+A field's view numbers its cell's own values, whatever the space, order or
+shape: `NODES` of them (a constant, so a loop over them unrolls), node `k` at
+parametric coordinates `node_parametric(k)`, its value `dof(c, k)`, stored at
+`dof_index(c, k)` in the field's array. At order 1 the nodes are the corners,
+at order 0 one node at the cell's centre; an `H1` order-2 cell numbers them as
+VTK's quadratic cells do -- corners, then edges, then faces and the centre --
+and every other order on the lattice above. So one kernel reads every value
+of a cell on any mesh, here each cell's largest:
+
+<!-- tack-check: cell-nodes -->
+```python
+import numpy as np
+
+import tack
+import tack.dataset as td
+
+tack.set_default_device("cpu")
+
+
+@tack.kernel
+def largest_value(cells, u, out):
+    for c in cells:                                  # every shape, space and order
+        top = u.dof(c, 0)
+        for k in range(1, u.NODES):                  # the cell's own values
+            top = max(top, u.dof(c, k))
+        out[cells.entity_id(c)] = top
+
+
+@tack.func
+def height(x):
+    return x[0] + 2.0 * x[1] + 3.0 * x[2]
+
+
+data = td.uniform_grid((4, 3, 3), spacing=(0.5, 0.5, 0.5))
+centres = td.values_at_centers(data, td.interpolate(data, height, td.H1(data))).values.numpy()
+for space in (td.H1(data, order=3), td.L2(data, order=2), td.Constant(data)):
+    out = tack.empty((data.num_cells,), tack.f32)
+    td.for_each(largest_value, data, "cells", td.interpolate(data, height, space), out)
+    # A linear field is largest at a cell's far corner: its centre value plus
+    # (1 + 2 + 3) / 4; a Constant cell's one node is its centre.
+    expected = centres if isinstance(space, td.Constant) else centres + 1.5
+    np.testing.assert_allclose(out.numpy(), expected, rtol=1e-6)
+print("largest values:", out.numpy()[:3])
+```
+
+The same view gives values elsewhere in the cell: `corner_value(c, j)` at its
+corner `j`, `value(c, pc)` at parametric coordinates `pc`. Reading another
+field at these nodes, `p.value(c, q.node_parametric(k))`, computes a field of
+one space from fields of others without projecting first:
+[Work at a field's nodes](05-mesh-kernels.md#work-at-a-fields-nodes) adds an
+order-1 field to an order-2 one that way. A kernel never computes storage
+indices itself ([Write Mesh Algorithms](05-mesh-kernels.md)).
+
+### Finding values on the host
+
+`space.offsets` gives where each cell's `L2` values start; `space.indices()`
+and `space.blocks(values)` give them as one row per cell, so they refuse cells
 holding different numbers of values (a mixed mesh, an order per cell): read
-`space.offsets` there.
-`td.interpolate` fills any space from a function of position. Derived edge and
-face ids are stable for a topology, but not across topologies: match values
-between meshes by position or global id, not by edge or face number.
+`space.offsets` there. `td.interpolate` fills any space from a function of
+position. Derived edge and face ids are stable for a topology, but not across
+topologies: match values between meshes by position or global id, not by
+edge or face number.
 
 ## Construct an L2 field
 
