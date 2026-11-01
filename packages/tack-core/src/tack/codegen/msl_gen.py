@@ -392,21 +392,11 @@ class MSLCodeGen(CFamilyCodeGen):
         self._emit("}")
         self._leave_loop_scope(var, outer)
 
-    def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
-        for stmt in stmts:
-            if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
-                if stmt._resolved_type is not None:
-                    return _MSL_TYPE_MAP.get(stmt._resolved_type, self._infer_type(stmt.value))
-                return self._infer_type(stmt.value)
-            if isinstance(stmt, ir.IRIf):
-                t = self._find_assign_type(var_name, stmt.then_body)
-                if t:
-                    return t
-                if stmt.else_body:
-                    t = self._find_assign_type(var_name, stmt.else_body)
-                    if t:
-                        return t
-        return None
+    def _assign_type(self, stmt: ir.IRAssign) -> str | None:
+        """The Metal type of an assignment's value."""
+        if stmt._resolved_type is not None:
+            return _MSL_TYPE_MAP.get(stmt._resolved_type, self._infer_type(stmt.value))
+        return self._infer_type(stmt.value)
 
     def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
         """The atomic as an expression whose value is the element's old value.

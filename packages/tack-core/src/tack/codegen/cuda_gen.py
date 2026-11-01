@@ -420,23 +420,12 @@ class CUDACodeGen(CFamilyCodeGen):
         self._emit("}")
         self._leave_loop_scope(var, outer)
 
-    def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
-        """Find the C type for a variable from its assignment in stmts."""
-        for stmt in stmts:
-            if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
-                # Prefer pre-computed type from ir_type_annotate pass
-                if stmt._resolved_type is not None:
-                    return self._resolved_type_to_c(stmt._resolved_type)
-                return self._infer_c_type(stmt.value)
-            if isinstance(stmt, ir.IRIf):
-                t = self._find_assign_type(var_name, stmt.then_body)
-                if t:
-                    return t
-                if stmt.else_body:
-                    t = self._find_assign_type(var_name, stmt.else_body)
-                    if t:
-                        return t
-        return None
+    def _assign_type(self, stmt: ir.IRAssign) -> str | None:
+        """The C type of an assignment's value."""
+        # Prefer pre-computed type from ir_type_annotate pass
+        if stmt._resolved_type is not None:
+            return self._resolved_type_to_c(stmt._resolved_type)
+        return self._infer_c_type(stmt.value)
 
     def _emit_print(self, node: ir.IRPrint):
         """Emit a printf call for kernel debugging."""
