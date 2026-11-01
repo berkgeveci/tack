@@ -146,6 +146,9 @@ are given in world coordinates.
 
 ## Compute one oriented flux per face
 
+For a complete cell/face workflow with units, conservation checks and Perot
+velocity reconstruction, see [Finite-volume Data and Fluxes](18-finite-volume.md).
+
 A face has side 0 and possibly side 1. Its normal points out of side 0;
 `faces.num_sides(f) == 1` identifies a boundary face. Reading a neighbouring
 cell must be guarded when that side is absent.
