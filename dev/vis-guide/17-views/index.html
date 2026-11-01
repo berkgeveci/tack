@@ -2133,6 +2133,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-group-holds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a group holds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-is-compiled-in-and-what-is-not" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3928,6 +3939,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-group-holds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a group holds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-is-compiled-in-and-what-is-not" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4001,7 +4023,9 @@ is written against views, and so are the kernels you write.</p>
 <h2 id="a-dataset-is-arrays-a-view-answers-in-mesh-terms">A dataset is arrays; a view answers in mesh terms<a class="headerlink" href="#a-dataset-is-arrays-a-view-answers-in-mesh-terms" title="Permanent link">&para;</a></h2>
 <p>Take the question "what is point <code>j</code> of cell <code>c</code>?":</p>
 <ul>
-<li>in an <code>UnstructuredTopology</code> it is <code>connectivity[offsets[c] + j]</code>;</li>
+<li>in an <code>UnstructuredTopology</code> it is <code>connectivity[offsets[c] + j]</code>, which a
+  view reads from its shape's own copy
+  (<a href="#what-a-group-holds">What a group holds</a>);</li>
 <li>in a <code>StructuredTopology</code> it is arithmetic on the cell's <code>(i, j, k)</code> index;
   nothing is stored;</li>
 <li>in a polyhedral topology it is read from a list of each cell's distinct
@@ -4119,6 +4143,73 @@ cells share it or not (<a href="../05-mesh-kernels/#visit-a-spaces-nodes">Visit 
         <span class="n">corner_mean</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">T</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">means</span><span class="p">)</span>       <span class="c1"># T, for the same cells</span>
 </code></pre></div>
 <p><code>group.shape</code> is the cell shape and <code>group.count</code> how many cells it has.</p>
+<h2 id="what-a-group-holds">What a group holds<a class="headerlink" href="#what-a-group-holds" title="Permanent link">&para;</a></h2>
+<p>A group is more than a range of cell ids. The topology makes, once, the
+arrays its views read, laid out so that every cell of the group has the
+same shape and so the same counts:</p>
+<ul>
+<li><strong>Each cell's points.</strong> An <code>UnstructuredTopology</code> stores VTK's flat form,
+  every cell's point ids one after another at <code>offsets[c]</code>. Its groups
+  gather them per shape, on the dataset's device, into rows of the shape's
+  <code>NUM_POINTS</code> ids, with <code>ids</code>, each row's cell id. In a group's view the loop
+  variable <code>c</code> is the row, <code>cells.point_id(c, j)</code> is <code>rows[c, j]</code>, and
+  <code>cells.entity_id(c)</code> is <code>ids[c]</code>. When every cell has one shape and the
+  offsets step evenly, the rows are the connectivity itself, reshaped; on a
+  mixed mesh they are a second copy of it, kept with the topology. A
+  structured grid's groups hold nothing: <code>c</code> is the cell's <code>(i, j, k)</code> and
+  its points are arithmetic. A polyhedron's points and faces are read by id
+  from the topology's own arrays, each group a bucket of cells of similar
+  size.</li>
+<li><strong>Each cell's edges and faces.</strong> <code>topology.edges()</code> and <code>topology.faces()</code>
+  number the mesh's edges and faces once (by arithmetic on a structured grid,
+  by sorting the cells' sides otherwise), and keep, for each cell and each of
+  its local edges or faces, the global one with how the cell meets it. They
+  are stored group by group, a fixed number a cell, so a view finds them at
+  <code>index(c) * NUM_EDGES + e</code> from the group's start: <code>edge_id(c, e)</code> and <code>edge_sign(c, e)</code>, which
+  way the cell runs along the edge; <code>face_id(c, f)</code>, <code>face_side(c, f)</code>, which
+  side of the face the cell is on, and <code>face_orientation(c, f)</code>, where the
+  cell's first point of the face is in the face's own row. They are made the
+  first time a view needs them: a face kernel, or a field with values on
+  edges and faces.</li>
+</ul>
+<p>A field view adds only what its space owns, and reaches everything else
+through these. A value of an <code>H1</code> order-2 field on a hexahedron is found in
+one of four ways, by the kind of node (<a href="../03-fields-and-spaces/#h1-above-order-1-numbered-by-entity">where each value is</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Node <code>k</code></th>
+<th><code>u.dof_index(c, k)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a corner</td>
+<td><code>cells.point_id(c, k)</code>: its point</td>
+</tr>
+<tr>
+<td>on edge <code>e</code></td>
+<td>the number of points, plus <code>edge_id(c, e)</code></td>
+</tr>
+<tr>
+<td>on quad face <code>f</code></td>
+<td><code>face_dofs[face_id(c, f)]</code>, the space's start for that face</td>
+</tr>
+<tr>
+<td>the interior</td>
+<td><code>cell_dofs[entity_id(c)]</code>, the space's start for that cell</td>
+</tr>
+</tbody>
+</table>
+<p><code>face_dofs</code> and <code>cell_dofs</code> are the space's: where each face's and each
+cell's values start, since faces and cells of different shapes hold
+different numbers of them. Every cell around an edge or face reads the same
+entry, so they find the same value. Above order 2 an edge's or face's
+several values are read in the edge's or the face's own frame, through
+<code>edge_sign</code> and <code>face_orientation</code>, so that cells meeting it from different
+directions agree on which is which.
+<a href="../05-mesh-kernels/#work-at-a-fields-nodes">Work at a field's nodes</a> loops
+over them.</p>
 <h2 id="what-is-compiled-in-and-what-is-not">What is compiled in, and what is not<a class="headerlink" href="#what-is-compiled-in-and-what-is-not" title="Permanent link">&para;</a></h2>
 <p>A view's <strong>class constants</strong> are compiled into the kernel: <code>NUM_POINTS</code>,
 <code>NUM_FACES</code>, <code>DIMENSION</code>, a field's <code>ORDER</code>. That is why
