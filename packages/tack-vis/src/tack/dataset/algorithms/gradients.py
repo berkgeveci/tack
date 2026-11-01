@@ -38,6 +38,23 @@ def _world_gradient(cells, u, c, pc):
     return g
 
 
+@tack.func
+def world_hessian(cells, u, c, pc):
+    """`u`'s second derivatives in the world at parametric `pc` of solid cell `c`, a
+    symmetric 3x3 matrix: by the chain rule through the geometry, the parametric
+    Hessian less the geometry's curvature along the world gradient, taken to world
+    axes on both sides by the inverse Jacobian. Analytic from the basis on every
+    shape's order 1 and 2 and on tensor shapes and simplices of any order;
+    fourth-order differences of the parametric gradient on wedges above order 2.
+    Zero on surfaces, lines and vertices."""
+    h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    if cells.DIMENSION == 3:
+        inverse = cells.geometry_jacobian(c, pc).inverse()
+        g = inverse.transpose() @ u.parametric_gradient(c, pc)
+        h = inverse.transpose() @ (u.parametric_hessian(c, pc) - cells.geometry_curvature(c, pc, g)) @ inverse
+    return h
+
+
 @tack.kernel
 def _gradients(cells, u, out):
     for c in cells:

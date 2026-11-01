@@ -156,6 +156,8 @@ algorithms that work on them are in [Algorithms](algorithms.md).
 
 ::: tack.dataset.for_each
 
+::: tack.dataset.world_hessian
+
 ## Filters of your own
 
 What the built-in filters are written with. A filter that makes a new
