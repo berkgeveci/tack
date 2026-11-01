@@ -646,8 +646,11 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
         try:
             # With orient, the shaped cells are outward already: the faces usually agree,
             # and the cell-by-cell walk below is needed only where polyhedra do not.
-            return PolyhedralTopology._from_rings(cell_offsets, ring_offsets, ring_points,
-                                                  grid.number_of_points, id_dtype=id_dtype)
+            topology = PolyhedralTopology._from_rings(cell_offsets, ring_offsets, ring_points,
+                                                      grid.number_of_points,
+                                                      id_dtype=id_dtype)
+            if not _inside_out_polyhedra(grid, topology, types == 42, orient):
+                return topology
         except ValueError as error:
             if not orient or "wound the same way" not in str(error):
                 raise
@@ -661,6 +664,37 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None, cells=None):
             raise ValueError(f"{error}. VTK winds every polyhedron face outward for its "
                              "cell; vtk_to_dataset(..., orient=True) repairs the input") from None
         raise
+
+
+def _inside_out_polyhedra(grid, topology, listed, orient):
+    """Whether any of ``topology``'s cells that VTK listed as polyhedra (``listed``, a
+    flag a cell) are inside out: their faces agree with their neighbours' -- the
+    matching refuses two copies wound alike -- but all point inward, a negative
+    volume summed over them (``cell_geometry``). A region of such polyhedra bounded
+    by the mesh's boundary, or by another piece of a split read, passes the
+    matching. Without ``orient`` they are named in a warning, and False is
+    returned; with it, True, for the caller to turn them outward."""
+    import numpy as np
+
+    if not listed.any():
+        return False
+    from tack.dataset import DataSet
+    from tack.dataset.algorithms.cell_geometry import cell_geometry
+    from tack.runtime.dispatch import get_backend
+
+    wide = tack.f64 if get_backend().supports_f64 else tack.f32
+    measured = cell_geometry(DataSet(topology, _vtk_points(grid), dtype=wide))
+    count = int(np.count_nonzero(measured.measure.values.numpy()[listed] < 0))
+    if not count:
+        return False
+    if orient:
+        return True
+    import warnings
+
+    warnings.warn(f"{count} polyhedra are inside out: their faces agree with their "
+                  "neighbours' but point inward, so their volumes are negative; "
+                  "vtk_to_dataset(..., orient=True) turns them outward", stacklevel=5)
+    return False
 
 
 def _face_tables(kind, corners, first):

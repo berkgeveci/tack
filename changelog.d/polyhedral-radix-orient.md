@@ -5,7 +5,12 @@
   prisms: negative volumes, inward faces) on every read -- a kernel screens
   every cell, the volume decides -- and warns, naming `orient=True`, which now
   turns them outward too. A tangled cell, negative at some corners but not
-  inside out, is left. A CFD mesh's 66,606 inside-out wedges took 0.3 s to find
+  inside out, is left. Polyhedra are checked by their volumes (`cell_geometry`)
+  once their faces are matched: a region of them wound inward together passes
+  the matching, and, in a split read, nothing compares them with the shaped
+  piece; they are named in a warning, and `orient=True` turns them outward.
+  VTK's own `concavePolyhedron.vtu` is such a polyhedron (exact signed volume
+  -11). A CFD mesh's 66,606 inside-out wedges took 0.3 s to find
   among 21M cells. Wedges are the common case: VTK's documentation gave their
   corner order the reverse of its code until March 2026, and writers that
   followed it wrote them inside out.
