@@ -54,6 +54,7 @@ an approximation to a sphere. This example needs no VTK installation.
 |---|---|
 | [Function Space Fundamentals](00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
 | [Understand a Dataset](01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
+| [Finite-volume Data and Fluxes](18-finite-volume.md) | Work with cell averages, oriented face fluxes, conservation balances and Perot reconstruction |
 | [Build Meshes](02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
 | [Point Clouds and Particles](08-point-clouds.md) | Clean and grid LiDAR, resample SPH particles, find halos |
 | [AMR Hierarchies](10-amr.md) | Hold levels of refined boxes, images or not; reduce and filter them |
@@ -81,6 +82,8 @@ themselves -- the language, arrays, backends -- are in the core
 
 For a first reading, follow the fundamentals, dataset and mesh chapters,
 then the field and filter chapters.
+For finite-volume simulation output, [Finite-volume Data and Fluxes](18-finite-volume.md)
+is an alternative entry point organized around cells, faces and conservation.
 The [field-space comparison](03-fields-and-spaces.md#a-material-interface-exposes-the-difference)
 and [filter comparison](04-filters.md#select-cells-cut-cells-or-extract-a-surface)
 show why two plausible images can represent different numerical operations.
