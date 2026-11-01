@@ -4,7 +4,7 @@ Datasets and scientific visualization for [Tack](https://github.com/berkgeveci/t
 `tack.dataset`.
 
 `tack.dataset` holds meshes and the fields on them -- structured grids,
-unstructured meshes of the linear cells, polyhedra, polygons and polylines --
+unstructured meshes, polyhedra, polygons and polylines --
 and the algorithms that work on them: contour, slice, clip, threshold,
 external faces, gradients, projections between spaces, streamlines and more.
 Every algorithm is a Tack kernel, so it runs on every backend `tack-core`
