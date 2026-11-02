@@ -17,6 +17,7 @@ from tack.dataset.polyhedra import (
     PolyhedralTopology,
     PolylineTopology,
     _match_rings,
+    _ranges,
     _side_counts,
 )
 from tack.dataset.spaces import H1
@@ -55,18 +56,59 @@ def _renumber(point_ids, new_id, dtype):
     return out if arrays.size_of(point_ids) else tack.empty((0,), dtype)
 
 
+@tack.kernel
+def _distinct_points(face_offsets, face_points, out):
+    # How many different points each face has once merged: under three, it has no area.
+    for f in range(out.shape[0]):
+        n = 0
+        for i in range(face_offsets[f], face_offsets[f + 1]):
+            new = 1
+            for j in range(face_offsets[f], i):
+                if face_points[j] == face_points[i]:
+                    new = 0
+            n += new
+        out[f] = n
+
+
 def _merged_polyhedra(topology, new_id, count):
     """``topology`` on the merged points, and the faces it keeps: faces renumbered, then
     matched by point set (``_match_rings``, as ``from_cell_faces`` matches its rings),
     so the copies of a face that pieces each stored once, with one side, become one
     face with two. The first copy is the face, in its winding; a cell on a later copy,
-    which runs the other way, sees the face from its other side."""
-    face_points = _renumber(topology.face_points, new_id, topology.id_dtype).numpy()
+    which runs the other way, sees the face from its other side. A face left with
+    fewer than three different points has no area and is matched with nothing: it
+    stays as it is, as an unstructured cell's merged corners do."""
+    renumbered = _renumber(topology.face_points, new_id, topology.id_dtype)
+    nf = topology.num_faces
+    distinct = tack.empty((max(nf, 1),), tack.i32)
+    if nf:
+        _distinct_points(topology.face_offsets, renumbered, distinct)
+    face_points = renumbered.numpy()
     face_offsets = arrays.to_host(topology.face_offsets).astype(np.int64)
-    offsets, points, face_of, copy, same_way = _match_rings(face_offsets, face_points)
+    # Match the faces with an area among themselves; each face's representative is its
+    # first copy, or itself.
+    flat = np.flatnonzero(distinct.numpy()[:nf] >= 3)
+    if flat.size == nf:                                   # the usual case: every face
+        ring_offsets, ring_points = face_offsets, face_points
+    else:
+        sizes = np.diff(face_offsets)[flat]
+        ring_offsets = np.concatenate([[0], np.cumsum(sizes)])
+        ring_points = face_points[_ranges(face_offsets[flat], sizes)]
+    _, _, ring_face, ring_copy, same_way = _match_rings(ring_offsets, ring_points)
     if same_way:
         raise ValueError(f"{same_way} faces become one with another that runs the same way: "
                          "both their cells hold the merged face on the same side")
+    first = flat[np.flatnonzero(ring_copy == 0)]          # each matched face's first copy
+    representative = np.arange(nf)
+    representative[flat] = first[ring_face]
+    copy = (representative != np.arange(nf)).astype(np.uint8)
+    kept = np.flatnonzero(copy == 0)
+    number = np.full(nf, -1, np.int64)
+    number[kept] = np.arange(kept.size)
+    face_of = number[representative]
+    kept_sizes = np.diff(face_offsets)[kept]
+    offsets = np.concatenate([[0], np.cumsum(kept_sizes)])
+    points = face_points[_ranges(face_offsets[kept], kept_sizes)]
     cell_faces = arrays.to_host(topology.cell_faces)
     sides = arrays.to_host(topology.cell_face_sides) ^ copy[cell_faces]
     merged = PolyhedralTopology(offsets, points, topology.cell_offsets, face_of[cell_faces],
@@ -76,7 +118,7 @@ def _merged_polyhedra(topology, new_id, count):
     if crowded:
         raise ValueError(f"{crowded} merged faces have more than one cell on a side: more "
                          "than two cells meet at them")
-    return merged, Take(tack.array(np.flatnonzero(copy == 0).astype(merged.id_dtype.numpy_dtype)))
+    return merged, Take(tack.array(kept.astype(merged.id_dtype.numpy_dtype)))
 
 
 @on_inputs_device

@@ -286,3 +286,20 @@ def test_pieces_written_without_merging_number_as_the_whole():
     numbered = td.generate_global_ids(td.PartitionedDataSet(pieces))
     ids = max(int(p.global_ids.points.numpy().max()) for p in numbered) + 1
     assert ids == mesh.num_points
+
+
+def test_faces_merged_to_no_area_stay_as_they_are():
+    """Merging every point into one, or nearly (all of them in one f32 value), leaves
+    faces of fewer than three points. They have no area and are shared with nothing,
+    so they stay as they are, each with its own cell, as an unstructured cell's merged
+    corners do -- rather than all of them matched into one face of every cell."""
+    mesh = td.as_polyhedra(_hexes((3, 3, 2)))
+    together = td.DataSet(mesh.topology, np.ones((mesh.num_points, 3)), dtype=tack.f64)
+    out = td.merge_points(together)
+    assert out.num_points == 1 and out.num_cells == mesh.num_cells
+    assert out.topology.num_faces == mesh.topology.num_faces
+    # Faces that keep an area still join: a pair of cubes whose shared face's copies
+    # merge, beside a cube collapsed to one point.
+    soup, _ = _polyhedral_pieces(td.as_polyhedra(_hexes((3, 2, 2))), 2)
+    assert td.merge_points(soup).topology.num_faces == td.as_polyhedra(
+        _hexes((3, 2, 2))).topology.num_faces
