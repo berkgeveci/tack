@@ -126,11 +126,71 @@ class _FannedCells:
 class _PolyhedralMesh(_FannedCells, views._PolyhedralLocation, views._PolyhedralWalk,
                       views._PolyhedralCells):
     """A polyhedral topology's cells by id, located in their sub-tetrahedra
-    (``views._PolyhedralLocation``)."""
+    (``views._PolyhedralLocation``), fanned from the cell points its locator chose
+    (``moved``: ``CellLocator.moved_cell_points``)."""
+
+    #: 1 once ``moved`` gives it cell points a locator moved (compiled in).
+    MOVED = 0
+
+    def __init__(self, topology, positions):
+        super().__init__(topology, positions)
+        device = topology.device
+        self.moved_starts = tack.full((1,), -1, topology.id_dtype, device=device)
+        self.moved_weights = tack.zeros((1,), arrays.dtype_of(positions), device=device)
+
+    def moved(self, starts, weights):
+        """The cell points a ``CellLocator`` moved into their cells' kernels."""
+        self.moved_starts, self.moved_weights = starts, weights
+        self.MOVED = 1
+        return self
 
     @tack.func
     def cell_type(self, e):
         return shapes.POLYHEDRON
+
+    @tack.func
+    def cell_point(self, c):
+        """The mean of the cell's points, or the sum of them by the weights its
+        locator gave it."""
+        s = self.moved_starts[c] if self.MOVED == 1 else -1
+        n = self.num_points(c)
+        x = self.point_position(self.point_id(c, 0))
+        if s >= 0:
+            # From the first point by the others' differences, as _cell_point.
+            first = x
+            for j in range(1, n):
+                x += (self.point_position(self.point_id(c, j)) - first) * self.moved_weights[s + j]
+        else:
+            for j in range(1, n):
+                x += self.point_position(self.point_id(c, j))
+            x = x / n
+        return x
+
+    @tack.func
+    def tet_value_of(self, field, e, t, pc):
+        """Point data at ``pc`` in sub-tetrahedron ``t``: linear there, the cell point
+        taking its points' values as its position takes their positions."""
+        k, j = self.tet_face(e, t)
+        n = self.side_num_points(e, k)
+        nxt = j + 1 if j + 1 < n else 0
+        count = self.num_points(e)
+        s = self.moved_starts[e] if self.MOVED == 1 else -1
+        v0 = field.values[self.point_id(e, 0)]
+        if s >= 0:
+            first = v0
+            for i in range(1, count):
+                v0 += (field.values[self.point_id(e, i)] - first) * self.moved_weights[s + i]
+        else:
+            for i in range(1, count):
+                v0 += field.values[self.point_id(e, i)]
+            v0 = v0 / count
+        vf = field.values[self.side_point_id(e, k, 0)]
+        for i in range(1, n):
+            vf += field.values[self.side_point_id(e, k, i)]
+        vf = vf / n
+        return (v0 + pc[0] * (vf - v0)
+                + pc[1] * (field.values[self.side_point_id(e, k, j)] - v0)
+                + pc[2] * (field.values[self.side_point_id(e, k, nxt)] - v0))
 
 
 @tack.device_class
@@ -704,6 +764,8 @@ def mesh_search(data, locator, positions=None, strict=True, neighbors=False):
                                                                           _GridCells))):
         return None
     cells, present = found
+    if isinstance(cells, _PolyhedralMesh) and locator.moved_cell_points is not None:
+        cells.moved(*locator.moved_cell_points)
     return _MeshSearch(cells, present, positions, locator, _TOLERANCE,
                        locator.cell_neighbors() if neighbors else None, curved)
 
