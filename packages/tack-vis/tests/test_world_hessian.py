@@ -12,6 +12,11 @@ from tack.dataset import shapes
 from tack.dataset.topology import uniform_cells
 
 
+OFF_CENTRE = (0.21, 0.13, 0.37)
+"""A parametric point inside every shape away from its centre, where a term that
+vanishes at the centre shows."""
+
+
 @tack.kernel
 def _hessians(cells, u, out):
     for c in cells:
@@ -23,9 +28,21 @@ def _hessians(cells, u, out):
 
 
 @tack.kernel
-def _differenced(cells, u, out, step):
+def _hessians_at(cells, u, out, px, py, pz):
     for c in cells:
-        pc = cells.parametric_center()
+        h = td.world_hessian(cells, u, c, tack.vec3(px, py, pz))
+        e = cells.entity_id(c)
+        for a in range(3):
+            for b in range(3):
+                out[9 * e + 3 * a + b] = h[a, b]
+
+
+@tack.kernel
+def _differenced(cells, u, out, step, px, py, pz, centre):
+    for c in cells:
+        pc = tack.vec3(px, py, pz)
+        if centre == 1:
+            pc = cells.parametric_center()
         d = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
         for k in range(3):
             e = tack.vec3(1.0 if k == 0 else 0.0, 1.0 if k == 1 else 0.0, 1.0 if k == 2 else 0.0)
@@ -43,6 +60,22 @@ def _run(data, kernel, *args):
     out = tack.zeros((9 * data.num_cells,), data.dtype)
     td.for_each(kernel, data, "cells", data.fields["u"], out, *args)
     return out.numpy().reshape(-1, 3, 3)
+
+
+@tack.kernel
+def _positions(cells, out, px, py, pz):
+    for c in cells:
+        out[cells.entity_id(c)] = cells.position(c, tack.vec3(px, py, pz))
+
+
+def _hessians_where(data, off):
+    """The Hessians and the world points where they were taken: the cell centres, or
+    ``OFF_CENTRE`` in each cell."""
+    if not off:
+        return _run(data, _hessians), td.cell_centers(data).values.numpy()
+    out = tack.zeros((data.num_cells,), tack.vec3(data.dtype))
+    td.for_each(_positions, data, "cells", out, *OFF_CENTRE)
+    return _run(data, _hessians_at, *OFF_CENTRE), out.numpy().reshape(-1, 3)
 
 
 @tack.func
@@ -142,12 +175,13 @@ EXACT = [
 ]
 
 
+@pytest.mark.parametrize("off", [0, 1], ids=["centre", "off-centre"])
 @pytest.mark.parametrize(("make", "space", "f", "exact"), [c[1:] for c in EXACT], ids=[c[0] for c in EXACT])
-def test_exact_on_affine_cells(f64_backend, make, space, f, exact):
+def test_exact_on_affine_cells(f64_backend, make, space, f, exact, off):
     data = make()
     data.fields["u"] = td.interpolate(data, f, space(data))
-    got = _run(data, _hessians)
-    want = exact(td.cell_centers(data).values.numpy())
+    got, x = _hessians_where(data, off)
+    want = exact(x)
     np.testing.assert_allclose(got, want, atol=1e-9 * max(1.0, np.abs(want).max()))
 
 
@@ -178,12 +212,13 @@ CURVED = [
 ]
 
 
+@pytest.mark.parametrize("off", [0, 1], ids=["centre", "off-centre"])
 @pytest.mark.parametrize(("make", "space"), [c[1:] for c in CURVED], ids=[c[0] for c in CURVED])
-def test_curved_cells_match_differences_of_the_world_gradient(f64_backend, make, space):
+def test_curved_cells_match_differences_of_the_world_gradient(f64_backend, make, space, off):
     data = make()
     data.fields["u"] = td.interpolate(data, _p3, space(data))
-    got = _run(data, _hessians)
-    want = _run(data, _differenced, 1e-4)
+    got, _ = _hessians_where(data, off)
+    want = _run(data, _differenced, 1e-4, *OFF_CENTRE, 1 - off)
     np.testing.assert_allclose(got, want, atol=1e-6 * max(1.0, np.abs(want).max()))
 
 
