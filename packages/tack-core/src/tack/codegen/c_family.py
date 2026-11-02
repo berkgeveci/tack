@@ -29,17 +29,30 @@ class CFamilyCodeGen:
     #: suffix; false for Metal, which has no f64.
     _HAS_F64 = True
 
-    def _collect_new_assigns(self, stmts: list) -> set[str]:
-        """Collect variable names that would be newly declared in these stmts."""
-        result = set()
+    @staticmethod
+    def _first_assignments(stmts: list, found: dict | None = None) -> dict:
+        """Each name assigned in stmts, nested branches included, mapped to its first
+        assignment in statement order (a branch's then before its else), found in
+        one walk for every name an `if` hoists."""
+        found = {} if found is None else found
         for stmt in stmts:
-            if isinstance(stmt, ir.IRAssign) and stmt.target not in self._declared_vars:
-                result.add(stmt.target)
+            if isinstance(stmt, ir.IRAssign):
+                found.setdefault(stmt.target, stmt)
             elif isinstance(stmt, ir.IRIf):
-                result |= self._collect_new_assigns(stmt.then_body)
+                CFamilyCodeGen._first_assignments(stmt.then_body, found)
                 if stmt.else_body:
-                    result |= self._collect_new_assigns(stmt.else_body)
-        return result
+                    CFamilyCodeGen._first_assignments(stmt.else_body, found)
+        return found
+
+    def _hoisted_type(self, name: str, branches) -> str | None:
+        """The C type of name's first assignment in the first branch that assigns it."""
+        for first in branches:
+            stmt = first.get(name)
+            if stmt is not None:
+                found = self._assign_type(stmt)
+                if found:
+                    return found
+        return None
 
     def _emit(self, line: str):
         self._lines.append("    " * self._indent + line)
@@ -66,25 +79,23 @@ class CFamilyCodeGen:
     def _emit_if(self, node: ir.IRIf):
         # Pre-declare variables assigned in branches so they are visible at
         # the outer scope in C.
-        then_new = self._collect_new_assigns(node.then_body)
-        else_new = self._collect_new_assigns(node.else_body) if node.else_body else set()
-        needs_hoist = then_new | else_new
+        branches = (self._first_assignments(node.then_body),
+                    self._first_assignments(node.else_body or []))
+        needs_hoist = {name for first in branches for name in first if name not in self._declared_vars}
 
         # Hoist with resolved types when available (from ir_type_annotate pass),
         # falling back to the two-pass inference for unannotated IR.
         hoist_types = {}
         for var_name in sorted(needs_hoist):
             if var_name not in self._declared_vars:
-                c_type = self._find_assign_type(var_name, node.then_body) or \
-                         self._find_assign_type(var_name, node.else_body or []) or "float"
+                c_type = self._hoisted_type(var_name, branches) or "float"
                 hoist_types[var_name] = c_type
                 self._local_vars[var_name] = c_type
         # Second pass re-infers non-float types now that referenced vars are
         # registered in _local_vars (needed when _resolved_type is absent).
         for var_name in list(hoist_types):
             if hoist_types[var_name] not in ("float", "double"):
-                c_type = self._find_assign_type(var_name, node.then_body) or \
-                         self._find_assign_type(var_name, node.else_body or []) or hoist_types[var_name]
+                c_type = self._hoisted_type(var_name, branches) or hoist_types[var_name]
                 hoist_types[var_name] = c_type
                 self._local_vars[var_name] = c_type
         for var_name in sorted(hoist_types):
