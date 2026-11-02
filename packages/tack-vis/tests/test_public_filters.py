@@ -337,6 +337,96 @@ def test_hidden_cells_are_not_triangulated():
     assert _differences(triangulate(surface), td.triangulate(surface)) == []
 
 
+# ── New points between points: contour of triangles ────────────────
+
+@tack.kernel
+def _crossed_edges(faces, u, level, crossed):
+    for f in faces:
+        above_a = u[faces.point_id(f, 0)] >= level
+        above_b = u[faces.point_id(f, 1)] >= level
+        crossed[faces.entity_id(f)] = 1 if above_a != above_b else 0
+
+
+@tack.kernel
+def _edge_points(faces, u, level, crossed, slots, ends, weights):
+    for f in faces:
+        e = faces.entity_id(f)
+        if crossed[e] == 1:
+            a = min(faces.point_id(f, 0), faces.point_id(f, 1))
+            b = max(faces.point_id(f, 0), faces.point_id(f, 1))
+            ends[slots[e]] = [a, b]
+            weights[slots[e]] = (level - u[a]) / (u[b] - u[a])
+
+
+@tack.kernel
+def _crossed_triangles(cells, u, level, counts):
+    for c in cells:
+        above = 0
+        for j in range(3):
+            if u[cells.point_id(c, j)] >= level:
+                above += 1
+        counts[cells.entity_id(c)] = 1 if above == 1 or above == 2 else 0
+
+
+@tack.kernel
+def _segments(cells, u, level, counts, starts, slots, connectivity, sources):
+    for c in cells:
+        e = cells.entity_id(c)
+        if counts[e] == 1:
+            rising = slots[0] - slots[0]
+            falling = rising
+            for k in range(3):
+                above_a = u[cells.side_point_id(c, k, 0)] >= level
+                above_b = u[cells.side_point_id(c, k, 1)] >= level
+                if above_b and not above_a:
+                    rising = slots[cells.face_id(c, k)]
+                if above_a and not above_b:
+                    falling = slots[cells.face_id(c, k)]
+            connectivity[2 * starts[e]] = rising
+            connectivity[2 * starts[e] + 1] = falling
+            sources[starts[e]] = e
+
+
+def contour(data, name, level):
+    data = td.visible(data)
+    u = data.fields[name].values
+    n, idt, device = data.num_cells, data.id_dtype, data.device
+    nf = data.topology.faces().num_faces
+    crossed = tack.empty((nf,), tack.i32, device=device)
+    td.for_each(_crossed_edges, data, "faces", u, level, crossed)
+    slots = tack.empty((nf,), idt, device=device)
+    count = tack.algorithms.exclusive_scan(crossed, slots, nf) if nf else 0
+    ends = tack.empty((count,), tack.vec(2, idt), device=device)
+    weights = tack.empty((count,), u.dtype, device=device)
+    td.for_each(_edge_points, data, "faces", u, level, crossed, slots, ends, weights)
+    counts = tack.empty((n,), tack.i32, device=device)
+    td.for_each(_crossed_triangles, data, "cells", u, level, counts)
+    starts = tack.empty((n,), idt, device=device)
+    lines = tack.algorithms.exclusive_scan(counts, starts, n) if n else 0
+    connectivity = tack.empty((2 * lines,), idt, device=device)
+    sources = tack.empty((lines,), idt, device=device)
+    td.for_each(_segments, data, "cells", u, level, counts, starts, slots, connectivity,
+                sources)
+    out = td.UnstructuredTopology(ConstantArray(int(td.shapes.LINE), lines, dtype=tack.u8,
+                                                device=device),
+                                  CountingArray(lines + 1, start=0, step=2, dtype=idt),
+                                  connectivity, num_points=count)
+    return td.carry(data, out, points=td.Interpolate(ends, weights), cells=td.Pieces(sources))
+
+
+def test_contour_of_triangles(data):
+    """Points made between points (``Interpolate``) and lines inside cells (``Pieces``):
+    the built-in's lines of a triangulated surface, every part, its fields
+    interpolated or taken from the cells, its ghost marks from the edges' first ends.
+    The level is no value's, so no line passes through a point (where the built-in
+    makes the edges' crossings one point)."""
+    surface = td.triangulate(td.extract_surface(data))
+    assert not np.any(materialize(surface.fields["RTData"].values).numpy() == 165.25)
+    ours = contour(surface, "RTData", 165.25)
+    assert ours.num_cells > 0
+    assert _differences(ours, td.contour(surface, "RTData", 165.25)) == []
+
+
 # ── Over pieces: entropy ────────────────────────────────────────────
 
 def entropy(pieces, name, bins=10):
