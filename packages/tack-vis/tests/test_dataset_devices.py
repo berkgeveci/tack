@@ -145,6 +145,8 @@ CALLS = {
     "tubes": lambda d: td.tubes(td.extract_edges(d), 0.05, radius_by="s"),
     "glyphs": lambda d: td.glyphs(d, "v", scale=0.1),
     "tetrahedralize": td.tetrahedralize,
+    "merge_points_polyhedra": lambda d: (None if isinstance(d.topology, td.StructuredTopology)
+                                         else td.merge_points(td.as_polyhedra(d))),
     "merge_points": lambda d: (None if isinstance(d.topology, td.StructuredTopology)
                                else td.merge_points(d)),
     "shrink": td.shrink,
