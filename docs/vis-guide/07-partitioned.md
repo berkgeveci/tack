@@ -132,7 +132,7 @@ all be ghosts. A structured piece whose remaining cells form a block stays
 a structured grid. `dataset_to_vtk` keeps the marks, so pieces with ghosts
 can also go to VTK as they are; VTK leaves ghosts out when it renders.
 
-## Pieces need ghost cells
+## Pieces without ghost cells
 
 Without ghost cells, a piece cannot tell what its neighbours make or keep
 from the cells, faces and edges they share. Take a contour point on an edge
@@ -146,8 +146,19 @@ does not guess:
 ```
 
 Such outputs record that they lost the marks, and `statistics` and
-`entropy` refuse them with `NotImplementedError`, naming the cause. What
-does not depend on neighbours still works on pieces without ghost cells:
+`entropy` refuse them with `NotImplementedError`, naming the cause. Mark
+them with `generate_global_ids` of the outputs, as the last two lines do. It
+matches the outputs' points by position, so a point several pieces made
+belongs to the lowest of them and one only a single piece made is its own;
+a cell several pieces made is matched by its points. The marked outputs
+then reduce to the whole's, cell for cell and point for point. That takes
+one exchange of the outputs' points, where ghost cells cost a layer of
+cells in every piece before filtering. A piece's `extract_surface` still
+includes the faces it shares with its neighbours, which only ghost cells
+leave out.
+
+What does not depend on neighbours works on pieces without ghost cells as
+they are:
 
 - reductions of the pieces themselves;
 - filters that keep the cells and points (`warp`, `transform`,

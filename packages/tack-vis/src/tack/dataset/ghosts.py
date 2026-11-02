@@ -201,8 +201,9 @@ def owned_values(data, field):
             "the filter that made it does not carry the marks")
         raise NotImplementedError(
             f"this dataset is a filter's output from data with ghost marks, and {why}: "
-            "its shared cells and points would count once per piece. Reduce the input "
-            "instead, or set the output's ghosts")
+            "its shared cells and points would count once per piece. "
+            "td.generate_global_ids(pieces) of the outputs marks them by matching "
+            "(or reduce the input instead, or set the output's ghosts)")
     values = materialize(field.values)
     ghosts = data.ghosts
     if ghosts is None or (ghosts.cells is None and ghosts.points is None):
@@ -388,7 +389,8 @@ def _unplaceable(source, points, cells, faces_to_cells, edges_to_cells):
     if _has(ghosts.points, Ghosts.DUPLICATEPOINT) and not duplicate_cells:
         return ("its input has no ghost cells, so a piece cannot tell what its neighbours "
                 "make or keep from the cells, faces and edges they share: split with "
-                "ghost_layers=1, or give the pieces ghost cells (vtkGhostCellsGenerator)")
+                "ghost_layers=1, or give the pieces ghost cells first (td.ghost_cells, or "
+                "VTK's vtkGhostCellsGenerator)")
     if used_points and not isinstance(points, Interpolate) and faces_to_cells is None \
             and edges_to_cells is None:
         return None                     # kept points keep their marks
@@ -414,7 +416,8 @@ def carry_marks(source, out, points=None, cells=None, faces_to_cells=None,
     Placing what is made on edges and faces needs pieces with ghost cells: a
     piece without them cannot tell what its neighbours make there. Without
     them, or without point positions, ``out`` records that it lost the marks,
-    so reductions refuse it."""
+    so reductions refuse it, keeping only cells' marks from their source cells;
+    ``generate_global_ids`` of the outputs decides the rest by matching."""
     from tack.dataset.carry import Interpolate, Same, Take, _take
 
     if source._ghosts_lost:
@@ -427,6 +430,12 @@ def carry_marks(source, out, points=None, cells=None, faces_to_cells=None,
         return keep_marks(source, out)
     reason = _unplaceable(source, points, cells, faces_to_cells, edges_to_cells)
     if reason is not None:
+        # Cells from source cells still have their owners: kept beside the record,
+        # for generate_global_ids, which decides the rest.
+        if ghosts.cells is not None and cells is not None and faces_to_cells is None \
+                and edges_to_cells is None:
+            out.ghosts = Ghosts(cells=ghosts.cells if isinstance(cells, Same)
+                                else _take(ghosts.cells, cells.ids))
         return drop_marks(source, out, reason)
     point_marks = None
     if isinstance(points, Same):

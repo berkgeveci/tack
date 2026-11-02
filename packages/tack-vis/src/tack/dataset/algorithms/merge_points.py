@@ -121,6 +121,43 @@ def _merged_polyhedra(topology, new_id, count):
     return merged, Take(tack.array(kept.astype(merged.id_dtype.numpy_dtype)))
 
 
+def _merged_ids(data, tolerance):
+    """``(new_id, kept, count)`` for ``data``'s points within ``tolerance`` of each other
+    made one: each point's merged point, each merged point's input point (its set's
+    smallest), and how many there are. Union-find over the points through the
+    locator's bins: each pair hooks the larger root under the smaller (an atomic
+    minimum), until nothing changes, so a set's root is its smallest point
+    whatever the order of the hooks."""
+    n = data.num_points
+    dtype = ids.at_least(tack.i32, n + 1)
+    if dtype not in get_backend().supported_atomic_dtypes:
+        raise NotImplementedError(f"merging {n} points needs {dtype} atomics, which the "
+                                  f"{get_backend().name} backend does not have")
+    labels = tack.arange(n, dtype=dtype)
+    if n:
+        grid = cached_point_locator(data).grid()
+        every = tack.empty((n,), tack.u8)
+        every.fill(1)
+        changed = tack.zeros((1,), tack.i32)
+        while True:
+            changed.fill(0)
+            _hook_near(grid, 0, every, float(tolerance), labels, changed)
+            _jump(labels)
+            if not int(changed.numpy()[0]):
+                break
+    flags = tack.empty((max(n, 1),), dtype)
+    index = tack.empty((max(n, 1),), dtype)
+    count = 0
+    if n:
+        _roots(labels, flags)
+        count = int(exclusive_scan(flags, index, n))
+    new_id = tack.empty((max(n, 1),), dtype)
+    kept = tack.empty((max(count, 1),), dtype)
+    if n:
+        _numbered(labels, index, new_id, kept)
+    return new_id, (kept if count else tack.empty((0,), dtype)), count
+
+
 @on_inputs_device
 def merge_points(data, tolerance=0.0, fields=None):
     """``data`` with each set of coincident points made one: points at most
@@ -160,37 +197,7 @@ def merge_points(data, tolerance=0.0, fields=None):
         raise TypeError("merge_points needs an order-1 H1 geometry: one position per point")
     data = visible(data)
     topology = data.topology
-    n = data.num_points
-    dtype = ids.at_least(tack.i32, n + 1)
-    if dtype not in get_backend().supported_atomic_dtypes:
-        raise NotImplementedError(f"merging {n} points needs {dtype} atomics, which the "
-                                  f"{get_backend().name} backend does not have")
-    # Union-find over the points within the tolerance, through the locator's
-    # bins: each pair hooks the larger root under the smaller (an atomic
-    # minimum), until nothing changes, so a set's root is its smallest point
-    # whatever the order of the hooks.
-    labels = tack.arange(n, dtype=dtype)
-    if n:
-        grid = cached_point_locator(data).grid()
-        every = tack.empty((n,), tack.u8)
-        every.fill(1)
-        changed = tack.zeros((1,), tack.i32)
-        while True:
-            changed.fill(0)
-            _hook_near(grid, 0, every, float(tolerance), labels, changed)
-            _jump(labels)
-            if not int(changed.numpy()[0]):
-                break
-    flags = tack.empty((max(n, 1),), dtype)
-    index = tack.empty((max(n, 1),), dtype)
-    count = 0
-    if n:
-        _roots(labels, flags)
-        count = int(exclusive_scan(flags, index, n))
-    new_id = tack.empty((max(n, 1),), dtype)
-    kept = tack.empty((max(count, 1),), dtype)
-    if n:
-        _numbered(labels, index, new_id, kept)
+    new_id, kept, count = _merged_ids(data, tolerance)
     faces = None
     if isinstance(topology, PolygonalTopology):
         merged = PolygonalTopology(topology.loop_offsets,
@@ -206,5 +213,4 @@ def merge_points(data, tolerance=0.0, fields=None):
         merged = UnstructuredTopology(topology.types, topology.offsets,
                                       _renumber(topology.connectivity, new_id, data.id_dtype),
                                       num_points=count)
-    kept = kept if count else tack.empty((0,), dtype)
     return carry(data, merged, points=Take(kept), cells=Same(), faces=faces, fields=fields)

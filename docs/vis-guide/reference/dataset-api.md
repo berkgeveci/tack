@@ -1231,7 +1231,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `ghost_cells(pds, layers=1, tolerance=0)` | unstructured pieces with a layer of their neighbours' cells, as `vtkGhostCellsGenerator` (see *Partitioned datasets*); with `tolerance`, pieces share points at most that far apart, for copies that differ in their last bits |
 | `update_ghosts(pds, *fields)` | ghost values refreshed from their owners, in place, for pieces `ghost_cells` made |
 | `merge_pieces(pds, root=0, tolerance=0)` | the pieces as one dataset, each cell and point once (see *Partitioned datasets*); `tolerance` as `generate_global_ids` takes it |
-| `generate_global_ids(pds, tolerance=0)` | the pieces' points and cells numbered across all of them, as `vtkGenerateGlobalIds` (see *Partitioned datasets*); with `tolerance` (VTK's `Tolerance`), points of different pieces at most that far apart are one, and so are chains of them. Points a piece repeats within itself stay apart: `merge_points` merges them first |
+| `generate_global_ids(pds, tolerance=0)` | the pieces' points and cells numbered across all of them, as `vtkGenerateGlobalIds` (see *Partitioned datasets*); with `tolerance` (VTK's `Tolerance`), points of different pieces at most that far apart are one, and so are chains of them. Points a piece repeats within itself stay apart: `merge_points` merges them first. On a filter's output from pieces without ghost cells, which lost its marks, every point and cell is matched and the owners marked, so reductions take it |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 
@@ -1419,7 +1419,7 @@ solid cells walk: pyramids, polyhedra and surfaces search the bins as before.
 
 | Function | |
 |---|---|
-| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, `vtkPolyData` (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None, merge_points=None)` | a `vtkUnstructuredGrid`, `vtkPolyData` (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding; `merge_points` (`True` or a tolerance) merges an unstructured grid's coincident points first |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
 | (both) | a `vtkPartitionedDataSet` and a `PartitionedDataSet` convert piece by piece (null pieces skipped); a `vtkPartitionedDataSetCollection` and a `dict` of names to `PartitionedDataSet`s convert by `vtkCompositeDataSet.NAME()` (`"block<i>"` without one, `"<name>#<i>"` for a name taken) |
 | `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |

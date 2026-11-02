@@ -812,7 +812,7 @@ _DEFAULT_FLOAT = _DefaultFloat()
 
 
 def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None, copy=True):
+                   origin=None, copy=True, merge_points=None):
     """Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,
     ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
     ``UniformCoordinates`` (with its direction matrix), a rectilinear grid's as a
@@ -860,6 +860,14 @@ def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id
     shaped cells are outward; without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
     ``i32`` unless the grid is too large for it (``tack.dataset.ids``).
+
+    ``merge_points`` (``True``, or a tolerance in VTK's coordinates) merges an
+    unstructured grid's coincident points before anything else is read, as
+    ``tack.dataset.merge_points`` would after: a mesh written per processor
+    (OpenFOAM's, put together without merging) repeats every point on a
+    processor boundary, and reading the merged grid matches its faces once,
+    orients its cells and, with ``polyhedral="split"``, decides which piece
+    owns each shared point, all on the merged points (``_merged_grid``).
 
     ``origin`` (three numbers) becomes the dataset's ``origin``: VTK's points,
     an image's origin and a rectilinear grid's lines are taken relative to it,
@@ -924,7 +932,8 @@ def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id
     if origin is None and dtype == tack.f32:
         origin = _far_origin(grid)
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
-                          id_dtype=id_dtype, origin=origin, copy=copy)
+                          id_dtype=id_dtype, origin=origin, copy=copy,
+                          merge_points=merge_points)
     if grid.GetInformation().Has(_time_key()):
         _stamp(out, grid.GetInformation().Get(_time_key()))
     return out
@@ -1121,6 +1130,58 @@ def _polydata_as_grid(polydata):
     return grid
 
 
+def _merged_grid(grid, tolerance):
+    """``grid`` (a ``vtkUnstructuredGrid``) on its points with those at most ``tolerance``
+    apart made one -- as a mesh written per processor (OpenFOAM's) repeats every
+    point on a processor boundary -- before Tack reads it, so faces are matched,
+    cells oriented and pieces' owners decided once, on the merged points. The
+    merge is ``merge_points``' (``_merged_ids``, through a Tack point cloud of
+    the positions as VTK holds them); each set becomes its smallest point, which
+    keeps its point data. The cells, and the polyhedra's faces, are the same on
+    the merged points; cell and field data are shared."""
+    import numpy as np
+    from vtkmodules.vtkCommonCore import (
+        vtkDoubleArray,
+        vtkFloatArray,
+        vtkPoints,
+        vtkUnsignedCharArray,
+    )
+    from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
+
+    from tack.dataset import point_cloud
+    from tack.dataset.algorithms.merge_points import _merged_ids
+
+    n = grid.number_of_points
+    x = np.asarray(grid.GetPoints().GetData())
+    exact = tack.f64 if x.dtype == np.float64 else tack.f32
+    new_id, kept, count = _merged_ids(point_cloud(x, origin=(0.0, 0.0, 0.0), dtype=exact),
+                                      float(tolerance))
+    if count == n:
+        return grid
+    new_id = new_id.numpy()[:n]
+    kept = kept.numpy()
+    out = vtkUnstructuredGrid()
+    out.points = vtkPoints(data=(vtkDoubleArray if x.dtype == np.float64
+                                 else vtkFloatArray)(np.ascontiguousarray(x[kept])))
+    stored = grid.GetCells()
+    cells = vtkCellArray(offsets=np.asarray(stored.offsets_array, np.int64),
+                         connectivity=new_id[np.asarray(stored.connectivity_array)]
+                         .astype(np.int64))
+    types = vtkUnsignedCharArray(np.asarray(grid.cell_types, np.uint8))
+    faces = grid.polyhedron_faces
+    if faces is not None and faces.GetNumberOfCells():
+        renumbered = vtkCellArray(
+            offsets=np.asarray(faces.offsets_array, np.int64),
+            connectivity=new_id[np.asarray(faces.connectivity_array)].astype(np.int64))
+        out.SetPolyhedralCells(types, cells, grid.polyhedron_face_locations, renumbered)
+    else:
+        out.SetCells(types, cells)
+    _take_cell_data(grid.GetPointData(), out.GetPointData(), kept)
+    out.GetCellData().ShallowCopy(grid.GetCellData())
+    out.GetFieldData().ShallowCopy(grid.GetFieldData())
+    return out
+
+
 def _take_cell_data(source, target, rows):
     """``target`` (empty) given ``source``'s arrays at ``rows``, each its own class,
     name, component names and information (``UNITS_LABEL``), and active where
@@ -1165,7 +1226,7 @@ def _take_cell_data(source, target, rows):
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None, copy=True):
+                   origin=None, copy=True, merge_points=None):
     """``vtk_to_dataset`` before the time is stamped."""
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
@@ -1193,7 +1254,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
     from tack.dataset.global_ids import GlobalIds
 
     options = {"dtype": dtype, "polyhedral": polyhedral, "orient": orient, "id_dtype": id_dtype,
-               "origin": origin, "copy": copy}
+               "origin": origin, "copy": copy, "merge_points": merge_points}
     share = not copy
     from tack.dataset.dataset import as_origin
 
@@ -1223,6 +1284,9 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         pieces = (grid.GetPartition(i) for i in range(grid.number_of_partitions))
         return PartitionedDataSet(vtk_to_dataset(piece, **options)
                                   for piece in pieces if piece is not None)
+    if isinstance(grid, vtkUnstructuredGrid) and merge_points not in (None, False):
+        grid = _merged_grid(grid, 0.0 if merge_points is True else merge_points)
+        options["merge_points"] = None                   # merged: the pieces need not be
     if isinstance(grid, vtkUnstructuredGrid):
         # VTK's constant and affine arrays come across as Tack's implicit ones.
         types = _from_vtk(grid.cell_types, tack.u8)
