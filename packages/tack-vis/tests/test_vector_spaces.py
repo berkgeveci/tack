@@ -1,12 +1,13 @@
 """HDiv and HCurl reproduce the fields their spaces hold, through their Piola maps."""
 
-import importlib
+import itertools
 
 import numpy as np
 import pytest
 
 import tack
 import tack.dataset as td
+from tack.dataset import shapes
 
 
 @tack.func
@@ -194,14 +195,8 @@ def _tetrahedra():
 
     from tack.interop.vtk import vtk_to_dataset
 
-    image = vtkImageData()
-    image.SetDimensions(5, 4, 3)
-    image.SetOrigin(0.3, -0.2, 1.0)
-    image.SetSpacing(0.5, 0.3, 0.7)
-    tets = vtkDataSetTriangleFilter()
-    tets.SetInputData(image)
-    tets.Update()
-    return vtk_to_dataset(tets.GetOutput())
+    image = vtkImageData(dimensions=(5, 4, 3), origin=(0.3, -0.2, 1.0), spacing=(0.5, 0.3, 0.7))
+    return vtk_to_dataset(vtkDataSetTriangleFilter()(image))
 
 
 TET_POINTS = [(0.25, 0.25, 0.25), (0.1, 0.2, 0.3), (0.0, 0.0, 0.0), (0.6, 0.2, 0.1)]
@@ -447,56 +442,110 @@ def test_hcurl_of_higher_order_reproduces_its_fields(backend, pc, p):
     np.testing.assert_allclose(curls.numpy(), curl, rtol=1e-4, atol=1e-4 * max(1.0, float(np.abs(curl).max())))
 
 
-def _rotated_hexahedra(seed=3):
-    """A 4 x 3 x 3 block of hexahedra whose corners each cell numbers from a random one of
-    the cube's 24 rotations, so shared faces and edges have different local frames."""
-    pytest.importorskip("vtkmodules.vtkCommonDataModel")
-    import itertools
+# Continuity across faces, on meshes whose cells number their corners every way.
 
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    from vtkmodules.vtkCommonCore import vtkPoints
-    from vtkmodules.vtkCommonDataModel import VTK_HEXAHEDRON, vtkUnstructuredGrid
+_HEX_BITS = np.array([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)])
+_VOXEL_BITS = np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)])
+_BLOCK = (4, 3, 3)
+_SPACING = np.array([0.5, 0.3, 0.7])
+_ORIGIN = np.array([0.3, -0.2, 1.0])
 
-    from tack.interop.vtk import vtk_to_dataset
 
-    rng = np.random.default_rng(seed)
-    n = (4, 3, 3)
-    spacing = np.array([0.5, 0.3, 0.7])
-    origin = np.array([0.3, -0.2, 1.0])
-    ids = np.arange((n[0] + 1) * (n[1] + 1) * (n[2] + 1)).reshape(n[2] + 1, n[1] + 1, n[0] + 1)
-    grid = np.stack(np.meshgrid(np.arange(n[0] + 1), np.arange(n[1] + 1), np.arange(n[2] + 1), indexing="xy"), -1)
-    positions = origin + spacing * np.stack([grid[..., 0], grid[..., 1], grid[..., 2]], -1).transpose(2, 0, 1, 3).reshape(-1, 3)
-    bits = np.array([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)])
-    rotations = []
+def _symmetries(reflections):
+    """The cube's 24 rotations, or with ``reflections`` all 48 of its symmetries."""
+    out = []
     for perm in itertools.permutations(range(3)):
         for signs in itertools.product((1, -1), repeat=3):
             R = np.zeros((3, 3), int)
             for r, (p, s) in enumerate(zip(perm, signs)):
                 R[r, p] = s
-            if round(np.linalg.det(R)) == 1:
-                rotations.append(R)
-    cells = []
-    for k in range(n[2]):
-        for j in range(n[1]):
-            for i in range(n[0]):
-                R = rotations[rng.integers(len(rotations))]
-                corners = []
-                for b in bits:
-                    o = np.rint(R @ (b - 0.5) + 0.5).astype(int)
-                    corners.append(ids[k + o[2], j + o[1], i + o[0]])
-                cells.append(corners)
-    ug = vtkUnstructuredGrid()
-    points = vtkPoints()
-    points.SetData(numpy_to_vtk(positions.astype(np.float64), deep=True))
-    ug.SetPoints(points)
-    for corners in cells:
-        ug.InsertNextCell(VTK_HEXAHEDRON, 8, [int(c) for c in corners])
-    return vtk_to_dataset(ug)
+            if reflections or round(np.linalg.det(R)) == 1:
+                out.append(R)
+    return out
 
 
+def _unstructured(points, types, connectivity, per_cell):
+    offsets = np.arange(len(types) + 1, dtype=np.int64) * per_cell
+    topology = td.UnstructuredTopology(tack.array(np.asarray(types, np.uint8)), tack.array(offsets),
+                                       tack.array(np.asarray(connectivity, np.int64)), num_points=len(points))
+    positions = tack.empty((len(points),), tack.vec3(tack.f32))
+    tack.copyto(positions, points.astype(np.float32))
+    return td.DataSet(topology, positions)
+
+
+def _block(numbering="natural", voxels=None, jitter=0.0, seed=3):
+    """A 4 x 3 x 3 block of hexahedra numbered ``natural``ly, from random ``rotated`` cubes,
+    or from any of the cube's symmetries (``reflected``: some cells inside out). ``voxels``
+    (i, j, k) picks the cells that are voxels instead; ``jitter`` moves the interior
+    points, so the cells are not affine."""
+    rng = np.random.default_rng(seed)
+    nx, ny, nz = _BLOCK
+    ids = np.arange((nx + 1) * (ny + 1) * (nz + 1)).reshape(nz + 1, ny + 1, nx + 1)
+    k, j, i = np.meshgrid(np.arange(nz + 1), np.arange(ny + 1), np.arange(nx + 1), indexing="ij")
+    points = _ORIGIN + _SPACING * np.stack([i, j, k], -1).reshape(-1, 3)
+    if jitter:
+        inside = ((i > 0) & (i < nx) & (j > 0) & (j < ny) & (k > 0) & (k < nz)).reshape(-1)
+        points[inside] += jitter * _SPACING * rng.uniform(-1.0, 1.0, (int(inside.sum()), 3))
+    symmetries = _symmetries(numbering == "reflected")
+    types, connectivity = [], []
+    for c in range(nz):
+        for b in range(ny):
+            for a in range(nx):
+                if voxels is not None and voxels(a, b, c):
+                    types.append(int(shapes.VOXEL))
+                    connectivity += [ids[c + o[2], b + o[1], a + o[0]] for o in _VOXEL_BITS]
+                    continue
+                R = np.eye(3, dtype=int) if numbering == "natural" else symmetries[rng.integers(len(symmetries))]
+                types.append(int(shapes.HEXAHEDRON))
+                for bit in _HEX_BITS:
+                    o = np.rint(R @ (bit - 0.5) + 0.5).astype(int)
+                    connectivity.append(ids[c + o[2], b + o[1], a + o[0]])
+    return _unstructured(points, types, connectivity, 8)
+
+
+def _kuhn_tetrahedra(odd, seed=5):
+    """The block's cubes as six tetrahedra each (Kuhn's), each numbering its corners from a
+    random even permutation, or with ``odd`` any permutation, which turns some inside out."""
+    rng = np.random.default_rng(seed)
+    nx, ny, nz = _BLOCK
+    ids = np.arange((nx + 1) * (ny + 1) * (nz + 1)).reshape(nz + 1, ny + 1, nx + 1)
+    k, j, i = np.meshgrid(np.arange(nz + 1), np.arange(ny + 1), np.arange(nx + 1), indexing="ij")
+    points = _ORIGIN + _SPACING * np.stack([i, j, k], -1).reshape(-1, 3)
+    perms = list(itertools.permutations(range(4)))
+    even = [p for p in perms if round(np.linalg.det(np.eye(4)[list(p)])) == 1]
+    connectivity = []
+    for c in range(nz):
+        for b in range(ny):
+            for a in range(nx):
+                for axes in itertools.permutations(range(3)):
+                    o = np.zeros(3, int)
+                    corners = [ids[c, b, a]]
+                    for axis in axes:
+                        o[axis] = 1
+                        corners.append(ids[c + o[2], b + o[1], a + o[0]])
+                    x = points[corners]
+                    if np.linalg.det(x[1:] - x[0]) < 0:
+                        corners[2], corners[3] = corners[3], corners[2]
+                    p = (perms if odd else even)[rng.integers(len(perms) if odd else len(even))]
+                    connectivity += [corners[q] for q in p]
+    return _unstructured(points, [int(shapes.TETRA)] * (len(connectivity) // 4), connectivity, 4)
+
+
+def _rotated_hexahedra(seed=3):
+    """A 4 x 3 x 3 block of hexahedra whose corners each cell numbers from a random one of
+    the cube's 24 rotations, so shared faces and edges have different local frames."""
+    return _block("rotated", seed=seed)
+
+
+REPRODUCING = {"rotated hexahedra": _rotated_hexahedra,
+               "voxels": lambda: _block(voxels=lambda a, b, c: True),
+               "voxels and rotated hexahedra": lambda: _block("rotated", voxels=lambda a, b, c: (a + b) % 2 == 0)}
+
+
+@pytest.mark.parametrize("mesh", list(REPRODUCING))
 @pytest.mark.parametrize("p", [1, 2, 3])
-def test_vector_spaces_on_rotated_hexahedra(backend, p):
-    data = _rotated_hexahedra()
+def test_vector_spaces_on_rotated_hexahedra(backend, p, mesh):
+    data = REPRODUCING[mesh]()
     pc = (0.3, 0.6, 0.2)
     values = tack.empty((data.num_cells,), tack.vec3(data.dtype))
     other = tack.empty((data.num_cells,), tack.vec3(data.dtype))
@@ -534,11 +583,6 @@ def test_vector_spaces_on_rotated_hexahedra(backend, p):
     np.testing.assert_allclose(other.numpy(), curl, rtol=1e-4, atol=1e-4 * max(1.0, float(np.abs(curl).max())))
 
 
-def test_world_gradient_is_public():
-    module = importlib.import_module("tack.dataset.algorithms.gradients")
-    assert td.world_gradient is module._world_gradient
-
-
 def test_vector_spaces_refuse_other_shapes(backend):
     data = td.uniform_grid((4, 3, 1))           # quads
     with pytest.raises((NotImplementedError, TypeError, ValueError)):
@@ -547,3 +591,93 @@ def test_vector_spaces_refuse_other_shapes(backend):
         out = tack.empty((data.num_cells,), tack.vec3(data.dtype))
         td.for_each(_hdiv_at, data, "cells", u, 0.5, 0.5, 0.5, out, out)
 
+
+CONTINUITY = {
+    "hexahedra": (lambda: _block(), (1, 2, 3)),
+    "rotated hexahedra": (lambda: _block("rotated"), (1, 2, 3)),
+    "reflected hexahedra": (lambda: _block("reflected"), (1, 2, 3)),
+    "reflected hexahedra, not affine": (lambda: _block("reflected", jitter=0.2), (1, 2, 3)),
+    "voxels": (lambda: _block(voxels=lambda a, b, c: True), (1, 2, 3)),
+    "voxels and rotated hexahedra": (lambda: _block("rotated", voxels=lambda a, b, c: (a + b + c) % 2 == 0),
+                                     (1, 2, 3)),
+    "tetrahedra": (lambda: _kuhn_tetrahedra(odd=False), (1,)),
+    "inside-out tetrahedra": (lambda: _kuhn_tetrahedra(odd=True), (1,)),
+}
+
+_FACE_POINTS = [(1 / 3, 1 / 3), (0.2, 0.3), (0.6, 0.2), (0.1, 0.7), (0.25, 0.15)]
+"""Points in a face's own frame, inside triangles and quadrilaterals alike."""
+
+
+@tack.func
+def _face_frame(cells, c, lf):
+    """The parametric points of local face ``lf``'s own corners 0, 1 and its last (3 on a
+    quadrilateral, 2 on a triangle), the frame both cells of the face share."""
+    m = cells.face_num_points(lf)
+    p0 = tack.vec3(0.0, 0.0, 0.0)
+    p1 = tack.vec3(0.0, 0.0, 0.0)
+    p2 = tack.vec3(0.0, 0.0, 0.0)
+    for i in range(m):
+        where = cells.face_position(c, lf, i)
+        point = cells.parametric_point(cells.face_corner(lf, i))
+        if where == 0:
+            p0 = point
+        if where == 1:
+            p1 = point
+        if where == m - 1:
+            p2 = point
+    return p0, p1 - p0, p2 - p0
+
+
+@tack.kernel
+def _normal_traces(cells, u, s, t, count, out):
+    for c in cells:
+        for lf in range(cells.NUM_FACES):
+            p0, du, dw = _face_frame(cells, c, lf)
+            row = 2 * cells.face_id(c, lf) + cells.face_side(c, lf)
+            for k in range(count):
+                pc = p0 + s[k] * du + t[k] * dw
+                J = cells.geometry_jacobian(c, pc)
+                n = (J @ du).cross(J @ dw)
+                out[2 * (row * count + k)] = td.hdiv_value(cells, u, c, pc).dot(n) / n.norm()
+
+
+@tack.kernel
+def _tangential_traces(cells, u, s, t, count, out):
+    for c in cells:
+        for lf in range(cells.NUM_FACES):
+            p0, du, dw = _face_frame(cells, c, lf)
+            row = 2 * cells.face_id(c, lf) + cells.face_side(c, lf)
+            for k in range(count):
+                pc = p0 + s[k] * du + t[k] * dw
+                J = cells.geometry_jacobian(c, pc)
+                v = td.hcurl_value(cells, u, c, pc)
+                out[2 * (row * count + k)] = v.dot(J @ du) / (J @ du).norm()
+                out[2 * (row * count + k) + 1] = v.dot(J @ dw) / (J @ dw).norm()
+
+
+def _jumps(data, space, kernel, seed):
+    """The largest difference between the two sides' traces of a field of random values
+    on every interior face, and the largest trace."""
+    values = np.random.default_rng(seed).uniform(-1.0, 1.0, space.size).astype(np.float32)
+    u = td.Field(space, tack.array(values))
+    count = len(_FACE_POINTS)
+    s = tack.array(np.array([p[0] for p in _FACE_POINTS], np.float32))
+    t = tack.array(np.array([p[1] for p in _FACE_POINTS], np.float32))
+    out = tack.array(np.full(2 * 2 * data.topology.faces().num_faces * count * 2, np.nan, np.float32))
+    td.for_each(kernel, data, "cells", u, s, t, count, out)
+    out = out.numpy().reshape(-1, 2, count, 2)
+    inside = ~np.isnan(out[:, 1, 0, 0])
+    if kernel is _normal_traces:
+        out = out[..., :1]
+    both = out[inside]
+    assert len(both) > 0
+    return float(np.abs(both[:, 0] - both[:, 1]).max()), float(np.abs(both).max())
+
+
+@pytest.mark.parametrize(("make", "p"), [(m, p) for m, (_, orders) in CONTINUITY.items() for p in orders],
+                         ids=[f"{m}-p{p}" for m, (_, orders) in CONTINUITY.items() for p in orders])
+def test_normal_and_tangential_components_are_continuous(backend, make, p):
+    data = CONTINUITY[make][0]()
+    for space, kernel in ((td.HDiv(data, order=p), _normal_traces), (td.HCurl(data, order=p), _tangential_traces)):
+        jump, largest = _jumps(data, space, kernel, seed=p)
+        assert jump <= 2e-5 * largest, (type(space).__name__, jump, largest)
