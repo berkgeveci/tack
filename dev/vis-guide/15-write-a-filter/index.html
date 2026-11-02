@@ -2813,6 +2813,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#new-points-and-lines-contour-of-triangles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New points and lines: contour of triangles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New points and lines: contour of triangles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#carry-map-by-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        carry, map by map
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-reduction-over-pieces-entropy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4627,6 +4655,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#new-points-and-lines-contour-of-triangles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New points and lines: contour of triangles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New points and lines: contour of triangles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#carry-map-by-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        carry, map by map
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-reduction-over-pieces-entropy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4683,7 +4739,7 @@
 <p>A filter is a Python function that takes a dataset and returns a field or a
 new dataset, running kernels to do the work. The built-in filters are
 written that way, with the same public API you have, so a filter of your own
-can do anything theirs do. This chapter rewrites five of them. Each rewrite
+can do anything theirs do. This chapter rewrites six of them. Each rewrite
 gives the built-in's result in every part, including topology, geometry,
 fields and their units, sets, ghost marks, global ids, origin, spatial unit
 and time. The example program checks this, and so does the test suite
@@ -4921,9 +4977,129 @@ is the cell on the face's inner side, and a boundary face has one side.</p>
   allocates: an implicit array lives on the device it is made for.</li>
 <li><strong><code>carry</code> brings everything else.</strong> It takes the input dataset, the new
   topology, and a map for each kind of entity, saying where the output's
-  entities came from. It then carries fields, sets, ghost marks, global ids
-  and the frame by those maps:</li>
+  entities came from, and carries fields, sets, ghost marks, global ids and
+  the frame by those maps. Here the points are the input's (<code>Same()</code>), and
+  each triangle is a piece of the cell <code>sources</code> names (<code>Pieces(sources)</code>).
+  The next section, whose filter makes new points as well, takes <code>carry</code>
+  apart.</li>
 </ul>
+<h2 id="new-points-and-lines-contour-of-triangles">New points and lines: <code>contour</code> of triangles<a class="headerlink" href="#new-points-and-lines-contour-of-triangles" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_crossed_edges</span><span class="p">(</span><span class="n">faces</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">crossed</span><span class="p">):</span>
+    <span class="c1"># A 2D mesh&#39;s faces are its edges: 1 where the level lies between the two ends.</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">faces</span><span class="p">:</span>
+        <span class="n">above_a</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">)]</span> <span class="o">&gt;=</span> <span class="n">level</span>
+        <span class="n">above_b</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">)]</span> <span class="o">&gt;=</span> <span class="n">level</span>
+        <span class="n">crossed</span><span class="p">[</span><span class="n">faces</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">f</span><span class="p">)]</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">above_a</span> <span class="o">!=</span> <span class="n">above_b</span> <span class="k">else</span> <span class="mi">0</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_edge_points</span><span class="p">(</span><span class="n">faces</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">crossed</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+    <span class="c1"># Each crossed edge&#39;s point: its two ends, and how far it lies from the first.</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">faces</span><span class="p">:</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">faces</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">crossed</span><span class="p">[</span><span class="n">e</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">ends</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">]</span>
+            <span class="n">weights</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span><span class="n">level</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">a</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">b</span><span class="p">]</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">a</span><span class="p">])</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_crossed_triangles</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">counts</span><span class="p">):</span>
+    <span class="c1"># A triangle with one or two corners above the level holds one line.</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>
+        <span class="n">above</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">u</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">j</span><span class="p">)]</span> <span class="o">&gt;=</span> <span class="n">level</span><span class="p">:</span>
+                <span class="n">above</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">counts</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">c</span><span class="p">)]</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">above</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">above</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="mi">0</span>
+
+
+<span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_segments</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">counts</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">sources</span><span class="p">):</span>
+    <span class="c1"># Going round the triangle, its line runs from the edge where the values rise</span>
+    <span class="c1"># past the level to the edge where they fall back, so higher values lie on its</span>
+    <span class="c1"># right. Its points are those edges&#39; points, numbered by `slots`.</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cells</span><span class="p">:</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">cells</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">counts</span><span class="p">[</span><span class="n">e</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">rising</span> <span class="o">=</span> <span class="n">slots</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">slots</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">falling</span> <span class="o">=</span> <span class="n">rising</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+                <span class="n">above_a</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">side_point_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="mi">0</span><span class="p">)]</span> <span class="o">&gt;=</span> <span class="n">level</span>
+                <span class="n">above_b</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">side_point_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="mi">1</span><span class="p">)]</span> <span class="o">&gt;=</span> <span class="n">level</span>
+                <span class="k">if</span> <span class="n">above_b</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">above_a</span><span class="p">:</span>
+                    <span class="n">rising</span> <span class="o">=</span> <span class="n">slots</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">face_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)]</span>
+                <span class="k">if</span> <span class="n">above_a</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">above_b</span><span class="p">:</span>
+                    <span class="n">falling</span> <span class="o">=</span> <span class="n">slots</span><span class="p">[</span><span class="n">cells</span><span class="o">.</span><span class="n">face_id</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">)]</span>
+            <span class="n">connectivity</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">starts</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="n">rising</span>
+            <span class="n">connectivity</span><span class="p">[</span><span class="mi">2</span> <span class="o">*</span> <span class="n">starts</span><span class="p">[</span><span class="n">e</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">falling</span>
+            <span class="n">sources</span><span class="p">[</span><span class="n">starts</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="n">e</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">contour</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">level</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Lines where a point field of a triangle mesh crosses a level: td.contour of a</span>
+<span class="sd">    surface.&quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">u</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+    <span class="n">n</span><span class="p">,</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">device</span>
+    <span class="c1"># The points: one per edge the level crosses, numbered by a scan over the edges.</span>
+    <span class="n">nf</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span><span class="o">.</span><span class="n">num_faces</span>
+    <span class="n">crossed</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nf</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_crossed_edges</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">crossed</span><span class="p">)</span>
+    <span class="n">slots</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nf</span><span class="p">,),</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">exclusive_scan</span><span class="p">(</span><span class="n">crossed</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">nf</span><span class="p">)</span> <span class="k">if</span> <span class="n">nf</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">ends</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">count</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">idt</span><span class="p">),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">weights</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">count</span><span class="p">,),</span> <span class="n">u</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_edge_points</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">crossed</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+    <span class="c1"># The lines: one per triangle the level crosses, numbered by a scan over the cells.</span>
+    <span class="n">counts</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_crossed_triangles</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">counts</span><span class="p">)</span>
+    <span class="n">starts</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="n">exclusive_scan</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="k">if</span> <span class="n">n</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">lines</span><span class="p">,),</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">sources</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">lines</span><span class="p">,),</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_segments</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">counts</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span>
+                <span class="n">sources</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">ConstantArray</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">shapes</span><span class="o">.</span><span class="n">LINE</span><span class="p">),</span> <span class="n">lines</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">,</span>
+                                                <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
+                                  <span class="n">CountingArray</span><span class="p">(</span><span class="n">lines</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">idt</span><span class="p">),</span>
+                                  <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="n">count</span><span class="p">)</span>
+    <span class="c1"># Point i lies between points ends[i] at weights[i]; line i lies in cell sources[i].</span>
+    <span class="k">return</span> <span class="n">td</span><span class="o">.</span><span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">td</span><span class="o">.</span><span class="n">Interpolate</span><span class="p">(</span><span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">),</span> <span class="n">cells</span><span class="o">=</span><span class="n">td</span><span class="o">.</span><span class="n">Pieces</span><span class="p">(</span><span class="n">sources</span><span class="p">))</span>
+</code></pre></div>
+<p>The lines where a point field crosses a level on a mesh of triangles, which
+is what <code>td.contour</code> gives for a surface. The filter makes new points, one on
+each edge the level crosses, and new cells, each a line inside a triangle, so
+<code>carry</code> gets a map for each.</p>
+<ul>
+<li><strong>Number the new points by the edges.</strong> A 2D mesh's faces are its edges
+  (<code>data.topology.faces()</code>), each stored once and shared by the triangles on
+  either side.</li>
+<li>One kernel over the faces flags the edges the level crosses, a scan
+    numbers them, and a second kernel fills in each point's two ends and its
+    weight: how far it lies from the first end,
+    <code>(level - u[a]) / (u[b] - u[a])</code>.</li>
+<li>The two triangles on an edge then name its point by the same number,
+    <code>slots[face_id]</code>, so their lines join.</li>
+<li>The first end is the edge's lower point id, as in the built-in, so the
+    points have the built-in's bits.</li>
+<li><strong>Orient the lines.</strong> Going round each triangle (<code>side_point_id(c, k, 0)</code> to
+  <code>side_point_id(c, k, 1)</code>), its line runs from the edge where the values rise
+  past the level to the edge where they fall back. The higher values then lie
+  on its right, as with the built-in.</li>
+<li><strong>What it leaves out.</strong> The built-in also:</li>
+<li>makes the crossings of edges that meet at a point whose value is exactly
+    the level into one point there;</li>
+<li>contours several levels at once;</li>
+<li>skips cells with a NaN.</li>
+</ul>
+<p>The example picks a level that no value equals.</p>
+<h3 id="carry-map-by-map"><code>carry</code>, map by map<a class="headerlink" href="#carry-map-by-map" title="Permanent link">&para;</a></h3>
+<p><code>carry(data, out, points=..., cells=...)</code> builds a dataset on the new
+topology <code>out</code>, and brings everything of <code>data</code> that its maps say how to
+bring:</p>
 <table>
 <thead>
 <tr>
@@ -4946,18 +5122,48 @@ is the cell on the face's inner side, and a boundary face has one side.</p>
 <tr>
 <td><code>Pieces(ids)</code></td>
 <td>a part of input cell <code>ids[i]</code></td>
-<td>cells cut from cells: triangles, tetrahedra</td>
+<td>cells cut from cells: triangles, tetrahedra, contour lines</td>
 </tr>
 <tr>
 <td><code>Interpolate(ends, weights)</code></td>
-<td>a point between two input points</td>
+<td>the point <code>weights[i]</code> of the way from input point <code>ends[i][0]</code> to <code>ends[i][1]</code></td>
 <td>points made on edges: contours, clips</td>
 </tr>
 </tbody>
 </table>
-<p>A kind of entity without a map carries no fields. <code>faces_to_cells=</code> says
-the output's cells are the input's faces (an extracted surface), and
-<code>geometry=</code> gives a geometry the filter computed itself.</p>
+<p>Each kind of entity has its own keyword:
+- <code>points=</code> and <code>cells=</code>;
+- <code>faces=</code> and <code>edges=</code>, for values stored on a mesh's faces or edges;
+- <code>faces_to_cells=</code> and <code>edges_to_cells=</code>, when the output's cells are the
+  input's faces or edges (an extracted surface, extracted edges).</p>
+<p>What goes with each map:</p>
+<ul>
+<li><strong>Point fields</strong> (<code>H1</code>, values on points) go by the points map.
+  <code>Interpolate</code> blends them as <code>va + w * (vb - va)</code>, so the contour's points
+  get <code>RTData</code> (the level, to rounding) and every other point field. A field
+  of integers cannot be blended and is left behind.</li>
+<li><strong>The geometry</strong> is a point field like any other, so <code>Interpolate</code> places
+  the new points: the filter never computes a position. A filter that
+  computes positions some other way passes them as <code>geometry=</code>.</li>
+<li><strong>Cell fields</strong> (<code>Constant</code>, values on cells) go by the cells map: each
+  line takes its triangle's value. <code>L2</code> fields go with <code>Same</code> and <code>Take</code> only,
+  since a piece of a cell is not the whole cell their basis describes.</li>
+<li><strong>Sets</strong> go by the same maps, so a line is in a cell set when its triangle
+  is. A point set cannot go through <code>Interpolate</code> and is left behind.</li>
+<li><strong>Ghost marks.</strong> A line takes its triangle's mark. A new point takes the
+  mark of its edge's first end by position, so the piece that owns that end
+  owns the point, and each line or point of the whole's contour is owned
+  once over the pieces.</li>
+<li>Pieces without ghost cells cannot tell who owns what they make on the
+    edges they share.</li>
+<li>Their output records that its marks were lost, and reductions over it
+    refuse to run (see <code>shrink</code> above).</li>
+<li><strong>Global ids</strong> go with entities that are input entities (<code>Same</code>, <code>Take</code>).
+  Made points and pieces of cells have none.</li>
+<li><strong>The frame:</strong> the origin, spatial unit and time always come along.</li>
+</ul>
+<p>A kind of entity with no map carries nothing: no fields, sets, marks or ids
+of that kind. <code>fields=</code> (a list of names) limits which fields are carried.</p>
 <h2 id="a-reduction-over-pieces-entropy">A reduction over pieces: <code>entropy</code><a class="headerlink" href="#a-reduction-over-pieces-entropy" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">entropy</span><span class="p">(</span><span class="n">pieces</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The entropy of a point field&#39;s histogram over every piece: td.entropy.&quot;&quot;&quot;</span>
