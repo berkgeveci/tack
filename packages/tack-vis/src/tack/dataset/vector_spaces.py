@@ -1,13 +1,13 @@
-"""Vector spaces of the lowest order on hexahedra, voxels and tetrahedra: ``HDiv``, one value
-per face, and ``HCurl``, one value per edge.
+"""Vector spaces on hexahedra, voxels and tetrahedra: ``HDiv``, its values on faces, and
+``HCurl``, on edges; above order 1, on hexahedra and voxels, also on faces and inside cells.
 
 ``HDiv`` (Raviart-Thomas) holds each face's integrated flux along the face's stored
 normal, out of its side 0 -- the convention of ``Values(data, "faces", oriented=True)``,
 ``upwind_flux`` and ``net_flux`` -- and interpolates it inside each cell so that the
 flux through every face is its value. ``HCurl`` (Nedelec, first kind) holds each
 edge's tangential integral from its low point id to its high one, and interpolates
-it so that the integral along every edge is its value. Both reproduce constant
-fields exactly, and ``HDiv`` the fields whose x-component depends on x alone, and so
+it so that the integral along every edge is its value. At order 1 both reproduce
+constant fields exactly, and ``HDiv`` the fields whose x-component depends on x alone, and so
 on: ``(a + b x, c + d y, e + f z)``.
 
 A field view gives ``parametric_value(c, pc)``, the field pulled back to the
@@ -427,10 +427,19 @@ class _HCurlField:
 class HDiv(Space):
     """H(div), Raviart-Thomas. At ``order`` 1 (on hexahedra, voxels and tetrahedra): one
     value per face, its integrated flux along the face's stored normal (out of side 0).
-    Above (on hexahedra and voxels), with p the order: p squared values per face, the normal
-    flux density at the Gauss points of the face's own frame, then 3 (p - 1) p squared per
-    cell, the reference components at their nodes (``gauss_nodes``, ``lobatto_nodes``).
-    Read with ``hdiv_value``."""
+    Above (on hexahedra and voxels), with p the order, ``values`` holds two blocks.
+
+    - Faces, p squared values each: face ``f``'s normal flux density at the Gauss points
+      (``gauss_nodes(p)``) of its own frame, at ``f p^2 + m + p q``, ``m`` along the face's
+      own u axis (its corner 0 to corner 1) and ``q`` along its w axis (corner 0 to 3).
+    - Cells, after the faces, 3 (p - 1) p squared values each, in the cell's own numbering:
+      for each axis ``a``, the reference component ``a`` at Gauss-Lobatto node ``i`` = 1 ..
+      p - 1 along ``a`` (``lobatto_nodes(p + 1)``) and Gauss nodes ``j``, ``k`` along axes
+      ``a + 1`` and ``a + 2`` (cyclically), at ``num_faces p^2 + c 3 (p - 1) p^2 + a (p -
+      1) p^2 + (i - 1) p^2 + j p + k``.
+
+    ``interpolate`` and ``project`` do not fill these spaces; a kernel writes the values in
+    this layout. Read with ``hdiv_value``."""
 
     on = "cells"
     mixin = _HDivField
@@ -482,7 +491,21 @@ class HCurl(Space):
     its high one. Above (on hexahedra and voxels), with p the order: p values per edge, the
     tangential component along the edge at its Gauss points; 2 p (p - 1) per face, the two
     tangential components of the face's own frame; then 3 p (p - 1) squared per cell, the
-    reference components at their nodes. Read with ``hcurl_value``."""
+    reference components at their nodes. In ``values``:
+
+    - Edges: edge ``e``'s tangential component at Gauss point ``m`` (``gauss_nodes(p)``),
+      from the edge's low point id, at ``e p + m``.
+    - Faces, after the edges: face ``f``'s component along its own u axis (corner 0 to 1)
+      at Gauss point ``m`` along u and interior Gauss-Lobatto node ``q`` = 1 .. p - 1 along
+      w (``lobatto_nodes(p + 1)``), at ``num_edges p + f 2 p (p - 1) + m + p (q - 1)``; then
+      its component along w, ``m`` along w and ``q`` along u, ``p (p - 1)`` further on.
+    - Cells, after the faces, in the cell's own numbering: the reference component ``a``
+      at Gauss point ``i`` along ``a`` and interior Gauss-Lobatto nodes ``j``, ``k`` = 1 ..
+      p - 1 along axes ``a + 1`` and ``a + 2`` (cyclically), at ``a p (p - 1)^2 + i (p -
+      1)^2 + (j - 1) (p - 1) + (k - 1)`` of the cell's block.
+
+    ``interpolate`` and ``project`` do not fill these spaces; a kernel writes the values in
+    this layout. Read with ``hcurl_value``."""
 
     on = "cells"
     mixin = _HCurlField
