@@ -148,10 +148,11 @@ def test_hcurl_values_and_curls(backend, pc, which):
 def test_h1_node_queries():
     data = td.uniform_grid((3, 3, 3))
     hexa = next(g.shape for g in data.topology.groups() if g.count)
-    two = td.H1(data, order=2)
-    assert not two.reads_any_order(hexa)
-    assert two.quadratic_count(hexa) == hexa.NUM_QUADRATIC
-    assert td.H1(data, order=3).reads_any_order(hexa)
+    assert td.H1(data).quadratic_count(hexa) == hexa.NUM_POINTS
+    assert td.H1(data, order=2).quadratic_count(hexa) == hexa.NUM_QUADRATIC
+    assert td.H1(data, order=2, basis="serendipity").quadratic_count(hexa) == hexa.NUM_POINTS + hexa.NUM_EDGES
+    with pytest.raises(ValueError):
+        td.H1(data, order=3).quadratic_count(hexa)
 
 
 @tack.func
