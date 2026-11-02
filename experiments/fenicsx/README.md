@@ -1,73 +1,128 @@
 # FEniCSx interoperability investigation
 
-This experiment tests a native DOLFINx-to-Tack import using the existing field
-model. It is not a public adapter. Run it in the `fenicsx-tack` conda environment:
+This experiment imports serial DOLFINx geometry and Basix P fields into Tack.
+It remains outside the installed API. It adds no FEniCSx dependency or changes
+to Tack's core field model. Run it in the `fenicsx-tack` conda environment:
 
 ```bash
 conda activate fenicsx-tack
-python experiments/fenicsx/interop.py
+python experiments/fenicsx/verify.py --report /tmp/fenicsx-validation.json
 ```
 
-Validated with DOLFINx/Basix 0.11.0, Python 3.12.16 and Tack at `b2190066` on
-Apple Silicon. Tack remains installed editable from `tack-berk`; this experiment
-does not change the installed package or add a DOLFINx dependency to Tack.
+The original `python experiments/fenicsx/interop.py` entry point also runs the
+checks. Options select shapes, variants, orders and component counts; see
+`--help`. Validated with DOLFINx/Basix 0.11.0, Python 3.12.16 and the installed
+Tack checkout at `b2190066`, using CPU float64 on Apple Silicon.
 
-## What passed
+## Coverage and results
 
-A serial 2x2 quadrilateral mesh with straight geometry, using CPU float64:
+The matrix covers H1 orders 1–4 and DG orders 0–4, scalar and blocked
+two-component fields, and eight requested Basix variants: equispaced,
+GLL warped/Isaac/centroid, Chebyshev warped, GL warped, Legendre and Bernstein.
+Only source-defined combinations are tested as imports; for example, Basix
+does not provide continuous Legendre elements or Bernstein elements on hexes.
 
-- Continuous H1 Lagrange fields, orders 1 through 4.
-- Discontinuous Lagrange fields, orders 0 through 3.
-- Scalars and blocked two-component vectors: 16 combinations in total.
-- Random coefficients, evaluated at seven interior points per cell against
-  DOLFINx's `Function.eval`; the largest observed error was below `1e-14`.
-- Changes to the source coefficient vector, made after completed reads, are
-  reflected in subsequent Tack evaluations without rebuilding the field.
-- DLPack-based memory checks confirm borrowed geometry and coefficient storage.
+| Shape | Direct sharing | Lazy conversion | Passed |
+|---|---:|---:|---:|
+| Interval | 96 | 16 | 112 |
+| Triangle | 62 | 50 | 112 |
+| Quadrilateral | 88 | 16 | 104 |
+| Tetrahedron | 62 | 50 | 112 |
+| Hexahedron | 88 | 16 | 104 |
+| Prism / wedge | 46 | 22 | 68 |
+| Pyramid | 26 | 2 | 28 |
+| **Total** | **468** | **172** | **640** |
 
-## How it works
+All 640 import cases passed. Basix declined 320 requested combinations, and
+DOLFINx could not construct 20 function spaces; 28 source-defined combinations
+were explicitly refused for unavailable Tack
+pyramid spaces. None failed unexpectedly. Counts include low-order variants
+that reduce to the same basis. The full run comprises 1,008 requested cases.
 
-DOLFINx's quadrilateral corner order differs from Tack's cyclic quad order.
-The topology's corner connectivity is reordered, and reference-node positions
-identify the permutation from Basix's local DOFs to Tack's local basis order.
+Each imported field uses random source coefficients and seven interior sample
+points per cell. Values are compared against DOLFINx `Function.eval`;
+world-gradient checks use field-view parametric derivatives and the experiment's
+Jacobian kernel, compared against Basix derivative tabulation and the source
+geometry Jacobian. Largest observed absolute errors were `6.7e-13` for values
+and `2.3e-12` for gradients. Checks repeat after changing the source vector to
+verify live borrowing. Memory checks verify shared geometry/coefficient storage.
 
-For H1, DOLFINx interleaves vertex, edge and interior DOFs globally. Tack's
-element-to-DOF tables require each corner's coefficient index to equal its
-topological point ID. The prototype creates an adapter numbering that meets
-that rule, then uses `arrays.Permutation` to read the original DOLFINx vector.
-The coefficients themselves are never reordered or copied. Each field can have
-its own adapter numbering on the same topology.
+Meshes have multiple adjacent cells; tetrahedra and triangles exercise varied
+cell orientations, and two pyramids share a base with reversed reference axes.
+Geometry is degree 1. Higher-order geometry and distributed meshes remain out
+of scope.
 
-For DG, a permutation maps each cell's basis order to its original coefficient
-blocks. The resulting values use Tack's existing L2 block layout. Vector
-coefficients are borrowed as vector elements rather than flattened scalar DOFs.
+## Two explicit import modes
 
-Integer connectivity, index permutations and DOF tables are allocated. Geometry
-positions and solution coefficients are shared, with explicit source-owner
-references retained. This is zero-copy numerical storage, not a claim that
-import allocates nothing.
+```python
+data = import_mesh(dolfinx_mesh)
+field = import_function(data, function)  # compatible basis required
+field = import_function(data, function, conversion="lazy")
+print(field._dolfinx_import)  # experimental inspection metadata
+```
 
-## Limits and next steps
+**Direct:** geometry and coefficients are borrowed. Integer connectivity,
+permutations and DOF tables allocate. Basis functions are compared by tabulation
+to find a coefficient permutation; this handles both nodal bases and native
+Bernstein coefficients. An element's interpolation points are not assumed to
+be coefficient locations. In particular, Basix Bernstein elements use more
+interpolation/quadrature points than coefficients.
 
-- Single-process, straight quads, real float64 CPU storage only. Mesh and
-  function must match. The prototype accepts matching Lagrange nodal bases and
-  refuses other element families or mismatched node locations.
-- Add triangles/tetrahedra, hexes, curved geometry and deliberately reversed
-  entity orientations; test values and derivatives, not only sampled pictures.
-- Basix's default simplex variants above order 2 may have nodes different from
-  Tack's equispaced simplex bases. Detect compatibility and use an explicit
-  exact coefficient conversion where the polynomial spaces match.
-- Mixed spaces, unblocked vector elements, moment/modal coefficients,
-  H(curl)/H(div), constraints and distributed owned/ghost data need separate
-  handling. A shared array does not establish correct ghost values.
-- The source must stay alive and cannot be modified during Tack reads. Live
-  solver views need a revision/invalidation contract before use as published
-  immutable datasets or with cached derived results. A copied snapshot is a
-  different ownership mode.
-- The CPU borrowing result does not establish zero-copy GPU interoperability.
-  The current float64 arrays cannot be used directly by Metal; any conversion
-  or device transfer must be explicit. Assess compatible GPU storage separately.
+DOLFINx interleaves vertex and higher-order DOFs. An adapter numbering makes
+corner indices match Tack's point IDs; `arrays.Permutation` reads the original
+vector without reordering its storage. Different fields use independent maps
+on the same topology. DG fields use the existing L2 block layout. Blocked
+vectors borrow vector elements rather than treating each component as a node.
 
-Before exposing a public `dolfinx_to_dataset` API, agree on these ownership and
-capability rules, then move the import into an optional interop module with
-tests against DOLFINx on the supported matrix.
+**Lazy conversion:** when bases differ, the explicit option represents each
+target nodal coefficient as a weighted sum of source coefficients. The weights
+come from source basis tabulation at target nodes, with reconstruction checked
+at independent reference points. H1 retains shared target DOFs; DG remains
+cell-local. Source coefficients stay borrowed and updates remain visible.
+This supports Legendre modal DG fields and incompatible nodal variants without
+allocating a converted coefficient vector. It does not add a native Legendre
+basis to Tack.
+
+The cost is a dense dot product per target coefficient read, potentially
+quadratic work in the local basis size for field evaluation. Materializing
+transformed coefficients could make repeated evaluation faster but would need
+explicit allocation and refresh. No performance recommendation follows from
+these correctness checks.
+
+The lazy storage currently uses Tack's internal `_Implicit`/`_metadata` hooks.
+A production adapter needs a supported extension mechanism or equivalent
+public composition; the experiment does not present these hooks as public API.
+
+## Shape and basis limits
+
+- Equispaced and matching GLL/GL nodal variants share coefficients directly.
+  Different simplex/wedge node variants use the explicit conversion path.
+- Basix Bernstein elements on intervals, triangles and tetrahedra match Tack's
+  Bernstein basis up to ordering, preserving their coefficient interpretation.
+- Legendre modal DG fields convert exactly on intervals, triangles, quads,
+  tetrahedra, hexes and prisms. Pyramid constants convert; order-1 Legendre
+  pyramids have eight modes, while Tack's order-1 pyramid has five functions.
+  Those are different spaces and are refused, not approximated.
+- Pyramids use different reference conventions: Tack's collapsed `(r,s,t)`
+  corresponds to Basix `((1-t)*r, (1-t)*s, t)`. Order-1 nodal fields are covered;
+  higher-order pyramids are refused until Tack has a matching basis.
+- In installed DOLFINx 0.11.0, constructing H1 prism spaces at orders 3–4
+  fails for the tested equispaced and GLL variants with
+  `Multiple index maps of this dimension. Call index_maps instead.`
+  The same error occurs for H1 pyramids at orders 3–4. These 20 cases fail
+  before the adapter runs. Prism H1 orders 1–2 and DG orders 0–4 are covered.
+  `reproduce_prism_dofmap.py` is a minimal source-only reproducer; its expected
+  outcome in this environment is the runtime error above.
+- Non-permutation orientation transformations, moment elements, H(curl)/H(div),
+  mixed spaces, constraints, periodic vertex identifications, unused geometry
+  points, complex coefficients and MPI ownership/ghosts require further work.
+
+## Ownership and devices
+
+Source owners are retained. The solver must not write during Tack reads.
+Revision/invalidation rules for cached results and immutable publication remain
+design work; live storage and a published snapshot need distinct contracts.
+
+The validated borrowing is CPU float64. It does not establish zero-copy GPU
+sharing. Metal cannot directly consume these float64 arrays; conversion and
+device-transfer behavior must be explicit and assessed separately.
