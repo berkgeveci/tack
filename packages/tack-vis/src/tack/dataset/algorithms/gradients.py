@@ -29,16 +29,21 @@ def world_gradient(cells, u, c, pc):
     if cells.DIMENSION == 3:
         g = cells.geometry_jacobian(c, pc).inverse().transpose() @ u.parametric_gradient(c, pc)
     elif cells.DIMENSION == 2:
-        m = cells.geometry_jacobian(c, pc)
-        a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
-        b = tack.vec3(m[0, 1], m[1, 1], m[2, 1])
-        d = u.parametric_gradient(c, pc)
-        aa = a.dot(a)
-        ab = a.dot(b)
-        bb = b.dot(b)
-        det = aa * bb - ab * ab
-        g = ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
+        g = _in_plane(cells.geometry_jacobian(c, pc), u.parametric_gradient(c, pc))
     return g
+
+
+@tack.func
+def _in_plane(m, d):
+    """The world vector in the plane of `m`'s first two columns whose dots with them
+    are `d[0]` and `d[1]`."""
+    a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
+    b = tack.vec3(m[0, 1], m[1, 1], m[2, 1])
+    aa = a.dot(a)
+    ab = a.dot(b)
+    bb = b.dot(b)
+    det = aa * bb - ab * ab
+    return ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
 
 
 _world_gradient = world_gradient
@@ -59,10 +64,11 @@ def world_hessian(cells, u, c, pc):
 
 @tack.func
 def world_jet(cells, u, c, pc):
-    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of solid
-    cell `c`, from the field view's `parametric_jet`, one pass over the cell's values:
-    what a kernel needing several of them reads once. As `world_hessian`; on surfaces,
-    lines and vertices the gradient and Hessian are zero."""
+    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of cell
+    `c`, from the field view's `parametric_jet`, one pass over the cell's values: what a
+    kernel needing several of them reads once. The gradient is `world_gradient`'s on
+    every cell, in the cell's plane on surfaces, and the Hessian `world_hessian`'s, zero
+    on surfaces, lines and vertices."""
     v, pg, ph = u.parametric_jet(c, pc)
     g = tack.vec3(0.0, 0.0, 0.0)
     h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
@@ -70,6 +76,8 @@ def world_jet(cells, u, c, pc):
         inverse = cells.geometry_jacobian(c, pc).inverse()
         g = inverse.transpose() @ pg
         h = inverse.transpose() @ (ph - cells.geometry_curvature(c, pc, g)) @ inverse
+    elif cells.DIMENSION == 2:
+        g = _in_plane(cells.geometry_jacobian(c, pc), pg)
     return v, g, h
 
 

@@ -202,6 +202,15 @@ def test_surfaces_have_none(backend):
 
 
 @tack.kernel
+def _jet_gradients(cells, u, out):
+    for c in cells:
+        _, g, _ = td.world_jet(cells, u, c, cells.parametric_center())
+        e = cells.entity_id(c)
+        for a in range(3):
+            out[3 * e + a] = g[a]
+
+
+@tack.kernel
 def _jets(cells, u, out):
     for c in cells:
         pc = cells.parametric_center()
@@ -223,6 +232,21 @@ def test_jets_are_the_value_gradient_and_hessian(f64_backend, make, space):
     out = out.numpy().reshape(-1, 13)
     np.testing.assert_allclose(out[:, :4], 0.0, atol=1e-10)
     np.testing.assert_allclose(out[:, 4:].reshape(-1, 3, 3), _run(data, _hessians), atol=1e-10)
+
+
+def test_jets_on_surfaces_have_the_in_plane_gradient(f64_backend):
+    data = td.uniform_grid((5, 4), dtype=tack.f64)
+    data.fields["u"] = td.interpolate(data, _p2, td.H1(data, order=2))
+    out = tack.zeros((13 * data.num_cells,), data.dtype)
+    td.for_each(_jets, data, "cells", data.fields["u"], out)
+    out = out.numpy().reshape(-1, 13)
+    np.testing.assert_allclose(out[:, :4], 0.0, atol=1e-10)
+    assert not out[:, 4:].any()
+    g = tack.zeros((3 * data.num_cells,), data.dtype)
+    td.for_each(_jet_gradients, data, "cells", data.fields["u"], g)
+    want = td.gradients(data, "u", at="cells").values.numpy()
+    np.testing.assert_allclose(g.numpy().reshape(-1, 3), want, atol=1e-12)
+    assert np.abs(want[:, :2]).max() > 0.1
 
 
 @tack.kernel
