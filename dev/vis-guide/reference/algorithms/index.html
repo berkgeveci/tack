@@ -14779,27 +14779,7 @@ origin in double precision before they are located (the pieces of a
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/probe.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 68</span>
-<span class="normal"> 69</span>
-<span class="normal"> 70</span>
-<span class="normal"> 71</span>
-<span class="normal"> 72</span>
-<span class="normal"> 73</span>
-<span class="normal"> 74</span>
-<span class="normal"> 75</span>
-<span class="normal"> 76</span>
-<span class="normal"> 77</span>
-<span class="normal"> 78</span>
-<span class="normal"> 79</span>
-<span class="normal"> 80</span>
-<span class="normal"> 81</span>
-<span class="normal"> 82</span>
-<span class="normal"> 83</span>
-<span class="normal"> 84</span>
-<span class="normal"> 85</span>
-<span class="normal"> 86</span>
-<span class="normal"> 87</span>
-<span class="normal"> 88</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 88</span>
 <span class="normal"> 89</span>
 <span class="normal"> 90</span>
 <span class="normal"> 91</span>
@@ -14920,7 +14900,32 @@ origin in double precision before they are located (the pieces of a
 <span class="normal">206</span>
 <span class="normal">207</span>
 <span class="normal">208</span>
-<span class="normal">209</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">probe</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">where</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">locator</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s fields at the points of ``where`` -- a dataset, or an ``(n, 3)``</span>
 <span class="sd">    array of points, which becomes vertex cells -- as Viskores&#39; Probe and VTK&#39;s</span>
@@ -15043,7 +15048,12 @@ origin in double precision before they are located (the pieces of a
             <span class="n">values</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
             <span class="n">order</span><span class="p">,</span> <span class="n">links</span> <span class="o">=</span> <span class="n">by_cell</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">f</span><span class="p">]):</span>
-                <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">locator</span><span class="o">.</span><span class="n">polyhedral</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">locator</span><span class="o">.</span><span class="n">moved_cell_points</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)):</span>
+                    <span class="n">_evaluate_in_moved_tets</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span>
+                                            <span class="o">*</span><span class="n">locator</span><span class="o">.</span><span class="n">moved_cell_points</span><span class="p">,</span> <span class="n">links</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">tets</span><span class="p">,</span>
+                                            <span class="n">pcs</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">locator</span><span class="o">.</span><span class="n">polyhedral</span><span class="p">:</span>
                     <span class="n">_evaluate_in_tets</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">f</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">links</span><span class="p">,</span>
                                       <span class="n">order</span><span class="p">,</span> <span class="n">tets</span><span class="p">,</span> <span class="n">pcs</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
                 <span class="k">elif</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
