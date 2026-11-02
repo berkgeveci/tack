@@ -55,9 +55,8 @@ def world_hessian(cells, u, c, pc):
     symmetric 3x3 matrix: by the chain rule through the geometry, the parametric
     Hessian less the geometry's curvature along the world gradient, taken to world
     axes on both sides by the inverse Jacobian. Analytic from the basis on every
-    shape's order 1 and 2 and on tensor shapes and simplices of any order;
-    fourth-order differences of the parametric gradient on wedges above order 2.
-    Zero on surfaces, lines and vertices."""
+    shape at orders 1 and 2, and at any order on tensor shapes, simplices and
+    wedges. Zero on surfaces, lines and vertices."""
     _, _, h = world_jet(cells, u, c, pc)
     return h
 

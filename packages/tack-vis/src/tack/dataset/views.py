@@ -2728,6 +2728,31 @@ class _WedgeBernstein:
                 g[m * q + a] = (g[m * q + a - 1] * t + f[m * q + a - 1]) / a
                 f[m * q + a] = f[m * q + a - 1] * t / a
 
+    @tack.func
+    def wedge_factors2(self, pc, f, g, h):
+        q = self.ORDER + 1
+        for m in range(5):
+            t = 1.0 - pc[0] - pc[1]
+            if m == 1:
+                t = pc[0]
+            elif m == 2:
+                t = pc[1]
+            elif m == 3:
+                t = 1.0 - pc[2]
+            elif m == 4:
+                t = pc[2]
+            scale = t - t + 1.0
+            if m == 0 or m == 3:
+                for s in range(2, q):
+                    scale = scale * s
+            f[m * q] = scale
+            g[m * q] = t - t
+            h[m * q] = t - t
+            for a in range(1, q):
+                h[m * q + a] = (h[m * q + a - 1] * t + 2.0 * g[m * q + a - 1]) / a
+                g[m * q + a] = (g[m * q + a - 1] * t + f[m * q + a - 1]) / a
+                f[m * q + a] = f[m * q + a - 1] * t / a
+
 
 class _WedgePolynomials:
     """The wedge's Lagrange basis of order ``ORDER`` (``bases.wedge_lattice``: node ``(i, j,
@@ -2800,6 +2825,54 @@ class _WedgePolynomials:
                          (g4 * f3 - g3 * f4) * f0 * f1 * f2)
 
     @tack.func
+    def wedge_factors2(self, pc, f, g, h):
+        """``wedge_factors``, and ``h`` the factors' second derivatives."""
+        q = self.ORDER + 1
+        for m in range(5):
+            t = 1.0 - pc[0] - pc[1]
+            if m == 1:
+                t = pc[0]
+            elif m == 2:
+                t = pc[1]
+            elif m == 3:
+                t = 1.0 - pc[2]
+            elif m == 4:
+                t = pc[2]
+            order = t - t + self.ORDER
+            f[m * q] = t - t + 1.0
+            g[m * q] = t - t
+            h[m * q] = t - t
+            for a in range(1, q):
+                step = (order * t - (a - 1)) / a
+                h[m * q + a] = h[m * q + a - 1] * step + 2.0 * g[m * q + a - 1] * (order / a)
+                g[m * q + a] = g[m * q + a - 1] * step + f[m * q + a - 1] * (order / a)
+                f[m * q + a] = f[m * q + a - 1] * step
+
+    @tack.func
+    def wedge_hessian(self, n, f, g, h):
+        """Node ``n``'s function's second derivatives by parametric coordinates: the
+        triangle factor's, through ``1 - x - y``, times the segment factor, the
+        segment's, through ``1 - z``, times the triangle's, and the mixed ones the
+        product of the two first derivatives."""
+        q = self.ORDER + 1
+        i0 = self.wedge_alpha(n, 0)
+        i1 = q + self.wedge_alpha(n, 1)
+        i2 = 2 * q + self.wedge_alpha(n, 2)
+        i3 = 3 * q + self.wedge_alpha(n, 3)
+        i4 = 4 * q + self.wedge_alpha(n, 4)
+        t = f[i0] * f[i1] * f[i2]
+        tx = (g[i1] * f[i0] - g[i0] * f[i1]) * f[i2]
+        ty = (g[i2] * f[i0] - g[i0] * f[i2]) * f[i1]
+        txx = (h[i1] * f[i0] - 2.0 * g[i1] * g[i0] + f[i1] * h[i0]) * f[i2]
+        tyy = (h[i2] * f[i0] - 2.0 * g[i2] * g[i0] + f[i2] * h[i0]) * f[i1]
+        txy = g[i1] * g[i2] * f[i0] - (g[i1] * f[i2] + f[i1] * g[i2]) * g[i0] + f[i1] * f[i2] * h[i0]
+        s = f[i3] * f[i4]
+        sz = g[i4] * f[i3] - g[i3] * f[i4]
+        szz = h[i4] * f[i3] - 2.0 * g[i4] * g[i3] + f[i4] * h[i3]
+        return tack.mat3([txx * s, txy * s, tx * sz], [txy * s, tyy * s, ty * sz],
+                         [tx * sz, ty * sz, t * szz])
+
+    @tack.func
     def node_parametric(self, n):
         zero = self.wedge_bernstein[0] - self.wedge_bernstein[0]
         return tack.vec3((zero + self.wedge_ijk[3 * n]) / self.ORDER,
@@ -2834,24 +2907,37 @@ class _WedgeBasis(_WedgePolynomials):
 
     @tack.func
     def parametric_hessian(self, c, pc):
-        """The second derivatives by parametric coordinates, a symmetric 3x3 matrix: the
-        parametric gradient by fourth-order central differences (steps of 1/4),
-        exact for these polynomials up to order 4."""
-        h = 0.25
-        d = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-        for k in range(3):
-            e = tack.vec3(1.0 if k == 0 else 0.0, 1.0 if k == 1 else 0.0, 1.0 if k == 2 else 0.0)
-            dk = tack.vec3(0.0, 0.0, 0.0)
-            for s in range(4):
-                offset = -2.0 if s == 0 else (-1.0 if s == 1 else (1.0 if s == 2 else 2.0))
-                weight = 1.0 if s == 0 else (-8.0 if s == 1 else (8.0 if s == 2 else -1.0))
-                dk += weight * self.parametric_gradient(c, pc + (offset * h) * e)
-            d += (dk / (12.0 * h)).outer_product(e)
-        return 0.5 * (d + d.transpose())
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        h = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors2(pc, f, g, h)
+        first = self.dof(c, 0)
+        out = (self.dof(c, 1) - first) * self.wedge_hessian(1, f, g, h)
+        for n in range(2, self.NODES):
+            out += (self.dof(c, n) - first) * self.wedge_hessian(n, f, g, h)
+        return out
 
     @tack.func
     def parametric_jet(self, c, pc):
-        return self.value(c, pc), self.parametric_gradient(c, pc), self.parametric_hessian(c, pc)
+        """The value, parametric gradient and parametric Hessian at ``pc``, from one pass over
+        the cell's values (each read once), relative to the first as the gradient's."""
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        h = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors2(pc, f, g, h)
+        value = pc[0] - pc[0]
+        grad = tack.vec3(0.0, 0.0, 0.0)
+        hess = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        first = value
+        for n in range(self.NODES):
+            v = self.dof(c, n)
+            if n == 0:
+                first = v
+            d = v - first
+            value += d * self.wedge_weight(n, f)
+            grad += d * self.wedge_gradient(n, f, g)
+            hess += d * self.wedge_hessian(n, f, g, h)
+        return first + value, grad, hess
 
     @tack.func
     def corner_value(self, c, j):
@@ -2980,21 +3066,16 @@ class _WedgeGeometry(_WedgePolynomials, _Geometry):
         return m
 
     @tack.func
-    def geometry_curvature(self, c, pc, g):
-        """``g . d2x/d(pc)2``, as the other geometries': the Jacobian's transpose times
-        ``g`` by fourth-order central differences (steps of 1/4)."""
-        h = 0.25
-        d = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-        for k in range(3):
-            e = tack.vec3(1.0 if k == 0 else 0.0, 1.0 if k == 1 else 0.0, 1.0 if k == 2 else 0.0)
-            dk = tack.vec3(0.0, 0.0, 0.0)
-            for s in range(4):
-                offset = -2.0 if s == 0 else (-1.0 if s == 1 else (1.0 if s == 2 else 2.0))
-                weight = 1.0 if s == 0 else (-8.0 if s == 1 else (8.0 if s == 2 else -1.0))
-                dk += weight * (self.geometry_jacobian(c, pc + (offset * h) * e).transpose() @ g)
-            d += (dk / (12.0 * h)).outer_product(e)
-        return 0.5 * (d + d.transpose())
-
+    def geometry_curvature(self, c, pc, gw):
+        f = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        g = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        h = tack.local_array_like(self.wedge_bernstein, 5 * (self.ORDER + 1))
+        self.wedge_factors2(pc, f, g, h)
+        first = self.get(self.dof_index(c, 0))
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        for n in range(1, self.NODES):
+            m += (self.get(self.dof_index(c, n)) - first).dot(gw) * self.wedge_hessian(n, f, g, h)
+        return m
 
 class _H1WedgeGeometry(_WedgeDofs, _WedgeGeometry):
     """Curved geometry of order 3 or more on wedges, its corners the points'."""

@@ -172,6 +172,10 @@ EXACT = [
     ("wedges H1 order 1", _wedges, lambda d: td.H1(d), _p1_wedge, _h1_wedge),
     ("wedges H1 order 2", _wedges, lambda d: td.H1(d, order=2), _p2, _h2),
     ("wedges H1 order 3", _wedges, lambda d: td.H1(d, order=3, basis="equispaced"), _p3, _h3),
+    ("wedges H1 order 3 Bernstein", _wedges, lambda d: td.H1(d, order=3, basis="bernstein"), _p3, _h3),
+    ("wedges H1 order 4", _wedges, lambda d: td.H1(d, order=4, basis="equispaced"), _p4, _h4),
+    ("wedges L2 order 4", _wedges, lambda d: td.L2(d, order=4, basis="equispaced"), _p4, _h4),
+    ("wedges H1 order 5", _wedges, lambda d: td.H1(d, order=5, basis="equispaced"), _p4, _h4),
 ]
 
 
@@ -208,6 +212,8 @@ CURVED = [
     ("tetrahedra curved at order 3", lambda: _bent(_tetrahedra, 3),
      lambda d: td.H1(d, order=3, basis="equispaced")),
     ("wedges curved at order 3", lambda: _bent(_wedges, 3), lambda d: td.H1(d, order=3, basis="equispaced")),
+    ("wedges curved at order 4, H1 order 5", lambda: _bent(_wedges, 4),
+     lambda d: td.H1(d, order=5, basis="equispaced")),
     ("pyramids, H1 order 1", _pyramids, lambda d: td.H1(d)),
 ]
 

@@ -9,9 +9,9 @@
   geometry's new `geometry_curvature` along the world gradient (zero where the
   map is affine), taken to world axes by the inverse Jacobian. Analytic from
   the shapes' new `shape_hessian` and `quadratic_hessian` at orders 1 and 2,
-  and from the bases at any order on tensor shapes (Lagrange and Bernstein)
-  and simplices (equispaced and Bernstein); wedges above order 2 difference
-  their parametric gradients.
+  and from the bases at any order on tensor shapes, simplices and wedges
+  (Lagrange and Bernstein), a wedge's from its triangle factor's second
+  derivatives and its segment factor's.
 - `world_jet(cells, u, c, pc)`: a scalar field's value, world gradient and
   world Hessian together (on surfaces, `world_gradient`'s in-plane gradient
   and a zero Hessian), from the field views' new `parametric_jet`, which
