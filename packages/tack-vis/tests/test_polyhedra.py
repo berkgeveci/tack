@@ -1387,6 +1387,73 @@ def test_split_reads_shapes_and_polyhedra_over_one_set_of_points(copy):
                                    area(td.contour(whole, "T", level)), rtol=1e-6)
 
 
+def test_split_readings_outputs_reduce_once_marked():
+    """The split reading's pieces share points but no cells, so a contour of them
+    loses its marks and reductions refuse it; ``generate_global_ids`` of the
+    contours marks them by matching, and they reduce as the whole's contour."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = _mixed_vtu_grid()
+    pieces = vtk_to_dataset(grid, polyhedral="split")
+    whole = vtk_to_dataset(grid, polyhedral=True)
+    for level in (-2.0, 2.0, 6.0):
+        cuts = td.PartitionedDataSet([td.contour(p, "T", level) for p in pieces])
+        with pytest.raises(NotImplementedError, match="generate_global_ids"):
+            td.statistics(cuts, "T")
+        expected = td.statistics(td.contour(whole, "T", level), "T")
+        got = td.statistics(td.generate_global_ids(cuts), "T")
+        assert got.n == expected.n
+        assert got.mean == pytest.approx(expected.mean, rel=1e-5)
+
+
+def _repeated_points(grid):
+    """``grid`` with its even cells and its odd cells each on their own copies of
+    their points, as a mesh written per processor and put together unmerged."""
+    from vtkmodules.vtkCommonCore import vtkIdList
+    from vtkmodules.vtkFiltersCore import vtkAppendFilter, vtkExtractCells
+
+    append = vtkAppendFilter(merge_points=False)
+    for parity in (0, 1):
+        ids = vtkIdList()
+        for c in range(parity, grid.number_of_cells, 2):
+            ids.InsertNextId(c)
+        append.AddInputData(vtkExtractCells(cell_list=ids)(grid))
+    append.Update()
+    return append.GetOutput()
+
+
+@pytest.mark.parametrize("polyhedral", [True, "split"])
+def test_reading_merges_repeated_points(polyhedral):
+    """``vtk_to_dataset(..., merge_points=True)`` reads a grid whose cells repeat
+    their neighbours' points as the grid on shared points: the points once, each
+    keeping its data, the polyhedra's faces matched once (so the boundary is the
+    whole's), and, split, each point owned by one piece."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = _mixed_vtu_grid()
+    repeated = _repeated_points(grid)
+    assert repeated.number_of_points > grid.number_of_points
+    expected, merged = (vtk_to_dataset(g, polyhedral=True, merge_points=m)
+                        for g, m in ((grid, None), (repeated, True)))
+    assert merged.num_points == grid.number_of_points
+    np.testing.assert_array_equal(np.sort(merged.fields["T"].values.numpy()),
+                                  np.sort(expected.fields["T"].values.numpy()))
+    assert (merged.topology.faces().boundary().size
+            == expected.topology.faces().boundary().size)
+    pieces = vtk_to_dataset(repeated, polyhedral=polyhedral, merge_points=True)
+    if polyhedral == "split":
+        assert td.statistics(pieces, "T").n == grid.number_of_points
+    else:
+        pieces = [pieces]
+
+    def area(data):
+        return float(td.cell_geometry(data).measure.values.numpy().sum()) if data.num_cells else 0
+
+    for level in (-2.0, 2.0, 6.0):
+        np.testing.assert_allclose(sum(area(td.contour(p, "T", level)) for p in pieces),
+                                   area(td.contour(expected, "T", level)), rtol=1e-6)
+
+
 def test_split_of_one_kind_is_one_piece():
     pytest.importorskip("vtkmodules.vtkCommonDataModel")
     import vtkmodules.vtkCommonDataModel as dm

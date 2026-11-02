@@ -560,6 +560,45 @@ def test_pieces_without_ghost_cells_refuse_what_their_neighbours_decide():
     assert td.statistics(td.PartitionedDataSet(points), "RTData").n == whole.num_points
 
 
+@pytest.mark.parametrize("name", [n for n in _FILTERS if "surface" not in n])
+def test_generate_global_ids_marks_outputs_that_lost_the_marks(name):
+    """What a piece without ghost cells cannot decide alone, ``generate_global_ids``
+    decides by matching the outputs: every point several pieces made is the
+    lowest's, every cell several made (by its points' ids) too, so the marked
+    outputs reduce to the whole's output, cell for cell and point for point; the
+    refusal names it. Pieces with ghost cells and no point marks too.
+    (``extract_surface`` is the exception: a piece's surface includes the faces
+    it shares, which the whole's has not.)"""
+    whole = td.wavelet(6)
+    filter = _FILTERS[name]
+    bare = td.split(whole, (2, 2, 2))                       # no ghost layers
+    ghosted = td.split(whole, (2, 2, 2), ghost_layers=1)
+    for p in ghosted:                                       # ghost cells, no point marks
+        p.ghosts = Ghosts(cells=p.ghosts.cells)
+    for pieces in (bare, ghosted):
+        outputs = td.PartitionedDataSet([filter(p) for p in pieces])
+        if any(out._ghosts_lost for out in outputs):
+            with pytest.raises(NotImplementedError, match="generate_global_ids"):
+                td.statistics(outputs, "RTData")
+        elif pieces is ghosted:
+            continue        # kept points keep the marks they were given, none here
+        if pieces is ghosted and name == "slice":
+            # Each piece triangulates a ghost cell's slice in its own numbering, so
+            # the copies are not the owner's triangles (with point marks too).
+            with pytest.raises(ValueError, match="no piece holds them unmarked"):
+                td.generate_global_ids(outputs)
+            continue
+        marked = td.generate_global_ids(outputs)
+        assert not any(out._ghosts_lost for out in marked)
+        expected = filter(whole)
+        owned = np.sum([_owned_counts(out) for out in marked], axis=0)
+        assert tuple(int(v) for v in owned) == (expected.num_cells, expected.num_points)
+        if "RTData" in expected.fields:
+            a, b = td.statistics(expected, "RTData"), td.statistics(marked, "RTData")
+            assert b.n == a.n
+            assert b.mean == pytest.approx(a.mean, rel=1e-5)
+
+
 def test_filters_that_keep_the_cells_keep_the_marks():
     """warp, transform, shrink, as_polyhedra and a probe's target keep their input's
     cells and points, so they keep its marks, and reduce as it does."""

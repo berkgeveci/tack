@@ -83,6 +83,10 @@ ids = pieces[0].global_ids.points                  # the same at a shared point
 Filters keep the ids of the points and cells they keep (`threshold`,
 `extract_cells`, `remove_ghosts`); what they make has none.
 
+Run on a filter's output from pieces without ghost cells, whose marks the
+filter could not place, `generate_global_ids` also decides the owners and
+marks them ([Pieces without ghost cells](07-partitioned.md#pieces-without-ghost-cells)).
+
 ## Pieces on several devices
 
 A piece is a dataset, so it can live on any device:

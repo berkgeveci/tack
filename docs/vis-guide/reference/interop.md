@@ -15,6 +15,17 @@ as polyhedra, each point owned by one of them so reductions count it once. A
 CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
 (with `copy=False`); read as polyhedra throughout, 27 seconds and 19 GB.
 
+A mesh written per processor and put together without merging (OpenFOAM's
+`foamToVTK` of a decomposed case) repeats every point on a processor
+boundary. `vtk_to_dataset(grid, merge_points=True)` (or a tolerance in VTK's
+coordinates) merges them before anything else is read, as
+[`merge_points`](algorithms.md#tack.dataset.algorithms.merge_points.merge_points)
+would after: the polyhedra's faces are matched once, so the boundary is the
+mesh's, and with `polyhedral="split"` each piece's owned points are decided
+on the merged points, so every point is owned once. Merging after a split
+reading is not the same: ownership was decided on the copies, and the pieces
+merged apart can disagree on it.
+
 Cells whose corners are in the reverse of VTK's order -- inside out, with negative
 volumes and inward faces, as some converters write prisms -- are found on every
 read and named in a warning; `vtk_to_dataset(grid, orient=True)` turns them
