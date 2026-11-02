@@ -102,23 +102,24 @@ def _lagrange_derivative(nodes, n, i, x):
     return s
 
 
+@tack.func
+def _local_face(view, a, side):
+    """The local face whose center has coordinate side (0 or 1) along axis a."""
+    found = 0
+    for k in range(6):
+        center = tack.vec3(0.0, 0.0, 0.0)
+        for i in range(4):
+            center += view.parametric_point(view.face_corner(k, i))
+        if (0.25 * center[a] - float(side)) * (0.25 * center[a] - float(side)) < 0.01:
+            found = k
+    return found
+
+
 class _HDivHexOrderField:
     """HDiv of order P on a hexahedron (Raviart-Thomas): component a is a tensor product of
     P + 1 Gauss-Lobatto nodes along axis a and P Gauss nodes across it. The nodes on a face
     hold the normal flux density there, along the face's stored normal and in the face's own
     frame, shared by the cells on both sides; the others are the cell's own."""
-
-    @tack.func
-    def _face_of(self, a, side):
-        """The local face whose center has coordinate side (0 or 1) along axis a."""
-        found = 0
-        for k in range(6):
-            center = tack.vec3(0.0, 0.0, 0.0)
-            for i in range(4):
-                center += self.parametric_point(self.face_corner(k, i))
-            if (0.25 * center[a] - float(side)) * (0.25 * center[a] - float(side)) < 0.01:
-                found = k
-        return found
 
     @tack.func
     def _face_dof(self, c, lf, a, j, k):
@@ -158,7 +159,7 @@ class _HDivHexOrderField:
         cc = (a + 2) % 3
         total = 0.0 * pc[0]
         for side in range(2):
-            lf = self._face_of(a, side)
+            lf = _local_face(self, a, side)
             sign = (1.0 if self.face_side(c, lf) == 0 else -1.0) * (1.0 if side == 1 else -1.0)
             la = (_lagrange_derivative(self.lobatto, n + 1, side * n, pc[a]) if derivative
                   else _lagrange(self.lobatto, n + 1, side * n, pc[a]))
@@ -186,19 +187,6 @@ class _HDivHexOrderField:
     @tack.func
     def parametric_divergence(self, c, pc):
         return self._component(c, pc, 0, True) + self._component(c, pc, 1, True) + self._component(c, pc, 2, True)
-
-
-@tack.func
-def _local_face(view, a, side):
-    """The local face whose center has coordinate side (0 or 1) along axis a."""
-    found = 0
-    for k in range(6):
-        center = tack.vec3(0.0, 0.0, 0.0)
-        for i in range(4):
-            center += view.parametric_point(view.face_corner(k, i))
-        if (0.25 * center[a] - float(side)) * (0.25 * center[a] - float(side)) < 0.01:
-            found = k
-    return found
 
 
 @tack.func
@@ -424,6 +412,17 @@ class _HCurlField:
         return v
 
 
+def _node_tables(space, dtype):
+    """The Gauss and Gauss-Lobatto nodes of ``space``'s order in the field's float type,
+    made once per space and type."""
+    real = np.float64 if dtype is tack.f64 else np.float32
+    cache = space.__dict__.setdefault("_node_tables", {})
+    if real not in cache:
+        cache[real] = {"gauss": tack.array(gauss_nodes(space.order).astype(real)),
+                       "lobatto": tack.array(lobatto_nodes(space.order + 1).astype(real))}
+    return cache[real]
+
+
 class HDiv(Space):
     """H(div), Raviart-Thomas. At ``order`` 1 (on hexahedra, voxels and tetrahedra): one
     value per face, its integrated flux along the face's stored normal (out of side 0).
@@ -478,10 +477,7 @@ class HDiv(Space):
                       "face_start": faces.group_starts[group.root]}
         p = self.order
         if p > 1:
-            real = np.float64 if dtype is tack.f64 else np.float32
-            attributes.update(P=p, face_block=faces.num_faces * p * p,
-                              gauss=tack.array(gauss_nodes(p).astype(real)),
-                              lobatto=tack.array(lobatto_nodes(p + 1).astype(real)))
+            attributes.update(P=p, face_block=faces.num_faces * p * p, **_node_tables(self, dtype))
         return attributes
 
 
@@ -549,14 +545,12 @@ class HCurl(Space):
         p = self.order
         if p > 1:
             faces = self.topology.faces()
-            real = np.float64 if dtype is tack.f64 else np.float32
             attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                               side_orientation=faces.side_orientation,
                               face_start=faces.group_starts[group.root], P=p,
                               face_base=edges.num_edges * p,
                               cell_base=edges.num_edges * p + faces.num_faces * 2 * p * (p - 1),
-                              gauss=tack.array(gauss_nodes(p).astype(real)),
-                              lobatto=tack.array(lobatto_nodes(p + 1).astype(real)))
+                              **_node_tables(self, dtype))
         return attributes
 
 
