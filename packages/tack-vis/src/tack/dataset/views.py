@@ -439,7 +439,10 @@ class _PolyhedralLocation:
         it is only near, as the shape path does.
 
         Inverted sub-tetrahedra (of a cell not star-shaped from its cell point)
-        hold nothing; ``CellLocator`` refuses such cells."""
+        hold nothing. ``CellLocator`` moves such a cell's point into its kernel,
+        where a point inside sees all of its faces (``moved_cell_points``; the
+        searches take it from there, ``locate_from``), and refuses a cell with
+        none."""
         t, pc, inside = self.locate_from(c, self.cell_point(c), x, slack)
         return t, pc, inside
 
@@ -2865,10 +2868,16 @@ class _PolyhedralPointField:
     @tack.func
     def tet_value(self, c, t, pc):
         """The value at ``pc`` in sub-tetrahedron ``t``."""
+        return self.tet_value_from(c, t, pc, self.cell_point_value(c))
+
+    @tack.func
+    def tet_value_from(self, c, t, pc, u0):
+        """``tet_value`` with the cell point's value given: where a ``CellLocator``
+        moved the cell point (``moved_cell_points``), its weights' sum of the
+        points' values."""
         k, j = self.tet_face(c, t)
         n = self.side_num_points(c, k)
         nxt = j + 1 if j + 1 < n else 0
-        u0 = self.cell_point_value(c)
         return (u0 + pc[0] * (self.face_point_value(c, k) - u0)
                 + pc[1] * (self.get(self.side_point_id(c, k, j)) - u0)
                 + pc[2] * (self.get(self.side_point_id(c, k, nxt)) - u0))

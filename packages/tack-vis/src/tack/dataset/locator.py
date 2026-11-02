@@ -32,6 +32,7 @@ from the cells, are evaluated cell by cell through the fields' bases, the
 points bucketed by the cell found.
 """
 
+import warnings
 from typing import NamedTuple
 
 import numpy as np
@@ -66,6 +67,11 @@ class Locations(NamedTuple):
 # A point just outside a cell counts as in it within this share of the cell's
 # diagonal, as vtkProbeFilter's computed tolerance has it (0.1%).
 _TOLERANCE = 1e-3
+
+#: ``moved_cell_points``' start for a polyhedron with no kernel: no point inside it
+#: sees all of its faces, so it holds no points (found, if anywhere, in a neighbour
+#: it overlaps).
+_SKIPPED = tack.constant(-2)
 
 
 @tack.kernel
@@ -164,12 +170,31 @@ def _polyhedral_boxes(cells, lo, hi):
         hi[e] = b
 
 
+@tack.func
+def _cell_point(cells, c, starts, weights, moved):
+    """Cell ``c``'s point: the mean of its points (``cell_point``), or, where the
+    locator moved it into the cell's kernel (``moved`` 1 and ``starts`` at the cell
+    not -1), the sum of its points by their weights from ``starts``, formed as the
+    first point plus the others' differences from it by their weights."""
+    # From the first point by the others' differences: the weights sum to 1, and
+    # in f32 a sum of whole positions loses a thin kernel at a wall (5 of an
+    # AhmedML volume's 119 cells with one).
+    s = starts[cells.entity_id(c)] if moved == 1 else -1
+    p = cells.cell_point(c)
+    if s >= 0:
+        first = cells.point_position(cells.point_id(c, 0))
+        p = first
+        for j in range(1, cells.num_points(c)):
+            p += (cells.point_position(cells.point_id(c, j)) - first) * weights[s + j]
+    return p
+
+
 @tack.kernel
-def _not_star_shaped(cells, bad):
+def _not_star_shaped(cells, starts, weights, moved, bad):
     # 1 where a sub-tetrahedron is inverted, or the cell has no volume: a cell
     # not star-shaped from its cell point, whose sub-tetrahedra overlap.
     for c in cells:
-        p = cells.cell_point(c)
+        p = _cell_point(cells, c, starts, weights, moved)
         total = 0.0
         least = 0.0
         for k in range(cells.num_faces(c)):
@@ -203,15 +228,151 @@ def _not_star_shaped_polygons(cells, bad):
         bad[cells.entity_id(c)] = 1 if total <= 0.0 or least < -1e-5 * total else 0
 
 
+@tack.func
+def _clearances(cells, c, centre, scale, q, beta):
+    # Over the cell's fan triangles (face point, a, b), each as seen from q (relative
+    # to centre, in units of 1 / scale): its clearance m, the distance from q to the
+    # triangle's plane, positive on its inner side; the least of them; and, with
+    # weights exp(-beta (m - least)), their sum and the weighted sums of the unit
+    # normals and of their outer products -- what the soft minimum and its first two
+    # derivatives need.
+    least = scale - scale + 1.0e30
+    for k in range(cells.num_faces(c)):
+        n = cells.side_num_points(c, k)
+        a = (cells.face_point(c, k) - centre) * scale
+        for j in range(n):
+            nxt = j + 1 if j + 1 < n else 0
+            normal = ((cells.side_position(c, k, j) - centre) * scale - a).cross(
+                (cells.side_position(c, k, nxt) - centre) * scale - a)
+            length = normal.norm()
+            if length > 0.0:
+                least = min(least, normal.dot(a - q) / length)
+    total = least - least
+    v = q - q
+    m2 = v.outer_product(v)
+    for k in range(cells.num_faces(c)):
+        n = cells.side_num_points(c, k)
+        a = (cells.face_point(c, k) - centre) * scale
+        for j in range(n):
+            nxt = j + 1 if j + 1 < n else 0
+            normal = ((cells.side_position(c, k, j) - centre) * scale - a).cross(
+                (cells.side_position(c, k, nxt) - centre) * scale - a)
+            length = normal.norm()
+            if length > 0.0:
+                unit = normal / length
+                w = exp(-beta * (unit.dot(a - q) - least))
+                total += w
+                v += w * unit
+                m2 += w * unit.outer_product(unit)
+    return least, total, v, m2
+
+
+@tack.kernel
+def _kernel_points(cells, bad, starts, weights):
+    # For each flagged cell, a point from which every sub-tetrahedron of its fan is
+    # positive -- in its kernel -- and weights on its points that give it; starts -1
+    # for a cell not flagged, or with no such point found. The point maximizes the
+    # soft minimum of the fan triangles' clearances, F = least - log(sum)/beta, by
+    # Newton's method from the mean of the points, the softness narrowed in stages
+    # (beta 10 to 1e5, in cell sizes). The weights are the mean's plus the least
+    # change that moves it there: w_j = 1/n + d_j . G^-1 q, with d_j the points less
+    # their mean and G the sum of d_j d_j^T, so a linear field's value there is the
+    # weighted sum of its values.
+    for c in cells:
+        e = cells.entity_id(c)
+        if bad[e] == 0:
+            starts[e] = -1
+        else:
+            npts = cells.num_points(c)
+            centre = cells.cell_point(c)
+            size = centre[0] - centre[0]
+            for j in range(npts):
+                d = cells.point_position(cells.point_id(c, j)) - centre
+                size = max(size, max(abs(d[0]), max(abs(d[1]), abs(d[2]))))
+            scale = 1.0 / size if size > 0.0 else size - size
+            q = centre - centre
+            beta = scale - scale + 10.0
+            for stage in range(5):
+                it = 0
+                while it < 40:
+                    least, total, v, m2 = _clearances(cells, c, centre, scale, q, beta)
+                    value = least - log(total) / beta
+                    mean_normal = v / total
+                    spread = m2 / total - mean_normal.outer_product(mean_normal)
+                    spread += 1.0e-6 * tack.identity(3)
+                    step = -(spread.inverse() @ mean_normal) / beta
+                    length = step.norm()
+                    if length > 0.25:
+                        step = step * (0.25 / length)
+                    t = scale - scale + 1.0
+                    moved = 0
+                    while t > 1.0e-6 and moved == 0:
+                        trial = q + t * step
+                        tl, tt, tv, tm = _clearances(cells, c, centre, scale, trial, beta)
+                        if tl - log(tt) / beta > value:
+                            q = trial
+                            moved = 1
+                        else:
+                            t = t * 0.5
+                    it += 1
+                    if moved == 0 or t * step.norm() < 1.0e-7:
+                        it = 40
+                beta = beta * 10.0
+            least, total, v, m2 = _clearances(cells, c, centre, scale, q, beta)
+            if least <= 0.0:
+                starts[e] = _SKIPPED
+            else:
+                g = (q - q).outer_product(q - q)
+                for j in range(npts):
+                    d = (cells.point_position(cells.point_id(c, j)) - centre) * scale
+                    g += d.outer_product(d)
+                y = g.inverse() @ q
+                s = starts[e]
+                for j in range(npts):
+                    d = (cells.point_position(cells.point_id(c, j)) - centre) * scale
+                    weights[s + j] = (scale - scale + 1.0) / npts + d.dot(y)
+
+
+@tack.kernel
+def _moved_counts(cells, bad, counts):
+    for c in cells:
+        e = cells.entity_id(c)
+        counts[e] = cells.num_points(c) if bad[e] == 1 else 0
+
+
+@tack.kernel
+def _skip(bad, starts):
+    # A cell still not star-shaped from its point holds no points.
+    for e in range(bad.shape[0]):
+        if bad[e] == 1:
+            starts[e] = _SKIPPED
+
+
+def _moved_cell_points(data, bad):
+    """``(starts, weights)`` for the polyhedra ``bad`` flags (``_kernel_points``):
+    room for each one's points' weights, by a scan, then the point and weights;
+    ``starts`` -1 for the others, and ``_SKIPPED`` for those with no kernel
+    found."""
+    n = data.num_cells
+    idt = data.id_dtype
+    counts = tack.empty((n,), idt)
+    for_each(_moved_counts, data, "cells", bad, counts)
+    starts = tack.empty((n,), idt)
+    total = int(exclusive_scan(counts, starts, n))
+    weights = tack.empty((max(total, 1),), data.dtype)
+    for_each(_kernel_points, data, "cells", bad, starts, weights)
+    return starts, weights
+
+
 @tack.kernel
 def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz,
                               ix, iy, iz, nx, ny, nz, tolerance, ncells, write, found, tets,
-                              pcs):
+                              pcs, starts, weights, moved):
     # As _test_points, locating in the cell's sub-tetrahedra, and ranking the
     # same way: holding the point ahead of coming within the tolerance.
     for c in cells:
         e = cells.entity_id(c)
-        middle = cells.cell_point(c)
+        middle = _cell_point(cells, c, starts, weights, moved)
         a = lo[e]
         b = hi[e]
         slack = tolerance * (b - a).norm()
@@ -221,6 +382,9 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
         i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
         j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
         k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
+        skipped = starts[e] if moved == 1 else -1
+        if skipped == _SKIPPED:
+            k1 = k0 - 1                          # no kernel: it holds no points
         for k in range(k0, k1 + 1):
             for j in range(j0, j1 + 1):
                 for i in range(i0, i1 + 1):
@@ -473,18 +637,42 @@ class CellLocator:
         dtype = data.dtype
         self.lo = tack.empty((n,), tack.vec(3, dtype))
         self.hi = tack.empty((n,), tack.vec(3, dtype))
+        #: ``None``, or ``(starts, weights)`` where it moved polyhedra's cell points:
+        #: a polyhedron not star-shaped from the mean of its points (snappyHexMesh's
+        #: concave cells at walls) is fanned from a point of its kernel instead, the
+        #: sum of its points by ``weights[starts[c] + j]`` (``starts[c]`` -1 for a cell
+        #: that keeps the mean). ``find``'s ``tets`` and ``pcs`` there are relative to
+        #: that point; ``probe`` and advection evaluate there. A polyhedron with no
+        #: kernel (tangled, inside out, a face whose fan folds, no volume) has
+        #: ``starts[c]`` -2 and holds no points: one inside it is found in a
+        #: neighbour it overlaps, or nowhere, and a particle reaching it stops as at
+        #: the mesh's edge. Making it is warned about.
+        self.moved_cell_points = None
         if n and self.polyhedral:
             bad = tack.zeros((n,), tack.i32)
             dimension = data.topology.dimension
-            if dimension >= 2:
+            if dimension == 3:
+                for_each(_not_star_shaped, data, "cells", *self._moved(), bad)
+                if int(bad.numpy().sum()):
+                    self.moved_cell_points = _moved_cell_points(data, bad)
+                    bad.fill(0)
+                    for_each(_not_star_shaped, data, "cells", *self._moved(), bad)
+            elif dimension == 2:
                 # A polyline needs no fan, so has no such failure.
-                for_each(_not_star_shaped if dimension == 3 else _not_star_shaped_polygons,
-                         data, "cells", bad)
+                for_each(_not_star_shaped_polygons, data, "cells", bad)
             count = int(bad.numpy().sum())
-            if count:
+            if count and dimension == 3:
+                _skip(bad, self.moved_cell_points[0])
+                warnings.warn(
+                    f"{count} of the {n} cells are not star-shaped from any point found "
+                    "inside them -- none sees all of their faces (tangled or inside-out "
+                    "cells) -- or have no volume: they hold no points. A point inside "
+                    "one is found in a neighbour it overlaps, or nowhere; a particle "
+                    "reaching one stops.", stacklevel=2)
+            elif count:
                 raise NotImplementedError(
                     f"{count} of the {n} cells are not star-shaped from their cell point "
-                    "(the mean of their points), or have no volume: locating points in "
+                    "(the mean of their points), or have no area: locating points in "
                     "them needs another inside test, not built yet")
             for_each(_polyhedral_boxes, data, "cells", self.lo, self.hi)
         elif n:
@@ -529,6 +717,15 @@ class CellLocator:
         sides = max(int(live.sum()), 1)
         root = float(np.prod(widths[live])) ** (1.0 / sides) if live.any() else 1.0
         self._units = (*map(float, widths / root), float(sides))
+
+    def _moved(self):
+        """The arguments of the kernels that take a cell's point (``_cell_point``):
+        ``moved_cell_points`` and 1, or stand-ins and 0 (never read)."""
+        if self.moved_cell_points is not None:
+            return (*self.moved_cell_points, 1)
+        device = self.lo.device
+        return (tack.full((1,), -1, self.data.id_dtype, device=device),
+                tack.zeros((1,), self.data.dtype, device=device), 0)
 
     def serves(self, data):
         """Whether it locates in ``data``'s cells as they are: the topology and the
@@ -716,7 +913,7 @@ class CellLocator:
                 if self.polyhedral:
                     for_each(_test_points_in_polyhedra, data, "cells", points, self.lo,
                              self.hi, starts, order, *self._grid(), _TOLERANCE,
-                             data.num_cells, write, found, tets, pcs)
+                             data.num_cells, write, found, tets, pcs, *self._moved())
                 else:
                     for_each(_test_points, data, "cells", points, self.lo, self.hi, starts,
                              order, *self._grid(), _TOLERANCE, data.num_cells, write, found,

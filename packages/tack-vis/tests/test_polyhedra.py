@@ -1199,16 +1199,118 @@ def test_sub_tetrahedra_reproduce_a_linear_field(backend, name):
     np.testing.assert_allclose(values[:, 0], values[:, 1], atol=1e-5)
 
 
-def test_a_cell_not_star_shaped_from_its_cell_point_is_refused(backend):
-    """A C-shaped prism's cell point is in its notch, outside it: its sub-tetrahedra
-    overlap, and the locator refuses it rather than find points it does not hold."""
+def test_a_cell_not_star_shaped_from_any_point_holds_no_points(backend):
+    """A C-shaped prism whose top and bottom are each one face: their face points are
+    in the notch, so their own fans fold over, and no cell point makes every
+    sub-tetrahedron positive. The locator warns and leaves it out -- a point inside
+    it is found nowhere, and a particle there stops -- rather than find points it
+    does not hold, or refuse the whole mesh. Beside it, a cube still holds its
+    points."""
     ring = np.array([[0, 0], [3, 0], [3, 1], [1, 1], [1, 2], [3, 2], [3, 3], [0, 3]], float)
-    pts = np.r_[np.c_[ring, np.zeros(8)], np.c_[ring, np.ones(8)]].astype(np.float32)
+    cube = np.array([[i & 1, (i >> 1) & 1, (i >> 2) & 1] for i in range(8)], float)
+    cube[:, 0] += 5.0
+    pts = np.r_[np.c_[ring, np.zeros(8)], np.c_[ring, np.ones(8)], cube].astype(np.float32)
     faces = [list(range(8))[::-1], list(range(8, 16))]
     faces += [[j, (j + 1) % 8, 8 + (j + 1) % 8, 8 + j] for j in range(8)]
-    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 16, pts, orient=True), pts)
-    with pytest.raises(NotImplementedError, match="1 of the 1 cells are not star-shaped"):
-        td.CellLocator(data)
+    cube_faces = [[16, 18, 19, 17], [20, 21, 23, 22], [16, 17, 21, 20], [18, 22, 23, 19],
+                  [16, 20, 22, 18], [17, 19, 23, 21]]
+    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces, cube_faces], 24, pts,
+                                                            orient=True), pts)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(np.tile([1.0, 0.0, 0.0], (24, 1))
+                                                        .astype(np.float32), tack.vec3()))
+    with pytest.warns(UserWarning, match="1 of the 2 cells are not star-shaped"):
+        locator = td.CellLocator(data)
+    starts = locator.moved_cell_points[0].numpy()
+    np.testing.assert_array_equal(starts, [-2, -1])
+    for many in (1, 100):                          # from the cells, and from the points
+        where = np.repeat([[0.5, 1.5, 0.5], [5.5, 0.5, 0.5]], many, axis=0)
+        found = locator.find(where).cells.numpy()[::many]
+        np.testing.assert_array_equal(found, [-1, 1])
+    end = td.advect(data, "v", np.array([[0.5, 1.5, 0.5]]), 0.1, 5, locator=locator)
+    assert not end.fields["status"].values.numpy()[0] & td.ParticleStatus.SUCCESS
+
+
+def _l_prism():
+    """An L-shaped prism, its convex faces: the mean of its 14 points, (9/7, 8/7), is in
+    the corner the L leaves out, outside it, but every point of the square at its
+    elbow, [0, 1] x [0, 1], sees all of its faces. Beside it, a cube, so the mesh has
+    cells that keep their mean."""
+    base = np.array([[0, 0], [1, 0], [3, 0], [3, 1], [1, 1], [1, 3], [0, 3]], float)
+    l_points = np.r_[np.c_[base, np.zeros(7)], np.c_[base, np.ones(7)]]
+    cube = np.array([[i & 1, (i >> 1) & 1, (i >> 2) & 1] for i in range(8)], float)
+    cube[:, 0] += 5.0
+    pts = np.r_[l_points, cube]
+    l_faces = [[0, 1, 4, 5, 6], [1, 2, 3, 4], [7, 8, 11, 12, 13], [8, 9, 10, 11],
+               [0, 1, 2, 9, 8, 7], [2, 3, 10, 9], [3, 4, 11, 10], [4, 5, 12, 11],
+               [5, 6, 13, 12], [6, 0, 7, 13]]
+    c = 14
+    cube_faces = [[c + 0, c + 2, c + 3, c + 1], [c + 4, c + 5, c + 7, c + 6],
+                  [c + 0, c + 1, c + 5, c + 4], [c + 2, c + 6, c + 7, c + 3],
+                  [c + 0, c + 4, c + 6, c + 2], [c + 1, c + 3, c + 7, c + 5]]
+    top = td.PolyhedralTopology.from_cell_faces([l_faces, cube_faces], len(pts), pts,
+                                                orient=True)
+    return top, pts
+
+
+@pytest.mark.parametrize("many", [False, True], ids=["from the cells", "from the points"])
+def test_a_cell_star_shaped_from_another_point_is_fanned_from_it(backend, many):
+    """snappyHexMesh's concave cells at walls are not star-shaped from the mean of
+    their points, but from some point inside. The locator moves such a cell's point
+    into its kernel, as weights on its points, and probes and particles locate and
+    evaluate from there: a linear field is exact in both arms of an L, the corner it
+    leaves out is outside, and the cube keeps its mean."""
+    top, pts = _l_prism()
+    data = td.DataSet(top, pts.astype(np.float32))
+    x = data.positions().astype(np.float64)
+    u = 2 * x[:, 0] + 3 * x[:, 1] - x[:, 2] + 1
+    data.fields["u"] = td.Field(td.H1(data), tack.array(u.astype(np.float32)))
+    data.fields["v"] = td.Field(td.H1(data), tack.array(
+        np.tile([1.0, 0.5, 0.0], (len(x), 1)).astype(np.float32), tack.vec3()))
+    locator = td.CellLocator(data)
+    starts, weights = (a.numpy() for a in locator.moved_cell_points)
+    assert starts[0] >= 0 and starts[1] == -1               # the L moved, the cube not
+    w = weights[starts[0]:starts[0] + 14]
+    np.testing.assert_allclose(w.sum(), 1.0, atol=1e-6)
+    np.testing.assert_allclose(w @ x[:14], [0.5, 0.5, 0.5], atol=1e-3)
+    probes = np.array([[0.5, 0.5, 0.5], [2.5, 0.5, 0.3], [0.5, 2.5, 0.7], [2.9, 0.9, 0.9],
+                       [1.5, 1.5, 0.5], [2.5, 2.5, 0.5], [5.5, 0.5, 0.5]])
+    where = np.repeat(probes, 100, axis=0) if many else probes  # many: the points' search
+    out = td.probe(data, where, locator=locator)
+    stride = 100 if many else 1
+    valid = out.fields["valid"].values.numpy()[::stride]
+    np.testing.assert_array_equal(valid, [1, 1, 1, 1, 0, 0, 1])
+    want = 2 * probes[:, 0] + 3 * probes[:, 1] - probes[:, 2] + 1
+    got = out.fields["u"].values.numpy()[::stride]
+    np.testing.assert_allclose(got[valid == 1], want[valid == 1], rtol=1e-5)
+    end = td.advect(data, "v", np.array([[0.2, 2.5, 0.5]]), 0.05, 200, locator=locator)
+    assert end.fields["status"].values.numpy()[0] & td.ParticleStatus.SPATIAL_BOUNDS
+    # Along y = 2.5 + (x - 0.2) / 2 to the wall at x = 1, which it leaves through.
+    p = end.positions()[0]
+    np.testing.assert_allclose(p[1], 2.5 + (p[0] - 0.2) / 2, atol=1e-5)
+    assert 1.0 <= p[0] < 1.06
+
+
+def test_a_moved_cell_point_is_exact_in_f64(f64_backend):
+    top, pts = _l_prism()
+    data = td.DataSet(top, pts, dtype=tack.f64)
+    x = data.positions()
+    data.fields["u"] = td.Field(td.H1(data), tack.array(2 * x[:, 0] + 3 * x[:, 1] - x[:, 2]))
+    probes = np.array([[0.25, 0.75, 0.5], [2.75, 0.25, 0.5], [0.25, 2.75, 0.5]])
+    out = td.probe(data, probes)
+    np.testing.assert_allclose(out.fields["u"].values.numpy(),
+                               2 * probes[:, 0] + 3 * probes[:, 1] - probes[:, 2], atol=1e-13)
+
+
+def test_an_inside_out_cell_has_no_kernel(backend):
+    """A cube wound inward: no point sees all of its faces from inside, so it holds no
+    points, with a warning that says why."""
+    cube = np.array([[i & 1, (i >> 1) & 1, (i >> 2) & 1] for i in range(8)], np.float32)
+    faces = [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4],
+             [1, 5, 7, 3]]
+    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 8), cube)
+    with pytest.warns(UserWarning, match="no volume|none sees all"):
+        locator = td.CellLocator(data)
+    assert locator.find([[0.5, 0.5, 0.5]]).cells.numpy()[0] == -1
 
 
 def test_global_ids_over_polyhedral_and_shape_pieces():
