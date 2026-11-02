@@ -330,8 +330,9 @@ def _array_to_field(array, float_dtype, share=False):
         host = np.asarray(array)
     if host.dtype.kind == "S":
         # A vtkCharArray has no numpy-compatible wrapper in 9.7.1, and NumPy reads
-        # it as bytes; its values are signed 8-bit integers, as vtk_to_numpy gave.
-        host = host.view(np.int8)
+        # it as bytes. Its values are 8-bit integers with the platform's char
+        # signedness: signed on x86 and macOS, unsigned on Linux on Arm.
+        host = host.view(np.int8 if array.GetDataTypeMin() < 0 else np.uint8)
     dtype = (float_dtype if host.dtype.kind == "f" and float_dtype is not None
              else from_numpy_dtype(host.dtype))
     values = _from_vtk(array, dtype)

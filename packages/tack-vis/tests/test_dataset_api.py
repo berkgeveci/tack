@@ -1076,22 +1076,25 @@ def test_view_mixins_may_not_share_a_name():
 
 
 @needs_vtk
-def test_vtk_char_arrays_come_across_as_i8():
+def test_vtk_char_arrays_come_across_as_8_bit_integers():
     """A vtkCharArray (vtkProbeFilter's valid mask, readers' flags) has no
     numpy-compatible wrapper in VTK 9.7.1, and NumPy reads it as bytes; its
-    values are signed 8-bit integers."""
+    values are 8-bit integers, signed where the platform's char is (x86, macOS)
+    and unsigned where it is not (Linux on Arm)."""
     from vtkmodules.vtkCommonCore import vtkCharArray
 
     image = vtk.vtkImageData(dimensions=(2, 2, 1))
     mask = vtkCharArray()
+    signed = mask.GetDataTypeMin() < 0
+    values = (0, 1, -1, 1) if signed else (0, 1, 255, 1)
     mask.SetNumberOfTuples(4)
-    for i, v in enumerate((0, 1, -1, 1)):
+    for i, v in enumerate(values):
         mask.SetTuple1(i, v)
     mask.SetName("mask")
     image.GetPointData().AddArray(mask)      # point_data[...] = refuses a vtkCharArray
     data = vtk_to_dataset(image)
-    assert data.fields["mask"].values.dtype == tack.i8
-    np.testing.assert_array_equal(data.fields["mask"].values.numpy(), [0, 1, -1, 1])
+    assert data.fields["mask"].values.dtype == (tack.i8 if signed else tack.u8)
+    np.testing.assert_array_equal(data.fields["mask"].values.numpy(), values)
 
 
 @needs_vtk
