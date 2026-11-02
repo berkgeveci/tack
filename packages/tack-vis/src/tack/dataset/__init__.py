@@ -109,6 +109,7 @@ from tack.dataset.algorithms import (
     voxelize,
     warp,
 )
+from tack.dataset.algorithms.gradients import world_gradient, world_hessian, world_jet
 from tack.dataset.amr import AMRDataSet
 from tack.dataset.carry import Interpolate, Pieces, Same, Take, carry
 from tack.dataset.dataset import (
@@ -304,4 +305,7 @@ __all__ = [
     "voxelize",
     "warp",
     "wavelet",
+    "world_gradient",
+    "world_hessian",
+    "world_jet",
 ]

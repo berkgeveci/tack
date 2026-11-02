@@ -214,6 +214,40 @@ def _linear(a, x):
 
 
 @tack.func
+def _q1d_second(a, x):
+    if a < 0.25 or a > 0.75:
+        return 4.0 + 0.0 * x
+    return -8.0 + 0.0 * x
+
+
+@tack.func
+def _p2_second(m, x):
+    if m > 0.75:
+        return 4.0 + 0.0 * x
+    return 0.0 * x
+
+
+@tack.func
+def _symmetric(xx, yy, zz, xy, xz, yz):
+    """The symmetric 3x3 matrix of these entries: a shape function's second
+    derivatives by parametric coordinates."""
+    return tack.mat3([xx, xy, xz], [xy, yy, yz], [xz, yz, zz])
+
+
+@tack.func
+def _simplex_quadratic_hessian(a, da, sa, b, db, sb, c, dc, sc, d, dd, sd):
+    """The second derivatives of ``A(1 - r - s - t) B(r) C(s) D(t)``, from each
+    factor's value, derivative and second derivative (a triangle's has ``D = 1``)."""
+    rest = sa * b * c * d
+    return _symmetric(rest - 2.0 * da * db * c * d + a * sb * c * d,
+                      rest - 2.0 * da * b * dc * d + a * b * sc * d,
+                      rest - 2.0 * da * b * c * dd + a * b * c * sd,
+                      rest - da * db * c * d - da * b * dc * d + a * db * dc * d,
+                      rest - da * db * c * d - da * b * c * dd + a * db * c * dd,
+                      rest - da * b * dc * d - da * b * c * dd + a * b * dc * dd)
+
+
+@tack.func
 def _nearest_on_triangle(a, b, c, p):
     """The point of triangle ``abc`` nearest ``p``, by the region of the triangle's
     plane that ``p`` projects into (Ericson, Real-Time Collision Detection, 5.1.5)."""
@@ -514,6 +548,10 @@ class Vertex(Shape):
         return tack.vec3(0.0, 0.0, 0.0)
 
     @tack.func
+    def shape_hessian(self, j, pc):
+        return _symmetric(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+    @tack.func
     def is_inside(self, pc, tol):
         return 1
 
@@ -561,6 +599,10 @@ class Line(Shape):
         return tack.vec3(2.0 * j - 1.0, 0.0, 0.0)
 
     @tack.func
+    def shape_hessian(self, j, pc):
+        return _symmetric(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+    @tack.func
     def is_inside(self, pc, tol):
         return -tol <= pc[0] and pc[0] <= 1.0 + tol
 
@@ -603,6 +645,10 @@ class Triangle(_Surface):
             return tack.vec3(-1.0, -1.0, 0.0)
         return self.parametric_point(j)
 
+    @tack.func
+    def shape_hessian(self, j, pc):
+        return _symmetric(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
     #: The six-node triangle, a tetrahedron's face: corners and edge middles.
     NUM_QUADRATIC = 6
 
@@ -623,6 +669,18 @@ class Triangle(_Surface):
         d0 = _p2_derivative(m0, x0) * f1 * f2               # by x0, which falls with r, s
         return tack.vec3(f0 * _p2_derivative(n[0], pc[0]) * f2 - d0,
                          f0 * f1 * _p2_derivative(n[1], pc[1]) - d0, 0.0)
+
+    @tack.func
+    def quadratic_hessian(self, k, pc):
+        n = self.quadratic_node(k)
+        m0 = 1.0 - n[0] - n[1]
+        x0 = 1.0 - pc[0] - pc[1]
+        h = _simplex_quadratic_hessian(
+            _p2(m0, x0), _p2_derivative(m0, x0), _p2_second(m0, x0),
+            _p2(n[0], pc[0]), _p2_derivative(n[0], pc[0]), _p2_second(n[0], pc[0]),
+            _p2(n[1], pc[1]), _p2_derivative(n[1], pc[1]), _p2_second(n[1], pc[1]),
+            1.0 + 0.0 * x0, 0.0 * x0, 0.0 * x0)
+        return _symmetric(h[0, 0], h[1, 1], 0.0, h[0, 1], 0.0, 0.0)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -673,6 +731,11 @@ class _Quadrilateral(_Surface):
         return tack.vec3((2.0 * a - 1.0) * _linear(b, pc[1]),
                          _linear(a, pc[0]) * (2.0 * b - 1.0), 0.0)
 
+    @tack.func
+    def shape_hessian(self, j, pc):
+        a, b = self._corner(j)
+        return _symmetric(0.0, 0.0, 0.0, (2.0 * a - 1.0) * (2.0 * b - 1.0), 0.0, 0.0)
+
     #: The nine-node biquadratic quad, a hexahedron's face: corners, edge
     #: middles and the center.
     NUM_QUADRATIC = 9
@@ -688,6 +751,13 @@ class _Quadrilateral(_Surface):
         n = self.quadratic_node(k)
         return tack.vec3(_q1d_derivative(n[0], pc[0]) * _q1d(n[1], pc[1]),
                          _q1d(n[0], pc[0]) * _q1d_derivative(n[1], pc[1]), 0.0)
+
+    @tack.func
+    def quadratic_hessian(self, k, pc):
+        n = self.quadratic_node(k)
+        return _symmetric(_q1d_second(n[0], pc[0]) * _q1d(n[1], pc[1]),
+                          _q1d(n[0], pc[0]) * _q1d_second(n[1], pc[1]), 0.0,
+                          _q1d_derivative(n[0], pc[0]) * _q1d_derivative(n[1], pc[1]), 0.0, 0.0)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -787,6 +857,10 @@ class Tetra(_Solid):
             return tack.vec3(-1.0, -1.0, -1.0)
         return self.parametric_point(j)
 
+    @tack.func
+    def shape_hessian(self, j, pc):
+        return _symmetric(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
     NUM_QUADRATIC = 10
 
     @tack.func
@@ -808,6 +882,17 @@ class Tetra(_Solid):
         return tack.vec3(f0 * _p2_derivative(n[0], pc[0]) * f2 * f3 - d0,
                          f0 * f1 * _p2_derivative(n[1], pc[1]) * f3 - d0,
                          f0 * f1 * f2 * _p2_derivative(n[2], pc[2]) - d0)
+
+    @tack.func
+    def quadratic_hessian(self, k, pc):
+        n = self.quadratic_node(k)
+        m0 = 1.0 - n[0] - n[1] - n[2]
+        x0 = 1.0 - pc[0] - pc[1] - pc[2]
+        return _simplex_quadratic_hessian(
+            _p2(m0, x0), _p2_derivative(m0, x0), _p2_second(m0, x0),
+            _p2(n[0], pc[0]), _p2_derivative(n[0], pc[0]), _p2_second(n[0], pc[0]),
+            _p2(n[1], pc[1]), _p2_derivative(n[1], pc[1]), _p2_second(n[1], pc[1]),
+            _p2(n[2], pc[2]), _p2_derivative(n[2], pc[2]), _p2_second(n[2], pc[2]))
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -866,6 +951,17 @@ class _Box(_Solid):
         return tack.vec3((2.0 * a - 1.0) * fb * fc, fa * (2.0 * b - 1.0) * fc,
                          fa * fb * (2.0 * c - 1.0))
 
+    @tack.func
+    def shape_hessian(self, j, pc):
+        a, b, c = self._corner(j)
+        fa = _linear(a, pc[0])
+        fb = _linear(b, pc[1])
+        fc = _linear(c, pc[2])
+        da = 2.0 * a - 1.0
+        db = 2.0 * b - 1.0
+        dc = 2.0 * c - 1.0
+        return _symmetric(0.0, 0.0, 0.0, da * db * fc, da * fb * dc, fa * db * dc)
+
     NUM_QUADRATIC = 27
     QUADRATIC_FACES = 6
     QUADRATIC_INTERIOR = 1
@@ -884,6 +980,18 @@ class _Box(_Solid):
         return tack.vec3(_q1d_derivative(n[0], pc[0]) * fb * fc,
                          fa * _q1d_derivative(n[1], pc[1]) * fc,
                          fa * fb * _q1d_derivative(n[2], pc[2]))
+
+    @tack.func
+    def quadratic_hessian(self, k, pc):
+        n = self.quadratic_node(k)
+        fa = _q1d(n[0], pc[0])
+        fb = _q1d(n[1], pc[1])
+        fc = _q1d(n[2], pc[2])
+        da = _q1d_derivative(n[0], pc[0])
+        db = _q1d_derivative(n[1], pc[1])
+        dc = _q1d_derivative(n[2], pc[2])
+        return _symmetric(_q1d_second(n[0], pc[0]) * fb * fc, fa * _q1d_second(n[1], pc[1]) * fc,
+                          fa * fb * _q1d_second(n[2], pc[2]), da * db * fc, da * fb * dc, fa * db * dc)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -1014,6 +1122,12 @@ class Wedge(_Solid):
         fc = _linear(c, pc[2])
         return tack.vec3(wr * fc, ws * fc, w * (2.0 * c - 1.0))
 
+    @tack.func
+    def shape_hessian(self, j, pc):
+        w, wr, ws = self._triangle(j % 3, pc)
+        dc = 2.0 * (j // 3) - 1.0
+        return _symmetric(0.0, 0.0, 0.0, 0.0, wr * dc, ws * dc)
+
     NUM_QUADRATIC = 18
     QUADRATIC_FACES = 3
 
@@ -1036,6 +1150,25 @@ class Wedge(_Solid):
         return tack.vec3((f0 * _p2_derivative(n[0], pc[0]) * f2 - d0) * ft,
                          (f0 * f1 * _p2_derivative(n[1], pc[1]) - d0) * ft,
                          f0 * f1 * f2 * _q1d_derivative(n[2], pc[2]))
+
+    @tack.func
+    def quadratic_hessian(self, k, pc):
+        n = self.quadratic_node(k)
+        m0 = 1.0 - n[0] - n[1]
+        x0 = 1.0 - pc[0] - pc[1]
+        a = _p2(m0, x0)
+        da = _p2_derivative(m0, x0)
+        b = _p2(n[0], pc[0])
+        db = _p2_derivative(n[0], pc[0])
+        c = _p2(n[1], pc[1])
+        dc = _p2_derivative(n[1], pc[1])
+        h = _simplex_quadratic_hessian(a, da, _p2_second(m0, x0), b, db, _p2_second(n[0], pc[0]),
+                                       c, dc, _p2_second(n[1], pc[1]),
+                                       1.0 + 0.0 * x0, 0.0 * x0, 0.0 * x0)
+        ft = _q1d(n[2], pc[2])
+        dt = _q1d_derivative(n[2], pc[2])
+        return _symmetric(h[0, 0] * ft, h[1, 1] * ft, a * b * c * _q1d_second(n[2], pc[2]),
+                          h[0, 1] * ft, (a * db * c - da * b * c) * dt, (a * b * dc - da * b * c) * dt)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -1112,6 +1245,17 @@ class Pyramid(_Solid):
         fb = _linear(b, pc[1])
         return tack.vec3((2.0 * a - 1.0) * fb * (1.0 - pc[2]),
                          fa * (2.0 * b - 1.0) * (1.0 - pc[2]), -fa * fb)
+
+    @tack.func
+    def shape_hessian(self, j, pc):
+        h = _symmetric(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        if j < 4:
+            a, b = self._corner(j)
+            da = 2.0 * a - 1.0
+            db = 2.0 * b - 1.0
+            h = _symmetric(0.0, 0.0, 0.0, da * db * (1.0 - pc[2]),
+                           -da * _linear(b, pc[1]), -_linear(a, pc[0]) * db)
+        return h
 
     @tack.func
     def world_to_parametric(self, pts, x):

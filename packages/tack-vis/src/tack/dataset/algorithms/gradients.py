@@ -12,11 +12,14 @@ from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import corner_layout
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ['gradients']
+__all__ = ['gradients', 'world_gradient', 'world_hessian', 'world_jet']
 
 
 @tack.func
-def _world_gradient(cells, u, c, pc):
+def world_gradient(cells, u, c, pc):
+    """`u`'s gradient in the world at parametric `pc` of cell `c`: its
+    parametric gradient through the geometry's Jacobian. For kernels that need a
+    field's gradient where `gradients` does not put it."""
     # d(u)/d(x) from d(u)/d(pc), through the geometry's Jacobian J. A solid's is
     # J^-T d(u)/d(pc). A 2D cell's lies in its tangent plane, spanned by J's
     # columns a and b: g = alpha a + beta b with g . a and g . b the parametric
@@ -26,22 +29,59 @@ def _world_gradient(cells, u, c, pc):
     if cells.DIMENSION == 3:
         g = cells.geometry_jacobian(c, pc).inverse().transpose() @ u.parametric_gradient(c, pc)
     elif cells.DIMENSION == 2:
-        m = cells.geometry_jacobian(c, pc)
-        a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
-        b = tack.vec3(m[0, 1], m[1, 1], m[2, 1])
-        d = u.parametric_gradient(c, pc)
-        aa = a.dot(a)
-        ab = a.dot(b)
-        bb = b.dot(b)
-        det = aa * bb - ab * ab
-        g = ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
+        g = _in_plane(cells.geometry_jacobian(c, pc), u.parametric_gradient(c, pc))
     return g
+
+
+@tack.func
+def _in_plane(m, d):
+    """The world vector in the plane of `m`'s first two columns whose dots with them
+    are `d[0]` and `d[1]`."""
+    a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
+    b = tack.vec3(m[0, 1], m[1, 1], m[2, 1])
+    aa = a.dot(a)
+    ab = a.dot(b)
+    bb = b.dot(b)
+    det = aa * bb - ab * ab
+    return ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
+
+
+
+@tack.func
+def world_hessian(cells, u, c, pc):
+    """`u`'s second derivatives in the world at parametric `pc` of solid cell `c`, a
+    symmetric 3x3 matrix: by the chain rule through the geometry, the parametric
+    Hessian less the geometry's curvature along the world gradient, taken to world
+    axes on both sides by the inverse Jacobian. Analytic from the basis on every
+    shape at orders 1 and 2, and at any order on tensor shapes, simplices and
+    wedges. Zero on surfaces, lines and vertices."""
+    _, _, h = world_jet(cells, u, c, pc)
+    return h
+
+
+@tack.func
+def world_jet(cells, u, c, pc):
+    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of cell
+    `c`, from the field view's `parametric_jet`, one pass over the cell's values: what a
+    kernel needing several of them reads once. The gradient is `world_gradient`'s on
+    every cell, in the cell's plane on surfaces, and the Hessian `world_hessian`'s, zero
+    on surfaces, lines and vertices."""
+    v, pg, ph = u.parametric_jet(c, pc)
+    g = tack.vec3(0.0, 0.0, 0.0)
+    h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    if cells.DIMENSION == 3:
+        inverse = cells.geometry_jacobian(c, pc).inverse()
+        g = inverse.transpose() @ pg
+        h = inverse.transpose() @ (ph - cells.geometry_curvature(c, pc, g)) @ inverse
+    elif cells.DIMENSION == 2:
+        g = _in_plane(cells.geometry_jacobian(c, pc), pg)
+    return v, g, h
 
 
 @tack.kernel
 def _gradients(cells, u, out):
     for c in cells:
-        out[cells.entity_id(c)] = _world_gradient(cells, u, c, cells.parametric_center())
+        out[cells.entity_id(c)] = world_gradient(cells, u, c, cells.parametric_center())
 
 
 @tack.kernel
@@ -49,7 +89,7 @@ def _node_gradients(cells, u, out):
     # The gradient at each of the cell's nodes of the target space.
     for c in cells:
         for j in range(cells.node_count(c)):
-            out[cells.node_dof(c, j)] = _world_gradient(cells, u, c, cells.node_parametric_point(c, j))
+            out[cells.node_dof(c, j)] = world_gradient(cells, u, c, cells.node_parametric_point(c, j))
 
 
 @tack.kernel
@@ -60,11 +100,11 @@ def _corner_gradients(cells, u, start, out):
             if cells.ID == shapes.PYRAMID and j == 4:
                 # The Jacobian is singular at a pyramid's apex. Extrapolate from
                 # two points just below it on the axis, as vtkPyramid does.
-                ga = _world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.998))
-                gb = _world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.996))
+                ga = world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.998))
+                gb = world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.996))
                 out[first + j] = 2.0 * ga - gb
             else:
-                out[first + j] = _world_gradient(cells, u, c, cells.parametric_point(j))
+                out[first + j] = world_gradient(cells, u, c, cells.parametric_point(j))
 
 
 @tack.kernel
