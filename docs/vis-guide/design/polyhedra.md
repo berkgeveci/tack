@@ -787,10 +787,19 @@ the points from which every triangle of its face fans is seen from inside.
     evaluate with, and probe's evaluation from the cells
     (`_evaluate_in_moved_tets`, `tet_value_from`).
   - A mesh without such cells compiles the path out.
-- **What is still refused.** A cell with no kernel: one tangled or inside
-  out, a face whose own fan folds over, or one with no volume. Locating in
-  those would need a solid-angle test and another interpolant (mean value
-  coordinates), which are not built.
+- **Cells with no kernel are skipped, with a warning.** These are tangled or
+  inside-out cells, cells with a face whose own fan folds over, and cells with
+  no volume. `starts` is -2 for them, and both searches leave them out.
+  - A point inside one is found in a neighbour it overlaps, or nowhere, and a
+    particle reaching one stops.
+  - On the AhmedML volume there were 12: wall cells 2–3 mm across at the
+    nose's four corners, which none of 338 streamlines aimed at those edges
+    entered.
+  - VTK's `vtkStreamTracer` traces through such cells without a word: in 9 of
+    the 12 its `FindCell` returns a neighbour for the cell's centroid.
+  - Locating in them properly would need a solid-angle (winding number) test
+    and another interpolant, mean value coordinates. That is on the roadmap
+    for 0.9.
 
 **Tests, and why not VTK.** The proposal planned exact agreement with
 `vtkProbeFilter` and `vtkGradientFilter` on linear fields. On VTK 9.7.1
@@ -846,8 +855,8 @@ share those loads.
   Polygons not star-shaped from their cell point are refused, as polyhedra are;
 - cells not star-shaped from their cell point: refused, by decision
   (2026-10-23); since 2026-11-02 a polyhedron with a kernel is fanned from a
-  point of it (`moved_cell_points`, above), and only cells with none are
-  refused. For those a solid-angle test would say whether a point is inside,
+  point of it (`moved_cell_points`, above), and cells with none are skipped
+  with a warning. For those a solid-angle test would say whether a point is inside,
   but the fan's pieces overlap, so there is no interpolant to evaluate;
 - ~~one return shape for `CellLocator.find` on both paths~~: `Locations(cells,
   pcs, tets)` everywhere since #95.

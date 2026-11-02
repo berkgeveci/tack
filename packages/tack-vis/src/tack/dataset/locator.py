@@ -32,6 +32,7 @@ from the cells, are evaluated cell by cell through the fields' bases, the
 points bucketed by the cell found.
 """
 
+import warnings
 from typing import NamedTuple
 
 import numpy as np
@@ -66,6 +67,11 @@ class Locations(NamedTuple):
 # A point just outside a cell counts as in it within this share of the cell's
 # diagonal, as vtkProbeFilter's computed tolerance has it (0.1%).
 _TOLERANCE = 1e-3
+
+#: ``moved_cell_points``' start for a polyhedron with no kernel: no point inside it
+#: sees all of its faces, so it holds no points (found, if anywhere, in a neighbour
+#: it overlaps).
+_SKIPPED = tack.constant(-2)
 
 
 @tack.kernel
@@ -314,7 +320,7 @@ def _kernel_points(cells, bad, starts, weights):
                 beta = beta * 10.0
             least, total, v, m2 = _clearances(cells, c, centre, scale, q, beta)
             if least <= 0.0:
-                starts[e] = -1
+                starts[e] = _SKIPPED
             else:
                 g = (q - q).outer_product(q - q)
                 for j in range(npts):
@@ -334,10 +340,19 @@ def _moved_counts(cells, bad, counts):
         counts[e] = cells.num_points(c) if bad[e] == 1 else 0
 
 
+@tack.kernel
+def _skip(bad, starts):
+    # A cell still not star-shaped from its point holds no points.
+    for e in range(bad.shape[0]):
+        if bad[e] == 1:
+            starts[e] = _SKIPPED
+
+
 def _moved_cell_points(data, bad):
     """``(starts, weights)`` for the polyhedra ``bad`` flags (``_kernel_points``):
     room for each one's points' weights, by a scan, then the point and weights;
-    ``starts`` -1 for the others, and for those with no kernel found."""
+    ``starts`` -1 for the others, and ``_SKIPPED`` for those with no kernel
+    found."""
     n = data.num_cells
     idt = data.id_dtype
     counts = tack.empty((n,), idt)
@@ -367,6 +382,9 @@ def _test_points_in_polyhedra(cells, points, lo, hi, bin_offsets, bin_points, ox
         i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
         j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
         k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
+        skipped = starts[e] if moved == 1 else -1
+        if skipped == _SKIPPED:
+            k1 = k0 - 1                          # no kernel: it holds no points
         for k in range(k0, k1 + 1):
             for j in range(j0, j1 + 1):
                 for i in range(i0, i1 + 1):
@@ -624,7 +642,11 @@ class CellLocator:
         #: concave cells at walls) is fanned from a point of its kernel instead, the
         #: sum of its points by ``weights[starts[c] + j]`` (``starts[c]`` -1 for a cell
         #: that keeps the mean). ``find``'s ``tets`` and ``pcs`` there are relative to
-        #: that point; ``probe`` and advection evaluate there.
+        #: that point; ``probe`` and advection evaluate there. A polyhedron with no
+        #: kernel (tangled, inside out, a face whose fan folds, no volume) has
+        #: ``starts[c]`` -2 and holds no points: one inside it is found in a
+        #: neighbour it overlaps, or nowhere, and a particle reaching it stops as at
+        #: the mesh's edge. Making it is warned about.
         self.moved_cell_points = None
         if n and self.polyhedral:
             bad = tack.zeros((n,), tack.i32)
@@ -640,12 +662,14 @@ class CellLocator:
                 for_each(_not_star_shaped_polygons, data, "cells", bad)
             count = int(bad.numpy().sum())
             if count and dimension == 3:
-                raise NotImplementedError(
+                _skip(bad, self.moved_cell_points[0])
+                warnings.warn(
                     f"{count} of the {n} cells are not star-shaped from any point found "
                     "inside them -- none sees all of their faces (tangled or inside-out "
-                    "cells) -- or have no volume: locating points in them needs another "
-                    "inside test, not built yet")
-            if count:
+                    "cells) -- or have no volume: they hold no points. A point inside "
+                    "one is found in a neighbour it overlaps, or nowhere; a particle "
+                    "reaching one stops.", stacklevel=2)
+            elif count:
                 raise NotImplementedError(
                     f"{count} of the {n} cells are not star-shaped from their cell point "
                     "(the mean of their points), or have no area: locating points in "

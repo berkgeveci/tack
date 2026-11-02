@@ -1199,18 +1199,35 @@ def test_sub_tetrahedra_reproduce_a_linear_field(backend, name):
     np.testing.assert_allclose(values[:, 0], values[:, 1], atol=1e-5)
 
 
-def test_a_cell_not_star_shaped_from_any_point_is_refused(backend):
+def test_a_cell_not_star_shaped_from_any_point_holds_no_points(backend):
     """A C-shaped prism whose top and bottom are each one face: their face points are
     in the notch, so their own fans fold over, and no cell point makes every
-    sub-tetrahedron positive. The locator refuses it rather than find points it does
-    not hold."""
+    sub-tetrahedron positive. The locator warns and leaves it out -- a point inside
+    it is found nowhere, and a particle there stops -- rather than find points it
+    does not hold, or refuse the whole mesh. Beside it, a cube still holds its
+    points."""
     ring = np.array([[0, 0], [3, 0], [3, 1], [1, 1], [1, 2], [3, 2], [3, 3], [0, 3]], float)
-    pts = np.r_[np.c_[ring, np.zeros(8)], np.c_[ring, np.ones(8)]].astype(np.float32)
+    cube = np.array([[i & 1, (i >> 1) & 1, (i >> 2) & 1] for i in range(8)], float)
+    cube[:, 0] += 5.0
+    pts = np.r_[np.c_[ring, np.zeros(8)], np.c_[ring, np.ones(8)], cube].astype(np.float32)
     faces = [list(range(8))[::-1], list(range(8, 16))]
     faces += [[j, (j + 1) % 8, 8 + (j + 1) % 8, 8 + j] for j in range(8)]
-    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 16, pts, orient=True), pts)
-    with pytest.raises(NotImplementedError, match="1 of the 1 cells are not star-shaped"):
-        td.CellLocator(data)
+    cube_faces = [[16, 18, 19, 17], [20, 21, 23, 22], [16, 17, 21, 20], [18, 22, 23, 19],
+                  [16, 20, 22, 18], [17, 19, 23, 21]]
+    data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces, cube_faces], 24, pts,
+                                                            orient=True), pts)
+    data.fields["v"] = td.Field(td.H1(data), tack.array(np.tile([1.0, 0.0, 0.0], (24, 1))
+                                                        .astype(np.float32), tack.vec3()))
+    with pytest.warns(UserWarning, match="1 of the 2 cells are not star-shaped"):
+        locator = td.CellLocator(data)
+    starts = locator.moved_cell_points[0].numpy()
+    np.testing.assert_array_equal(starts, [-2, -1])
+    for many in (1, 100):                          # from the cells, and from the points
+        where = np.repeat([[0.5, 1.5, 0.5], [5.5, 0.5, 0.5]], many, axis=0)
+        found = locator.find(where).cells.numpy()[::many]
+        np.testing.assert_array_equal(found, [-1, 1])
+    end = td.advect(data, "v", np.array([[0.5, 1.5, 0.5]]), 0.1, 5, locator=locator)
+    assert not end.fields["status"].values.numpy()[0] & td.ParticleStatus.SUCCESS
 
 
 def _l_prism():
@@ -1285,14 +1302,15 @@ def test_a_moved_cell_point_is_exact_in_f64(f64_backend):
 
 
 def test_an_inside_out_cell_has_no_kernel(backend):
-    """A cube wound inward: no point sees all of its faces from inside, so it is
-    refused as before, with the reason."""
+    """A cube wound inward: no point sees all of its faces from inside, so it holds no
+    points, with a warning that says why."""
     cube = np.array([[i & 1, (i >> 1) & 1, (i >> 2) & 1] for i in range(8)], np.float32)
     faces = [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4],
              [1, 5, 7, 3]]
     data = td.DataSet(td.PolyhedralTopology.from_cell_faces([faces], 8), cube)
-    with pytest.raises(NotImplementedError, match="no volume|none sees all"):
-        td.CellLocator(data)
+    with pytest.warns(UserWarning, match="no volume|none sees all"):
+        locator = td.CellLocator(data)
+    assert locator.find([[0.5, 0.5, 0.5]]).cells.numpy()[0] == -1
 
 
 def test_global_ids_over_polyhedral_and_shape_pieces():

@@ -149,6 +149,16 @@ class _PolyhedralMesh(_FannedCells, views._PolyhedralLocation, views._Polyhedral
         return shapes.POLYHEDRON
 
     @tack.func
+    def locate(self, c, x, slack):
+        """``_PolyhedralLocation.locate`` from its cell point; a cell the locator found
+        no kernel for (``moved_cell_points``' -2) holds nothing."""
+        t, pc, inside = self.locate_from(c, self.cell_point(c), x, slack)
+        skipped = self.moved_starts[c] if self.MOVED == 1 else -1
+        if skipped == -2:
+            t = -1
+        return t, pc, inside
+
+    @tack.func
     def cell_point(self, c):
         """The mean of the cell's points, or the sum of them by the weights its
         locator gave it."""
