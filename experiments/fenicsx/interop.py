@@ -37,8 +37,10 @@ def _vertices(cell):
     return out
 
 
-def _basix_points(cell, points):
+def _basix_points(cell, points, reflected=False):
     out = np.asarray(points).copy()
+    if reflected:
+        out[:, [0, 1]] = out[:, [1, 0]]
     if cell == 'pyramid':
         out[:, :2] *= 1.0 - out[:, 2:3]
     return out
@@ -111,7 +113,7 @@ def target_basis(cell, p, family, points):
 
 
 @lru_cache(maxsize=None)
-def _basis_plan(cell, p, variant, discontinuous):
+def _basis_plan(cell, p, variant, discontinuous, reflected=False):
     e = basix.create_element(basix.ElementFamily.P, getattr(basix.CellType, cell), p,
                              getattr(basix.LagrangeVariant, variant),
                              discontinuous=discontinuous)
@@ -127,7 +129,7 @@ def _basis_plan(cell, p, variant, discontinuous):
         nodes = target_points(cell, p, family)
         samples = np.r_[nodes, random_points(cell, 19)]
         target = target_basis(cell, p, family, samples)
-        source = e.tabulate(0, _basix_points(cell, samples))[0, :, :, 0]
+        source = e.tabulate(0, _basix_points(cell, samples, reflected))[0, :, :, 0]
         if target.shape[1] != e.dim:
             continue
         distances = np.max(np.abs(target[:, :, None] - source[:, None, :]), axis=0)
@@ -140,10 +142,10 @@ def _basis_plan(cell, p, variant, discontinuous):
     nodes = target_points(cell, p, family)
     if len(nodes) != e.dim:
         raise NotImplementedError('Source and target polynomial spaces have different dimensions')
-    matrix = e.tabulate(0, _basix_points(cell, nodes))[0, :, :, 0]
+    matrix = e.tabulate(0, _basix_points(cell, nodes, reflected))[0, :, :, 0]
     samples = random_points(cell, 31, seed=91)
     reconstructed = target_basis(cell, p, family, samples) @ matrix
-    expected = e.tabulate(0, _basix_points(cell, samples))[0, :, :, 0]
+    expected = e.tabulate(0, _basix_points(cell, samples, reflected))[0, :, :, 0]
     if np.max(np.abs(reconstructed - expected)) > 2e-10:
         raise NotImplementedError('Source polynomial space is not represented exactly')
     return family, None, matrix
@@ -168,7 +170,28 @@ def import_mesh(m):
     at_vertices = element.tabulate(0, basix.geometry(element.cell_type))[0, :, :, 0]
     if not np.allclose(at_vertices, np.eye(shape.NUM_POINTS), rtol=0, atol=1e-12):
         raise NotImplementedError('Coordinate basis must interpolate the vertices')
-    connectivity = np.ascontiguousarray(rows[:, corners], dtype=np.int32)
+    normalized = rows.copy()
+    reflected = np.zeros(len(rows), dtype=bool)
+    if shape.DIMENSION == 3 and len(rows):
+        center = target_points(cell, 0, 'equispaced')
+        samples = np.r_[center, 0.9*_vertices(cell) + 0.1*center]
+        tab = element.tabulate(1, _basix_points(cell, samples))
+        derivative_ids = [basix.index(*(int(i == axis) for i in range(3))) for axis in range(3)]
+        derivatives = np.stack([tab[i, :, :, 0] for i in derivative_ids], axis=-1)
+        jac = np.einsum('qad,cai->cqid', derivatives, m.geometry.x[rows])
+        determinants = np.linalg.det(jac)
+        scales = np.max(np.abs(determinants), axis=1)
+        if (np.any(~np.isfinite(determinants)) or np.any(scales == 0)
+                or np.any(np.min(np.abs(determinants), axis=1) <= 1e-12*scales)
+                or np.any((determinants.min(axis=1) < 0) & (determinants.max(axis=1) > 0))):
+            raise NotImplementedError('Degenerate or folded geometry detected')
+        reflected = determinants[:, 0] < 0
+        vertices = basix.geometry(element.cell_type)
+        swapped = vertices[:, [1, 0, 2]]
+        distances = np.linalg.norm(swapped[:, None, :] - vertices[None, :, :], axis=2)
+        reflection = distances.argmin(axis=1)
+        normalized[reflected] = rows[reflected][:, reflection]
+    connectivity = np.ascontiguousarray(normalized[:, corners], dtype=np.int32)
     types, offsets = uniform_cells(shape.ID, len(rows), tack.i32)
     topology = td.UnstructuredTopology(types, offsets, tack.array(connectivity),
                                        num_points=len(m.geometry.x))
@@ -179,6 +202,7 @@ def import_mesh(m):
     data = td.DataSet(topology, xyz, dtype=tack.f64)
     data._dolfinx_owner = m
     data._dolfinx_cell = cell
+    data._dolfinx_reflected = reflected
     return data
 
 
@@ -195,19 +219,22 @@ def _dof_indices(cells, field, count, out, points):
 class _BasisMappedValues(_Implicit):
     """Read-only live change of basis. Uses Tack's internal implicit-array hook."""
 
-    def __init__(self, source, dofs, matrix, owners, local_nodes, width):
+    def __init__(self, source, dofs, matrix, owners, local_nodes, width, reflections):
         self.source = source
         self.indices = tack.array(np.ascontiguousarray(dofs.reshape(-1)))
         self.weights = tack.array(np.ascontiguousarray(matrix.reshape(-1)))
         self.owners = tack.array(owners)
         self.local_nodes = tack.array(local_nodes)
+        self.reflections = tack.array(reflections.astype(np.int32))
         self.SOURCE_NODES = dofs.shape[1]
+        self.TARGET_NODES = matrix.shape[-2]
         _metadata(self, len(owners), width if width > 1 else None, tack.f64)
 
     @tack.func
     def get(self, k):
         start = self.owners[k] * self.SOURCE_NODES
-        row = self.local_nodes[k] * self.SOURCE_NODES
+        orientation = self.reflections[self.owners[k]]
+        row = (orientation*self.TARGET_NODES + self.local_nodes[k]) * self.SOURCE_NODES
         value = self.source[self.indices[start]] * self.weights[row]
         for j in range(1, self.SOURCE_NODES):
             value += self.source[self.indices[start + j]] * self.weights[row + j]
@@ -216,7 +243,7 @@ class _BasisMappedValues(_Implicit):
 
 def _lazy_values(data, space, source, source_table, matrix, block_size, nodes):
     placeholder = td.Field(space, ConstantArray(0.0, space.size, dtype=tack.f64))
-    nlocal = matrix.shape[0]
+    nlocal = matrix.shape[-2]
     table = tack.empty((data.num_cells * nlocal,), tack.i32)
     native_points = tack.empty((nlocal,), tack.vec(3, tack.f64))
     td.for_each(_dof_indices, data, 'cells', placeholder, nlocal, table, native_points)
@@ -236,7 +263,8 @@ def _lazy_values(data, space, source, source_table, matrix, block_size, nodes):
             owners[dof], local_nodes[dof] = divmod(i, nlocal)
     if np.any(owners < 0):
         raise NotImplementedError('Unreferenced target DOFs need an ownership rule')
-    return _BasisMappedValues(source, source_table, matrix, owners, local_nodes, block_size)
+    return _BasisMappedValues(source, source_table, matrix, owners, local_nodes, block_size,
+                              data._dolfinx_reflected)
 
 
 def import_function(data, function, *, conversion='error'):
@@ -261,6 +289,12 @@ def import_function(data, function, *, conversion='error'):
     assert np.shares_memory(np.from_dlpack(raw), function.x.array)
     family, permutation, matrix = _basis_plan(data._dolfinx_cell, p,
                                                e.lagrange_variant.name, e.discontinuous)
+    reflected_plan = _basis_plan(data._dolfinx_cell, p, e.lagrange_variant.name,
+                                 e.discontinuous, True) if np.any(data._dolfinx_reflected) else (
+                                     family, permutation, matrix)
+    other_family, other_permutation, other_matrix = reflected_plan
+    if family != other_family or (matrix is None) != (other_matrix is None):
+        raise NotImplementedError('Reference reflection needs a common target-basis plan')
     kwargs = {'order': p, 'basis': family}
     if e.discontinuous:
         kwargs['layout'] = 'blocks'
@@ -271,9 +305,13 @@ def import_function(data, function, *, conversion='error'):
             raise NotImplementedError('Basis differs; opt in with conversion="lazy"')
         space = constructor(data, **kwargs)
         nodes = target_points(data._dolfinx_cell, p, family)
-        values = _lazy_values(data, space, raw, source_table, matrix, block_size, nodes)
+        matrices = np.stack([matrix, other_matrix])
+        values = _lazy_values(data, space, raw, source_table, matrices, block_size, nodes)
     elif e.discontinuous:
-        indices = np.ascontiguousarray(source_table[:, permutation].reshape(-1))
+        ordered = source_table[:, permutation].copy()
+        reflected = data._dolfinx_reflected
+        ordered[reflected] = source_table[reflected][:, other_permutation]
+        indices = np.ascontiguousarray(ordered.reshape(-1))
         space = constructor(data, **kwargs)
         values = Permutation(tack.array(indices), raw)
     else:
@@ -292,13 +330,17 @@ def import_function(data, function, *, conversion='error'):
         foreign_to_tack[remaining] = np.arange(data.num_points, n, dtype=np.int32)
         inverse = np.argsort(foreign_to_tack).astype(np.int32)
         if p > 1:
-            kwargs['dofs'] = np.ascontiguousarray(foreign_to_tack[source_table[:, permutation]])
+            ordered = source_table[:, permutation].copy()
+            reflected = data._dolfinx_reflected
+            ordered[reflected] = source_table[reflected][:, other_permutation]
+            kwargs['dofs'] = np.ascontiguousarray(foreign_to_tack[ordered])
         space = constructor(data, **kwargs)
         values = Permutation(tack.array(inverse), raw)
     field = td.Field(space, values)
     field._dolfinx_owner = function
     field._dolfinx_import = {'mode': 'lazy' if matrix is not None else 'direct',
-                             'basis': family, 'source_variant': e.lagrange_variant.name}
+                             'basis': family, 'source_variant': e.lagrange_variant.name,
+                             'reflected_cells': int(data._dolfinx_reflected.sum())}
     return field
 
 

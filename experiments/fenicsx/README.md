@@ -43,14 +43,29 @@ Each imported field uses random source coefficients and seven interior sample
 points per cell. Values are compared against DOLFINx `Function.eval`;
 world-gradient checks use field-view parametric derivatives and the experiment's
 Jacobian kernel, compared against Basix derivative tabulation and the source
-geometry Jacobian. Largest observed absolute errors were `6.7e-13` for values
-and `2.3e-12` for gradients. Checks repeat after changing the source vector to
+geometry Jacobian. Largest observed absolute errors were `9.0e-13` for values
+and `2.6e-12` for gradients. Checks repeat after changing the source vector to
 verify live borrowing. Memory checks verify shared geometry/coefficient storage.
 
 Meshes have multiple adjacent cells; tetrahedra and triangles exercise varied
 cell orientations, and two pyramids share a base with reversed reference axes.
 Geometry is degree 1. Higher-order geometry and distributed meshes remain out
 of scope.
+
+## Solved-problem analysis validation
+
+[ANALYSIS.md](ANALYSIS.md) records 14 end-to-end cases backed by 16 variational
+solves, followed by the public integration, probe, gradient, contour, slice,
+flow-diagnostic and streamline APIs. This includes native Bernstein and
+lazy-converted H1/modal-DG fields. Run `python experiments/fenicsx/analysis.py`.
+
+These tests found and repaired an orientation defect: valid DOLFINx prisms can
+have negative reference orientation, whose signed Tack volumes canceled.
+The importer now normalizes 3D cell orientation and applies the same reference
+reflection to field addressing. Geometry and coefficient storage remain shared;
+the check uses temporary work arrays and allocates orientation/index metadata.
+The full 640-case representation matrix passed again after the repair, and
+positive-cell/domain-measure checks were added for every shape.
 
 ## Two explicit import modes
 

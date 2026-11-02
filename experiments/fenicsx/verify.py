@@ -35,6 +35,19 @@ def make_mesh(cell):
     return mesh.create_mesh(MPI.COMM_SELF, cells, coordinate, x)
 
 
+def reflect_mesh(domain):
+    """Reverse reference orientation using public DOLFINx mesh construction."""
+    cell = domain.topology.cell_type.name
+    if _CELLS[cell][0].DIMENSION != 3:
+        raise ValueError('--reflect-3d requires three-dimensional cell shapes')
+    vertices = basix.geometry(getattr(basix.CellType, cell))
+    swapped = vertices[:, [1, 0, 2]]
+    permutation = np.linalg.norm(swapped[:, None, :] - vertices[None, :, :], axis=2).argmin(axis=1)
+    cells = np.ascontiguousarray(domain.geometry.dofmaps[0][:, permutation], dtype=np.int64)
+    coordinate = basix.ufl.element('P', cell, 1, shape=(3,))
+    return mesh.create_mesh(MPI.COMM_SELF, cells, coordinate, domain.geometry.x.copy())
+
+
 @tack.kernel
 def evaluate(cells, field, pcs, per_cell, positions, values):
     for c in cells:
@@ -93,16 +106,16 @@ def check(data, function, field, *, derivatives=True):
     if derivatives:
         V = function.function_space
         element = V.element.basix_element
-        X = _basix_points(cell, reference_points)
-        tab = element.tabulate(1, X)
         geometry = basix.create_element(basix.ElementFamily.P, getattr(basix.CellType, cell),
                                         1, basix.LagrangeVariant.equispaced)
-        geom_tab = geometry.tabulate(1, X)
         derivative_ids = [basix.index(*(int(i == axis) for i in range(dim))) for axis in range(dim)]
         coeffs = function.x.array.reshape(-1, block_size)[V.dofmap.list]
         coord = V.mesh.geometry.x[V.mesh.geometry.dofmaps[0]]
         expected_gradients = []
         for c in range(data.num_cells):
+            X = _basix_points(cell, reference_points, data._dolfinx_reflected[c])
+            tab = element.tabulate(1, X)
+            geom_tab = geometry.tabulate(1, X)
             jac = np.stack([geom_tab[i, :, :, 0] @ coord[c] for i in derivative_ids], axis=-1)
             d = np.stack([tab[i, :, :, 0] @ coeffs[c] for i in derivative_ids], axis=-1)
             expected_gradients.append(np.einsum('qdi,qbd->qbi', np.linalg.pinv(jac), d))
@@ -127,6 +140,7 @@ def main():
     parser.add_argument('--orders', default='0,1,2,3,4')
     parser.add_argument('--components', default='1,2')
     parser.add_argument('--no-derivatives', action='store_true')
+    parser.add_argument('--reflect-3d', action='store_true')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     tack.set_default_device('cpu')
@@ -134,8 +148,16 @@ def main():
     report = {'passed': [], 'source_unsupported': [], 'target_unsupported': [], 'failed': []}
     for cell in args.shapes.split(','):
         m = make_mesh(cell)
+        if args.reflect_3d:
+            m = reflect_mesh(m)
         data = import_mesh(m)
         assert np.shares_memory(np.from_dlpack(data.geometry.values), m.geometry.x)
+        # Guard against orientation errors that pointwise evaluation alone misses.
+        measures = td.cell_geometry(data).measure.values.numpy()
+        assert np.all(measures > 0), (cell, measures)
+        expected_measure = 2/3 if cell == 'pyramid' else 1.0
+        np.testing.assert_allclose(td.integrate(data, []).measure, expected_measure,
+                                   rtol=2e-12, atol=2e-12)
         for variant in args.variants.split(','):
             for discontinuous in (False, True):
                 for p in map(int, args.orders.split(',')):
