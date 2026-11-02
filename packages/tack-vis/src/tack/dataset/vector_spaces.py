@@ -13,7 +13,7 @@ on: ``(a + b x, c + d y, e + f z)``.
 A field view gives ``parametric_value(c, pc)``, the field pulled back to the
 reference cell. ``hdiv_value`` and ``hcurl_value`` map it into the world through the
 cell's geometry, as ``world_gradient`` maps ``parametric_gradient``: the contravariant
-Piola map ``J v / det J``, which keeps fluxes, and the covariant ``J^-T v``, which
+Piola map ``J v / |det J|``, which keeps fluxes, and the covariant ``J^-T v``, which
 keeps tangential integrals.
 """
 
@@ -539,15 +539,17 @@ class HCurl(Space):
 
 @tack.func
 def hdiv_div(cells, u, c, pc):
-    """An HDiv field's divergence in the world: div_ref / det J."""
-    return u.parametric_divergence(c, pc) / cells.geometry_jacobian(c, pc).determinant()
+    """An HDiv field's divergence in the world: div_ref / |det J|, as ``hdiv_value``."""
+    return u.parametric_divergence(c, pc) / abs(cells.geometry_jacobian(c, pc).determinant())
 
 
 @tack.func
 def hdiv_value(cells, u, c, pc):
-    """An HDiv field's value in the world: J v / det J, the map that keeps fluxes."""
+    """An HDiv field's value in the world: J v / |det J|, the map that keeps fluxes. The
+    stored fluxes follow each face's own normal (``face_side``), whatever the cell's
+    handedness, so an inside-out cell, whose det J is negative, takes its magnitude."""
     J = cells.geometry_jacobian(c, pc)
-    return (J @ u.parametric_value(c, pc)) / J.determinant()
+    return (J @ u.parametric_value(c, pc)) / abs(J.determinant())
 
 
 @tack.func

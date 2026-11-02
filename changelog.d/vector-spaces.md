@@ -9,9 +9,10 @@
   `net_flux`); `HCurl` one value per edge, its tangential integral from the
   low point id to the high one. A field view's `parametric_value(c, pc)` is
   the field in the reference cell, and `hdiv_value` and `hcurl_value` map it
-  into the world through the contravariant and covariant Piola maps;
+  into the world through the contravariant and covariant Piola maps (the
+  contravariant by |det J|, so inside-out cells agree with their neighbors);
   `hcurl_curl` gives an `HCurl` field's curl and `hdiv_div` an `HDiv` field's
   divergence.
-- `H1.reads_any_order(shape)` and `H1.quadratic_count(shape)`: which nodes a
-  view of an `H1` space reads on a shape's cells, for kernels that loop over
-  them.
+- `H1.quadratic_count(shape)`: the nodes a view of an `H1` space of order 1
+  or 2 reads on a shape's cells as the shape's own functions, for kernels
+  that loop over them.
