@@ -4806,6 +4806,9 @@ them, as <code>vtkGenerateGlobalIds</code> does:</p>
 </code></pre></div>
 <p>Filters keep the ids of the points and cells they keep (<code>threshold</code>,
 <code>extract_cells</code>, <code>remove_ghosts</code>); what they make has none.</p>
+<p>Run on a filter's output from pieces without ghost cells, whose marks the
+filter could not place, <code>generate_global_ids</code> also decides the owners and
+marks them (<a href="../07-partitioned/#pieces-without-ghost-cells">Pieces without ghost cells</a>).</p>
 <h2 id="pieces-on-several-devices">Pieces on several devices<a class="headerlink" href="#pieces-on-several-devices" title="Permanent link">&para;</a></h2>
 <p>A piece is a dataset, so it can live on any device:
 <code>td.PartitionedDataSet(piece.to_device(f"cuda:{i % 2}") for i, piece in

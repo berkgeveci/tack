@@ -10102,44 +10102,7 @@ first, as every filter that makes cells drops them.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/merge_points.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">124</span>
-<span class="normal">125</span>
-<span class="normal">126</span>
-<span class="normal">127</span>
-<span class="normal">128</span>
-<span class="normal">129</span>
-<span class="normal">130</span>
-<span class="normal">131</span>
-<span class="normal">132</span>
-<span class="normal">133</span>
-<span class="normal">134</span>
-<span class="normal">135</span>
-<span class="normal">136</span>
-<span class="normal">137</span>
-<span class="normal">138</span>
-<span class="normal">139</span>
-<span class="normal">140</span>
-<span class="normal">141</span>
-<span class="normal">142</span>
-<span class="normal">143</span>
-<span class="normal">144</span>
-<span class="normal">145</span>
-<span class="normal">146</span>
-<span class="normal">147</span>
-<span class="normal">148</span>
-<span class="normal">149</span>
-<span class="normal">150</span>
-<span class="normal">151</span>
-<span class="normal">152</span>
-<span class="normal">153</span>
-<span class="normal">154</span>
-<span class="normal">155</span>
-<span class="normal">156</span>
-<span class="normal">157</span>
-<span class="normal">158</span>
-<span class="normal">159</span>
-<span class="normal">160</span>
-<span class="normal">161</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">161</span>
 <span class="normal">162</span>
 <span class="normal">163</span>
 <span class="normal">164</span>
@@ -10188,7 +10151,13 @@ first, as every filter that makes cells drops them.</p>
 <span class="normal">207</span>
 <span class="normal">208</span>
 <span class="normal">209</span>
-<span class="normal">210</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">merge_points</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` with each set of coincident points made one: points at most</span>
 <span class="sd">    ``tolerance`` apart (inclusive; 0, the default, merges only points of equal</span>
@@ -10227,37 +10196,7 @@ first, as every filter that makes cells drops them.</p>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;merge_points needs an order-1 H1 geometry: one position per point&quot;</span><span class="p">)</span>
     <span class="n">data</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="n">topology</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span>
-    <span class="n">dtype</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">at_least</span><span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">supported_atomic_dtypes</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;merging </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> points needs </span><span class="si">{</span><span class="n">dtype</span><span class="si">}</span><span class="s2"> atomics, which the &quot;</span>
-                                  <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">get_backend</span><span class="p">()</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> backend does not have&quot;</span><span class="p">)</span>
-    <span class="c1"># Union-find over the points within the tolerance, through the locator&#39;s</span>
-    <span class="c1"># bins: each pair hooks the larger root under the smaller (an atomic</span>
-    <span class="c1"># minimum), until nothing changes, so a set&#39;s root is its smallest point</span>
-    <span class="c1"># whatever the order of the hooks.</span>
-    <span class="n">labels</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-        <span class="n">grid</span> <span class="o">=</span> <span class="n">cached_point_locator</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">grid</span><span class="p">()</span>
-        <span class="n">every</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">)</span>
-        <span class="n">every</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">changed</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
-        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-            <span class="n">changed</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-            <span class="n">_hook_near</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">every</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">tolerance</span><span class="p">),</span> <span class="n">labels</span><span class="p">,</span> <span class="n">changed</span><span class="p">)</span>
-            <span class="n">_jump</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">int</span><span class="p">(</span><span class="n">changed</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">0</span><span class="p">]):</span>
-                <span class="k">break</span>
-    <span class="n">flags</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
-    <span class="n">index</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
-    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-        <span class="n">_roots</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">flags</span><span class="p">)</span>
-        <span class="n">count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">exclusive_scan</span><span class="p">(</span><span class="n">flags</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
-    <span class="n">new_id</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
-    <span class="n">kept</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="mi">1</span><span class="p">),),</span> <span class="n">dtype</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-        <span class="n">_numbered</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">new_id</span><span class="p">,</span> <span class="n">kept</span><span class="p">)</span>
+    <span class="n">new_id</span><span class="p">,</span> <span class="n">kept</span><span class="p">,</span> <span class="n">count</span> <span class="o">=</span> <span class="n">_merged_ids</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">)</span>
     <span class="n">faces</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">topology</span><span class="p">,</span> <span class="n">PolygonalTopology</span><span class="p">):</span>
         <span class="n">merged</span> <span class="o">=</span> <span class="n">PolygonalTopology</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">loop_offsets</span><span class="p">,</span>
@@ -10273,7 +10212,6 @@ first, as every filter that makes cells drops them.</p>
         <span class="n">merged</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">types</span><span class="p">,</span> <span class="n">topology</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span>
                                       <span class="n">_renumber</span><span class="p">(</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="p">,</span> <span class="n">new_id</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">),</span>
                                       <span class="n">num_points</span><span class="o">=</span><span class="n">count</span><span class="p">)</span>
-    <span class="n">kept</span> <span class="o">=</span> <span class="n">kept</span> <span class="k">if</span> <span class="n">count</span> <span class="k">else</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">merged</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Take</span><span class="p">(</span><span class="n">kept</span><span class="p">),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">faces</span><span class="o">=</span><span class="n">faces</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -18236,6 +18174,13 @@ differ in their last bits -- and cells when their points' global ids are;
 pieces from <code>ghost_cells</code> reuse the exchanges it kept instead of
 matching again. Points a piece repeats within itself stay apart:
 <code>merge_points</code> merges them first.</p>
+<p>A filter's output from pieces whose marks it could not carry (pieces
+without ghost cells; see <code>owned_values</code>) is marked here exactly: every
+point is matched, so a point several pieces made belongs to the lowest of
+them and one only a single piece made is its own, and a cell several
+pieces made (from a ghost cell and its owner, or an edge they share) is
+matched by its points' ids, the lowest piece's again. The output then has
+marks, and reductions take it.</p>
 <p><code>data</code> holds this rank's pieces, on any devices; <code>world</code> is the
 <code>tack.communication.World</code> they live in (<code>data.world</code> by default).
 The matching runs on the host and the exchanges on the pieces' devices.</p>
@@ -18243,81 +18188,101 @@ The matching runs on the host and the exchanges on the pieces' devices.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/generate_global_ids.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">20</span>
-<span class="normal">21</span>
-<span class="normal">22</span>
-<span class="normal">23</span>
-<span class="normal">24</span>
-<span class="normal">25</span>
-<span class="normal">26</span>
-<span class="normal">27</span>
-<span class="normal">28</span>
-<span class="normal">29</span>
-<span class="normal">30</span>
-<span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span>
-<span class="normal">50</span>
-<span class="normal">51</span>
-<span class="normal">52</span>
-<span class="normal">53</span>
-<span class="normal">54</span>
-<span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span>
-<span class="normal">61</span>
-<span class="normal">62</span>
-<span class="normal">63</span>
-<span class="normal">64</span>
-<span class="normal">65</span>
-<span class="normal">66</span>
-<span class="normal">67</span>
-<span class="normal">68</span>
-<span class="normal">69</span>
-<span class="normal">70</span>
-<span class="normal">71</span>
-<span class="normal">72</span>
-<span class="normal">73</span>
-<span class="normal">74</span>
-<span class="normal">75</span>
-<span class="normal">76</span>
-<span class="normal">77</span>
-<span class="normal">78</span>
-<span class="normal">79</span>
-<span class="normal">80</span>
-<span class="normal">81</span>
-<span class="normal">82</span>
-<span class="normal">83</span>
-<span class="normal">84</span>
-<span class="normal">85</span>
-<span class="normal">86</span>
-<span class="normal">87</span>
-<span class="normal">88</span>
-<span class="normal">89</span>
-<span class="normal">90</span>
-<span class="normal">91</span>
-<span class="normal">92</span>
-<span class="normal">93</span>
-<span class="normal">94</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">generate_global_ids</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">world</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 20</span>
+<span class="normal"> 21</span>
+<span class="normal"> 22</span>
+<span class="normal"> 23</span>
+<span class="normal"> 24</span>
+<span class="normal"> 25</span>
+<span class="normal"> 26</span>
+<span class="normal"> 27</span>
+<span class="normal"> 28</span>
+<span class="normal"> 29</span>
+<span class="normal"> 30</span>
+<span class="normal"> 31</span>
+<span class="normal"> 32</span>
+<span class="normal"> 33</span>
+<span class="normal"> 34</span>
+<span class="normal"> 35</span>
+<span class="normal"> 36</span>
+<span class="normal"> 37</span>
+<span class="normal"> 38</span>
+<span class="normal"> 39</span>
+<span class="normal"> 40</span>
+<span class="normal"> 41</span>
+<span class="normal"> 42</span>
+<span class="normal"> 43</span>
+<span class="normal"> 44</span>
+<span class="normal"> 45</span>
+<span class="normal"> 46</span>
+<span class="normal"> 47</span>
+<span class="normal"> 48</span>
+<span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">generate_global_ids</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">world</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s pieces numbered across every piece, as VTK&#39;s</span>
 <span class="sd">    ``vtkGenerateGlobalIds``: a new ``PartitionedDataSet`` of the same pieces with</span>
 <span class="sd">    ``global_ids`` (``tack.dataset.GlobalIds``), every point and cell one id,</span>
@@ -18338,6 +18303,14 @@ The matching runs on the host and the exchanges on the pieces' devices.</p>
 <span class="sd">    matching again. Points a piece repeats within itself stay apart:</span>
 <span class="sd">    ``merge_points`` merges them first.</span>
 
+<span class="sd">    A filter&#39;s output from pieces whose marks it could not carry (pieces</span>
+<span class="sd">    without ghost cells; see ``owned_values``) is marked here exactly: every</span>
+<span class="sd">    point is matched, so a point several pieces made belongs to the lowest of</span>
+<span class="sd">    them and one only a single piece made is its own, and a cell several</span>
+<span class="sd">    pieces made (from a ghost cell and its owner, or an edge they share) is</span>
+<span class="sd">    matched by its points&#39; ids, the lowest piece&#39;s again. The output then has</span>
+<span class="sd">    marks, and reductions take it.</span>
+
 <span class="sd">    ``data`` holds this rank&#39;s pieces, on any devices; ``world`` is the</span>
 <span class="sd">    ``tack.communication.World`` they live in (``data.world`` by default).</span>
 <span class="sd">    The matching runs on the host and the exchanges on the pieces&#39; devices.</span>
@@ -18351,7 +18324,13 @@ The matching runs on the host and the exchanges on the pieces' devices.</p>
     <span class="n">pieces</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="n">piece</span><span class="o">.</span><span class="n">device</span> <span class="k">for</span> <span class="n">piece</span> <span class="ow">in</span> <span class="n">pieces</span><span class="p">],</span> <span class="n">world</span><span class="p">)</span>
     <span class="n">plans</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;_ghost_plans&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="n">marks</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">_marks</span><span class="p">(</span><span class="n">piece</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span><span class="p">,</span> <span class="n">piece</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)}</span>
+    <span class="c1"># Pieces that lost their marks keep only their cells&#39; (from source cells):</span>
+    <span class="c1"># every point is matched, and every cell not marked a copy.</span>
+    <span class="n">lost</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">piece</span><span class="o">.</span><span class="n">_ghosts_lost</span><span class="p">))</span>
+                                   <span class="k">for</span> <span class="n">g</span><span class="p">,</span> <span class="n">piece</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)},</span> <span class="s2">&quot;max&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">lost</span><span class="p">:</span>
+        <span class="n">plans</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">marks</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">_marks</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="n">lost</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span><span class="p">,</span> <span class="n">piece</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)}</span>
 
     <span class="c1"># Points: who owns each, then the owners&#39; numbers, then the copies&#39;.</span>
     <span class="k">if</span> <span class="n">plans</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -18360,7 +18339,7 @@ The matching runs on the host and the exchanges on the pieces' devices.</p>
         <span class="n">point_shared</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">point_owned</span><span class="p">,</span> <span class="n">point_plan</span><span class="p">,</span> <span class="n">point_shared</span> <span class="o">=</span> <span class="n">_point_owners</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">marks</span><span class="p">,</span>
-                                                                 <span class="n">tolerance</span><span class="p">)</span>
+                                                                 <span class="n">tolerance</span><span class="p">,</span> <span class="n">every</span><span class="o">=</span><span class="n">lost</span><span class="p">)</span>
     <span class="n">point_ids</span> <span class="o">=</span> <span class="n">_numbered</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">point_owned</span><span class="p">,</span> <span class="n">point_plan</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">)</span>
 
     <span class="c1"># Cells: owned cells numbered, ghost cells from their owners.</span>
@@ -18368,6 +18347,8 @@ The matching runs on the host and the exchanges on the pieces' devices.</p>
     <span class="n">copies</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="nb">int</span><span class="p">((</span><span class="o">~</span><span class="n">cell_owned</span><span class="p">[</span><span class="n">g</span><span class="p">])</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
     <span class="k">if</span> <span class="n">plans</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">cell_plan</span> <span class="o">=</span> <span class="n">plans</span><span class="p">[</span><span class="s2">&quot;cells&quot;</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">lost</span><span class="p">:</span>
+        <span class="n">cell_owned</span><span class="p">,</span> <span class="n">cell_plan</span> <span class="o">=</span> <span class="n">_matched_cells</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">marks</span><span class="p">,</span> <span class="n">point_ids</span><span class="p">,</span> <span class="n">point_shared</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">copies</span><span class="p">:</span>
         <span class="n">cell_plan</span> <span class="o">=</span> <span class="n">_cell_owners</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">marks</span><span class="p">,</span> <span class="n">point_ids</span><span class="p">,</span> <span class="n">point_shared</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -18380,13 +18361,17 @@ The matching runs on the host and the exchanges on the pieces' devices.</p>
                                         <span class="n">Ghosts</span><span class="o">.</span><span class="n">DUPLICATEPOINT</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
         <span class="k">with</span> <span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">g</span><span class="p">):</span>
             <span class="n">ghosts</span> <span class="o">=</span> <span class="n">piece</span><span class="o">.</span><span class="n">ghosts</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">marks</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="mi">1</span><span class="p">]):</span>     <span class="c1"># copies newly marked</span>
+            <span class="k">if</span> <span class="n">lost</span><span class="p">:</span>                                        <span class="c1"># every owner decided here</span>
+                <span class="n">cells</span> <span class="o">=</span> <span class="n">marks</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">cell_owned</span><span class="p">[</span><span class="n">g</span><span class="p">],</span> <span class="mi">0</span><span class="p">,</span>
+                                               <span class="n">Ghosts</span><span class="o">.</span><span class="n">DUPLICATECELL</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+                <span class="n">ghosts</span> <span class="o">=</span> <span class="n">Ghosts</span><span class="p">(</span><span class="n">cells</span><span class="o">=</span><span class="n">cells</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">points</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">array_equal</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">marks</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="mi">1</span><span class="p">]):</span>   <span class="c1"># copies newly marked</span>
                 <span class="n">ghosts</span> <span class="o">=</span> <span class="n">Ghosts</span><span class="p">(</span><span class="n">cells</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">ghosts</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ghosts</span><span class="o">.</span><span class="n">cells</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">points</span><span class="p">)</span>
             <span class="n">copy</span> <span class="o">=</span> <span class="n">DataSet</span><span class="p">(</span><span class="n">piece</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">piece</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">piece</span><span class="o">.</span><span class="n">fields</span><span class="p">),</span>
                            <span class="n">sets</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">piece</span><span class="o">.</span><span class="n">sets</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">piece</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">ghosts</span><span class="o">=</span><span class="n">ghosts</span><span class="p">,</span>
                            <span class="n">global_ids</span><span class="o">=</span><span class="n">GlobalIds</span><span class="p">(</span><span class="n">cells</span><span class="o">=</span><span class="n">cell_ids</span><span class="p">[</span><span class="n">g</span><span class="p">],</span> <span class="n">points</span><span class="o">=</span><span class="n">point_ids</span><span class="p">[</span><span class="n">g</span><span class="p">]),</span>
                            <span class="o">**</span><span class="n">piece</span><span class="o">.</span><span class="n">_frame</span><span class="p">())</span>
-        <span class="n">copy</span><span class="o">.</span><span class="n">_ghosts_lost</span> <span class="o">=</span> <span class="n">piece</span><span class="o">.</span><span class="n">_ghosts_lost</span>
+        <span class="n">copy</span><span class="o">.</span><span class="n">_ghosts_lost</span> <span class="o">=</span> <span class="kc">False</span> <span class="k">if</span> <span class="n">lost</span> <span class="k">else</span> <span class="n">piece</span><span class="o">.</span><span class="n">_ghosts_lost</span>
         <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">copy</span><span class="p">)</span>
     <span class="n">result</span> <span class="o">=</span> <span class="n">PartitionedDataSet</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">world</span><span class="o">=</span><span class="n">world</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">plans</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>

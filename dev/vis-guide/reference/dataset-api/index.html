@@ -7158,7 +7158,7 @@ every field and set kept; on an <code>L2</code> geometry each cell's own corners
 </tr>
 <tr>
 <td><code>generate_global_ids(pds, tolerance=0)</code></td>
-<td>the pieces' points and cells numbered across all of them, as <code>vtkGenerateGlobalIds</code> (see <em>Partitioned datasets</em>); with <code>tolerance</code> (VTK's <code>Tolerance</code>), points of different pieces at most that far apart are one, and so are chains of them. Points a piece repeats within itself stay apart: <code>merge_points</code> merges them first</td>
+<td>the pieces' points and cells numbered across all of them, as <code>vtkGenerateGlobalIds</code> (see <em>Partitioned datasets</em>); with <code>tolerance</code> (VTK's <code>Tolerance</code>), points of different pieces at most that far apart are one, and so are chains of them. Points a piece repeats within itself stay apart: <code>merge_points</code> merges them first. On a filter's output from pieces without ghost cells, which lost its marks, every point and cell is matched and the owners marked, so reductions take it</td>
 </tr>
 <tr>
 <td><code>sources.wavelet(extent, ...)</code></td>
@@ -7347,8 +7347,8 @@ solid cells walk: pyramids, polyhedra and surfaces search the bins as before.</p
 </thead>
 <tbody>
 <tr>
-<td><code>tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)</code></td>
-<td>a <code>vtkUnstructuredGrid</code>, <code>vtkPolyData</code> (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (<code>vtkImageData</code>, as <code>UniformCoordinates</code>). Point data becomes <code>H1</code>, cell data <code>Constant</code>. A grid with polyhedra becomes polyhedral (<code>polyhedral=True</code> forces it); <code>orient</code> repairs inconsistent winding</td>
+<td><code>tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None, merge_points=None)</code></td>
+<td>a <code>vtkUnstructuredGrid</code>, <code>vtkPolyData</code> (as the unstructured grid of its cells; strips as their triangles), rectilinear grid or image (<code>vtkImageData</code>, as <code>UniformCoordinates</code>). Point data becomes <code>H1</code>, cell data <code>Constant</code>. A grid with polyhedra becomes polyhedral (<code>polyhedral=True</code> forces it); <code>orient</code> repairs inconsistent winding; <code>merge_points</code> (<code>True</code> or a tolerance) merges an unstructured grid's coincident points first</td>
 </tr>
 <tr>
 <td><code>tack.interop.vtk.dataset_to_vtk(data)</code></td>
