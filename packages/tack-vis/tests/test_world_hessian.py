@@ -3,6 +3,8 @@ derivatives and the geometry's. On affine cells, against the exact Hessians of
 polynomials the spaces hold; on distorted and curved cells, against central
 differences of ``world_gradient`` in float64, which differentiate the same field."""
 
+import importlib
+
 import numpy as np
 import pytest
 
@@ -10,7 +12,6 @@ import tack
 import tack.dataset as td
 from tack.dataset import shapes
 from tack.dataset.topology import uniform_cells
-
 
 OFF_CENTRE = (0.21, 0.13, 0.37)
 """A parametric point inside every shape away from its centre, where a term that
@@ -306,3 +307,10 @@ def test_world_gradient_is_what_gradients_gives(f64_backend):
     td.for_each(_gradients_at_centers, data, "cells", data.fields["u"], out)
     np.testing.assert_allclose(out.numpy().reshape(-1, 3), td.gradients(data, "u", at="cells").values.numpy(),
                                atol=1e-12)
+
+
+def test_the_world_functions_are_public():
+    gradients = importlib.import_module("tack.dataset.algorithms.gradients")
+    for name in ("world_gradient", "world_hessian", "world_jet"):
+        assert name in gradients.__all__
+        assert getattr(td, name) is getattr(gradients, name)

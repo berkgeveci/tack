@@ -32,7 +32,7 @@ needs_data = pytest.mark.skipif(
 
 from vtkmodules.vtkCommonCore import reference
 
-from tack.dataset.algorithms.gradients import _world_gradient
+from tack.dataset.algorithms.gradients import world_gradient
 from tack.interop.vtk import vtk_to_dataset
 
 #: VTK's higher-order test files: (path under the data directory).
@@ -366,4 +366,4 @@ def _x_squared(x):
 def _gradient_at(cells, u, pcs, out):
     for c in cells:
         e = cells.entity_id(c)
-        out[e] = _world_gradient(cells, u, c, pcs[e])   # in a surface's plane on 2D cells
+        out[e] = world_gradient(cells, u, c, pcs[e])   # in a surface's plane on 2D cells

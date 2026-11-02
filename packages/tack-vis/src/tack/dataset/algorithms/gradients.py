@@ -12,7 +12,7 @@ from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.dataset.topology import corner_layout
 from tack.runtime.dispatch import on_inputs_device
 
-__all__ = ['gradients']
+__all__ = ['gradients', 'world_gradient', 'world_hessian', 'world_jet']
 
 
 @tack.func
@@ -45,8 +45,6 @@ def _in_plane(m, d):
     det = aa * bb - ab * ab
     return ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
 
-
-_world_gradient = world_gradient
 
 
 @tack.func
@@ -83,7 +81,7 @@ def world_jet(cells, u, c, pc):
 @tack.kernel
 def _gradients(cells, u, out):
     for c in cells:
-        out[cells.entity_id(c)] = _world_gradient(cells, u, c, cells.parametric_center())
+        out[cells.entity_id(c)] = world_gradient(cells, u, c, cells.parametric_center())
 
 
 @tack.kernel
@@ -91,7 +89,7 @@ def _node_gradients(cells, u, out):
     # The gradient at each of the cell's nodes of the target space.
     for c in cells:
         for j in range(cells.node_count(c)):
-            out[cells.node_dof(c, j)] = _world_gradient(cells, u, c, cells.node_parametric_point(c, j))
+            out[cells.node_dof(c, j)] = world_gradient(cells, u, c, cells.node_parametric_point(c, j))
 
 
 @tack.kernel
@@ -102,11 +100,11 @@ def _corner_gradients(cells, u, start, out):
             if cells.ID == shapes.PYRAMID and j == 4:
                 # The Jacobian is singular at a pyramid's apex. Extrapolate from
                 # two points just below it on the axis, as vtkPyramid does.
-                ga = _world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.998))
-                gb = _world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.996))
+                ga = world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.998))
+                gb = world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.996))
                 out[first + j] = 2.0 * ga - gb
             else:
-                out[first + j] = _world_gradient(cells, u, c, cells.parametric_point(j))
+                out[first + j] = world_gradient(cells, u, c, cells.parametric_point(j))
 
 
 @tack.kernel
