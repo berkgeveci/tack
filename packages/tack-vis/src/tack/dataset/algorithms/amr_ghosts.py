@@ -107,9 +107,11 @@ class _Fill:
             box = self.boxes[g]
             parts = [values[i] for i in groups.members[g]]
             with blocks.device(g):
-                if box["m"]:
-                    parts = [*parts, tack.zeros((box["m"],), parts[0].dtype)]
-                combined[g] = tack.concat(parts)
+                if box["m"] or not parts:
+                    # A device none of whose boxes take part still joins the exchange.
+                    dtype = values[0].dtype if values else tack.f32
+                    parts = [*parts, tack.zeros((box["m"],), dtype)]
+                combined[g] = tack.concat(parts) if len(parts) > 1 else parts[0].copy()
         self.plan.run(combined)
         for g in blocks.local:
             box, buffer = self.boxes[g], combined[g]
@@ -144,16 +146,22 @@ class _Groups:
     gathered over ranks, every box's group and the start of its arrays (of
     ``extents``, cells and points) in its group's."""
 
-    def __init__(self, amr, extents):
+    def __init__(self, amr, extents, levels=None):
+        """``levels``: the levels whose boxes are members (all by default); the groups
+        are the devices of every box, so every rank makes the same blocks."""
         d = amr.dimension
-        self.local = [(level, amr._first[level] + k) for level, pieces in enumerate(amr.levels)
-                      for k in range(len(pieces))]
-        devices, of_box = [], []
+        devices = []
         for _, box in amr:
-            device = box.device
-            if device not in devices:
-                devices.append(device)
-            of_box.append(devices.index(device))
+            if box.device not in devices:
+                devices.append(box.device)
+        self.local, self.pieces, of_box = [], [], []
+        for level, pieces in enumerate(amr.levels):
+            if levels is not None and level not in levels:
+                continue
+            for k, box in enumerate(pieces):
+                self.local.append((level, amr._first[level] + k))
+                self.pieces.append(box)
+                of_box.append(devices.index(box.device))
         self.blocks = tc.Blocks(devices, amr.world)
         gids = list(self.blocks.local)
         self.members = {g: [i for i, k in enumerate(of_box) if k == n] for n, g in enumerate(gids)}
@@ -535,6 +543,12 @@ def _tables(amr, groups, extents, g):
     return table
 
 
+def _entry_boxes(offsets):
+    """Each entry's box, from the boxes' CSR ``offsets``: a ``searchsorted`` of every
+    entry was 30 s of AMR-Wind's five levels."""
+    return np.repeat(np.arange(len(offsets) - 1), np.diff(offsets))
+
+
 def _entries(sizes, device):
     offsets = np.concatenate([[0], np.cumsum(sizes)]).astype(np.int64)
     with device:
@@ -594,7 +608,7 @@ def _ghost_parts(amr, groups, extents):
                     _ghost_cells_of(same, coarse, int(level > 0), *map(int, r), ids_d, offsets_d, nb,
                                     targets, grp, where)
             t, gr, pl = targets.numpy(), grp.numpy(), where.numpy()
-            box = np.searchsorted(offsets, np.arange(total), side="right") - 1
+            box = _entry_boxes(offsets)
             cbase = groups.cell_base[level][ids]
             gone = np.flatnonzero((t >= 0) & (gr < 0))
             for place, own in _by_box(gone - offsets[box[gone]], box[gone], places).items():
@@ -627,7 +641,7 @@ def _ghost_parts(amr, groups, extents):
                                      nb, 1, tack.array(starts[:-1], tack.i64), counts, targets, grp,
                                      where, nums)
             t = targets.numpy()[:total]
-            box = np.searchsorted(offsets, np.arange(total), side="right") - 1
+            box = _entry_boxes(offsets)
             pbase = groups.point_base[level][ids]
             gone = np.flatnonzero(c == 0)
             for place, own in _by_box(gone - offsets[box[gone]], box[gone], places).items():
@@ -690,7 +704,7 @@ def _down_parts(amr, groups, level, kind):
         with device:
             ids_d = tack.array(ids, tack.i64)
             targets = tack.full((max(total, 1),), -1, tack.i64)
-        entry_box = np.searchsorted(offsets, np.arange(total), side="right") - 1
+        entry_box = _entry_boxes(offsets)
         base = (groups.point_base if kind == "points" else groups.cell_base)[level][ids]
         if kind == "points":
             with device:
@@ -756,6 +770,10 @@ def amr_ghost_cells(amr, layers, fields):
 
     # The grown boxes: own values placed, ghosts filled; positions too, for grids
     # whose positions are not an image's.
+    # Only grids other than images read positions (an image keeps its lattice), but
+    # an image box can be a source of their ghosts: all or none, over every rank.
+    need = any(amr.world._allgather(
+        any(not isinstance(piece.geometry.values, UniformCoordinates) for piece in pieces)))
     grown_boxes, arrays_by_kind, positions = [], [], []
     for i, ((level, k), piece) in enumerate(zip(groups.local, pieces)):
         box, ext = amr._boxes[level][k], extents[level][k]
@@ -763,13 +781,14 @@ def amr_ghost_cells(amr, layers, fields):
             assembled = {name: _placed(piece.fields[name].values, _kind(piece.fields[name]),
                                        box, ext, d, piece) for name in names}
             positions.append(tack.array(_placed_host(piece.positions(), "points", box, ext, d),
-                                        tack.vec3(piece.dtype)))
+                                        tack.vec3(piece.dtype)) if need else None)
         arrays_by_kind.append(assembled)
         grown_boxes.append((i, level, k, piece, box, ext))
     for name in names:
         kind = _kind(pieces[0].fields[name])
         fills[kind].run([arrays[name] for arrays in arrays_by_kind])
-    fills["points"].run(positions)
+    if need:
+        fills["points"].run(positions)
 
     # What a finer level covers, each level's grown boxes at once.
     refined = {}
@@ -936,7 +955,6 @@ def average_down(amr, field):
     coarse point (``REFINEDPOINT``) the value of the fine point at its location.
     ``field`` names a floating-point point or cell field every box has; finest
     level first, so a value reaches the coarsest level in one call."""
-    from tack.dataset.algorithms.cell_geometry import cell_geometry
     from tack.dataset.algorithms.ghost_cells import _kind
 
     if not isinstance(amr, AMRDataSet):
@@ -946,13 +964,15 @@ def average_down(amr, field):
     if len(kinds) != 1 or None in kinds:
         raise TypeError(f"average_down averages a point or cell field; {field!r} is not one")
     kind = kinds.pop()
-    groups = _Groups(amr, amr._extents)
-    measures = None
+    measures = {}                       # (level, index): the box's cell measures
     for level in range(amr.num_levels - 2, -1, -1):
         if not len(amr._boxes[level + 1]) or not len(amr._boxes[level]):
             continue                         # nothing finer to average onto this level
+        # Only this level's boxes and the next finer level's take part: a fill over
+        # every box of the hierarchy copied all of them at every level.
+        groups = _Groups(amr, amr._extents, levels=(level, level + 1))
         fill = _Fill(groups, kind, _down_parts(amr, groups, level, kind))
-        values = [box.fields[field].values for box in boxes]
+        values = [box.fields[field].values for box in groups.pieces]
         for array in values:
             scalar = getattr(array.dtype, "scalar_dtype", array.dtype)
             if not isinstance(array, tack.Array) or scalar.numpy_dtype.kind != "f":
@@ -962,24 +982,34 @@ def average_down(amr, field):
             fill.run(values)
             continue
         # Cells: sums of measure times value over sums of measure. The measures are
-        # the boxes' own, the same every level (computing them for every box at
-        # every level was most of the time).
-        if measures is None:
-            measures = []
-            for box in boxes:
-                with box.device:
-                    measures.append(arrays.materialize(cell_geometry(box).measure.values))
-        weighted = []
-        for box, array, measure in zip(boxes, values, measures):
+        # the boxes' own, each found once.
+        weighted, sums = [], []
+        for key, box, array in zip(groups.local, groups.pieces, values):
+            if key not in measures:
+                measures[key] = _measures(box, array.dtype)
             with box.device:
-                weighted.append(_times(array, measure))
-        sums = [m.copy() for m in measures]             # the fill sums into them
+                weighted.append(_times(array, measures[key]))
+                sums.append(measures[key].copy())       # the fill sums into them
         fill.run(weighted)
         fill.run(sums)
         for i, targets in fill.box_targets.items():
             if len(targets):
-                with boxes[i].device:
+                with groups.pieces[i].device:
                     _divide(weighted[i], sums[i], tack.array(targets, tack.i64), values[i])
+
+
+def _measures(box, dtype):
+    """A box's cells' measures in ``dtype``: an image's, all alike, the product of its
+    spacing (``cell_geometry`` of each of AMR-Wind's 15,598 boxes was 10 s)."""
+    from tack.dataset.algorithms.cell_geometry import cell_geometry
+
+    coordinates = box.geometry.values
+    with box.device:
+        if isinstance(coordinates, UniformCoordinates):
+            d = len(box.topology.point_dims)
+            volume = float(np.prod(np.asarray(coordinates._spacing, np.float64)[:d]))
+            return tack.full((box.num_cells,), volume, dtype)
+        return arrays.materialize(cell_geometry(box).measure.values)
 
 
 @tack.kernel
