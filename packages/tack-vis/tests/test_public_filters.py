@@ -352,10 +352,13 @@ def _edge_points(faces, u, level, crossed, slots, ends, weights):
     for f in faces:
         e = faces.entity_id(f)
         if crossed[e] == 1:
-            a = min(faces.point_id(f, 0), faces.point_id(f, 1))
-            b = max(faces.point_id(f, 0), faces.point_id(f, 1))
-            ends[slots[e]] = [a, b]
-            weights[slots[e]] = (level - u[a]) / (u[b] - u[a])
+            a = faces.point_id(f, 0)
+            b = faces.point_id(f, 1)
+            first, second, w = td.edge_crossing(level, a, b, u[a], u[b],
+                                                faces.corner_position(f, 0),
+                                                faces.corner_position(f, 1))
+            ends[slots[e]] = [first, second]
+            weights[slots[e]] = w
 
 
 @tack.kernel

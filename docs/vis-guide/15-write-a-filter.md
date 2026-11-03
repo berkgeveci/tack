@@ -154,23 +154,27 @@ each edge the level crosses, and new cells, each a line inside a triangle, so
   either side.
   - One kernel over the faces flags the edges the level crosses, a scan
     numbers them, and a second kernel fills in each point's two ends and its
-    weight: how far it lies from the first end,
-    `(level - u[a]) / (u[b] - u[a])`.
+    weight, how far it lies from the first end, with `td.edge_crossing`, the
+    rule every built-in cut uses.
   - The two triangles on an edge then name its point by the same number,
     `slots[face_id]`, so their lines join.
-  - The first end is the edge's lower point id, as in the built-in, so the
-    points have the built-in's bits.
+  - `edge_crossing` takes the end first by position (x, then y, then z) as
+    the first, so every piece holding the edge computes the point to the same
+    bits, and gets the built-in's bits.
 - **Orient the lines.** Going round each triangle (`side_point_id(c, k, 0)` to
   `side_point_id(c, k, 1)`), its line runs from the edge where the values rise
   past the level to the edge where they fall back. The higher values then lie
   on its right, as with the built-in.
 - **What it leaves out.** The built-in also:
-  - makes the crossings of edges that meet at a point whose value is exactly
-    the level into one point there;
+  - makes the crossings of the edges that meet at a point into one point
+    there, when the point's value is the level or the crossing lies within
+    half an ulp of it (`edge_crossing` returns that point as both ends): a
+    plane a hair from mesh points would otherwise put several points at one
+    position;
   - contours several levels at once;
   - skips cells with a NaN.
 
-  The example picks a level that no value equals.
+  The example picks a level no crossing lands on a point at.
 
 ### `carry`, map by map
 
@@ -212,7 +216,9 @@ What goes with each map:
   - Pieces without ghost cells cannot tell who owns what they make on the
     edges they share.
   - Their output records that its marks were lost, and reductions over it
-    refuse to run (see `shrink` above).
+    refuse to run (see `shrink` above) until `generate_global_ids` of the
+    outputs decides the owners by matching positions, which works because
+    every piece computes a shared point to the same bits.
 - **Global ids** go with entities that are input entities (`Same`, `Take`).
   Made points and pieces of cells have none.
 - **The frame:** the origin, spatial unit and time always come along.

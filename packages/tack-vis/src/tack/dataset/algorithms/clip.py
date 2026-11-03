@@ -257,6 +257,17 @@ def clip(data, by, value=0.0, inside=False, fields=None, subdivision=None, toler
     corners, the crossings on cut edges (merged across cells) and centroid
     points; point data is interpolated onto them, cell data goes to each piece.
 
+    Crossings are named by their edges, as VTK's ``vtkTableBasedClipDataSet``
+    names them, so a clip exactly through mesh points (a plane through a face
+    of cells, or a hair from points, as a symmetry plane's at y = 1e-45) leaves
+    a crossing on top of the corner it lies at and cells of no volume between
+    them, as VTK's does. ``merge_points`` merges the coincident points (VTK's
+    ``vtkCleanGrid``), leaving those cells naming a point more than once;
+    ``generate_global_ids`` of clipped pieces needs them merged first, since it
+    matches points by position. ``contour`` and ``slice`` instead make such a
+    crossing the point (``edge_crossing``) and drop what loses its area; clip
+    cannot drop what it keeps, since some of those cells keep their volume.
+
     A polyhedral topology is clipped cell by cell into polyhedra: each cut cell
     becomes the polyhedron of its kept part, its faces clipped (each face once,
     so faces two cells share stay one face) and its iso-polygons -- as

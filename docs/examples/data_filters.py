@@ -176,14 +176,19 @@ def _crossed_edges(faces, u, level, crossed):
 
 @tack.kernel
 def _edge_points(faces, u, level, crossed, slots, ends, weights):
-    # Each crossed edge's point: its two ends, and how far it lies from the first.
+    # Each crossed edge's point: its two ends, and how far it lies from the first,
+    # as td.edge_crossing places it -- from the end first by position, so pieces
+    # sharing the edge compute it to the same bits.
     for f in faces:
         e = faces.entity_id(f)
         if crossed[e] == 1:
-            a = min(faces.point_id(f, 0), faces.point_id(f, 1))
-            b = max(faces.point_id(f, 0), faces.point_id(f, 1))
-            ends[slots[e]] = [a, b]
-            weights[slots[e]] = (level - u[a]) / (u[b] - u[a])
+            a = faces.point_id(f, 0)
+            b = faces.point_id(f, 1)
+            first, second, w = td.edge_crossing(level, a, b, u[a], u[b],
+                                                faces.corner_position(f, 0),
+                                                faces.corner_position(f, 1))
+            ends[slots[e]] = [first, second]
+            weights[slots[e]] = w
 
 
 @tack.kernel

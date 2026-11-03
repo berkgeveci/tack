@@ -187,7 +187,10 @@ def test_contours_of_viskores_files():
     assert (ours.num_cells, ours.num_points) == (10, theirs.number_of_points) == \
         (theirs.number_of_cells, theirs.number_of_points)
     assert _measure(ours) == pytest.approx(_vtk_measure(theirs), rel=1e-6)
-    assert td.contour(vtk_to_dataset(_read("wedge_cells.vtk")), "gyroid", 0.0).num_cells == 52
+    # Viskores makes 52: three of them slivers whose points lie within half an ulp
+    # of one wedge corner (|gyroid| < 1e-6 there), which Tack makes that corner
+    # (edge_crossing), so they have no area and are dropped.
+    assert td.contour(vtk_to_dataset(_read("wedge_cells.vtk")), "gyroid", 0.0).num_cells == 49
 
 
 @pytest.mark.quick
