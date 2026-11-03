@@ -250,13 +250,17 @@ def _to_integers(values, width, dtype, evaluated):
     return out
 
 
-def _held_box(piece):
+def _held_box(piece, locator):
     """A piece's box, grown by what its locator accepts outside a cell: a share
-    (``locator._TOLERANCE``) of a cell's diagonal, so of the piece's at most."""
+    (``locator._TOLERANCE``) of a cell's diagonal, so of the piece's at most. The
+    box of its cells is the locator's, found once when it was made, rather than
+    the positions' bounds taken on the host on every call (a second of each
+    streamlines call over the AhmedML mesh's 21M-cell piece)."""
     from tack.dataset.locator import _TOLERANCE
 
-    x = piece.positions().astype(np.float64)
-    lower, upper = x.min(axis=0), x.max(axis=0)
+    # Relative to the piece's origin, as positions and the points routed are.
+    lower = np.asarray(locator.box[0], np.float64)
+    upper = np.asarray(locator.box[1], np.float64)
     grow = _TOLERANCE * float(np.linalg.norm(upper - lower))
     return lower - grow, upper + grow
 
@@ -300,9 +304,9 @@ def _probe_pieces(data, where, fields, levels=None):
     locators = {}
     for g, piece in zip(blocks.local, pieces):
         if piece.num_points:
-            boxes[g] = _held_box(piece)
             with piece.device:
                 locators[g] = cached_locator(piece)
+            boxes[g] = _held_box(piece, locators[g])
         else:
             boxes[g] = None
 
