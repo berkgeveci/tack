@@ -45,6 +45,14 @@ from tack.dataset.sets import Set
 from tack.dataset.spaces import H1, Constant, Values
 from tack.dataset.topology import StructuredTopology, UnstructuredTopology
 
+
+def _polyhedral(topology):
+    """Whether ``topology`` is a polyhedral one (not polygons or polylines)."""
+    from tack.dataset.polyhedra import PolygonalTopology, PolyhedralTopology, PolylineTopology
+
+    return isinstance(topology, PolyhedralTopology) and not isinstance(
+        topology, (PolygonalTopology, PolylineTopology))
+
 __all__ = ["ghost_cells", "update_ghosts"]
 
 
@@ -53,8 +61,12 @@ def ghost_cells(data, layers=1, world=None, fields=None, tolerance=0.0):
     a new ``PartitionedDataSet``, as VTK's ``vtkGhostCellsGenerator`` makes.
 
     ``data`` holds this rank's pieces, all unstructured
-    (``UnstructuredTopology``) or all structured (below), without ghost cells,
-    on any devices; ``world`` is the
+    (``UnstructuredTopology``), all polyhedral (``PolyhedralTopology``: each
+    ghost sent with its faces, wound out of it, and the piece's faces matched
+    again, so a face a ghost shares with the piece's own cell is one face) or
+    all structured (below), without ghost cells, on any devices. Pieces of two
+    kinds -- the split reading's shapes and polyhedra -- are refused:
+    ``as_polyhedra`` makes the shaped ones polyhedral. ``world`` is the
     ``tack.communication.World`` they live in (``data.world``, this process
     alone, by default). Pieces neighbour where they share points at exactly
     the same position, or with ``tolerance`` at most that far apart (in the
@@ -116,17 +128,19 @@ def ghost_cells(data, layers=1, world=None, fields=None, tolerance=0.0):
     blocks = tc.Blocks([piece.device for piece in pieces], world)
     if blocks.count > 1 << (63 - INDEX_BITS):
         raise ValueError(f"ghost_cells handles up to {1 << (63 - INDEX_BITS)} pieces")
-    structured = {g: int(isinstance(p.topology, StructuredTopology))
-                  for g, p in zip(blocks.local, pieces)}
-    every = blocks.all_gather(structured)
-    if blocks.count and all(every):
+    # 0 unstructured, 1 structured, 2 polyhedral: every rank's.
+    kinds = {g: 1 if isinstance(p.topology, StructuredTopology) else
+             (2 if _polyhedral(p.topology) else 0) for g, p in zip(blocks.local, pieces)}
+    every = blocks.all_gather(kinds)
+    if blocks.count and all(k == 1 for k in every):
         out, plans = structured_ghost_cells(blocks, pieces, int(layers), names, _kind)
         result = PartitionedDataSet(out, world=world)
         result._ghost_plans = plans
         return result
-    if any(every):
-        raise TypeError("ghost_cells takes pieces all structured or all unstructured, "
-                        "not a mix")
+    if len(set(every)) > 1:
+        raise TypeError("ghost_cells takes pieces all structured, all unstructured or all "
+                        "polyhedral, not a mix (as_polyhedra makes an unstructured piece "
+                        "polyhedral)")
 
     hosts = {g: _host(piece) for g, piece in zip(blocks.local, pieces)}
     # Global ids come along where every piece has them, and points are matched
@@ -250,34 +264,66 @@ def _carried(pieces, fields, what="ghost_cells"):
 
 
 def _check_piece(i, piece):
-    if not isinstance(piece.topology, (UnstructuredTopology, StructuredTopology)):
-        raise TypeError(f"ghost_cells takes unstructured or structured pieces; partition "
-                        f"{i} is {type(piece.topology).__name__}")
+    if not (isinstance(piece.topology, (UnstructuredTopology, StructuredTopology))
+            or _polyhedral(piece.topology)):
+        raise TypeError(f"ghost_cells takes unstructured, polyhedral or structured pieces; "
+                        f"partition {i} is {type(piece.topology).__name__}")
     marks = piece.ghosts
     if marks is not None and marks.cells is not None and \
             (marks.cells.numpy() & Ghosts.DUPLICATECELL).any():
         raise ValueError(f"partition {i} already has ghost cells; remove_ghosts first")
 
 
+def _outward_rings(topology):
+    """A polyhedral topology's cells as their faces wound out of them, on the host:
+    ``(cell_offsets, ring_offsets, ring_points)``, cell ``c``'s rings
+    ``cell_offsets[c]`` to ``cell_offsets[c + 1]`` -- a face it is side 1 of run
+    the other way -- as ``PolyhedralTopology._from_rings`` takes them."""
+    face_offsets, face_points, cell_offsets, cell_faces, sides = (
+        np.asarray(a, np.int64) for a in topology.arrays())
+    starts = face_offsets[cell_faces]
+    sizes = face_offsets[cell_faces + 1] - starts
+    ring_offsets = np.concatenate(([0], np.cumsum(sizes))).astype(np.int64)
+    within = np.arange(int(ring_offsets[-1]), dtype=np.int64) - np.repeat(ring_offsets[:-1],
+                                                                            sizes)
+    flipped = np.repeat(sides == 1, sizes)
+    at = np.repeat(starts, sizes) + np.where(flipped, np.repeat(sizes, sizes) - 1 - within,
+                                             within)
+    return cell_offsets, ring_offsets, face_points[at]
+
+
 def _host(piece):
-    """What the matching and assembly read of a piece, on the host."""
+    """What the matching and assembly read of a piece, on the host: its cells' points
+    as CSR rows (a polyhedron's distinct points), and a polyhedral piece's cells
+    as their outward faces too (``rings``)."""
     topology = piece.topology
     positions = piece.positions()
-    faces = topology.faces()
-    rows = arrays.to_host(faces.rows).reshape(-1, 4)
-    boundary = arrays.to_host(faces.boundary()).astype(np.int64)
-    candidates = np.unique(rows[boundary].ravel())
     marks = piece.ghosts
+    if _polyhedral(topology):
+        from tack.dataset.algorithms.generate_global_ids import _boundary_points
+
+        candidates = _boundary_points(topology)
+        offsets, connectivity = topology.cell_points()
+        types = np.full(piece.num_cells, 42, np.uint8)
+        rings = _outward_rings(topology)
+    else:
+        faces = topology.faces()
+        rows = arrays.to_host(faces.rows).reshape(-1, 4)
+        boundary = arrays.to_host(faces.boundary()).astype(np.int64)
+        candidates = np.unique(rows[boundary].ravel())
+        offsets, connectivity = topology.offsets, topology.connectivity
+        types = arrays.to_host(topology.types)
+        rings = None
     return {
         "num_points": piece.num_points,
         "num_cells": piece.num_cells,
         "positions": positions,
         "geometry_dtype": arrays.dtype_of(piece.geometry.values),
         "candidates": candidates[candidates >= 0].astype(np.int64),
-        "types": np.asarray(arrays.to_host(topology.types), np.uint8).reshape(-1),
-        "offsets": np.asarray(arrays.to_host(topology.offsets), np.int64).reshape(-1),
-        "connectivity": np.asarray(arrays.to_host(topology.connectivity),
-                                   np.int64).reshape(-1),
+        "types": np.asarray(types, np.uint8).reshape(-1),
+        "offsets": np.asarray(arrays.to_host(offsets), np.int64).reshape(-1),
+        "connectivity": np.asarray(arrays.to_host(connectivity), np.int64).reshape(-1),
+        "rings": rings,
         "cell_marks": (np.zeros(piece.num_cells, np.uint8)
                        if marks is None or marks.cells is None else marks.cells.numpy()),
         "point_marks": (np.zeros(piece.num_points, np.uint8)
@@ -383,6 +429,18 @@ def _ghost_parts(blocks, pieces, hosts, needed, owners, names, numbered):
                 "positions": tack.array(host["positions"][points],
                                         tack.vec3(host["geometry_dtype"]), device=device),
             }
+            if host["rings"] is not None:
+                # Each polyhedron's faces, wound out of it, on the message's points.
+                cell_rings, ring_offsets, ring_points = host["rings"]
+                rings, _ = _csr_rows(cell_rings, np.arange(len(ring_offsets) - 1), cells)
+                ring_sizes = np.diff(ring_offsets)[rings]
+                taken, _ = _csr_rows(ring_offsets, ring_points, rings)
+                message["ring_counts"] = tack.array(np.diff(cell_rings)[cells].astype(np.int64),
+                                                    tack.i64, device=device)
+                message["ring_sizes"] = tack.array(ring_sizes.astype(np.int64), tack.i64,
+                                                   device=device)
+                message["ring_points"] = tack.array(np.searchsorted(points, taken)
+                                                    .astype(np.int64), tack.i64, device=device)
             point_ids = tack.array(points, tack.i64, device=device)
             cell_ids = tack.array(cells.astype(np.int64), tack.i64, device=device)
             for name in names:
@@ -466,8 +524,13 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
         points_from[int(source)] = (every_identity[mine] & INDEX_MASK, mine)
 
     with blocks.device(g):
-        topology = UnstructuredTopology(types, offsets, connectivity, num_points=total_points,
-                                        id_dtype=piece.topology.id_dtype)
+        if host["rings"] is not None:
+            topology = _polyhedra_with(host["rings"], sources, maps, total_points,
+                                       piece.topology.id_dtype)
+        else:
+            topology = UnstructuredTopology(types, offsets, connectivity,
+                                            num_points=total_points,
+                                            id_dtype=piece.topology.id_dtype)
         out = DataSet(topology, positions, dtype=geometry_dtype,
                       ghosts=Ghosts(cells=cell_marks, points=point_marks), **piece._frame())
         for name in names:
@@ -505,6 +568,28 @@ def _appended(g, piece, host, identity, received, names, numbered, blocks):
         if ids:
             out.global_ids = GlobalIds(cells=ids.get("cells"), points=ids.get("points"))
     return out, points_from, cells_from
+
+
+def _polyhedra_with(rings, sources, maps, num_points, id_dtype):
+    """A piece's polyhedra and the ones its neighbours sent, after them in the order
+    of the messages, as one topology: every cell's outward faces matched by point
+    set (``_from_rings``), so a face a received cell shares with one of the
+    piece's own becomes one face with both."""
+    from tack.dataset.polyhedra import PolyhedralTopology
+
+    cell_rings, ring_offsets, ring_points = rings
+    counts = [np.diff(cell_rings)]
+    sizes = [np.diff(ring_offsets)]
+    points = [ring_points]
+    for m, (_, message) in enumerate(sources):
+        counts.append(message["ring_counts"].numpy())
+        sizes.append(message["ring_sizes"].numpy())
+        points.append(maps[m][message["ring_points"].numpy()])
+    counts, sizes = np.concatenate(counts), np.concatenate(sizes)
+    return PolyhedralTopology._from_rings(
+        np.concatenate(([0], np.cumsum(counts))).astype(np.int64),
+        np.concatenate(([0], np.cumsum(sizes))).astype(np.int64),
+        np.concatenate(points).astype(np.int64), num_points, id_dtype=id_dtype)
 
 
 def _joined(parts):

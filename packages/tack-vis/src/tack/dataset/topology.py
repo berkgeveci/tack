@@ -436,6 +436,23 @@ class UnstructuredTopology(_Topology):
                                     self.connectivity.to_device(target),
                                     num_points=self.num_points, id_dtype=self.id_dtype)
 
+    _cell_points = None
+
+    @on_inputs_device
+    def cell_points(self):
+        """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR in
+        ``id_dtype``, as a polyhedral or polyline topology gives them; derived on
+        first use and kept. A cell naming a point more than once has it once."""
+        if self._cell_points is None:
+            from tack.dataset.polyhedra import _counting, _derive_cell_points
+
+            # Each cell as its one "face": its run of the connectivity.
+            identity = tack.empty((self.num_cells + 1,), self.id_dtype)
+            _counting(identity)
+            self._cell_points = _derive_cell_points(self, identity, identity, self.offsets,
+                                                    self.connectivity)
+        return self._cell_points
+
     @on_inputs_device
     def groups(self):
         if self._groups is not None:

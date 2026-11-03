@@ -1465,6 +1465,20 @@ def test_split_readings_surface_is_the_wholes():
     whole = td.extract_surface(vtk_to_dataset(grid, polyhedral=True))
     assert sum(int(((p.ghosts.cells.numpy() & 1) == 0).sum()) for p in surface) == whole.num_cells
     assert sum(td.extract_surface(p).num_cells for p in pieces) > whole.num_cells
+def test_split_reading_ghosted_as_polyhedra_reduces_exactly():
+    """The split reading's two pieces share points but no cells, so their filters'
+    outputs cannot be owned exactly; with the shaped piece made polyhedral,
+    ghost_cells gives both a ghost layer, and a contour of them reduces to the
+    whole's, point for point."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = _mixed_vtu_grid()
+    shaped, polyhedral = vtk_to_dataset(grid, polyhedral="split")
+    pieces = td.ghost_cells(td.PartitionedDataSet([td.as_polyhedra(shaped), polyhedral]))
+    whole = vtk_to_dataset(grid, polyhedral=True)
+    for level in (-2.0, 2.0, 6.0):
+        cuts = td.PartitionedDataSet([td.contour(p, "T", level) for p in pieces])
+        assert td.statistics(cuts, "T").n == td.contour(whole, "T", level).num_points
 
 
 def test_split_of_one_kind_is_one_piece():

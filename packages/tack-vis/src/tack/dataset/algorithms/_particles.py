@@ -111,8 +111,8 @@ def _unbits(message):
                     axis=1)
 
 
-def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighbors=False,
-                  **adaptive):
+def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", unit="time",
+                  neighbors=False, **adaptive):
     """``advect`` over the pieces of ``data``: the particles where they stopped, a
     ``PartitionedDataSet`` of one vertex dataset per piece -- each particle on
     the piece it stopped in, or left from -- with ``steps``, ``time``,
@@ -121,7 +121,7 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighb
     ``seeds`` are this rank's, an ``(n, 3)`` array; across MPI ranks each rank
     passes its own, numbered after the ranks before it."""
     blocks, pieces, finished, _ = _rounds(data, field, seeds, step_size, steps, integrator,
-                                          record=False, neighbors=neighbors,
+                                          record=False, unit=unit, neighbors=neighbors,
                                           adaptive=adaptive)
     out = []
     for g, piece in zip(blocks.local, pieces):
@@ -212,7 +212,7 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
     for g, piece in zip(blocks.local, pieces):
         with piece.device:
             locators[g] = cached_locator(piece)
-    boxes = _boxes(blocks, pieces)
+    boxes = _boxes(blocks, pieces, locators)
     pending = _seeded(blocks, seeds, common_origin(data, "advection over pieces"))
     finished = {g: [] for g in blocks.local}
     traced = {g: [] for g in blocks.local}
@@ -232,12 +232,12 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
     return blocks, pieces, {g: _Particles.joined(finished[g]) for g in blocks.local}, traced
 
 
-def _boxes(blocks, pieces):
-    """This rank's pieces' boxes as the locator sees them (``probe._held_box``),
+def _boxes(blocks, pieces, locators):
+    """This rank's pieces' boxes as their locators see them (``probe._held_box``),
     ``None`` for a piece with no points."""
     from tack.dataset.algorithms.probe import _held_box
 
-    return {g: _held_box(piece) if piece.num_points else None
+    return {g: _held_box(piece, locators[g]) if piece.num_points else None
             for g, piece in zip(blocks.local, pieces)}
 
 

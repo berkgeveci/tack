@@ -92,11 +92,32 @@ def _node_gradients(cells, u, out):
             out[cells.node_dof(c, j)] = world_gradient(cells, u, c, cells.node_parametric_point(c, j))
 
 
+@tack.func
+def _singular(cells, c, pc):
+    """1 where the geometry's Jacobian at parametric `pc` of cell `c` has no inverse:
+    a solid's determinant, or a 2D cell's in-plane one (`_in_plane`'s), exactly 0."""
+    m = cells.geometry_jacobian(c, pc)
+    s = 0
+    if cells.DIMENSION == 3:
+        if m.determinant() == 0.0:
+            s = 1
+    elif cells.DIMENSION == 2:
+        a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
+        b = tack.vec3(m[0, 1], m[1, 1], m[2, 1])
+        aa = a.dot(a)
+        ab = a.dot(b)
+        bb = b.dot(b)
+        if aa * bb - ab * ab == 0.0:
+            s = 1
+    return s
+
+
 @tack.kernel
-def _corner_gradients(cells, u, start, out):
+def _corner_gradients(cells, u, start, out, singular):
     for c in cells:
         first = start + cells.index(c) * cells.NUM_POINTS
         for j in range(cells.NUM_POINTS):
+            singular[first + j] = 0
             if cells.ID == shapes.PYRAMID and j == 4:
                 # The Jacobian is singular at a pyramid's apex. Extrapolate from
                 # two points just below it on the axis, as vtkPyramid does.
@@ -104,7 +125,33 @@ def _corner_gradients(cells, u, start, out):
                 gb = world_gradient(cells, u, c, tack.vec3(0.5, 0.5, 0.996))
                 out[first + j] = 2.0 * ga - gb
             else:
-                out[first + j] = world_gradient(cells, u, c, cells.parametric_point(j))
+                pc = cells.parametric_point(j)
+                if _singular(cells, c, pc) == 1:
+                    # Singular at this corner too, where two of the cell's faces
+                    # meet flat (a corner on a straight edge of a face): its
+                    # gradient grows without bound toward the corner and has no
+                    # value there, so the cell is left out of the point's average.
+                    out[first + j] = tack.vec3(0.0, 0.0, 0.0)
+                    singular[first + j] = 1
+                else:
+                    out[first + j] = world_gradient(cells, u, c, pc)
+
+
+@tack.kernel
+def _without_singular(offsets, entries, singular, out, nan):
+    # A point's average over the corners that have a gradient: the corners left out
+    # added zero to the mean over all, which is scaled to the rest; NaN if none is left.
+    for p in range(out.shape[0]):
+        n = offsets[p + 1] - offsets[p]
+        left_out = 0
+        for k in range(offsets[p], offsets[p + 1]):
+            left_out += singular[entries[k]]
+        if left_out > 0:
+            if left_out == n:
+                out[p] = tack.vec3(nan, nan, nan)
+            else:
+                # In the gradients' own type: Metal has no f64.
+                out[p] = out[p] * n / (n - left_out)
 
 
 @tack.kernel
@@ -262,15 +309,18 @@ def _scalar_gradients(data, field, at):
     # gradients). Lines and vertices contribute zero.
     start_of, total = corner_layout(data.topology)
     corners = _vectors(total, data.dtype)
+    singular = tack.empty((total,), tack.i32)
     for group in data.launch_groups("cells", [field]):
         if group.count:
             _corner_gradients(data.domain_view("cells", group), field.view(group),
-                              start_of[group.root], corners)
+                              start_of[group.root], corners, singular)
     out = tack.empty((data.num_points,), tack.vec(3, data.dtype))
     out.fill(0)
     if total:
         offsets, entries = data.topology.point_links()
         _average_links(offsets, entries, corners, out)
+        if singular.max() > 0:              # rare: only then is any point rescaled
+            _without_singular(offsets, entries, singular, out, float("nan"))
     return out
 
 
@@ -293,7 +343,13 @@ def gradients(data, field, at="cells"):
     into a world gradient, so the two need not share a space. A 2D cell's
     gradient lies in its plane (VTK's and Viskores' in-plane gradient), lines
     and vertices get zero, and a cell of no volume or area NaN (its Jacobian is
-    singular). ``flow_quantities`` derives divergence, vorticity and
+    singular). At the points, a pyramid's apex gives its gradient extrapolated from
+    just below it, as vtkPyramid does; a cell whose Jacobian is singular at any
+    other corner -- where two of its faces meet flat, as in a hexahedron with a
+    straight corner -- has no gradient there (it grows without bound toward the
+    corner) and is left out of that point's average, which is NaN only if no
+    cell around the point is left (VTK leaves its inverse Jacobian unset there;
+    Viskores adds nothing but still counts the cell). ``flow_quantities`` derives divergence, vorticity and
     the Q-criterion from a vector field's gradient.
 
     On a polyhedral topology there is no reference element. A cell's gradient

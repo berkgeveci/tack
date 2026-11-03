@@ -205,6 +205,63 @@ def test_update_ghosts_refreshes_point_and_cell_values():
                                       piece.fields["c"].values.numpy())
 
 
+def _by_position(piece):
+    """A piece by position, numbering and kind of topology aside: each cell (its
+    distinct points), its mark and cell values; each point, its mark and values."""
+    if isinstance(piece.topology, td.UnstructuredTopology):
+        offsets = tack.arrays.to_host(piece.topology.offsets)
+        ids = tack.arrays.to_host(piece.topology.connectivity)
+    else:
+        offsets, ids = (o.numpy() for o in piece.topology.cell_points())
+    x = piece.positions()
+    cell_marks, point_marks = piece.ghosts.cells.numpy(), piece.ghosts.points.numpy()
+    values = {n: tack.arrays.to_host(piece.fields[n].values) for n in sorted(piece.fields)}
+    cell_fields = [n for n in values if _on_cells(piece.fields[n])]
+    cells = {tuple(sorted({_key(x[q]) for q in ids[offsets[c]:offsets[c + 1]]})):
+             (int(cell_marks[c]), tuple(np.round(np.ravel(values[n][c]), 3).tolist()
+                                        for n in cell_fields))
+             for c in range(piece.num_cells)}
+    points = {_key(x[q]): (int(point_marks[q]), tuple(
+        np.round(np.ravel(values[n][q]), 3).tolist() for n in values if n not in cell_fields))
+        for q in range(piece.num_points)}
+    return cells, points
+
+
+@pytest.mark.parametrize("layers", [1, 2])
+def test_polyhedral_pieces_are_ghosted_as_the_same_cells_unstructured(layers):
+    """Polyhedral pieces (OpenFOAM's processor pieces, or a split reading made
+    polyhedral) take their ghost layers as the same cells do as shapes: each
+    sent with its faces wound out of it, the faces matched again on arrival, so
+    a face a ghost shares with a piece's own cell is one face. Filters then give
+    each piece its share of the whole's output; update_ghosts and
+    generate_global_ids run on them."""
+    whole = _with_fields(td.wavelet(6))
+    shaped = _unstructured(td.split(whole, (2, 2, 1)))
+    polyhedral = td.PartitionedDataSet([td.as_polyhedra(p) for p in shaped])
+    a = td.ghost_cells(shaped, layers=layers)
+    b = td.ghost_cells(polyhedral, layers=layers)
+    for pa, pb in zip(a, b):
+        assert isinstance(pb.topology, td.PolyhedralTopology)
+        assert _by_position(pa) == _by_position(pb)
+        assert pa.topology.faces().boundary().size == pb.topology.faces().boundary().size
+    expected = td.contour(td.as_polyhedra(whole), "RTData", 160.0)
+    cuts = [td.contour(p, "RTData", 160.0) for p in b]
+    assert sum(int(((c.ghosts.cells.numpy() & 1) == 0).sum()) for c in cuts) == \
+        expected.num_cells
+    assert td.statistics(td.PartitionedDataSet(cuts), "RTData").n == expected.num_points
+    for p in b:
+        p.fields["k"] = td.Field(td.Constant(p), tack.array(np.where(
+            p.ghosts.cells.numpy() & Ghosts.DUPLICATECELL, -1.0,
+            p.fields["c"].values.numpy()).astype(np.float32)))
+    td.update_ghosts(b, "k")
+    for p in b:
+        np.testing.assert_array_equal(p.fields["k"].values.numpy(), p.fields["c"].values.numpy())
+    ids = td.generate_global_ids(b)
+    assert sum(int(((p.ghosts.points.numpy() & 1) == 0).sum()) for p in ids) == whole.num_points
+    with pytest.raises(TypeError, match="as_polyhedra makes"):
+        td.ghost_cells(td.PartitionedDataSet([shaped[0], polyhedral[1]]))
+
+
 def test_ghost_cells_refuse_what_they_cannot_do():
     whole = _with_fields(td.wavelet(3))
     plain = _unstructured(td.split(whole, 2))

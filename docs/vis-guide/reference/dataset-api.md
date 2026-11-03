@@ -164,8 +164,9 @@ search from the points uses no atomics, and everything else works there.
   cell is on.
 - On a polyhedral topology the faces are given, not derived, and keep their
   given numbering.
-- A polyhedral topology also derives each cell's distinct points
-  (`cell_points()`), for point data.
+- Unstructured, polyhedral and polyline topologies also derive each cell's
+  distinct points, sorted (`cell_points()`, CSR `(offsets, point_ids)`), for
+  point data.
 
 ### Converting and checking
 
@@ -708,7 +709,7 @@ combine pieces.
   input's own ghost marks come along. An unstructured mesh is partitioned by
   VTK (`vtkRedistributeDataSetFilter`) or by its host application.
 - **`ghost_cells(pds, layers=1, world=None, fields=None)`** gives each
-  unstructured piece a layer of its neighbours' cells, as VTK's
+  unstructured or polyhedral piece (all of one kind) a layer of its neighbours' cells, as VTK's
   `vtkGhostCellsGenerator` does, in one process (pieces on any devices) or
   across MPI ranks. Pieces neighbour where they share points at exactly the
   same position; a piece gains the cells of others that use a point it
