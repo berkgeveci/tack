@@ -205,6 +205,8 @@ do, so pieces sharing an edge compute it alike.
 
 ::: tack.dataset.edge_crossing
 
+::: tack.dataset.register_field_resolver
+
 ::: tack.dataset.keep_marks
 
 ::: tack.dataset.drop_marks
