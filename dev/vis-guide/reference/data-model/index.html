@@ -3798,6 +3798,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="UnstructuredTopology">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tack.dataset.UnstructuredTopology.cell_points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cell_points
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -7911,6 +7928,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="UnstructuredTopology">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tack.dataset.UnstructuredTopology.cell_points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cell_points
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -13050,26 +13084,26 @@ neighbouring pieces agree.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/topology.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">503</span>
-<span class="normal">504</span>
-<span class="normal">505</span>
-<span class="normal">506</span>
-<span class="normal">507</span>
-<span class="normal">508</span>
-<span class="normal">509</span>
-<span class="normal">510</span>
-<span class="normal">511</span>
-<span class="normal">512</span>
-<span class="normal">513</span>
-<span class="normal">514</span>
-<span class="normal">515</span>
-<span class="normal">516</span>
-<span class="normal">517</span>
-<span class="normal">518</span>
-<span class="normal">519</span>
-<span class="normal">520</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">520</span>
 <span class="normal">521</span>
-<span class="normal">522</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">point_dims</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">522</span>
+<span class="normal">523</span>
+<span class="normal">524</span>
+<span class="normal">525</span>
+<span class="normal">526</span>
+<span class="normal">527</span>
+<span class="normal">528</span>
+<span class="normal">529</span>
+<span class="normal">530</span>
+<span class="normal">531</span>
+<span class="normal">532</span>
+<span class="normal">533</span>
+<span class="normal">534</span>
+<span class="normal">535</span>
+<span class="normal">536</span>
+<span class="normal">537</span>
+<span class="normal">538</span>
+<span class="normal">539</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">point_dims</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="n">point_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">point_dims</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">point_dims</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="ow">or</span> <span class="nb">min</span><span class="p">(</span><span class="n">point_dims</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;point_dims must be 1 to 3 sizes of at least 2, not </span><span class="si">{</span><span class="n">point_dims</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -13226,6 +13260,59 @@ the connectivity of cells that each have their own points a
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="tack.dataset.UnstructuredTopology.cell_points" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">cell_points</span>
+
+
+<a href="#tack.dataset.UnstructuredTopology.cell_points" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">cell_points</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Each cell's points, sorted and unique: <code>(offsets, point_ids)</code>, CSR in
+<code>id_dtype</code>, as a polyhedral or polyline topology gives them; derived on
+first use and kept. A cell naming a point more than once has it once.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-vis/src/tack/dataset/topology.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s points, sorted and unique: ``(offsets, point_ids)``, CSR in</span>
+<span class="sd">    ``id_dtype``, as a polyhedral or polyline topology gives them; derived on</span>
+<span class="sd">    first use and kept. A cell naming a point more than once has it once.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.polyhedra</span><span class="w"> </span><span class="kn">import</span> <span class="n">_counting</span><span class="p">,</span> <span class="n">_derive_cell_points</span>
+
+        <span class="c1"># Each cell as its one &quot;face&quot;: its run of the connectivity.</span>
+        <span class="n">identity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,),</span> <span class="bp">self</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">)</span>
+        <span class="n">_counting</span><span class="p">(</span><span class="n">identity</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="o">=</span> <span class="n">_derive_cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">identity</span><span class="p">,</span> <span class="n">identity</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span>
+                                                <span class="bp">self</span><span class="o">.</span><span class="n">connectivity</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 
 

@@ -5388,8 +5388,9 @@ search from the points uses no atomics, and everything else works there.</p>
   cell is on.</li>
 <li>On a polyhedral topology the faces are given, not derived, and keep their
   given numbering.</li>
-<li>A polyhedral topology also derives each cell's distinct points
-  (<code>cell_points()</code>), for point data.</li>
+<li>Unstructured, polyhedral and polyline topologies also derive each cell's
+  distinct points, sorted (<code>cell_points()</code>, CSR <code>(offsets, point_ids)</code>), for
+  point data.</li>
 </ul>
 <h3 id="converting-and-checking">Converting and checking<a class="headerlink" href="#converting-and-checking" title="Permanent link">&para;</a></h3>
 <table>
