@@ -11,7 +11,9 @@ since one topology holds either shapes or polyhedra for now (a topology holding
 both is planned). For a large mesh that mixes them, read it with
 `vtk_to_dataset(grid, polyhedral="split")`: a `PartitionedDataSet` of two
 pieces over the same points, the shaped cells as themselves and the polyhedra
-as polyhedra, each point owned by one of them so reductions count it once. A
+as polyhedra, each point owned by one of them so reductions count it once
+(filters' outputs need `generate_global_ids` for that, or ghost cells:
+`ghost_cells` of the two with the shaped piece made polyhedral). A
 CFD mesh of 21M hexahedra and 508K polyhedra reads in under 5 seconds this way
 (with `copy=False`); read as polyhedra throughout, 27 seconds and 19 GB.
 
