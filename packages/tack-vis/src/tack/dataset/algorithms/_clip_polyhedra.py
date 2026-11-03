@@ -185,7 +185,7 @@ def clip_polyhedra(data, values, iso, inside, fields):
     weight_dtype = arrays.dtype_of(values)
     levels = tack.array([iso], weight_dtype)
     (poly_starts, vertices, poly_cells, _, polygons, cap_ends, _, _,
-     cap_count) = _lopez_polygons(data, values, levels, 1, weight_dtype)
+     cap_count) = _lopez_polygons(data, values, levels, 1, weight_dtype, snap=False)
 
     n_faces, n_cells = size_of(t.face_offsets) - 1, data.num_cells
     sizes = tack.empty((n_faces,), tack.i32)

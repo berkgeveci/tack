@@ -109,6 +109,7 @@ from tack.dataset.algorithms import (
     voxelize,
     warp,
 )
+from tack.dataset.algorithms._common import edge_crossing
 from tack.dataset.algorithms.gradients import world_gradient, world_hessian, world_jet
 from tack.dataset.amr import AMRDataSet
 from tack.dataset.carry import Interpolate, Pieces, Same, Take, carry
@@ -231,6 +232,7 @@ __all__ = [
     "divergence",
     "dot",
     "drop_marks",
+    "edge_crossing",
     "edge_lengths",
     "entropy",
     "extend_paths",

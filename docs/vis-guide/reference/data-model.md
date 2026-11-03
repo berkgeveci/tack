@@ -186,6 +186,8 @@ reductions over pieces refuse what they would count twice. Filters that
 make cells start from `visible(data)`, which leaves out hidden cells, and a
 reduction over a piece takes its `owned_values`. A selection made by a
 kernel becomes a set with `Set.from_flags`, and `extract_cells` keeps it.
+A cut's kernel places each crossing with `edge_crossing`, as the built-ins
+do, so pieces sharing an edge compute it alike.
 
 ::: tack.dataset.carry
     options: {members: false}
@@ -200,6 +202,8 @@ kernel becomes a set with `Set.from_flags`, and `extract_cells` keeps it.
 ::: tack.dataset.Pieces
 
 ::: tack.dataset.Interpolate
+
+::: tack.dataset.edge_crossing
 
 ::: tack.dataset.keep_marks
 

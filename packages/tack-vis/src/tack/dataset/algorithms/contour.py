@@ -12,6 +12,7 @@ from tack.dataset.algorithms._common import (
     _close,
     _compact,
     _crossing,
+    _end_hit,
     _field,
     _first_end,
     _in_unit_of,
@@ -123,12 +124,14 @@ def _contour_points(cells, u, levels, nlevels, per_cell, starts, points, edges, 
                 b = cells.point_id(c, jb)
                 sources[at] = cell
                 which[at] = v
-                # A crossing at a corner whose value is the level is that corner,
-                # keyed by it, so every edge's crossing there merges into one point.
+                # A crossing at a corner -- its value the level, or its position
+                # the corner's -- is that corner, keyed by it, so every edge's
+                # crossing there merges into one point (_end_hit).
                 hit = -1
-                if va == level:
+                end = _end_hit(level, a, b, va, vb, xa, xb)
+                if end == a:
                     hit = ja
-                elif vb == level:
+                elif end == b:
                     hit = jb
                 if hit >= 0:
                     p = cells.point_id(c, hit)
@@ -221,20 +224,17 @@ def _crosses(va, vb, iso):
 def _emit_crossing(a, b, values, positions, iso, v, nlevels, e, at, keys, ends, weights,
                    sources, which):
     # The crossing of segment (a, b): named by its (low, high) points and the
-    # level, or by the end whose value is the level, so every segment's crossing
-    # there is one point; interpolated from the end first by position, as the
-    # shape paths are.
+    # level, or by the end it is (its value the level, or its position the
+    # end's: _end_hit), so every segment's crossing there is one point;
+    # interpolated from the end first by position, as the shape paths are.
     lo = min(a, b)
     hi = max(a, b)
     first = a if _first_end(positions[a], positions[b], a, b) else b
     second = b if first == a else a
-    if values[lo] == iso:
-        keys[at] = [lo * nlevels + v, lo]
-        ends[at] = [lo, lo]
-        weights[at] = 0.0
-    elif values[hi] == iso:
-        keys[at] = [hi * nlevels + v, hi]
-        ends[at] = [hi, hi]
+    hit = _end_hit(iso, lo, hi, values[lo], values[hi], positions[lo], positions[hi])
+    if hit >= 0:
+        keys[at] = [hit * nlevels + v, hit]
+        ends[at] = [hit, hit]
         weights[at] = 0.0
     else:
         keys[at] = [lo * nlevels + v, hi]
@@ -737,21 +737,26 @@ def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, pol
 
 
 @tack.kernel
-def _crossing_names(pair_from, values, levels, nlevels, names):
-    # A crossing's name is its edge, or the point at an end whose value is the
-    # level, so every edge's crossing at such a point is one iso-vertex, as the
-    # shape path's contour names it; with the level, as its key holds it:
-    # (point * nlevels + level, other point).
+def _crossing_names(pair_from, values, positions, levels, nlevels, names, snap):
+    # A crossing's name is its edge, or the end it is (its value the level, or,
+    # with ``snap``, its position the end's: _end_hit), so every edge's crossing at
+    # such a point is one iso-vertex, as the shape path's contour names it; with
+    # the level, as its key holds it: (point * nlevels + level, other point).
     for i in range(names.shape[0]):
         key = pair_from[i]
         v = key[0] % nlevels
         a = key[0] // nlevels
         b = key[1]
         iso = levels[v]
-        if values[a] == iso:
-            names[i] = [a * nlevels + v, a]
+        hit = -1
+        if snap == 1:
+            hit = _end_hit(iso, a, b, values[a], values[b], positions[a], positions[b])
+        elif values[a] == iso:
+            hit = a
         elif values[b] == iso:
-            names[i] = [b * nlevels + v, b]
+            hit = b
+        if hit >= 0:
+            names[i] = [hit * nlevels + v, hit]
         else:
             names[i] = key
 
@@ -835,14 +840,16 @@ def _renumber_vertices(vertices, vertex_of_pair):
         vertices[i] = vertex_of_pair[vertices[i]]
 
 
-def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
+def _lopez_polygons(data, values, levels, nlevels, weight_dtype, snap=True):
     """A polyhedral topology's iso-polygons of point ``values`` at ``levels``, by López's
     tracing: ``(poly_starts, vertices, poly_cells, poly_levels, polygons, ends,
     weights, positions, count)`` -- each polygon's iso-vertices (CSR, in the
     order traced), its cell and level, and per iso-vertex the points it lies
     between (``ends``: ``(a, a)`` at a point whose value is the level, else the
     edge's end first by position, ``_first_end``), its weight from ``a`` and its
-    position.
+    position. ``snap`` makes a crossing within half an ulp of a point that point,
+    as contour's are (``_end_hit``); clip's caps do not, so they meet its clipped
+    faces, whose crossings are named by their edges.
     Polygons come in cell order."""
     from tack.dataset.polyhedra import SizeBuckets
 
@@ -901,7 +908,8 @@ def _lopez_polygons(data, values, levels, nlevels, weight_dtype):
     # equal names.
     names = tack.empty((pairs,), tack.vec(2, kdt))
     if pairs:
-        _crossing_names(pair_from, values, levels, nlevels, names)
+        _crossing_names(pair_from, values, data.geometry.values, levels, nlevels, names,
+                        1 if snap else 0)
     order = key_order(names, data.num_points * nlevels, odt)
     offsets, count = run_offsets(names, order)
     positions = tack.empty((count,), tack.vec(3, data.dtype))
@@ -997,12 +1005,16 @@ def _side_runs(order, offsets, keys, side_id, side_points, count):
 def _side_crossings(side_points, values, geometry, levels, nlevels, ends, weights, positions,
                     hits):
     # Each side's crossing of each level it crosses (slot f * nlevels + v), from its
-    # lower point id, as every contour interpolates; at an end whose value is the
-    # level, the crossing is that point, shared by every side crossing there.
+    # end first by position, as every contour interpolates, so pieces sharing the
+    # side compute it alike; at the end it is (its value the level, or its
+    # position the end's: _end_hit), the crossing is that point, shared by every
+    # side crossing there.
     for f in range(side_points.shape[0]):
         ab = side_points[f]
         p = ab[0]
         q = ab[1]
+        if not _first_end(geometry[p], geometry[q], p, q):
+            p, q = q, p
         vp = values[p]
         vq = values[q]
         for v in range(nlevels):
@@ -1014,7 +1026,7 @@ def _side_crossings(side_points, values, geometry, levels, nlevels, ends, weight
                 ends[slot] = [p, q]
                 weights[slot] = w
                 positions[slot] = xp + w * (geometry[q] - xp)
-                hits[slot] = p if vp == iso else (q if vq == iso else -1)
+                hits[slot] = _end_hit(iso, p, q, vp, vq, xp, geometry[q])
 
 
 def _sides(data, groups):
