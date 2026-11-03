@@ -212,7 +212,7 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
     for g, piece in zip(blocks.local, pieces):
         with piece.device:
             locators[g] = cached_locator(piece)
-    boxes = _boxes(blocks, pieces)
+    boxes = _boxes(blocks, pieces, locators)
     pending = _seeded(blocks, seeds, common_origin(data, "advection over pieces"))
     finished = {g: [] for g in blocks.local}
     traced = {g: [] for g in blocks.local}
@@ -232,12 +232,12 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
     return blocks, pieces, {g: _Particles.joined(finished[g]) for g in blocks.local}, traced
 
 
-def _boxes(blocks, pieces):
-    """This rank's pieces' boxes as the locator sees them (``probe._held_box``),
+def _boxes(blocks, pieces, locators):
+    """This rank's pieces' boxes as their locators see them (``probe._held_box``),
     ``None`` for a piece with no points."""
     from tack.dataset.algorithms.probe import _held_box
 
-    return {g: _held_box(piece) if piece.num_points else None
+    return {g: _held_box(piece, locators[g]) if piece.num_points else None
             for g, piece in zip(blocks.local, pieces)}
 
 

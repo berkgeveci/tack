@@ -68,6 +68,24 @@ def by_seed(pieces):
 
 
 @pytest.mark.quick
+def test_a_pieces_held_box_is_its_locators():
+    """Routing over pieces bounds each piece by its locator's box of its cells, found
+    once with the locator, not by its positions on every call: the same box, grown
+    by the locator's tolerance, at any origin."""
+    from tack.dataset.algorithms.probe import _held_box
+    from tack.dataset.locator import _TOLERANCE, cached_locator
+
+    for piece in td.split(td.wavelet(4), 2, ghost_layers=1):
+        far = td.DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
+                         origin=(1.0e6, -2.0e6, 3.0e5))
+        for data in (piece, far):
+            lower, upper = _held_box(data, cached_locator(data))
+            x = data.positions().astype(np.float64)
+            grow = _TOLERANCE * np.linalg.norm(x.max(axis=0) - x.min(axis=0))
+            np.testing.assert_allclose(lower, x.min(axis=0) - grow, rtol=0, atol=1e-6)
+            np.testing.assert_allclose(upper, x.max(axis=0) + grow, rtol=0, atol=1e-6)
+
+
 def test_advect_goes_on_from_its_own_output():
     grid = helix()
     once = td.advect(grid, "v", SEEDS, 0.05, 40)

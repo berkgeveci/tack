@@ -694,6 +694,9 @@ class CellLocator:
             high = highs.numpy().max(axis=0).astype(float)
         else:
             low = high = np.zeros(3)
+        #: The box of its cells' boxes, relative to the dataset's origin: what a
+        #: piece's locator can hold (``probe._held_box``), found here once.
+        self.box = (low, high)
         extent = high - low
         size = max(float(extent.max()), 1e-30)
         live = extent > 1e-9 * size
