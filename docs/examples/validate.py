@@ -12,14 +12,15 @@ from pathlib import Path
 EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
             "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
             "data_analysis", "data_mesh_kernels", "data_filters", "data_spaces",
-            "data_partitioned", "data_high_order", "data_finite_volume")
+            "data_partitioned", "data_high_order", "data_finite_volume", "comm_ghosts",
+            "data3_build", "vis2_amr", "vis2_finite_volume", "vis2_pieces", "vis3_mesh_algorithm")
 QUICKSTARTS = (
     "users-guide/01-getting-started", "users-guide/02-arrays-and-types",
     "users-guide/11-reductions-and-scans", "users-guide/12-execution-model",
     "users-guide/14-vectors-and-matrices", "users-guide/15-debugging-and-timing",
     "users-guide/16-interoperability", "vis-guide/introduction",
 )
-GUIDES = ("users-guide", "vis-guide")
+GUIDES = ("users-guide", "vis-guide", "core", "communication", "data", "visualization")
 
 
 def check_quickstarts():
@@ -48,7 +49,8 @@ def check_quickstarts():
         # <!-- tack-check: example-name --> immediately before a Python fence.
         # Execute the displayed Markdown so its inputs and assertions cannot
         # drift away from a separate validation script.
-        for page in sorted(p for guide in GUIDES for p in (docs / guide).glob("*.md")):
+        for page in sorted([docs / "index.md", docs / "install.md", docs / "use-cases.md"]
+                           + [p for guide in GUIDES for p in (docs / guide).glob("*.md")]):
             blocks = re.findall(
                 r"<!-- tack-check: ([a-z0-9-]+) -->\s*```python\n(.*?)```",
                 page.read_text(encoding="utf-8"), flags=re.S)
