@@ -82,6 +82,18 @@ _RK45 = tack.constant(2, tack.i32)
 _METHODS = {"euler": int(_EULER), "rk4": int(_RK4), "rk45": int(_RK45)}
 
 
+# Zero velocity: a squared speed at or below this, about the smallest normal f32
+# number's tenfold, where a direction can no longer be formed. It is no speed
+# in particular: the machine epsilon, which stood here and is still the
+# bisection's bracket (eps), was a speed of 3.5e-4 in any unit, and stopped
+# the SciVis mantle's 1e-9 m/s at its seeds. Slower flows end by
+# terminal_speed, the caller's.
+_ZERO_SPEED2 = tack.constant(1e-37)
+
+# The bisection's bound: 2^64 is past every float's resolution of a step.
+_MAX_DIV = tack.constant(18446744073709551616.0)
+
+
 @tack.kernel
 def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, steps, status,
             trace, trace_times, lengths, capacity, record, ghosts, handoff, budget, first,
@@ -210,7 +222,7 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
             # at zero velocity's threshold stops the particle as before.
             w = h - h + 1.0
             if by_length == 1:
-                if v.dot(v) > eps:
+                if v.dot(v) > _ZERO_SPEED2:
                     w = 1.0 / v.norm()
                     v = v * w
                 else:
@@ -324,8 +336,18 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                                 nh = 0.9 * sub * pow(ratio, -0.2)
                             hc = min(max(nh, min_step), max_step)
                             forced = 0
+                        # A step that left the particle where it was, to the
+                        # bit, would leave it there every step after (RK45's at
+                        # its longest step): it has stopped, however slow the
+                        # flow's unit makes its speed. Near a stagnation point
+                        # a step's move falls below an ulp, and the particle
+                        # sat out its remaining steps.
+                        stuck = 0
+                        if all(x == start) and (method != _RK45 or tol <= 0.0
+                                                or sub >= max_step):
+                            stuck = 1
                         sub = hc
-                        if vel.dot(vel) <= eps:
+                        if vel.dot(vel) <= _ZERO_SPEED2 or stuck == 1:
                             st = st | ZERO_VELOCITY | TERMINATE
                             running = 0
                         elif n == max_steps:
@@ -390,7 +412,7 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     # device). As vtkStreamTracer's RK45 ends it, the particle
                     # has left.
                     st = st | SPATIAL_BOUNDS
-                if vel.dot(vel) <= eps:
+                if vel.dot(vel) <= _ZERO_SPEED2:
                     st = st | ZERO_VELOCITY | TERMINATE
                 if n == max_steps or (max_length > 0.0 and gone >= max_length - 0.001 * hc):
                     st = st | TERMINATE
@@ -408,8 +430,12 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                 stage = 0
                 final = 0
             if bisect == 1:
-                # The next trial step, or the push out once the bracket is small.
-                if r1 - r0 > 10.0 * eps:
+                # The next trial step, or the push out once the bracket is small --
+                # or after _MAX_HALVINGS halvings, so a push out always ends in a
+                # step that counts: the bracket is absolute, and on long steps
+                # (or a tolerance below an ulp) it never got small, and the
+                # particle bisected forever.
+                if r1 - r0 > 10.0 * eps and div < _MAX_DIV:
                     div = div * 2.0
                     sub = r0 + hc / div
                     mode = _CHECK
