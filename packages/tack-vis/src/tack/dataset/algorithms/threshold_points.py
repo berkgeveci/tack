@@ -1,7 +1,7 @@
 """``threshold_points``: the points whose ``field`` (point data: ``H1``, values on points) lies in ``[lower, upper]``, as vertex cells."""
 
 from tack import arrays
-from tack.dataset.algorithms._common import _field, _in_unit_of
+from tack.dataset.algorithms._common import _field, _in_unit_of, _inward
 from tack.dataset.algorithms._extract import _keep_points, _point_flags
 from tack.dataset.carry import _point_values
 from tack.dataset.spaces import H1, Values
@@ -25,4 +25,5 @@ def threshold_points(data, field, lower, upper, fields=None):
     if arrays.width_of(field.values):
         raise TypeError("threshold_points needs a scalar field")
     values = _point_values(field.values, data.num_points)
+    lower, upper = _inward(lower, upper, field)
     return _keep_points(data, _point_flags(data, values, lower, upper), fields)
