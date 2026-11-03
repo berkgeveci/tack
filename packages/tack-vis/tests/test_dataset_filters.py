@@ -170,6 +170,25 @@ def test_a_clip_through_points_is_merged_before_its_pieces_match(layers):
         expected.num_cells
 
 
+def test_threshold_bounds_are_the_range_as_given():
+    """A bound that f32 cannot hold (0.1) is rounded inward to the field's type, so a
+    value is kept exactly when it is in [lower, upper] as given: f32(-0.1) and
+    f32(0.1), just outside, are left out, as VTK (comparing in double) leaves
+    them out, and the f32 field keeps what the same values in f64 keep."""
+    grid = td.uniform_grid((6, 1, 1), spacing=(1.0, 1.0, 1.0))
+    values = np.zeros(grid.num_points, np.float32)
+    values[:6] = [np.float32(-0.1), -0.05, 0.0, 0.05, np.float32(0.1), 0.2]
+    kept = {}
+    for dtype in (np.float32, np.float64):
+        grid.fields["u"] = td.Field(td.H1(grid.topology), tack.array(values.astype(dtype)))
+        points = td.threshold_points(grid, "u", -0.1, 0.1)
+        kept[dtype] = np.sort(points.fields["u"].values.numpy().astype(np.float64))
+        cells = td.threshold(grid, "u", -0.1, 0.1)
+        assert cells.num_cells == 2                        # (-0.05, 0), (0, 0.05)
+    np.testing.assert_array_equal(kept[np.float32], kept[np.float64])
+    assert float(np.float32(-0.1)) not in kept[np.float32].tolist()
+
+
 @pytest.mark.parametrize("form", ["rectilinear", "explicit"])
 def test_a_sphere_is_closed_and_on_the_isovalue(backend, form):
     data = _with_radius(_grid(9, form))

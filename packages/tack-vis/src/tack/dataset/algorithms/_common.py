@@ -226,6 +226,24 @@ def _tolerance(data, value, who):
     return float(value)
 
 
+def _inward(lower, upper, field):
+    """``[lower, upper]`` as ``field``'s floating type holds it, rounded inward: the
+    least value of the type at or above ``lower``, the greatest at or below
+    ``upper``. A value of the field is then in the range exactly when it is in
+    ``[lower, upper]`` as given, on every device; the type's nearest values may lie
+    just outside it (f32(-0.1) is -0.10000000149), keeping a value VTK, comparing
+    in double, leaves out. Integer fields and f64 compare exactly as they are."""
+    dtype = arrays.dtype_of(field.values).numpy_dtype
+    if not np.issubdtype(dtype, np.floating) or dtype == np.float64:
+        return lower, upper
+    lo, hi = dtype.type(lower), dtype.type(upper)
+    if np.isfinite(lo) and float(lo) < lower:
+        lo = np.nextafter(lo, dtype.type(np.inf))
+    if np.isfinite(hi) and float(hi) > upper:
+        hi = np.nextafter(hi, dtype.type(-np.inf))
+    return float(lo), float(hi)
+
+
 def _in_unit_of(field, value, what):
     """A value compared with ``field``'s (an isovalue, a threshold) as a number in
     its unit: a quantity converted, offsets included (``"20 degC"`` on a field

@@ -2,7 +2,7 @@
 
 import tack
 from tack import arrays
-from tack.dataset.algorithms._common import _field, _in_unit_of, _with_basis
+from tack.dataset.algorithms._common import _field, _in_unit_of, _inward, _with_basis
 from tack.dataset.algorithms._extract import _keep_cells
 from tack.dataset.spaces import H1, L2, Constant
 from tack.runtime.dispatch import on_inputs_device
@@ -66,6 +66,7 @@ def threshold(data, field, lower, upper, all_points=True, fields=None, subdivisi
     field = _field(data, field)
     if arrays.width_of(field.values):
         raise TypeError("threshold needs a scalar field")
+    lower, upper = _inward(lower, upper, field)
     field = _with_basis(data, field)
     space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
