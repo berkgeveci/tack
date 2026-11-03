@@ -255,6 +255,31 @@ def test_every_algorithm_runs_on_the_datasets_device(second, name, make):
     assert _on(second, data)          # nothing derived it elsewhere
 
 
+def test_a_cpu_without_f64_does_not_load_what_a_cpu_with_it_stored(no_f64):
+    """The stand-in for Metal refuses an f64 kernel as it builds it; the disk cache
+    keeps the CPU's variants by target, so its target names that it has no f64,
+    or it would load a variant a CPU with f64 stored and run it (#268's rescaling
+    cast to f64 ran here and failed on Metal)."""
+    assert no_f64._backend.cache_target() != CPUBackend().cache_target()
+
+
+def test_point_gradients_at_singular_corners_run_without_f64(no_f64):
+    """The rescaling of points whose corners are left out (a corner where two faces
+    meet flat) runs only where there is one; on a device without f64 too."""
+    x = np.array([(0, 0, 0), (1, 0, 0), (2, 0, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (2, 0, 1),
+                  (0, 1, 1), (1, -1, 0), (2, -1, 0), (1, -1, 1), (2, -1, 1)], np.float32)
+    ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 2, 1, 10, 11, 6, 5]
+    with no_f64:
+        topology = td.UnstructuredTopology(tack.array([12, 12], dtype=tack.u8),
+                                           tack.array([0, 8, 16], dtype=tack.i32),
+                                           tack.array(ids, dtype=tack.i32), num_points=12)
+        data = td.DataSet(topology, tack.array(x, tack.vec3(tack.f32)))
+        data.fields["u"] = td.Field(td.H1(topology), tack.array(
+            (x @ np.array([1.0, 2.0, 3.0])).astype(np.float32)))
+        g = td.gradients(data, "u", at="points").values.numpy().reshape(-1, 3)
+    np.testing.assert_allclose(g, np.tile([1.0, 2.0, 3.0], (12, 1)), rtol=1e-5)
+
+
 @pytest.mark.parametrize("name", CALLS)
 @pytest.mark.parametrize("make", ["hexes", "grid"])
 def test_every_algorithm_runs_on_a_device_without_f64(no_f64, name, make):
