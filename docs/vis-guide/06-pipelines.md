@@ -117,6 +117,19 @@ is the longest path. `time` on the points is still the time the particle
 takes. Where speeds vary widely, a time step sized for the fastest makes
 tiny steps elsewhere, so length steps reach as far in far fewer steps.
 
+**At a wall.** When a step would leave the mesh, `advect` and `streamlines`
+halve it until it stays inside, as Viskores' `SmallStep` does, then push the
+particle out along the velocity there. The path ends at the mesh's edge
+(`SPATIAL_BOUNDS`) only if that push leaves it. At a no-slip wall the flow
+runs along the wall, so the particle stays in the fluid and goes on
+downstream. VTK's `vtkStreamTracer` ends a line as soon as a step leaves the
+mesh, so near walls its lines stop sooner. In the AhmedML case's wake (72
+seeds behind the body, length steps of 0.005), VTK ends 29 lines within 0.02
+of the body and Tack 1, and Tack's wake lines are longer (a median of 9.0
+against 6.5). A `terminal_speed` does not make the two agree: at 5% of the
+freestream VTK still ends 22 lines by the body and Tack 6, because the flow
+where VTK's steps cross the wall is faster than that.
+
 **Choose the device by the number of seeds.** Each particle is one thread
 that takes all its steps, so a few seeds use a few threads of a GPU built
 for thousands, and a single GPU thread is slower than a CPU core. Below a
