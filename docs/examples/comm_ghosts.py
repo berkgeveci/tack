@@ -31,7 +31,7 @@ def diffuse(u, out):
 def run(arch="cpu", check=False, mpi=False):
     tack.set_default_device(arch)
     if mpi:
-        from mpi4py import MPI      # after the device: a GPU-aware MPI starts on it
+        from mpi4py import MPI  # after the device: a GPU-aware MPI starts on it
 
         world = tc.World(MPI.COMM_WORLD)
     else:
