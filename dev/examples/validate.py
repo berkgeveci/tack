@@ -12,43 +12,23 @@ from pathlib import Path
 EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
             "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
             "data_analysis", "data_mesh_kernels", "data_filters", "data_spaces",
-            "data_partitioned", "data_high_order", "data_finite_volume")
-QUICKSTARTS = (
-    "users-guide/01-getting-started", "users-guide/02-arrays-and-types",
-    "users-guide/11-reductions-and-scans", "users-guide/12-execution-model",
-    "users-guide/14-vectors-and-matrices", "users-guide/15-debugging-and-timing",
-    "users-guide/16-interoperability", "vis-guide/introduction",
-)
-GUIDES = ("users-guide", "vis-guide")
+            "data_partitioned", "data_high_order", "data_finite_volume", "comm_ghosts",
+            "data3_build", "vis2_amr", "vis2_finite_volume", "vis2_pieces", "vis3_mesh_algorithm")
+GUIDES = ("core", "communication", "data", "visualization", "vis-guide",
+          "users-guide/tutorials")
 
 
 def check_quickstarts():
-    """Execute the complete opening examples, including the actual Markdown code."""
+    """Execute the pages' marked examples, the actual Markdown code."""
     docs = Path(__file__).resolve().parents[1]
     checked = 0
     with tempfile.TemporaryDirectory(prefix="tack-guide-check-") as temporary:
-        for name in QUICKSTARTS:
-            page = docs / f"{name}.md"
-            blocks = re.findall(r"```python\n(.*?)```", page.read_text(encoding="utf-8"), flags=re.S)
-            if not blocks:
-                raise RuntimeError(f"No Python quick start in {page.name}")
-            code = blocks[0]
-            if "import tack" not in code or "tack.set_default_device" not in code:
-                raise RuntimeError(f"The first Python example in {page.name} is not standalone")
-            if name == "vis-guide/introduction":
-                code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'
-            script = Path(temporary) / f"{name.replace('/', '-')}.py"
-            script.write_text(code, encoding="utf-8")
-            print(f"Checking Markdown quick start: {page.name} on cpu", flush=True)
-            subprocess.run([sys.executable, str(script)], check=True, timeout=120,
-                           cwd=temporary)
-            checked += 1
-
         # Mark complete examples beyond a page's opening with an HTML comment:
         # <!-- tack-check: example-name --> immediately before a Python fence.
         # Execute the displayed Markdown so its inputs and assertions cannot
         # drift away from a separate validation script.
-        for page in sorted(p for guide in GUIDES for p in (docs / guide).glob("*.md")):
+        for page in sorted([docs / "index.md", docs / "install.md", docs / "use-cases.md"]
+                           + [p for guide in GUIDES for p in (docs / guide).glob("*.md")]):
             blocks = re.findall(
                 r"<!-- tack-check: ([a-z0-9-]+) -->\s*```python\n(.*?)```",
                 page.read_text(encoding="utf-8"), flags=re.S)

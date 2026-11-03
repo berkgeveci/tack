@@ -5,7 +5,39 @@
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
+         <loc>https://berkgeveci.github.io/tack/dev/install/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
          <loc>https://berkgeveci.github.io/tack/dev/performance/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/use-cases/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/communication/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/communication/blocks-and-worlds/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/communication/exchange-and-plans/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/communication/mpi/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/communication/routing/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/communication/sort-and-reduce/</loc>
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
@@ -22,6 +54,130 @@
     </url>
     <url>
          <loc>https://berkgeveci.github.io/tack/dev/contracts/runtime-api/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/arrays-and-types/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/asyncio/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/choose-a-device/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/control-flow-and-math/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/debug-and-time/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/device-classes/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/device-functions/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/examples/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/how-programs-run/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/kernel-cache/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/kernels/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/memory-and-correctness/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/reductions-scans-sorts/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/share-arrays/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/vectors-and-matrices/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/core/workgroups-atomics-textures/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/amr-and-octrees/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/build-meshes-and-fields/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/cells-and-meshes/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/connect-simulation-data/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/devices/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/fields/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/higher-order/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/particles/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/pieces/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/polyhedra/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/storage-and-layouts/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/topology-and-geometry/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/data/units-coordinates-time/</loc>
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
@@ -117,83 +273,11 @@
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
+         <loc>https://berkgeveci.github.io/tack/dev/reference/glossary/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
          <loc>https://berkgeveci.github.io/tack/dev/reference/language-contract/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/01-getting-started/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/02-arrays-and-types/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/03-kernels/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/04-control-flow/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/05-device-functions/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/06-templates/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/07-advanced/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/08-backends/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/11-reductions-and-scans/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/12-execution-model/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/13-memory-and-parallelism/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/14-vectors-and-matrices/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/15-debugging-and-timing/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/16-interoperability/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/17-kernel-cache/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/18-communication/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/quick-reference/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/users-guide/tutorials/</loc>
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
@@ -221,115 +305,7 @@
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/00-function-spaces/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/01-datasets/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/02-meshes/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/03-fields-and-spaces/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/04-filters/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/05-mesh-kernels/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/06-pipelines/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/07-partitioned/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/08-point-clouds/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/09-pieces-across/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/10-amr/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/11-octrees/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/12-units/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/13-streaming/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/14-communication/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/15-write-a-filter/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/16-cells-and-bases/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/17-views/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/18-finite-volume/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/18-polyhedra/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/adaptive-data/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/collections-and-partitions/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/connect-simulation-data/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/create-fields/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/data-model-overview/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/examples/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/field-storage/</loc>
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
@@ -337,19 +313,7 @@
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/introduction/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/mfem-gallery/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/point-cloud-model/</loc>
-         <lastmod>2026-11-03</lastmod>
-    </url>
-    <url>
-         <loc>https://berkgeveci.github.io/tack/dev/vis-guide/topology-and-geometry/</loc>
          <lastmod>2026-11-03</lastmod>
     </url>
     <url>
@@ -382,6 +346,70 @@
     </url>
     <url>
          <loc>https://berkgeveci.github.io/tack/dev/vis-guide/reference/units/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/adaptive-data/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/derive/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/examples/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/extract/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/finite-volume/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/mfem-warp-and-others/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/over-pieces/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/over-time/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/points-and-particles/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/reduce/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/sample-and-trace/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/views/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/vtk/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/write-a-filter/</loc>
+         <lastmod>2026-11-03</lastmod>
+    </url>
+    <url>
+         <loc>https://berkgeveci.github.io/tack/dev/visualization/write-a-mesh-algorithm/</loc>
          <lastmod>2026-11-03</lastmod>
     </url>
 </urlset>
