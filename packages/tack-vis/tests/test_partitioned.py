@@ -620,12 +620,6 @@ def test_generate_global_ids_marks_outputs_that_lost_the_marks(name):
                 td.statistics(outputs, "RTData")
         elif pieces is ghosted:
             continue        # kept points keep the marks they were given, none here
-        if pieces is ghosted and name == "slice":
-            # Each piece triangulates a ghost cell's slice in its own numbering, so
-            # the copies are not the owner's triangles (with point marks too).
-            with pytest.raises(ValueError, match="no piece holds them unmarked"):
-                td.generate_global_ids(outputs)
-            continue
         marked = td.generate_global_ids(outputs)
         assert not any(out._ghosts_lost for out in marked)
         expected = filter(whole)

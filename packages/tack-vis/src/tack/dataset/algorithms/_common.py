@@ -37,6 +37,69 @@ def _first_end(xa, xb, a, b):
     return _before(xa, xb) or (not _before(xb, xa) and a < b)
 
 
+@tack.func
+def _end_hit(level, a, b, va, vb, xa, xb):
+    """The end (``a`` or ``b``, point ids at ``xa`` and ``xb`` with values ``va`` and
+    ``vb``) that an edge's crossing of ``level`` is, or -1: an end whose value is
+    the level, or one the crossing's position -- interpolated from the end first
+    by position, as every cut interpolates -- lies within half an ulp of the
+    edge's largest coordinate of (``s + d == s``), which its coordinates cannot
+    tell from the end. A level passing a hair from a point (a symmetry plane's
+    points at y = 1e-45, or a plane through grid points whose distances round
+    to 1e-7) crosses every edge there at, or an ulp from, that point, so several
+    crossings would land on one position; named by the end, they are one point,
+    owned as the point is, and pieces can match their points by position.
+    Values and positions are every piece's alike, so every piece decides alike."""
+    hit = -1
+    if va == level:
+        hit = a
+    elif vb == level:
+        hit = b
+    else:
+        first = _first_end(xa, xb, a, b)
+        x0 = xa if first else xb
+        x1 = xb if first else xa
+        p = x0 + _crossing(level, va if first else vb, vb if first else va) * (x1 - x0)
+        scale = max(abs(xa).max(), abs(xb).max())
+        if scale + abs(p - x0).max() == scale:
+            hit = a if first else b
+        elif scale + abs(p - x1).max() == scale:
+            hit = b if first else a
+    return hit
+
+
+@tack.func
+def edge_crossing(level, a, b, va, vb, xa, xb):
+    """Where ``level`` crosses the edge between points ``a`` and ``b`` (ids, at
+    positions ``xa`` and ``xb``, with values ``va`` and ``vb``), as every built-in
+    cut places it: ``(first, second, weight)``, ``Interpolate``'s ends and
+    weight, for a ``@tack.kernel`` writing them.
+
+    - The crossing is interpolated from the end first by position (x, then y,
+      then z), so every piece and cell holding the edge computes it, and the
+      values ``carry`` brings there, to the same bits; ghost marks give the
+      point that end's owner.
+    - At an end whose value is the level, or one the crossing lies within half
+      an ulp of (relative to the edge's largest coordinate), the crossing is that
+      end: ``(end, end, 0)``. Every edge's crossing there is then one point --
+      name it by the end, as the built-ins do, so the cut has no two points at
+      one position.
+    """
+    hit = _end_hit(level, a, b, va, vb, xa, xb)
+    first = a
+    second = b
+    w = _crossing(level, va, vb)
+    if hit >= 0:
+        first = hit
+        second = hit
+        w = 0.0
+    elif not _first_end(xa, xb, a, b):
+        first = b
+        second = a
+        w = _crossing(level, vb, va)
+    return first, second, w
+
+
 #: Constant tables as device arrays, per backend (released with it) and key.
 _CONSTANTS = weakref.WeakKeyDictionary()
 

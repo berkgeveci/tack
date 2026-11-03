@@ -99,6 +99,77 @@ def _oriented(points, triangles, decimals=5):
 
 # ── Contour ─────────────────────────────────────────────────────────
 
+def _hair_off(data):
+    """``data`` with explicit positions and its points on the plane y = 0 moved a hair
+    off it, alternately by 1.4e-45 (f32's smallest number), -1.4e-45 and -3e-35, as
+    a solver leaves a symmetry plane's points (AhmedML's)."""
+    x = data.positions().astype(np.float32)
+    on = np.flatnonzero(x[:, 1] == 0)
+    x[on, 1] = np.array([1.4e-45, -1.4e-45, -3e-35], np.float32)[np.arange(len(on)) % 3]
+    return td.DataSet(data.topology, tack.array(x, tack.vec3(tack.f32)), fields=dict(data.fields))
+
+
+_CUT_PATHS = {
+    "hexahedra": lambda d: d,
+    "tetrahedra": td.tetrahedralize,
+    "polyhedra": td.as_polyhedra,
+    "surface": td.extract_surface,
+    "edges": td.extract_edges,
+}
+
+
+@pytest.mark.parametrize("path", list(_CUT_PATHS))
+def test_a_slice_a_hair_from_points_makes_them_one_point_each(path):
+    """A plane passing a hair from mesh points (a symmetry plane's at y = 1e-45) crosses
+    every edge leaving them at those points' positions. Each such crossing is its
+    point (edge_crossing), so the slice has no two points at one position (before,
+    18 of the hexahedra's 126 points and 167 of the tetrahedra's 310 repeated
+    one); every point is on the plane, the crossings of edges between points on
+    either side of it included."""
+    off = _CUT_PATHS[path](_hair_off(td.wavelet(4)))
+    near = td.slice_plane(off, (0, 0, 0), (0, 1, 0))
+    x = near.positions()
+    assert near.num_cells > 0
+    assert len(np.unique(x.view(np.uint32).reshape(-1, 3), axis=0)) == len(x)
+    assert np.abs(x[:, 1]).max() <= 3e-35
+
+
+@pytest.mark.parametrize("layers", [0, 1])
+def test_pieces_of_a_slice_a_hair_from_points_match_by_position(layers):
+    """The same over pieces: with or without ghost cells, generate_global_ids matches
+    the pieces' slices by position and they reduce to the whole's slice (with ghost
+    cells it refused before, finding ghost copies whose owners' were points of
+    other edges at the same position)."""
+    whole = _hair_off(td.wavelet(4))
+    expected = td.slice_plane(whole, (0, 0, 0), (0, 1, 0))
+    pieces = td.split(whole, (2, 2, 1), ghost_layers=layers)
+    cuts = td.generate_global_ids(td.PartitionedDataSet(
+        td.slice_plane(p, (0, 0, 0), (0, 1, 0)) for p in pieces))
+    assert td.statistics(cuts, "RTData").n == expected.num_points
+    assert sum(int(((p.ghosts.cells.numpy() & 1) == 0).sum()) for p in cuts) == \
+        expected.num_cells
+
+
+@pytest.mark.parametrize("layers", [0, 1])
+def test_a_clip_through_points_is_merged_before_its_pieces_match(layers):
+    """clip names crossings by their edges, as VTK's vtkTableBasedClipDataSet does, so a
+    plane through mesh points leaves crossings on top of corners. merge_points
+    merges them (as vtkCleanGrid); then generate_global_ids matches the clipped
+    pieces by position, and they reduce to the whole's clip, merged."""
+    whole = td.wavelet(6)
+    plane = td.Plane((0.3, 0.2, 0.1), (1, 2, 3))         # through lattice points
+    clipped = td.clip(whole, plane)
+    x = clipped.positions()
+    assert len(np.unique(x.view(np.uint32).reshape(-1, 3), axis=0)) < len(x)
+    expected = td.merge_points(clipped)
+    pieces = td.split(whole, (2, 2, 2), ghost_layers=layers)
+    marked = td.generate_global_ids(td.PartitionedDataSet(
+        td.merge_points(td.clip(p, plane)) for p in pieces))
+    assert td.statistics(marked, "RTData").n == expected.num_points
+    assert sum(int(((p.ghosts.cells.numpy() & 1) == 0).sum()) for p in marked) == \
+        expected.num_cells
+
+
 @pytest.mark.parametrize("form", ["rectilinear", "explicit"])
 def test_a_sphere_is_closed_and_on_the_isovalue(backend, form):
     data = _with_radius(_grid(9, form))
