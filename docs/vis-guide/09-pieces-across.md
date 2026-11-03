@@ -44,7 +44,12 @@ deeper = td.ghost_cells(plain, layers=2)           # two, for two neighbour filt
 
 Structured pieces, `split`'s or VTK's image pieces, stay structured: each
 becomes its block grown by the layers, with the right offset and
-coordinates.
+coordinates. Polyhedral pieces (OpenFOAM's processor pieces, read as
+polyhedra) get their layers the same way, each ghost with its faces.
+Pieces must be of one kind: the split reading's shaped piece and polyhedra
+piece are ghosted together as `td.ghost_cells(td.PartitionedDataSet(
+[td.as_polyhedra(shaped), polyhedra]))`, on the polyhedra's slower path, and
+then reduce exactly, which pieces that share only points cannot always do.
 
 Pieces neighbour where they share points at exactly the same position, and
 a shared point belongs to the lowest piece holding it. The pieces may be on

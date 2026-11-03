@@ -709,7 +709,7 @@ combine pieces.
   input's own ghost marks come along. An unstructured mesh is partitioned by
   VTK (`vtkRedistributeDataSetFilter`) or by its host application.
 - **`ghost_cells(pds, layers=1, world=None, fields=None)`** gives each
-  unstructured piece a layer of its neighbours' cells, as VTK's
+  unstructured or polyhedral piece (all of one kind) a layer of its neighbours' cells, as VTK's
   `vtkGhostCellsGenerator` does, in one process (pieces on any devices) or
   across MPI ranks. Pieces neighbour where they share points at exactly the
   same position; a piece gains the cells of others that use a point it
