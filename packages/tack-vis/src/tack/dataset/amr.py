@@ -90,8 +90,7 @@ class AMRDataSet:
         self._fills = None
         self.domain = self._domain(domain)
         self._check(given)
-        self.levels = tuple(PartitionedDataSet([self._marked(level, k, piece)
-                                                for k, piece in enumerate(pieces)], world)
+        self.levels = tuple(PartitionedDataSet(self._marked(level, pieces), world)
                             for level, pieces in enumerate(given))
 
     @classmethod
@@ -117,23 +116,32 @@ class AMRDataSet:
     def _refined(self, level, lo, hi):
         """Which cells and points of the cell-index box ``[lo, hi)`` of ``level`` a
         finer level covers: two bool arrays shaped z, y, x (``dimension`` axes)."""
+        box = np.stack([np.asarray(lo, np.int64), np.asarray(hi, np.int64)])[None]
+        return self._refined_boxes(level, box)[0]
+
+    def _refined_boxes(self, level, boxes):
+        """``_refined`` of each cell-index box of ``boxes`` (``(n, 2, 3)``), every box
+        at once: the boxes and the finer level's that meet them are found by
+        ``_meeting``, so the work is in the pairs that meet, not in every pair (a
+        loop over all the children for each box took 129 s for AMR-Wind's 6,436
+        boxes)."""
         d = self.dimension
-        lo, hi = np.asarray(lo)[:d], np.asarray(hi)[:d]
-        cells = np.zeros(tuple(int(v) for v in (hi - lo)[::-1]), bool)
-        points = np.zeros(tuple(int(v) + 1 for v in (hi - lo)[::-1]), bool)
+        lo, hi = boxes[:, 0, :d], boxes[:, 1, :d]
+        out = [(np.zeros(tuple(int(v) for v in (b - a)[::-1]), bool),
+                np.zeros(tuple(int(v) + 1 for v in (b - a)[::-1]), bool))
+               for a, b in zip(lo, hi)]
         if level + 1 < self.num_levels:
-            ratio = np.asarray(self.ratios[level])[:d]
-            for child in self._boxes[level + 1]:
-                clo, chi = _coarsened(child, self.ratios[level])
-                a, b = np.maximum(clo[:d], lo), np.minimum(chi[:d], hi)
-                if (a < b).all():
-                    cells[_slices(a - lo, b - lo)] = True
-                # A point refined: its location p * ratio is one of the child's points.
-                a = np.maximum(-(-child[0, :d] // ratio), lo)
-                b = np.minimum(child[1, :d] // ratio, hi)
-                if (a <= b).all():
-                    points[_slices(a - lo, b - lo + 1)] = True
-        return cells, points
+            ratio = np.asarray(self.ratios[level], np.int64)[:d]
+            children = self._boxes[level + 1][:, :, :d]
+            # A cell refined: a child, coarsened, covers it.
+            clo, chi = children[:, 0] // ratio, -(-children[:, 1] // ratio)
+            for i, a, b in _cut(lo, hi, clo, chi, closed=False):
+                out[i][0][_slices(a - lo[i], b - lo[i])] = True
+            # A point refined: its location p * ratio is one of the child's points.
+            plo, phi = -(-children[:, 0] // ratio), children[:, 1] // ratio
+            for i, a, b in _cut(lo, hi, plo, phi, closed=True):
+                out[i][1][_slices(a - lo[i], b - lo[i] + 1)] = True
+        return out
 
     # -- what it holds ---------------------------------------------------
 
@@ -238,61 +246,78 @@ class AMRDataSet:
                 raise ValueError(f"boxes {a} and {b} of level {level} overlap: {_text(boxes[a])} "
                                  f"and {_text(boxes[b])}")
         for level in range(1, self.num_levels):
-            ratio = np.asarray(self.ratios[level - 1])
+            ratio = np.asarray(self.ratios[level - 1], np.int64)
             coarse = self._boxes[level - 1]
-            for k, box in enumerate(self._boxes[level]):
-                lo, hi = _coarsened(box, ratio)
-                need = int(np.prod(hi - lo))
-                inside = np.maximum(np.minimum(coarse[:, 1], hi) - np.maximum(coarse[:, 0], lo), 0)
-                if int(inside.prod(axis=1).sum()) != need:
-                    raise ValueError(f"box {k} of level {level} ({_text(box)}) is not within "
-                                     f"level {level - 1}'s boxes when coarsened by "
-                                     f"{tuple(ratio[:self.dimension])}: the hierarchy is not "
-                                     f"properly nested")
+            fine = self._boxes[level]
+            lo, hi = fine[:, 0] // ratio, -(-fine[:, 1] // ratio)
+            i, j = _meeting(lo, hi, coarse[:, 0], coarse[:, 1], closed=False)
+            inside = (np.minimum(coarse[j, 1], hi[i]) - np.maximum(coarse[j, 0], lo[i])).prod(axis=1)
+            covered = np.bincount(i, inside, minlength=len(fine))
+            short = np.flatnonzero(covered != (hi - lo).prod(axis=1))
+            if len(short):
+                k = int(short[0])
+                raise ValueError(f"box {k} of level {level} ({_text(fine[k])}) is not within "
+                                 f"level {level - 1}'s boxes when coarsened by "
+                                 f"{tuple(ratio[:self.dimension])}: the hierarchy is not "
+                                 f"properly nested")
         for level, pieces in enumerate(given):
             lattices = self.world._allgather([_lattice(piece, self.dimension)
                                               for piece in pieces])
             lattices = [entry for part in lattices for entry in part if entry is not None]
-            for spacing, origin in lattices[1:]:
-                ref_spacing, ref_origin = lattices[0]
-                tolerance = 1e-6 * float(np.max(ref_spacing))
-                if not (np.allclose(spacing, ref_spacing, rtol=1e-9, atol=0.0)
-                        and np.allclose(origin, ref_origin, rtol=0.0, atol=tolerance)):
-                    raise ValueError(
-                        f"the image boxes of level {level} are not on one lattice: spacing "
-                        f"{tuple(spacing)} and origin {tuple(origin)} against "
-                        f"{tuple(ref_spacing)} and {tuple(ref_origin)} (VTK's model: one "
-                        "spacing per level and one origin)")
+            if len(lattices) < 2:
+                continue
+            spacings = np.array([np.asarray(entry[0], np.float64) for entry in lattices])
+            origins = np.array([np.asarray(entry[1], np.float64) for entry in lattices])
+            ref_spacing, ref_origin = spacings[0], origins[0]
+            tolerance = 1e-6 * float(np.max(ref_spacing))
+            # ``np.allclose`` of each against the first, every box at once.
+            same = (np.abs(spacings - ref_spacing) <= 1e-9 * np.abs(ref_spacing)).all(axis=1) \
+                & (np.abs(origins - ref_origin) <= tolerance).all(axis=1)
+            if not same.all():
+                k = int(np.flatnonzero(~same)[0])
+                spacing, origin = spacings[k], origins[k]
+                raise ValueError(
+                    f"the image boxes of level {level} are not on one lattice: spacing "
+                    f"{tuple(spacing)} and origin {tuple(origin)} against "
+                    f"{tuple(ref_spacing)} and {tuple(ref_origin)} (VTK's model: one "
+                    "spacing per level and one origin)")
 
     # -- the marks -------------------------------------------------------
 
-    def _marked(self, level, k, piece):
-        """``piece``, box ``k`` of this rank's ``level``, with its marks computed."""
+    def _marked(self, level, pieces):
+        """This rank's boxes of ``level``, ``pieces``, with their marks computed."""
         d = self.dimension
-        box = self._boxes[level][self._first[level] + k]
-        lo, hi = box[0, :d], box[1, :d]
-        cell_shape = tuple(int(v) for v in (hi - lo)[::-1])
-        point_shape = tuple(int(v) + 1 for v in (hi - lo)[::-1])
-        refined_cells, refined_points = self._refined(level, box[0], box[1])
-        cells = np.where(refined_cells, Ghosts.REFINEDCELL, 0).astype(np.uint8)
-        points = np.where(refined_points, Ghosts.REFINEDPOINT, 0).astype(np.uint8)
-        index = self._first[level] + k
-        for other in self._boxes[level][:index]:
-            a, b = np.maximum(other[0, :d], lo), np.minimum(other[1, :d], hi)
-            if (a <= b).all():                       # a shared face, edge or corner
-                points[_slices(a - lo, b - lo + 1)] |= Ghosts.DUPLICATEPOINT
+        first = self._first[level]
+        every = self._boxes[level]
+        mine = every[first:first + len(pieces)]
+        refined = self._refined_boxes(level, mine)
+        # Siblings' shared faces, edges and corners: the lower-numbered sibling owns them.
+        lo, hi = mine[:, 0, :d], mine[:, 1, :d]
+        lower = [[] for _ in pieces]
+        for k, a, b, j in _cut(lo, hi, every[:, 0, :d], every[:, 1, :d], closed=True,
+                               partners=True):
+            if j < first + k:
+                lower[k].append((a, b))
         cleared_cells = 0xFF & ~Ghosts.REFINEDCELL
         cleared_points = 0xFF & ~(Ghosts.REFINEDPOINT | Ghosts.DUPLICATEPOINT)
-        marks = piece.ghosts
-        if marks is not None and marks.cells is not None:
-            cells |= (marks.cells.numpy() & cleared_cells).reshape(cell_shape)
-        if marks is not None and marks.points is not None:
-            points |= (marks.points.numpy() & cleared_points).reshape(point_shape)
-        with piece.device:
-            ghosts = Ghosts(cells=cells.reshape(-1), points=points.reshape(-1))
-        return DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
-                       sets=dict(piece.sets), dtype=piece.dtype, ghosts=ghosts,
-                       global_ids=piece.global_ids, **piece._frame())
+        out = []
+        for k, piece in enumerate(pieces):
+            refined_cells, refined_points = refined[k]
+            cells = refined_cells.astype(np.uint8) * np.uint8(Ghosts.REFINEDCELL)
+            points = refined_points.astype(np.uint8) * np.uint8(Ghosts.REFINEDPOINT)
+            for a, b in lower[k]:
+                points[_slices(a - lo[k], b - lo[k] + 1)] |= Ghosts.DUPLICATEPOINT
+            marks = piece.ghosts
+            if marks is not None and marks.cells is not None:
+                cells |= (marks.cells.numpy() & cleared_cells).reshape(cells.shape)
+            if marks is not None and marks.points is not None:
+                points |= (marks.points.numpy() & cleared_points).reshape(points.shape)
+            with piece.device:
+                ghosts = Ghosts(cells=cells.reshape(-1), points=points.reshape(-1))
+            out.append(DataSet(piece.topology, piece.geometry, fields=dict(piece.fields),
+                               sets=dict(piece.sets), dtype=piece.dtype, ghosts=ghosts,
+                               global_ids=piece.global_ids, **piece._frame()))
+        return out
 
 
 def _box(piece, dimension):
@@ -314,13 +339,52 @@ def _coarsened(box, ratio):
 
 def _overlap(boxes):
     """The first two boxes that share a cell, or None."""
-    for a in range(len(boxes) - 1):
-        rest = boxes[a + 1:]
-        inside = np.minimum(rest[:, 1], boxes[a, 1]) - np.maximum(rest[:, 0], boxes[a, 0])
-        hit = np.flatnonzero((inside > 0).all(axis=1))
-        if len(hit):
-            return a, a + 1 + int(hit[0])
-    return None
+    i, j = _meeting(boxes[:, 0], boxes[:, 1], boxes[:, 0], boxes[:, 1], closed=False)
+    keep = i < j
+    if not keep.any():
+        return None
+    i, j = i[keep], j[keep]
+    first = np.lexsort((j, i))[0]
+    return int(i[first]), int(j[first])
+
+
+def _meeting(alo, ahi, blo, bhi, closed):
+    """Every pair ``(i, j)`` of box ``i`` of ``a`` and box ``j`` of ``b`` that meet, as
+    two arrays ordered by ``i``: ``[lo, hi)`` boxes sharing a cell, or with
+    ``closed``, ``[lo, hi]`` boxes sharing a point. Arrays ``(n, axes)``. ``b`` is
+    sorted on its first axis, and each box of ``a`` tests only the boxes whose
+    start is within the widest of ``b`` of its own (a sweep), not every box."""
+    empty = np.zeros(0, np.int64)
+    if not len(alo) or not len(blo):
+        return empty, empty
+    order = np.argsort(blo[:, 0], kind="stable")
+    starts = blo[order, 0]
+    width = max(int((bhi[:, 0] - blo[:, 0]).max()), 0)
+    if closed:      # blo <= ahi and bhi >= alo, with bhi <= blo + width
+        first = np.searchsorted(starts, alo[:, 0] - width, side="left")
+        stop = np.searchsorted(starts, ahi[:, 0], side="right")
+    else:           # blo < ahi and bhi > alo
+        first = np.searchsorted(starts, alo[:, 0] - width, side="right")
+        stop = np.searchsorted(starts, ahi[:, 0], side="left")
+    counts = np.maximum(stop - first, 0)
+    i = np.repeat(np.arange(len(alo)), counts)
+    within = np.arange(int(counts.sum())) - np.repeat(np.cumsum(counts) - counts, counts)
+    j = order[np.repeat(first, counts) + within]
+    low = np.maximum(alo[i], blo[j])
+    high = np.minimum(ahi[i], bhi[j])
+    meet = (low <= high).all(axis=1) if closed else (low < high).all(axis=1)
+    return i[meet], j[meet]
+
+
+def _cut(alo, ahi, blo, bhi, closed, partners=False):
+    """For each pair ``_meeting`` finds, ``(i, low, high)``: box ``i`` of ``a`` and
+    where it meets the other box (``(i, low, high, j)`` with ``partners``)."""
+    i, j = _meeting(alo, ahi, blo, bhi, closed)
+    low = np.maximum(alo[i], blo[j])
+    high = np.minimum(ahi[i], bhi[j])
+    if partners:
+        return zip(i.tolist(), low, high, j.tolist())
+    return zip(i.tolist(), low, high)
 
 
 def _slices(a, b):
