@@ -51,9 +51,16 @@ class Field:
     ``unit`` is the values' physical unit, a string such as ``"m/s"`` kept in
     unyt's canonical spelling (``tack.dataset.units``), or ``None`` for unknown:
     meaning, which kernels never see. Filters that keep a quantity keep its
-    unit; anything else gives ``None`` rather than a guess."""
+    unit; anything else gives ``None`` rather than a guess.
 
-    def __init__(self, space, values, unit=None):
+    ``gradient``, a field on the same topology, is its world gradient where something
+    other than its basis gives it, such as a solver's own reconstruction: 3 values
+    each for a scalar, 3k row by row for a vector of k components (``gradients``'
+    layout). ``world_gradient``, ``world_jet`` and ``gradients`` read it, evaluated
+    at the point asked for as that field's view evaluates it; the Hessian, which a
+    gradient does not determine, is NaN."""
+
+    def __init__(self, space, values, unit=None, gradient=None):
         if not isinstance(space, Space):
             raise TypeError(f"a field's space is a Space on a topology, not {space!r}")
         views.storage(values)                       # refuses what is not an array
@@ -64,6 +71,16 @@ class Field:
         self.values = values
         self._unit = units.canonical(unit)
         _ = self._device                    # refuses values on another device
+        if gradient is not None:
+            if not isinstance(gradient, Field):
+                raise TypeError(f"a field's gradient is a tack.dataset.Field, not {gradient!r}")
+            if gradient.space.topology is not space.topology:
+                raise ValueError("a field's gradient belongs to another topology")
+            width = max(1, arrays.width_of(values) or 0)
+            if (arrays.width_of(gradient.values) or 1) != 3 * width:
+                raise ValueError(f"a field of {width} components has a gradient of {3 * width}, "
+                                 f"not {arrays.width_of(gradient.values) or 1}")
+        self.gradient = gradient
 
     @property
     def unit(self):
@@ -93,7 +110,8 @@ class Field:
         values = self.values
         stored = repr(values) if isinstance(values, arrays._Implicit) else "stored"
         unit = "" if self._unit is None else f", in {self._unit}"
-        return f"Field({self.space!r}, {arrays.size_of(values)} values, {stored}{unit})"
+        given = "" if self.gradient is None else ", with its gradient"
+        return f"Field({self.space!r}, {arrays.size_of(values)} values, {stored}{unit}{given})"
 
 
 def _is_cells(group):
@@ -130,6 +148,8 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
         # A geometry's incidence is the domain view's own.
         mixins.extend(space.extra_mixins(group))
     mixins.append(storage)
+    if not space_mixin:
+        mixins.extend(_derivative_mixins(field, group, mixins, attributes))
     # Reading only the points' values -- an order-2 geometry on faces and edges
     # -- needs none of the space's own layout.
     layout = {} if corners_only else space.attributes(group, dtype=_basis_type(field))
@@ -137,6 +157,26 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
         # The geometry's L2 offsets sit beside the domain view's own names.
         attributes["point_offsets" if space_mixin and name == "offsets" else name] = value
     return mixins, attributes
+
+
+def _derivative_mixins(field, group, mixins, attributes):
+    """Where a field view's ``world_gradient`` and ``world_jet`` come from: the gradient
+    the field was given, a space's own mixin, or else the basis -- the parts of it the
+    view has, since every method of a view resolves when a kernel takes it."""
+    from tack.dataset.algorithms.gradients import _BasisGradient, _BasisJet, _GivenGradient
+
+    given = getattr(field, "gradient", None)
+    if given is not None:
+        attributes.update(given_gradient=given.view(group), no_hessian=float("nan"))
+        return [_GivenGradient]
+    out = []
+    if (any(hasattr(m, "parametric_gradient") for m in mixins)
+            and not any(hasattr(m, "world_gradient") for m in mixins)):
+        out.append(_BasisGradient)
+    if (any(hasattr(m, "parametric_jet") for m in mixins)
+            and not any(hasattr(m, "world_jet") for m in mixins)):
+        out.append(_BasisJet)
+    return out
 
 
 def _basis_type(field):
@@ -778,7 +818,8 @@ class DataSet:
             values = field.values.to_device(target)
             if isinstance(space, L2) and space.layout != field.space.layout:
                 values = _relaid(values, field.space, space)      # "auto" chose another
-            return Field(space, values, field.unit)
+            gradient = None if field.gradient is None else moved(field.gradient)
+            return Field(space, values, field.unit, gradient=gradient)
 
         sets = {name: Set._from_sorted_ids(topology, s.on, s.ids.to_device(target))
                 for name, s in self.sets.items()}
