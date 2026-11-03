@@ -1,12 +1,12 @@
 # Kernels
 
 A kernel is a Python function, decorated with `@tack.kernel`, whose outermost
-loop runs in parallel on a device. This page teaches the parts of a kernel:
-the parallel loop, loops over two or three dimensions, ordinary loops inside
-it, array dimensions, constants, returning a value, and seeing the code Tack
-generates. It is for readers who have run a first kernel and know
-[how a program runs](how-programs-run.md). After it you can write the kernels
-of a typical simulation or image calculation.
+loop runs in parallel on a device. The kernels of a typical simulation or
+image calculation are built from a few parts, and each has a section below.
+The parallel loop comes first, then its forms over two or three dimensions
+and the ordinary loops inside it. Array dimensions, constants and a returned
+value follow, and the last section shows the code Tack generates. The page
+builds on [how a program runs](how-programs-run.md).
 
 ## The parallel loop
 

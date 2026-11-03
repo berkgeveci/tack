@@ -2,11 +2,11 @@
 
 A field is a function of position, and many questions ask for its value
 somewhere the mesh stores nothing: along a line, at a sensor, on another grid.
-Others follow a velocity field: where do particles released here go? This page
-shows Tack's filters for both, for readers who know VTK's `vtkProbeFilter`,
-`vtkResampleToImage` and `vtkStreamTracer`. After it you can probe a dataset
-at points or onto another dataset, put a mesh's fields on an image, and trace
-streamlines and particles, choosing the integrator, the step and the device.
+Others follow a velocity field: where do particles released here go? Tack's
+`probe` answers the first kind, as VTK's `vtkProbeFilter` and
+`vtkResampleToImage` do. It samples a dataset at points, onto another
+dataset, or onto an image. `streamlines` and `advect` answer the second, as
+`vtkStreamTracer` does, with a choice of integrator, step and device.
 
 ## Probe a dataset at points
 
@@ -44,6 +44,32 @@ assert np.allclose(along.fields["T"].values.numpy(), 300 + 10 * line.positions()
 
 Check `valid` before reading a sample. A point outside the mesh gets 0 in
 every field, and 0 may also be a real value.
+
+<div class="grid cards" markdown>
+
+-   ![A probe of tetrahedra](../assets/gallery/probe-linear.jpg){ loading=lazy width=240 height=210 }
+
+    **Tetrahedra**: the field linear in each cell
+
+-   ![A probe of polyhedra](../assets/gallery/probe-polyhedra.jpg){ loading=lazy width=240 height=210 }
+
+    **Polyhedra**: the field linear on each cell's tetrahedra
+
+-   ![A probe of an order-4 field](../assets/gallery/probe-high-order.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 4** on straight hexahedra
+
+-   ![A probe of curved cells](../assets/gallery/probe-curved.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 3** on curved hexahedra, the plane's edge following them
+
+</div>
+
+Each picture probes the field `cos 2πx + cos 2πy + cos 2πz` of a unit cube's
+mesh onto a tilted image plane wider than the cube, colored by the field. The
+plane's points that no cell holds (`valid` 0) are left out, so its edge shows
+the mesh's boundary. The [gallery](../vis-guide/gallery.md#probe) describes
+the four meshes.
 
 - **Points as an array** become vertex cells, one per point. Their positions
   are world coordinates, converted in double precision.
@@ -161,6 +187,31 @@ The velocity may be point data, cell data, or a field of any order, on a
 straight or curved mesh. `seeds` is an `(n, 3)` array or a field of 3-vectors.
 A seed that cannot take a step, outside the mesh say, keeps a point in the
 output and makes no line.
+
+<div class="grid cards" markdown>
+
+-   ![Streamlines through tetrahedra](../assets/gallery/streamlines-linear.jpg){ loading=lazy width=240 height=210 }
+
+    **Tetrahedra**: point data, linear in each cell
+
+-   ![Streamlines through polyhedra](../assets/gallery/streamlines-polyhedra.jpg){ loading=lazy width=240 height=210 }
+
+    **Polyhedra**: point data, linear on each cell's tetrahedra
+
+-   ![Streamlines through an order-4 field](../assets/gallery/streamlines-high-order.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 4**: an `H1` velocity on straight hexahedra
+
+-   ![Streamlines through curved cells](../assets/gallery/streamlines-curved.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 3**: an `H1` velocity on curved hexahedra
+
+</div>
+
+Each picture traces 25 seeds through a swirl inside a unit cube, with
+`integrator="rk45"`, `step_unit="length"` and `max_length=1.4`. The paths are
+drawn as tubes colored by `time`. The
+[gallery](../vis-guide/gallery.md#streamlines) has the script.
 
 ### Choose the step
 

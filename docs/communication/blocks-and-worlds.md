@@ -2,11 +2,10 @@
 
 Every call in `tack.communication` goes through two objects. A `Blocks` holds
 this process's units of work and their devices. A `World` says which processes
-there are and moves messages between them. This page explains both: how
-blocks are numbered, where their arrays live, and the one rule every program
-on them follows. It is for readers about to write a computation over blocks.
-After it you can decide how many blocks to make and where, address any block by
-its global id, and know which calls every process must make.
+there are and moves messages between them. Before writing a computation over
+blocks, you decide how many blocks to make and on which devices. Each block is
+addressed by its global id, and its arrays live on its device. One rule says
+which calls every process must make.
 
 <!-- tack-check: blocks -->
 ```python
@@ -141,8 +140,9 @@ The calls are:
 | `all_reduce`, `all_gather`, `exclusive_scan`, `sort_by_key` | combine and sort over every block | [Sort and reduce](sort-and-reduce.md) |
 
 Kernels, by contrast, are not collective. Each process launches kernels on
-its own blocks' arrays whenever it likes, as the ghost example on the
-[section's first page](index.md) does between plan runs.
+its own blocks' arrays whenever it likes, as the ghost example in
+[Exchange and plans](exchange-and-plans.md#refresh-ghost-rows-of-a-periodic-grid)
+does between plan runs.
 
 ## Arguments are dictionaries keyed by global id
 

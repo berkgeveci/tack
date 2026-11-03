@@ -2,12 +2,12 @@
 
 Many questions about a simulation are about quantities it did not store: the
 gradient of a pressure, the vorticity of a flow, the volume and shape of each
-cell, the total mass in a region, a cell field seen at the points. This page
-shows the Tack filters that compute them, for readers who know VTK's
+cell, the total mass in a region, a cell field seen at the points. Tack
+computes each of them with a filter that has a VTK counterpart:
 `vtkGradientFilter`, `vtkCellSizeFilter`, `vtkMeshQuality`,
-`vtkIntegrateAttributes` and `vtkCellDataToPointData`. After it you can derive
-these quantities, read their layout and units, and choose between the ways of
-moving a field between point and cell data.
+`vtkIntegrateAttributes` and `vtkCellDataToPointData`. Every result comes with
+its layout and its unit. A field can move between point and cell data in more
+than one way, and the last section helps you choose.
 
 The filters here return fields or numbers, not a new dataset. Put a field in
 `data.fields` to keep it with the dataset, so that later filters carry it.

@@ -2,11 +2,10 @@
 
 Many parallel programs need the same few steps between their own kernels:
 add up an array, turn counts into offsets, sort by a key, or combine the
-values of each group. This page shows Tack's ready-made versions of those
-steps. It is for anyone writing kernels who would otherwise copy an array
-to NumPy for a sum, a `cumsum` or an `argsort`. After it you can reduce
-arrays, compute statistics, scan, sort, group and reduce segments on the
-device, and you will know which results are reproducible.
+values of each group. Tack has ready-made versions of these steps that run on
+the device. Use them instead of copying an array to NumPy for a sum, a
+`cumsum` or an `argsort`. The page also says which of their results are
+reproducible.
 
 <!-- tack-check: reductions-first -->
 ```python

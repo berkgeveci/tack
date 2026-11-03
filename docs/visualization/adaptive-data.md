@@ -1,12 +1,13 @@
 # Adaptive data
 
-This page is for anyone who analyses the output of an adaptive simulation:
-block-structured AMR from codes such as those built on AMReX, and tree-based
-AMR from codes such as RAMSES. It shows how to filter each box of an AMR
-hierarchy, add ghost cells, average fine data down to the coarse levels,
-resample onto an image and reduce with weights. For octrees it shows how to
-turn the leaves into cells and probe them. After it, you can analyse adaptive
-data at the finest resolution it has, counting each region of space once.
+An adaptive simulation refines its mesh where something happens, so its
+output holds the same region at several resolutions. Codes built on AMReX
+write block-structured AMR, and codes such as RAMSES write tree-based AMR. An
+analysis of either should use the finest data each region has and count every
+region of space once. Tack filters each box of an AMR hierarchy, adds ghost
+cells, averages fine data down to the coarse levels, resamples onto an image
+and reduces with weights. It also turns an octree's leaves into cells and
+probes them.
 
 Tack has two adaptive models. An [AMR dataset](../reference/glossary.md) is
 levels of structured boxes, each level finer than the one before, as VTK's

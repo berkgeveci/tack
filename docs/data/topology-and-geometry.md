@@ -2,10 +2,10 @@
 
 A Tack dataset keeps its cells and its point positions apart. The cells are
 the **topology**: which points each cell connects. The positions are the
-**geometry**. This page explains both, for readers who know VTK's points and
-cells. After it you can tell which topology and which geometry hold your
-mesh, use positions that are computed rather than stored, and find a mesh's
-faces and edges.
+**geometry**. They correspond to VTK's cells and points, held as two objects
+instead of one. Keeping them apart lets several datasets share one topology,
+and lets positions be computed instead of stored. A mesh's faces and edges
+are derived from its topology and kept there.
 
 ## One topology, three geometries
 

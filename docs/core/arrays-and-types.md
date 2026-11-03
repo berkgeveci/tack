@@ -1,10 +1,9 @@
 # Arrays and types
 
-Arrays hold the data kernels read and write. This page shows how to make
-arrays on a device, move values between them and NumPy, choose their element
-types, and pass Python numbers to kernels. It is for anyone writing their first
-kernels. After it you can set up the inputs and outputs of a calculation,
-predict the type of every value a kernel sees, and use arrays that compute
+Every kernel reads its inputs from arrays and writes its results into them,
+so arrays are where a calculation starts. You make them on a device, move
+values between them and NumPy, and choose their element types. A Python number
+passed to a kernel gets a type too, and you can predict it. Some arrays compute
 their values instead of storing them.
 
 ## An array from input to output

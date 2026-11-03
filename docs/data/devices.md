@@ -1,12 +1,12 @@
 # Data on devices
 
-This page shows where a dataset lives, how to make one on a GPU, how to move
-one between devices, and what happens when its parts are on different
-devices. It is for anyone who runs Tack's data model on a GPU, or on several.
-After it you can put a dataset on any device Tack supports, work with it
-there, and spread the pieces of a large dataset over several GPUs.
-[Choose a device](../core/choose-a-device.md) explains devices themselves,
-for arrays and kernels; this page is about datasets.
+Running a filter on a GPU starts with putting the dataset on the GPU. You can
+make a dataset on any device Tack supports, or move one there, and Tack's
+functions then run where the dataset is. The pieces of a large dataset can be
+spread over several GPUs. The sections below also explain what happens when a
+dataset's parts are on different devices.
+[Choose a device](../core/choose-a-device.md) explains devices themselves, for
+arrays and kernels. Here the subject is datasets.
 
 A dataset lives on one device. `data.to_device(device)` gives the dataset on
 another, and everything Tack does with it then happens there:

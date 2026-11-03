@@ -1,13 +1,12 @@
 # Sort and reduce over blocks
 
-This page shows how to combine values over every block and how to bring
-matching items together when they are spread over many blocks. Sums, extrema
-and counts over blocks are *collectives*. A global numbering is a scan. Finding
-every copy of a point, a key or an id is a sort. The page is for readers who
-know [blocks](blocks-and-worlds.md) and [exchanges](exchange-and-plans.md).
-After it you can reduce, gather and number over blocks with results that do
-not depend on how blocks are shared out, and match items across blocks with
-`sort_by_key`.
+How do you add up a value over every block, number items across all of them,
+or find every copy of a point that several blocks hold? Sums, extrema and
+counts over blocks are *collectives*. A global numbering is a scan. Finding
+every copy of a point, a key or an id is a sort, `sort_by_key`. Reductions,
+gathers and numberings give results that do not depend on how blocks are
+shared out. The page builds on [blocks](blocks-and-worlds.md) and
+[exchanges](exchange-and-plans.md).
 
 <!-- tack-check: collectives -->
 ```python

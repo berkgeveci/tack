@@ -1,11 +1,12 @@
 # Device functions
 
-A device function is a helper that kernels call: a Python function decorated
-with `@tack.func`. This page shows how to write one, return several values,
-pass arrays, use small scratch arrays, and organize helpers across modules. It
-is for readers who write kernels ([Kernels](kernels.md)) and want to stop
-repeating code in them. After it you can factor a kernel into named pieces and
-share those pieces between kernels without any cost at run time.
+When the same few lines appear in several kernels, move them into a device
+function. A device function is a helper that kernels call, a Python function
+decorated with `@tack.func`. Tack inlines it into every kernel that calls it,
+so splitting a kernel into named pieces costs nothing at run time. A device
+function can return several values, take arrays and use small scratch
+arrays. Helpers can live in modules of their own and be shared between
+kernels.
 
 ## Write a device function
 

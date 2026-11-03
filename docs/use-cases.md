@@ -1,9 +1,9 @@
 # Use cases
 
-This page is for readers deciding what to use Tack for. It describes six jobs
-Tack does well. Each section says why Tack is good at the job, gives a measured
-result where one exists, and links to the pages that show how. The
-[front page](index.md) describes Tack as a whole.
+What would you use Tack for? Here are six jobs it does well. Each section
+says why Tack is good at the job, gives a measured result where one exists,
+and links to the pages that show how. The [front page](index.md) describes
+Tack as a whole.
 
 ## Analyze simulation output on the GPU you have
 

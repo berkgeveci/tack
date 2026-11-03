@@ -2,10 +2,11 @@
 
 Most pipelines start by extracting the part of a dataset that matters: an
 isosurface, a cut through the volume, the cells in a range or a region, the
-outer surface. This page shows Tack's extraction filters for readers who know
-VTK's: `contour`, `slice`, `clip`, `threshold`, the cell extractors, and the
-surface and edge filters. After it you can choose the right filter for a
-question, set its main options, and decide which fields come along.
+outer surface. Tack has the extraction filters VTK has: `contour`, `slice`,
+`clip`, `threshold`, the cell extractors, and the surface and edge filters.
+Three of them can seem to answer one question, so the page starts by setting
+them side by side. The sections after it give each filter's main options and
+show how to choose the fields that come along.
 
 ## Keep, cut or intersect
 
@@ -47,6 +48,25 @@ data: one value per point, linear along each cell's edges. The sphere
 approximates the true area π, and the clipped ball the true volume 0.524. The
 threshold keeps only the cells that lie wholly inside, so its volume is
 smaller. None of the three is wrong: each answers its own question.
+
+<div class="grid cards" markdown>
+
+-   ![The sphere: contour](../assets/gallery/extract-sphere.jpg){ loading=lazy width=240 height=210 }
+
+    **`contour`**: the sphere, a shell of triangles
+
+-   ![The ball: clip](../assets/gallery/extract-ball.jpg){ loading=lazy width=240 height=210 }
+
+    **`clip`**: the ball, solid, its cut cells cut to the sphere
+
+-   ![Whole cells: threshold](../assets/gallery/extract-cells.jpg){ loading=lazy width=240 height=210 }
+
+    **`threshold`**: the whole cells inside, solid and blocky
+
+</div>
+
+Each is cut open at the plane y = 0 to show its inside, and colored by `r`
+([the script](https://github.com/berkgeveci/tack/blob/main/docs/gallery/extract.py)).
 
 | You want | Filter | Output |
 |---|---|---|
@@ -422,6 +442,27 @@ print(whole.num_cells, "whole cells of order", whole.fields["u"].space.order,
       "and", part.num_cells, "linear pieces")
 assert error < 1e-5 and whole.fields["u"].space.order == 3
 ```
+
+<div class="grid cards" markdown>
+
+-   ![Contours on tetrahedra](../assets/gallery/contour-linear.jpg){ loading=lazy width=240 height=210 }
+
+    Linear tetrahedra: each cut is flat within its cell
+
+-   ![Contours of an order-4 field](../assets/gallery/contour-high-order.jpg){ loading=lazy width=240 height=210 }
+
+    An order-4 field on straight hexahedra: the cuts bend inside the cells
+
+-   ![Contours on curved cells](../assets/gallery/contour-curved.jpg){ loading=lazy width=240 height=210 }
+
+    Curved cells of order 3, the field of order 3 on them
+
+</div>
+
+The same field contoured on three kinds of cells. Where the field or the
+geometry is of higher order, the surface follows the level set inside each
+cell, not a straight line between the corners
+([gallery](../vis-guide/gallery.md#contour)).
 
 The options:
 

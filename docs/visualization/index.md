@@ -1,62 +1,53 @@
 # Visualization: filters you know
 
-This part of the documentation is about Tack's visualization and analysis
-algorithms: contour, slice, clip, threshold, gradients, probe, streamlines,
-statistics and the other filters a VTK or ParaView user already knows. They
-are written in Python on Tack's kernels and run on the CPU or the GPU, wherever
-the dataset lives. This page is for readers who know VTK. After it you can run
-a first pipeline (read with VTK, filter with Tack, write or draw with VTK),
-find the Tack function for a VTK filter, and know the conventions every Tack
-filter follows.
+Contour, slice, clip, threshold, gradients, probe, streamlines, statistics:
+Tack has the filters a VTK or ParaView user already knows, and they give
+VTK's results. They are written in Python on Tack's kernels, and they run on
+the CPU or a GPU, wherever the dataset lives. This page runs two of them,
+shows where the others are, and lists the conventions they all follow.
 
-## Read with VTK, filter with Tack, write with VTK
+## Make a dataset and filter it
 
-The example below first makes a file with VTK's wavelet source, so that it has
-something to read. The pipeline itself is the second half: VTK reads the file,
-Tack computes the point gradients and an isosurface, and VTK writes the
-result.
+The example makes the image of VTK's wavelet source, computes the gradient of
+its field at the points, and extracts an isosurface. It needs nothing but
+Tack.
 
 <!-- tack-check: first-pipeline -->
 ```python
-from vtkmodules.vtkFiltersCore import vtkContourFilter
-from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
-from vtkmodules.vtkIOXML import (vtkXMLImageDataReader, vtkXMLImageDataWriter,
-                                 vtkXMLUnstructuredGridWriter)
-
 import tack
 import tack.dataset as td
-from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
-tack.set_default_device("cpu")
+tack.set_default_device("cpu")           # or "metal", "cuda", "hip", "level_zero"
 
-# A file to read: VTK's wavelet, 41 x 41 x 41 points.
-writer = vtkXMLImageDataWriter(file_name="wavelet.vti")
-vtkRTAnalyticSource(whole_extent=(-20, 20, -20, 20, -20, 20)) >> writer
-writer.Write()
-
-# The pipeline.
-image = vtkXMLImageDataReader(file_name="wavelet.vti")()
-data = vtk_to_dataset(image)
+data = td.wavelet(20)                    # an image of 41 x 41 x 41 points, field "RTData"
 data.fields["gradient"] = td.gradients(data, "RTData", at="points")
 surface = td.contour(data, "RTData", 157.0)
 
-grid = dataset_to_vtk(surface)
-out = vtkXMLUnstructuredGridWriter(file_name="surface.vtu")
-grid >> out
-assert out.Write() == 1
-print(surface.num_cells, "triangles carrying", list(grid.point_data.keys()))
+print(surface.num_cells, "triangles carrying", list(surface.fields))
 # 25880 triangles carrying ['RTData', 'gradient']
-
-# VTK's contour of the same image has the same triangles.
-vtk_contour = vtkContourFilter()
-vtk_contour.SetValue(0, 157.0)
-assert (image >> vtk_contour)().number_of_cells == surface.num_cells
+assert surface.num_cells == 25880        # VTK's contour of the same image has as many
 ```
 
-Open `surface.vtu` in ParaView, or hand `grid` to a VTK mapper. Tack has no
-renderer of its own: VTK draws what Tack computes.
+`td.wavelet` makes the same image as VTK's `vtkRTAnalyticSource`, with the
+point field `RTData`. A Tack [dataset](../reference/glossary.md#dataset)
+holds what a VTK dataset holds: a topology (how points join into cells), a
+geometry (the positions) and [fields](../reference/glossary.md#field).
+VTK's point data is an [`H1`](../reference/glossary.md#h1) field of order 1,
+with one value per point, linear in each cell. VTK's cell data is a
+[`Constant`](../reference/glossary.md#constant) field, with one value per
+cell.
 
-The pipeline has three stages:
+Each filter takes the dataset and returns something new. `gradients` returns
+a field, and the example puts it in `data.fields` so that `contour` carries it
+onto the surface. `contour` returns a new dataset of triangles. If datasets,
+fields and filters are new to you, read
+[the data model's first page](../data/index.md) before going on.
+
+## Read and draw with VTK
+
+Tack does not read most file formats, and it does not render. VTK does both,
+so a pipeline on your own data reads with VTK, filters with Tack, and writes
+or draws with VTK:
 
 ```mermaid
 flowchart LR
@@ -65,24 +56,13 @@ flowchart LR
     C -->|dataset_to_vtk| D["VTK writer<br/>or renderer"]
 ```
 
-- `vtk_to_dataset` turns a VTK dataset into a Tack
-  [dataset](../reference/glossary.md#dataset): a topology (how points join into
-  cells), a geometry (the positions) and [fields](../reference/glossary.md#field).
-  VTK's point data become [`H1`](../reference/glossary.md#h1) fields and its
-  cell data [`Constant`](../reference/glossary.md#constant) fields.
-  An `H1` field of order 1 is exactly point data: one value per point, linear
-  in each cell. A `Constant` field is cell data: one value per cell. With
-  `copy=False` the Tack dataset shares VTK's arrays instead of copying them.
-- Each filter takes the dataset and returns something new. `gradients`
-  returns a field, which the example puts in `data.fields` so that `contour`
-  carries it onto the surface. `contour` returns a new dataset.
-- `dataset_to_vtk` turns the result back into a VTK dataset, here a
-  `vtkUnstructuredGrid` of triangles. `H1` fields become point data and
-  `Constant` fields cell data.
-
-The [VTK page](vtk.md) covers the conversions in full: sharing memory,
-partitioned and AMR datasets, higher-order cells, and Tack's filters as VTK
-algorithms that sit in a VTK pipeline (`tack.interop.vtk.algorithms`).
+`vtk_to_dataset` turns a VTK dataset into a Tack dataset. Its point data
+becomes `H1` fields and its cell data `Constant` fields. `dataset_to_vtk`
+turns a result back. The contour above would become a
+`vtkUnstructuredGrid` of triangles, which a writer saves or a mapper draws.
+With `copy=False` the two share arrays instead of copying them. The [VTK page](vtk.md#convert-a-dataset-both-ways)
+shows the pipeline in code. It also covers partitioned and AMR datasets,
+higher-order cells, and Tack's filters as VTK algorithms in a VTK pipeline.
 
 ## Find the Tack filter for a VTK filter
 
@@ -151,58 +131,28 @@ to all of them.
 ## How Tack's filters differ from VTK's
 
 The names and the results are VTK's, and Tack's tests hold its filters to
-VTK's output. Four things work differently.
+VTK's output. Four things work differently:
 
-**Fields have a space, not only an association.** Besides `H1` (point data)
-and `Constant` (cell data), a field may be `L2`: values that belong to each
-cell alone, so the field may jump between cells, as a discontinuous Galerkin
-solution does. `H1` and `L2` fields may be of any order, polynomials inside
-each cell. The filters use the field's own interpolation, so a contour of an
-order-4 field lies on that field's level set, not on a linear approximation of
-it. The [fields page](../data/fields.md) explains spaces, and the
-[higher-order page](../data/higher-order.md) the polynomial ones.
-
-**Results do not depend on thread scheduling.** The filters are built from
-scans, sorts and segmented reductions, mostly without atomic operations. Their
-output on a device does not change with how its threads happened to run, so
-two runs give the same bits.
-
-**Pieces are first-class.** A filter given one piece of a
-[`PartitionedDataSet`](../reference/glossary.md#piece) computes that piece's share of
-the whole dataset's output. The summaries take all the pieces at once, over
-MPI ranks or not. [Filters over pieces](over-pieces.md) explains this.
-
-**Your filters see the mesh as the built-in ones do.** The views a filter uses
-(cells, faces, a field's values at a cell's corners) are public, so a filter
-you write runs as fast as a built-in one. See
-[write a filter](write-a-filter.md).
+- **Fields have a space, not only an association.** A field may also jump
+  between cells, as a discontinuous Galerkin solution does, and be of any
+  polynomial order; filters use the field's own interpolation
+  ([fields](../data/fields.md), [higher order](../data/higher-order.md)).
+- **Results do not depend on thread scheduling.** Two runs on a device give
+  the same bits.
+- **Pieces are first-class.** A filter given one piece computes that piece's
+  share of the whole dataset's output ([filters over pieces](over-pieces.md)).
+- **Your filters see the mesh as the built-in ones do**, through public views,
+  so they can be as fast ([write a filter](write-a-filter.md)).
 
 ## How fast, against VTK
 
-Tack's filters were measured against VTK's on data from production
-simulations, read with VTK's readers. Tack ran on the CPU and VTK on 8
-threads, both on an Apple M1 Max. Every Tack output was checked against VTK's
-before its time counted. The numbers say how many times faster Tack is: VTK's
-time over Tack's.
-
-<!-- The skeleton asks for the AhmedML car's filters here (point gradients 0.84 s
-against VTK's 159). Those numbers are not in the repository yet; these are
-performance.md's "Real data, against VTK". -->
-
-| dataset | filter | VTK / Tack |
-|---|---|---|
-| ONERA M6 wing, 46.9M tetrahedra and wedges | isosurface | 3.2× |
-| | slice | 1.0× |
-| | gradients | 14.6× |
-| | low-density cells (threshold) | 1.3× |
-| | outer surface of a fresh mesh | 0.95× |
-| aneurysm blood flow, 8.7M tetrahedra | isosurface, slice, gradients | 2.7×, 2.0×, 17× |
-| LANL wildfire, 18.7M curvilinear cells | plume, slice, gradients, fuel cells, surface | 4.3×, 1.9×, 33×, 4.0×, 5.9× |
-
-On meshes of 20M cells and a 28-core CPU, Tack is ahead of VTK on every filter
-measured. On an RTX 6000 Ada GPU it is 11 to 2,269 times faster than VTK on
-the CPU. The [performance page](../performance.md) has every measurement, the
-machines and the versions.
+On production data read with VTK's readers, on an Apple M1 Max's CPU, Tack's
+filters are mostly faster than VTK's on 8 threads: point gradients 14 to 33
+times, isosurfaces 2.7 to 4.3 times. Not every filter is ahead: a slice of the
+ONERA M6 wing takes as long, and its outer surface slightly longer. On a GPU
+the filters are 11 to 2,269 times faster than VTK on the CPU. The
+[performance page](../performance.md) has every measurement, the machines and
+the versions.
 
 ## Where to go next
 

@@ -1,6 +1,7 @@
 """Run the examples of the pages given: every Python block marked with
 ``<!-- tack-check: name -->`` on the line before its fence, each in a fresh
-process, on the CPU; and check every snippet a page includes exists.
+process, on the CPU; check every snippet a page includes exists; and flag the
+set opening formulas the style guide's first rule retired.
 
     uv run python docs/_writing/check_page.py docs/data/index.md docs/data/fields.md
 """
@@ -12,10 +13,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+#: Openings written to a template (the style guide, rule 1).
+FORMULAS = re.compile(r"This page is for|After it,? you can|After this page,? you can")
+
 
 def check(page):
     text = page.read_text(encoding="utf-8")
     failures = 0
+    for match in FORMULAS.finditer(text):
+        line = text.count("\n", 0, match.start()) + 1
+        print(f"{page}:{line}: a set opening formula ({match.group(0)!r}); see the style guide, rule 1")
+        failures += 1
     for path, section in re.findall(r'--8<-- "([^":]+)(?::([^"]+))?"', text):
         file = ROOT / path
         if not file.exists():

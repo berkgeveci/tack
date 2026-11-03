@@ -44,6 +44,12 @@ print(faces.num_faces, "faces,", len(faces.boundary().numpy()), "on the boundary
 assert mesh.num_cells == 3 and faces.num_faces == 6 + 5 + 5 - 2
 ```
 
+The arrays are a `vtkUnstructuredGrid`'s: a VTK cell type per cell, offsets
+and the connectivity, with each cell's corners in VTK's order. The offsets have
+one more entry than there are cells, and cell `c` uses the connectivity entries
+from `offsets[c]` up to `offsets[c + 1]`. Giving `DataSet` a NumPy array of
+positions makes its geometry, one 3-vector per point.
+
 The three cells have 16 faces between them. Two are shared, so the mesh has
 14. `cells.groups()` sorts the cells by shape, which is how kernels see a
 mixed mesh: once per shape present, with no test of the type inside the

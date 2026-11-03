@@ -2,9 +2,9 @@
 
 A program built on an event loop, such as a trame or web server or a Jupyter
 kernel, must not block the loop while a GPU works, or every other request
-waits too. This page is for anyone calling Tack from such a program. After
-reading it you can wait for the device and read results back without stopping
-the loop, and you know which devices allow it.
+waits too. Tack can wait for the device and read results back while the loop
+keeps running. Not every device waits off the loop, and the page says which
+ones do.
 
 Two coroutines do the waiting in a worker thread, so the loop keeps running.
 `await tack.sync_async()` waits for the kernels launched so far, and

@@ -1,9 +1,9 @@
 # Core examples
 
 These six tutorials each build a complete program with Tack's core: arrays,
-kernels, device functions and classes, atomics, scans and workgroups. They are
-for readers who have written a first kernel and want to see the pieces work
-together in a real program. Each one opens with the question it answers,
+kernels, device functions and classes, atomics, scans and workgroups. Once a
+first kernel works, they show the pieces working together in a real program.
+Each one opens with the question it answers,
 develops the program from its data layout to its host loop, and ends with a
 check of the result. None needs datasets or visualization.
 

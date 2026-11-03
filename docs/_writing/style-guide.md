@@ -17,14 +17,23 @@ sentence and a link.
 
 ## Every page
 
-1. **Start with the big picture.** The first paragraph says what the page is
-   for, who it is for, and what the reader can do after it. No page opens with
-   a caveat, a history or a list of other pages.
+1. **Start with the big picture.** The first paragraph tells the reader what
+   the page is about and why they would want it, so they know at once whether
+   it is theirs. Open with the reader's question, the result the page leads to,
+   or the idea itself, in the page's own words. Do not announce the audience and
+   the outcome in a set formula ("This page is for ...", "After it you can
+   ..."): across a site it reads as written to a template (the editorial review,
+   2026-11-03). No page opens with a caveat, a history or a list of other pages.
 2. **Show early.** Within the first screen, a short example the reader can run.
-3. **Then explain, in order**: the idea, why it matters, how to use it, the
+   On a page about a visual result (a filter, a probe, streamlines), show the
+   result too: an image beside the explanation, not only in the gallery.
+3. **Keep introductions short.** A section's first page orients: one small
+   example and the way into the chapters. Longer examples belong in the
+   chapters that teach them.
+4. **Then explain, in order**: the idea, why it matters, how to use it, the
    details. Edge cases, precision, history and internals go last, in a
    "Details" section, or to the reference or design notes.
-4. **End with where to go next**: one to three links, said why.
+5. **End with where to go next**: one to three links, said why.
 
 ## Sentences
 

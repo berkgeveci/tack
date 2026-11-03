@@ -1,12 +1,13 @@
 # Coordinates, units and time
 
-Besides its cells and fields, a dataset records three facts about its data:
-where its positions are measured from, in what units its positions and
-fields are, and when the data are. This page is for readers who know VTK,
-which keeps a unit in an array's `UNITS_LABEL` and a time in
-`DATA_TIME_STEP`. After it you can hold coordinates far from zero without
-losing precision, give positions and fields their units, and stamp a
-dataset with its time.
+A coordinate millions of metres from zero loses its fine digits in single
+precision. A temperature means little until you know whether it is in kelvin
+or in degrees Celsius, and a simulation's step means little without its time.
+So besides its cells and fields, a Tack dataset records three facts: where its
+positions are measured from, the units of its positions and fields, and when
+the data are. VTK keeps a unit in an array's `UNITS_LABEL` and a time in
+`DATA_TIME_STEP`. Tack keeps them on the field and on the dataset, and filters
+keep them through a pipeline.
 
 ## A survey far from zero, in metres, at one time
 

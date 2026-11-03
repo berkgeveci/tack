@@ -1,11 +1,12 @@
 # Fields and where values live
 
 A field is a dataset's data array together with its meaning: where the
-values live and what they mean between those places. This page is for
-readers who know VTK's point data and cell data. It shows how Tack holds
-both, how it holds values on faces and edges and values that jump between
-cells, and how to find a field by name. After it you can choose the space
-for each of your arrays and put them on a dataset.
+values live and what they mean between those places. In VTK that meaning
+comes from putting an array in point data or in cell data. Tack holds both,
+and it also holds values on faces and edges and values that jump between
+cells. Each of these is a *space*, and every field names its own. Putting an
+array on a dataset means choosing its space, and you find the field again by
+its name, or by its name and space.
 
 ## Point data, cell data and face data on one mesh
 

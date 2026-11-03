@@ -4,11 +4,12 @@ Most cells are maps of a fixed reference cell: a hexahedron is a bent unit
 cube, a triangle a bent unit triangle. Some meshes hold cells with no fixed
 shape. Finite-volume codes such as OpenFOAM and MPAS write polyhedra with
 any number of faces. Surfaces and contours are made of polygons with any
-number of points, and streamlines are polylines. This page is for anyone
-whose data has such cells. It explains how Tack stores them, what a field
-means inside them, what a cell must be for Tack to work in it, and where
-they cost more than shaped cells. It assumes the
-[cells and meshes](cells-and-meshes.md) page.
+number of points, and streamlines are polylines. Tack stores these cells and
+computes inside them. Without a reference cell, what a field means inside one
+needs a definition of its own, and a cell must meet a few conditions for Tack
+to work in it. Some work also costs more on them than on shaped cells.
+[Cells and meshes](cells-and-meshes.md) explains the shaped cells, and this
+page builds on it.
 
 ## A polyhedron in a few lines
 

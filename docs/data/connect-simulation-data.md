@@ -1,14 +1,14 @@
 # Connect a simulation's data
 
-This page shows how to make a dataset on a running simulation's own memory:
-its point positions, its cell connectivity and its fields, wrapped where they
-are instead of copied. It is for simulation developers who want to analyze
-data in situ, on the device the simulation already uses and in the pieces it
-already has. After it you can build a dataset once over your solver's arrays,
-let the solver update them step by step, and have Tack read the new values
-each time. [Build meshes and fields](build-meshes-and-fields.md) shows the
-same constructors with data Tack owns; this page is about the boundary
-between the simulation and Tack.
+Your simulation already holds its mesh and fields in memory, perhaps on a GPU
+and perhaps split over MPI ranks. Tack can build a dataset on those arrays
+where they are, without copying them, so its filters run in situ on the
+simulation's own data and device. You build the dataset once over the
+solver's point positions, cell connectivity and fields. The solver then
+updates its arrays step by step, and each analysis reads the new values. The
+constructors are those of [Build meshes and fields](build-meshes-and-fields.md),
+which uses data Tack owns. What is new here is the boundary between the
+simulation and Tack: who owns the memory, and how the two order their work.
 
 Here the simulation's arrays are NumPy arrays, which stand for any memory on
 any device. Two hexahedra share a face; the simulation has a pressure at each

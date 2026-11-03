@@ -1,10 +1,10 @@
 # Choose a device
 
 A Tack program runs the same kernels on the CPU and on GPUs from Apple,
-NVIDIA, AMD and Intel. This page is for anyone who has written a first kernel
-and now wants to decide where it runs. After reading it you can pick a device,
-make it the default, move arrays between devices, use several GPUs, ask a
-device what it supports, and know when a kernel call has finished.
+NVIDIA, AMD and Intel. Once a first kernel works, the next question is where
+it runs. You pick a device, make it the default, and move arrays between
+devices. One program can also use several GPUs, ask a device what it
+supports, and know when a kernel call has finished.
 
 A *device* is one CPU or one GPU, as a Python value. Every array lives on one
 device, and a kernel runs on the device its arrays live on:

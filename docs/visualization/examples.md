@@ -1,10 +1,10 @@
 # Visualization examples
 
-This page is an index of the Visualization layer's worked examples, for
-readers who learn best from a whole program. Each entry opens with the
-question it answers, so you can pick the one closest to your problem, run it,
-and change it. Every program runs on the CPU and on the GPU backends, and
-checks its own result.
+Sometimes a whole program teaches faster than a page of explanation. Each
+program below answers one question, and the tables list them by that
+question, so you can pick the one closest to your problem, run it, and change
+it. Every program runs on the CPU and on the GPU backends, and checks its own
+result.
 
 Run any of the programs in `docs/examples/` from a checkout:
 
