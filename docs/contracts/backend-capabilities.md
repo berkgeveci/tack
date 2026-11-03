@@ -281,7 +281,7 @@ trip counts, NaN-preferring `min`/`max`, signed zeros, no contraction across
 statements). Scalars are Warp kernel arguments, so nothing is packed and no
 dispatch lock is held. `supports_inspect` is false: `tack.inspect` raises
 `NotImplementedError`. A texture sample has no code generator and fails at
-compilation. See [Backends](../users-guide/08-backends.md#warp-prototype).
+compilation. See [Backends](../core/choose-a-device.md).
 
 ## Portable subset
 

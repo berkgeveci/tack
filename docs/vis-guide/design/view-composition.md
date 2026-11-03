@@ -1,6 +1,6 @@
 # View storage and composition
 
-The [public view guide](../17-views.md) teaches the kernel interface. This
+The [public view guide](../../visualization/views.md) teaches the kernel interface. This
 record describes its current implementation; generated class names and group
 storage are diagnostics rather than stable public interfaces.
 
@@ -36,7 +36,7 @@ same shape and so the same counts:
 
 A field view adds only what its space owns, and reaches everything else
 through these. A value of an `H1` order-2 field on a hexahedron is found in
-one of four ways, by the kind of node ([where each value is](../field-storage.md#h1-above-order-1-numbered-by-entity)):
+one of four ways, by the kind of node ([where each value is](../../data/storage-and-layouts.md#h1-above-order-1-numbered-by-entity)):
 
 | Node `k` | `u.dof_index(c, k)` |
 |---|---|
@@ -52,7 +52,7 @@ entry, so they find the same value. Above order 2 an edge's or face's
 several values are read in the edge's or the face's own frame, through
 `edge_sign` and `face_orientation`, so that cells meeting it from different
 directions agree on which is which.
-[Work at a field's nodes](../05-mesh-kernels.md#work-at-a-fields-nodes) loops
+[Work at a field's nodes](../../visualization/write-a-mesh-algorithm.md#work-at-a-fields-nodes) loops
 over them.
 
 ## How a view is put together

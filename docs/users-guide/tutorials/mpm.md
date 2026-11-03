@@ -48,7 +48,7 @@ waits for all components to finish before reading it.
 
 The stencil must fit inside the grid. Initial positions and boundary handling
 keep this small example in its supported range; Tack does not check the
-indices unless [debug mode](../15-debugging-and-timing.md#check-every-index-with-debug-mode)
+indices unless [debug mode](../../core/debug-and-time.md)
 is on. If extending the model to emit particles or change boundaries, check
 that invariant explicitly.
 

@@ -9,7 +9,7 @@ The whole policy lives in `packages/tack-core/src/tack/runtime/cpu.py`:
 per-kernel state on `CompiledKernel`, decision and measurement code on
 `CPUBackend`, entered through `CPUBackend._dispatch`. The
 [runtime chapter](../developers-guide/06-runtime.md) and the
-[backends guide](../users-guide/08-backends.md#cpu) carry short versions.
+[backends guide](../core/choose-a-device.md) carry short versions.
 
 !!! summary "In one paragraph"
     The backend compares two *measured* costs: how long this kernel takes per

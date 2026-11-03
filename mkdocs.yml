@@ -105,7 +105,7 @@ plugins:
 # otherwise it builds, unreachable, and nothing says so.
 validation:
   nav:
-    omitted_files: info        # the draft: old pages stay as sources
+    omitted_files: warn
     not_found: warn
 
 nav:

@@ -74,7 +74,7 @@ of 3-D positions and a subset of projected acceleration arrows.
 For performance work, compile both kernels first, reuse their arrays, time warm
 calls at the same `n`, and record the selected device. GPU launches are
 queued, so call `tack.sync()` before reading the clock (see
-[timing](../15-debugging-and-timing.md#measure-first-call-and-warm-time-separately)). Shared memory reduces
+[timing](../../core/debug-and-time.md)). Shared memory reduces
 repeated position loads within a workgroup, but it also adds barriers and uses
 resources. Measure the net effect; this tutorial promises no universal speedup.
 The arithmetic remains O(n²).

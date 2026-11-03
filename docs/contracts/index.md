@@ -93,7 +93,7 @@ flowchart LR
   on a real device. A CPU run doesn't validate GPU execution, and a
   host-side syntax check of generated GPU source doesn't validate device
   behavior.
-- **Guides** ([User's Guide](../users-guide/index.md) and
+- **Guides** ([User's Guide](../core/index.md) and
   [Developer's Guide](../developers-guide/index.md)) are examples. They
   aren't an exhaustive specification, and parts of them predate the
   contracts.
