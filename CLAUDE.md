@@ -342,7 +342,7 @@ stale entry runs. Backends opt into `.variant` with `cache_target()`,
 The target must name everything the artifact depends on besides the IR
 and argument types (device, compiler and driver versions, compile options,
 kept in module constants such as `_NVRTC_OPTIONS` that the compiler and
-the target both read), or a stale binary loads. Artifacts (CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
+the target both read), or a stale binary loads. The CPU's target also says when it has no f64 (the tests' stand-in for Metal), which refuses an f64 kernel only as it builds, so it must not load what a CPU with f64 stored. Artifacts (CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
 `cuModuleLoadData`, its target naming the device and compute capability,
 the driver that compiles the PTX, NVRTC and its options; HIP: the code
 object, loaded with `hipModuleLoadData`, its target naming the device and

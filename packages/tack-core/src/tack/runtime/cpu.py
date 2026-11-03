@@ -1178,9 +1178,12 @@ class CPUBackend(Backend):
     _target = None
 
     def cache_target(self):
+        """The machine's LLVM target, and whether this CPU has f64: one posing as a
+        device without it (the tests' stand-in for Metal) refuses an f64 kernel as
+        it builds, so it must not load one stored by a CPU with f64."""
         if CPUBackend._target is None:
             CPUBackend._target = _cache_target()
-        return CPUBackend._target
+        return CPUBackend._target if self.supports_f64 else CPUBackend._target + "; no f64"
 
     def variant_artifact(self, compiled):
         if compiled.object_code is None:
