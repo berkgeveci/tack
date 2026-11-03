@@ -19,7 +19,6 @@ import tack
 from tack import arrays
 from tack import communication as tc
 from tack.arrays import CartesianProduct, UniformCoordinates
-from tack.communication._kernels import take
 from tack.dataset import _matching
 from tack.dataset.amr import AMRDataSet
 from tack.dataset.carry import _point_values
@@ -57,131 +56,690 @@ def _divide(sums, measures, targets, values):
 
 
 class _Fill:
-    """Values of some entries of each box (``targets``) as weighted sums of other
-    boxes' entries: a ``Plan`` staging the sources after each box's own values,
-    and per box CSR rows of ``(staging slot, weight)``."""
+    """Values of some entries of each box as weighted sums of other boxes' entries,
+    one group at a time (``_Groups``: a rank's boxes on one device, their arrays
+    end to end): a ``Plan`` between groups stages the sources other groups hold
+    after the group's own values, and one kernel sums each target's sources by
+    weight. Rows of one box per block, and a plan with a pair for every two boxes
+    that touch, made AMR-Wind's 3,328 boxes 326,480 launches a fill."""
 
-    def __init__(self, blocks, rows):
-        """``rows[g]``: ``(n, targets, sources)``, the box's array length, its target
-        indices, and per target a list of ``(source block, source index, weight)``."""
-        self.blocks = blocks
-        self.boxes = {}
-        receives = {}
+    def __init__(self, groups, kind, parts):
+        """``parts[g]``, for each of this rank's groups: ``(targets, offsets, sources,
+        weights)``, the targets' places in the group's buffer, CSR offsets into
+        ``sources`` (rows of ``(group, place)``, each group's buffer's) and
+        ``weights``; ``box_targets`` per local box, its targets' own indices."""
+        self.groups, self.kind = groups, kind
+        blocks = groups.blocks
+        self.boxes, receives = {}, {}
         for g in blocks.local:
-            n, targets, sources = rows[g]
-            slots, keys = {}, []
-            offsets, entries, weights, picks, kept = [0], [], [], [], []
-            for target, row in zip(targets, sources):
-                if not row:
-                    continue
-                for source, index, weight in row:
-                    key = (int(source), int(index))
-                    if key not in slots:
-                        slots[key] = len(keys)
-                        keys.append(key)
-                    entries.append(slots[key])
-                    weights.append(float(weight))
-                best = max(range(len(row)), key=lambda e: row[e][2])
-                picks.append(slots[(int(row[best][0]), int(row[best][1]))])
-                offsets.append(len(entries))
-                kept.append(int(target))
-            by_source = {}
-            for slot, (source, index) in enumerate(keys):
-                by_source.setdefault(source, ([], []))
-                by_source[source][0].append(index)
-                by_source[source][1].append(n + slot)
-            receives[g] = {source: (np.asarray(a, np.int64), np.asarray(b, np.int64))
-                           for source, (a, b) in by_source.items()}
-            self.boxes[g] = {"n": n, "m": len(keys), "targets": np.asarray(kept, np.int64),
-                             "offsets": np.asarray(offsets, np.int64),
-                             "entries": np.asarray(entries, np.int64),
-                             "weights": np.asarray(weights, np.float64),
-                             "picks": np.asarray(picks, np.int64)}
+            targets, offsets, sources, weights, _ = parts[g]
+            n = groups.size(g, kind)
+            remote = sources[:, 0] != g
+            keys, slot = np.unique(sources[remote], axis=0, return_inverse=True) \
+                if remote.any() else (np.zeros((0, 2), np.int64), np.zeros(0, np.int64))
+            entries = sources[:, 1].copy()
+            entries[remote] = n + slot.reshape(-1)
+            receives[g] = {int(source): (keys[keys[:, 0] == source, 1],
+                                         n + np.flatnonzero(keys[:, 0] == source))
+                           for source in np.unique(keys[:, 0])}
+            # Integers take their weightiest source's value: the first of the largest.
+            picks = np.zeros(len(targets), np.int64)
+            if len(targets):
+                counts = np.diff(offsets)
+                largest = np.maximum.reduceat(weights, offsets[:-1]) if len(weights) else weights
+                hit = weights == np.repeat(largest, counts)
+                first = np.minimum.reduceat(np.where(hit, np.arange(len(weights)), len(weights)),
+                                            offsets[:-1])
+                picks = entries[first]
+            self.boxes[g] = {"n": n, "m": len(keys), "targets": targets, "offsets": offsets,
+                             "entries": entries, "weights": weights, "picks": picks}
+        self.box_targets = {i: t for g in blocks.local for i, t in parts[g][4].items()}
         self.plan = _matching.plan(blocks, receives)
 
     def run(self, values, combine=True):
-        """Fill each box's targets in ``values`` (``{g: array}``, the boxes' arrays of
-        one kind), in place. With ``combine`` false, integer arrays included, each
-        target takes its weightiest source's value."""
-        blocks = self.blocks
+        """Fill the targets of ``values`` (this rank's boxes' arrays of one kind, in
+        the order the hierarchy holds them), in place. With ``combine`` false,
+        integer arrays included, each target takes its weightiest source's
+        value."""
+        groups, blocks = self.groups, self.groups.blocks
         combined = {}
         for g in blocks.local:
-            box, array = self.boxes[g], values[g]
+            box = self.boxes[g]
+            parts = [values[i] for i in groups.members[g]]
             with blocks.device(g):
-                staging = tack.zeros((box["m"],), array.dtype)
-                combined[g] = tack.concat([array, staging]) if box["m"] else array
+                if box["m"] or not parts:
+                    # A device none of whose boxes take part still joins the exchange.
+                    dtype = values[0].dtype if values else tack.f32
+                    parts = [*parts, tack.zeros((box["m"],), dtype)]
+                combined[g] = tack.concat(parts) if len(parts) > 1 else parts[0].copy()
         self.plan.run(combined)
         for g in blocks.local:
-            box, array = self.boxes[g], values[g]
+            box, buffer = self.boxes[g], combined[g]
             if not len(box["targets"]):
                 continue
             with blocks.device(g):
-                staged = take(combined[g], box["n"], box["m"])
                 targets = tack.array(box["targets"], tack.i64)
-                scalar = getattr(array.dtype, "scalar_dtype", array.dtype)
+                scalar = getattr(buffer.dtype, "scalar_dtype", buffer.dtype)
                 if combine and scalar.numpy_dtype.kind == "f":
-                    _apply(staged, tack.array(box["offsets"], tack.i64),
+                    _apply(buffer, tack.array(box["offsets"], tack.i64),
                            tack.array(box["entries"], tack.i64),
                            tack.array(box["weights"].astype(scalar.numpy_dtype), scalar),
-                           targets, array)
+                           targets, buffer)
                 else:
-                    _pick(staged, tack.array(box["picks"], tack.i64), targets, array)
+                    _pick(buffer, tack.array(box["picks"], tack.i64), targets, buffer)
+                for i, start in zip(groups.members[g], groups.starts(g, self.kind)):
+                    if len(self.box_targets.get(i, ())):
+                        _copy_into(buffer, int(start), values[i])
+
+
+@tack.kernel
+def _copy_into(source, start, values):
+    for i in range(values.shape[0]):
+        values[i] = source[start + i]
 
 
 # -- where boxes are ------------------------------------------------------------------
 
-class _Layout:
-    """Every box's block id and array extent, on every rank."""
+class _Groups:
+    """This rank's boxes by device: each device's boxes a group, a block of
+    ``tack.communication``, its boxes' arrays end to end in hierarchy order; and,
+    gathered over ranks, every box's group and the start of its arrays (of
+    ``extents``, cells and points) in its group's."""
 
-    def __init__(self, amr):
-        self.amr = amr
-        local = [box for _, box in amr]
-        self.blocks = tc.Blocks([box.device for box in local], amr.world)
-        counts = amr.world._allgather([len(level) for level in amr.levels])
-        self.counts = np.asarray(counts, np.int64).reshape(len(counts), -1)
-        self.prefix = np.concatenate([np.zeros((1, amr.num_levels), np.int64),
-                                      np.cumsum(self.counts, axis=0)])
-        self.local = [(level, amr._first[level] + k) for level, pieces in enumerate(amr.levels)
-                      for k in range(len(pieces))]
+    def __init__(self, amr, extents, levels=None):
+        """``levels``: the levels whose boxes are members (all by default); the groups
+        are the devices of every box, so every rank makes the same blocks."""
+        d = amr.dimension
+        devices = []
+        for _, box in amr:
+            if box.device not in devices:
+                devices.append(box.device)
+        self.local, self.pieces, of_box = [], [], []
+        for level, pieces in enumerate(amr.levels):
+            if levels is not None and level not in levels:
+                continue
+            for k, box in enumerate(pieces):
+                self.local.append((level, amr._first[level] + k))
+                self.pieces.append(box)
+                of_box.append(devices.index(box.device))
+        self.blocks = tc.Blocks(devices, amr.world)
+        gids = list(self.blocks.local)
+        self.members = {g: [i for i, k in enumerate(of_box) if k == n] for n, g in enumerate(gids)}
+        sizes = {"cells": [], "points": []}
+        for level, k in self.local:
+            ext = extents[level][k]
+            sizes["cells"].append(int(np.prod(ext[1, :d] - ext[0, :d])))
+            sizes["points"].append(int(np.prod(ext[1, :d] - ext[0, :d] + 1)))
+        self._sizes = {kind: np.asarray(v, np.int64) for kind, v in sizes.items()}
+        base = {kind: np.zeros(len(self.local), np.int64) for kind in sizes}
+        for g, members in self.members.items():
+            for kind in sizes:
+                lengths = self._sizes[kind][members]
+                base[kind][members] = np.concatenate([[0], np.cumsum(lengths)[:-1]])
+        # Per level, over every rank's boxes in the hierarchy's order: group and starts.
+        self.group, self.cell_base, self.point_base = [], [], []
+        for level in range(amr.num_levels):
+            mine = [i for i, (lv, _) in enumerate(self.local) if lv == level]
+            row = np.stack([np.asarray([gids[of_box[i]] for i in mine], np.int64),
+                            base["cells"][mine], base["points"][mine]], axis=1) \
+                if mine else np.zeros((0, 3), np.int64)
+            every = np.concatenate(amr.world._allgather(row)).reshape(-1, 3)
+            self.group.append(every[:, 0])
+            self.cell_base.append(every[:, 1])
+            self.point_base.append(every[:, 2])
 
-    def gid(self, level, k):
-        """The block id of global box ``k`` of ``level``."""
-        rank = int(np.searchsorted(self.prefix[:, level], k, side="right")) - 1
-        position = int(self.counts[rank, :level].sum()) + int(k - self.prefix[rank, level])
-        return int(self.blocks._starts[rank]) + position
+    def size(self, g, kind):
+        return int(self._sizes[kind][self.members[g]].sum())
+
+    def starts(self, g, kind):
+        lengths = self._sizes[kind][self.members[g]]
+        return np.concatenate([[0], np.cumsum(lengths)[:-1]])
+
+    def boxes(self, g, level):
+        """The group's boxes of ``level``: their places in the hierarchy's order of this
+        rank's boxes, and their global indices in the level."""
+        places = [i for i in self.members[g] if self.local[i][0] == level]
+        return places, np.asarray([self.local[i][1] for i in places], np.int64)
 
 
-def _cell_index(extent, q, d):
-    """Flat indices of cells ``q`` (``(m, d)``) in a box's arrays of ``extent``."""
-    lo, hi = extent[0, :d], extent[1, :d]
-    n = hi - lo
-    local = q - lo
-    flat = np.zeros(len(q), np.int64)
-    for a in range(d - 1, -1, -1):
-        flat = flat * n[a] + local[:, a]
-    return flat
+@tack.device_class
+class _LevelBoxes:
+    """A level's boxes on a device, found by the bins of a uniform grid over the
+    level (each bin the boxes that meet it, closed, in index order), with each
+    box's arrays' extent and its place in its group's: what the source kernels
+    look up."""
+
+    def __init__(self, amr, groups, extents, level, device):
+        d = amr.dimension
+        boxes, ext = amr._boxes[level], extents[level]
+        lo, hi = amr.level_domain(level)
+        n = len(boxes)
+        size = np.ones(3, np.int64)
+        if n:
+            size[:d] = np.maximum((boxes[:, 1, :d] - boxes[:, 0, :d]).max(axis=0), 1)
+        dims = np.ones(3, np.int64)
+        dims[:d] = (hi[:d] - lo[:d]) // size[:d] + 2
+        first = (boxes[:, 0, :] - lo) // size
+        last = (boxes[:, 1, :] - lo) // size
+        first[:, d:], last[:, d:] = 0, 0
+        last = np.minimum(last, dims - 1)
+        span = (last - first + 1).max(axis=0) if n else np.ones(3, np.int64)
+        bins, ids = [], []
+        for dz in range(int(span[2])):
+            for dy in range(int(span[1])):
+                for dx in range(int(span[0])):
+                    at = first + np.array([dx, dy, dz])
+                    ok = (at <= last).all(axis=1)
+                    bins.append(at[ok, 0] + dims[0] * (at[ok, 1] + dims[1] * at[ok, 2]))
+                    ids.append(np.flatnonzero(ok))
+        bins = np.concatenate(bins) if bins else np.zeros(0, np.int64)
+        ids = np.concatenate(ids) if ids else np.zeros(0, np.int64)
+        order = np.lexsort((ids, bins))
+        offsets = np.concatenate([[0], np.cumsum(np.bincount(bins, minlength=int(np.prod(dims))))])
+        def put(a):
+            return tack.array(np.ascontiguousarray(a, np.int64).reshape(-1), tack.i64)
+
+        with device:
+            self.lo, self.hi = put(boxes[:, 0]), put(boxes[:, 1])
+            self.elo, self.ehi = put(ext[:, 0]), put(ext[:, 1])
+            self.group = put(groups.group[level])
+            self.cbase, self.pbase = put(groups.cell_base[level]), put(groups.point_base[level])
+            self.origin, self.size, self.dims = put(lo), put(size), put(dims)
+            self.offsets, self.ids = put(offsets), put(ids[order])
+        self.d = int(d)
+
+    @tack.func
+    def holds(self, j, q0, q1, q2, closed):
+        """Whether box ``j`` holds index ``q``: ``[lo, hi)``, or ``[lo, hi]`` closed."""
+        inside = 1
+        for a in range(self.d):
+            q = q0 if a == 0 else (q1 if a == 1 else q2)
+            low = self.lo[3 * j + a]
+            high = self.hi[3 * j + a]
+            if q < low or q > high or (closed == 0 and q == high):
+                inside = 0
+        return inside
+
+    @tack.func
+    def find(self, q0, q1, q2, closed, skip, below):
+        """The lowest box below ``below``, other than ``skip``, that holds ``q``, or -1."""
+        found = -1
+        b0 = (q0 - self.origin[0]) // self.size[0]
+        b1 = (q1 - self.origin[1]) // self.size[1] if self.d > 1 else 0
+        b2 = (q2 - self.origin[2]) // self.size[2] if self.d > 2 else 0
+        if (b0 >= 0 and b1 >= 0 and b2 >= 0 and b0 < self.dims[0] and b1 < self.dims[1]
+                and b2 < self.dims[2]):
+            b = b0 + self.dims[0] * (b1 + self.dims[1] * b2)
+            m = self.offsets[b]
+            while m < self.offsets[b + 1] and found < 0:
+                j = self.ids[m]
+                if j != skip and j < below and self.holds(j, q0, q1, q2, closed) == 1:
+                    found = j
+                m += 1
+        return found
+
+    @tack.func
+    def find_scaled(self, q0, q1, q2, r0, r1, r2):
+        """The lowest box that holds ``q / r`` (a finer level's point), closed, or -1."""
+        found = -1
+        b0 = (q0 // r0 - self.origin[0]) // self.size[0]
+        b1 = (q1 // r1 - self.origin[1]) // self.size[1] if self.d > 1 else 0
+        b2 = (q2 // r2 - self.origin[2]) // self.size[2] if self.d > 2 else 0
+        if (b0 >= 0 and b1 >= 0 and b2 >= 0 and b0 < self.dims[0] and b1 < self.dims[1]
+                and b2 < self.dims[2]):
+            b = b0 + self.dims[0] * (b1 + self.dims[1] * b2)
+            m = self.offsets[b]
+            while m < self.offsets[b + 1] and found < 0:
+                j = self.ids[m]
+                inside = 1
+                for a in range(self.d):
+                    q = q0 if a == 0 else (q1 if a == 1 else q2)
+                    r = r0 if a == 0 else (r1 if a == 1 else r2)
+                    if q < self.lo[3 * j + a] * r or q > self.hi[3 * j + a] * r:
+                        inside = 0
+                if inside == 1:
+                    found = j
+                m += 1
+        return found
+
+    @tack.func
+    def place(self, j, q0, q1, q2, points):
+        """Where index ``q`` of box ``j``'s arrays is in its group's: its start plus the
+        index's place in the box's extent, x fastest (points one more a side)."""
+        extra = 1 if points == 1 else 0
+        nx = self.ehi[3 * j] - self.elo[3 * j] + extra
+        ny = self.ehi[3 * j + 1] - self.elo[3 * j + 1] + extra
+        flat = q2 - self.elo[3 * j + 2] if self.d > 2 else q2 - q2
+        if self.d > 1:
+            flat = flat * ny + (q1 - self.elo[3 * j + 1])
+        flat = flat * nx + (q0 - self.elo[3 * j])
+        start = self.pbase[j] if points == 1 else self.cbase[j]
+        return start + flat
 
 
-def _point_index(extent, p, d):
-    lo, hi = extent[0, :d], extent[1, :d]
-    n = hi - lo + 1
-    local = p - lo
-    flat = np.zeros(len(p), np.int64)
-    for a in range(d - 1, -1, -1):
-        flat = flat * n[a] + local[:, a]
-    return flat
+@tack.func
+def _entry(offsets, n, e):
+    """The box (an index into ``offsets``) whose entries hold entry ``e``."""
+    low = 0
+    high = n
+    while high - low > 1:
+        mid = (low + high) // 2
+        if offsets[mid] <= e:
+            low = mid
+        else:
+            high = mid
+    return low
 
 
-def _grid(lo, hi, d):
-    """Every index of the box ``[lo, hi)`` (``d`` axes), x fastest: ``(m, d)``."""
-    axes = [np.arange(lo[a], hi[a]) for a in range(d)]
-    mesh = np.meshgrid(*axes[::-1], indexing="ij")
-    return np.stack([m.reshape(-1) for m in mesh[::-1]], axis=1).astype(np.int64)
+@tack.func
+def _index(same, j, r, points, use_box):
+    """Entry ``r`` of box ``j``'s extent (or of the box itself), x fastest: ``(q0, q1,
+    q2)``."""
+    extra = 1 if points == 1 else 0
+    lo0 = same.lo[3 * j] if use_box == 1 else same.elo[3 * j]
+    lo1 = same.lo[3 * j + 1] if use_box == 1 else same.elo[3 * j + 1]
+    lo2 = same.lo[3 * j + 2] if use_box == 1 else same.elo[3 * j + 2]
+    hi0 = same.hi[3 * j] if use_box == 1 else same.ehi[3 * j]
+    hi1 = same.hi[3 * j + 1] if use_box == 1 else same.ehi[3 * j + 1]
+    nx = hi0 - lo0 + extra
+    ny = (hi1 - lo1 + extra) if same.d > 1 else hi1 - hi1 + 1
+    q0 = lo0 + r % nx
+    q1 = lo1 + (r // nx) % ny if same.d > 1 else lo1
+    q2 = lo2 + r // (nx * ny) if same.d > 2 else lo2
+    return q0, q1, q2
 
 
-def _inside(index, lo, hi):
-    """Which rows of ``index`` lie in ``[lo, hi)``."""
-    return np.all((index >= lo) & (index < hi), axis=1)
+@tack.kernel
+def _ghost_cells_of(same, coarse, has_coarse, r0, r1, r2, ids, offsets, n, targets, groups,
+                    places):
+    # Each entry of the boxes' grown extents: a ghost cell's target place and its one
+    # source, a sibling's (the lowest holding it) else the coarse cell's; -1 targets
+    # for the boxes' own cells, -1 groups for ghosts nothing holds (hidden).
+    for e in range(targets.shape[0]):
+        b = _entry(offsets, n, e)
+        j = ids[b]
+        q0, q1, q2 = _index(same, j, e - offsets[b], 0, 0)
+        target = -1
+        group = -1
+        place = 0 * j
+        if same.holds(j, q0, q1, q2, 0) == 0:
+            target = same.place(j, q0, q1, q2, 0)
+            s = same.find(q0, q1, q2, 0, j, same.ids.shape[0] + same.lo.shape[0])
+            if s >= 0:
+                group = same.group[s]
+                place = same.place(s, q0, q1, q2, 0)
+            elif has_coarse == 1:
+                c0 = q0 // r0
+                c1 = q1 // r1
+                c2 = q2 // r2
+                t = coarse.find(c0, c1, c2, 0, -1, coarse.ids.shape[0] + coarse.lo.shape[0])
+                if t >= 0:
+                    group = coarse.group[t]
+                    place = coarse.place(t, c0, c1, c2, 0)
+        targets[e] = target
+        groups[e] = group
+        places[e] = place
+
+
+@tack.kernel
+def _ghost_points_of(same, coarse, has_coarse, r0, r1, r2, den, ids, offsets, n, write, starts,
+                     counts, targets, groups, places, weights):
+    # Each point of the boxes' grown extents: its sources' count (-1 not a target, 0
+    # hidden) and, with ``write``, the sources at ``starts``. A ghost point is a
+    # sibling's (the lowest holding it), else interpolated in the coarse cell
+    # holding it by its corners' owners (the lowest coarse box holding each); an
+    # own point a lower sibling also holds is that sibling's. Weights are integer
+    # numerators over ``den`` (the ratios' product), so no device needs f64.
+    for e in range(counts.shape[0]):
+        b = _entry(offsets, n, e)
+        j = ids[b]
+        q0, q1, q2 = _index(same, j, e - offsets[b], 1, 0)
+        big = same.ids.shape[0] + same.lo.shape[0]
+        count = -1
+        at = starts[e] if write == 1 else 0 * e
+        if same.holds(j, q0, q1, q2, 1) == 1:
+            s = same.find(q0, q1, q2, 1, j, j)
+            if s >= 0:
+                count = 1
+                if write == 1:
+                    targets[e] = same.place(j, q0, q1, q2, 1)
+                    groups[at] = same.group[s]
+                    places[at] = same.place(s, q0, q1, q2, 1)
+                    weights[at] = den
+        else:
+            count = 0
+            if write == 1:
+                targets[e] = same.place(j, q0, q1, q2, 1)
+            s = same.find(q0, q1, q2, 1, j, big)
+            if s >= 0:
+                count = 1
+                if write == 1:
+                    groups[at] = same.group[s]
+                    places[at] = same.place(s, q0, q1, q2, 1)
+                    weights[at] = den
+            elif has_coarse == 1:
+                t = coarse.find_scaled(q0, q1, q2, r0, r1, r2)
+                if t >= 0:
+                    # The coarse cell: q // r, kept within the box; q's place in it.
+                    c0 = min(max(q0 // r0, coarse.lo[3 * t]), coarse.hi[3 * t] - 1)
+                    c1 = q1 - q1
+                    c2 = q2 - q2
+                    if coarse.d > 1:
+                        c1 = min(max(q1 // r1, coarse.lo[3 * t + 1]), coarse.hi[3 * t + 1] - 1)
+                    if coarse.d > 2:
+                        c2 = min(max(q2 // r2, coarse.lo[3 * t + 2]), coarse.hi[3 * t + 2] - 1)
+                    t0 = q0 - c0 * r0
+                    t1 = q1 - c1 * r1
+                    t2 = q2 - c2 * r2
+                    corners = 1
+                    for a in range(coarse.d):
+                        corners = corners * 2
+                    for c in range(corners):
+                        a0 = c & 1
+                        a1 = (c >> 1) & 1
+                        a2 = (c >> 2) & 1
+                        w = t0 if a0 == 1 else r0 - t0
+                        if coarse.d > 1:
+                            w = w * (t1 if a1 == 1 else r1 - t1)
+                        if coarse.d > 2:
+                            w = w * (t2 if a2 == 1 else r2 - t2)
+                        if w > 0:
+                            k0 = c0 + a0
+                            k1 = c1 + a1 if coarse.d > 1 else c1
+                            k2 = c2 + a2 if coarse.d > 2 else c2
+                            owner = coarse.find(k0, k1, k2, 1, -1, big + coarse.lo.shape[0])
+                            if write == 1:
+                                groups[at + count] = coarse.group[owner]
+                                places[at + count] = coarse.place(owner, k0, k1, k2, 1)
+                                weights[at + count] = w
+                            count += 1
+        if write == 0:
+            counts[e] = count
+
+
+_MOST_FINE = tack.constant(64)
+
+
+@tack.kernel
+def _down_cells_of(coarse, fine, r0, r1, r2, ids, offsets, n, write, starts, counts, targets,
+                   groups, places):
+    # Each own cell of the coarse boxes: the fine cells over it, by fine box (the
+    # lowest holding each), then x fastest within; -1 for a cell no fine box covers.
+    for e in range(counts.shape[0]):
+        b = _entry(offsets, n, e)
+        j = ids[b]
+        q0, q1, q2 = _index(coarse, j, e - offsets[b], 0, 1)
+        big = fine.ids.shape[0] + fine.lo.shape[0]
+        boxes = tack.local_array(tack.i64, _MOST_FINE)
+        found = tack.local_array(tack.i64, _MOST_FINE)
+        count = 0
+        n1 = r1 if fine.d > 1 else 1
+        n2 = r2 if fine.d > 2 else 1
+        for k2 in range(n2):
+            for k1 in range(n1):
+                for k0 in range(r0):
+                    f0 = q0 * r0 + k0
+                    f1 = q1 * r1 + k1 if fine.d > 1 else q1
+                    f2 = q2 * r2 + k2 if fine.d > 2 else q2
+                    s = fine.find(f0, f1, f2, 0, -1, big)
+                    if s >= 0:
+                        # Insert after every entry of a box at most s: by box, stable.
+                        at = count
+                        while at > 0 and boxes[at - 1] > s:
+                            boxes[at] = boxes[at - 1]
+                            found[at] = found[at - 1]
+                            at -= 1
+                        boxes[at] = s
+                        found[at] = fine.place(s, f0, f1, f2, 0)
+                        count += 1
+        if write == 1:
+            if count > 0:
+                targets[e] = coarse.place(j, q0, q1, q2, 0)
+            for m in range(count):
+                groups[starts[e] + m] = fine.group[boxes[m]]
+                places[starts[e] + m] = found[m]
+        else:
+            counts[e] = count if count > 0 else -1
+
+
+@tack.kernel
+def _down_points_of(coarse, fine, r0, r1, r2, ids, offsets, n, targets, groups, places):
+    # Each own point of the coarse boxes: the fine point at its location, the lowest
+    # fine box's holding it; -1 targets where none does.
+    for e in range(targets.shape[0]):
+        b = _entry(offsets, n, e)
+        j = ids[b]
+        q0, q1, q2 = _index(coarse, j, e - offsets[b], 1, 1)
+        f0 = q0 * r0
+        f1 = q1 * r1 if fine.d > 1 else q1
+        f2 = q2 * r2 if fine.d > 2 else q2
+        s = fine.find(f0, f1, f2, 1, -1, fine.ids.shape[0] + fine.lo.shape[0])
+        target = -1
+        group = -1
+        place = 0 * e
+        if s >= 0:
+            target = coarse.place(j, q0, q1, q2, 1)
+            group = fine.group[s]
+            place = fine.place(s, f0, f1, f2, 1)
+        targets[e] = target
+        groups[e] = group
+        places[e] = place
+
+
+def _ratio3(amr, level):
+    r = np.ones(3, np.int64)
+    r[:amr.dimension] = np.asarray(amr.ratios[level], np.int64)[:amr.dimension]
+    return r
+
+
+def _tables(amr, groups, extents, g):
+    """Each level's ``_LevelBoxes`` on group ``g``'s device, made when first asked."""
+    made = {}
+
+    def table(level):
+        if level not in made:
+            made[level] = _LevelBoxes(amr, groups, extents, level, groups.blocks.device(g))
+        return made[level]
+    return table
+
+
+def _entry_boxes(offsets):
+    """Each entry's box, from the boxes' CSR ``offsets``: a ``searchsorted`` of every
+    entry was 30 s of AMR-Wind's five levels."""
+    return np.repeat(np.arange(len(offsets) - 1), np.diff(offsets))
+
+
+def _entries(sizes, device):
+    offsets = np.concatenate([[0], np.cumsum(sizes)]).astype(np.int64)
+    with device:
+        return offsets, tack.array(offsets, tack.i64)
+
+
+def _part(targets, entry_box, base, places, sources, weights, offsets):
+    """A ``_Fill`` part from the targets with sources: their places, CSR rows, and
+    each box's targets as its own indices."""
+    return targets, offsets, sources, weights, _by_box(targets - base, entry_box, places)
+
+
+def _by_box(values, entry_box, places):
+    """``values`` split by box: ``{place: its values}``; ``entry_box`` is in box order,
+    so each box's values are one run (a mask per box was quadratic: 36 s for
+    AMR-Wind's 6,436 boxes)."""
+    if not len(values):
+        return {}
+    boxes, starts = np.unique(entry_box, return_index=True)
+    ends = np.append(starts[1:], len(values))
+    return {places[b]: values[a:e] for b, a, e in zip(boxes, starts, ends)}
+
+
+def _ghost_parts(amr, groups, extents):
+    """Every group's ghost-cell and ghost-point fills' parts, and each local box's
+    hidden cells and points (its own indices)."""
+    blocks = groups.blocks
+    cell_parts, point_parts = {}, {}
+    hidden = {i: (np.zeros(0, np.int64), np.zeros(0, np.int64)) for i in range(len(groups.local))}
+    for g in blocks.local:
+        device = blocks.device(g)
+        table = _tables(amr, groups, extents, g)
+        cells = {"targets": [], "box": [], "base": [], "places": [], "sources": []}
+        points = {"targets": [], "box": [], "base": [], "places": [], "sources": [], "weights": [],
+                  "counts": []}
+        for level in range(amr.num_levels):
+            places, ids = groups.boxes(g, level)
+            if not places:
+                continue
+            same = table(level)
+            coarse = table(level - 1) if level else same
+            r = _ratio3(amr, level - 1) if level else np.ones(3, np.int64)
+            den = int(np.prod(r[:amr.dimension]))
+            ext = extents[level][ids]
+            d = amr.dimension
+            nb = len(ids)
+            with device:
+                ids_d = tack.array(ids, tack.i64)
+            # Cells: one source each.
+            offsets, offsets_d = _entries(np.prod(ext[:, 1, :d] - ext[:, 0, :d], axis=1), device)
+            total = int(offsets[-1])
+            with device:
+                targets = tack.empty((total,), tack.i64)
+                grp = tack.empty((total,), tack.i64)
+                where = tack.empty((total,), tack.i64)
+                if total:
+                    _ghost_cells_of(same, coarse, int(level > 0), *map(int, r), ids_d, offsets_d, nb,
+                                    targets, grp, where)
+            t, gr, pl = targets.numpy(), grp.numpy(), where.numpy()
+            box = _entry_boxes(offsets)
+            cbase = groups.cell_base[level][ids]
+            gone = np.flatnonzero((t >= 0) & (gr < 0))
+            for place, own in _by_box(gone - offsets[box[gone]], box[gone], places).items():
+                hidden[place] = (own, hidden[place][1])
+            kept = (t >= 0) & (gr >= 0)
+            cells["targets"].append(t[kept])
+            cells["box"].append(box[kept] + sum(len(x) for x in cells["places"]))
+            cells["base"].append(cbase[box[kept]])
+            cells["places"].append(places)
+            cells["sources"].append(np.stack([gr[kept], pl[kept]], axis=1))
+            # Points: a count, then the sources.
+            offsets, offsets_d = _entries(np.prod(ext[:, 1, :d] - ext[:, 0, :d] + 1, axis=1), device)
+            total = int(offsets[-1])
+            with device:
+                counts = tack.empty((total,), tack.i32)
+                one = tack.zeros((1,), tack.i64)
+                if total:
+                    _ghost_points_of(same, coarse, int(level > 0), *map(int, r), den, ids_d, offsets_d,
+                                     nb, 0, one, counts, one, one, one, one)
+            c = counts.numpy().astype(np.int64)
+            starts = np.concatenate([[0], np.cumsum(np.maximum(c, 0))])
+            m = int(starts[-1])
+            with device:
+                targets = tack.full((max(total, 1),), -1, tack.i64)
+                grp = tack.empty((max(m, 1),), tack.i64)
+                where = tack.empty((max(m, 1),), tack.i64)
+                nums = tack.empty((max(m, 1),), tack.i64)
+                if total:
+                    _ghost_points_of(same, coarse, int(level > 0), *map(int, r), den, ids_d, offsets_d,
+                                     nb, 1, tack.array(starts[:-1], tack.i64), counts, targets, grp,
+                                     where, nums)
+            t = targets.numpy()[:total]
+            box = _entry_boxes(offsets)
+            pbase = groups.point_base[level][ids]
+            gone = np.flatnonzero(c == 0)
+            for place, own in _by_box(gone - offsets[box[gone]], box[gone], places).items():
+                hidden[place] = (hidden[place][0], own)
+            kept = c > 0
+            points["targets"].append(t[kept])
+            points["box"].append(box[kept] + sum(len(x) for x in points["places"]))
+            points["base"].append(pbase[box[kept]])
+            points["places"].append(places)
+            points["counts"].append(c[kept])
+            points["sources"].append(np.stack([grp.numpy()[:m], where.numpy()[:m]], axis=1))
+            points["weights"].append(nums.numpy()[:m].astype(np.float64) / den)
+        cell_parts[g] = _assembled(cells, None)
+        point_parts[g] = _assembled(points, points["counts"])
+    return cell_parts, point_parts, hidden
+
+
+def _assembled(chunks, counts):
+    """One group's part from its levels' chunks."""
+    if not chunks["targets"]:
+        empty = np.zeros(0, np.int64)
+        return empty, np.zeros(1, np.int64), np.zeros((0, 2), np.int64), np.zeros(0), {}
+    targets = np.concatenate(chunks["targets"])
+    places = [p for part in chunks["places"] for p in part]
+    sources = np.concatenate(chunks["sources"])
+    if counts is None:
+        offsets = np.arange(len(targets) + 1, dtype=np.int64)
+        weights = np.ones(len(targets))
+    else:
+        offsets = np.concatenate([[0], np.cumsum(np.concatenate(counts))]).astype(np.int64)
+        weights = np.concatenate(chunks["weights"])
+    return _part(targets, np.concatenate(chunks["box"]), np.concatenate(chunks["base"]), places,
+                 sources, weights, offsets)
+
+
+def _down_parts(amr, groups, level, kind):
+    """Every group's ``average_down`` part for ``level``'s boxes: each covered coarse
+    cell (point) and the fine cells (point) over it."""
+    blocks, extents, d = groups.blocks, amr._extents, amr.dimension
+    r = _ratio3(amr, level)
+    if kind == "cells" and int(np.prod(r[:d])) > int(_MOST_FINE):
+        raise ValueError(f"average_down takes refinement ratios of at most {int(_MOST_FINE)} "
+                         f"fine cells a coarse cell, not {tuple(r[:d])}")
+    parts = {}
+    for g in blocks.local:
+        device = blocks.device(g)
+        places, ids = groups.boxes(g, level)
+        if not places:
+            parts[g] = (np.zeros(0, np.int64), np.zeros(1, np.int64), np.zeros((0, 2), np.int64),
+                        np.zeros(0), {})
+            continue
+        table = _tables(amr, groups, extents, g)
+        coarse, fine = table(level), table(level + 1)
+        box = amr._boxes[level][ids]
+        nb = len(ids)
+        extra = 1 if kind == "points" else 0
+        offsets, offsets_d = _entries(np.prod(box[:, 1, :d] - box[:, 0, :d] + extra, axis=1),
+                                      device)
+        total = int(offsets[-1])
+        with device:
+            ids_d = tack.array(ids, tack.i64)
+            targets = tack.full((max(total, 1),), -1, tack.i64)
+        entry_box = _entry_boxes(offsets)
+        base = (groups.point_base if kind == "points" else groups.cell_base)[level][ids]
+        if kind == "points":
+            with device:
+                grp = tack.empty((max(total, 1),), tack.i64)
+                where = tack.empty((max(total, 1),), tack.i64)
+                if total:
+                    _down_points_of(coarse, fine, *map(int, r), ids_d, offsets_d, nb, targets, grp,
+                                    where)
+            t = targets.numpy()[:total]
+            kept = t >= 0
+            sources = np.stack([grp.numpy()[:total][kept], where.numpy()[:total][kept]], axis=1)
+            offs = np.arange(int(kept.sum()) + 1, dtype=np.int64)
+        else:
+            with device:
+                counts = tack.empty((max(total, 1),), tack.i32)
+                one = tack.zeros((1,), tack.i64)
+                if total:
+                    _down_cells_of(coarse, fine, *map(int, r), ids_d, offsets_d, nb, 0, one, counts,
+                                   one, one, one)
+            c = counts.numpy()[:total].astype(np.int64)
+            starts = np.concatenate([[0], np.cumsum(np.maximum(c, 0))])
+            m = int(starts[-1])
+            with device:
+                grp = tack.empty((max(m, 1),), tack.i64)
+                where = tack.empty((max(m, 1),), tack.i64)
+                if total:
+                    _down_cells_of(coarse, fine, *map(int, r), ids_d, offsets_d, nb, 1,
+                                   tack.array(starts[:-1], tack.i64), counts, targets, grp, where)
+            t = targets.numpy()[:total]
+            kept = c > 0
+            sources = np.stack([grp.numpy()[:m], where.numpy()[:m]], axis=1)
+            offs = np.concatenate([[0], np.cumsum(c[kept])]).astype(np.int64)
+        parts[g] = _part(t[kept], entry_box[kept], base[entry_box[kept]], places, sources,
+                         np.ones(len(sources)), offs)
+    return parts
 
 
 # -- ghost cells ----------------------------------------------------------------------
@@ -205,136 +763,46 @@ def amr_ghost_cells(amr, layers, fields):
         grown[:, 0, :d] = np.maximum(grown[:, 0, :d] - layers, lo[:d])
         grown[:, 1, :d] = np.minimum(grown[:, 1, :d] + layers, hi[:d])
         extents.append(grown)
-    layout = _Layout(amr)
-    cell_rows, point_rows, hidden = {}, {}, {}
-    for g, (level, k) in zip(layout.blocks.local, layout.local):
-        cell_rows[g], point_rows[g], hidden[g] = _ghost_rows(amr, layout, extents, level, k)
-    fills = {"cells": _Fill(layout.blocks, cell_rows),
-             "points": _Fill(layout.blocks, point_rows)}
+    groups = _Groups(amr, extents)
+    cell_parts, point_parts, hidden = _ghost_parts(amr, groups, extents)
+    fills = {"cells": _Fill(groups, "cells", cell_parts),
+             "points": _Fill(groups, "points", point_parts)}
 
     # The grown boxes: own values placed, ghosts filled; positions too, for grids
     # whose positions are not an image's.
-    grown_boxes, arrays_by_kind, positions = [], {}, {}
-    for g, (level, k), piece in zip(layout.blocks.local, layout.local, pieces):
+    # Only grids other than images read positions (an image keeps its lattice), but
+    # an image box can be a source of their ghosts: all or none, over every rank.
+    need = any(amr.world._allgather(
+        any(not isinstance(piece.geometry.values, UniformCoordinates) for piece in pieces)))
+    grown_boxes, arrays_by_kind, positions = [], [], []
+    for i, ((level, k), piece) in enumerate(zip(groups.local, pieces)):
         box, ext = amr._boxes[level][k], extents[level][k]
         with piece.device:
             assembled = {name: _placed(piece.fields[name].values, _kind(piece.fields[name]),
                                        box, ext, d, piece) for name in names}
-            positions[g] = tack.array(_placed_host(piece.positions(), "points", box, ext, d),
-                                      tack.vec3(piece.dtype))
-        arrays_by_kind[g] = assembled
-        grown_boxes.append((g, level, k, piece, box, ext))
+            positions.append(tack.array(_placed_host(piece.positions(), "points", box, ext, d),
+                                        tack.vec3(piece.dtype)) if need else None)
+        arrays_by_kind.append(assembled)
+        grown_boxes.append((i, level, k, piece, box, ext))
     for name in names:
         kind = _kind(pieces[0].fields[name])
-        fills[kind].run({g: arrays_by_kind[g][name] for g in layout.blocks.local})
-    fills["points"].run(positions)
+        fills[kind].run([arrays[name] for arrays in arrays_by_kind])
+    if need:
+        fills["points"].run(positions)
 
+    # What a finer level covers, each level's grown boxes at once.
+    refined = {}
+    for level in range(amr.num_levels):
+        ks = [k for _, lvl, k, *_ in grown_boxes if lvl == level]
+        refined.update(zip(((level, k) for k in ks),
+                           amr._refined_boxes(level, extents[level][ks])))
     out = [[] for _ in range(amr.num_levels)]
-    for g, level, k, piece, box, ext in grown_boxes:
-        out[level].append(_grown_box(amr, level, piece, box, ext, d, arrays_by_kind[g], names,
-                                     positions[g], hidden[g]))
+    for i, level, k, piece, box, ext in grown_boxes:
+        out[level].append(_grown_box(piece, box, ext, d, arrays_by_kind[i], names,
+                                     positions[i], hidden[i], refined[level, k]))
     return AMRDataSet._grown(amr, out, extents, int(layers), fills)
 
 
-def _ghost_rows(amr, layout, extents, level, k):
-    """A box's ghost cells and points: ``(cell rows, point rows, (hidden cells,
-    hidden points))``, rows as ``_Fill`` takes them."""
-    d = amr.dimension
-    box, ext = amr._boxes[level][k], extents[level][k]
-    siblings = [(j, b) for j, b in enumerate(amr._boxes[level]) if j != k]
-    coarse = list(enumerate(amr._boxes[level - 1])) if level else []
-    ratio = np.asarray(amr.ratios[level - 1], np.int64)[:d] if level else None
-
-    # Cells: a sibling's, else the coarse cell's.
-    cells = _grid(ext[0, :d], ext[1, :d], d)
-    ghost = ~_inside(cells, box[0, :d], box[1, :d])
-    q = cells[ghost]
-    cell_targets = _cell_index(ext, q, d)
-    rows = [[] for _ in range(len(q))]
-    open_ = np.ones(len(q), bool)
-    for j, other in siblings:
-        hit = open_ & _inside(q, other[0, :d], other[1, :d])
-        if hit.any():
-            source = layout.gid(level, j)
-            index = _cell_index(extents[level][j], q[hit], d)
-            for r, i in zip(np.flatnonzero(hit), index):
-                rows[r] = [(source, i, 1.0)]
-            open_ &= ~hit
-    for j, other in coarse:
-        if not open_.any():
-            break
-        c = q // ratio
-        hit = open_ & _inside(c, other[0, :d], other[1, :d])
-        if hit.any():
-            source = layout.gid(level - 1, j)
-            index = _cell_index(extents[level - 1][j], c[hit], d)
-            for r, i in zip(np.flatnonzero(hit), index):
-                rows[r] = [(source, i, 1.0)]
-            open_ &= ~hit
-    hidden_cells = cell_targets[open_]
-    cell_rows = (int(np.prod(ext[1, :d] - ext[0, :d])), cell_targets, rows)
-
-    # Points: a sibling's, else interpolated in a coarse cell.
-    points = _grid(ext[0, :d], ext[1, :d] + 1, d)
-    ghost = ~np.all((points >= box[0, :d]) & (points <= box[1, :d]), axis=1)
-    p = points[ghost]
-    point_targets = _point_index(ext, p, d)
-    rows = [[] for _ in range(len(p))]
-    open_ = np.ones(len(p), bool)
-    for j, other in siblings:
-        hit = open_ & np.all((p >= other[0, :d]) & (p <= other[1, :d]), axis=1)
-        if hit.any():
-            source = layout.gid(level, j)
-            index = _point_index(extents[level][j], p[hit], d)
-            for r, i in zip(np.flatnonzero(hit), index):
-                rows[r] = [(source, i, 1.0)]
-            open_ &= ~hit
-    for j, other in coarse:
-        if not open_.any():
-            break
-        f = p / ratio
-        hit = open_ & np.all((f >= other[0, :d]) & (f <= other[1, :d]), axis=1)
-        if not hit.any():
-            continue
-        base = np.minimum(np.floor(f[hit]).astype(np.int64), other[1, :d] - 1)
-        base = np.maximum(base, other[0, :d])
-        t = f[hit] - base
-        corners = [np.array([(c >> a) & 1 for a in range(d)]) for c in range(2 ** d)]
-        for r, b, tt in zip(np.flatnonzero(hit), base, t):
-            row = []
-            for corner in corners:
-                w = float(np.prod(np.where(corner == 1, tt, 1.0 - tt)))
-                if w > 0.0:
-                    # From the corner's owner: the lowest coarse box holding it,
-                    # whose value is never a copy refreshed in the same pass.
-                    at = b + corner
-                    owner = next(i for i, c in coarse
-                                 if np.all((at >= c[0, :d]) & (at <= c[1, :d])))
-                    index = _point_index(extents[level - 1][owner], at[None], d)[0]
-                    row.append((layout.gid(level - 1, owner), index, w))
-            rows[r] = row
-        open_ &= ~hit
-    hidden_points = point_targets[open_]
-    # The box's own points on a face a lower sibling shares are that sibling's
-    # (DUPLICATEPOINT): refreshed from it too, as split pieces' shared points are.
-    own = points[~ghost]
-    shared = np.zeros(len(own), bool)
-    extra_targets, extra_rows = [], []
-    for j, other in siblings:
-        if j > k:
-            break
-        hit = ~shared & np.all((own >= other[0, :d]) & (own <= other[1, :d]), axis=1)
-        if hit.any():
-            source = layout.gid(level, j)
-            extra_targets.append(_point_index(ext, own[hit], d))
-            extra_rows += [[(source, i, 1.0)]
-                           for i in _point_index(extents[level][j], own[hit], d)]
-            shared |= hit
-    if extra_targets:
-        point_targets = np.concatenate([point_targets, *extra_targets])
-        rows = rows + extra_rows
-    point_rows = (int(np.prod(ext[1, :d] - ext[0, :d] + 1)), point_targets, rows)
-    return cell_rows, point_rows, (hidden_cells, hidden_points)
 
 
 def _placed_host(values, kind, box, ext, d):
@@ -362,7 +830,7 @@ def _placed(values, kind, box, ext, d, piece):
     return tack.array(_placed_host(host, kind, box, ext, d), values.dtype)
 
 
-def _grown_box(amr, level, piece, box, ext, d, assembled, names, positions, hidden):
+def _grown_box(piece, box, ext, d, assembled, names, positions, hidden, refined):
     """The box grown to ``ext``: its topology, geometry, fields and marks."""
     from tack.dataset.algorithms.ghost_cells import _kind
 
@@ -397,7 +865,7 @@ def _grown_box(amr, level, piece, box, ext, d, assembled, names, positions, hidd
         else:
             with piece.device:
                 geometry = tack.array(grid.astype(piece.dtype.numpy_dtype), tack.vec3(piece.dtype))
-    cells, points = _grown_marks(amr, level, piece, box, ext, d, hidden_cells, hidden_points)
+    cells, points = _grown_marks(piece, box, ext, d, hidden_cells, hidden_points, refined)
     with piece.device:
         out = DataSet(topology, geometry, dtype=piece.dtype,
                       ghosts=Ghosts(cells=cells, points=points), **piece._frame())
@@ -412,15 +880,15 @@ def _grown_box(amr, level, piece, box, ext, d, assembled, names, positions, hidd
     return out
 
 
-def _grown_marks(amr, level, piece, box, ext, d, hidden_cells, hidden_points):
+def _grown_marks(piece, box, ext, d, hidden_cells, hidden_points, refined):
     """The grown box's marks: its own, then ``DUPLICATECELL`` and ``DUPLICATEPOINT``
     on the ghosts, hidden where nothing filled them, refined where a finer box
-    covers them."""
+    covers them (``refined``, ``AMRDataSet._refined_boxes``' for the grown box)."""
     cells = _placed_host(piece.ghosts.cells.numpy(), "cells", box, ext, d)
     points = _placed_host(piece.ghosts.points.numpy(), "points", box, ext, d)
     own_cells = _placed_host(np.ones(piece.num_cells, bool), "cells", box, ext, d)
     own_points = _placed_host(np.ones(piece.num_points, bool), "points", box, ext, d)
-    refined_cells, refined_points = amr._refined(level, ext[0], ext[1])
+    refined_cells, refined_points = refined
     cells[~own_cells] |= Ghosts.DUPLICATECELL
     cells[~own_cells & refined_cells.reshape(-1)] |= Ghosts.REFINEDCELL
     cells[hidden_cells] |= Ghosts.HIDDENCELL
@@ -466,16 +934,15 @@ def amr_update_ghosts(amr, names):
         raise ValueError("update_ghosts needs the hierarchy ghost_cells made, which keeps "
                          "the exchanges")
     layout_boxes = [box for _, box in amr]
-    blocks = amr._fills["cells"].blocks
     for name in names:
-        values, kind = {}, None
-        for g, box in zip(blocks.local, layout_boxes):
+        values, kind = [], None
+        for box in layout_boxes:
             field = box.fields[name]
             kind = _kind(field)
             if kind is None or not isinstance(field.values, tack.Array):
                 raise TypeError(f"update_ghosts refreshes point and cell fields of explicit "
                                 f"values; {name!r} is not one")
-            values[g] = field.values
+            values.append(field.values)
         amr._fills[kind].run(values)
 
 
@@ -488,7 +955,6 @@ def average_down(amr, field):
     coarse point (``REFINEDPOINT``) the value of the fine point at its location.
     ``field`` names a floating-point point or cell field every box has; finest
     level first, so a value reaches the coarsest level in one call."""
-    from tack.dataset.algorithms.cell_geometry import cell_geometry
     from tack.dataset.algorithms.ghost_cells import _kind
 
     if not isinstance(amr, AMRDataSet):
@@ -498,16 +964,16 @@ def average_down(amr, field):
     if len(kinds) != 1 or None in kinds:
         raise TypeError(f"average_down averages a point or cell field; {field!r} is not one")
     kind = kinds.pop()
-    layout = _Layout(amr)
-    d = amr.dimension
+    measures = {}                       # (level, index): the box's cell measures
     for level in range(amr.num_levels - 2, -1, -1):
-        rows = {}
-        for g, (lv, k) in zip(layout.blocks.local, layout.local):
-            rows[g] = _down_rows(amr, layout, lv, k, kind, d) if lv == level else \
-                (_extent_size(amr._extents[lv][k], kind, d), np.zeros(0, np.int64), [])
-        fill = _Fill(layout.blocks, rows)
-        values = {g: box.fields[field].values for g, box in zip(layout.blocks.local, boxes)}
-        for g, array in values.items():
+        if not len(amr._boxes[level + 1]) or not len(amr._boxes[level]):
+            continue                         # nothing finer to average onto this level
+        # Only this level's boxes and the next finer level's take part: a fill over
+        # every box of the hierarchy copied all of them at every level.
+        groups = _Groups(amr, amr._extents, levels=(level, level + 1))
+        fill = _Fill(groups, kind, _down_parts(amr, groups, level, kind))
+        values = [box.fields[field].values for box in groups.pieces]
+        for array in values:
             scalar = getattr(array.dtype, "scalar_dtype", array.dtype)
             if not isinstance(array, tack.Array) or scalar.numpy_dtype.kind != "f":
                 raise TypeError(f"average_down averages floating-point values of explicit "
@@ -515,19 +981,35 @@ def average_down(amr, field):
         if kind == "points":
             fill.run(values)
             continue
-        # Cells: sums of measure times value over sums of measure.
-        weighted, measures = {}, {}
-        for g, box in zip(layout.blocks.local, boxes):
+        # Cells: sums of measure times value over sums of measure. The measures are
+        # the boxes' own, each found once.
+        weighted, sums = [], []
+        for key, box, array in zip(groups.local, groups.pieces, values):
+            if key not in measures:
+                measures[key] = _measures(box, array.dtype)
             with box.device:
-                measures[g] = arrays.materialize(cell_geometry(box).measure.values)
-                weighted[g] = _times(values[g], measures[g])
+                weighted.append(_times(array, measures[key]))
+                sums.append(measures[key].copy())       # the fill sums into them
         fill.run(weighted)
-        fill.run(measures)
-        for g in layout.blocks.local:
-            targets = fill.boxes[g]["targets"]
+        fill.run(sums)
+        for i, targets in fill.box_targets.items():
             if len(targets):
-                with layout.blocks.device(g):
-                    _divide(weighted[g], measures[g], tack.array(targets, tack.i64), values[g])
+                with groups.pieces[i].device:
+                    _divide(weighted[i], sums[i], tack.array(targets, tack.i64), values[i])
+
+
+def _measures(box, dtype):
+    """A box's cells' measures in ``dtype``: an image's, all alike, the product of its
+    spacing (``cell_geometry`` of each of AMR-Wind's 15,598 boxes was 10 s)."""
+    from tack.dataset.algorithms.cell_geometry import cell_geometry
+
+    coordinates = box.geometry.values
+    with box.device:
+        if isinstance(coordinates, UniformCoordinates):
+            d = len(box.topology.point_dims)
+            volume = float(np.prod(np.asarray(coordinates._spacing, np.float64)[:d]))
+            return tack.full((box.num_cells,), volume, dtype)
+        return arrays.materialize(cell_geometry(box).measure.values)
 
 
 @tack.kernel
@@ -547,38 +1029,3 @@ def _extent_size(ext, kind, d):
     extra = 1 if kind == "points" else 0
     return int(np.prod(ext[1, :d] - ext[0, :d] + extra))
 
-
-def _down_rows(amr, layout, level, k, kind, d):
-    """A coarse box's refined cells (or points) and the fine sources of each."""
-    box, ext = amr._boxes[level][k], amr._extents[level][k]
-    ratio = np.asarray(amr.ratios[level], np.int64)[:d]
-    fine = list(enumerate(amr._boxes[level + 1]))
-    n = _extent_size(ext, kind, d)
-    if kind == "cells":
-        own = _grid(box[0, :d], box[1, :d], d)
-        targets, rows = [], []
-        for c in own:
-            lo, hi = c * ratio, (c + 1) * ratio
-            row = []
-            for j, other in fine:
-                a, b = np.maximum(lo, other[0, :d]), np.minimum(hi, other[1, :d])
-                if (a < b).all():
-                    q = _grid(a, b, d)
-                    index = _cell_index(amr._extents[level + 1][j], q, d)
-                    source = layout.gid(level + 1, j)
-                    row += [(source, i, 1.0) for i in index]
-            if row:
-                targets.append(_cell_index(ext, c[None], d)[0])
-                rows.append(row)
-        return n, np.asarray(targets, np.int64), rows
-    own = _grid(box[0, :d], box[1, :d] + 1, d)
-    targets, rows = [], []
-    for p in own:
-        f = p * ratio
-        for j, other in fine:
-            if np.all((f >= other[0, :d]) & (f <= other[1, :d])):
-                targets.append(_point_index(ext, p[None], d)[0])
-                rows.append([(layout.gid(level + 1, j),
-                              _point_index(amr._extents[level + 1][j], f[None], d)[0], 1.0)])
-                break
-    return n, np.asarray(targets, np.int64), rows

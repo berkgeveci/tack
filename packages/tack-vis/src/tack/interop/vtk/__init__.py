@@ -391,6 +391,19 @@ def _label(array, unit):
 _GHOST_ARRAY = "vtkGhostType"
 
 
+def _arrays_of(attributes):
+    """``(name, array)`` for each named array of a VTK attributes object, through VTK's
+    classic calls. The pythonic ``keys()`` and ``attributes[name]`` give each array's
+    Python wrapper attributes of its own, which VTK keeps (a ghost of the wrapper)
+    when the wrapper goes while the array lives, and searches on every later
+    wrap: converting AMR-Wind's 3,328 boxes went from 0.8 to 6.4 ms a box as
+    they piled up."""
+    for i in range(attributes.GetNumberOfArrays()):
+        name = attributes.GetArrayName(i)
+        if name:
+            yield name, attributes.GetAbstractArray(i)
+
+
 def _attributes_to_fields(attributes, space, float_dtype, share=False):
     from vtkmodules.vtkCommonCore import vtkDataArray
 
@@ -399,8 +412,7 @@ def _attributes_to_fields(attributes, space, float_dtype, share=False):
     fields = {}
     global_ids = attributes.GetGlobalIds()          # no pythonic form in 9.7.1
     skipped = {_GHOST_ARRAY, global_ids.GetName() if global_ids is not None else None}
-    for name in attributes.keys():
-        array = attributes[name]
+    for name, array in _arrays_of(attributes):
         # Named data arrays: string and other abstract arrays have no values to compute on,
         # the ghost array becomes the ghost marks and the global ids the global ids.
         if name and name not in skipped and isinstance(array, vtkDataArray):
@@ -429,9 +441,10 @@ def _ghost_marks(attributes, share=False):
     ``share``, VTK's memory."""
     import numpy as np
 
-    if _GHOST_ARRAY not in attributes.keys():
+    array = attributes.GetAbstractArray(_GHOST_ARRAY)      # not keys(): see _arrays_of
+    if array is None:
         return None
-    host = np.asarray(attributes[_GHOST_ARRAY]).reshape(-1)
+    host = np.asarray(array).reshape(-1)
     shared = _shared(host, tack.u8) if share else None
     if shared is not None:
         return shared
@@ -1226,8 +1239,10 @@ def _take_cell_data(source, target, rows):
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None, copy=True, merge_points=None):
-    """``vtk_to_dataset`` before the time is stamped."""
+                   origin=None, copy=True, merge_points=None, placement=None):
+    """``vtk_to_dataset`` before the time is stamped. ``placement`` is a structured
+    grid's offset in a larger grid (three values), in place of its extent's start:
+    an AMR box's place in its level."""
     import numpy as np
     from vtkmodules.vtkCommonDataModel import (
         vtkImageData,
@@ -1376,7 +1391,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         geometry_dtype = dtype if dtype is not None else tack.f64      # VTK's double
         geometry = UniformCoordinates(dims, start - shift, spacing, direction,
                                       dtype=geometry_dtype)
-        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
+        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2] if placement is None else placement)
     elif isinstance(grid, vtkRectilinearGrid):
         if dtype is None:
             geometry_dtype = (tack.f32 if np.asarray(grid.x_coordinates).dtype == np.float32
@@ -1388,18 +1403,21 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         dims = list(grid.dimensions)
         if dims != list(geometry.dims):
             raise ValueError(f"grid dimensions {dims} do not match its coordinates")
-        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
+        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2] if placement is None else placement)
     elif isinstance(grid, vtkStructuredGrid):
         dims = [0, 0, 0]
         grid.GetDimensions(dims)        # not a readable property on a structured grid in 9.7.1
-        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2])
+        topology = grid_topology(dims, id_dtype=id_dtype, offset=grid.extent[0::2] if placement is None else placement)
         geometry, geometry_dtype = _points_geometry(grid, shift, dtype, share)
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkPolyData, vtkStructuredGrid, "
                         f"vtkRectilinearGrid, vtkImageData, vtkPartitionedDataSet or "
                         f"vtkPartitionedDataSetCollection, not {grid.class_name}")
-    fields = _attributes_to_fields(grid.point_data, H1(topology), dtype, share)
-    for name, field in _attributes_to_fields(grid.cell_data, Constant(topology), dtype,
+    # The classic calls: the pythonic ``point_data``/``cell_data`` set attributes on the
+    # wrappers, which VTK 9.7.1 then keeps as ghosts and sweeps on every later wrap.
+    point_data, cell_data = grid.GetPointData(), grid.GetCellData()
+    fields = _attributes_to_fields(point_data, H1(topology), dtype, share)
+    for name, field in _attributes_to_fields(cell_data, Constant(topology), dtype,
                                              share).items():
         # A point array and a cell array of one name are two fields of that name.
         fields[name if name not in fields else (name, field.space)] = field
@@ -1409,9 +1427,9 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
         unit = None                     # VTK 9.7.1 has nowhere to keep an image's
     else:
         unit = _units_label(grid.points.data) if grid.points is not None else None
-    cells, points = _ghost_marks(grid.cell_data, share), _ghost_marks(grid.point_data, share)
+    cells, points = _ghost_marks(cell_data, share), _ghost_marks(point_data, share)
     ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
-    cells, points = _global_ids(grid.cell_data, share), _global_ids(grid.point_data, share)
+    cells, points = _global_ids(cell_data, share), _global_ids(point_data, share)
     global_ids = None if cells is None and points is None else GlobalIds(cells=cells,
                                                                          points=points)
     return DataSet(topology, geometry, fields=fields, dtype=geometry_dtype, ghosts=ghosts,
@@ -1498,7 +1516,7 @@ def _to_vtk_ids(values):
 def _amr_to_dataset(amr, options):
     """A ``vtkOverlappingAMR`` as an ``AMRDataSet``: each level's blocks, each placed
     in its level by its ``vtkAMRBox``."""
-    from tack.dataset import AMRDataSet, DataSet, StructuredTopology
+    from tack.dataset import AMRDataSet, StructuredTopology
 
     levels, ratios = [], []
     for level in range(amr.GetNumberOfLevels()):
@@ -1509,20 +1527,21 @@ def _amr_to_dataset(amr, options):
                 continue
             lo, hi = [0, 0, 0], [0, 0, 0]
             amr.GetAMRBox(level, index).GetDimensions(lo, hi)   # cells, hi inclusive
-            data = vtk_to_dataset(block, **options)
+            # Placed as it is made, on the hierarchy's origin (``options``, chosen
+            # for the whole), not one a box's own bounds would choose.
+            data = _vtk_to_dataset(block, **options, placement=lo)
+            if block.GetInformation().Has(_time_key()):
+                _stamp(data, block.GetInformation().Get(_time_key()))
             topology = data.topology
             n = len(topology.point_dims)
-            cells = [h - lo_ + 1 for lo_, h in zip(lo[:n], hi[:n])]
-            if [d - 1 for d in topology.point_dims] != cells:
-                raise ValueError(f"block {index} of level {level} has {topology.point_dims} "
-                                 f"points for a box of {cells} cells: blocks with ghost "
-                                 "layers are not taken yet")
-            placed = StructuredTopology(topology.point_dims, id_dtype=topology.id_dtype,
-                                        device=data.device, offset=tuple(lo[:n]))
-            fields = {name: _rehomed(field, placed) for name, field in data.fields.items()}
-            boxes.append(DataSet(placed, data.geometry.values, fields=fields,
-                                 dtype=data.dtype, ghosts=data.ghosts,
-                                 global_ids=data.global_ids, **data._frame()))
+            cells = [h - lo_ + 1 for lo_, h in zip(lo, hi) if h >= lo_][:n]   # 2D: hi -1
+            if not isinstance(topology, StructuredTopology) or \
+                    [d - 1 for d in topology.point_dims] != cells:
+                raise ValueError(f"block {index} of level {level} has "
+                                 f"{getattr(topology, 'point_dims', None)} points for a box "
+                                 f"of {cells} cells: blocks with ghost layers are not taken "
+                                 "yet")
+            boxes.append(data)
         levels.append(boxes)
         if level + 1 < amr.GetNumberOfLevels():
             ratios.append(int(amr.GetRefinementRatio(level)))
@@ -1671,15 +1690,6 @@ def _to_bits(values):
     out = vtkBitArray()
     out.DeepCopy(vtkUnsignedCharArray(np.ascontiguousarray(values, np.uint8)))
     return out
-
-
-def _rehomed(field, topology):
-    """``field``'s values in the same kind of space on ``topology``, one of the same
-    cells and points."""
-    from tack.dataset import H1, Constant, Field
-
-    space = H1(topology) if isinstance(field.space, H1) else Constant(topology)
-    return Field(space, field.values)
 
 
 def _amr_to_vtk(amr):

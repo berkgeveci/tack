@@ -458,6 +458,45 @@ def test_ghost_cells_in_3d():
     assert hidden_somewhere              # the level-2 box grows past its coarse box
 
 
+def _many_boxes():
+    """A 3D hierarchy of many small boxes: a 16 x 16 x 8 root in 64 boxes of 4 x 4 x 2,
+    and a refined region (coarse cells [4, 12) x [4, 12) x [2, 6)) in 32 boxes of
+    4 x 4 x 4."""
+    coarse = [image((i, j, k), (4, 4, 2), 1.0) for k in range(0, 8, 2)
+              for j in range(0, 16, 4) for i in range(0, 16, 4)]
+    fine = [image((i, j, k), (4, 4, 4), 0.5) for k in range(4, 12, 4)
+            for j in range(8, 24, 4) for i in range(8, 24, 4)]
+    return td.AMRDataSet([coarse, fine], ratios=[2])
+
+
+def test_ghost_cells_of_many_boxes_are_exact_for_linear_fields():
+    """Every box's ghosts, over 96 boxes: the point field (y) linear, so exact wherever
+    a ghost point is filled, from a sibling or by the coarse corners' weights; the
+    cell field (the centres' x) exact on the root, whose ghost cells are all
+    siblings'. The sources are found by kernels over a level's boxes at once
+    (a mask or a loop per box made AMR-Wind's 6,436 boxes take minutes)."""
+    amr = _many_boxes()
+    grown = td.ghost_cells(amr)
+    filled_points = 0
+    for level, box in grown:
+        x = box.world_positions()
+        points = (box.ghosts.points.numpy() & Ghosts.HIDDENPOINT) == 0
+        filled_points += int(points.sum())
+        np.testing.assert_allclose(box.fields["p"].values.numpy()[points], x[points, 1],
+                                   atol=1e-6)
+        if level == 0:
+            cells = (box.ghosts.cells.numpy() & Ghosts.HIDDENCELL) == 0
+            centres = td.cell_centers(box).values.numpy().reshape(-1, 3)
+            np.testing.assert_allclose(box.fields["c"].values.numpy()[cells], centres[cells, 0],
+                                       atol=1e-6)
+    assert filled_points > sum(b.num_points for _, b in amr)       # ghosts were filled
+    # Averaging the fine points down leaves the linear field as it is.
+    before = [box.fields["p"].values.numpy().copy() for _, box in amr]
+    td.average_down(amr, "p")
+    for (_, box), old in zip(amr, before):
+        np.testing.assert_allclose(box.fields["p"].values.numpy(), old, atol=1e-6)
+
+
 def across(world):
     """This rank's share of each level's boxes: their marks by (level, global index),
     and the statistics of the cell field over the hierarchy."""
