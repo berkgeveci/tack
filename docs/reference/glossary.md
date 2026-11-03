@@ -1,0 +1,3 @@
+# Glossary
+
+*Draft in progress.*
