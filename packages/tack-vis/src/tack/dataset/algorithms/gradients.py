@@ -150,7 +150,8 @@ def _without_singular(offsets, entries, singular, out, nan):
             if left_out == n:
                 out[p] = tack.vec3(nan, nan, nan)
             else:
-                out[p] = out[p] * (tack.f64(n) / tack.f64(n - left_out))
+                # In the gradients' own type: Metal has no f64.
+                out[p] = out[p] * n / (n - left_out)
 
 
 @tack.kernel
