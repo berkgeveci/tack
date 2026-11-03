@@ -83,13 +83,14 @@ def test_empty_filter_pipelines_preserve_maps_and_ids(backend, kind, unused_poin
 
 
 def test_extracting_an_empty_face_set_keeps_point_fields(backend):
+    # No faces use any point, so the surface has none, and its point fields are empty.
     data = td.uniform_grid((2, 2, 2))
     data.fields["p"] = td.point_ids(data)
     data.sets["none"] = td.Set(data, "faces", [])
     out = td.extract_surface(data, "none")
-    assert out.num_cells == 0 and out.num_points == data.num_points
+    assert out.num_cells == 0 and out.num_points == 0
     assert out.topology.offsets.numpy().tolist() == [0]
-    np.testing.assert_array_equal(tack.arrays.to_host(out.fields["p"].values), np.arange(8))
+    np.testing.assert_array_equal(tack.arrays.to_host(out.fields["p"].values), [])
     assert out.sets["none"].on == "cells" and len(out.sets["none"]) == 0
 
 

@@ -1096,7 +1096,7 @@ What each filter gives:
 | `contour`, `slice`, `slice_plane` | interpolated along edges | pieces of the cut cells | — | — |
 | `clip` | kept points, edge crossings and centroids | pieces of the cut cells, whole kept ones | — | — |
 | `extract_points`, `threshold_points`, `mask_points` | kept points, each a vertex cell | — | — | — |
-| `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
+| `extract_surface` | the points the faces use, in order | pieces (each face's cell); face values become cell values | — | — |
 | `extract_edges` | the same points | — (an edge has several cells) | — | the lines' cells: edge values become cell values |
 | `as_polyhedra` | same | same | same | same |
 | `as_polygons` | same | same | — | — |

@@ -58,7 +58,9 @@ def test_faces_are_the_ends(backend):
     np.testing.assert_array_equal(td.boundary_faces(data).numpy(), [0, 2, 4, 5])
     ends = td.extract_surface(data)
     assert set(ends.topology.types.numpy()) == {1}                  # VTK_VERTEX
-    np.testing.assert_array_equal(ends.topology.connectivity.numpy(), [0, 5, 9, 10])
+    # On the points they use, renumbered in order, as VTK's geometry filter keeps them.
+    np.testing.assert_array_equal(ends.topology.connectivity.numpy(), [0, 1, 2, 3])
+    np.testing.assert_array_equal(ends.positions(), data.positions()[[0, 5, 9, 10]])
 
 
 def test_branches_have_no_faces(backend):

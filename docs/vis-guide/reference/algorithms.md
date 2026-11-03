@@ -45,7 +45,7 @@ topologies, sets, implicit functions, locators -- are in
 
 - [Cells kept whole](#cells-kept-whole): New datasets of some of the input's cells, unchanged, with only the points they use.
 - [Cutting](#cutting): New datasets of pieces of cells, with points made on their edges.
-- [Surfaces and edges](#surfaces-and-edges): A mesh's faces and edges, as sets or datasets on the same points.
+- [Surfaces and edges](#surfaces-and-edges): A mesh's faces and edges, as sets or datasets: a surface on the points its faces use, edges on the same points.
 - [Shapes for drawing](#shapes-for-drawing): Geometry made to be drawn: what a renderer would otherwise make from lines and vectors, made by Tack so its fields and marks come along.
 - [Connectivity and winding](#connectivity-and-winding): Which cells belong together, and which are wound wrong.
 - [Changing cell types](#changing-cell-types): The same points and region, in other cells.
@@ -111,7 +111,9 @@ New datasets of pieces of cells, with points made on their edges.
 
 ## Surfaces and edges
 
-A mesh's faces and edges, as sets or datasets on the same points.
+A mesh's faces and edges, as sets or datasets: a surface on the points its faces
+use (renumbered in order, as VTK's geometry filter keeps them), edges on the
+same points.
 
 | Algorithm | Gives | Takes | VTK | Viskores |
 |---|---|---|---|---|
