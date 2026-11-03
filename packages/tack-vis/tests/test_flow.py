@@ -608,8 +608,10 @@ def test_streamlines_are_the_paths(backend):
     np.testing.assert_allclose(lengths, [np.linalg.norm(np.diff(x[:31], axis=0), axis=1).sum(),
                                          np.linalg.norm(np.diff(x[31:62], axis=0), axis=1).sum()],
                                rtol=1e-5)
-    ends = td.extract_surface(lines)
-    np.testing.assert_array_equal(np.sort(ends.topology.connectivity.numpy()), [0, 30, 31, 61])
+    ends = td.extract_surface(lines)                    # on the points they use
+    assert ends.num_points == 4
+    np.testing.assert_array_equal(ends.positions()[ends.topology.connectivity.numpy()],
+                                  x[[0, 30, 31, 61]])
     advected = td.advect(data, "v", seeds, 0.05, 30)
     np.testing.assert_allclose(x[[30, 61]], advected.positions()[:2], atol=1e-6)
 
