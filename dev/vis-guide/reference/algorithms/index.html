@@ -8300,6 +8300,16 @@ ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their
 shape; cut cells become the pieces their case lists. Points are the kept
 corners, the crossings on cut edges (merged across cells) and centroid
 points; point data is interpolated onto them, cell data goes to each piece.</p>
+<p>Crossings are named by their edges, as VTK's <code>vtkTableBasedClipDataSet</code>
+names them, so a clip exactly through mesh points (a plane through a face
+of cells, or a hair from points, as a symmetry plane's at y = 1e-45) leaves
+a crossing on top of the corner it lies at and cells of no volume between
+them, as VTK's does. <code>merge_points</code> merges the coincident points (VTK's
+<code>vtkCleanGrid</code>), leaving those cells naming a point more than once;
+<code>generate_global_ids</code> of clipped pieces needs them merged first, since it
+matches points by position. <code>contour</code> and <code>slice</code> instead make such a
+crossing the point (<code>edge_crossing</code>) and drop what loses its area; clip
+cannot drop what it keeps, since some of those cells keep their volume.</p>
 <p>A polyhedral topology is clipped cell by cell into polyhedra: each cut cell
 becomes the polyhedron of its kept part, its faces clipped (each face once,
 so faces two cells share stay one face) and its iso-polygons -- as
@@ -8466,7 +8476,18 @@ between the lattice values does.</p>
 <span class="normal">389</span>
 <span class="normal">390</span>
 <span class="normal">391</span>
-<span class="normal">392</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">clip</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">by</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">inside</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
          <span class="n">exact</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The part of ``data`` where ``by`` -- point data (a field or its name) or an</span>
@@ -8476,6 +8497,17 @@ between the lattice values does.</p>
 <span class="sd">    shape; cut cells become the pieces their case lists. Points are the kept</span>
 <span class="sd">    corners, the crossings on cut edges (merged across cells) and centroid</span>
 <span class="sd">    points; point data is interpolated onto them, cell data goes to each piece.</span>
+
+<span class="sd">    Crossings are named by their edges, as VTK&#39;s ``vtkTableBasedClipDataSet``</span>
+<span class="sd">    names them, so a clip exactly through mesh points (a plane through a face</span>
+<span class="sd">    of cells, or a hair from points, as a symmetry plane&#39;s at y = 1e-45) leaves</span>
+<span class="sd">    a crossing on top of the corner it lies at and cells of no volume between</span>
+<span class="sd">    them, as VTK&#39;s does. ``merge_points`` merges the coincident points (VTK&#39;s</span>
+<span class="sd">    ``vtkCleanGrid``), leaving those cells naming a point more than once;</span>
+<span class="sd">    ``generate_global_ids`` of clipped pieces needs them merged first, since it</span>
+<span class="sd">    matches points by position. ``contour`` and ``slice`` instead make such a</span>
+<span class="sd">    crossing the point (``edge_crossing``) and drop what loses its area; clip</span>
+<span class="sd">    cannot drop what it keeps, since some of those cells keep their volume.</span>
 
 <span class="sd">    A polyhedral topology is clipped cell by cell into polyhedra: each cut cell</span>
 <span class="sd">    becomes the polyhedron of its kept part, its faces clipped (each face once,</span>

@@ -5214,6 +5214,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#tack.dataset.edge_crossing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        edge_crossing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.dataset.keep_marks" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -9310,6 +9321,17 @@
     <span class="md-ellipsis">
       
         Interpolate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tack.dataset.edge_crossing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        edge_crossing
       
     </span>
   </a>
@@ -19466,7 +19488,9 @@ same cells and points) or records their loss with <code>drop_marks</code>, so th
 reductions over pieces refuse what they would count twice. Filters that
 make cells start from <code>visible(data)</code>, which leaves out hidden cells, and a
 reduction over a piece takes its <code>owned_values</code>. A selection made by a
-kernel becomes a set with <code>Set.from_flags</code>, and <code>extract_cells</code> keeps it.</p>
+kernel becomes a set with <code>Set.from_flags</code>, and <code>extract_cells</code> keeps it.
+A cut's kernel places each crossing with <code>edge_crossing</code>, as the built-ins
+do, so pieces sharing an edge compute it alike.</p>
 
 
 <div class="doc doc-object doc-module">
@@ -19932,6 +19956,103 @@ than between their ends (<code>_crossings</code>: <code>exact(field, values)</co
 
   </div>
 
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="tack.dataset.edge_crossing" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">tack.dataset.edge_crossing</span>
+
+
+<a href="#tack.dataset.edge_crossing" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">edge_crossing</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">,</span> <span class="n">xa</span><span class="p">,</span> <span class="n">xb</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Where <code>level</code> crosses the edge between points <code>a</code> and <code>b</code> (ids, at
+positions <code>xa</code> and <code>xb</code>, with values <code>va</code> and <code>vb</code>), as every built-in
+cut places it: <code>(first, second, weight)</code>, <code>Interpolate</code>'s ends and
+weight, for a <code>@tack.kernel</code> writing them.</p>
+<ul>
+<li>The crossing is interpolated from the end first by position (x, then y,
+  then z), so every piece and cell holding the edge computes it, and the
+  values <code>carry</code> brings there, to the same bits; ghost marks give the
+  point that end's owner.</li>
+<li>At an end whose value is the level, or one the crossing lies within half
+  an ulp of (relative to the edge's largest coordinate), the crossing is that
+  end: <code>(end, end, 0)</code>. Every edge's crossing there is then one point --
+  name it by the end, as the built-ins do, so the cut has no two points at
+  one position.</li>
+</ul>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/_common.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">func</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">edge_crossing</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">,</span> <span class="n">xa</span><span class="p">,</span> <span class="n">xb</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Where ``level`` crosses the edge between points ``a`` and ``b`` (ids, at</span>
+<span class="sd">    positions ``xa`` and ``xb``, with values ``va`` and ``vb``), as every built-in</span>
+<span class="sd">    cut places it: ``(first, second, weight)``, ``Interpolate``&#39;s ends and</span>
+<span class="sd">    weight, for a ``@tack.kernel`` writing them.</span>
+
+<span class="sd">    - The crossing is interpolated from the end first by position (x, then y,</span>
+<span class="sd">      then z), so every piece and cell holding the edge computes it, and the</span>
+<span class="sd">      values ``carry`` brings there, to the same bits; ghost marks give the</span>
+<span class="sd">      point that end&#39;s owner.</span>
+<span class="sd">    - At an end whose value is the level, or one the crossing lies within half</span>
+<span class="sd">      an ulp of (relative to the edge&#39;s largest coordinate), the crossing is that</span>
+<span class="sd">      end: ``(end, end, 0)``. Every edge&#39;s crossing there is then one point --</span>
+<span class="sd">      name it by the end, as the built-ins do, so the cut has no two points at</span>
+<span class="sd">      one position.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">hit</span> <span class="o">=</span> <span class="n">_end_hit</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">,</span> <span class="n">xa</span><span class="p">,</span> <span class="n">xb</span><span class="p">)</span>
+    <span class="n">first</span> <span class="o">=</span> <span class="n">a</span>
+    <span class="n">second</span> <span class="o">=</span> <span class="n">b</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">_crossing</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">hit</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">hit</span>
+        <span class="n">second</span> <span class="o">=</span> <span class="n">hit</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">_first_end</span><span class="p">(</span><span class="n">xa</span><span class="p">,</span> <span class="n">xb</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">b</span>
+        <span class="n">second</span> <span class="o">=</span> <span class="n">a</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">_crossing</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">vb</span><span class="p">,</span> <span class="n">va</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">first</span><span class="p">,</span> <span class="n">second</span><span class="p">,</span> <span class="n">w</span>
+</code></pre></div></td></tr></table></div>
+            </details>
     </div>
 
 </div>

@@ -4995,14 +4995,19 @@ is the cell on the face's inner side, and a boundary face has one side.</p>
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_edge_points</span><span class="p">(</span><span class="n">faces</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">crossed</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">ends</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
-    <span class="c1"># Each crossed edge&#39;s point: its two ends, and how far it lies from the first.</span>
+    <span class="c1"># Each crossed edge&#39;s point: its two ends, and how far it lies from the first,</span>
+    <span class="c1"># as td.edge_crossing places it -- from the end first by position, so pieces</span>
+    <span class="c1"># sharing the edge compute it to the same bits.</span>
     <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">faces</span><span class="p">:</span>
         <span class="n">e</span> <span class="o">=</span> <span class="n">faces</span><span class="o">.</span><span class="n">entity_id</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">crossed</span><span class="p">[</span><span class="n">e</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="n">a</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
-            <span class="n">b</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
-            <span class="n">ends</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">]</span>
-            <span class="n">weights</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span><span class="n">level</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">a</span><span class="p">])</span> <span class="o">/</span> <span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">b</span><span class="p">]</span> <span class="o">-</span> <span class="n">u</span><span class="p">[</span><span class="n">a</span><span class="p">])</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="n">faces</span><span class="o">.</span><span class="n">point_id</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">first</span><span class="p">,</span> <span class="n">second</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">edge_crossing</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">u</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">u</span><span class="p">[</span><span class="n">b</span><span class="p">],</span>
+                                                <span class="n">faces</span><span class="o">.</span><span class="n">corner_position</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                                                <span class="n">faces</span><span class="o">.</span><span class="n">corner_position</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">ends</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span><span class="n">first</span><span class="p">,</span> <span class="n">second</span><span class="p">]</span>
+            <span class="n">weights</span><span class="p">[</span><span class="n">slots</span><span class="p">[</span><span class="n">e</span><span class="p">]]</span> <span class="o">=</span> <span class="n">w</span>
 
 
 <span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
@@ -5079,23 +5084,27 @@ each edge the level crosses, and new cells, each a line inside a triangle, so
   either side.</li>
 <li>One kernel over the faces flags the edges the level crosses, a scan
     numbers them, and a second kernel fills in each point's two ends and its
-    weight: how far it lies from the first end,
-    <code>(level - u[a]) / (u[b] - u[a])</code>.</li>
+    weight, how far it lies from the first end, with <code>td.edge_crossing</code>, the
+    rule every built-in cut uses.</li>
 <li>The two triangles on an edge then name its point by the same number,
     <code>slots[face_id]</code>, so their lines join.</li>
-<li>The first end is the edge's lower point id, as in the built-in, so the
-    points have the built-in's bits.</li>
+<li><code>edge_crossing</code> takes the end first by position (x, then y, then z) as
+    the first, so every piece holding the edge computes the point to the same
+    bits, and gets the built-in's bits.</li>
 <li><strong>Orient the lines.</strong> Going round each triangle (<code>side_point_id(c, k, 0)</code> to
   <code>side_point_id(c, k, 1)</code>), its line runs from the edge where the values rise
   past the level to the edge where they fall back. The higher values then lie
   on its right, as with the built-in.</li>
 <li><strong>What it leaves out.</strong> The built-in also:</li>
-<li>makes the crossings of edges that meet at a point whose value is exactly
-    the level into one point there;</li>
+<li>makes the crossings of the edges that meet at a point into one point
+    there, when the point's value is the level or the crossing lies within
+    half an ulp of it (<code>edge_crossing</code> returns that point as both ends): a
+    plane a hair from mesh points would otherwise put several points at one
+    position;</li>
 <li>contours several levels at once;</li>
 <li>skips cells with a NaN.</li>
 </ul>
-<p>The example picks a level that no value equals.</p>
+<p>The example picks a level no crossing lands on a point at.</p>
 <h3 id="carry-map-by-map"><code>carry</code>, map by map<a class="headerlink" href="#carry-map-by-map" title="Permanent link">&para;</a></h3>
 <p><code>carry(data, out, points=..., cells=...)</code> builds a dataset on the new
 topology <code>out</code>, and brings everything of <code>data</code> that its maps say how to
@@ -5157,7 +5166,9 @@ bring:</p>
 <li>Pieces without ghost cells cannot tell who owns what they make on the
     edges they share.</li>
 <li>Their output records that its marks were lost, and reductions over it
-    refuse to run (see <code>shrink</code> above).</li>
+    refuse to run (see <code>shrink</code> above) until <code>generate_global_ids</code> of the
+    outputs decides the owners by matching positions, which works because
+    every piece computes a shared point to the same bits.</li>
 <li><strong>Global ids</strong> go with entities that are input entities (<code>Same</code>, <code>Take</code>).
   Made points and pieces of cells have none.</li>
 <li><strong>The frame:</strong> the origin, spatial unit and time always come along.</li>
