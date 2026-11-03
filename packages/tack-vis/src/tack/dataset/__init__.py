@@ -109,7 +109,7 @@ from tack.dataset.algorithms import (
     voxelize,
     warp,
 )
-from tack.dataset.algorithms._common import edge_crossing
+from tack.dataset.algorithms._common import edge_crossing, register_field_resolver
 from tack.dataset.algorithms.gradients import world_gradient, world_hessian, world_jet
 from tack.dataset.amr import AMRDataSet
 from tack.dataset.carry import Interpolate, Pieces, Same, Take, carry
@@ -282,6 +282,7 @@ __all__ = [
     "probe",
     "project",
     "rectilinear_grid",
+    "register_field_resolver",
     "remove_ghosts",
     "shapes",
     "shrink",

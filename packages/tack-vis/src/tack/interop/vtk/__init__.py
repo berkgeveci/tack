@@ -2197,8 +2197,12 @@ def dataset_to_vtk(data, copy=True, higher_order=False, cell_grid=False):
     ``Constant`` fields and values on cells ``constant``; fields of other spaces
     are left out with a warning. The cells come type by type, in Tack's order
     within each. It needs ``vtkDGCell.SetCellSpec``, newer than VTK 9.7.1."""
+    from tack.dataset import DataSet
+    from tack.dataset.dataset import stored
     from tack.interop.vtk import _lagrange
 
+    if isinstance(data, DataSet):
+        data = stored(data)
     if cell_grid:
         from tack.interop.vtk import _cellgrid
 

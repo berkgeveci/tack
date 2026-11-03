@@ -465,7 +465,8 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
     fields (``Constant``, values on cells) onto its triangles, from the cell
     each came from.
     """
-    value = _in_unit_of(_field(data, field), value, "contour's value")
+    field = _field(data, field)
+    value = _in_unit_of(field, value, "contour's value")
     from tack.dataset.ghosts import visible
 
     data, field = visible(data, field)

@@ -136,13 +136,37 @@ def _same_space(*fields):
     return space, n
 
 
+_RESOLVERS = []
+
+
+def register_field_resolver(resolve):
+    """Lets every algorithm's field argument be text that names no field: ``resolve(data,
+    text)`` gives a ``Field`` on ``data`` for it, or ``None`` when the text is not its kind
+    (the field expressions of ``tack_expr`` register one). The last registered is asked
+    first."""
+    if resolve not in _RESOLVERS:
+        _RESOLVERS.append(resolve)
+
+
+def _resolved(data, text):
+    if not isinstance(text, str) or text in data.fields:
+        return data.fields[text]
+    for resolve in reversed(_RESOLVERS):
+        field = resolve(data, text)
+        if field is not None:
+            return field
+    return data.fields[text]
+
+
 def _field(data, field):
-    """A field by name or object, checked against the dataset before launch."""
+    """A field by name, object or registered resolver (``register_field_resolver``),
+    checked against the dataset before launch."""
     from tack.dataset.dataset import Field, is_field_key
 
-    field = data.fields[field] if is_field_key(field) else field
+    field = _resolved(data, field) if is_field_key(field) else field
     if not isinstance(field, Field):
-        raise TypeError("a field argument is a tack.dataset.Field or its name")
+        raise TypeError("a field argument is a tack.dataset.Field, its name, or text a "
+                        "registered resolver reads")
     if field.space.topology is not data.topology:
         raise ValueError("a field argument belongs to another topology")
     return field

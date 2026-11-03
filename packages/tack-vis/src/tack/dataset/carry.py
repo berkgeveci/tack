@@ -499,9 +499,19 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
         if geometry is None:
             raise ValueError("the geometry cannot be carried by these maps; pass it")
     carried = {}
+    rebound = []
     for name in selected(data, fields):
-        field = _carry_field(data.fields[name], data, out, points, cells, faces,
+        source = data.fields[name]
+        if getattr(source.space, "evaluated", False) and hasattr(source.space, "rebind"):
+            rebound.append((name, source))
+            continue
+        field = _carry_field(source, data, out, points, cells, faces,
                              faces_to_cells, edges, edges_to_cells)
+        if field is not None and getattr(source, "gradient", None) is not None:
+            gradient = _carry_field(source.gradient, data, out, points, cells, faces,
+                                    faces_to_cells, edges, edges_to_cells)
+            if gradient is not None:
+                field = Field(field.space, field.values, field.unit, gradient=gradient)
         if field is not None:
             carried[name] = field
     if sets is None:
@@ -518,5 +528,12 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     made = DataSet(out, geometry, fields=carried, sets=sets, **data._frame())
     carry_ids(data, made, points=points, cells=None if faces_to_cells is not None or
               edges_to_cells is not None else cells)
-    return carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,
+    made = carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,
                        edges_to_cells=edges_to_cells)
+    # A field evaluated where it is read has nothing to move: its space makes it again
+    # on the output, from the fields carried there (None where they were not).
+    for name, source in rebound:
+        field = source.space.rebind(source, made)
+        if field is not None:
+            made.fields[name] = field
+    return made
