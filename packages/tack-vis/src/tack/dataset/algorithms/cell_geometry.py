@@ -172,8 +172,6 @@ def cell_geometry(data):
         volumes, centroids = cell_measures(data)
         return CellGeometry(Field(Values(data, "cells"), volumes, _measure_unit(data)),
                             Field(Values(data, "cells"), centroids, data.unit))
-    if data.topology.dimension > 1 and not getattr(data.topology, "reference_cells", True):
-        data.topology.faces()                      # polyhedra and polygons walk theirs
     n = data.num_cells
     volumes = tack.empty((n,), data.dtype)
     centroids = _vectors(n, data.dtype)

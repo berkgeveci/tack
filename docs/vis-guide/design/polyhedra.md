@@ -521,9 +521,18 @@ includes.
 whose cells are polygons and whose facets are edges.
 
 - It is built from point loops, as producers and isosurfaces give them.
-  Edges are matched by sorting: the first polygon to use an edge is its
-  side 0, and a second must walk it the other way. Inconsistent winding,
-  or a non-orientable surface, is refused, as is an edge of three polygons.
+  Edges are matched by sorting, when something first needs them (`faces()`,
+  the facet arrays): the first polygon to use an edge is its side 0, and a
+  second must walk it the other way. Inconsistent winding, or a
+  non-orientable surface, is refused there, as is an edge of three polygons.
+- The polygons themselves need no matching: their kernels walk each loop
+  (through the matched facets where there are some, else each polygon's own
+  edges), so areas, centres, integrals, probes, quality and writing work on
+  any loops. A contour through polyhedra can meet an edge three or more
+  times -- a point within half an ulp of the level made a vertex on some of
+  its edges and not others traces one iso-edge in several faces (the AhmedML
+  mesh's Q = 1, 2 and 5) -- and is made, as a polyline topology with
+  branches is.
 - Sides, boundary, the shared entity methods and the face-based algorithms
   all carry over. `check_winding` checks that loops close; `cell_geometry`
   gives areas and centroids.

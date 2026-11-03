@@ -427,11 +427,19 @@ class PolyhedralTopology(_Topology):
             self._point_links = (offsets, order)
         return self._point_links
 
+    def _cell_walk(self):
+        """What the cells' kernels walk: ``(cell_offsets, cell_faces, cell_face_sides,
+        face_offsets, face_points)``."""
+        return (self.cell_offsets, self.cell_faces, self.cell_face_sides, self.face_offsets,
+                self.face_points)
+
     @on_inputs_device
     def cell_points(self):
         """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR."""
         if self._cell_points is None:
-            self._cell_points = _derive_cell_points(self)
+            cell_offsets, cell_faces, _, face_offsets, face_points = self._cell_walk()
+            self._cell_points = _derive_cell_points(self, cell_offsets, cell_faces,
+                                                    face_offsets, face_points)
         return self._cell_points
 
     @on_inputs_device
@@ -441,8 +449,7 @@ class PolyhedralTopology(_Topology):
             point_offsets, point_ids = self.cell_points()
             self._groups = [DomainGroup(
                 _PolyhedralCells, self.cell_shape,
-                (self.cell_offsets, self.cell_faces, self.cell_face_sides, self.face_offsets,
-                 self.face_points, point_offsets, point_ids, self.num_cells),
+                (*self._cell_walk(), point_offsets, point_ids, self.num_cells),
                 self.num_cells, 0)]
         return self._groups
 
@@ -620,6 +627,24 @@ def _every_other(offsets):
         offsets[i] = 2 * i
 
 
+@tack.kernel
+def _own_edges(loop_offsets, loop_points, face_points, n):
+    # Each polygon's edges as its own facets: facet k of polygon c, entry
+    # loop_offsets[c] + k, from its loop point k to the next.
+    for c in range(n):
+        start = loop_offsets[c]
+        m = loop_offsets[c + 1] - start
+        for k in range(m):
+            face_points[2 * (start + k)] = loop_points[start + k]
+            face_points[2 * (start + k) + 1] = loop_points[start + (k + 1) % m]
+
+
+def _facet_array(index):
+    def read(self):
+        return self._facets()[index]
+    return property(read)
+
+
 class PolygonalTopology(PolyhedralTopology):
     """Polygons of any number of points, the polyhedral topology one dimension down:
     cells are polygons, their facets edges.
@@ -627,15 +652,30 @@ class PolygonalTopology(PolyhedralTopology):
     Built from point loops -- ``loop_points[loop_offsets[c]:loop_offsets[c + 1]]``
     is polygon ``c``'s points in order -- as producers and isosurfaces give them.
     Facet ``k`` of a polygon is its edge from loop point ``k`` to the next. Edges
-    are matched by sorting: the first polygon to use an edge is its side 0 and
-    the edge runs its way; a second must run it the other way, or the winding is
-    inconsistent (or the surface not orientable) and is refused, as is an edge
-    of three polygons. ``loops()`` gives the loops back.
+    are matched by sorting, on first use (``faces()``, the facet arrays): the
+    first polygon to use an edge is its side 0 and the edge runs its way; a
+    second must run it the other way, or the winding is inconsistent (or the
+    surface not orientable) and is refused, as is an edge of three polygons.
+    The topology itself takes them: its cells (``groups()``, ``cell_points()``,
+    locating and evaluating in them) and everything that does not need its
+    faces work, as a polyline topology's branches do, so a contour or a
+    surface whose edges meet three or more polygons is made and drawn, its
+    areas and values computed. ``loops()`` gives the loops back.
     """
 
     dimension = 2
     cell_shape = shapes.Polygon
     facet_shape = shapes.Line
+    _STORED = ("loop_offsets", "loop_points")
+    _matched = None
+
+    # The matched facets, derived on first use: each edge once, wound out of its
+    # side 0.
+    face_offsets = _facet_array(0)
+    face_points = _facet_array(1)
+    cell_faces = _facet_array(2)
+    cell_face_sides = _facet_array(3)
+    num_faces = _facet_array(4)
 
     def _moved(self, target):
         return PolygonalTopology(self.loop_offsets.to_device(target),
@@ -658,7 +698,31 @@ class PolygonalTopology(PolyhedralTopology):
             _refuse("polygonal topology", _csr_problems(
                 loop_offsets, loop_points, int(num_points), "loop_offsets", "loop_points",
                 "num_points"))
-        n = size_of(loop_offsets) - 1
+        self.id_dtype = idt
+        self.loop_offsets = self.cell_offsets = loop_offsets
+        self.loop_points = loop_points
+        self.num_points = int(num_points)
+        self.num_cells = size_of(loop_offsets) - 1
+        if self.num_cells < 0:
+            raise ValueError("loop_offsets has one entry more than there are polygons")
+        self._cell_points = None
+        self._groups = None
+
+    def _facets(self):
+        """The edges matched: ``(face_offsets, face_points, cell_faces, sides,
+        num_faces)``, derived once; refused (``ValueError``) where an edge meets
+        three or more polygons or two walk it the same way."""
+        if self._matched is None:
+            self._matched = self._match()
+        if isinstance(self._matched, str):
+            raise ValueError(self._matched)
+        return self._matched
+
+    @on_inputs_device
+    def _match(self):
+        idt, n = self.id_dtype, self.num_cells
+        loop_offsets, loop_points = self.loop_offsets, self.loop_points
+        total = size_of(loop_points)
         keys = tack.empty((total,), tack.vec(2, idt))
         directions = tack.empty((total,), tack.i32)
         cell_faces = tack.empty((total,), idt)
@@ -666,7 +730,7 @@ class PolygonalTopology(PolyhedralTopology):
         count = 0
         if total:
             _loop_edge_keys(loop_offsets, loop_points, keys, directions, n)
-            order = key_order(keys, num_points, idt)
+            order = key_order(keys, self.num_points, idt)
             offsets, count = run_offsets(keys, order)
         face_points = tack.empty((2 * count,), idt)
         if count:
@@ -674,17 +738,34 @@ class PolygonalTopology(PolyhedralTopology):
             _facets_from_runs(order, offsets, keys, directions, face_points, cell_faces,
                               sides, problems, count)
             if problems[0]:
-                raise ValueError(f"{problems[0]} edges are shared by more than two polygons")
+                return (f"{problems[0]} edges are shared by more than two polygons: the "
+                        "polygons work, their faces do not")
             if problems[1]:
-                raise ValueError(f"{problems[1]} edges are walked the same way by both their "
-                                 "polygons: the winding is inconsistent, or the surface is "
-                                 "not orientable")
+                return (f"{problems[1]} edges are walked the same way by both their "
+                        "polygons: the winding is inconsistent, or the surface is not "
+                        "orientable")
         face_offsets = tack.empty((count + 1,), idt)
         _every_other(face_offsets)
-        super().__init__(face_offsets, face_points, loop_offsets, cell_faces, sides,
-                         num_points=num_points, id_dtype=idt)
-        self.loop_offsets = loop_offsets
-        self.loop_points = loop_points
+        return face_offsets, face_points, cell_faces, sides, count
+
+    def _cell_walk(self):
+        """The matched facets, or where the edges cannot be matched each polygon's
+        own edges, which its kernels walk alike (a polygon's walk is its loop)."""
+        try:
+            face_offsets, face_points, cell_faces, sides, _ = self._facets()
+        except ValueError:
+            return self._own_edges()
+        return self.cell_offsets, cell_faces, sides, face_offsets, face_points
+
+    def _own_edges(self):
+        idt, total = self.id_dtype, size_of(self.loop_points)
+        face_points = tack.empty((2 * total,), idt)
+        if total:
+            _own_edges(self.loop_offsets, self.loop_points, face_points, self.num_cells)
+        face_offsets = tack.empty((total + 1,), idt)
+        _every_other(face_offsets)
+        return (self.cell_offsets, tack.arange(total, dtype=idt), tack.zeros((total,), tack.u8),
+                face_offsets, face_points)
 
 
     def validate(self):
