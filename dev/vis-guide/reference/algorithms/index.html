@@ -7001,7 +7001,7 @@ topologies, sets, implicit functions, locators -- are in
 <ul>
 <li><a href="#cells-kept-whole">Cells kept whole</a>: New datasets of some of the input's cells, unchanged, with only the points they use.</li>
 <li><a href="#cutting">Cutting</a>: New datasets of pieces of cells, with points made on their edges.</li>
-<li><a href="#surfaces-and-edges">Surfaces and edges</a>: A mesh's faces and edges, as sets or datasets on the same points.</li>
+<li><a href="#surfaces-and-edges">Surfaces and edges</a>: A mesh's faces and edges, as sets or datasets: a surface on the points its faces use, edges on the same points.</li>
 <li><a href="#shapes-for-drawing">Shapes for drawing</a>: Geometry made to be drawn: what a renderer would otherwise make from lines and vectors, made by Tack so its fields and marks come along.</li>
 <li><a href="#connectivity-and-winding">Connectivity and winding</a>: Which cells belong together, and which are wound wrong.</li>
 <li><a href="#changing-cell-types">Changing cell types</a>: The same points and region, in other cells.</li>
@@ -8649,7 +8649,9 @@ between the lattice values does.</p>
     </div>
 
 </div><h2 id="surfaces-and-edges">Surfaces and edges<a class="headerlink" href="#surfaces-and-edges" title="Permanent link">&para;</a></h2>
-<p>A mesh's faces and edges, as sets or datasets on the same points.</p>
+<p>A mesh's faces and edges, as sets or datasets: a surface on the points its faces
+use (renumbered in order, as VTK's geometry filter keeps them), edges on the
+same points.</p>
 <table>
 <thead>
 <tr>
@@ -8758,15 +8760,17 @@ carry it through filters; <code>extract_surface</code> makes a dataset of it.</p
 
         <p>The <code>faces</code> -- a face <code>Set</code> (as <code>boundary_faces</code> returns), a set's name
 in <code>data.sets</code>, or face ids (a field or an array); by default the boundary
-(<code>boundary_faces</code>), VTK's external faces -- as a dataset on the same points: a 3D
+(<code>boundary_faces</code>), VTK's external faces -- as a dataset on the points they use: a 3D
 mesh's faces as triangles, quads or polygons, each in its side 0's outward
 order; a 2D mesh's edges as line cells; a polyline mesh's ends as vertex
 cells. By default a 2D mesh is its own surface: its cells pass through (its
 hidden ones left out), as VTK's geometry filter passes polygons; its
 boundary edges are <code>extract_surface(data, boundary_faces(data))</code>. Fields on faces become the surface's
 cell fields, and so do cell fields (<code>Constant</code>, values on cells), each face
-taking its side 0 cell's value; point fields (<code>H1</code>, values on points) stay on
-the same points. A 3D mesh's order-2 <code>H1</code> fields and geometry stay order 2
+taking its side 0 cell's value; point fields (<code>H1</code>, values on points) come with
+the points, which are the ones the faces use, renumbered in order, as VTK's
+geometry filter keeps them (so a surface's point statistics are the
+surface's). A 3D mesh's order-2 <code>H1</code> fields and geometry stay order 2
 on the surface, the trace of the solid's: each face's corners, edge middles
 and (a quad's) center are the surface cell's, so their values are gathered,
 not evaluated. A 2D mesh's boundary lines take an order-2 field's values at
@@ -8785,9 +8789,7 @@ them where the pieces had no ghost cells).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/extract_surface.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">207</span>
 <span class="normal">208</span>
 <span class="normal">209</span>
 <span class="normal">210</span>
@@ -8865,19 +8867,32 @@ them where the pieces had no ghost cells).</p>
 <span class="normal">282</span>
 <span class="normal">283</span>
 <span class="normal">284</span>
-<span class="normal">285</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_surface</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">faces</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``faces`` -- a face ``Set`` (as ``boundary_faces`` returns), a set&#39;s name</span>
 <span class="sd">    in ``data.sets``, or face ids (a field or an array); by default the boundary</span>
-<span class="sd">    (``boundary_faces``), VTK&#39;s external faces -- as a dataset on the same points: a 3D</span>
+<span class="sd">    (``boundary_faces``), VTK&#39;s external faces -- as a dataset on the points they use: a 3D</span>
 <span class="sd">    mesh&#39;s faces as triangles, quads or polygons, each in its side 0&#39;s outward</span>
 <span class="sd">    order; a 2D mesh&#39;s edges as line cells; a polyline mesh&#39;s ends as vertex</span>
 <span class="sd">    cells. By default a 2D mesh is its own surface: its cells pass through (its</span>
 <span class="sd">    hidden ones left out), as VTK&#39;s geometry filter passes polygons; its</span>
 <span class="sd">    boundary edges are ``extract_surface(data, boundary_faces(data))``. Fields on faces become the surface&#39;s</span>
 <span class="sd">    cell fields, and so do cell fields (``Constant``, values on cells), each face</span>
-<span class="sd">    taking its side 0 cell&#39;s value; point fields (``H1``, values on points) stay on</span>
-<span class="sd">    the same points. A 3D mesh&#39;s order-2 ``H1`` fields and geometry stay order 2</span>
+<span class="sd">    taking its side 0 cell&#39;s value; point fields (``H1``, values on points) come with</span>
+<span class="sd">    the points, which are the ones the faces use, renumbered in order, as VTK&#39;s</span>
+<span class="sd">    geometry filter keeps them (so a surface&#39;s point statistics are the</span>
+<span class="sd">    surface&#39;s). A 3D mesh&#39;s order-2 ``H1`` fields and geometry stay order 2</span>
 <span class="sd">    on the surface, the trace of the solid&#39;s: each face&#39;s corners, edge middles</span>
 <span class="sd">    and (a quad&#39;s) center are the surface cell&#39;s, so their values are gathered,</span>
 <span class="sd">    not evaluated. A 2D mesh&#39;s boundary lines take an order-2 field&#39;s values at</span>
@@ -8910,7 +8925,8 @@ them where the pieces had no ghost cells).</p>
     <span class="k">if</span> <span class="n">faces</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
         <span class="c1"># A surface mesh is its own surface: its polygons pass through, as VTK&#39;s</span>
         <span class="c1"># geometry filter passes them.</span>
-        <span class="k">return</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_on_used_points</span><span class="p">(</span><span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span>
+                                     <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">))</span>
     <span class="k">if</span> <span class="n">faces</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">fresh</span> <span class="o">=</span> <span class="n">_fresh_boundary</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">fresh</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -8937,15 +8953,21 @@ them where the pieces had no ghost cells).</p>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
         <span class="n">_surface_cells</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">faces</span><span class="o">.</span><span class="n">kinds</span><span class="p">,</span> <span class="n">faces</span><span class="o">.</span><span class="n">rows</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span>
                        <span class="n">length</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
-    <span class="n">surface</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
     <span class="n">cells</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
         <span class="n">_face_cells</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">faces</span><span class="o">.</span><span class="n">sides</span><span class="p">,</span> <span class="n">cells</span><span class="p">)</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">surface</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Pieces</span><span class="p">(</span><span class="n">cells</span><span class="p">),</span> <span class="n">faces_to_cells</span><span class="o">=</span><span class="n">Take</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
-                <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">_has_order_two</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="p">):</span>
+        <span class="c1"># The order-2 values are gathered from the solid&#39;s nodes by its point</span>
+        <span class="c1"># numbering, so the surface is put on its points after.</span>
+        <span class="n">surface</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">surface</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Same</span><span class="p">(),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Pieces</span><span class="p">(</span><span class="n">cells</span><span class="p">),</span> <span class="n">faces_to_cells</span><span class="o">=</span><span class="n">Take</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span>
+                    <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
         <span class="n">_keep_order_two</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">out</span>
+        <span class="k">return</span> <span class="n">_on_used_points</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+    <span class="n">count</span><span class="p">,</span> <span class="n">points</span> <span class="o">=</span> <span class="n">_used_points</span><span class="p">(</span><span class="n">connectivity</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">,</span> <span class="n">idt</span><span class="p">)</span>
+    <span class="n">surface</span> <span class="o">=</span> <span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="n">count</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">carry</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">surface</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">Take</span><span class="p">(</span><span class="n">points</span><span class="p">),</span> <span class="n">cells</span><span class="o">=</span><span class="n">Pieces</span><span class="p">(</span><span class="n">cells</span><span class="p">),</span>
+                 <span class="n">faces_to_cells</span><span class="o">=</span><span class="n">Take</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
