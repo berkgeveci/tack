@@ -654,6 +654,52 @@ def test_streamlines_by_length_follow_the_direction(backend):
         td.streamlines(data, "v", seeds, h, n, step_unit="cells")
 
 
+def test_slow_flows_are_not_zero_velocity(backend):
+    """A mantle's flow is 1e-9 m/s: by length, its paths are a fast flow's, and its
+    times 1e9 as long. Zero velocity is a speed whose square is at or below the
+    smallest normal number, not the machine epsilon (a speed of 3.5e-4 in f32,
+    in any unit), which stopped every particle at its seed."""
+    seeds = np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.0]])
+    fast = td.streamlines(_rotation(_grid()), "v", seeds, 0.05, 30, step_unit="length")
+    data = _rotation(_grid())
+    data.fields["v"] = td.Field(td.H1(data), _vectors(data.fields["v"].values.numpy() * 1e-9))
+    slow = td.streamlines(data, "v", seeds, 0.05, 30, step_unit="length")
+    assert slow.num_points == fast.num_points == 62
+    np.testing.assert_allclose(slow.positions(), fast.positions(), atol=1e-5)
+    np.testing.assert_allclose(slow.fields["time"].values.numpy(),
+                               1e9 * fast.fields["time"].values.numpy(), rtol=1e-4)
+    ends = td.advect(data, "v", seeds, 0.05, 30, step_unit="length")
+    assert not (ends.fields["status"].values.numpy() & td.ParticleStatus.ZERO_VELOCITY).any()
+
+
+def test_a_push_out_always_ends(backend):
+    """A step that leaves the mesh is bisected to the boundary and pushed out. The
+    bracket is absolute (ten machine epsilons), so on a mesh a thousand units
+    across, with steps of 50 in f32, it could never get that small (an ulp of
+    50 is 3.8e-6), and the particle bisected forever; the bisection is now
+    bounded. The slow flow of the mantle (1e-9) leaves through the top the
+    same way: with its zero velocity at the machine epsilon's square root, the
+    bisection's tolerance and the stop were one number."""
+    ends = {}
+    for scale, speed in ((1.0, 1.0), (1000.0, 1.0), (1.0, 1e-9)):
+        axis = scale * np.linspace(-2.0, 2.0, 9)
+        data = td.rectilinear_grid(axis, axis, scale * np.linspace(-1.0, 2.0, 7))
+        x = data.positions()
+        v = np.c_[-x[:, 1] / scale, x[:, 0] / scale, np.full(len(x), 0.25)] * speed
+        data.fields["v"] = td.Field(td.H1(data), _vectors(v))
+        seeds = scale * np.array([[1.0, 0.0, 1.8], [0.0, 0.5, 1.9]])
+        out = td.advect(data, "v", seeds, 0.05 * scale, 200, step_unit="length")
+        status = out.fields["status"].values.numpy()
+        assert (status & td.ParticleStatus.SPATIAL_BOUNDS).all(), status
+        ends[scale, speed] = (out.positions() / scale, out.fields["steps"].values.numpy())
+    # Out through the top, a fraction of a step past it, as the unit case is.
+    unit, steps = ends[1.0, 1.0]
+    assert (unit[:, 2] > 2.0).all() and (unit[:, 2] < 2.05).all()
+    for key in ((1000.0, 1.0), (1.0, 1e-9)):
+        np.testing.assert_allclose(ends[key][0], unit, rtol=1e-5, atol=1e-5)
+        np.testing.assert_array_equal(ends[key][1], steps)
+
+
 def test_particles_stay_on_the_device(backend, monkeypatch):
     """Seeds in an array of 3-vectors are copied on the device, the particles stay
     there, and the streamlines' paths are chosen and numbered there: nothing is
