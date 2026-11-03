@@ -111,8 +111,8 @@ def _unbits(message):
                     axis=1)
 
 
-def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighbors=False,
-                  **adaptive):
+def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", unit="time",
+                  neighbors=False, **adaptive):
     """``advect`` over the pieces of ``data``: the particles where they stopped, a
     ``PartitionedDataSet`` of one vertex dataset per piece -- each particle on
     the piece it stopped in, or left from -- with ``steps``, ``time``,
@@ -121,7 +121,7 @@ def advect_pieces(data, field, seeds, step_size, steps, integrator="rk4", neighb
     ``seeds`` are this rank's, an ``(n, 3)`` array; across MPI ranks each rank
     passes its own, numbered after the ranks before it."""
     blocks, pieces, finished, _ = _rounds(data, field, seeds, step_size, steps, integrator,
-                                          record=False, neighbors=neighbors,
+                                          record=False, unit=unit, neighbors=neighbors,
                                           adaptive=adaptive)
     out = []
     for g, piece in zip(blocks.local, pieces):

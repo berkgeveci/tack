@@ -119,6 +119,37 @@ def _thin_hexahedra(dtype):
     return data
 
 
+def test_a_corner_where_faces_meet_flat_is_left_out_of_the_points_average(backend):
+    """A hexahedron whose corners 1 and 5 lie on straight edges of its faces (two faces
+    meeting flat there: AhmedML's mesh has such cells) has a singular Jacobian there,
+    and its gradient grows without bound toward them. It is left out of those points'
+    averages, which come from the cells around them that have one: exact for a linear
+    field. With no other cell there, the points are NaN."""
+    flat = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (2, 0, 1), (0, 1, 1)]
+    below = [(1, -1, 0), (2, -1, 0), (2, 0, 0), (1, 0, 0), (1, -1, 1), (2, -1, 1), (2, 0, 1),
+             (1, 0, 1)]
+    x = np.array(flat + below[:2] + below[4:6], np.float32)
+    ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 2, 1, 10, 11, 6, 5]
+
+    def dataset(n_cells):
+        topology = td.UnstructuredTopology(tack.array([12] * n_cells, dtype=tack.u8),
+                                           tack.array([0, 8, 16][:n_cells + 1], dtype=tack.i32),
+                                           tack.array(ids[:8 * n_cells], dtype=tack.i32),
+                                           num_points=8 if n_cells == 1 else 12)
+        points = x[:topology.num_points]
+        data = td.DataSet(topology, tack.array(points, tack.vec3(tack.f32)))
+        data.fields["u"] = td.Field(td.H1(topology), tack.array(
+            (points @ np.array([1.0, 2.0, 3.0])).astype(np.float32)))
+        return data
+
+    both = td.gradients(dataset(2), "u", at="points").values.numpy().reshape(-1, 3)
+    np.testing.assert_allclose(both, np.tile([1.0, 2.0, 3.0], (12, 1)), rtol=1e-5)
+    alone = td.gradients(dataset(1), "u", at="points").values.numpy().reshape(-1, 3)
+    assert np.isnan(alone[[1, 5]]).all()
+    np.testing.assert_allclose(np.delete(alone, [1, 5], axis=0), np.tile([1.0, 2.0, 3.0], (6, 1)),
+                               rtol=1e-5)
+
+
 @pytest.mark.parametrize("at", ["cells", "points"])
 def test_thin_cells_keep_their_gradients_in_f32(at):
     """A cell's Jacobian and its field's parametric derivative are formed from its

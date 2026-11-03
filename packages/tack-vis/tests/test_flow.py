@@ -315,6 +315,28 @@ def test_rk45_ends_at_a_wall_it_cannot_get_past(backend):
         last = out.positions()[offsets[1:] - 1].astype(float)
         assert (last[:, 0] > 0.95).all()                            # at the wall
 
+@pytest.mark.parametrize("integrator", ["rk4", "rk45"])
+def test_advect_steps_in_the_length_unit_as_streamlines_does(backend, integrator):
+    """advect takes streamlines' step_unit: its particles stop where the paths end,
+    whole and over pieces, in either unit."""
+    data = _rotation(_grid())
+    seeds = np.array([[1.0, 0.0, 0.1], [0.5, 0.5, 0.2]])
+    for unit in ("length", "time"):
+        moved = td.advect(data, "v", seeds, 0.05, 40, integrator=integrator, step_unit=unit)
+        paths = td.streamlines(data, "v", seeds, 0.05, 40, integrator=integrator,
+                               step_unit=unit)
+        ends = paths.positions()[tack.arrays.to_host(paths.topology.line_offsets)[1:] - 1]
+        np.testing.assert_array_equal(moved.positions(), ends)
+    pieces = td.split(data, 2, ghost_layers=1)
+    whole = td.advect(data, "v", seeds, 0.05, 40, step_unit="length")
+    over = td.advect(pieces, "v", seeds, 0.05, 40, step_unit="length")
+    got = np.concatenate([p.positions() for p in over])[
+        np.argsort(np.concatenate([p.fields["seed"].values.numpy() for p in over]))]
+    np.testing.assert_allclose(got, whole.positions(), atol=1e-5)
+    with pytest.raises(ValueError, match="step_unit"):
+        td.advect(data, "v", seeds, 0.05, 4, step_unit="steps")
+
+
 def test_rk45_in_the_length_unit_keeps_its_step_bounds(backend):
     """In the length unit a step is an arc length: every step lies within
     [min_step, max_step], the path's last step short of it where max_length
