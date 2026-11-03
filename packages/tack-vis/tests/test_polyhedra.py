@@ -551,7 +551,7 @@ def test_polygons_whose_edges_meet_three_or_more_work_but_their_faces_do_not(bac
     with pytest.raises(ValueError, match="more than two polygons"):
         topology.faces()
     with pytest.raises(ValueError, match="more than two polygons"):
-        topology.num_faces
+        _ = topology.num_faces
 
 
 def test_a_contour_through_a_point_near_its_level_is_made(backend):
