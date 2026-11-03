@@ -500,6 +500,10 @@ class _MeshSearch:
     #: locates through their groups' views (``_CurvedCells``).
     CURVED = 0
 
+    #: 1 (an instance's, compiled in): polyhedra (``_PolyhedralMesh``), which
+    #: ``find_from`` tries in their sub-tetrahedra (``_well_inside_fan``).
+    FANNED = 0
+
     def __init__(self, cells, present, positions, locator, tolerance, neighbors=None,
                  curved=None):
         self.cells = cells
@@ -528,6 +532,8 @@ class _MeshSearch:
         self.neighbors = neighbors if neighbors is not None else tack.zeros((1,), tack.i32)
         if neighbors is not None:
             self.NEIGHBORS = 1
+        if isinstance(cells, _PolyhedralMesh):
+            self.FANNED = 1
 
     @tack.func
     def find(self, p):
@@ -545,9 +551,10 @@ class _MeshSearch:
         taken only where it holds ``p`` by ``WELL_INSIDE``, far more than
         ``HOLD_TOLERANCE``: no other cell of a mesh whose cells do not overlap
         holds ``p`` then, so the search would give the same cell, and the same
-        coordinates, computed alike. Elsewhere, and for pyramids (whose
-        coordinates collapse at the apex), surfaces and cells without a
-        reference element, the bins are searched.
+        coordinates, computed alike. A polyhedron is tried in its sub-tetrahedra
+        (``_well_inside_fan``) by the same rule. Elsewhere, and for pyramids
+        (whose coordinates collapse at the apex), surfaces, polygons and
+        polylines, the bins are searched.
 
         With ``NEIGHBORS``, the hint's face neighbours are tried next, by the same
         rule: a point that left its cell is mostly in one across a face (78% of
@@ -557,6 +564,8 @@ class _MeshSearch:
         kind = 0
         pc = p - p
         tet = -1
+        if self.PREVIOUS_CELL == 1 and self.FANNED == 1 and hint < self.ncells:
+            e, kind, pc, tet = self._well_inside_fan(p, hint)
         if self.PREVIOUS_CELL == 1 and self.cells.NO_REFERENCE == 0 and hint < self.ncells:
             e, kind, pc = self._well_inside(p, hint)
             if self.NEIGHBORS == 1 and e == self.ncells:
@@ -569,6 +578,31 @@ class _MeshSearch:
         if e == self.ncells:
             e, kind, pc, tet = self.find(p)
         return e, kind, pc, tet
+
+    @tack.func
+    def _well_inside_fan(self, p, e):
+        """``(e, kind, pc, tet)`` if polyhedron ``e`` holds ``p`` in one of its
+        sub-tetrahedra by ``WELL_INSIDE`` (each of the four weights at least
+        that), else ``(ncells, 0, 0, -1)``. The sub-tetrahedra tile the cell, so
+        ``p`` is that far inside it and in no other cell; the location is the
+        search's own call (``locate``, with the search's slack), so its first
+        sub-tetrahedron holding ``p`` and the coordinates there are the
+        search's."""
+        a = self.lo[e]
+        c = self.hi[e]
+        s = self.tolerance * (c - a).norm()
+        tet, tpc, held = self.cells.locate(e, p, s)
+        found = self.ncells
+        kind = 0
+        pc = p - p
+        t = -1
+        if (held == 1 and tet >= 0 and min(tpc[0], tpc[1], tpc[2]) >= shapes.WELL_INSIDE
+                and tpc[0] + tpc[1] + tpc[2] <= 1.0 - shapes.WELL_INSIDE):
+            found = e
+            kind = self.cells.cell_type(e)
+            pc = tpc
+            t = tet
+        return found, kind, pc, t
 
     @tack.func
     def _well_inside(self, p, e):
