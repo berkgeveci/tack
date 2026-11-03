@@ -527,11 +527,66 @@ def _pixel_grid():
     return vtkAppendFilter()(vtkImageData(dimensions=(4, 3, 1)))  # pixels, as an unstructured grid
 
 
+def test_polygons_whose_edges_meet_three_or_more_work_but_their_faces_do_not(backend):
+    """Three triangles on one edge (a book of pages) and a fourth on its own: the
+    topology takes them, its cells work -- areas, centres, values, locating -- and
+    only its faces, which cannot hold an edge of three polygons, are refused."""
+    x = np.array([[0, 0, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [-1, -1, 0],
+                  [3, 0, 0], [4, 0, 0], [3, 1, 0]], np.float32)
+    loops = [[0, 1, 2], [1, 0, 3], [0, 1, 4], [5, 6, 7]]
+    offsets = np.concatenate([[0], np.cumsum([len(r) for r in loops])])
+    topology = td.PolygonalTopology(offsets, np.concatenate(loops))
+    data = td.DataSet(topology, x)
+    data.fields["u"] = td.Field(td.H1(data), tack.array((x @ [1.0, 2.0, 3.0]).astype(np.float32)))
+    np.testing.assert_allclose(td.cell_geometry(data).measure.values.numpy(),
+                               [0.5, 0.5, np.sqrt(2) / 2, 0.5], rtol=1e-6)
+    np.testing.assert_allclose(td.cell_centers(data).values.numpy(),
+                               [x[r].mean(axis=0) for r in loops], rtol=1e-6)
+    offsets_, points = (a.numpy() for a in topology.cell_points())
+    np.testing.assert_array_equal(points, [0, 1, 2, 0, 1, 3, 0, 1, 4, 5, 6, 7])
+    probed = td.probe(data, [[3.25, 0.25, 0.0], [0.25, 0.0, 0.25]], fields=["u"])
+    np.testing.assert_allclose(probed.fields["u"].values.numpy(), [3.75, 1.0], rtol=1e-6)
+    total = td.integrate(data, fields=["u"])
+    assert total.measure == pytest.approx(1.5 + np.sqrt(2) / 2, rel=1e-6)
+    with pytest.raises(ValueError, match="more than two polygons"):
+        topology.faces()
+    with pytest.raises(ValueError, match="more than two polygons"):
+        _ = topology.num_faces
+
+
+def test_a_contour_through_a_point_near_its_level_is_made(backend):
+    """A point a hair above the level: the crossing on its edge to a point far below
+    is within half an ulp of it, so it is the point, and the crossing on its edge
+    to a point just below is not. The faces around that edge trace the same
+    iso-edge, from the point to that crossing, so it meets four polygons (the
+    AhmedML mesh's Q = 1). The contour is made; only its faces are refused."""
+    data = td.as_polyhedra(td.uniform_grid((3, 3, 3), origin=(0.0, 0.0, 0.0),
+                                           spacing=(1.0, 1.0, 1.0)))
+    x = data.positions()
+    values = np.ones(len(x), np.float32)
+    at = {tuple(p): i for i, p in enumerate(x.tolist())}
+    # P, a hair above the level 0, and X just below it; the two faces about P-X
+    # in the plane y = 1 have their other points far below, so the crossings
+    # there toward P are P and each traces P to the crossing on P-X.
+    for p, v in {(1, 1, 1): 1e-8, (2, 1, 1): -1e-3, (1, 1, 0): -1.0, (1, 1, 2): -1.0,
+                 (2, 1, 0): -1.0, (2, 1, 2): -1.0}.items():
+        values[at[tuple(map(float, p))]] = v
+    data.fields["f"] = td.Field(td.H1(data), tack.array(values))
+    surface = td.contour(data, "f", 0.0)
+    offsets, _ = (a.numpy() for a in surface.topology.loops())
+    assert np.diff(offsets).tolist() == [3, 5] * 4
+    np.testing.assert_allclose(td.cell_geometry(surface).measure.values.numpy(),
+                               [0.375, 1.1178] * 4, rtol=1e-4)
+    with pytest.raises(ValueError, match="more than two polygons"):
+        surface.topology.faces()
+
+
 def test_polygon_windings_must_agree(backend):
     loops = [[0, 1, 4, 3], [1, 2, 5, 4], [3, 6, 4]]   # the triangle walks 3->4 like its quad
     offsets = np.concatenate([[0], np.cumsum([len(r) for r in loops])])
+    topology = td.PolygonalTopology(offsets, np.concatenate(loops))   # made; its faces refused
     with pytest.raises(ValueError, match="walked the same way"):
-        td.PolygonalTopology(offsets, np.concatenate(loops))
+        topology.faces()
     with pytest.raises(ValueError, match="not 2D"):
         td.as_polygons(_two_hexes_and_a_pyramid())
 

@@ -276,7 +276,6 @@ def _no_reference_values(data, field):
     width = arrays.width_of(values)
     dtype = arrays.dtype_of(values)
     out = tack.zeros((data.num_cells,), tack.vec(width, dtype) if width else dtype)
-    data.topology.faces()
     for group in data.launch_groups("cells", []):
         if not group.count:
             continue

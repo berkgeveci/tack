@@ -92,9 +92,7 @@ class _FannedCells:
 
     def __init__(self, topology, positions):
         point_offsets, point_ids = topology.cell_points()
-        super().__init__(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
-                         topology.face_offsets, topology.face_points, point_offsets,
-                         point_ids, topology.num_cells)
+        super().__init__(*topology._cell_walk(), point_offsets, point_ids, topology.num_cells)
         self.positions = positions
 
     @tack.func

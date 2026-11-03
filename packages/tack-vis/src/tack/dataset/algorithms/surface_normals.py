@@ -231,8 +231,6 @@ def surface_normals(data, consistent=True, weights=None):
     areas = tack.empty((n,), data.dtype)
     cell_normals.fill(0)                           # lines and vertices: none,
     areas.fill(0)                                  # nor any area to weigh by
-    if not getattr(data.topology, "reference_cells", True):
-        data.topology.faces()                      # a polygon's walk
     for group in data.launch_groups("cells", []):
         if not group.count or group.shape.DIMENSION != 2:
             continue

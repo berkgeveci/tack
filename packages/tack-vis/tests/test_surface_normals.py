@@ -96,7 +96,7 @@ def test_consistency_turns_the_cells_that_wind_against_their_region():
     both.Update()
     data = vtk_to_dataset(both.GetOutput(), dtype=tack.f64)
     with pytest.raises(ValueError, match="walked the same way"):
-        td.as_polygons(data)
+        td.as_polygons(data).topology.faces()
     ours = td.surface_normals(data)
     polygons = td.as_polygons(ours)                            # consistent now
     assert polygons.num_cells == data.num_cells
