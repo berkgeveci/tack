@@ -1405,7 +1405,12 @@ for VTK's `vtkStreamTracer` on 8 threads.
 A stage first tries the cell the particle was last found in, taking it only
 where it holds the point well inside (`shapes.WELL_INSIDE`, a thousandth of
 the cell, so no other cell of the mesh holds it and the search would give the
-same answer). About one location in seven misses, mostly next to a face.
+same answer). A polyhedron is tried in its sub-tetrahedra, taken where one
+holds the point by the same margin, its four weights each at least a
+thousandth; it is the search's own call, so its sub-tetrahedron and
+coordinates are the search's. About one location in seven misses, mostly
+next to a face. On the AhmedML mesh's 21.5M polyhedra, 2,000 streamlines take
+0.66 s on the CPU against 0.76, and 3.0 s on Metal against 6.0.
 `advect(..., neighbors=True)` and `streamlines(..., neighbors=True)` then try
 that cell's face neighbours, by the same rule, before the bins: a point that
 left its cell is mostly across a face (78% of the misses on the ONERA M6, 43-49%
@@ -1414,7 +1419,8 @@ Streamlines on the CPU take 1.5-2x less time there, the paths the same bit for
 bit. The table of neighbours (`CellLocator.cell_neighbors()`, six ids a cell)
 is built from the faces on first use and kept with the locator: 0.9 s and 210
 MB for the aneurysm's 8.7M cells, 4.1 s and 1.1 GB for the M6's 46.9M. Only
-solid cells walk: pyramids, polyhedra and surfaces search the bins as before.
+solid cells with a reference element walk to their neighbours: pyramids and
+surfaces search the bins as before, and polyhedra after their last cell.
 
 ## Interoperability
 
