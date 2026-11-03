@@ -1454,6 +1454,19 @@ def test_reading_merges_repeated_points(polyhedral):
                                    area(td.contour(expected, "T", level)), rtol=1e-6)
 
 
+def test_split_readings_surface_is_the_wholes():
+    """The split reading's two pieces share points but no cells; extract_surface of
+    them is the whole's surface, the faces between them left out."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    grid = _mixed_vtu_grid()
+    pieces = vtk_to_dataset(grid, polyhedral="split")
+    surface = td.extract_surface(pieces)
+    whole = td.extract_surface(vtk_to_dataset(grid, polyhedral=True))
+    assert sum(int(((p.ghosts.cells.numpy() & 1) == 0).sum()) for p in surface) == whole.num_cells
+    assert sum(td.extract_surface(p).num_cells for p in pieces) > whole.num_cells
+
+
 def test_split_of_one_kind_is_one_piece():
     pytest.importorskip("vtkmodules.vtkCommonDataModel")
     import vtkmodules.vtkCommonDataModel as dm

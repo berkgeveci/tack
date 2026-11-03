@@ -219,9 +219,25 @@ def extract_surface(data, faces=None, fields=None):
     and (a quad's) center are the surface cell's, so their values are gathered,
     not evaluated. A 2D mesh's boundary lines take an order-2 field's values at
     the points. The geometry must be ``H1``: an ``L2`` one has no shared points
-    for the faces to stand on."""
-    from tack.dataset.ghosts import refuse_hidden, visible
+    for the faces to stand on.
 
+    Given a ``PartitionedDataSet``, the whole's surface, a piece each: each
+    piece's boundary, less the faces two pieces share. Pieces without ghost
+    cells take the faces between them for boundary; the faces of every piece's
+    surface are matched over the pieces by their points (by position, as
+    ``generate_global_ids`` matches them), and a face held unmarked by two
+    pieces is between them and dropped. On pieces with ghost cells no such face
+    is on a boundary, and each piece's surface is its own, its ghost faces
+    marked. The surface's points are owned once (``generate_global_ids`` marks
+    them where the pieces had no ghost cells)."""
+    from tack.dataset.ghosts import refuse_hidden, visible
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet):
+        if faces is not None:
+            raise TypeError("extract_surface of pieces takes their boundary; choose faces "
+                            "of each piece instead")
+        return _surface_of_pieces(data, fields)
     if faces is None:
         data = visible(data)
     else:
@@ -406,3 +422,54 @@ def _polygon_surface(data, ids, fields=None):
         _face_cells(ids, faces.sides, cells)
     return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),
                  fields=fields)
+
+
+def _surface_of_pieces(pds, fields):
+    """``extract_surface`` over a ``PartitionedDataSet``: each piece's surface, less
+    the faces two pieces hold unmarked (the faces between pieces without ghost
+    cells), then, where a surface lost its marks, the rest marked by matching."""
+    import numpy as np
+
+    from tack import communication as tc
+    from tack.dataset import _matching
+    from tack.dataset.algorithms._extract import _keep_cells
+    from tack.dataset.algorithms.generate_global_ids import (
+        _cell_entries,
+        _marks,
+        _numbered,
+        _point_owners,
+        generate_global_ids,
+    )
+    from tack.dataset.ghosts import Ghosts
+    from tack.dataset.partitioned import PartitionedDataSet
+
+    world = pds.world
+    surfaces = [extract_surface(piece, fields=fields) for piece in pds]
+    blocks = tc.Blocks([s.device for s in surfaces], world)
+    # Every point matched by position, and every face by its points' numbers.
+    marks = {g: _marks(s, lost=True) for g, s in zip(blocks.local, surfaces)}
+    owned, plan, shared = _point_owners(blocks, surfaces, marks, every=True)
+    point_ids = _numbered(blocks, surfaces, owned, plan, "points")
+    ghost = {g: (_marks(s)[0] & Ghosts.DUPLICATECELL) != 0
+             for g, s in zip(blocks.local, surfaces)}
+    partners = _matching.match(blocks, _cell_entries(blocks, surfaces, ghost, point_ids,
+                                                     shared))
+    kept = []
+    for g, surface in zip(blocks.local, surfaces):
+        index, _, _, other_flag = partners[g]
+        between = np.zeros(surface.num_cells, bool)
+        unmarked = other_flag == 0
+        between[index[unmarked]] = True
+        between &= ~ghost[g]
+        if between.any():
+            # The rest of the faces, on all the surface's points, as one piece's
+            # surface keeps its input's points.
+            with blocks.device(g):
+                surface = _keep_cells(surface, tack.array((~between).astype(np.int32)),
+                                      keep_points=tack.array(np.ones(surface.num_points,
+                                                                     np.int32)))
+        kept.append(surface)
+    out = PartitionedDataSet(kept, world=world)
+    lost = bool(blocks.all_reduce({g: int(bool(s._ghosts_lost))
+                                   for g, s in zip(blocks.local, kept)}, "max"))
+    return generate_global_ids(out) if lost else out

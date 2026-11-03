@@ -116,7 +116,7 @@ A mesh's faces and edges, as sets or datasets on the same points.
 | Algorithm | Gives | Takes | VTK | Viskores |
 |---|---|---|---|---|
 | [`boundary_faces`](#tack.dataset.algorithms.boundary_faces.boundary_faces) | the boundary, as a face set | dataset | — | — |
-| [`extract_surface`](#tack.dataset.algorithms.extract_surface.extract_surface) | faces (the boundary by default) as cells | dataset | vtkDataSetSurfaceFilter | ExternalFaces |
+| [`extract_surface`](#tack.dataset.algorithms.extract_surface.extract_surface) | faces (the boundary by default) as cells; of pieces, the whole's surface | dataset, or pieces | vtkDataSetSurfaceFilter | ExternalFaces |
 | [`extract_edges`](#tack.dataset.algorithms.extract_edges.extract_edges) | edges as line cells | dataset | vtkExtractEdges | — |
 | [`feature_edges`](#tack.dataset.algorithms.feature_edges.feature_edges) | a surface's boundary, feature, non-manifold and manifold edges | dataset | vtkFeatureEdges | — |
 | [`surface_normals`](#tack.dataset.algorithms.surface_normals.surface_normals) | cell and point normals of a surface, wound consistently | dataset | vtkPolyDataNormals | SurfaceNormals |

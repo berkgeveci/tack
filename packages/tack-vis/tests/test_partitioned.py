@@ -541,6 +541,44 @@ def test_two_dimensional_pieces_give_their_shares():
         _check_shares(grid, pieces, filter)
 
 
+def _faces_by_position(surface):
+    """A surface's owned faces, each by its points' positions, as a multiset."""
+    from collections import Counter
+
+    x = surface.positions()
+    if isinstance(surface.topology, td.UnstructuredTopology):
+        offsets = tack.arrays.to_host(surface.topology.offsets)
+        ids = tack.arrays.to_host(surface.topology.connectivity)
+    else:
+        offsets, ids = (o.numpy() for o in surface.topology.cell_points())
+    marks = (surface.ghosts.cells.numpy() if surface.ghosts is not None
+             and surface.ghosts.cells is not None else np.zeros(surface.num_cells, np.uint8))
+    return Counter(tuple(sorted(tuple(np.round(x[q], 5)) for q in ids[offsets[c]:offsets[c + 1]]))
+                   for c in range(surface.num_cells) if not marks[c] & Ghosts.DUPLICATECELL)
+
+
+@pytest.mark.parametrize("kind", ["no ghost cells", "ghost cells", "polyhedra"])
+def test_the_surface_of_pieces_is_the_wholes(kind):
+    """extract_surface of a PartitionedDataSet: each piece's boundary less the faces
+    two pieces share, which pieces without ghost cells take for boundary. The owned
+    faces over the pieces are the whole's surface, face for face, and its points
+    are owned once."""
+    whole = td.wavelet(6)
+    pieces = td.split(whole, (2, 2, 2), ghost_layers=1 if kind == "ghost cells" else 0)
+    if kind == "polyhedra":
+        pieces = td.PartitionedDataSet([td.as_polyhedra(p) for p in pieces])
+    expected = td.extract_surface(whole if kind != "polyhedra" else td.as_polyhedra(whole))
+    surface = td.extract_surface(pieces)
+    got = sum((_faces_by_position(p) for p in surface), start=type(_faces_by_position(expected))())
+    assert got == _faces_by_position(expected)
+    assert td.statistics(surface, "RTData").n == expected.num_points
+    if kind == "no ghost cells":
+        naive = sum(td.extract_surface(p).num_cells for p in pieces)
+        assert naive > expected.num_cells             # the faces between pieces
+    with pytest.raises(TypeError, match="choose faces of each piece"):
+        td.extract_surface(pieces, faces="boundary")
+
+
 def test_pieces_without_ghost_cells_refuse_what_their_neighbours_decide():
     """Without ghost cells a piece cannot tell what its neighbours make or keep from
     the cells, faces and edges they share: a point on a shared edge, a shared

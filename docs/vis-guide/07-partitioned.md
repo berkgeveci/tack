@@ -14,7 +14,8 @@ pieces into the whole's answer.
   take a `DataSet`, as everywhere else, and you loop over the pieces. There
   is no "apply to every piece" wrapper: the loop says what it does.
 - **Only algorithms whose answer needs every piece take the container:**
-  `statistics` and `entropy`, given a field's name, here; probing,
+  `statistics` and `entropy`, given a field's name, and `extract_surface`
+  (the whole's surface), here; probing,
   particles, connected regions and the point-cloud filters in
   [Algorithms Across Pieces](09-pieces-across.md).
 
@@ -153,9 +154,13 @@ belongs to the lowest of them and one only a single piece made is its own;
 a cell several pieces made is matched by its points. The marked outputs
 then reduce to the whole's, cell for cell and point for point. That takes
 one exchange of the outputs' points, where ghost cells cost a layer of
-cells in every piece before filtering. A piece's `extract_surface` still
-includes the faces it shares with its neighbours, which only ghost cells
-leave out.
+cells in every piece before filtering.
+
+A piece's own `extract_surface` includes the faces it shares with its
+neighbours, since it cannot tell them from the boundary. `extract_surface` of
+the pieces, `td.extract_surface(pieces)`, gives the whole's surface, a piece
+each: the pieces' faces are matched by their points, the faces two pieces
+hold left out, and the surface's points owned once.
 
 What does not depend on neighbours works on pieces without ghost cells as
 they are:
