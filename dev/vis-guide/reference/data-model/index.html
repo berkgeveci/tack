@@ -13636,16 +13636,20 @@ cell order).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">430</span>
-<span class="normal">431</span>
-<span class="normal">432</span>
-<span class="normal">433</span>
-<span class="normal">434</span>
-<span class="normal">435</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s points, sorted and unique: ``(offsets, point_ids)``, CSR.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="o">=</span> <span class="n">_derive_cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">cell_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">face_offsets</span><span class="p">,</span> <span class="n">face_points</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_walk</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="o">=</span> <span class="n">_derive_cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span>
+                                                <span class="n">face_offsets</span><span class="p">,</span> <span class="n">face_points</span><span class="p">)</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -13671,25 +13675,23 @@ cell order).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">437</span>
-<span class="normal">438</span>
-<span class="normal">439</span>
-<span class="normal">440</span>
-<span class="normal">441</span>
-<span class="normal">442</span>
-<span class="normal">443</span>
-<span class="normal">444</span>
-<span class="normal">445</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">445</span>
 <span class="normal">446</span>
-<span class="normal">447</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">groups</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The cells as one ``Polyhedron`` group.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">point_offsets</span><span class="p">,</span> <span class="n">point_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cell_points</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span> <span class="o">=</span> <span class="p">[</span><span class="n">DomainGroup</span><span class="p">(</span>
             <span class="n">_PolyhedralCells</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cell_shape</span><span class="p">,</span>
-            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cell_offsets</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cell_faces</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cell_face_sides</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">face_offsets</span><span class="p">,</span>
-             <span class="bp">self</span><span class="o">.</span><span class="n">face_points</span><span class="p">,</span> <span class="n">point_offsets</span><span class="p">,</span> <span class="n">point_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span><span class="p">),</span>
+            <span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_cell_walk</span><span class="p">(),</span> <span class="n">point_offsets</span><span class="p">,</span> <span class="n">point_ids</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span><span class="p">),</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span><span class="p">,</span> <span class="mi">0</span><span class="p">)]</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span>
 </code></pre></div></td></tr></table></div>
@@ -13737,14 +13739,7 @@ row per point) are needed for that last step.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">449</span>
-<span class="normal">450</span>
-<span class="normal">451</span>
-<span class="normal">452</span>
-<span class="normal">453</span>
-<span class="normal">454</span>
-<span class="normal">455</span>
-<span class="normal">456</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">456</span>
 <span class="normal">457</span>
 <span class="normal">458</span>
 <span class="normal">459</span>
@@ -13765,7 +13760,14 @@ row per point) are needed for that last step.</p>
 <span class="normal">474</span>
 <span class="normal">475</span>
 <span class="normal">476</span>
-<span class="normal">477</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@classmethod</span>
+<span class="normal">477</span>
+<span class="normal">478</span>
+<span class="normal">479</span>
+<span class="normal">480</span>
+<span class="normal">481</span>
+<span class="normal">482</span>
+<span class="normal">483</span>
+<span class="normal">484</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@classmethod</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">from_cell_faces</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">cells</span><span class="p">,</span> <span class="n">num_points</span><span class="p">,</span> <span class="n">positions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A topology from each cell&#39;s own list of faces (point-id rings), as VTK and many</span>
 <span class="sd">    readers give them: copies of a face are matched by point set, the first copy</span>
@@ -13818,11 +13820,11 @@ row per point) are needed for that last step.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">496</span>
-<span class="normal">497</span>
-<span class="normal">498</span>
-<span class="normal">499</span>
-<span class="normal">500</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">arrays</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">503</span>
+<span class="normal">504</span>
+<span class="normal">505</span>
+<span class="normal">506</span>
+<span class="normal">507</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">arrays</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The five defining arrays as host arrays, in constructor order.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">face_offsets</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">face_points</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">cell_offsets</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">cell_faces</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
@@ -13869,10 +13871,15 @@ cells are polygons, their facets edges.</p>
 <p>Built from point loops -- <code>loop_points[loop_offsets[c]:loop_offsets[c + 1]]</code>
 is polygon <code>c</code>'s points in order -- as producers and isosurfaces give them.
 Facet <code>k</code> of a polygon is its edge from loop point <code>k</code> to the next. Edges
-are matched by sorting: the first polygon to use an edge is its side 0 and
-the edge runs its way; a second must run it the other way, or the winding is
-inconsistent (or the surface not orientable) and is refused, as is an edge
-of three polygons. <code>loops()</code> gives the loops back.</p>
+are matched by sorting, on first use (<code>faces()</code>, the facet arrays): the
+first polygon to use an edge is its side 0 and the edge runs its way; a
+second must run it the other way, or the winding is inconsistent (or the
+surface not orientable) and is refused, as is an edge of three polygons.
+The topology itself takes them: its cells (<code>groups()</code>, <code>cell_points()</code>,
+locating and evaluating in them) and everything that does not need its
+faces work, as a polyline topology's branches do, so a contour or a
+surface whose edges meet three or more polygons is made and drawn, its
+areas and values computed. <code>loops()</code> gives the loops back.</p>
 
 
 
@@ -13883,49 +13890,31 @@ of three polygons. <code>loops()</code> gives the loops back.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">645</span>
-<span class="normal">646</span>
-<span class="normal">647</span>
-<span class="normal">648</span>
-<span class="normal">649</span>
-<span class="normal">650</span>
-<span class="normal">651</span>
-<span class="normal">652</span>
-<span class="normal">653</span>
-<span class="normal">654</span>
-<span class="normal">655</span>
-<span class="normal">656</span>
-<span class="normal">657</span>
-<span class="normal">658</span>
-<span class="normal">659</span>
-<span class="normal">660</span>
-<span class="normal">661</span>
-<span class="normal">662</span>
-<span class="normal">663</span>
-<span class="normal">664</span>
-<span class="normal">665</span>
-<span class="normal">666</span>
-<span class="normal">667</span>
-<span class="normal">668</span>
-<span class="normal">669</span>
-<span class="normal">670</span>
-<span class="normal">671</span>
-<span class="normal">672</span>
-<span class="normal">673</span>
-<span class="normal">674</span>
-<span class="normal">675</span>
-<span class="normal">676</span>
-<span class="normal">677</span>
-<span class="normal">678</span>
-<span class="normal">679</span>
-<span class="normal">680</span>
-<span class="normal">681</span>
-<span class="normal">682</span>
-<span class="normal">683</span>
-<span class="normal">684</span>
-<span class="normal">685</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">685</span>
 <span class="normal">686</span>
-<span class="normal">687</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">687</span>
+<span class="normal">688</span>
+<span class="normal">689</span>
+<span class="normal">690</span>
+<span class="normal">691</span>
+<span class="normal">692</span>
+<span class="normal">693</span>
+<span class="normal">694</span>
+<span class="normal">695</span>
+<span class="normal">696</span>
+<span class="normal">697</span>
+<span class="normal">698</span>
+<span class="normal">699</span>
+<span class="normal">700</span>
+<span class="normal">701</span>
+<span class="normal">702</span>
+<span class="normal">703</span>
+<span class="normal">704</span>
+<span class="normal">705</span>
+<span class="normal">706</span>
+<span class="normal">707</span>
+<span class="normal">708</span>
+<span class="normal">709</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">loop_offsets</span><span class="p">,</span> <span class="n">loop_points</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="n">loop_offsets</span><span class="p">,</span> <span class="n">loop_points</span> <span class="o">=</span> <span class="n">_given</span><span class="p">(</span><span class="n">loop_offsets</span><span class="p">),</span> <span class="n">_given</span><span class="p">(</span><span class="n">loop_points</span><span class="p">)</span>
     <span class="n">total</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">loop_points</span><span class="p">)</span>
@@ -13941,33 +13930,15 @@ of three polygons. <code>loops()</code> gives the loops back.</p>
         <span class="n">_refuse</span><span class="p">(</span><span class="s2">&quot;polygonal topology&quot;</span><span class="p">,</span> <span class="n">_csr_problems</span><span class="p">(</span>
             <span class="n">loop_offsets</span><span class="p">,</span> <span class="n">loop_points</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">num_points</span><span class="p">),</span> <span class="s2">&quot;loop_offsets&quot;</span><span class="p">,</span> <span class="s2">&quot;loop_points&quot;</span><span class="p">,</span>
             <span class="s2">&quot;num_points&quot;</span><span class="p">))</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">loop_offsets</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
-    <span class="n">keys</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">total</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">vec</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">idt</span><span class="p">))</span>
-    <span class="n">directions</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">total</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
-    <span class="n">cell_faces</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">total</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
-    <span class="n">sides</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">total</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">)</span>
-    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">if</span> <span class="n">total</span><span class="p">:</span>
-        <span class="n">_loop_edge_keys</span><span class="p">(</span><span class="n">loop_offsets</span><span class="p">,</span> <span class="n">loop_points</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">directions</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
-        <span class="n">order</span> <span class="o">=</span> <span class="n">key_order</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">num_points</span><span class="p">,</span> <span class="n">idt</span><span class="p">)</span>
-        <span class="n">offsets</span><span class="p">,</span> <span class="n">count</span> <span class="o">=</span> <span class="n">run_offsets</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
-    <span class="n">face_points</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">count</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">count</span><span class="p">:</span>
-        <span class="n">problems</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
-        <span class="n">_facets_from_runs</span><span class="p">(</span><span class="n">order</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">directions</span><span class="p">,</span> <span class="n">face_points</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span>
-                          <span class="n">sides</span><span class="p">,</span> <span class="n">problems</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">problems</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">problems</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> edges are shared by more than two polygons&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">problems</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">problems</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2"> edges are walked the same way by both their &quot;</span>
-                             <span class="s2">&quot;polygons: the winding is inconsistent, or the surface is &quot;</span>
-                             <span class="s2">&quot;not orientable&quot;</span><span class="p">)</span>
-    <span class="n">face_offsets</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,),</span> <span class="n">idt</span><span class="p">)</span>
-    <span class="n">_every_other</span><span class="p">(</span><span class="n">face_offsets</span><span class="p">)</span>
-    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">face_offsets</span><span class="p">,</span> <span class="n">face_points</span><span class="p">,</span> <span class="n">loop_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span> <span class="n">sides</span><span class="p">,</span>
-                     <span class="n">num_points</span><span class="o">=</span><span class="n">num_points</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="n">idt</span><span class="p">)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">loop_offsets</span> <span class="o">=</span> <span class="n">loop_offsets</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">id_dtype</span> <span class="o">=</span> <span class="n">idt</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">loop_offsets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cell_offsets</span> <span class="o">=</span> <span class="n">loop_offsets</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">loop_points</span> <span class="o">=</span> <span class="n">loop_points</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">num_points</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">num_points</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">loop_offsets</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;loop_offsets has one entry more than there are polygons&quot;</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span> <span class="o">=</span> <span class="kc">None</span>
 </code></pre></div></td></tr></table></div>
                   </details>
 
@@ -14002,9 +13973,9 @@ of three polygons. <code>loops()</code> gives the loops back.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">695</span>
-<span class="normal">696</span>
-<span class="normal">697</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">loops</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">776</span>
+<span class="normal">777</span>
+<span class="normal">778</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">loops</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each polygon&#39;s points in order: ``(loop_offsets, loop_points)``.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">loop_offsets</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">loop_points</span>
 </code></pre></div></td></tr></table></div>
@@ -14067,32 +14038,32 @@ sorted and unique.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">766</span>
-<span class="normal">767</span>
-<span class="normal">768</span>
-<span class="normal">769</span>
-<span class="normal">770</span>
-<span class="normal">771</span>
-<span class="normal">772</span>
-<span class="normal">773</span>
-<span class="normal">774</span>
-<span class="normal">775</span>
-<span class="normal">776</span>
-<span class="normal">777</span>
-<span class="normal">778</span>
-<span class="normal">779</span>
-<span class="normal">780</span>
-<span class="normal">781</span>
-<span class="normal">782</span>
-<span class="normal">783</span>
-<span class="normal">784</span>
-<span class="normal">785</span>
-<span class="normal">786</span>
-<span class="normal">787</span>
-<span class="normal">788</span>
-<span class="normal">789</span>
-<span class="normal">790</span>
-<span class="normal">791</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">847</span>
+<span class="normal">848</span>
+<span class="normal">849</span>
+<span class="normal">850</span>
+<span class="normal">851</span>
+<span class="normal">852</span>
+<span class="normal">853</span>
+<span class="normal">854</span>
+<span class="normal">855</span>
+<span class="normal">856</span>
+<span class="normal">857</span>
+<span class="normal">858</span>
+<span class="normal">859</span>
+<span class="normal">860</span>
+<span class="normal">861</span>
+<span class="normal">862</span>
+<span class="normal">863</span>
+<span class="normal">864</span>
+<span class="normal">865</span>
+<span class="normal">866</span>
+<span class="normal">867</span>
+<span class="normal">868</span>
+<span class="normal">869</span>
+<span class="normal">870</span>
+<span class="normal">871</span>
+<span class="normal">872</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line_offsets</span><span class="p">,</span> <span class="n">line_points</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="n">line_offsets</span><span class="p">,</span> <span class="n">line_points</span> <span class="o">=</span> <span class="n">_given</span><span class="p">(</span><span class="n">line_offsets</span><span class="p">),</span> <span class="n">_given</span><span class="p">(</span><span class="n">line_points</span><span class="p">)</span>
     <span class="n">total</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">line_points</span><span class="p">)</span>
@@ -14152,9 +14123,9 @@ sorted and unique.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">799</span>
-<span class="normal">800</span>
-<span class="normal">801</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">lines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">880</span>
+<span class="normal">881</span>
+<span class="normal">882</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">lines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each polyline&#39;s points in order: ``(line_offsets, line_points)``.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">line_offsets</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">line_points</span>
 </code></pre></div></td></tr></table></div>
@@ -14181,16 +14152,16 @@ sorted and unique.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">803</span>
-<span class="normal">804</span>
-<span class="normal">805</span>
-<span class="normal">806</span>
-<span class="normal">807</span>
-<span class="normal">808</span>
-<span class="normal">809</span>
-<span class="normal">810</span>
-<span class="normal">811</span>
-<span class="normal">812</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">884</span>
+<span class="normal">885</span>
+<span class="normal">886</span>
+<span class="normal">887</span>
+<span class="normal">888</span>
+<span class="normal">889</span>
+<span class="normal">890</span>
+<span class="normal">891</span>
+<span class="normal">892</span>
+<span class="normal">893</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s points, sorted and unique: ``(offsets, point_ids)``, CSR.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_points</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -14224,16 +14195,16 @@ sorted and unique.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">816</span>
-<span class="normal">817</span>
-<span class="normal">818</span>
-<span class="normal">819</span>
-<span class="normal">820</span>
-<span class="normal">821</span>
-<span class="normal">822</span>
-<span class="normal">823</span>
-<span class="normal">824</span>
-<span class="normal">825</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">897</span>
+<span class="normal">898</span>
+<span class="normal">899</span>
+<span class="normal">900</span>
+<span class="normal">901</span>
+<span class="normal">902</span>
+<span class="normal">903</span>
+<span class="normal">904</span>
+<span class="normal">905</span>
+<span class="normal">906</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">groups</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The cells as one ``PolyLine`` group.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_groups</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -14268,37 +14239,37 @@ first use and kept; refuses a point where more than two chains end.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">827</span>
-<span class="normal">828</span>
-<span class="normal">829</span>
-<span class="normal">830</span>
-<span class="normal">831</span>
-<span class="normal">832</span>
-<span class="normal">833</span>
-<span class="normal">834</span>
-<span class="normal">835</span>
-<span class="normal">836</span>
-<span class="normal">837</span>
-<span class="normal">838</span>
-<span class="normal">839</span>
-<span class="normal">840</span>
-<span class="normal">841</span>
-<span class="normal">842</span>
-<span class="normal">843</span>
-<span class="normal">844</span>
-<span class="normal">845</span>
-<span class="normal">846</span>
-<span class="normal">847</span>
-<span class="normal">848</span>
-<span class="normal">849</span>
-<span class="normal">850</span>
-<span class="normal">851</span>
-<span class="normal">852</span>
-<span class="normal">853</span>
-<span class="normal">854</span>
-<span class="normal">855</span>
-<span class="normal">856</span>
-<span class="normal">857</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">908</span>
+<span class="normal">909</span>
+<span class="normal">910</span>
+<span class="normal">911</span>
+<span class="normal">912</span>
+<span class="normal">913</span>
+<span class="normal">914</span>
+<span class="normal">915</span>
+<span class="normal">916</span>
+<span class="normal">917</span>
+<span class="normal">918</span>
+<span class="normal">919</span>
+<span class="normal">920</span>
+<span class="normal">921</span>
+<span class="normal">922</span>
+<span class="normal">923</span>
+<span class="normal">924</span>
+<span class="normal">925</span>
+<span class="normal">926</span>
+<span class="normal">927</span>
+<span class="normal">928</span>
+<span class="normal">929</span>
+<span class="normal">930</span>
+<span class="normal">931</span>
+<span class="normal">932</span>
+<span class="normal">933</span>
+<span class="normal">934</span>
+<span class="normal">935</span>
+<span class="normal">936</span>
+<span class="normal">937</span>
+<span class="normal">938</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">faces</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The chains&#39; ends as faces (``PolygonFaces`` of one-point faces), derived on</span>
 <span class="sd">    first use and kept; refuses a point where more than two chains end.&quot;&quot;&quot;</span>
@@ -14354,12 +14325,12 @@ needs them as global entities yet.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">859</span>
-<span class="normal">860</span>
-<span class="normal">861</span>
-<span class="normal">862</span>
-<span class="normal">863</span>
-<span class="normal">864</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">940</span>
+<span class="normal">941</span>
+<span class="normal">942</span>
+<span class="normal">943</span>
+<span class="normal">944</span>
+<span class="normal">945</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">edges</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Not derived: a polyline&#39;s segments are parts of its cells, and nothing</span>
 <span class="sd">    needs them as global entities yet.&quot;&quot;&quot;</span>
@@ -14443,14 +14414,7 @@ as launches split by shape and order. One per topology and caps.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">542</span>
-<span class="normal">543</span>
-<span class="normal">544</span>
-<span class="normal">545</span>
-<span class="normal">546</span>
-<span class="normal">547</span>
-<span class="normal">548</span>
-<span class="normal">549</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">549</span>
 <span class="normal">550</span>
 <span class="normal">551</span>
 <span class="normal">552</span>
@@ -14460,7 +14424,14 @@ as launches split by shape and order. One per topology and caps.</p>
 <span class="normal">556</span>
 <span class="normal">557</span>
 <span class="normal">558</span>
-<span class="normal">559</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">559</span>
+<span class="normal">560</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s bucket, an i32 array.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="s2">&quot;_keys&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
@@ -14502,9 +14473,9 @@ as launches split by shape and order. One per topology and caps.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">561</span>
-<span class="normal">562</span>
-<span class="normal">563</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">domain_mixin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">domain_mixin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The mixin that gives a launch of bucket ``key`` its ``MAX_SCRATCH``.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">_bucket_mixin</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">caps</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
 </code></pre></div></td></tr></table></div>
@@ -14541,24 +14512,24 @@ they are; <code>check_winding</code> judges the rest.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/polyhedra.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1073</span>
-<span class="normal">1074</span>
-<span class="normal">1075</span>
-<span class="normal">1076</span>
-<span class="normal">1077</span>
-<span class="normal">1078</span>
-<span class="normal">1079</span>
-<span class="normal">1080</span>
-<span class="normal">1081</span>
-<span class="normal">1082</span>
-<span class="normal">1083</span>
-<span class="normal">1084</span>
-<span class="normal">1085</span>
-<span class="normal">1086</span>
-<span class="normal">1087</span>
-<span class="normal">1088</span>
-<span class="normal">1089</span>
-<span class="normal">1090</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1154</span>
+<span class="normal">1155</span>
+<span class="normal">1156</span>
+<span class="normal">1157</span>
+<span class="normal">1158</span>
+<span class="normal">1159</span>
+<span class="normal">1160</span>
+<span class="normal">1161</span>
+<span class="normal">1162</span>
+<span class="normal">1163</span>
+<span class="normal">1164</span>
+<span class="normal">1165</span>
+<span class="normal">1166</span>
+<span class="normal">1167</span>
+<span class="normal">1168</span>
+<span class="normal">1169</span>
+<span class="normal">1170</span>
+<span class="normal">1171</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">orient</span><span class="p">(</span><span class="n">topology</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A topology whose faces wound into their only cell are turned around: each such</span>
 <span class="sd">    face&#39;s points reversed and its one reference made side 0. Other faces are left as</span>

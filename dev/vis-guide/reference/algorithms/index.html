@@ -9499,9 +9499,7 @@ normals are dimensionless.</p>
 <span class="normal">266</span>
 <span class="normal">267</span>
 <span class="normal">268</span>
-<span class="normal">269</span>
-<span class="normal">270</span>
-<span class="normal">271</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">269</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A surface -- triangles, quads, pixels or polygons -- with its normals: the</span>
 <span class="sd">    unit normal of each cell (Newell&#39;s, round its corners) as the cell field</span>
@@ -9541,8 +9539,6 @@ normals are dimensionless.</p>
     <span class="n">areas</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="n">cell_normals</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                           <span class="c1"># lines and vertices: none,</span>
     <span class="n">areas</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                                  <span class="c1"># nor any area to weigh by</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-        <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>                      <span class="c1"># a polygon&#39;s walk</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">or</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">continue</span>
@@ -11451,9 +11447,7 @@ those weigh. (A curved cell was measured by its corners.)</p>
 <span class="normal">190</span>
 <span class="normal">191</span>
 <span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">193</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_geometry</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell&#39;s volume, by the</span>
 <span class="sd">    divergence theorem over its faces -- polyhedral or of a shape -- with faces</span>
@@ -11477,8 +11471,6 @@ those weigh. (A curved cell was measured by its corners.)</p>
         <span class="n">volumes</span><span class="p">,</span> <span class="n">centroids</span> <span class="o">=</span> <span class="n">cell_measures</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">CellGeometry</span><span class="p">(</span><span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">volumes</span><span class="p">,</span> <span class="n">_measure_unit</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span>
                             <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">centroids</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">unit</span><span class="p">))</span>
-    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-        <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>                      <span class="c1"># polyhedra and polygons walk theirs</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span>
     <span class="n">volumes</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
     <span class="n">centroids</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
@@ -11997,9 +11989,7 @@ tests).</p>
 <span class="normal">620</span>
 <span class="normal">621</span>
 <span class="normal">622</span>
-<span class="normal">623</span>
-<span class="normal">624</span>
-<span class="normal">625</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">623</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_quality</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">measures</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;How well shaped each cell is: a dict of cell fields, one per measure named in</span>
 <span class="sd">    ``measures`` (all of ``MEASURES`` by default). Each is 1 on the ideal cell of its</span>
@@ -12057,8 +12047,6 @@ tests).</p>
     <span class="n">big</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">dtype</span><span class="o">.</span><span class="n">numpy_dtype</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="p">{</span><span class="n">m</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,),</span> <span class="n">dtype</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">,</span> <span class="s2">&quot;jacobian_ratio&quot;</span><span class="p">,</span>
                                                 <span class="s2">&quot;condition&quot;</span><span class="p">,</span> <span class="s2">&quot;min_edge&quot;</span><span class="p">,</span> <span class="s2">&quot;max_edge&quot;</span><span class="p">)}</span>
-    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-        <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">faces</span><span class="p">()</span>                      <span class="c1"># polyhedra and polygons walk theirs</span>
     <span class="n">jacobian</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;scaled_jacobian&quot;</span><span class="p">,</span> <span class="s2">&quot;jacobian_ratio&quot;</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">}</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">names</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
@@ -14355,7 +14343,8 @@ the pieces' order.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/integrate.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">331</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">330</span>
+<span class="normal">331</span>
 <span class="normal">332</span>
 <span class="normal">333</span>
 <span class="normal">334</span>
@@ -14394,8 +14383,7 @@ the pieces' order.</p>
 <span class="normal">367</span>
 <span class="normal">368</span>
 <span class="normal">369</span>
-<span class="normal">370</span>
-<span class="normal">371</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">370</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The measure of ``data`` -- its cells&#39; total volume, area or length -- and the</span>
 <span class="sd">    integral over it of each of ``fields`` (names; by default every field with a</span>

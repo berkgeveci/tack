@@ -5380,8 +5380,8 @@ search from the points uses no atomics, and everything else works there.</p>
   side 1 the second, and the normal runs along side 0's chain, out of it, with
   an "area" of 1. A vertex has no winding, so any two chains meeting end to
   end are consistent. Three or more ending at one point (a branch) have no
-  faces: <code>faces()</code> refuses them, as an edge of three polygons is refused,
-  while everything that does not need faces still works.</li>
+  faces: <code>faces()</code> refuses them, as a polygonal topology's refuses an edge
+  of three polygons, while everything that does not need faces still works.</li>
 <li>A face's points are wound out of its <strong>side 0</strong>. <strong>Side 1</strong> is the cell on
   the other side, or none (<code>-1</code>) on the boundary.</li>
 <li>Each cell knows, per local face, the face's id and which side of it the
