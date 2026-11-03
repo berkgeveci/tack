@@ -140,6 +140,21 @@ def _check_pieces(whole, pieces, counts):
 
 # ── The container ───────────────────────────────────────────────────
 
+
+@pytest.mark.parametrize("n", [1, 4096, 4097, 3 * 4096 + 5])
+def test_whether_any_mark_has_a_bit(n):
+    """ghosts._has, a flag per chunk of 4096 marks with no atomics: one marked element
+    anywhere, the last of the last chunk included, is found; none is none."""
+    from tack.dataset.ghosts import _has
+
+    for at in sorted({0, n // 2, n - 1}):
+        marks = np.zeros(n, np.uint8)
+        marks[at] = Ghosts.DUPLICATEPOINT | Ghosts.HIDDENPOINT
+        assert _has(tack.array(marks), Ghosts.DUPLICATEPOINT)
+        assert not _has(tack.array(marks), Ghosts.REFINEDPOINT)
+    assert not _has(tack.array(np.zeros(n, np.uint8)), Ghosts.DUPLICATEPOINT)
+    assert not _has(None, Ghosts.DUPLICATEPOINT)
+
 def test_a_partitioned_dataset_is_a_list_of_datasets():
     a, b = td.uniform_grid((3, 3)), td.uniform_grid((4, 2))
     pds = td.PartitionedDataSet([a, b])

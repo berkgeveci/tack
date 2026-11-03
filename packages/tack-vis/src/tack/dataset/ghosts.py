@@ -245,19 +245,33 @@ def owned_values(data, field):
 # ── What filters make: the marks carried ────────────────────────────
 
 @tack.kernel
-def _any_bit(marks, bit, found):
-    for i in range(marks.shape[0]):
-        if (marks[i] & bit) != 0:
-            tack.atomic_max(found, 0, 1)
+def _any_bit(marks, bit, n, found):
+    # Each chunk's own flag, no atomics: one counter every marked element hit
+    # made every worker wait on it (a sixth of the AhmedML polyhedra piece's
+    # 22.8M points are copies), so the CPU kept the kernel serial (0.14 s) and
+    # its rechecks fanned it out at 1 s.
+    for c in range(found.shape[0]):
+        start = c * _ANY_CHUNK
+        end = min(start + _ANY_CHUNK, n)
+        hit = 0
+        for i in range(start, end):
+            if (marks[i] & bit) != 0:
+                hit = 1
+        found[c] = hit
+
+
+_ANY_CHUNK = tack.constant(4096, tack.i64)
 
 
 def _has(marks, bit):
-    """Whether any of ``marks`` (or ``None``) has ``bit``."""
+    """Whether any of ``marks`` (or ``None``) has ``bit``: a flag per chunk of the
+    marks, the few of them read on the host."""
     if marks is None or marks.shape[0] == 0:
         return False
-    found = tack.zeros((1,), tack.i32)
-    _any_bit(marks, bit, found)
-    return int(found[0]) == 1
+    n = int(marks.shape[0])
+    found = tack.empty((-(-n // int(_ANY_CHUNK)),), tack.i32)
+    _any_bit(marks, bit, n, found)
+    return bool(found.numpy().max())
 
 
 @tack.func
