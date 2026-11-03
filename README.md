@@ -97,7 +97,7 @@ offline compiler (`intel-opencl-icd`).
 
 Kernels are compiled on first call and cached by type signature. Subsequent calls with the same types skip compilation.
 Compiled kernels are also kept on disk, so a later process starts warm; see
-[The Kernel Cache](docs/users-guide/17-kernel-cache.md).
+[The Kernel Cache](docs/core/kernel-cache.md).
 
 ## Data Types
 
@@ -304,7 +304,7 @@ def debug_kern(x, out):
 
 To find an index out of bounds, run in debug mode: `tack.set_debug(True)`
 or `TACK_DEBUG=1` checks every array index and raises `IndexError` naming
-the access. See [Debugging and timing](docs/users-guide/15-debugging-and-timing.md).
+the access. See [Debugging and timing](docs/core/debug-and-time.md).
 
 ### Device Functions
 
@@ -356,7 +356,7 @@ Vector methods: `.dot(w)`, `.cross(w)`, `.norm()`, `.norm_sqr()`,
 `.normalized()`, `.sum()`, `.min()`, `.max()`, `.outer_product(w)`.
 Matrix methods: `.transpose()`, `.trace()`, and for 2x2 and 3x3
 `.determinant()` and `.inverse()`; entries are `A[i, j]`. See the
-[User's Guide](docs/users-guide/07-advanced.md) for the rules.
+[Workgroups, atomics, textures and random numbers](docs/core/workgroups-atomics-textures.md) for the rules.
 
 ### Template Classes
 
@@ -406,7 +406,7 @@ surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
 print(surface.num_cells, "triangles")
 ```
 
-See the [Visualization Guide](docs/vis-guide/index.md) and its
+See the [Visualization layer](docs/visualization/index.md) and the
 [Dataset API reference](docs/vis-guide/reference/dataset-api.md).
 
 ## Examples
@@ -481,7 +481,7 @@ packages/
 
 archive/                    # Retired packages kept for reference (tack-rendering)
 benchmarks/                 # Performance benchmarks
-docs/                       # Users guide, developers guide, performance notes
+docs/                       # The site: core, communication, data, visualization, reference, design notes
 ```
 
 ## Contributing

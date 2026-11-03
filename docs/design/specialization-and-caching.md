@@ -451,7 +451,7 @@ instance scalar `offset` and an instance array `data`:
 `runtime/disk_cache.py` keeps both kinds of cached code across processes.
 The in-memory caches above stay in front of it: the disk is consulted only
 on an in-memory miss, so a warm dispatch never touches it. User-facing
-settings are on [The Kernel Cache](../users-guide/17-kernel-cache.md).
+settings are on [The Kernel Cache](../core/kernel-cache.md).
 
 **Why the front end is cached too.** A cold contour of a 21³ grid on an M1
 Max spent about 1.15 s in 18 new kernels: 0.46 s lowering (template

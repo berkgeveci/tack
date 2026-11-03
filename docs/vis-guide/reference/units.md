@@ -102,4 +102,4 @@ refuse two known units, naming both and `convert`. An unknown unit cannot be
 checked, so it is not refused.
 
 
-For conversion, see [Connect Simulation Data](../connect-simulation-data.md#converting).
+For conversion, see [Connect Simulation Data](../../data/connect-simulation-data.md).

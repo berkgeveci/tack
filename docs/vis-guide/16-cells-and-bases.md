@@ -1,8 +1,8 @@
 # Cell types and bases
 
 Every cell, every space and every basis Tack supports today, in one place, and
-what is planned. [Function Spaces and Higher-order Geometry](00-function-spaces.md) explains
-what a space and a basis are, and [Fields and Spaces](03-fields-and-spaces.md)
+what is planned. [Function Spaces and Higher-order Geometry](../data/higher-order.md) explains
+what a space and a basis are, and [Fields and Spaces](../data/fields.md)
 how to make and convert fields in them.
 
 ## Cell shapes
@@ -43,7 +43,7 @@ linear on pieces: on a polyline's segments, on the triangles that fan a polygon
 from its points' mean, and on the sub-tetrahedra that fan a polyhedron's faces
 from their means and the cell's. So linear fields are exact there, and
 `integrate`, `probe`, `gradients` and the cutting filters all work on these
-pieces ([Polyhedra and Polygons](18-polyhedra.md)).
+pieces ([Polyhedra and Polygons](../data/polyhedra.md)).
 
 ## Spaces
 
@@ -123,7 +123,7 @@ linear sub-cells; exact crossings need cells of one family.
 
 The [interop catalog](reference/interop.md#reading-and-writing-other-formats)
 lists VTK, cell-grid and MFEM mappings, including nonconforming interfaces.
-[Connect Simulation Data](connect-simulation-data.md) shows importing and sharing.
+[Connect Simulation Data](../data/connect-simulation-data.md) shows importing and sharing.
 
 ## Planned
 

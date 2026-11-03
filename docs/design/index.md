@@ -119,7 +119,7 @@ libraries and frameworks without copying: wrapping external pointers,
 DLPack, exported device memory, and VTK interop.
 
 The two design records of `tack.dataset` are kept with the
-[Visualization Guide](../vis-guide/index.md):
+[Visualization Guide](../visualization/index.md):
 
 **[Dataset API](../vis-guide/design/dataset-api.md).** The design record of `tack.dataset`: how
 its data model (topologies, spaces, fields, sets), its algorithms and its

@@ -88,7 +88,7 @@ jobs:
   docs:
     name: docs
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
@@ -99,8 +99,9 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
 
-      - name: Sync the docs extra
-        run: uv sync --extra docs
+      - name: Sync the docs and interop extras
+        # The pages' examples run VTK pipelines and read MFEM meshes.
+        run: uv sync --extra docs --extra interop
 
       - name: Check tutorial results on CPU
         run: uv run python docs/examples/validate.py --arch cpu

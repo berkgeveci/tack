@@ -19,6 +19,7 @@ docs_dir: docs
 # The Griffe extension the API pages load (mkdocstrings, below), not a page.
 exclude_docs: |
   _ext/
+  _writing/
 
 theme:
   name: material
@@ -108,123 +109,129 @@ validation:
     not_found: warn
 
 nav:
-  - Home: index.md
-  - User's Guide:
-      - users-guide/index.md
-      - Start Here:
-          - Getting Started: users-guide/01-getting-started.md
-          - From Python to a Tack program: users-guide/12-execution-model.md
-          - Quick Reference: users-guide/quick-reference.md
-      - Write Kernels:
-          - Arrays and Types: users-guide/02-arrays-and-types.md
-          - Vectors and Matrices: users-guide/14-vectors-and-matrices.md
-          - Kernels: users-guide/03-kernels.md
-          - Control Flow and Math: users-guide/04-control-flow.md
-          - Device Functions: users-guide/05-device-functions.md
-          - Templates: users-guide/06-templates.md
-          - Memory and Parallel Correctness: users-guide/13-memory-and-parallelism.md
-      - Kernel Algorithms:
-          - Reductions and Scans: users-guide/11-reductions-and-scans.md
-          - Advanced Features: users-guide/07-advanced.md
-      - Run and Diagnose:
-          - Backends: users-guide/08-backends.md
-          - Sharing Arrays: users-guide/16-interoperability.md
-          - Communicate Between Blocks: users-guide/18-communication.md
-          - Debugging and Timing: users-guide/15-debugging-and-timing.md
-          - The Kernel Cache: users-guide/17-kernel-cache.md
-      - Worked Examples:
-          - Gallery: users-guide/tutorials/index.md
-          - Heat Diffusion: users-guide/tutorials/heat.md
-          - Advecting Dye: users-guide/tutorials/dye.md
-          - Trail-following Agents: users-guide/tutorials/physarum.md
-          - Marching Squares: users-guide/tutorials/contours.md
-          - Particle-to-grid Simulation: users-guide/tutorials/mpm.md
-          - Tiled N-body Forces: users-guide/tutorials/nbody.md
-  - Visualization Guide:
-      - vis-guide/index.md
-      - Introduction: vis-guide/introduction.md
-      - The Data Model:
-          - Overview: vis-guide/data-model-overview.md
-          - Understand a Dataset: vis-guide/01-datasets.md
-          - Topology and Geometry: vis-guide/topology-and-geometry.md
-          - Fields and Spaces: vis-guide/03-fields-and-spaces.md
-          - Coordinates, Units and Time: vis-guide/12-units.md
-          - Data Representations:
-              - Polyhedra, Polygons and Lines: vis-guide/18-polyhedra.md
-              - Point Clouds and Particles: vis-guide/point-cloud-model.md
-              - Collections and Partitions: vis-guide/collections-and-partitions.md
-              - AMR Hierarchies: vis-guide/10-amr.md
-              - Octrees: vis-guide/11-octrees.md
-          - Further Detail:
-              - Function Spaces and Higher-order Geometry: vis-guide/00-function-spaces.md
-              - Arrays, Storage and Layouts: vis-guide/field-storage.md
-      - Work with Data:
-          - Create and Connect:
-              - Build Meshes: vis-guide/02-meshes.md
-              - Create and Convert Fields: vis-guide/create-fields.md
-              - Connect Simulation Data: vis-guide/connect-simulation-data.md
-          - Analyze and Transform:
-              - Filter and Analyze: vis-guide/04-filters.md
-              - Sample and Trace Fields: vis-guide/06-pipelines.md
-              - Finite-volume Data and Fluxes: vis-guide/18-finite-volume.md
-              - Process Point Clouds and Particles: vis-guide/08-point-clouds.md
-              - Analyze Adaptive Data: vis-guide/adaptive-data.md
-              - Stream Steps: vis-guide/13-streaming.md
-          - Write Your Own Algorithms:
-              - "Views: How a Kernel Sees a Dataset": vis-guide/17-views.md
-              - Write Mesh Algorithms: vis-guide/05-mesh-kernels.md
-              - Write a Filter: vis-guide/15-write-a-filter.md
-      - Data in Pieces:
-          - Work with Data in Pieces: vis-guide/07-partitioned.md
-          - Algorithms Across Pieces: vis-guide/09-pieces-across.md
-          - Pieces and Blocks: vis-guide/14-communication.md
-      - Worked Examples: vis-guide/examples.md
-      - Gallery: vis-guide/gallery.md
-      - MFEM Gallery: vis-guide/mfem-gallery.md
-      - Reference:
+  - What Tack is: index.md
+  - Use cases: use-cases.md
+  - Install: install.md
+  - "1. Core":
+      - core/index.md
+      - How a Tack program runs: core/how-programs-run.md
+      - Learn:
+          - Arrays and types: core/arrays-and-types.md
+          - Kernels: core/kernels.md
+          - Control flow and math: core/control-flow-and-math.md
+          - Device functions: core/device-functions.md
+          - Vectors and matrices: core/vectors-and-matrices.md
+          - Device classes: core/device-classes.md
+          - Reductions, scans and sorts: core/reductions-scans-sorts.md
+          - Memory and parallel correctness: core/memory-and-correctness.md
+      - Do:
+          - Choose a device: core/choose-a-device.md
+          - Share arrays: core/share-arrays.md
+          - Workgroups, atomics, textures, random numbers: core/workgroups-atomics-textures.md
+          - Wait without blocking (asyncio): core/asyncio.md
+          - Debug and time a kernel: core/debug-and-time.md
+          - Keep compiled kernels: core/kernel-cache.md
+      - Examples:
+          - core/examples.md
+          - Heat diffusion: users-guide/tutorials/heat.md
+          - Advecting dye: users-guide/tutorials/dye.md
+          - Trail-following agents: users-guide/tutorials/physarum.md
+          - Marching squares: users-guide/tutorials/contours.md
+          - Particle-to-grid simulation: users-guide/tutorials/mpm.md
+          - Tiled n-body forces: users-guide/tutorials/nbody.md
+  - "2. Communication":
+      - communication/index.md
+      - Blocks and worlds: communication/blocks-and-worlds.md
+      - Exchange and plans: communication/exchange-and-plans.md
+      - Route points to blocks: communication/routing.md
+      - Sort and reduce over blocks: communication/sort-and-reduce.md
+      - Run under MPI: communication/mpi.md
+  - "3. Data":
+      - data/index.md
+      - Understand:
+          - Topology and geometry: data/topology-and-geometry.md
+          - Fields and where values live: data/fields.md
+          - Coordinates, units and time: data/units-coordinates-time.md
+          - Cells and meshes: data/cells-and-meshes.md
+          - Polyhedra, polygons and polylines: data/polyhedra.md
+          - Higher-order and finite-element data: data/higher-order.md
+          - Particles and point clouds: data/particles.md
+          - AMR hierarchies and octrees: data/amr-and-octrees.md
+          - Data in pieces: data/pieces.md
+          - Storage and layouts: data/storage-and-layouts.md
+      - Do:
+          - Build meshes and fields: data/build-meshes-and-fields.md
+          - Connect a simulation's data: data/connect-simulation-data.md
+          - Data on devices: data/devices.md
+  - "4. Visualization":
+      - visualization/index.md
+      - Filters by task:
+          - Extract: visualization/extract.md
+          - Derive: visualization/derive.md
+          - Sample and trace: visualization/sample-and-trace.md
+          - Reduce: visualization/reduce.md
+          - Points and particles: visualization/points-and-particles.md
+          - Adaptive data: visualization/adaptive-data.md
+          - Finite-volume data and fluxes: visualization/finite-volume.md
+      - At scale and over time:
+          - Filters over pieces: visualization/over-pieces.md
+          - Steps over time: visualization/over-time.md
+      - Extend:
+          - Views: visualization/views.md
+          - Write a mesh algorithm: visualization/write-a-mesh-algorithm.md
+          - Write a filter: visualization/write-a-filter.md
+      - Connect:
+          - VTK: visualization/vtk.md
+          - MFEM, Warp and others: visualization/mfem-warp-and-others.md
+      - Examples:
+          - visualization/examples.md
+          - Gallery: vis-guide/gallery.md
+          - MFEM gallery: vis-guide/mfem-gallery.md
+  - Reference:
+      - Core:
+          - Runtime API: contracts/runtime-api.md
+          - API summary: reference/api.md
+          - Array API: design/array-api.md
+          - Kernel language: reference/language-contract.md
+          - Backends: reference/backends.md
+          - Backend capabilities: contracts/backend-capabilities.md
+      - Data:
           - Dataset API: vis-guide/reference/dataset-api.md
+          - Data model: vis-guide/reference/data-model.md
+          - Cell types and bases: vis-guide/16-cells-and-bases.md
+          - Units and quantities: vis-guide/reference/units.md
+      - Visualization:
           - Algorithms: vis-guide/reference/algorithms.md
-          - Data Model: vis-guide/reference/data-model.md
-          - Cell Types and Bases: vis-guide/16-cells-and-bases.md
-          - Dataset Interoperability: vis-guide/reference/interop.md
-          - Units and Quantities: vis-guide/reference/units.md
-      - Design:
-          - Dataset API: vis-guide/design/dataset-api.md
-          - Polyhedra: vis-guide/design/polyhedra.md
-          - View Storage and Composition: vis-guide/design/view-composition.md
-  - Design and Implementation:
-      - design/index.md
-      - Principles: design/principles.md
-      - Array API: design/array-api.md
-      - Compilation Pipeline: design/compilation-pipeline.md
-      - Specialization and Caching: design/specialization-and-caching.md
-      - Numerical Semantics: design/numerical-semantics.md
-      - Parallel Execution: design/parallel-execution.md
-      - Memory and Aliasing: design/memory-and-aliasing.md
-      - CPU Threading Policy: design/cpu-threading.md
-      - Backend Implementations: design/backend-implementations.md
-      - Vendor Workarounds: design/vendor-workarounds.md
-      - Interoperability: design/interoperability.md
-  - Contracts:
-      - contracts/index.md
-      - Kernel Language Contract: reference/language-contract.md
-      - Backend Capabilities: contracts/backend-capabilities.md
-      - Runtime API: contracts/runtime-api.md
-      - Conformance and Validation: contracts/conformance.md
-  - Developer's Guide:
+          - Interoperability: vis-guide/reference/interop.md
+      - Glossary: reference/glossary.md
+      - Performance: performance.md
+  - Developer's guide:
       - developers-guide/index.md
       - Architecture: developers-guide/01-architecture.md
-      - AST Transform: developers-guide/02-ast-transform.md
+      - AST transform: developers-guide/02-ast-transform.md
       - IR: developers-guide/03-ir.md
-      - IR Passes: developers-guide/04-ir-passes.md
-      - Codegen: developers-guide/05-codegen.md
+      - IR passes: developers-guide/04-ir-passes.md
+      - Code generation: developers-guide/05-codegen.md
       - Runtime: developers-guide/06-runtime.md
       - Templates: developers-guide/07-templates.md
-      - Adding Features: developers-guide/08-adding-features.md
-  - Reference:
-      - Backends: reference/backends.md
-      - API: reference/api.md
-      - Performance: performance.md
+      - Adding features: developers-guide/08-adding-features.md
+      - Conformance and validation: contracts/conformance.md
+  - Design notes:
+      - design/index.md
+      - Principles: design/principles.md
+      - Compilation pipeline: design/compilation-pipeline.md
+      - Specialization and caching: design/specialization-and-caching.md
+      - Numerical semantics: design/numerical-semantics.md
+      - Parallel execution: design/parallel-execution.md
+      - Memory and aliasing: design/memory-and-aliasing.md
+      - CPU threading policy: design/cpu-threading.md
+      - Backend implementations: design/backend-implementations.md
+      - Vendor workarounds: design/vendor-workarounds.md
+      - Interoperability: design/interoperability.md
+      - Contracts: contracts/index.md
+      - Dataset API design: vis-guide/design/dataset-api.md
+      - Polyhedra: vis-guide/design/polyhedra.md
+      - View storage and composition: vis-guide/design/view-composition.md
 
 extra:
   # A version selector over the folders mike publishes: `0.4`, `0.5`, ...,

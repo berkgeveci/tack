@@ -1,7 +1,7 @@
 # Dataset API
 
 `tack.dataset`, in the `tack-vis` package. This page describes the API as it
-stands; the [Visualization Guide](../index.md)
+stands; the [Visualization Guide](../../visualization/index.md)
 develops the model, mesh construction, field spaces, filters, mesh kernels and
 complete pipelines with checked examples. For why it is shaped this way and how it got here, see the
 design records: [Dataset API](../design/dataset-api.md) and
@@ -336,7 +336,7 @@ cells apart without changing the topology. A geometry of order 2 is curved.
 
 **Fields.** `data.fields` holds the fields by name and space: two fields may
 share a name in different spaces, as VTK's point and cell arrays do
-([Fields that share a name](../create-fields.md#fields-that-share-a-name)).
+([Fields that share a name](../../data/build-meshes-and-fields.md)).
 
 | | |
 |---|---|
@@ -358,7 +358,7 @@ of that name.
 string kept in unyt's canonical spelling (`"m/s"`, `"m*s**-1"` and `"m/s^1"`
 are one unit; `"1"` is `"dimensionless"`), or `None` for unknown. The spatial
 unit is the geometry's, `data.unit`, and `origin` is in it. Kernels never see
-a unit. See [Coordinates, Units and Time](../12-units.md).
+a unit. See [Coordinates, Units and Time](../../data/units-coordinates-time.md).
 
 | | |
 |---|---|
@@ -397,7 +397,7 @@ hands filters one step at a time, and each step is a dataset at its time.
 | `extend_paths(paths, particles)` | joins a step's particles onto the paths so far, by `seed`: polylines through each particle's points in time |
 | `Pathlines(field, seeds, ...)`, `Streaklines(field, seeds, releases=1, ...)` | the current pathlines every step; the line of each seed's released particles, newest first |
 
-See [Streaming Steps](../13-streaming.md).
+See [Streaming Steps](../../visualization/over-time.md).
 
 ## Origins and point clouds
 
@@ -936,7 +936,7 @@ build if two of them define the same name.
 
 ### What views offer
 
-[Views](../17-views.md) introduces them.
+[Views](../../visualization/views.md) introduces them.
 
 
 Every view supports `for i in view` and `entity_id(i)`, the global id of
@@ -984,7 +984,7 @@ side `s` and its local face number.
 
 | Field view | Methods |
 |---|---|
-| `H1`, `L2`, `Constant` | `value(c, pc)`, `parametric_gradient(c, pc)` at parametric coordinates; `corner_value(c, j)`; the field's nodes, on cells with a reference element: `NODES` per cell, node `k`'s value `dof(c, k)`, its place in the array `dof_index(c, k)` and its parametric coordinates `node_parametric(k)` ([Work at a field's nodes](../05-mesh-kernels.md#work-at-a-fields-nodes)) |
+| `H1`, `L2`, `Constant` | `value(c, pc)`, `parametric_gradient(c, pc)` at parametric coordinates; `corner_value(c, j)`; the field's nodes, on cells with a reference element: `NODES` per cell, node `k`'s value `dof(c, k)`, its place in the array `dof_index(c, k)` and its parametric coordinates `node_parametric(k)` ([Work at a field's nodes](../../visualization/write-a-mesh-algorithm.md#work-at-a-fields-nodes)) |
 | `Values` | `at(i)` |
 | `SideTraces` | `trace(f, s, j)`, `value(f, s, pc)` |
 

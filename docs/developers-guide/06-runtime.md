@@ -192,7 +192,7 @@ device memory of the process, so `load_variant` makes them anew from the
 call's arguments. Debug mode is part of the lowered key, so its kernels are
 stored apart. The test suite runs with `TACK_CACHE=off` unless the
 environment says otherwise; `test_disk_cache.py` runs its cases in fresh
-processes. See [The Kernel Cache](../users-guide/17-kernel-cache.md) for the
+processes. See [The Kernel Cache](../core/kernel-cache.md) for the
 settings and MPI bundles.
 
 ## Launch Completion

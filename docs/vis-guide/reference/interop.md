@@ -1,6 +1,6 @@
 # Dataset interoperability
 
-Use [Connect Simulation Data](../connect-simulation-data.md) for complete workflows.
+Use [Connect Simulation Data](../../data/connect-simulation-data.md) for complete workflows.
 This catalog records format mappings and geometric restrictions.
 
 ## Reading and writing other formats

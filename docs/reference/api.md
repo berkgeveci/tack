@@ -2,8 +2,8 @@
 
 Look up the functions you call from Python here. The signatures and detailed
 descriptions below are generated from the source. For a complete program, use
-the [User's Guide](../users-guide/index.md); for a reminder of which operations
-belong on the host or in a kernel, use the [quick reference](../users-guide/quick-reference.md).
+the [User's Guide](../core/index.md); for a reminder of which operations
+belong on the host or in a kernel, use the [quick reference](../core/how-programs-run.md).
 
 | Task | Call | Result or effect |
 |---|---|---|
@@ -42,7 +42,7 @@ the [Developer's Guide](../developers-guide/01-architecture.md).
 ## Devices
 
 A kernel runs on its arrays' device: the default device when that can
-address them, otherwise theirs. See [Backends: Devices](../users-guide/08-backends.md#devices).
+address them, otherwise theirs. See [Backends: Devices](../core/choose-a-device.md).
 
 ::: tack.device
 
@@ -67,7 +67,7 @@ address them, otherwise theirs. See [Backends: Devices](../users-guide/08-backen
 `tack.Array` holds storage on one device (`a.device`), chosen at allocation. Its shape
 counts elements; its dtype describes one scalar, vector or matrix element.
 `tack.dataset.Field` instead couples coefficient values with a space on a topology.
-See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
+See [Arrays and Types](../core/arrays-and-types.md) for examples.
 
 ::: tack.Array
 
@@ -187,7 +187,7 @@ Inside a kernel the element-type names above build values instead:
 `tack.vec3(x, y, z)`, `tack.vec3(s)` (every component `s`) or
 `tack.vec3(v)` (a 3-vector), and `tack.mat2([a, b], [c, d])`,
 `tack.mat2(a, b, c, d)` (row-major) or `tack.mat(row, ...)` for any
-shape up to 4×4. See [Vectors and Matrices](../users-guide/14-vectors-and-matrices.md).
+shape up to 4×4. See [Vectors and Matrices](../core/vectors-and-matrices.md).
 
 ::: tack.identity
 
@@ -258,7 +258,7 @@ shape up to 4×4. See [Vectors and Matrices](../users-guide/14-vectors-and-matri
 
 How these behave on each backend — dtypes, accumulators, NaN and empty
 inputs, repeatability — is in the User's Guide chapter
-[Reductions and Scans](../users-guide/11-reductions-and-scans.md). Array
+[Reductions and Scans](../core/reductions-scans-sorts.md). Array
 reductions are the methods `Array.sum`, `min`, `max` and `mean`, above.
 
 ### Statistics
@@ -365,7 +365,7 @@ Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
 ids, each on a device, such as the pieces of a partitioned dataset -- and
 combines values over them. `World()` is this process; its blocks may be on any
 of its devices. The User's Guide's
-[Communicate Between Blocks](../users-guide/18-communication.md) builds
+[Communicate Between Blocks](../communication/index.md) builds
 algorithms on it step by step, and the
 [Runtime API contract](../contracts/runtime-api.md#communication-between-blocks)
 says what it guarantees.

@@ -483,7 +483,7 @@ See [Interoperability](../design/interoperability.md).
 ## Communication between blocks
 
 Defined in `packages/tack-core/src/tack/communication/`. A guide:
-[Communicate Between Blocks](../users-guide/18-communication.md).
+[Communicate Between Blocks](../communication/index.md).
 
 **Blocks and worlds.** `Blocks(devices, world=None)` holds this rank's
 blocks, one per entry of `devices`. Global ids run over every rank's
@@ -700,7 +700,7 @@ it is queued (see [Host operations](#host-operations)).
 | `TACK_CPU_MALLOC` | `CPUBackend.__init__` | **Linux.** A boolean flag read like `TACK_NO_REINIT`. When on, the first CPU backend sets glibc's `malloc` thresholds so freed blocks keep their pages (`cpu._tune_malloc`), process-wide. Off by default |
 | `TACK_DEBUG` | `import tack` (`runtime/dispatch.py`) | A boolean flag read like `TACK_NO_REINIT`: turns on debug mode's bounds checks. `tack.set_debug` overrides it (above) |
 | `TACK_NO_REINIT` | `tack.set_default_device` | A boolean flag (`dispatch.env_flag`): when on, `set_default_device` leaves an existing default alone. `0`, `false`, `no`, `off` and empty mean off. See above |
-| `TACK_CACHE` | The disk cache, at the first kernel compiled | `write` (default), `read`, `bundle` (default under MPI) or `off`; also `0`, `false`, `no`, `none` for off. Any other value raises `ValueError`. See [The Kernel Cache](../users-guide/17-kernel-cache.md) |
+| `TACK_CACHE` | The disk cache, at the first kernel compiled | `write` (default), `read`, `bundle` (default under MPI) or `off`; also `0`, `false`, `no`, `none` for off. Any other value raises `ValueError`. See [The Kernel Cache](../core/kernel-cache.md) |
 | `TACK_CACHE_SIZE` | The disk cache, at the first kernel compiled | The most the entries of every Tack version may take: bytes, a size such as `500M` or `2G` (binary units), or `unlimited`; default `1G`. Past it, a process that stores entries deletes the least recently used, at most once an hour. Any other value raises `ValueError` |
 | `TACK_CACHE_DIR` | The disk cache, at the first kernel compiled | The cache directory. Default: the platform's per-user cache directory. It must belong to the user and be writable by nobody else, or it is not used (with a `RuntimeWarning`) |
 | `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** A boolean flag read like `TACK_NO_REINIT`. When on, writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. A variant loaded from the disk cache is not generated, so not dumped. Other backends ignore it. Use `tack.inspect` instead |

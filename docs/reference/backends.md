@@ -40,10 +40,10 @@ A queued launch is waited for where the host reads an array or calls
 `tack.sync()`, and its errors surface there. A launch that uses memory
 shared with another library (DLPack export, `array_from_ptr`) completes
 before the call returns. See
-[Backends](../users-guide/08-backends.md#when-a-call-returns) in the User's
-Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
+[Backends](../core/choose-a-device.md) in the User's
+Guide and [The Kernel Cache](../core/kernel-cache.md).
 
-[Debug mode](../users-guide/15-debugging-and-timing.md#check-every-index-with-debug-mode)
+[Debug mode](../core/debug-and-time.md)
 (`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every index on all five.
 
 ## Scalar types
@@ -103,7 +103,7 @@ pip install -e 'packages/tack-core[warp]'         # warp-lang: the prototype War
 ```
 
 Two of these need a word; the Warp backend is described in
-[Backends](../users-guide/08-backends.md#warp-prototype).
+[Backends](../core/choose-a-device.md).
 
 **HIP.** `hip-python`'s version tracks the ROCm release it binds to — 7.1.x
 against ROCm 7.1, 7.2.x against 7.2 — so the extra sets a lower bound rather
