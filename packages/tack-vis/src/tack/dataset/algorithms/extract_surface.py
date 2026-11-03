@@ -424,52 +424,95 @@ def _polygon_surface(data, ids, fields=None):
                  fields=fields)
 
 
-def _surface_of_pieces(pds, fields):
-    """``extract_surface`` over a ``PartitionedDataSet``: each piece's surface, less
-    the faces two pieces hold unmarked (the faces between pieces without ghost
-    cells), then, where a surface lost its marks, the rest marked by matching."""
+def _boundary_of(piece):
+    """A piece's boundary faces on the host: ``(ids, ring offsets, ring points, marks)``,
+    each face's points in its ring and the ghost marks of the one cell it bounds."""
     import numpy as np
 
+    from tack import arrays
+
+    topology = piece.topology
+    faces = topology.faces()
+    ids = np.asarray(arrays.to_host(faces.boundary()), np.int64).reshape(-1)
+    n = piece.num_cells
+    marks = piece.ghosts.cells.numpy() if piece.ghosts is not None and \
+        piece.ghosts.cells is not None else np.zeros(n, np.uint8)
+    if hasattr(faces, "rows"):
+        rows = np.asarray(arrays.to_host(faces.rows), np.int64).reshape(-1, 4)[ids]
+        sizes = (rows >= 0).sum(axis=1)
+        points = rows[rows >= 0]
+        cells = np.asarray(arrays.to_host(faces.sides), np.int64).reshape(-1, 4)[ids, 0]
+    else:
+        face_offsets, face_points, cell_offsets, cell_faces, sides = (
+            np.asarray(a, np.int64) for a in topology.arrays())
+        sizes = face_offsets[ids + 1] - face_offsets[ids]
+        starts = np.concatenate(([0], np.cumsum(sizes)))
+        at = (np.arange(starts[-1], dtype=np.int64) - np.repeat(starts[:-1], sizes)
+              + np.repeat(face_offsets[ids], sizes))
+        points = face_points[at]
+        cell_of = np.full(len(face_offsets) - 1, -1, np.int64)
+        first = sides == 0
+        cell_of[cell_faces[first]] = np.repeat(np.arange(n), np.diff(cell_offsets))[first]
+        cells = cell_of[ids]
+    offsets = np.concatenate(([0], np.cumsum(sizes))).astype(np.int64)
+    return ids, offsets, points, marks[np.maximum(cells, 0)]
+
+
+def _surface_of_pieces(pds, fields):
+    """``extract_surface`` over a ``PartitionedDataSet``: each piece's boundary faces,
+    matched over the pieces by their points' positions before any surface is made,
+    less the faces two pieces hold unmarked (those between pieces without ghost
+    cells); then each piece's surface of the rest -- part of the whole's surface,
+    so manifold where the whole's is, though a piece's own boundary need not be
+    (a sheet of polyhedra one cell thick meets itself along edges) -- and, where
+    a surface lost its marks, the rest marked by matching."""
+    import numpy as np
+
+    import tack
     from tack import communication as tc
     from tack.dataset import _matching
-    from tack.dataset.algorithms._extract import _keep_cells
-    from tack.dataset.algorithms.generate_global_ids import (
-        _cell_entries,
-        _marks,
-        _numbered,
-        _point_owners,
-        generate_global_ids,
-    )
-    from tack.dataset.ghosts import Ghosts
+    from tack.dataset.algorithms.generate_global_ids import generate_global_ids
+    from tack.dataset.ghosts import Ghosts, visible
     from tack.dataset.partitioned import PartitionedDataSet
 
     world = pds.world
-    surfaces = [extract_surface(piece, fields=fields) for piece in pds]
-    blocks = tc.Blocks([s.device for s in surfaces], world)
-    # Every point matched by position, and every face by its points' numbers.
-    marks = {g: _marks(s, lost=True) for g, s in zip(blocks.local, surfaces)}
-    owned, plan, shared = _point_owners(blocks, surfaces, marks, every=True)
-    point_ids = _numbered(blocks, surfaces, owned, plan, "points")
-    ghost = {g: (_marks(s)[0] & Ghosts.DUPLICATECELL) != 0
-             for g, s in zip(blocks.local, surfaces)}
-    partners = _matching.match(blocks, _cell_entries(blocks, surfaces, ghost, point_ids,
-                                                     shared))
-    kept = []
-    for g, surface in zip(blocks.local, surfaces):
+    pieces = [visible(piece) for piece in pds]
+    if all(p.topology.dimension == 2 for p in pieces):
+        # A surface's pieces are their own surfaces, as one surface is.
+        return PartitionedDataSet([extract_surface(p, fields=fields) for p in pieces],
+                                  world=world)
+    blocks = tc.Blocks([p.device for p in pieces], world)
+    bounds, entries = {}, {}
+    for g, piece in zip(blocks.local, pieces):
+        ids, offsets, points, marks = _boundary_of(piece)
+        bounds[g] = (ids, marks)
+        # A face by its points' positions: count, a hash of them sorted, the least, the most.
+        point_keys = _matching.hashed(list(_matching.position_bits(piece.positions())),
+                                      seed=2)
+        sizes = np.diff(offsets)
+        columns = [np.zeros(len(ids), np.uint64) for _ in range(4)]
+        for size in np.unique(sizes).tolist():
+            which = np.flatnonzero(sizes == size)
+            rows = points[offsets[which][:, None] + np.arange(size)]
+            keys = np.sort(point_keys[rows], axis=1)
+            columns[0][which] = np.uint64(size)
+            columns[1][which] = _matching.hashed(list(keys.T), seed=1)
+            columns[2][which] = keys[:, 0]
+            columns[3][which] = keys[:, -1]
+        flags = ((marks & Ghosts.DUPLICATECELL) != 0).astype(np.uint8)
+        entries[g] = (np.arange(len(ids), dtype=np.int64), columns, flags)
+    partners = _matching.match(blocks, entries)
+    surfaces = []
+    for g, piece in zip(blocks.local, pieces):
+        ids, marks = bounds[g]
         index, _, _, other_flag = partners[g]
-        between = np.zeros(surface.num_cells, bool)
-        unmarked = other_flag == 0
-        between[index[unmarked]] = True
-        between &= ~ghost[g]
-        if between.any():
-            # The rest of the faces, on all the surface's points, as one piece's
-            # surface keeps its input's points.
-            with blocks.device(g):
-                surface = _keep_cells(surface, tack.array((~between).astype(np.int32)),
-                                      keep_points=tack.array(np.ones(surface.num_points,
-                                                                     np.int32)))
-        kept.append(surface)
-    out = PartitionedDataSet(kept, world=world)
+        between = np.zeros(len(ids), bool)
+        between[index[other_flag == 0]] = True
+        between &= (marks & Ghosts.DUPLICATECELL) == 0
+        with blocks.device(g):
+            kept = tack.array(ids[~between].astype(np.int64), tack.i64)
+            surfaces.append(extract_surface(piece, kept, fields=fields))
+    out = PartitionedDataSet(surfaces, world=world)
     lost = bool(blocks.all_reduce({g: int(bool(s._ghosts_lost))
-                                   for g, s in zip(blocks.local, kept)}, "max"))
+                                   for g, s in zip(blocks.local, surfaces)}, "max"))
     return generate_global_ids(out) if lost else out

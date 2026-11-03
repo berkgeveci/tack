@@ -579,6 +579,24 @@ def test_the_surface_of_pieces_is_the_wholes(kind):
         td.extract_surface(pieces, faces="boundary")
 
 
+def test_the_surface_of_pieces_whose_own_surfaces_are_not_manifold():
+    """A piece whose cells touch along an edge alone (a sheet of polyhedra one cell
+    thick meeting itself, as in the AhmedML mesh) has an own surface with edges of
+    four faces, which a polygonal topology refuses; the pieces' boundary faces are
+    matched before any surface is made, so the whole's surface comes out."""
+    whole = td.as_polyhedra(td.wavelet(1))                       # 2 x 2 x 2 cells
+    centers = td.cell_centers(whole).values.numpy()
+    diagonal = (centers[:, 0] > 0) == (centers[:, 1] > 0)      # (0,0) and (1,1) columns
+    pieces = td.PartitionedDataSet([td.extract_cells(whole, np.flatnonzero(diagonal)),
+                                    td.extract_cells(whole, np.flatnonzero(~diagonal))])
+    with pytest.raises(ValueError, match="more than two polygons"):
+        td.extract_surface(pieces[0])
+    surface = td.extract_surface(pieces)
+    total = sum((_faces_by_position(p) for p in surface),
+                start=type(_faces_by_position(surface[0]))())
+    assert total == _faces_by_position(td.extract_surface(whole))
+
+
 def test_pieces_without_ghost_cells_refuse_what_their_neighbours_decide():
     """Without ghost cells a piece cannot tell what its neighbours make or keep from
     the cells, faces and edges they share: a point on a shared edge, a shared
