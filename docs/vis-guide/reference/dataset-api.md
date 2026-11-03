@@ -164,8 +164,9 @@ search from the points uses no atomics, and everything else works there.
   cell is on.
 - On a polyhedral topology the faces are given, not derived, and keep their
   given numbering.
-- A polyhedral topology also derives each cell's distinct points
-  (`cell_points()`), for point data.
+- Unstructured, polyhedral and polyline topologies also derive each cell's
+  distinct points, sorted (`cell_points()`, CSR `(offsets, point_ids)`), for
+  point data.
 
 ### Converting and checking
 

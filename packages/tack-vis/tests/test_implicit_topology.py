@@ -101,6 +101,25 @@ def test_a_topology_keeps_its_implicit_arrays():
     np.testing.assert_array_equal(np.asarray(narrow.offsets), [0, 1, 2, 3])
 
 
+def test_an_unstructured_topology_derives_its_cells_points():
+    """cell_points(), as a polyhedral or polyline topology gives it: each cell's points
+    sorted and unique, CSR, from implicit offsets as from stored ones, kept."""
+    types, offsets = uniform_cells(td.shapes.TRIANGLE, 2, tack.i32)
+    t = td.UnstructuredTopology(types, offsets, tack.array([2, 0, 1, 3, 1, 2], dtype=tack.i32))
+    o, p = t.cell_points()
+    assert (_host(o).tolist(), _host(p).tolist()) == ([0, 3, 6], [0, 1, 2, 1, 2, 3])
+    assert t.cell_points() is t.cell_points()
+    # A cell naming a point twice (a degenerate quad) has it once.
+    quad = td.UnstructuredTopology(tack.array([9], dtype=tack.u8), tack.array([0, 4], dtype=tack.i32),
+                                   tack.array([3, 1, 1, 0], dtype=tack.i32))
+    o, p = quad.cell_points()
+    assert (_host(o).tolist(), _host(p).tolist()) == ([0, 3], [0, 1, 3])
+    vertices = td.UnstructuredTopology(ConstantArray(1, 3, dtype=tack.u8), CountingArray(4),
+                                       CountingArray(3))
+    o, p = vertices.cell_points()
+    assert (_host(o).tolist(), _host(p).tolist()) == ([0, 1, 2, 3], [0, 1, 2])
+
+
 @pytest.mark.parametrize("chunk, chunks", [(4096, 1024), (7, 1024), (7, 5)])
 def test_stored_types_are_grouped_by_their_counts(monkeypatch, chunk, chunks):
     """A stored types array is counted by chunks on the CPU, each into its own

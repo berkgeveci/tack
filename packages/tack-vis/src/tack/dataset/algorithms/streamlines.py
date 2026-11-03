@@ -57,8 +57,8 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     ``time`` on the points. A seed that takes no step has a point and no line.
     The arguments are ``advect``'s.
 
-    ``step_unit`` is what ``step_size`` measures: ``"time"`` (the default, as
-    ``advect`` and Viskores step), or ``"length"``, an arc length along the
+    ``step_unit`` is what ``step_size`` measures (``advect``'s too): ``"time"``
+    (the default, as Viskores steps), or ``"length"``, an arc length along the
     path: the particle follows the velocity's direction, as VTK's
     ``vtkStreamTracer`` does by default, so slow flow takes as long steps as
     fast, and ``steps * step_size`` is the longest path. ``time`` is the time
