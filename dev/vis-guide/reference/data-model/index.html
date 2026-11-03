@@ -20264,21 +20264,7 @@ carried. Given field <code>arguments</code> too (<code>Field</code>s of
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">480</span>
-<span class="normal">481</span>
-<span class="normal">482</span>
-<span class="normal">483</span>
-<span class="normal">484</span>
-<span class="normal">485</span>
-<span class="normal">486</span>
-<span class="normal">487</span>
-<span class="normal">488</span>
-<span class="normal">489</span>
-<span class="normal">490</span>
-<span class="normal">491</span>
-<span class="normal">492</span>
-<span class="normal">493</span>
-<span class="normal">494</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">494</span>
 <span class="normal">495</span>
 <span class="normal">496</span>
 <span class="normal">497</span>
@@ -20292,7 +20278,21 @@ carried. Given field <code>arguments</code> too (<code>Field</code>s of
 <span class="normal">505</span>
 <span class="normal">506</span>
 <span class="normal">507</span>
-<span class="normal">508</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">508</span>
+<span class="normal">509</span>
+<span class="normal">510</span>
+<span class="normal">511</span>
+<span class="normal">512</span>
+<span class="normal">513</span>
+<span class="normal">514</span>
+<span class="normal">515</span>
+<span class="normal">516</span>
+<span class="normal">517</span>
+<span class="normal">518</span>
+<span class="normal">519</span>
+<span class="normal">520</span>
+<span class="normal">521</span>
+<span class="normal">522</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">visible</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="n">arguments</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` without its hidden cells (``HIDDENCELL``: data not valid there) and</span>
 <span class="sd">    refined cells (``REFINEDCELL``: an AMR cell a finer level covers), which</span>

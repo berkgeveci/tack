@@ -7179,7 +7179,8 @@ the fewest whose estimated error is within it).</p>
 <span class="normal">86</span>
 <span class="normal">87</span>
 <span class="normal">88</span>
-<span class="normal">89</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">89</span>
+<span class="normal">90</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">threshold</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="n">all_points</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">subdivision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
               <span class="n">tolerance</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The cells whose ``field`` lies in ``[lower, upper]``, with only the points they use.</span>
@@ -7218,6 +7219,7 @@ the fewest whose estimated error is within it).</p>
     <span class="n">field</span> <span class="o">=</span> <span class="n">_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">arrays</span><span class="o">.</span><span class="n">width_of</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;threshold needs a scalar field&quot;</span><span class="p">)</span>
+    <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">_inward</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
     <span class="n">field</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
     <span class="n">space</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">space</span><span class="o">.</span><span class="n">interpolated</span> <span class="ow">or</span> <span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">):</span>
@@ -8668,8 +8670,8 @@ between the lattice values does.</p>
 </tr>
 <tr>
 <td><a href="#tack.dataset.algorithms.extract_surface.extract_surface"><code>extract_surface</code></a></td>
-<td>faces (the boundary by default) as cells</td>
-<td>dataset</td>
+<td>faces (the boundary by default) as cells; of pieces, the whole's surface</td>
+<td>dataset, or pieces</td>
 <td>vtkDataSetSurfaceFilter</td>
 <td>ExternalFaces</td>
 </tr>
@@ -8770,6 +8772,15 @@ and (a quad's) center are the surface cell's, so their values are gathered,
 not evaluated. A 2D mesh's boundary lines take an order-2 field's values at
 the points. The geometry must be <code>H1</code>: an <code>L2</code> one has no shared points
 for the faces to stand on.</p>
+<p>Given a <code>PartitionedDataSet</code>, the whole's surface, a piece each: each
+piece's boundary, less the faces two pieces share. Pieces without ghost
+cells take the faces between them for boundary; the faces of every piece's
+surface are matched over the pieces by their points (by position, as
+<code>generate_global_ids</code> matches them), and a face held unmarked by two
+pieces is between them and dropped. On pieces with ghost cells no such face
+is on a boundary, and each piece's surface is its own, its ghost faces
+marked. The surface's points are owned once (<code>generate_global_ids</code> marks
+them where the pieces had no ghost cells).</p>
 
 
             <details class="mkdocstrings-source">
@@ -8838,7 +8849,23 @@ for the faces to stand on.</p>
 <span class="normal">266</span>
 <span class="normal">267</span>
 <span class="normal">268</span>
-<span class="normal">269</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_surface</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">faces</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The ``faces`` -- a face ``Set`` (as ``boundary_faces`` returns), a set&#39;s name</span>
 <span class="sd">    in ``data.sets``, or face ids (a field or an array); by default the boundary</span>
@@ -8855,9 +8882,25 @@ for the faces to stand on.</p>
 <span class="sd">    and (a quad&#39;s) center are the surface cell&#39;s, so their values are gathered,</span>
 <span class="sd">    not evaluated. A 2D mesh&#39;s boundary lines take an order-2 field&#39;s values at</span>
 <span class="sd">    the points. The geometry must be ``H1``: an ``L2`` one has no shared points</span>
-<span class="sd">    for the faces to stand on.&quot;&quot;&quot;</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">refuse_hidden</span><span class="p">,</span> <span class="n">visible</span>
+<span class="sd">    for the faces to stand on.</span>
 
+<span class="sd">    Given a ``PartitionedDataSet``, the whole&#39;s surface, a piece each: each</span>
+<span class="sd">    piece&#39;s boundary, less the faces two pieces share. Pieces without ghost</span>
+<span class="sd">    cells take the faces between them for boundary; the faces of every piece&#39;s</span>
+<span class="sd">    surface are matched over the pieces by their points (by position, as</span>
+<span class="sd">    ``generate_global_ids`` matches them), and a face held unmarked by two</span>
+<span class="sd">    pieces is between them and dropped. On pieces with ghost cells no such face</span>
+<span class="sd">    is on a boundary, and each piece&#39;s surface is its own, its ghost faces</span>
+<span class="sd">    marked. The surface&#39;s points are owned once (``generate_global_ids`` marks</span>
+<span class="sd">    them where the pieces had no ghost cells).&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">refuse_hidden</span><span class="p">,</span> <span class="n">visible</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.partitioned</span><span class="w"> </span><span class="kn">import</span> <span class="n">PartitionedDataSet</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">PartitionedDataSet</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">faces</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;extract_surface of pieces takes their boundary; choose faces &quot;</span>
+                            <span class="s2">&quot;of each piece instead&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_surface_of_pieces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">faces</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -15942,7 +15985,8 @@ carried and cell fields left behind (a vertex cell has no cell of the input).</p
 <span class="normal">25</span>
 <span class="normal">26</span>
 <span class="normal">27</span>
-<span class="normal">28</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">28</span>
+<span class="normal">29</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">threshold_points</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The points whose ``field`` (point data: ``H1``, values on points) lies in</span>
 <span class="sd">    ``[lower, upper]``, as vertex cells.</span>
@@ -15957,6 +16001,7 @@ carried and cell fields left behind (a vertex cell has no cell of the input).</p
     <span class="k">if</span> <span class="n">arrays</span><span class="o">.</span><span class="n">width_of</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;threshold_points needs a scalar field&quot;</span><span class="p">)</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">_point_values</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
+    <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">_inward</span><span class="p">(</span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_keep_points</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">_point_flags</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">lower</span><span class="p">,</span> <span class="n">upper</span><span class="p">),</span> <span class="n">fields</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>

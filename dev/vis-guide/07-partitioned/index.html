@@ -4670,7 +4670,8 @@ pieces into the whole's answer.</p>
   take a <code>DataSet</code>, as everywhere else, and you loop over the pieces. There
   is no "apply to every piece" wrapper: the loop says what it does.</li>
 <li><strong>Only algorithms whose answer needs every piece take the container:</strong>
-  <code>statistics</code> and <code>entropy</code>, given a field's name, here; probing,
+  <code>statistics</code> and <code>entropy</code>, given a field's name, and <code>extract_surface</code>
+  (the whole's surface), here; probing,
   particles, connected regions and the point-cloud filters in
   <a href="../09-pieces-across/">Algorithms Across Pieces</a>.</li>
 </ul>
@@ -4856,9 +4857,12 @@ belongs to the lowest of them and one only a single piece made is its own;
 a cell several pieces made is matched by its points. The marked outputs
 then reduce to the whole's, cell for cell and point for point. That takes
 one exchange of the outputs' points, where ghost cells cost a layer of
-cells in every piece before filtering. A piece's <code>extract_surface</code> still
-includes the faces it shares with its neighbours, which only ghost cells
-leave out.</p>
+cells in every piece before filtering.</p>
+<p>A piece's own <code>extract_surface</code> includes the faces it shares with its
+neighbours, since it cannot tell them from the boundary. <code>extract_surface</code> of
+the pieces, <code>td.extract_surface(pieces)</code>, gives the whole's surface, a piece
+each: the pieces' faces are matched by their points, the faces two pieces
+hold left out, and the surface's points owned once.</p>
 <p>What does not depend on neighbours works on pieces without ghost cells as
 they are:</p>
 <ul>
