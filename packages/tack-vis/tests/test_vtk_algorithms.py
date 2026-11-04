@@ -437,10 +437,12 @@ def test_every_argument_of_the_tack_function_is_a_parameter():
     assert unmerged.number_of_cells == plain.number_of_cells
 
 
-def test_what_the_wrapper_supplies_is_no_parameter():
+def test_what_the_wrapper_supplies_is_no_parameter_of_the_functions():
+    """A locator and Probe's points are the wrapper's; ``world`` is a parameter of
+    every algorithm (by default VTK's), not of the function's."""
     assert not hasattr(ta.Streamlines(), "locator")
-    assert not hasattr(ta.GhostCells(), "world")
     assert not hasattr(ta.Probe(), "where")
+    assert ta.GhostCells().world is None and ta.Contour().world is None
 
 
 def test_a_required_argument_unset_is_named():
@@ -602,3 +604,44 @@ def test_time_passes_through(tree, make):
     assert f.error is None
     out = f.GetOutputDataObject(0)
     assert out.GetInformation().Get(vtk.vtkDataObject.DATA_TIME_STEP()) == 1.0
+
+
+# ── The world: MPI ranks ────────────────────────────────────────────
+
+def test_without_an_mpi_controller_the_world_is_this_process():
+    from tack.interop.vtk import world
+
+    assert world().size == 1
+    dummy = vtk.vtkDummyController()
+    assert world(dummy).size == 1
+
+
+def test_a_world_given_is_the_pieces_world():
+    from tack.communication import World
+
+    given = World()
+    seen = []
+
+    class Seeing(ta.GenerateGlobalIds):
+        def over_pieces(self, pieces):
+            seen.append(pieces.world)
+            return super().over_pieces(pieces)
+
+    _, halves = _halves()
+    Seeing(world=given)(halves)
+    assert seen == [given]
+
+
+@pytest.mark.parametrize("source", ["comm", "vtk"])
+def test_filters_over_pieces_span_mpi_ranks(mpiexec, source):
+    """Three ranks, a slab of the wavelet each: global ids, ghost cells and the merge
+    are the whole's, with the world given (an mpi4py communicator) or taken from
+    VTK's controller (a VTK with MPI and vtkParallelMPI4Py; no wheel has them)."""
+    import os
+
+    if source == "vtk":
+        pytest.importorskip("vtkmodules.vtkParallelMPI4Py",
+                            reason="needs a VTK built with MPI and vtkParallelMPI4Py")
+    run = mpiexec(3, os.path.join(os.path.dirname(__file__), "_vtk_algorithms_mpi.py"),
+                  source)
+    assert run.returncode == 0 and "ok" in run.stdout, run.stdout + run.stderr

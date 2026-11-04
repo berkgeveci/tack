@@ -198,6 +198,17 @@ tree, a `vtkMultiPieceDataSet` block too, is filtered as a whole, so
 `GhostCells` and `GenerateGlobalIds` see all its pieces together, and each
 block that is one dataset is filtered on its own.
 
+Over MPI ranks, each rank's pipeline holds its own pieces, and the algorithms
+whose answer needs every piece take the other ranks' too. They take the ranks
+from VTK, as VTK's own parallel filters do: VTK's global controller
+(`vtkMultiProcessController.GetGlobalController()`, which `pvbatch` sets, or a
+script with `SetGlobalController`), its communicator made mpi4py's by VTK's
+`vtkMPI4PyCommunicator`. `tack.interop.vtk.world()` gives that `World`. VTK's
+wheels have no MPI, so with them give the ranks yourself, an mpi4py
+communicator or a `World`: `GenerateGlobalIds(world=MPI.COMM_WORLD)`. Over
+ranks, `MergePieces` gives the whole to its `root` rank and an empty dataset
+to the others.
+
 A field is named as a string, or with where VTK keeps it when a point array and
 a cell array share the name: `field=("p", "cells")`. Or choose it as VTK's own
 filters do, with `SetInputArrayToProcess`, numbering the algorithm's field
