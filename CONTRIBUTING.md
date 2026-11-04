@@ -11,8 +11,21 @@ under the license of the files it changes: BSD-3-Clause, unless a file's
 authors' copyright and its own license; say where it came from.
 
 There is no contributor license agreement and no copyright assignment: you
-keep the copyright to your work. Nor is a `Signed-off-by` line required;
-submitting the contribution is the agreement.
+(or your employer) keep the copyright to your work. If you are not at
+Kitware, add your own line to the header of the files you write or
+substantially change, beside Kitware's:
+
+```python
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) Your Organization
+# SPDX-License-Identifier: BSD-3-Clause
+```
+
+Nor is a `Signed-off-by` line required; submitting the contribution is the
+agreement. You are responsible for what you submit, whatever tools helped
+you write it: the certificate covers code an AI assistant produced as much
+as code you typed. How the project decides what to merge is in
+[GOVERNANCE.md](GOVERNANCE.md).
 
 ```text
 Developer Certificate of Origin
