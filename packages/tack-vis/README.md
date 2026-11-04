@@ -1,6 +1,6 @@
 # tack-vis
 
-Datasets and scientific visualization for [Tack](https://github.com/berkgeveci/tack):
+Datasets and scientific visualization for [Tack](https://github.com/Kitware/tack):
 `tack.dataset`.
 
 `tack.dataset` holds meshes and the fields on them -- structured grids,

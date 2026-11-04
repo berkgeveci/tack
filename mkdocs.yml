@@ -5,9 +5,9 @@ site_description: Scientific data analysis, visualization and portable GPU compu
 # generated sitemap are built from it. `.readthedocs.yaml` is still in the
 # repo and still correct -- if that is ever connected too, RTD sets its own
 # canonical and this stays pointing at the Pages site.
-site_url: https://berkgeveci.github.io/tack/
-repo_url: https://github.com/berkgeveci/tack
-repo_name: berkgeveci/tack
+site_url: https://kitware.github.io/tack/
+repo_url: https://github.com/Kitware/tack
+repo_name: Kitware/tack
 edit_uri: edit/main/docs/
 
 # The guides were written as plain markdown long before this file existed and
@@ -254,7 +254,7 @@ extra:
     default: latest
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/berkgeveci/tack
+      link: https://github.com/Kitware/tack
 
 extra_css:
   - stylesheets/tack.css

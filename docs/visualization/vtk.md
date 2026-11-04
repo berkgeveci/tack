@@ -168,23 +168,73 @@ reference = (source >> Tetrahedralize() >> theirs)()
 assert surface.number_of_cells == reference.number_of_cells
 ```
 
-Each algorithm converts its input with `copy=False`, runs the Tack filter on
-the CPU and hands its result back to VTK with `copy=False`, so no array is
-copied where both sides store it alike. Parameters are properties, given to
-the constructor or set later; setting one marks the algorithm modified, so
-the pipeline runs again.
+Each algorithm converts its input with `copy=False`, runs the Tack filter
+where the input's memory is (or on `device=`), and hands its result back to
+VTK with `copy=False`, so no array is copied where both sides store it alike.
+Parameters are properties, given to the constructor or set later; setting one
+marks the algorithm modified, so the pipeline runs again. Every argument of
+the Tack filter is a parameter, with the filter's default, except the data
+and what the algorithm supplies itself (the device, a locator, the
+communicator): `Contour(field="p", value=0.5, merge_points=False)`.
 
 | Algorithm | Tack filter | Output |
 |---|---|---|
 | `Contour`, `SlicePlane`, `Clip`, `Threshold` | `contour`, `slice_plane`, `clip`, `threshold` | `vtkUnstructuredGrid` |
 | `ExtractSurface`, `Tetrahedralize`, `SurfaceNormals`, `Streamlines` | `extract_surface`, `tetrahedralize`, `surface_normals`, `streamlines` | `vtkUnstructuredGrid` |
 | `ConnectedComponents` | `connected_components` | the input's type, with `region` arrays |
+| `Probe` | `probe`, of the source on port 1 at the input's points | the input's structure, with the source's fields |
 | `Gradients`, `Elevation`, `CellQuality` | `gradients`, `point_elevation`, `cell_quality` | the input's type, with the new arrays added |
 | `GhostCells`, `GenerateGlobalIds`, `MergePieces` | `ghost_cells`, `generate_global_ids`, `merge_pieces` | over every piece of a `vtkPartitionedDataSet` |
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
 `vtkPartitionedDataSet`. The last row's algorithms need every piece at once,
 so they take the pieces together; see [Filters over pieces](over-pieces.md).
+
+Readers of Exodus, IOSS, CGNS, EnSight and OpenFOAM files give trees of
+datasets: a `vtkMultiBlockDataSet` or a `vtkPartitionedDataSetCollection`. The
+algorithms take them as they are and give a tree of the same shape, with the
+blocks' names and a collection's data assembly. Each partitioned dataset in the
+tree, a `vtkMultiPieceDataSet` block too, is filtered as a whole, so
+`GhostCells` and `GenerateGlobalIds` see all its pieces together, and each
+block that is one dataset is filtered on its own.
+
+A field is named as a string, or with where VTK keeps it when a point array and
+a cell array share the name: `field=("p", "cells")`. Or choose it as VTK's own
+filters do, with `SetInputArrayToProcess`, numbering the algorithm's field
+parameters in order. Where Tack takes an implicit function (`Clip`'s `by`),
+VTK's `vtkPlane`, `vtkSphere`, `vtkBox`, `vtkCylinder`, `vtkPlanes` and
+`vtkImplicitBoolean` work as Tack's. They are the same functions, so a clip
+at any value matches, except that a `vtkPlane`'s normal is made a unit vector.
+
+<!-- tack-check: vtk-pipeline-trees -->
+```python
+import vtkmodules.vtkCommonDataModel as dm
+from vtkmodules.vtkImagingCore import vtkExtractVOI, vtkRTAnalyticSource
+
+import tack
+from tack.interop.vtk.algorithms import Clip, GenerateGlobalIds, Threshold
+
+tack.set_default_device("cpu")
+
+image = vtkRTAnalyticSource(whole_extent=(-8, 8, -8, 8, -8, 8))()
+halves = dm.vtkPartitionedDataSet()
+for extent in [(-8, 0, -8, 8, -8, 8), (0, 8, -8, 8, -8, 8)]:
+    halves.append(vtkExtractVOI(voi=extent)(image))
+tree = dm.vtkPartitionedDataSetCollection()
+tree.SetNumberOfPartitionedDataSets(1)
+tree.SetPartitionedDataSet(0, halves)
+tree.GetMetaData(0).Set(dm.vtkCompositeDataSet.NAME(), "wavelet")
+
+numbered = GenerateGlobalIds()(tree)          # the two halves numbered together
+assert numbered.GetMetaData(0).Get(dm.vtkCompositeDataSet.NAME()) == "wavelet"
+
+threshold = Threshold(lower=150.0, upper=250.0)
+threshold.SetInputArrayToProcess(0, 0, 0, dm.vtkDataObject.FIELD_ASSOCIATION_POINTS,
+                                 "RTData")
+ball = Clip(by=dm.vtkSphere(center=(0, 0, 0), radius=6.0), inside=True)
+inside = (threshold >> ball)(tree)
+assert isinstance(inside, dm.vtkPartitionedDataSetCollection)
+```
 
 An exception in a filter is VTK's error. It is printed, the output is left
 empty, and the algorithm's `error` attribute keeps the exception for Python
@@ -235,6 +285,13 @@ answer needs every piece overrides `execute(data)` instead. `OUTPUT` names
 the output's VTK type for a dataset input: `"vtkUnstructuredGrid"` by
 default, or `None` for the input's own type. A filter of your own
 ([Write a filter](write-a-filter.md)) goes into `compute` the same way.
+
+To wrap a `tack.dataset` function as it is, name it instead: `FUNCTION =
+"threshold"` gives the class a parameter for each of its arguments and a
+`compute` that calls it. `FIELDS` names the parameters that are fields, which
+then take `("p", "points")` and `SetInputArrayToProcess`, and `IMPLICIT` the
+ones that take VTK's implicit functions. The built-in algorithms are written
+so.
 
 ## Read meshes with polyhedra, repeated points or inside-out cells
 
@@ -367,9 +424,10 @@ whose nodes are Tack's equispaced nodes in Tack's order.
   contour's cell types come out as a `vtkConstantArray` and its offsets as a
   `vtkAffineArray`.
 - **Level Zero.** A Level Zero pointer means something only in the context
-  that allocated it. To share device arrays with a VTK built with Viskores on
-  Kokkos' SYCL backend, start Tack with `tack.interop.vtk.init_level_zero()`
-  instead of `tack.set_default_device("level_zero")`.
+  that allocated it. To share device arrays with a VTK that holds Level Zero
+  memory (its own device arrays, or Viskores on Kokkos' SYCL backend), start
+  Tack with `tack.interop.vtk.init_level_zero()` instead of
+  `tack.set_default_device("level_zero")`.
 - **The full signatures** are in the
   [Data Model reference](../vis-guide/reference/data-model.md#interoperability).
 
