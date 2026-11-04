@@ -223,17 +223,17 @@ def _kept(flags, slots, ids):
 
 @on_inputs_device
 def owned_values(data, field):
-    """The values of ``field`` (a ``Field`` of ``data``, or its name) that ``data`` owns: all of
+    """The values of ``field`` (a ``Field`` of ``data``, its name, or text a registered
+    resolver reads; one evaluated where it is read, by its stored values) that ``data`` owns: all of
     them when it has no marks for where they live, else those of cells and
     points not marked a duplicate or hidden, materialized. Fields on faces or
     edges, and order-2 fields, have no marks of their own yet; on a dataset
     with ghost marks they are refused rather than counted twice."""
+    from tack.dataset.algorithms._common import _stored_field
     from tack.dataset.carry import _take
-    from tack.dataset.dataset import is_field_key
     from tack.dataset.spaces import H1, L2, Constant, Values
 
-    if is_field_key(field):
-        field = data.fields[field]
+    field = _stored_field(data, field)
     space = field.space
     on_points = (isinstance(space, H1) and space.order == 1) or (
         isinstance(space, Values) and space.on == "points")

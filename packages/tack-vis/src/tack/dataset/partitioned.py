@@ -78,10 +78,16 @@ def fields_of(data, field, what):
     if not is_field_key(field):
         raise TypeError(f"{what} of a PartitionedDataSet takes a field's name (or name "
                         "and space): a Field belongs to one partition's topology")
+    from tack.dataset.algorithms._common import _field
+
     for i, piece in enumerate(data):
-        if field not in piece.fields:
+        if field in piece.fields:
+            continue
+        try:
+            _field(piece, field)        # text a registered resolver reads
+        except KeyError:
             raise KeyError(f"partition {i} has no field {field!r}: it has "
-                           f"{', '.join(map(repr, piece.fields)) or 'none'}")
+                           f"{', '.join(map(repr, piece.fields)) or 'none'}") from None
     return field
 
 

@@ -175,6 +175,15 @@ def _field(data, field):
     return field
 
 
+def _stored_field(data, field):
+    """``_field``, with a field evaluated where it is read (an expression's) replaced
+    by its values, as its space's ``stored`` gives them: for an algorithm that
+    reduces a field's values rather than reading it through its view."""
+    field = _field(data, field)
+    stored = getattr(field.space, "stored", None)
+    return stored(field, data) if callable(stored) else field
+
+
 def _with_basis(data, field):
     """Values on points or cells read as the space they are: order-1 ``H1`` and
     ``Constant``, so every algorithm that takes a field with a basis takes them

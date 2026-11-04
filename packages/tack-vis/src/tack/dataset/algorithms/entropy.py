@@ -6,7 +6,7 @@
 import numpy as np
 
 from tack.arrays import size_of, width_of
-from tack.dataset.algorithms._common import _field
+from tack.dataset.algorithms._common import _stored_field
 from tack.dataset.algorithms.statistics import _over_pieces
 from tack.dataset.ghosts import owned_values
 from tack.dataset.partitioned import PartitionedDataSet, fields_of
@@ -19,7 +19,7 @@ __all__ = ['entropy']
 def _extrema(data, field):
     """The minimum and maximum of the values of one dataset's scalar field that it
     owns, or ``None`` for no values."""
-    field = _field(data, field)
+    field = _stored_field(data, field)
     if width_of(field.values):
         raise TypeError("entropy takes a scalar field")
     values = owned_values(data, field)
@@ -32,7 +32,7 @@ def _extrema(data, field):
 def _counts(data, field, bins, value_range, weights=None):
     from tack.algorithms import histogram
 
-    field = _field(data, field)
+    field = _stored_field(data, field)
     values = owned_values(data, field)
     if weights is not None:
         from tack.dataset.algorithms.statistics import _weights
