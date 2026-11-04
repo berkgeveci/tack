@@ -45,15 +45,11 @@
     
     
       
-        
-        
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
-        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
-      
     
     
       <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/tack.css">
     
     <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
@@ -71,7 +67,7 @@
     
     
     
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
   
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
@@ -143,7 +139,7 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
     
       <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
@@ -153,7 +149,7 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
     
       <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
@@ -242,71 +238,16 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href=".." class="md-tabs__link">
-        
-  
-  
-    
-  
-  What Tack is
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../use-cases/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Use cases
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../install/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Install
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
     
     
       <li class="md-tabs__item">
-        <a href="../core/" class="md-tabs__link">
+        <a href=".." class="md-tabs__link">
           
   
   
-  1. Core
+    
+  
+  Get started
 
         </a>
       </li>
@@ -315,6 +256,15 @@
 
       
         
+  
+  
+  
+    
+  
+  
+    
+    
+      
   
   
   
@@ -324,54 +274,19 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../core/" class="md-tabs__link">
           
   
   
-  2. Communication
+    
+  
+  Guide
 
         </a>
       </li>
     
   
 
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../data/" class="md-tabs__link">
-          
-  
-  
-  3. Data
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../visualization/" class="md-tabs__link">
-          
-  
-  
-  4. Visualization
-
-        </a>
-      </li>
     
   
 
@@ -394,6 +309,8 @@
         <a href="../contracts/runtime-api/" class="md-tabs__link">
           
   
+  
+    
   
   Reference
 
@@ -418,6 +335,8 @@
           
   
   
+    
+  
   Developer's guide
 
         </a>
@@ -437,6 +356,8 @@
         <a href="../design/" class="md-tabs__link">
           
   
+  
+    
   
   Design notes
 
@@ -497,15 +418,42 @@
   
   
   
-    <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href=".." class="md-nav__link ">
+              
   
   
   <span class="md-ellipsis">
     
   
-    What Tack is
+    Get started
   
 
     
@@ -513,13 +461,30 @@
   
   
 
-      </a>
-    </li>
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
   
 
-    
-      
-      
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
   
   
   
@@ -544,9 +509,10 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
   
@@ -571,38 +537,61 @@
     </li>
   
 
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
     
       
       
   
   
+    
   
   
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
-    
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
   <span class="md-ellipsis">
     
   
-    1. Core
+    Guide
   
 
     
@@ -613,12 +602,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
   
-    1. Core
+    Guide
   
 
           </label>
@@ -630,15 +619,49 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../core/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../core/" class="md-nav__link ">
+              
   
   
   <span class="md-ellipsis">
     
   
-    Core: GPU computing in Python
+    Core
   
 
     
@@ -646,10 +669,26 @@
   
   
 
-      </a>
-    </li>
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_1" id="__nav_2_1_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core
   
 
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
               
             
               
@@ -688,6 +727,24 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -700,10 +757,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1_3" >
         
           
-          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_1_3" id="__nav_2_1_3_label" tabindex="0">
             
   
   
@@ -721,8 +778,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4_3">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -972,6 +1029,20 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -984,10 +1055,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1_4" >
         
           
-          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_1_4" id="__nav_2_1_4_label" tabindex="0">
             
   
   
@@ -1005,8 +1076,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4_4">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1200,6 +1271,22 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -1212,10 +1299,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1_5" >
         
           
-          <label class="md-nav__link" for="__nav_4_5" id="__nav_4_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_1_5" id="__nav_2_1_5_label" tabindex="0">
             
   
   
@@ -1233,8 +1320,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4_5">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_1_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1_5">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1454,63 +1541,7 @@
     </li>
   
 
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
-        
-          
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    2. Communication
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_5">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    2. Communication
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+              
             
               
                 
@@ -1520,22 +1551,51 @@
   
   
   
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
+    
+    
       
         
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
           
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="./" class="md-nav__link md-nav__link--active">
+              
   
   
   <span class="md-ellipsis">
     
   
-    Communication: distributed parallelism
+    Communication
   
 
     
@@ -1543,114 +1603,26 @@
   
   
 
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+            </a>
+            
+              
+              <label class="md-nav__link md-nav__link--active" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
         
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
   
-  
-  <span class="md-ellipsis">
-    
-  
-    Communication: distributed parallelism
-  
-
-    
-  </span>
-  
+    Communication
   
 
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#refresh-ghost-cells-over-six-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Refresh ghost cells over six blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#blocks-on-one-process-and-on-mpi-ranks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blocks on one process and on MPI ranks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#send-one-message" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Send one message
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-algorithms-are-written-on-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why algorithms are written on blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#result-three-ranks-one-answer" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Result: three ranks, one answer
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reading-path" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reading path
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
               
             
               
@@ -1799,38 +1771,53 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
   
   
     
     
-    
-    
       
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
-            
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../data/" class="md-nav__link ">
+              
   
   
   <span class="md-ellipsis">
     
   
-    3. Data
+    Data
   
 
     
@@ -1838,47 +1825,27 @@
   
   
 
-            <span class="md-nav__icon md-icon"></span>
-          </label>
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
-    3. Data
+    Data
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
               
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../data/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Data: a dataset in five minutes
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -1887,6 +1854,28 @@
   
   
     
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1900,10 +1889,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_2" >
         
           
-          <label class="md-nav__link" for="__nav_6_2" id="__nav_6_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3_2" id="__nav_2_3_2_label" tabindex="0">
             
   
   
@@ -1921,8 +1910,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6_2">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_2">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2228,6 +2217,14 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -2240,10 +2237,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_3" >
         
           
-          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3_3" id="__nav_2_3_3_label" tabindex="0">
             
   
   
@@ -2261,8 +2258,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6_3">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2370,38 +2367,59 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
   
   
     
     
-    
-    
       
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../visualization/" class="md-nav__link ">
+              
   
   
   <span class="md-ellipsis">
     
   
-    4. Visualization
+    Visualization
   
 
     
@@ -2409,47 +2427,27 @@
   
   
 
-            <span class="md-nav__icon md-icon"></span>
-          </label>
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
             <span class="md-nav__icon md-icon"></span>
             
   
-    4. Visualization
+    Visualization
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
               
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../visualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Visualization: filters you know
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -2458,6 +2456,22 @@
   
   
     
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -2471,10 +2485,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4_2" >
         
           
-          <label class="md-nav__link" for="__nav_7_2" id="__nav_7_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_4_2" id="__nav_2_4_2_label" tabindex="0">
             
   
   
@@ -2492,8 +2506,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_2">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4_2">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2715,6 +2729,12 @@
   
     
     
+      
+        
+      
+        
+      
+    
     
     
       
@@ -2727,10 +2747,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4_3" >
         
           
-          <label class="md-nav__link" for="__nav_7_3" id="__nav_7_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_4_3" id="__nav_2_4_3_label" tabindex="0">
             
   
   
@@ -2748,8 +2768,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_3">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2831,6 +2851,14 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -2843,10 +2871,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4_4" >
         
           
-          <label class="md-nav__link" for="__nav_7_4" id="__nav_7_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_4_4" id="__nav_2_4_4_label" tabindex="0">
             
   
   
@@ -2864,8 +2892,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_4">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_4_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2975,6 +3003,12 @@
   
     
     
+      
+        
+      
+        
+      
+    
     
     
       
@@ -2987,10 +3021,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4_5" >
         
           
-          <label class="md-nav__link" for="__nav_7_5" id="__nav_7_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_4_5" id="__nav_2_4_5_label" tabindex="0">
             
   
   
@@ -3008,8 +3042,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_5">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_4_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4_5">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3091,6 +3125,14 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -3103,10 +3145,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4_6" >
         
           
-          <label class="md-nav__link" for="__nav_7_6" id="__nav_7_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_4_6" id="__nav_2_4_6_label" tabindex="0">
             
   
   
@@ -3124,8 +3166,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_6">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3233,6 +3275,14 @@
     </li>
   
 
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
     
       
       
@@ -3241,6 +3291,18 @@
   
   
     
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -3254,10 +3316,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   
@@ -3275,8 +3337,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3294,6 +3356,20 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -3306,10 +3382,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
         
           
-          <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
             
   
   
@@ -3327,8 +3403,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_1">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3522,6 +3598,16 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -3534,10 +3620,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
         
           
-          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
             
   
   
@@ -3555,8 +3641,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3694,6 +3780,12 @@
   
     
     
+      
+        
+      
+        
+      
+    
     
     
       
@@ -3706,10 +3798,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
         
           
-          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
             
   
   
@@ -3727,8 +3819,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3873,6 +3965,30 @@
   
     
     
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -3885,11 +4001,12 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
-            
+          <div class="md-nav__link md-nav__container">
+            <a href="../developers-guide/" class="md-nav__link ">
+              
   
   
   <span class="md-ellipsis">
@@ -3903,11 +4020,17 @@
   
   
 
-            <span class="md-nav__icon md-icon"></span>
-          </label>
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3917,32 +4040,6 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../developers-guide/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Tack Developer's Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
               
             
               
@@ -4212,6 +4309,40 @@
   
     
     
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
     
     
       
@@ -4224,11 +4355,12 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
         
           
-          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
-            
+          <div class="md-nav__link md-nav__container">
+            <a href="../design/" class="md-nav__link ">
+              
   
   
   <span class="md-ellipsis">
@@ -4242,11 +4374,17 @@
   
   
 
-            <span class="md-nav__icon md-icon"></span>
-          </label>
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_10">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4256,32 +4394,6 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../design/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Design and Implementation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
               
             
               
@@ -4710,10 +4822,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#refresh-ghost-cells-over-six-blocks" class="md-nav__link">
+  <a href="#send-a-message-between-blocks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Refresh ghost cells over six blocks
+        Send a message between blocks
       
     </span>
   </a>
@@ -4721,43 +4833,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#blocks-on-one-process-and-on-mpi-ranks" class="md-nav__link">
+  <a href="#one-program-for-one-process-or-many-ranks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Blocks on one process and on MPI ranks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#send-one-message" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Send one message
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-algorithms-are-written-on-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why algorithms are written on blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#result-three-ranks-one-answer" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Result: three ranks, one answer
+        One program for one process or many ranks
       
     </span>
   </a>
@@ -4786,115 +4865,94 @@
           
             <div class="md-content" data-md-component="content">
               
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../core/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Guide
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="./" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Communication
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
               <article class="md-content__inner md-typeset">
                 
                   
 
 
   
+    <a href="https://github.com/berkgeveci/tack/edit/main/docs/communication/index.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
   
 
 
 <h1 id="communication-distributed-parallelism">Communication: distributed parallelism<a class="headerlink" href="#communication-distributed-parallelism" title="Permanent link">&para;</a></h1>
-<p>A problem too large for one device is cut into parts, and the parts need each
-other's data. A stencil needs its neighbour's edge cells, a particle needs the
-part that holds its position, and a duplicated point needs to find its other
-copies. <code>tack.communication</code> is the layer of Tack that moves Tack arrays
-between such parts, called <em>blocks</em>, and combines values over them. This
-section is for anyone who writes a computation over several devices or MPI
-ranks with Tack arrays: a simulation developer, or the author of a parallel
-algorithm. After this page you can write a computation on blocks that runs
-unchanged in one process and on many MPI ranks.</p>
+<p>You need this layer when your data is in pieces: when you split a problem into
+parts, spread it over several devices, or run it over MPI ranks. The parts,
+called <em>blocks</em>, need each other's data. A stencil needs its neighbour's edge
+cells, and a particle needs the part that holds its position.
+<code>tack.communication</code> moves Tack arrays between blocks and combines values over
+them. If you contour a dataset on one device, you do not need it. Tack's own
+algorithms over a dataset in pieces are written on this layer and use it for
+you (see <a href="../data/pieces/">Data in pieces</a> and
+<a href="../visualization/over-pieces/">Filters over pieces</a>).</p>
 <p>The layer uses only Tack's core: arrays, devices and kernels. If those are
 new, start with <a href="../core/">Core</a>.</p>
-<h2 id="refresh-ghost-cells-over-six-blocks">Refresh ghost cells over six blocks<a class="headerlink" href="#refresh-ghost-cells-over-six-blocks" title="Permanent link">&para;</a></h2>
-<p>The example below diffuses heat along a line of 240 cells cut into six
-blocks. Each block owns 40 cells and stores one extra <em>ghost cell</em> at each end,
-a copy of its neighbour's edge cell. Before every step, a <code>Plan</code> copies each
-block's edge cells into its neighbours' ghosts. Then every block runs the
-same kernel on its own array.</p>
-<p>The kernel is an ordinary Tack kernel. It replaces each cell by itself plus a
-quarter of its discrete second derivative:</p>
-<div class="highlight"><pre><span></span><code><span class="nd">@tack</span><span class="o">.</span><span class="n">kernel</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">diffuse</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
-        <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">u</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
-</code></pre></div>
-<p>The blocks, the plan and the time steps follow. In the example file, <code>arch</code>
-is the device (<code>"cpu"</code> by default) and <code>world</code> is <code>tc.World()</code>, this process
-alone. <code>BLOCKS</code> is 6, <code>CELLS</code> 40 and <code>STEPS</code> 200.</p>
-<div class="highlight"><pre><span></span><code><span class="n">blocks</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Blocks</span><span class="p">([</span><span class="n">arch</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">BLOCKS</span> <span class="o">//</span> <span class="n">world</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">world</span><span class="p">)</span>
-<span class="n">n</span> <span class="o">=</span> <span class="n">CELLS</span> <span class="o">*</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span>                       <span class="c1"># cells in the whole line</span>
-
-<span class="c1"># Block g owns cells g * CELLS to (g + 1) * CELLS - 1. It stores them at</span>
-<span class="c1"># 1 to CELLS, with a ghost cell at each end, 0 and CELLS + 1.</span>
-<span class="n">start</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">n</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="mf">8.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
-<span class="n">u</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">g</span> <span class="o">*</span> <span class="n">CELLS</span><span class="p">:(</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">CELLS</span><span class="p">],</span> <span class="mi">1</span><span class="p">))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="n">v</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">CELLS</span> <span class="o">+</span> <span class="mi">2</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">f64</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-
-<span class="c1"># The plan: each block sends its first owned cell to the block before it</span>
-<span class="c1"># and its last to the block after it, which write them into their ghosts.</span>
-<span class="n">sends</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="n">receives</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}</span>
-<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">g</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">sends</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">-</span> <span class="mi">1</span><span class="p">],</span> <span class="n">receives</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">g</span> <span class="o">&lt;</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">sends</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">receives</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">g</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">CELLS</span><span class="p">],</span> <span class="p">[</span><span class="n">CELLS</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-<span class="n">ghosts</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">Plan</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">sends</span><span class="p">,</span> <span class="n">receives</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">STEPS</span><span class="p">):</span>
-    <span class="n">ghosts</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">u</span><span class="p">)</span>                              <span class="c1"># refresh every ghost cell</span>
-    <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
-        <span class="n">diffuse</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">g</span><span class="p">],</span> <span class="n">v</span><span class="p">[</span><span class="n">g</span><span class="p">])</span>
-    <span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="p">,</span> <span class="n">u</span>
-
-<span class="c1"># Every block&#39;s owned cells, in order of global id, on every rank.</span>
-<span class="n">owned</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="n">u</span><span class="p">[</span><span class="n">g</span><span class="p">]</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">1</span><span class="p">:</span><span class="n">CELLS</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
-<span class="n">line</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">owned</span><span class="p">)</span>
-</code></pre></div>
-<p>After 200 steps, <code>line</code> holds exactly the values that the same kernel gives on
-one array of 240 cells, bit for bit. The example file checks that when you
-run <code>python docs/examples/comm_ghosts.py --check</code>.</p>
-<p>Three things in it are the whole layer in small:</p>
-<ul>
-<li><code>tc.Blocks(devices, world)</code> makes this process's blocks, one per device
-  given. <code>blocks.local</code> is the range of their global ids.</li>
-<li>Every argument and result is a dictionary keyed by global id, with an entry
-  for each of this process's blocks.</li>
-<li><code>Plan</code> and <code>all_gather</code> are <em>collective</em>: every process makes the same
-  calls, in the same order.</li>
-</ul>
-<h2 id="blocks-on-one-process-and-on-mpi-ranks">Blocks on one process and on MPI ranks<a class="headerlink" href="#blocks-on-one-process-and-on-mpi-ranks" title="Permanent link">&para;</a></h2>
-<p>A <strong>block</strong> is one unit of distributed work: a part of a domain, a share of
-particles, or a piece of a dataset. Each block lives on one device and has a
-<strong>global id</strong>, a number unique over every process. A <strong>world</strong> is the set of
-processes the blocks live in. <code>tc.World()</code> is this process alone.
-<code>tc.World(comm)</code> spans the ranks of an mpi4py communicator, where a <strong>rank</strong>
-is one MPI process.</p>
-<pre class="mermaid"><code>flowchart LR
-  subgraph rank0["rank 0"]
-    b0["block 0 on cuda:0"]
-    b1["block 1 on cuda:1"]
-  end
-  subgraph rank1["rank 1"]
-    b2["block 2 on cuda:0"]
-    b3["block 3 on cuda:1"]
-  end
-  b0 &lt;--&gt; b1
-  b1 &lt;--&gt; b2
-  b2 &lt;--&gt; b3</code></pre>
-<p>Global ids run over rank 0's blocks first, then rank 1's, and so on. A process
-may hold several blocks, on one device or on several. An algorithm written on
-<code>Blocks</code> never asks which arrangement it runs on: the ghost example runs on
-three ranks with two blocks each and gives the same line.
-<a href="blocks-and-worlds/">Blocks and worlds</a> explains the numbering, the devices
-and the rule that every call is collective.</p>
-<h2 id="send-one-message">Send one message<a class="headerlink" href="#send-one-message" title="Permanent link">&para;</a></h2>
-<p><code>exchange</code> is the call every other pattern is built on. It takes
-<code>{source: {destination: message}}</code>, where a message is a dictionary of names
-to Tack arrays. It returns <code>{destination: {source: message}}</code> for every block
-of this process. Here each of four blocks sends its id to the next block in a
+<h2 id="send-a-message-between-blocks">Send a message between blocks<a class="headerlink" href="#send-a-message-between-blocks" title="Permanent link">&para;</a></h2>
+<p>A <strong>block</strong> is one unit of distributed work, such as a part of a grid or a
+share of particles. Each block lives on one device and has a <strong>global id</strong>, a
+number unique over every process. <code>exchange</code> is the call every other pattern
+is built on. Here each of four blocks sends its id to the next block in a
 ring:</p>
 <!-- tack-check: ring -->
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -4919,49 +4977,36 @@ ring:</p>
 <span class="nb">print</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">incoming</span><span class="p">[</span><span class="n">g</span><span class="p">])</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
 <span class="c1"># Blocks(4 blocks, 4 on rank 0) {0: [3], 1: [0], 2: [1], 3: [2]}</span>
 </code></pre></div>
-<p>Each received array is on the destination block's device. A block that
-receives nothing gets an empty dictionary.
-<a href="exchange-and-plans/">Exchange data and refresh ghosts with plans</a> covers
-messages, neighbours and plans.</p>
-<h2 id="why-algorithms-are-written-on-blocks">Why algorithms are written on blocks<a class="headerlink" href="#why-algorithms-are-written-on-blocks" title="Permanent link">&para;</a></h2>
-<p>Writing an algorithm on blocks, rather than on MPI calls, has three
-consequences that matter in practice.</p>
-<ul>
-<li><strong>One code for every arrangement.</strong> The same function runs on one process
-  with one block, on one process with a block per GPU, and on hundreds of
-  ranks. You can develop and test it in one process, without <code>mpiexec</code>.</li>
-<li><strong>Results that do not depend on the arrangement.</strong> Collectives combine
-  values in order of global id. A floating-point sum over blocks therefore has
-  the same bits however the blocks are shared out over ranks.</li>
-<li><strong>Tack arrays as messages.</strong> A message keeps its arrays' element types and
-  shapes, vectors and matrices included, and arrives on the receiving block's
-  device. There is no packing into bytes and no callback to register.</li>
-</ul>
+<p><code>exchange</code> takes <code>{source: {destination: message}}</code>, where a message is a
+dictionary of names to Tack arrays. It returns <code>{destination: {source:
+message}}</code> for every block of this process. Each received array is on the
+destination block's device.</p>
+<h2 id="one-program-for-one-process-or-many-ranks">One program for one process or many ranks<a class="headerlink" href="#one-program-for-one-process-or-many-ranks" title="Permanent link">&para;</a></h2>
+<p>A <strong>world</strong> is the set of processes the blocks live in. <code>tc.World()</code> is this
+process alone, as in the example. <code>tc.World(comm)</code> spans the ranks of an
+mpi4py communicator, where a <strong>rank</strong> is one MPI process. Global ids run over
+rank 0's blocks first, then rank 1's, and so on:</p>
+<pre class="mermaid"><code>flowchart LR
+  subgraph rank0["rank 0"]
+    b0["block 0 on cuda:0"]
+    b1["block 1 on cuda:1"]
+  end
+  subgraph rank1["rank 1"]
+    b2["block 2 on cuda:0"]
+    b3["block 3 on cuda:1"]
+  end
+  b0 &lt;--&gt; b1
+  b1 &lt;--&gt; b2
+  b2 &lt;--&gt; b3</code></pre>
+<p>An algorithm written on blocks never asks which arrangement it runs on. You
+can develop and test it in one process, without <code>mpiexec</code>, and run it
+unchanged on hundreds of ranks. Collectives combine values in order of global
+id, so a floating-point sum over blocks has the same bits however the blocks
+are shared out. Every call on blocks is collective: every process makes the
+same calls, in the same order.</p>
 <p>The model is that of <a href="https://github.com/diatomic/diy">DIY</a>: blocks, links,
 exchanges and collectives. Tack uses plain dictionaries in place of DIY's
 callbacks.</p>
-<p>Tack's own algorithms over a dataset in pieces are written on this layer.
-Ghost cells, global ids, probing across pieces and particle tracing all use
-the calls on these pages. See also <a href="../data/pieces/">Data in pieces</a> and
-<a href="../visualization/over-pieces/">Filters over pieces</a>, in the layers above.</p>
-<h2 id="result-three-ranks-one-answer">Result: three ranks, one answer<a class="headerlink" href="#result-three-ranks-one-answer" title="Permanent link">&para;</a></h2>
-<p>The ghost example runs under MPI with one flag, <code>--mpi</code>, which makes its world
-from <code>MPI.COMM_WORLD</code>. The six blocks are then shared out over the ranks. On a
-laptop with Open MPI 5.0, every run prints the same maximum and the same hash
-of the line's bytes:</p>
-<div class="highlight"><pre><span></span><code><span class="gp">$ </span>python<span class="w"> </span>docs/examples/comm_ghosts.py<span class="w"> </span>--check
-<span class="go">1 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d</span>
-<span class="gp">$ </span>mpiexec<span class="w"> </span>-n<span class="w"> </span><span class="m">2</span><span class="w"> </span>python<span class="w"> </span>docs/examples/comm_ghosts.py<span class="w"> </span>--mpi<span class="w"> </span>--check
-<span class="go">2 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d</span>
-<span class="gp">$ </span>mpiexec<span class="w"> </span>-n<span class="w"> </span><span class="m">3</span><span class="w"> </span>python<span class="w"> </span>docs/examples/comm_ghosts.py<span class="w"> </span>--mpi<span class="w"> </span>--check
-<span class="go">3 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d</span>
-<span class="gp">$ </span>mpiexec<span class="w"> </span>-n<span class="w"> </span><span class="m">6</span><span class="w"> </span>python<span class="w"> </span>docs/examples/comm_ghosts.py<span class="w"> </span>--mpi<span class="w"> </span>--check
-<span class="go">6 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d</span>
-</code></pre></div>
-<p><code>--check</code> also compares each run with the same kernel on one array of 240
-cells, and every run passes. Tack's test suite runs the layer's patterns on
-three MPI ranks the same way, both with messages staged through host memory
-and with arrays handed to MPI directly.</p>
 <h2 id="reading-path">Reading path<a class="headerlink" href="#reading-path" title="Permanent link">&para;</a></h2>
 <p>Read these in order. Each page has a short example you can run in one
 process.</p>
@@ -5012,6 +5057,46 @@ process.</p>
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../users-guide/tutorials/nbody/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Tiled n-body forces">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Tiled n-body forces
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="blocks-and-worlds/" class="md-footer__link md-footer__link--next" aria-label="Next: Blocks and worlds">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Blocks and worlds
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
@@ -5053,7 +5138,7 @@ process.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "content.code.copy", "content.code.annotate", "content.tabs.link", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.path", "navigation.footer", "navigation.top", "navigation.tracking", "content.action.edit", "content.code.copy", "content.code.annotate", "content.tabs.link", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
       <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>

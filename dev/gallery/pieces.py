@@ -18,9 +18,9 @@ from tack.dataset import Ghosts
 PALETTE = ((0.12, 0.47, 0.71), (1.0, 0.5, 0.05), (0.17, 0.63, 0.17), (0.84, 0.15, 0.16),
            (0.58, 0.4, 0.74), (0.55, 0.34, 0.29), (0.89, 0.47, 0.76), (0.5, 0.5, 0.5))
 
-# Not polyhedra, nor curved or high-order cells: ghost_cells takes unstructured
-# and structured pieces, not polyhedral ones yet, and carries positions and
-# values at the points.
+# Not polyhedra, though ghost_cells takes polyhedral pieces too (since
+# 0de38715), nor curved or high-order cells, whose geometry and fields ghost
+# cells do not carry yet: it carries positions and values at the points.
 KINDS = ("image", "linear", "mixed")
 
 

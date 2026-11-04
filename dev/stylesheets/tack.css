@@ -1,0 +1,70 @@
+/* The site's look, after NumPy's documentation (the PyData Sphinx theme): a plain
+   header and tab row, set apart from the page by a hairline rather than a colour
+   or a shadow; the sections as dark links, the current one underlined. */
+
+.md-header,
+.md-tabs {
+  box-shadow: none;
+}
+
+.md-tabs {
+  border-bottom: 0.05rem solid var(--md-default-fg-color--lightest);
+}
+
+.md-tabs__link {
+  margin-top: 0.6rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 0.1rem solid transparent;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.75rem;
+  opacity: 1;
+}
+
+.md-tabs__link:hover,
+.md-tabs__link:focus {
+  color: var(--md-accent-fg-color);
+}
+
+.md-tabs__item--active .md-tabs__link {
+  border-bottom-color: var(--md-accent-fg-color);
+  color: var(--md-default-fg-color);
+  font-weight: 600;
+}
+
+/* The sidebar's groups as NumPy's: bold headings over plain lists. */
+.md-nav--primary .md-nav__item--section > .md-nav__link {
+  color: var(--md-default-fg-color);
+  font-weight: 700;
+}
+
+/* Headings dark and solid, as NumPy's, not Material's light grey. */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  color: var(--md-default-fg-color);
+  font-weight: 600;
+}
+
+.md-typeset h1 {
+  font-size: 1.8em;
+}
+
+/* Previous and next on the page's own colour, below a hairline, as NumPy's,
+   not in a dark band. */
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-footer-bg-color: var(--md-default-bg-color);
+  --md-footer-bg-color--dark: var(--md-default-bg-color);
+  --md-footer-fg-color: var(--md-default-fg-color);
+  --md-footer-fg-color--light: var(--md-default-fg-color--light);
+  --md-footer-fg-color--lighter: var(--md-default-fg-color--lighter);
+}
+
+.md-footer {
+  border-top: 0.05rem solid var(--md-default-fg-color--lightest);
+}
+
+.md-footer__link:hover .md-footer__title,
+.md-footer__link:focus .md-footer__title {
+  color: var(--md-accent-fg-color);
+}
