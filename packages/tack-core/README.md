@@ -1,6 +1,6 @@
 # tack-core
 
-Kernels, arrays, types, IR, codegen and backends for [Tack](https://github.com/berkgeveci/tack) —
+Kernels, arrays, types, IR, codegen and backends for [Tack](https://github.com/Kitware/tack) —
 a Python-first GPU compute framework.
 
 Write compute kernels as decorated Python functions; they are JIT-compiled at first call (and
@@ -31,7 +31,7 @@ print(out.numpy())
 ## Install
 
 Tack is not on PyPI yet. From a clone of
-[the repository](https://github.com/berkgeveci/tack), pick the extra matching
+[the repository](https://github.com/Kitware/tack), pick the extra matching
 your hardware:
 
 ```bash
@@ -57,6 +57,6 @@ pip install -e "packages/tack-core[level_zero]"   # Intel — needs the system L
 - `tack-vis` — `tack.dataset`: meshes, fields and visualization algorithms; VTK and MFEM interop
 
 Full documentation, examples and the kernel-language reference are in the
-[repository](https://github.com/berkgeveci/tack).
+[repository](https://github.com/Kitware/tack).
 
 BSD 3-Clause licensed.

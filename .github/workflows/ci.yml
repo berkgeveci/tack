@@ -354,6 +354,52 @@ jobs:
           uv run pytest -q --ids=i64 packages/tack-vis/tests/test_warp_interop.py
           packages/tack-vis/tests/test_simdata_interop.py
 
+  # ── VTK master ─────────────────────────────────────────────────────
+  # The VTK interop's tests against VTK master's nightly wheel
+  # (wheels.vtk.org), the VTK the interop targets; the other jobs hold it to
+  # the 9.7.1 wheel, its fallback (copies where 9.7.1 has no device arrays).
+  # VTK's own breakage on master must not block a merge, so a failure here
+  # warns (an annotation on the run) rather than failing the job.
+  vtk-master:
+    name: VTK master
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
+
+      - name: Sync the workspace, with the interop extra
+        run: uv sync --extra cpu --extra dev --extra interop
+
+      - name: Install VTK master's nightly wheel
+        run: |
+          uv pip install --pre --upgrade --extra-index-url https://wheels.vtk.org vtk
+          uv run --no-sync python -c "from vtkmodules.vtkCommonCore import vtkVersion; print(vtkVersion.GetVTKVersionFull())"
+
+      - name: Run the VTK tests
+        id: vtk-tests
+        continue-on-error: true
+        run: >-
+          uv run --no-sync pytest -q -rs -n auto
+          packages/tack-vis/tests/test_vtk_interop.py
+          packages/tack-vis/tests/test_vtk_polydata.py
+          packages/tack-vis/tests/test_vtk_shared.py
+          packages/tack-vis/tests/test_vtk_shared_device.py
+          packages/tack-vis/tests/test_vtk_algorithms.py
+          packages/tack-vis/tests/test_vtk_higher_order.py
+          packages/tack-vis/tests/test_vtk_cell_grid.py
+
+      - name: Warn when VTK master fails
+        if: steps.vtk-tests.outcome == 'failure'
+        run: echo "::warning title=VTK master::the VTK tests fail against VTK master's nightly wheel; see the 'Run the VTK tests' step"
+
   # ── MPI ────────────────────────────────────────────────────────────
   # tack.communication across ranks: its cases under `mpiexec -n 3`,
   # host-staged and GPU-aware (CPU arrays handed to MPI through DLPack), a
