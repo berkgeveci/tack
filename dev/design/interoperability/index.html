@@ -5675,12 +5675,15 @@ Tack created inside the adopted context is likewise left alone.</p>
 <code>tack.set_default_device("level_zero", external_context=handles)</code> and
 returns that device. If that
 function is absent or returns nothing, it raises <code>RuntimeError</code>: the VTK is
-too old, was built without Viskores on Kokkos' SYCL backend, or is not
-running on a Level Zero device.</p>
+too old, or has no Level Zero context (no device arrays of its own and no
+Viskores on Kokkos' SYCL backend, or no Level Zero GPU).</p>
 <p>What VTK must provide is one function: <code>level_zero_handles()</code> in
 <code>vtkmodules.util.dlpack_support</code>, returning the integer <code>driver</code>, <code>device</code>
-and <code>context</code> handles of the SYCL queue its Viskores device runs on, or a
-falsy value when there is none. This requires a VTK with
+and <code>context</code> handles of VTK's one Level Zero context, or a falsy value when
+there is none. That context is one given to
+<code>vtkDeviceArrayFactory.SetLevelZeroContext</code>, else the one the SYCL queue of
+VTK's Viskores device runs in, else one VTK makes on the first Level Zero GPU
+(a VTK with <code>vtkDeviceDataArray</code>, needing no Viskores or oneAPI). This requires a VTK with
 <code>level_zero_handles</code>, which is not yet in VTK master. With an older VTK the
 other backends are unaffected, and on Level Zero the guard below refuses
 every exchange.</p>
