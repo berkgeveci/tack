@@ -6,7 +6,7 @@ of Python references.
 
 ![Two hot spots diffusing](../../assets/tutorials/heat.png)
 
-**Origin:** adapted from [Tack's heat-equation example](https://github.com/berkgeveci/tack/blob/main/packages/tack-core/examples/17_heat_equation.py),
+**Origin:** adapted from [Tack's heat-equation example](https://github.com/Kitware/tack/blob/main/packages/tack-core/examples/17_heat_equation.py),
 Copyright © 2026 Kitware, Inc., BSD-3-Clause. This version swaps buffers instead
 of copying them each step and includes an independent NumPy check.
 

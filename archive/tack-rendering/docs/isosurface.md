@@ -6,7 +6,7 @@ easy to check independently before trying more complicated implicit shapes.
 
 ![An extracted and rendered sphere](../../assets/tutorials/isosurface.png)
 
-**Origin:** adapted from [Tack's isosurface/path-tracing example](https://github.com/berkgeveci/tack/blob/main/examples/32_pathtrace.py),
+**Origin:** adapted from [Tack's isosurface/path-tracing example](https://github.com/Kitware/tack/blob/main/examples/32_pathtrace.py),
 Copyright © 2026 Kitware, Inc., BSD-3-Clause. This version replaces the gyroid with
 an analytic sphere and adds geometric and rendered-depth checks.
 

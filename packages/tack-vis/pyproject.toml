@@ -39,7 +39,7 @@ build-backend = "hatchling.build"
 packages = ["src/tack"]
 
 [project.urls]
-Homepage = "https://github.com/berkgeveci/tack"
-Repository = "https://github.com/berkgeveci/tack"
-Documentation = "https://berkgeveci.github.io/tack/"
-Issues = "https://github.com/berkgeveci/tack/issues"
+Homepage = "https://github.com/Kitware/tack"
+Repository = "https://github.com/Kitware/tack"
+Documentation = "https://kitware.github.io/tack/"
+Issues = "https://github.com/Kitware/tack/issues"

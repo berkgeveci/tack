@@ -108,8 +108,8 @@ specular = Material(Material.SPECULAR)
 glass = Material(Material.TRANSPARENT, ior=1.5)
 ```
 
-See the [materials example](https://github.com/berkgeveci/tack/blob/main/packages/tack-rendering/examples/33_pathtrace_primitives.py)
-and [scalar-colouring example](https://github.com/berkgeveci/tack/blob/main/packages/tack-rendering/examples/39_scalar_coloring.py)
+See the [materials example](https://github.com/Kitware/tack/blob/main/packages/tack-rendering/examples/33_pathtrace_primitives.py)
+and [scalar-colouring example](https://github.com/Kitware/tack/blob/main/packages/tack-rendering/examples/39_scalar_coloring.py)
 for complete scenes.
 
 ## Transforms and lighting
@@ -176,7 +176,7 @@ Scene geometry/BVH preparation is cached. Adding actors changes the scene's
 version; editing an actor's existing geometry fields does not automatically
 notify the cache. For changing geometry, construct a fresh scene before
 rendering so it prepares current geometry and bounds. See the
-[in-situ example](https://github.com/berkgeveci/tack/blob/main/examples/37_insitu_pipeline.py).
+[in-situ example](https://github.com/Kitware/tack/blob/main/examples/37_insitu_pipeline.py).
 
 ## Wireframes and points
 
@@ -190,7 +190,7 @@ Across actors, later actors win equal-depth ties. Selection uses separate comple
 passes for depth, winner selection and colour, so a depth winner cannot be paired
 with a competing primitive's RGB. NaN/infinite projected depths are discarded.
 See the [rendering contracts](../reference/language-contract.md#atomic-field-updates)
-for atomic limitations and [scene example](https://github.com/berkgeveci/tack/blob/main/packages/tack-rendering/examples/41_interactive.py)
+for atomic limitations and [scene example](https://github.com/Kitware/tack/blob/main/packages/tack-rendering/examples/41_interactive.py)
 for rendering modes.
 
 ## Uniform-grid volumes
@@ -213,7 +213,7 @@ comparable frames. Opacity scale, step size and number of steps control how a
 ray accumulates samples; the standalone renderer uses trilinear texture sampling
 and refreshes the texture snapshot at render time. Surface and volume actors can
 also compose in the path tracer. The
-[volume example](https://github.com/berkgeveci/tack/blob/main/packages/tack-rendering/examples/42_volume_render.py)
+[volume example](https://github.com/Kitware/tack/blob/main/packages/tack-rendering/examples/42_volume_render.py)
 shows complete setups and transfer functions.
 
 ## Annotations and output processing
@@ -228,8 +228,8 @@ image = annotate(canvas.to_numpy(), [TextOverlay("Tack render", position=(10, 10
 
 `ColorBar` shows a colour table's scalar range, and `AxisIndicator` shows the
 camera orientation. Drawing uses Pillow; see the
-[annotation example](https://github.com/berkgeveci/tack/blob/main/packages/tack-rendering/examples/43_annotated_render.py).
+[annotation example](https://github.com/Kitware/tack/blob/main/packages/tack-rendering/examples/43_annotated_render.py).
 For optional Open Image Denoise processing, the
-[denoising example](https://github.com/berkgeveci/tack/blob/main/packages/tack-rendering/examples/36_pathtrace_denoise.py)
+[denoising example](https://github.com/Kitware/tack/blob/main/packages/tack-rendering/examples/36_pathtrace_denoise.py)
 uses the binding's explicit device/filter calls. Treat denoising and annotation
 as separate postprocessing costs when timing the renderer.
