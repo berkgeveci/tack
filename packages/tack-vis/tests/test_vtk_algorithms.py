@@ -3,6 +3,8 @@ beside VTK's own, on datasets and on partitioned datasets. Each gives what the
 Tack filter gives called directly, and where VTK has the same filter, VTK's
 counts."""
 
+from functools import lru_cache
+
 import numpy as np
 import pytest
 
@@ -11,7 +13,7 @@ import tack.dataset as td
 
 vtk = pytest.importorskip("vtkmodules.all")
 from tack.interop.vtk import algorithms as ta
-from tack.interop.vtk import vtk_to_dataset
+from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 
 pytestmark = pytest.mark.quick
 
@@ -642,3 +644,341 @@ def test_filters_over_pieces_span_mpi_ranks(mpiexec, source):
     run = mpiexec(3, os.path.join(os.path.dirname(__file__), "_vtk_algorithms_mpi.py"),
                   source)
     assert run.returncode == 0 and "ok" in run.stdout, run.stdout + run.stderr
+
+
+# ── Every filter, against the Tack filter called directly ───────────
+
+
+@tack.func
+def _x_plus_y(x):
+    return x[0] + x[1]
+
+
+@lru_cache
+def _small():
+    """A small wavelet image with vector fields: ``v`` (RTData in each component), ``w``,
+    ``vg`` (``v``'s gradient at the points) and a cell field ``c``."""
+    data = vtk_to_dataset(_wavelet((-3, 3, -3, 3, -3, 3))(), dtype=None)
+    data.fields["v"] = td.composite(data, "RTData", "RTData", "RTData")
+    data.fields["w"] = td.composite(data, "RTData", td.log_values(data, "RTData"), "RTData")
+    data.fields["vg"] = td.gradients(data, "v", at="points")
+    data.fields["c"] = td.values_at_centers(data, "RTData")
+    return dataset_to_vtk(data)
+
+
+@lru_cache
+def _tets():
+    return dataset_to_vtk(td.tetrahedralize(vtk_to_dataset(_small(), dtype=None)))
+
+
+@lru_cache
+def _surface():
+    return dataset_to_vtk(td.extract_surface(vtk_to_dataset(_tets(), dtype=None)))
+
+
+@lru_cache
+def _edges():
+    return dataset_to_vtk(td.feature_edges(vtk_to_dataset(_surface(), dtype=None)))
+
+
+@lru_cache
+def _polyhedra():
+    return dataset_to_vtk(td.as_polyhedra(vtk_to_dataset(_tets(), dtype=None)))
+
+
+@lru_cache
+def _cloud():
+    """200 points in the unit cube with ``h``, ``mass``, a vector ``g``, their SPH
+    ``density`` and friends-of-friends ``point_region``."""
+    points = np.random.default_rng(7).random((200, 3)).astype(np.float32)
+    data = td.point_cloud(points)
+    for name, value in [("h", 0.15), ("mass", 1.0)]:
+        data.fields[name] = td.Field(td.H1(data.topology),
+                                     tack.array(np.full(200, value, np.float32)))
+    data.fields["g"] = td.composite(data, "h", "h", "mass")
+    data = td.sph_density(data)
+    data = td.connected_components(data, radius=0.08)
+    return dataset_to_vtk(data)
+
+
+@lru_cache
+def _meters():
+    """The tetrahedra with their positions in metres."""
+    data = vtk_to_dataset(_tets(), dtype=None)
+    return dataset_to_vtk(td.DataSet(data.topology, data.geometry, fields=data.fields,
+                                     unit="m"))
+
+
+@lru_cache
+def _grid():
+    return vtk.vtkImageData(dimensions=(4, 4, 4), origin=(-3, -3, -3), spacing=(2, 2, 2))
+
+
+def _halves_of(vtk_data):
+    pieces = vtk.vtkPartitionedDataSet()
+    for piece in td.split(vtk_to_dataset(vtk_data, dtype=None), 2):
+        pieces.append(dataset_to_vtk(piece))
+    return pieces
+
+
+@lru_cache
+def _ghosted():
+    pieces = vtk.vtkPartitionedDataSet()
+    for piece in td.split(vtk_to_dataset(_small(), dtype=None), 2, ghost_layers=1):
+        pieces.append(dataset_to_vtk(piece))
+    return pieces
+
+
+@lru_cache
+def _cloud_pieces():
+    data = vtk_to_dataset(_cloud(), dtype=None)
+    ids = np.arange(data.num_cells)
+    pieces = vtk.vtkPartitionedDataSet()
+    for half in (ids[:100], ids[100:]):
+        pieces.append(dataset_to_vtk(td.extract_cells(data, half)))
+    return pieces
+
+
+def _tack(vtk_data):
+    """The Tack dataset (or pieces) a wrapper sees."""
+    return vtk_to_dataset(vtk_data, dtype=None)
+
+
+def _with(data, fields):
+    """``data`` with ``fields`` added, as a field algorithm's output is."""
+    return td.DataSet(data.topology, data.geometry, fields={**data.fields, **fields},
+                      ghosts=data.ghosts, global_ids=data.global_ids, **data._frame())
+
+
+def _on_faces(data, fields, on="faces"):
+    with_fields = _with(data, fields)
+    if on == "edges":
+        return td.extract_edges(with_fields)
+    return td.extract_surface(with_fields, faces=np.arange(data.topology.faces().num_faces))
+
+
+def _sphere():
+    return vtk.vtkSphere(center=(0, 0, 0), radius=2.0)
+
+
+def _scale():
+    transform = vtk.vtkTransform()
+    transform.Scale(2.0, 1.0, 0.5)
+    return transform
+
+
+_EVERY = {
+    # Cells kept whole
+    "ExtractCells": (_small, lambda: ta.ExtractCells(cells=np.arange(0, 216, 7)),
+                     lambda d: td.extract_cells(d, np.arange(0, 216, 7))),
+    "ExtractGeometry": (_small, lambda: ta.ExtractGeometry(function=_sphere()),
+                        lambda d: td.extract_geometry(d, td.Sphere((0, 0, 0), 2.0))),
+    "ExtractExtent": (_small, lambda: ta.ExtractExtent(extent=((0, 4), (0, 4), (0, 6)), rate=2),
+                      lambda d: td.extract_extent(d, ((0, 4), (0, 4), (0, 6)), rate=2)),
+    "Mask": (_tets, lambda: ta.Mask(stride=3), lambda d: td.mask(d, 3)),
+    "Mask of pieces": (lambda: _halves_of(_small()), lambda: ta.Mask(stride=3),
+                       lambda d: td.PartitionedDataSet([td.mask(p, 3) for p in d])),
+    # Cutting
+    "Slice": (_small, lambda: ta.Slice(function=_sphere()),
+              lambda d: td.slice(d, td.Sphere((0, 0, 0), 2.0))),
+    # Surfaces and edges
+    "BoundaryFaces": (_tets, ta.BoundaryFaces,
+                      lambda d: td.extract_surface(d, faces=td.boundary_faces(d))),
+    "ExtractEdges": (_small, ta.ExtractEdges, td.extract_edges),
+    "FeatureEdges": (_surface, lambda: ta.FeatureEdges(angle=20.0),
+                     lambda d: td.feature_edges(d, angle=20.0)),
+    # Shapes for drawing
+    "Tubes": (_edges, lambda: ta.Tubes(radius=0.1, sides=6), lambda d: td.tubes(d, 0.1, sides=6)),
+    "Glyphs": (_cloud, lambda: ta.Glyphs(vectors="g", scale=0.1),
+               lambda d: td.glyphs(d, "g", scale=0.1)),
+    # Connectivity and winding
+    "CheckWinding": (_polyhedra, ta.CheckWinding, lambda d: _with(d, {"inconsistent": td.Field(
+        td.Constant(d.topology), td.check_winding(d).flags().astype(tack.u8))})),
+    "MergePoints": (_tets, ta.MergePoints, td.merge_points),
+    # Changing cell types
+    "Triangulate": (_surface, ta.Triangulate, td.triangulate),
+    "AsPolyhedra": (_tets, ta.AsPolyhedra, td.as_polyhedra),
+    "AsPolygons": (_surface, ta.AsPolygons, td.as_polygons),
+    "Shrink": (_tets, lambda: ta.Shrink(factor=0.8),
+               lambda d: td.subdivide(td.shrink(d, 0.8), 1)),
+    "Subdivide": (_small, lambda: ta.Subdivide(level=2), lambda d: td.subdivide(d, 2)),
+    # Moving the geometry
+    "Transform": (_small, lambda: ta.Transform(matrix=_scale()),
+                  lambda d: td.transform(d, np.diag([2.0, 1.0, 0.5, 1.0]))),
+    "Transform of tetrahedra": (_tets, lambda: ta.Transform(matrix=np.diag([2.0, 1.0, 0.5, 1.0])),
+                                lambda d: td.transform(d, np.diag([2.0, 1.0, 0.5, 1.0]))),
+    "Warp": (_small, lambda: ta.Warp(direction="v", scale=0.001),
+             lambda d: td.warp(d, "v", scale=0.001)),
+    "Cylindrical": (_small, ta.Cylindrical, td.cylindrical),
+    "Spherical": (_tets, ta.Spherical, td.spherical),
+    # Measures and quality
+    "CellGeometry": (_small, ta.CellGeometry, lambda d: _with(d, td.cell_geometry(d)._asdict())),
+    "FaceGeometry": (_small, ta.FaceGeometry,
+                     lambda d: _on_faces(d, td.face_geometry(d)._asdict())),
+    "CellCenters": (_tets, ta.CellCenters, lambda d: _with(d, {"center": td.cell_centers(d)})),
+    "FaceCenters": (_tets, ta.FaceCenters, lambda d: _on_faces(d, {"center": td.face_centers(d)})),
+    "EdgeLengths": (_small, ta.EdgeLengths,
+                    lambda d: _on_faces(d, {"length": td.edge_lengths(d)}, "edges")),
+    "ImplicitValues": (_small, lambda: ta.ImplicitValues(function=_sphere()), lambda d: _with(
+        d, {"implicit": td.implicit_values(d, td.Sphere((0, 0, 0), 2.0))})),
+    "CellIds": (_small, ta.CellIds, lambda d: _with(d, {"cell_id": td.cell_ids(d)})),
+    "PointIds": (_small, ta.PointIds, lambda d: _with(d, {"point_id": td.point_ids(d)})),
+    # Fields from fields
+    "FlowQuantities": (_small, lambda: ta.FlowQuantities(gradient="vg"),
+                       lambda d: _with(d, td.flow_quantities(d, "vg")._asdict())),
+    "Project": (_small, lambda: ta.Project(field="RTData", to="cells", name="mean"), lambda d: _with(
+        d, {"mean": td.project(d, "RTData", td.Constant(d.topology))})),
+    "ValuesAtCenters": (_tets, lambda: ta.ValuesAtCenters(field="RTData", name="at"),
+                        lambda d: _with(d, {"at": td.values_at_centers(d, "RTData")})),
+    "Interpolate": (_small, lambda: ta.Interpolate(function=_x_plus_y), lambda d: _with(
+        d, {"interpolated": td.interpolate(d, _x_plus_y, td.H1(d.topology))})),
+    "Magnitude": (_small, lambda: ta.Magnitude(field="v"),
+                  lambda d: _with(d, {"magnitude": td.magnitude(d, "v")})),
+    "Dot": (_small, lambda: ta.Dot(a="v", b="w"), lambda d: _with(d, {"dot": td.dot(d, "v", "w")})),
+    "Cross": (_small, lambda: ta.Cross(a="v", b="w"),
+              lambda d: _with(d, {"cross": td.cross(d, "v", "w")})),
+    "Composite": (_small, lambda: ta.Composite(fields=["RTData", ("RTData", "points"), "RTData"]),
+                  lambda d: _with(d, {"composite": td.composite(d, "RTData", "RTData", "RTData")})),
+    "LogValues": (_small, lambda: ta.LogValues(field="RTData", base=10.0),
+                  lambda d: _with(d, {"log": td.log_values(d, "RTData", base=10.0)})),
+    "Convert": (_meters, lambda: ta.Convert(unit="cm"), lambda d: td.convert(d, "cm")),
+    # Finite volumes
+    "Jump": (_small, lambda: ta.Jump(field="c"), lambda d: _on_faces(d, {"jump": td.jump(d, "c")})),
+    "UpwindFlux": (_small, lambda: ta.UpwindFlux(field="c", velocity=(1.0, 0.5, 0.0)),
+                   lambda d: _on_faces(d, {"flux": td.upwind_flux(d, "c", (1.0, 0.5, 0.0))})),
+    # Probing, sampling and particles
+    "Voxelize": (_tets, lambda: ta.Voxelize(grid=_grid(), samples=2),
+                 lambda d: td.voxelize(d, _tack(_grid()), samples=2)),
+    "Advect": (_small, lambda: ta.Advect(field="v", seeds=np.array([[0.5, 0.5, 0.5], [1, 0, 0]]),
+                                         step_size=1e-4, steps=20),
+               lambda d: td.advect(d, "v", np.array([[0.5, 0.5, 0.5], [1, 0, 0]]), 1e-4, 20)),
+    # Point clouds
+    "ExtractPoints": (_cloud, lambda: ta.ExtractPoints(function=vtk.vtkSphere(
+        center=(0.5, 0.5, 0.5), radius=0.3)),
+        lambda d: td.extract_points(d, td.Sphere((0.5, 0.5, 0.5), 0.3))),
+    "ThresholdPoints": (_cloud, lambda: ta.ThresholdPoints(field="density", lower=0.0, upper=60.0),
+                        lambda d: td.threshold_points(d, "density", 0.0, 60.0)),
+    "MaskPoints": (_cloud, lambda: ta.MaskPoints(stride=3), lambda d: td.mask_points(d, 3)),
+    "PointNormals": (_cloud, lambda: ta.PointNormals(k=8), lambda d: _with(
+        d, {"normals": td.point_normals(d, k=8).fields["normals"]})),
+    "Outliers": (_cloud, lambda: ta.Outliers(k=8), lambda d: td.outliers(d, k=8)),
+    "VoxelDownsample": (_cloud, lambda: ta.VoxelDownsample(size=0.25),
+                        lambda d: td.voxel_downsample(d, 0.25)),
+    "Deposit": (_cloud, lambda: ta.Deposit(grid=vtk.vtkImageData(
+        dimensions=(5, 5, 5), spacing=(0.25, 0.25, 0.25))), lambda d: _deposited(d)),
+    "SphDensity": (_cloud, lambda: ta.SphDensity(), lambda d: _with(
+        d, {"density": td.sph_density(d).fields["density"]})),
+    "HaloCatalog": (_cloud, ta.HaloCatalog, td.halo_catalog),
+    # Pieces and ghosts
+    "Split": (_small, lambda: ta.Split(pieces=2, ghost_layers=1),
+              lambda d: td.split(d, 2, ghost_layers=1)),
+    "RemoveGhosts": (_ghosted, ta.RemoveGhosts,
+                     lambda d: td.PartitionedDataSet([td.remove_ghosts(p) for p in d])),
+    "GhostPoints": (_cloud_pieces, lambda: ta.GhostPoints(radius=0.1),
+                    lambda d: td.ghost_points(d, radius=0.1)),
+}
+
+
+def _deposited(data):
+    grid = _tack(vtk.vtkImageData(dimensions=(5, 5, 5), spacing=(0.25, 0.25, 0.25)))
+    return td.DataSet(grid.topology, grid.geometry, fields={"deposit": td.deposit(data, grid)},
+                      **grid._frame())
+
+
+def _contents(vtk_data):
+    """What a VTK dataset holds, as NumPy arrays by name: its class, structure, points,
+    cells and arrays; for pieces, each piece's."""
+    if isinstance(vtk_data, vtk.vtkPartitionedDataSet):
+        return [_contents(vtk_data.GetPartition(i))
+                for i in range(vtk_data.GetNumberOfPartitions())]
+    out = {"class": vtk_data.GetClassName()}
+    if isinstance(vtk_data, vtk.vtkImageData):
+        out |= {"dims": vtk_data.dimensions, "origin": vtk_data.origin,
+                "spacing": vtk_data.spacing}
+    elif vtk_data.GetNumberOfPoints():
+        out["points"] = np.asarray(vtk_data.points.data)
+    if isinstance(vtk_data, vtk.vtkUnstructuredGrid):
+        out |= {"types": np.asarray(vtk_data.cell_types),
+                "offsets": np.asarray(vtk_data.cells.offsets_array),
+                "connectivity": np.asarray(vtk_data.cells.connectivity_array)}
+    for where, attributes in [("point", vtk_data.GetPointData()),
+                              ("cell", vtk_data.GetCellData())]:
+        for i in range(attributes.GetNumberOfArrays()):
+            array = attributes.GetArray(i)
+            if array is not None:
+                out[f"{where} {array.GetName()}"] = np.asarray(array)
+    return out
+
+
+def _assert_same(got, expected):
+    if isinstance(expected, list):
+        assert isinstance(got, list) and len(got) == len(expected)
+        for g, e in zip(got, expected):
+            _assert_same(g, e)
+        return
+    assert sorted(got) == sorted(expected)
+    for key, value in expected.items():
+        if isinstance(value, str):
+            assert got[key] == value, key
+        else:
+            np.testing.assert_array_equal(np.asarray(got[key]), np.asarray(value), err_msg=key)
+
+
+@pytest.mark.parametrize("name", sorted(_EVERY))
+def test_each_wrapper_gives_its_tack_filters_output(name):
+    data, make, direct = _EVERY[name]
+    algorithm = make()
+    out = algorithm(data())
+    assert algorithm.error is None, algorithm.error
+    _assert_same(_contents(out), _contents(dataset_to_vtk(direct(_tack(data())))))
+
+
+def test_every_algorithm_but_the_tables_and_amr_has_a_wrapper():
+    """Every algorithm of the reference page, but those for later (statistics,
+    entropy, integrate, average_down), the in-place update_ghosts, and the finite
+    volume operators that take values on faces, which VTK keeps nowhere."""
+    import re
+    from pathlib import Path
+
+    page = (Path(__file__).parents[3] / "docs/vis-guide/reference/algorithms.md").read_text()
+    names = set(re.findall(r"^\| \[`(\w+)`\]", page, re.M))
+    later = {"statistics", "entropy", "integrate", "average_down", "update_ghosts",
+             "net_flux", "divergence", "perot", "contour", "slice_plane", "clip", "threshold",
+             "extract_surface", "tetrahedralize", "surface_normals", "connected_components",
+             "streamlines", "probe", "gradients", "point_elevation", "cell_quality",
+             "ghost_cells", "generate_global_ids", "merge_pieces"}
+    camel = {n: "".join(part.capitalize() for part in n.split("_")) for n in names - later}
+    missing = [n for n, c in camel.items() if not hasattr(ta, c)]
+    assert not missing
+
+
+# ── Seeds on a port ─────────────────────────────────────────────────
+
+@pytest.mark.parametrize("make", [
+    lambda: ta.Streamlines(field="v", step_size=1e-4, steps=20),
+    lambda: ta.Advect(field="v", step_size=1e-4, steps=20)])
+def test_seeds_come_from_port_1(make):
+    seeds = np.array([[0.5, 0.5, 0.5], [1.0, 0.0, 0.0], [-1.0, 0.5, 0.0]])
+    source = vtk.vtkPolyData()
+    source.points = vtk.vtkPoints(data=seeds)
+    from_port = make()
+    from_port.SetInputDataObject(0, _small())
+    from_port.SetSourceData(source)
+    from_port.Update()
+    assert from_port.error is None, from_port.error
+    given = make()
+    given.seeds = seeds
+    _assert_same(_contents(from_port.GetOutputDataObject(0)), _contents(given(_small())))
+
+
+def test_sph_interpolate_takes_its_particles_on_port_1():
+    particles = _cloud()
+    target = vtk.vtkPolyData()
+    target.points = vtk.vtkPoints(data=np.array([[0.5, 0.5, 0.5], [0.2, 0.3, 0.4]]))
+    sph = ta.SphInterpolate(fields=["h"])
+    sph.SetInputDataObject(0, target)
+    sph.SetSourceData(particles)
+    sph.Update()
+    assert sph.error is None, sph.error
+    expected = td.sph_interpolate(_tack(particles), _tack(target), fields=["h"])
+    _assert_same(_contents(sph.GetOutputDataObject(0)), _contents(dataset_to_vtk(expected)))
