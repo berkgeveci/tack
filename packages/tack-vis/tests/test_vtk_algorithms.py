@@ -172,3 +172,113 @@ def test_a_reader_tack_and_vtk_filters_in_one_pipeline(tmp_path):
     area = float(sizes.cell_data["Area"].sum())
     reference = vtk.vtkCellSizeFilter()(_vtk_contour(reader(), 150.0))
     assert area == pytest.approx(float(reference.cell_data["Area"].sum()), rel=1e-5)
+
+
+# ── One Tack dataset per VTK dataset ────────────────────────────────
+
+def _rotation():
+    grid = vtk.vtkImageData(dimensions=(12, 12, 3), spacing=(0.2, 0.2, 0.2),
+                            origin=(-1.1, -1.1, 0.0))
+    x = np.asarray(vtk.vtkImageDataToPointSet()(grid).points.data)
+    v = np.stack([-x[:, 1], x[:, 0], np.zeros(len(x))], axis=1)
+    grid.point_data["v"] = v
+    return grid
+
+
+def _streamlines(grid, steps):
+    f = ta.Streamlines(field="v", seeds=np.array([[0.5, 0.0, 0.2]]), step_size=0.01,
+                       steps=steps)
+    f.SetInputDataObject(grid)
+    f.Update()
+    return f.GetOutputDataObject(0)
+
+
+def test_filters_reading_one_dataset_share_its_tack_dataset():
+    """What one derives (here the locator) the next one reuses."""
+    grid = _rotation()
+    _streamlines(grid, 50)
+    data = ta._as_dataset(grid)
+    locator = data.topology._locator
+    assert locator is not None
+    _streamlines(grid, 80)
+    assert ta._as_dataset(grid) is data
+    assert data.topology._locator is locator
+
+
+def test_a_filter_run_again_reuses_its_inputs_tack_dataset():
+    contour = ta.Contour(field="RTData", value=150.0)
+    source = _wavelet()
+    contour.SetInputConnection(source.GetOutputPort())
+    contour.Update()
+    data = ta._as_dataset(contour.GetInputDataObject(0, 0))
+    contour.value = 200.0
+    contour.Update()
+    assert ta._as_dataset(contour.GetInputDataObject(0, 0)) is data
+
+
+def test_a_changed_dataset_is_converted_again():
+    grid = _rotation()
+    data = ta._as_dataset(grid)
+    grid.point_data["w"] = np.ones(grid.number_of_points)
+    changed = ta._as_dataset(grid)
+    assert changed is not data and "w" in changed.fields
+
+
+def test_an_entry_goes_with_its_vtk_dataset():
+    import gc
+
+    grid = _rotation()
+    ta._as_dataset(grid)
+    address = grid.GetAddressAsString("vtkObject")
+    assert address in ta._datasets
+    del grid
+    gc.collect()
+    assert address not in ta._datasets
+
+
+def test_a_field_filters_output_keeps_its_inputs_topology():
+    """Its output is its input with arrays added: the next filter keeps the topology
+    and what was derived from it, and sees what a fresh conversion gives."""
+    grid = _rotation()
+    elevation = ta.Elevation(low_point=(0, 0, 0), high_point=(1, 0, 0))
+    elevation.SetInputDataObject(grid)
+    elevation.Update()
+    out = elevation.GetOutputDataObject(0)
+    kept = ta._as_dataset(out)
+    assert kept.topology is ta._as_dataset(grid).topology
+    fresh = vtk_to_dataset(out, dtype=None)
+    assert set(kept.fields) == set(fresh.fields)
+    for name in fresh.fields:
+        np.testing.assert_array_equal(kept.fields[name].values.numpy(),
+                                      fresh.fields[name].values.numpy())
+
+
+def test_probe_gives_vtks_values():
+    source = _wavelet()()
+    points = vtk.vtkPointSource(number_of_points=60, radius=6.0)()
+    probe = ta.Probe()
+    probe.SetInputDataObject(points)
+    probe.SetSourceData(source)
+    probe.Update()
+    out = probe.GetOutputDataObject(0)
+    assert probe.error is None and isinstance(out, vtk.vtkUnstructuredGrid)
+    reference = vtk.vtkProbeFilter()
+    reference.SetInputData(points)
+    reference.SetSourceData(source)
+    reference.Update()
+    np.testing.assert_allclose(out.point_data["RTData"],
+                               reference.GetOutput().point_data["RTData"], rtol=1e-5)
+    np.testing.assert_array_equal(out.point_data["valid"], 1)
+
+
+def test_probe_in_a_pipeline_keeps_an_images_structure():
+    source = _wavelet()
+    image = vtk.vtkImageData(dimensions=(5, 5, 5), origin=(-4.0, -4.0, -4.0),
+                             spacing=(2.0, 2.0, 2.0))
+    probe = ta.Probe(fields=["RTData"])
+    probe.SetInputDataObject(image)
+    probe.SetSourceConnection(source.GetOutputPort())
+    probe.Update()
+    out = probe.GetOutputDataObject(0)
+    assert isinstance(out, vtk.vtkImageData) and out.dimensions == (5, 5, 5)
+    assert set(out.point_data.keys()) == {"RTData", "valid"}
