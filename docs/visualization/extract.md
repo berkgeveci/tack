@@ -66,7 +66,7 @@ smaller. None of the three is wrong: each answers its own question.
 </div>
 
 Each is cut open at the plane y = 0 to show its inside, and colored by `r`
-([the script](https://github.com/berkgeveci/tack/blob/main/docs/gallery/extract.py)).
+([the script](https://github.com/Kitware/tack/blob/main/docs/gallery/extract.py)).
 
 | You want | Filter | Output |
 |---|---|---|

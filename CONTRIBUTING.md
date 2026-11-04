@@ -3,7 +3,7 @@
 ## Getting set up
 
 ```bash
-git clone https://github.com/berkgeveci/tack.git
+git clone https://github.com/Kitware/tack.git
 cd tack
 uv sync --extra cpu --extra dev
 uv run pytest -m quick -n 4
