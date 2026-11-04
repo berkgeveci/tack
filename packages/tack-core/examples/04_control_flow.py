@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """04 -- Control flow: if/else, while loops, break, ternary expressions.
 
 Tack kernels support standard Python control flow.  The top-level for-range

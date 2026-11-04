@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Statements outside the parallel loop may only bind locals and arrays.
 
 They may run any number of times per launch: once per GPU thread, and on

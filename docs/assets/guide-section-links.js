@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Retain bookmarks when a guide section moves to another chapter.
 function followGuideSection() {
   let fragment;

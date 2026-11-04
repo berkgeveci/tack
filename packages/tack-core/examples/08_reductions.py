@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """08 -- Array reductions: sum, min, max.
 
 Arrays have built-in reduction methods.  On Metal, these run entirely

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Statistics and entropy, the wavelet and tangle sources, and refinement --
 tetrahedralize, triangulate, shrink, point cloud -- as Viskores defines them,
 against VTK where VTK has the filter."""

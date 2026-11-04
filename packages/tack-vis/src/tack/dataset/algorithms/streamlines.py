@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``streamlines``: the paths of ``advect``'s particles, as Viskores' Streamline: one polyline per seed."""
 
 import tack

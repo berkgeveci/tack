@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A dataset's origin: positions are ``origin + value``, the value in the geometry's
 type, so coordinates far from zero (a LiDAR survey's eastings and northings) keep
 their precision in single precision.

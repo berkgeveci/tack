@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Checking a topology's arrays: ``validate()`` on every kind, and debug mode,
 which checks the ids of every topology when it is made, before anything is
 derived from them (a bad id would be read or written out of bounds)."""

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack OpenCL C code generation — transforms Tack IR to OpenCL C source.
 
 Generates a ``__kernel`` function where:

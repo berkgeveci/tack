@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """44 -- Partitioned data: a dataset in pieces, ghost marks, and reductions.
 
 A PartitionedDataSet is a list of DataSets, each a whole dataset with its own

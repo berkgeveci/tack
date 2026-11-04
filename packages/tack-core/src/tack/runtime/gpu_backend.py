@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """What the GPU backends share: how a kernel call becomes a queued launch.
 
 Metal, CUDA, HIP and Level Zero resolve a call's variant, evaluate its

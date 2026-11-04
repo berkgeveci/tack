@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Gradients at cells and at points, of scalar and vector fields, and the flow
 quantities derived from them, against VTK's vtkGradientFilter and
 vtkCellDerivatives."""

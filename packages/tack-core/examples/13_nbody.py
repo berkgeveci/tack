@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """13 -- N-body gravitational simulation.
 
 Compute gravitational forces between N particles using the direct

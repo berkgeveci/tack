@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Per-launch and per-allocation trace of the vtk_compare filters on the CPU.
 
     python benchmarks/alloc_trace.py REPO THREADS SIZE [filters...]

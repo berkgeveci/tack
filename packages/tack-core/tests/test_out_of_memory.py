@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """An allocation that runs out of device memory collects Python's garbage and tries
 once more (``lang.array._allocate``): a dropped array held in a reference cycle
 keeps its memory until the cycle collector runs, and that collector counts

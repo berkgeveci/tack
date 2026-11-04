@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``boundary_faces``: the faces with one side, as a face ``Set``."""
 
 from tack.dataset.sets import Set

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """11 -- Template classes with @tack.device_class.
 
 Use @tack.device_class to bundle arrays and scalar parameters into a

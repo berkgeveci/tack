@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for tack.interop.mfem, with MFEM itself (PyMFEM) as the reference.
 
 Meshes are built in MFEM -- Cartesian meshes of each element type, and a

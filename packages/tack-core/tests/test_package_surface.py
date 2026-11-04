@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """What ``import tack`` offers: ``__all__``, submodules on first use, typing.
 
 ``tack`` is marked typed (``py.typed``), and a typed package's ``__init__``

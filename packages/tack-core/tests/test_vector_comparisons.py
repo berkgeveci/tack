@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Elementwise comparison of vectors, ``any``/``all``, and ``tack.select``."""
 
 import numpy as np

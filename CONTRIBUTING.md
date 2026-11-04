@@ -1,5 +1,69 @@
 # Contributing to Tack
 
+## Your contribution's license
+
+Tack is distributed under the BSD 3-Clause License ([LICENSE](LICENSE)). By
+submitting a contribution -- a pull request, a patch, or code in an issue --
+you certify that you have the right to submit it, as the Developer
+Certificate of Origin below states, and you agree that it is distributed
+under the license of the files it changes: BSD-3-Clause, unless a file's
+`SPDX-License-Identifier` names another. Code from elsewhere keeps its
+authors' copyright and its own license; say where it came from.
+
+There is no contributor license agreement and no copyright assignment: you
+(or your employer) keep the copyright to your work. If you are not at
+Kitware, add your own line to the header of the files you write or
+substantially change, beside Kitware's:
+
+```python
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) Your Organization
+# SPDX-License-Identifier: BSD-3-Clause
+```
+
+Nor is a `Signed-off-by` line required; submitting the contribution is the
+agreement. You are responsible for what you submit, whatever tools helped
+you write it: the certificate covers code an AI assistant produced as much
+as code you typed. How the project decides what to merge is in
+[GOVERNANCE.md](GOVERNANCE.md).
+
+```text
+Developer Certificate of Origin
+Version 1.1
+
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+
+Developer's Certificate of Origin 1.1
+
+By making a contribution to this project, I certify that:
+
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+```
+
 ## Getting set up
 
 ```bash
@@ -189,6 +253,21 @@ uvx ruff check .
 CI runs the same thing and it is the fastest job, so it will tell you first
 either way. It is configured in `pyproject.toml` under `[tool.ruff]`.
 
+**Every source file opens with an SPDX header** (`.py`, `.js`, `.css`, `.html`
+outside `archive/`), as in ParaView and VTK:
+
+```python
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+```
+
+`python tools/spdx_headers.py add` writes it into new files and `check` (in
+the lint job) finds any without one. Code from elsewhere names each holder on
+a `SPDX-FileCopyrightText` line of its own and keeps its license: the Taichi and
+Warp adaptations in `docs/examples/` are Apache-2.0 with both holders, and
+`tack.dataset`'s clip tables, VisIt's, carry Lawrence Livermore's line. Data,
+generated files and Markdown carry no header.
+
 Two things about that config are worth knowing before you argue with it.
 
 **Kernel bodies are not Python.** Inside `@tack.kernel`, names like `sqrt` and
@@ -211,7 +290,9 @@ Record what the PR changes for users in a file of its own in `changelog.d/`
 (`python tools/changelog.py release VERSION DATE`), so two PRs never conflict
 over it.
 
-Open a PR against `main`. CI runs lint (with `tools/changelog.py check`), the suite on Python 3.11/3.12/3.13, the
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Open a PR against `main`. CI runs lint (with `tools/changelog.py check` and `tools/spdx_headers.py check`), the suite on Python 3.11/3.12/3.13, the
 packaging gate, the example sweep, and a Metal job on an Apple Silicon runner.
 All of them should be green.
 

@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """MFEM's examples through Tack: each problem solved with PyMFEM (``_mfem``), its
 mesh and solution imported with ``tack.interop.mfem``, and what Tack's filters
 make of them drawn through VTK: contours and slices cut on sub-cells of curved

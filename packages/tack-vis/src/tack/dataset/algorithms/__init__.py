@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Every algorithm on ``tack.dataset`` datasets, one module each; ``tack.dataset``
 re-exports them all."""
 

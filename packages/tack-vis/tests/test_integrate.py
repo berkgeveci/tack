@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``integrate``: a dataset's measure and its fields' integrals by quadrature through
 each cell's own map, held to closed forms -- polynomials over straight and curved
 cells of every shape, fields of any order -- and over pieces; and ``cell_geometry``

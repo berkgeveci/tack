@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """09 -- Shared memory and thread synchronization.
 
 On GPUs, threads within a workgroup (threadgroup on Metal, thread block

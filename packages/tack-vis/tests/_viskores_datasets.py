@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Viskores' test datasets (``MakeTestDataSet``), transcribed, for tests ported from
 Viskores' filter unit tests. The source is
 ``viskores/cont/testlib/MakeTestDataSet.cxx``.

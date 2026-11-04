@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Kernel values built as NumPy and GLSL spell them: tack.vec3(x, y, z),
 tack.mat2(...), tack.identity(n); a[()] for a zero-dimensional array."""
 

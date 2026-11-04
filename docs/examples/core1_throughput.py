@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Time one kernel, out = alpha * x + y, on a device, against NumPy.
 
     uv run python docs/examples/core1_throughput.py --arch cpu

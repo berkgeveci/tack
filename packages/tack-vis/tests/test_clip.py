@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Clip by Viskores' case tables, against VTK's vtkTableBasedClipDataSet: cells,
 points, measure and orientation on every linear shape, by implicit functions
 and by fields, both ways; fields carried onto the new points and pieces."""

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Contour case tables, generated from VTK 9.7.1 by
 packages/tack-vis/tools/make_contour_tables.py. Do not edit.
 

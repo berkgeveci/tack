@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """48 -- A dataset in pieces through a VTK pipeline: ghost cells, contour, merge.
 
 A vtkPartitionedDataSet goes through Tack's VTK algorithms whole: filters that

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for GPU statistics and analysis (tack.algorithms.stats)."""
 
 import numpy as np

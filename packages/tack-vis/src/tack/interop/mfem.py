@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """MFEM meshes and grid functions as ``tack.dataset`` datasets, through PyMFEM.
 
 ``mfem_to_dataset(mesh, fields)`` copies an ``mfem.ser.Mesh`` and named

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """24 -- Point coordinates: Product vs AOS vs SOA performance benchmark.
 
 Compares three ways to store 3D point coordinates when evaluating an

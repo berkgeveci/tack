@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """10 -- Vector operations in kernels.
 
 Kernels have small vector values for 3D math.  Construct them from

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Array accesses, as lowering emits them.
 
 An index is linearized row-major over the array's dimensions (each a

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tack.set_default_float(tack.f64)`` makes datasets f64 where nothing chooses
 their type: the constructors, the sources and the readers, which then give what
 ``dtype=tack.f64`` gives."""

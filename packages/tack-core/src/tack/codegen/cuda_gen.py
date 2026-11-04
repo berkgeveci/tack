@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack CUDA C code generation — transforms Tack IR to CUDA C source for NVRTC.
 
 Generates an ``extern "C" __global__`` kernel function where:

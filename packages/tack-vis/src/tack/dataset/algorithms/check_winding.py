@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``check_winding``: the cells whose faces do not wind consistently, as a cell ``Set``."""
 
 

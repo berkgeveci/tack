@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``divergence``: each cell's finite-volume divergence, its net outflow (``net_flux``) over its measure."""
 
 import tack

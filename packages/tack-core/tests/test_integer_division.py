@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Integer // and % agree with Python on the defined fixed-width domain.
 
 Expected values use Python integers, avoiding NumPy overflow and recording

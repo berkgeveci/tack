@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Exact crossings: a cut of high-order data on sub-cells puts each crossing where the
 field itself takes the value along the sub-edge (``algorithms/_crossings.py``), not
 where the line between its lattice values does, and carries every field there."""

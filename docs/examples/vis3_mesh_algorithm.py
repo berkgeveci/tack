@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Mesh algorithms written with views: cell, face and node kernels on a mixed
 mesh, each checked against an analytic answer or a built-in algorithm."""
 

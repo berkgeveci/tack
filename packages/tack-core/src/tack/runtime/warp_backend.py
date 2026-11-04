@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A prototype backend on NVIDIA Warp: Tack kernels compiled and launched by Warp.
 
 ``tack.device("warp")`` drives Warp's default device (its first CUDA

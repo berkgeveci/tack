@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``subdivide``: a dataset of curved or high-order cells as linear sub-cells -- each
 cell's lattice of ``level`` steps along each axis -- with its fields evaluated at
 the lattice points. ``contour`` and ``slice`` cut high-order data this way, on

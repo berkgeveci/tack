@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Ghost layers for structured pieces, kept structured: ``ghost_cells``' path for
 pieces that are all ``StructuredTopology``.
 

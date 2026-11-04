@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for expression-level dtype annotation (Layer 1 of type system refactor).
 
 Validates that ir_type_annotate sets dtype on every expression IR node,

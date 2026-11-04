@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``voxel_downsample``: one point per occupied voxel of a uniform grid -- the voxel's centroid, its first point, or its point nearest the centroid -- as VTK's vtkVoxelGrid and PDAL's ``filters.voxeldownsize``. Deterministic: voxels by a stable sort, each reduced in index order."""
 
 import numpy as np

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Segmented operations: reductions, prefix sums and broadcasts over segments.
 
 A collection of variable-length segments is flat ``values`` and CSR ``offsets``:

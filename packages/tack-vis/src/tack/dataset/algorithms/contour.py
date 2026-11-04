@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``contour``: the surface where ``field`` crosses ``value`` -- or each of several
 values, in one pass over the cells -- as triangles."""
 

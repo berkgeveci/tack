@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Shader-style helpers as device functions: ``fract``, ``mix``, ``clamp``...
 
 GLSL, MSL and Taichi's ``taichi.math`` share a small vocabulary that

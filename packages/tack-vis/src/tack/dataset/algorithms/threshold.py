@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``threshold``: the cells whose ``field`` lies in ``[lower, upper]``, with only the points they use."""
 
 import tack

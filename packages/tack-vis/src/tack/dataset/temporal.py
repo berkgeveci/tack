@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Temporal filters: steps streamed through filters one at a time.
 
 Tack holds no series of steps. A simulation in situ, or a reader's loop, hands

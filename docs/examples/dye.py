@@ -1,5 +1,7 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) The Taichi Authors
 # SPDX-License-Identifier: Apache-2.0
+
 """Semi-Lagrangian dye advection, adapted from Taichi's stable_fluid.py.
 
 Copyright (c) The Taichi Authors. Apache-2.0; see LICENSE-APACHE-2.0.txt.

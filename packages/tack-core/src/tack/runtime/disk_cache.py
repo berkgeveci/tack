@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A disk cache of lowered and compiled kernels, safe for MPI jobs.
 
 A kernel's first call in a process spends most of its time in Tack's own

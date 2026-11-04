@@ -33,6 +33,16 @@ and deletes the files; edit `CHANGELOG.md` only at a release (its summary).
 `tools/` tests itself alone (`cd tools && uv run --no-project --with pytest
 pytest`; its `pytest.ini` keeps the repository's conftest out).
 
+**Every source file opens with an SPDX header** (ParaView's form: `#
+SPDX-FileCopyrightText: Copyright (c) Kitware Inc.`, then `#
+SPDX-License-Identifier: BSD-3-Clause`; `.py`, `.js`, `.css`, `.html` outside
+`archive/`). A new file needs one: `python tools/spdx_headers.py add` writes
+it, `check` (CI's lint job) refuses a file without one. Code from elsewhere
+names each holder on a line of its own and keeps its license (the Apache-2.0
+examples in `docs/examples/`; `_clip_tables.py`, VisIt's tables by way of VTK
+and Viskores; `halo_catalog.py`, after LANL's cosmotools). The table
+generators write the header.
+
 ## Build & Test Commands
 
 ```bash

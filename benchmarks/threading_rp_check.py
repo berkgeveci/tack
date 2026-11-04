@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Is policy v2's learned `r_p` any good? Run this before trusting v2 anywhere.
 
 v2's threshold is `fan_out * M / (r_s - r_p)`, so `r_p` sits in a

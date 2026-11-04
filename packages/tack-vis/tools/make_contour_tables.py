@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Generate tack.dataset's contour case tables from VTK's own cells.
 
 For every cell shape and every way its points can be above or below the
@@ -73,7 +76,9 @@ def cases(cls):
 def main():
     import vtkmodules
     out = sys.stdout
-    out.write('"""Contour case tables, generated from VTK %s by\n'
+    out.write('# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.\n'
+              '# SPDX-License-Identifier: BSD-3-Clause\n\n'
+              '"""Contour case tables, generated from VTK %s by\n'
               'packages/tack-vis/tools/make_contour_tables.py. Do not edit.\n\n'
               'For each shape, CASES is the number of triangles of each case and\n'
               'EDGES the cell edges their points lie on, MAX_TRIANGLES * 3 per\n'

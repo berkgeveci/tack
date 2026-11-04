@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """IR resolution pass — resolves dispatch-time constants in the IR.
 
 Runs after AST transform, before codegen. Replaces:

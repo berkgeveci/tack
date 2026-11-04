@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for explicit type casts (Layer 2 of type system refactor).
 
 Tests tack.f32(), tack.f64(), tack.i32(), tack.i64(), tack.u32(), tack.u64()

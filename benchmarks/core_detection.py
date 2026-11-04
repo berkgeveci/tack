@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """What this machine reports about its cores, and what Tack makes of it.
 
 Tack wants one compute thread per *physical* core. A hyperthread shares an

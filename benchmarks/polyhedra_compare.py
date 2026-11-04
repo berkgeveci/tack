@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Hexahedra against the same hexahedra as polyhedra, through the algorithms that
 run on polyhedra by their sub-tetrahedra: gradients (Green-Gauss), cell
 centers, values at centers, the cell locator, probe, advect and streamlines.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``vtk_to_dataset(..., copy=False)`` and ``dataset_to_vtk(..., copy=False)`` with the
 data on a GPU: Tack's device arrays and VTK's device arrays sharing one
 allocation each way -- the points, data arrays, offsets and connectivity -- with the

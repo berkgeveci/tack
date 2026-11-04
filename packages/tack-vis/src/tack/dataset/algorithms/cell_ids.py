@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``cell_ids``: each cell's id, as values on cells: an implicit array, nothing stored."""
 
 from tack.arrays import CountingArray

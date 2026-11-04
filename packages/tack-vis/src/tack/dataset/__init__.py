@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack's dataset API: see ``docs/vis-guide/reference/dataset-api.md``.
 
 ``shapes`` holds the linear cells as template classes; ``arrays`` the

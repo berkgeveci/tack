@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``extract_cells``: the cells with the given ids (a host array, an integer field, or a cell set), with only the points they use; cells keep their order, not the order given."""
 
 import numpy as np

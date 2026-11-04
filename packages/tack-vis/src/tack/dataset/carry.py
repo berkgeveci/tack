@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """How a filter's output takes its input's fields.
 
 A filter that makes a new dataset says how each kind of output entity comes

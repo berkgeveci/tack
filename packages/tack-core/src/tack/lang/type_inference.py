@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack type inference — resolves types for kernel parameters and expressions.
 
 Type inference is performed at call time, when actual arguments are available.

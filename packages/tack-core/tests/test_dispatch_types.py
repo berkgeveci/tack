@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for dispatch-time type checking (Layer 5 of type system refactor).
 
 Validates that unsupported array dtypes are caught with clear errors

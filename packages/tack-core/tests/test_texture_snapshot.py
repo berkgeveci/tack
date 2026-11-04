@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A texture samples a snapshot of its array, refreshed by ``update()``.
 
 The hardware paths used to copy the array into a texture image on first

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """tack.algorithms — GPU algorithm primitives.
 
 Portable, backend-agnostic building blocks for common parallel patterns:

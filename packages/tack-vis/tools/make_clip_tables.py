@@ -1,4 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Generate tack/dataset/_clip_tables.py from Viskores' clip tables.
+
+The tables are VisIt's (Jeremy Meredith, LLNL, 2003): VTK keeps them in
+vtkTableBasedClipCases.h, split into the cells kept and the cells inside out,
+and Viskores copied VTK's case for case. The output carries LLNL's copyright.
 
 Usage:
   python packages/tack-vis/tools/make_clip_tables.py \
@@ -7,7 +14,7 @@ Usage:
 
 Parses the edge table and both case tables (kept and inverted) with their
 per-case offsets, checks that every case of every shape decodes within the
-table, and writes them as Python lists with Viskores' license notice.
+table, and writes them as Python lists with VisIt's copyright notice.
 """
 import re
 import sys
@@ -29,11 +36,14 @@ assert len(data_starts) == 2 and len(index_starts) == 2
 tables = {inv: (block(data_starts[k]), block(index_starts[k])) for k, inv in enumerate((False, True))}
 lookup = {1: 0, 3: 2, 5: 6, 9: 14, 10: 30, 12: 46, 13: 302, 14: 366}
 npts = {1: 1, 3: 2, 5: 3, 9: 4, 10: 4, 12: 8, 13: 6, 14: 5}
-out = ['"""Clip case tables, generated from Viskores\' ClipTables.h',
-       '(viskores/filter/contour/worklet/clip, Viskores 1.1.9999, ab6b17965) by',
-       'packages/tack-vis/tools/make_clip_tables.py; do not edit. Copyright (c) Kitware, Inc.; covered by the Viskores license',
-       '(BSD-3-Clause; https://github.com/Viskores/viskores/blob/main/LICENSE.txt).',
-       'The tables descend from VisIt\'s.',
+out = ['# SPDX-FileCopyrightText: Copyright (c) 2000 - 2009, Lawrence Livermore National Security, LLC',
+       '# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.',
+       '# SPDX-License-Identifier: BSD-3-Clause',
+       '',
+       '"""Clip case tables: VisIt\'s (Jeremy Meredith, LLNL, 2003), as VTK keeps them in',
+       'vtkTableBasedClipCases.h and Viskores copied them into ClipTables.h. Generated',
+       'from Viskores\' (viskores/filter/contour/worklet/clip, Viskores 1.1.9999,',
+       'ab6b17965) by packages/tack-vis/tools/make_clip_tables.py; do not edit.',
        '',
        'Per shape (VTK cell type id): ``EDGES[shape]``, the corners of each local edge',
        '(E00, E01, ...), flattened; ``CASES[invert][shape]``, for each case (bit k set',
