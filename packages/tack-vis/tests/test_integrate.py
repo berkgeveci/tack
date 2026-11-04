@@ -165,6 +165,91 @@ def test_point_fields_on_polyhedra_and_polygons():
     assert surface.values["u"] == pytest.approx(6.0 * exact, abs=1e-13)
 
 
+def _fan(x, loop):
+    """A polygon's fan of triangles from its points' mean: their areas, signed by
+    the polygon's Newell normal, and the triangles' corner means of x."""
+    p = x[loop]
+    m = p.mean(axis=0)
+    n = np.sum(np.cross(p, np.roll(p, -1, axis=0)), axis=0)
+    cross = np.cross(p - m, np.roll(p, -1, axis=0) - m)
+    area = np.linalg.norm(cross, axis=1) / 2 * np.sign(cross @ n)
+    return area, (m + p + np.roll(p, -1, axis=0)) / 3
+
+
+def test_a_polygon_is_measured_as_its_fan():
+    """A non-planar polygon is its fan of triangles from its points' mean, as Tack
+    interpolates and locates in it: its area is the fan's, more than its projection
+    onto its normal (which measured a contour's wrinkled free surface 1% small), and
+    a linear field integrates exactly over the fan. A planar polygon whose mean is
+    outside it (a U) still measures its own area: the fan's triangles are signed."""
+    x = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0.6], [0, 1, 0],                 # bent
+                  [3, 0, 0], [6, 0, 0], [6, 3, 0], [5, 3, 0], [5, 1, 0], [4, 1, 0],
+                  [4, 3, 0], [3, 3, 0]], np.float64)                            # a U
+    loops = [[0, 1, 2, 3], list(range(4, 12))]
+    top = td.PolygonalTopology([0, 4, 12], loops[0] + loops[1], num_points=len(x))
+    data = td.DataSet(top, x, dtype=tack.f64)
+    data.fields["u"] = td.Field(td.H1(data), tack.array(x[:, 0] + 2 * x[:, 2]))
+    out = td.integrate(data, "u")
+    areas = [_fan(x, loop)[0] for loop in loops]
+    integral = sum((a * (c[:, 0] + 2 * c[:, 2])).sum() for a, c in (_fan(x, loop) for loop in loops))
+    measures = td.cell_geometry(data).measure.values.numpy()
+    np.testing.assert_allclose(measures, [a.sum() for a in areas], rtol=1e-13)
+    assert out.measure == pytest.approx(sum(a.sum() for a in areas), rel=1e-13)
+    assert out.values["u"] == pytest.approx(integral, rel=1e-13)
+    projected = np.linalg.norm(np.sum(np.cross(x[loops[0]], np.roll(x[loops[0]], -1, axis=0)), axis=0)) / 2
+    assert measures[0] > projected * 1.01
+    assert measures[1] == pytest.approx(9.0 - 2.0, rel=1e-13)       # the U: 3 x 3 less 1 x 2
+
+
+def _patch(q, f, n=64):
+    """A bilinear quad's integrals of f(X) |Xu x Xv| (signed by its Newell normal),
+    by n Gauss points an axis: the reference for four."""
+    a, b, c, d = q
+    unit = np.cross(c - a, d - b)
+    unit /= np.linalg.norm(unit)
+    r, w = np.polynomial.legendre.leggauss(n)
+    r, w = (r + 1) / 2, w / 2
+    total = 0.0
+    for u, wu in zip(r, w):
+        for v, wv in zip(r, w):
+            cross = np.cross((1 - v) * (b - a) + v * (c - d), (1 - u) * (d - a) + u * (c - b))
+            x = (1 - u) * (1 - v) * a + u * (1 - v) * b + u * v * c + (1 - u) * v * d
+            total = total + wu * wv * np.linalg.norm(cross) * np.sign(cross @ unit) * f(x)
+    return total
+
+
+def test_a_quad_is_measured_as_its_bilinear_patch():
+    """A quad has a reference element, so it is its bilinear patch: a non-planar
+    one's area, centroid and integrals are the patch's (by 4 x 4 Gauss points,
+    1e-11 from a 64-point rule at this twist), neither its projection
+    onto its normal (VTK's, smaller) nor the fan from its mean (larger). A planar
+    quad that is not convex measures its own area: the element is signed."""
+    x = np.array([[0, 0, 0], [1, 0, 0], [1.1, 0.9, 0.2], [-0.1, 1, 0],            # bent
+                  [3, 0, 0], [5, 0, 0], [5, 2, 0], [4.5, 0.5, 0]], np.float64)   # a dart
+    types = tack.array(np.full(2, shapes.QUAD, np.uint8))
+    offsets = tack.array(np.array([0, 4, 8], np.int32))
+    top = td.UnstructuredTopology(types, offsets, tack.array(np.arange(8, dtype=np.int32)),
+                                  num_points=8)
+    data = td.DataSet(top, x, dtype=tack.f64)
+    # u on the bent quad alone: the dart's field integrals weigh by |det J|.
+    data.fields["u"] = td.Field(td.H1(data), tack.array(np.r_[x[:4, 0] + 2 * x[:4, 2], np.zeros(4)]))
+    out = td.integrate(data, "u")
+    geometry = td.cell_geometry(data)
+    measures = geometry.measure.values.numpy()
+    bent = x[:4]
+    area = _patch(bent, lambda p: 1.0)
+    assert measures[0] == pytest.approx(area, rel=1e-10)
+    np.testing.assert_allclose(geometry.centroid.values.numpy()[0],
+                               _patch(bent, lambda p: p) / area, atol=1e-9)
+    projected = np.linalg.norm(np.cross(bent[2] - bent[0], bent[3] - bent[1])) / 2
+    assert projected < area * (1 - 1e-4) and _fan(x, [0, 1, 2, 3])[0].sum() > area * (1 + 1e-5)
+    dart = x[4:, :2]
+    shoelace = 0.5 * np.sum(dart[:, 0] * np.roll(dart[:, 1], -1) - np.roll(dart[:, 0], -1) * dart[:, 1])
+    assert measures[1] == pytest.approx(shoelace, rel=1e-13)        # 2 x 2 less a notch
+    assert out.measure == pytest.approx(area + shoelace, rel=1e-10)
+    assert out.values["u"] == pytest.approx(_patch(bent, lambda p: p[0] + 2 * p[2]), rel=1e-10)
+
+
 def test_only_the_meshs_own_dimension_counts():
     """A tetrahedron with a triangle, a line and a vertex beside it: the volume's
     integrals leave the lower-dimensional cells out, as VTK's vtkIntegrateAttributes
