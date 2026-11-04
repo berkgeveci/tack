@@ -405,8 +405,31 @@ def rewrite_templates(kernel_ast, template_args, python_func=None):
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
+    _resolve_reachable(funcdef, resolved_funcs, specializer)
     _prune_synthetic(funcdef, resolved_funcs, synthetic)
     return rewritten, resolved_funcs
+
+
+def _resolve_reachable(kernel_def, resolved_funcs, specializer):
+    """Resolve the template methods the kernel calls, and those they call: only
+    these are lowered, so a view's other methods cost nothing, and one that would
+    not resolve (a method using what this object lacks) is never reached."""
+    seen = set()
+    todo = [kernel_def]
+    while todo:
+        funcdef = todo.pop()
+        for node in ast.walk(funcdef):
+            if not (isinstance(node, ast.Name) and getattr(node, '_tack_template_call', False)):
+                continue
+            name = node.id
+            if name in seen:
+                continue
+            seen.add(name)
+            if name not in resolved_funcs and name in specializer.unresolved:
+                specializer._resolve_now(name)
+            resolved = resolved_funcs.get(name)
+            if isinstance(resolved, _ResolvedFunc):
+                todo.append(resolved._funcdef)
 
 
 def _prune_synthetic(kernel_def, resolved_funcs, synthetic):
@@ -718,11 +741,12 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays,
                for name, func_obj in template_func_methods(type(node.obj)).items()
                if name in node.methods}
     if specializer is not None:
+        # Resolved when a call reaches them (``_resolve_reachable``).
         specializer.unresolved.update(methods)
+        return nodes[()], extra
     for resolved_name, (func_obj, node) in methods.items():
-        if resolved_name not in resolved_funcs:
-            resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
-                                                            node, extra, specializer)
+        resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
+                                                        node, extra, specializer)
     return nodes[()], extra
 
 
