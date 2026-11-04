@@ -140,6 +140,79 @@ def _same_space(*fields):
 
 
 _RESOLVERS = []
+_DERIVED = {}             # name -> {location: compute}
+_LOCATIONS = ("points", "cells", "faces")
+
+
+def register_derived_field(name, compute, at):
+    """Lets ``name`` stand, at ``at`` (``"points"``, ``"cells"`` or ``"faces"``), for a
+    field a dataset makes from itself when it stores none of that name there:
+    ``compute(data)`` gives the ``Field`` on ``data``, made the first time it is
+    asked for and kept with the dataset while its geometry is the same. One name
+    is one quantity, registered at each location it has: Tack registers
+    ``normals`` (a surface's at its points and cells, ``surface_normals``'; every
+    mesh's at its faces, ``face_geometry``'s), ``measures`` (each cell's volume, area
+    or length; each face's area) and ``centroids`` (each cell's)."""
+    if at not in _LOCATIONS:
+        raise ValueError(f"at is one of {_LOCATIONS}, not {at!r}")
+    _DERIVED.setdefault(name, {})[at] = compute
+
+
+def derived_names():
+    """The names ``register_derived_field`` has registered."""
+    return tuple(_DERIVED)
+
+
+def _location(field):
+    from tack.dataset.spaces import H1, L2, Constant, Values
+
+    space = field.space
+    if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
+        return "points"
+    if isinstance(space, (Constant, L2)) or (isinstance(space, Values) and space.on == "cells"):
+        return "cells"
+    if isinstance(space, Values) and space.on == "faces":
+        return "faces"
+    return None
+
+
+def _derived(data, name, at):
+    made = data.__dict__.setdefault("_derived_fields", {})
+    hit = made.get((name, at))
+    if hit is not None and hit[0] is data.geometry:
+        return hit[1]
+    field = _DERIVED[name][at](data)
+    made[(name, at)] = (data.geometry, field)
+    return field
+
+
+def named_field(data, name, at=None):
+    """The field ``name`` names on ``data``, read at ``at`` (``"points"``, ``"cells"``,
+    ``"faces"``, or None for wherever it is). A field stored under the name there
+    comes first, then the one the dataset derives there
+    (``register_derived_field``), then one stored under the name elsewhere. With
+    no ``at``, the stored field, else the derived one at the first location it is
+    registered at that the dataset has. A ``KeyError`` for none."""
+    if not isinstance(name, str) or name not in _DERIVED:
+        return data.fields[name]
+    stored = data.fields.named(name)
+    places = _DERIVED[name]
+    if at is not None:
+        for field in stored:
+            if _location(field) == at:
+                return field
+        if at in places:
+            return _derived(data, name, at)
+        return data.fields[name]
+    if stored:
+        return data.fields[name]
+    reasons = []
+    for where in places:
+        try:
+            return _derived(data, name, where)
+        except (ValueError, TypeError, NotImplementedError) as e:
+            reasons.append(f"at {where}: {e}")
+    raise KeyError(f"{name!r} is derived from no part of this dataset ({'; '.join(reasons)})")
 
 
 def register_field_resolver(resolve):
@@ -152,8 +225,8 @@ def register_field_resolver(resolve):
 
 
 def _resolved(data, text):
-    if not isinstance(text, str) or text in data.fields:
-        return data.fields[text]
+    if not isinstance(text, str) or text in data.fields or text in _DERIVED:
+        return named_field(data, text)
     for resolve in reversed(_RESOLVERS):
         field = resolve(data, text)
         if field is not None:

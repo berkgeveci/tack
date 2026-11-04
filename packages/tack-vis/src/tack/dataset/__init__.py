@@ -14,6 +14,7 @@ locator; ``sources`` the wavelet and tangle; ``algorithms`` every algorithm,
 one module each, all re-exported here.
 """
 
+import tack.dataset.algorithms.derived
 from tack.dataset import (
     algorithms,
     implicit,
@@ -112,7 +113,13 @@ from tack.dataset.algorithms import (
     voxelize,
     warp,
 )
-from tack.dataset.algorithms._common import edge_crossing, register_field_resolver
+from tack.dataset.algorithms._common import (
+    derived_names,
+    edge_crossing,
+    named_field,
+    register_derived_field,
+    register_field_resolver,
+)
 from tack.dataset.algorithms.gradients import world_gradient, world_hessian, world_jet
 from tack.dataset.amr import AMRDataSet
 from tack.dataset.carry import Interpolate, Pieces, Same, Take, carry
@@ -232,6 +239,7 @@ __all__ = [
     "cross",
     "cylindrical",
     "deposit",
+    "derived_names",
     "divergence",
     "dot",
     "drop_marks",
@@ -272,6 +280,7 @@ __all__ = [
     "mask_points",
     "merge_pieces",
     "merge_points",
+    "named_field",
     "net_flux",
     "orient",
     "outliers",
@@ -285,6 +294,7 @@ __all__ = [
     "probe",
     "project",
     "rectilinear_grid",
+    "register_derived_field",
     "register_field_resolver",
     "remove_ghosts",
     "shapes",
