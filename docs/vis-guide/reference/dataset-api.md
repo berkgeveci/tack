@@ -1362,8 +1362,11 @@ The rules are Viskores':
 
 - a step is taken whole when every stage of it lies in the mesh;
 - a step that would leave the mesh is bisected to the boundary, and the
-  particle is then pushed out by the step still left, ending just outside
-  with `SPATIAL_BOUNDS`;
+  particle is then pushed just outside by an Euler step from the last point
+  inside (the bisection's bracket, grown until the locator finds no cell
+  there, at most the way to the boundary again), ending with
+  `SPATIAL_BOUNDS`; its time and path length count the way it went.
+  Viskores pushes by the way to the boundary again, counting it once;
 - a particle stops after `steps` steps, outside the mesh, or at zero
   velocity;
 - a seed outside the mesh does not move and loses `SUCCESS`.
@@ -1384,7 +1387,12 @@ that ends in a ghost cell and the cell's owner goes on with whole steps,
 so the paths are the whole mesh's, up to rounding, wherever a step
 (`step_size` times the speed) fits in the ghost layer. Without ghost cells
 a particle crosses by the short step to the boundary and the push out, so
-it differs by about a step. `advect` returns a `PartitionedDataSet` of the
+it differs by about a step. Pieces whose shared faces are not one surface
+(a hexahedron's bilinear face against a polyhedron's fanned one, in a
+`polyhedral="split"` reading) leave slivers that no piece holds: a particle
+pushed into one goes on from where the push would have ended going the way
+to the boundary again, if a piece holds that, the move counted in its time
+and length and drawn in its stretch. `advect` returns a `PartitionedDataSet` of the
 particles on the pieces they stopped in (or left the domain from), each
 with a `seed` (its number among all the seeds); `streamlines` one of each
 piece's stretches of the paths, with `seed` and `segment` on the cells,

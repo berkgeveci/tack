@@ -97,7 +97,8 @@ _MAX_DIV = tack.constant(18446744073709551616.0)
 @tack.kernel
 def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, steps, status,
             trace, trace_times, lengths, capacity, record, ghosts, handoff, budget, first,
-            moved, hints, tol, min_step, max_step, max_length, terminal, hs, travelled):
+            moved, hints, tol, min_step, max_step, max_length, terminal, hs, travelled,
+            beyond, beyond_time, beyond_length):
     # by_length: h is an arc length, and the particle follows the velocity's
     # direction, v / |v| -- vtkStreamTracer's length unit -- with the time a
     # unit of length takes, 1 / |v|, integrated beside it by the same weights.
@@ -123,6 +124,15 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
     # the length unit. terminal (0: none) is vtkStreamTracer's TerminalSpeed: a
     # whole step is not begun where the velocity's speed is at or below it, so a
     # path ends at its first point that slow (the seed's too).
+    #
+    # A push out that ends outside also writes, for routing over pieces, where
+    # the push would have ended had it gone r1 from curr (beyond[q], the move
+    # from x there) and the time and length that move takes: pieces whose
+    # shared faces are not the same surface (a hexahedron's bilinear face
+    # against a polyhedron's fanned one) leave slivers between them that no
+    # piece holds, and a particle pushed into one goes on from there. The
+    # arrays are written only there (zero otherwise, as the caller fills them),
+    # so a launch that skips a stopped particle keeps them.
     for q in range(xs.shape[0]):
         x = xs[q]
         t = times[q]
@@ -153,6 +163,8 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
         w5 = w1
         curr = x
         out = x
+        push = h - h              # the push out's length past curr
+        wc = h - h                # the time a unit of length takes at curr
         mode = _STEP
         stage = 0
         sub = hc
@@ -378,19 +390,33 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     r1 = sub
                 bisect = 1
             elif mode == _LAST:
+                # The push out: an Euler step from curr, the last point inside, by
+                # the bisection's bracket, so the particle lands just outside, r1
+                # from where it was (Viskores' SmallStep pushes from curr by r1,
+                # twice the way to the boundary, counting it once: between
+                # pieces a path went on from there, past max_length, or out of
+                # the mesh across a thin layer). A bracket too small to leave
+                # the tolerance or a position's last bit grows fourfold, to r1.
                 vel = v
-                out = curr + r1 * vel
-                if by_length == 1:
-                    t += r1 * w
-                else:
-                    t += r1
+                wc = w
+                push = r1 - r0
+                if push <= 0.0:
+                    push = r1
+                out = curr + push * vel
                 mode = _OUT
+            elif mode == _OUT and found == 1 and push < r1:
+                push = min(4.0 * push, r1)
+                out = curr + push * vel
             else:
-                # Where the push out ends: the step is taken, in or out.
+                # Where the push out ends: the step is taken, in or out, r0 + push
+                # along the way.
                 if by_length == 1:
-                    gone += r1
+                    t += (r0 + push) * wc
+                    gone += r0 + push
                 else:
+                    t += r0 + push
                     gone += (out - x).norm()
+                start = x
                 x = out
                 n += 1
                 here += 1
@@ -401,7 +427,15 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     length += 1
                 if found == 0:
                     st = st | SPATIAL_BOUNDS
-                elif method == _RK45 and (out - x).norm() < min_step * (
+                    rest = r1 - push
+                    beyond[q] = rest * vel
+                    if by_length == 1:
+                        beyond_time[q] = rest * wc
+                        beyond_length[q] = rest
+                    else:
+                        beyond_time[q] = rest
+                        beyond_length[q] = (rest * vel).norm()
+                elif method == _RK45 and (x - start).norm() < min_step * (
                         1.0 if by_length == 1 else vel.norm()):
                     # Moved less than RK45's shortest step: at a wall the flow
                     # turns back from, a stage point swings out of the mesh at
@@ -474,7 +508,7 @@ _CHUNKED_ON_CPU = False
 
 def _launches(mesh, velocity, step_size, steps, args, device, adaptive):
     """Run ``_advect`` (``args``, its arguments from ``method`` to ``handoff``;
-    ``adaptive``, from ``tol`` to ``travelled``) until no particle has steps left
+    ``adaptive``, from ``tol`` to ``beyond_length``) until no particle has steps left
     or is not stopped: on the CPU in one launch, else in launches of a bounded
     number of steps."""
     import time
@@ -640,6 +674,9 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
     lengths = tack.empty((m,), tack.i32)
     hs = tack.empty((m,), dtype)
     travelled = tack.empty((m,), dtype)
+    beyond = tack.zeros((m,), tack.vec(3, dtype))
+    beyond_time = tack.zeros((m,), dtype)
+    beyond_length = tack.zeros((m,), dtype)
     capacity = int(steps) + 1 if record else 1
     trace = tack.empty((m * capacity,), tack.vec(3, dtype))
     trace_times = tack.empty((m * capacity,), dtype)
@@ -666,5 +703,7 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record, resu
                    taken, status, trace, trace_times, lengths, capacity, 1 if record else 0,
                    ghosts, 1 if marks is not None else 0), xs.device,
                   (tol, low, high, 0.0 if max_length is None else float(max_length),
-                   0.0 if terminal_speed is None else float(terminal_speed), hs, travelled))
-    return xs, times, taken, status, (trace, trace_times), lengths, capacity, (hs, travelled)
+                   0.0 if terminal_speed is None else float(terminal_speed), hs, travelled,
+                   beyond, beyond_time, beyond_length))
+    return (xs, times, taken, status, (trace, trace_times), lengths, capacity,
+            (hs, travelled, beyond, beyond_time, beyond_length))
