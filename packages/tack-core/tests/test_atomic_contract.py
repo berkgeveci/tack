@@ -287,6 +287,8 @@ def test_cuda_hip_wide_atomic_syntax(arch, generator, dtype, op, tmp_path):
 // CUDA's unfusable products, as the generator emits them for a named product.
 static inline float __fmul_rn(float a, float b) { return a * b; }
 static inline double __dmul_rn(double a, double b) { return a * b; }
+static inline float __fmaf_rn(float a, float b, float c) { return fmaf(a, b, c); }
+static inline double __fma_rn(double a, double b, double c) { return fma(a, b, c); }
 struct Dim { unsigned int x; };
 extern Dim threadIdx, blockIdx, blockDim;
 unsigned long long atomicCAS(unsigned long long*, unsigned long long, unsigned long long);

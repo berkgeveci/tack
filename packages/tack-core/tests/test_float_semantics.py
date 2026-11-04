@@ -249,7 +249,8 @@ def _later_sums(a, b, c, out):
 
 def _check_later_sums(dtype):
     # p - p above cannot show it: the compiler folds it whether or not it
-    # fuses. A named product read once by a later sum can: NVRTC's --fmad=true
+    # fuses. A named product read once by a later sum can: NVRTC's --fmad=true, as
+    # CUDA used to compile,
     # fused p = a * b into p + c across the statement (all 100k on an RTX 4060
     # Ti), the product never rounded. With c = -p rounded, p + c is exactly 0,
     # and a fused result is p's rounding error instead.
@@ -463,6 +464,8 @@ def test_generated_cpp_executes_safe_identities(dtype, generate, tmp_path):
 // CUDA's unfusable products, as the generator emits them for a named product.
 static inline float __fmul_rn(float a, float b) { return a * b; }
 static inline double __dmul_rn(double a, double b) { return a * b; }
+static inline float __fmaf_rn(float a, float b, float c) { return fmaf(a, b, c); }
+static inline double __fma_rn(double a, double b, double c) { return fma(a, b, c); }
 struct Grid { unsigned int x; };
 Grid blockIdx = {0}, blockDim = {1}, threadIdx = {0};
 ''' + source + f'''

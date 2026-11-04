@@ -235,7 +235,7 @@ target also names:
 | `--ftz=false` | keep denormals rather than flushing to zero |
 | `--prec-div=true` | IEEE-rounded division |
 | `--prec-sqrt=true` | IEEE-rounded square root |
-| `--fmad=true` | allow multiply-add contraction, which the contract permits; the generator emits a product outside a sum as `__fmul_rn`/`__dmul_rn`, since NVRTC also fuses across statements |
+| `--fmad=false` | NVRTC fuses nothing; the generator writes the contractions the contract permits as `__fmaf_rn`/`__fma_rn` (a sum or difference with a product operand) and every other product as `__fmul_rn`/`__dmul_rn`, so an expression rounds the same in every kernel |
 | `--extra-device-vectorization` | let NVRTC vectorize more aggressively |
 
 `--use_fast_math` is never passed. No target architecture is given, so
