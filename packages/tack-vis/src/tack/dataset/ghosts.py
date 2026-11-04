@@ -37,6 +37,36 @@ from tack.runtime.dispatch import (
 __all__ = ["Ghosts"]
 
 
+class _Lost:
+    """What a dataset lost of its input's ghost marks, kind by kind: for its cells
+    and for its points, the reason (a sentence, or ``True``), or ``None`` where that
+    kind's marks still hold. A filter that cannot place the points it makes on
+    shared edges and faces still knows its cells' owners when each cell came from
+    one input cell, and a reduction over cells (``integrate``, statistics of a
+    cell field) needs only those. True when either kind is lost, so a reader asking
+    only whether anything was lost reads it as before."""
+
+    __slots__ = ("cells", "points")
+
+    def __init__(self, cells=None, points=None):
+        self.cells = cells or None
+        self.points = points or None
+
+    def __bool__(self):
+        return self.cells is not None or self.points is not None
+
+    def __repr__(self):
+        return f"_Lost(cells={self.cells!r}, points={self.points!r})"
+
+
+def _lost(record):
+    """A dataset's ``_ghosts_lost`` as a ``_Lost``: ``False``, a reason for both kinds,
+    or a ``_Lost``."""
+    if isinstance(record, _Lost):
+        return record
+    return _Lost(record, record) if record else _Lost()
+
+
 def keep_marks(source, out):
     """``out``, a dataset on ``source``'s cells and points (the same topology), with
     ``source``'s ghost marks -- and its record of having lost them -- and its
@@ -48,14 +78,19 @@ def keep_marks(source, out):
     return _keep_frame(source, out)
 
 
-def drop_marks(source, out, reason=True):
+def drop_marks(source, out, reason=True, cells_kept=False):
     """``out``, made from ``source``'s cells and points by a filter that cannot give
     it ghost marks: if ``source`` had marks, or had lost them, record that
     ``out`` lost them (``reason``, a sentence saying why, or ``True``), so
     reductions refuse it rather than count shared cells and points once per
-    piece."""
+    piece. With ``cells_kept`` only its points' marks are lost: its cells came one
+    each from ``source``'s cells, whose marks (or, without any, ownership of every
+    cell) ``out`` keeps, unless ``source`` had lost those too."""
     if source.ghosts is not None or source._ghosts_lost:
-        out._ghosts_lost = source._ghosts_lost or reason
+        before = _lost(source._ghosts_lost)
+        points = before.points or before.cells or reason
+        cells = before.cells if cells_kept else (before.cells or reason)
+        out._ghosts_lost = _Lost(cells=cells, points=points)
     out.origin = source.origin
     return _keep_frame(source, out)
 
@@ -196,24 +231,28 @@ def owned_values(data, field):
 
     if is_field_key(field):
         field = data.fields[field]
-    if data._ghosts_lost:
-        why = data._ghosts_lost if isinstance(data._ghosts_lost, str) else (
-            "the filter that made it does not carry the marks")
+    space = field.space
+    on_points = (isinstance(space, H1) and space.order == 1) or (
+        isinstance(space, Values) and space.on == "points")
+    on_cells = isinstance(space, (Constant, L2)) or (
+        isinstance(space, Values) and space.on == "cells")
+    # Only the marks of where the values live: a filter that lost its points'
+    # marks but kept its cells' still reduces cell values (integrate's).
+    lost = _lost(data._ghosts_lost)
+    why = lost.points if on_points else lost.cells if on_cells else (lost.cells or lost.points)
+    if why:
+        kind = "points" if on_points else "cells" if on_cells else "cells and points"
+        reason = why if isinstance(why, str) else "the filter that made it does not carry the marks"
         raise NotImplementedError(
-            f"this dataset is a filter's output from data with ghost marks, and {why}: "
-            "its shared cells and points would count once per piece. "
+            f"this dataset is a filter's output from data with ghost marks, and {reason}: "
+            f"its shared {kind} would count once per piece. "
             "td.generate_global_ids(pieces) of the outputs marks them by matching "
             "(or reduce the input instead, or set the output's ghosts)")
     values = materialize(field.values)
     ghosts = data.ghosts
     if ghosts is None or (ghosts.cells is None and ghosts.points is None):
         return values
-    space = field.space
     n = size_of(values)
-    on_points = (isinstance(space, H1) and space.order == 1) or (
-        isinstance(space, Values) and space.on == "points")
-    on_cells = isinstance(space, (Constant, L2)) or (
-        isinstance(space, Values) and space.on == "cells")
     if on_points:
         marks, skipped = ghosts.points, Ghosts.SKIPPED_POINTS
     elif on_cells:
@@ -434,23 +473,32 @@ def carry_marks(source, out, points=None, cells=None, faces_to_cells=None,
     ``generate_global_ids`` of the outputs decides the rest by matching."""
     from tack.dataset.carry import Interpolate, Same, Take, _take
 
-    if source._ghosts_lost:
-        out._ghosts_lost = source._ghosts_lost
-        return out
+    # The output's cells came one each from the input's (not from its faces or
+    # edges), so they keep their source cells' marks whatever the points lose.
+    from_cells = cells is not None and faces_to_cells is None and edges_to_cells is None
     ghosts = source.ghosts
+    if source._ghosts_lost:
+        before = _lost(source._ghosts_lost)
+        if from_cells and before.cells is None and ghosts is not None and \
+                ghosts.cells is not None:
+            out.ghosts = Ghosts(cells=ghosts.cells if isinstance(cells, Same)
+                                else _take(ghosts.cells, cells.ids))
+        return drop_marks(source, out, before.points or before.cells,
+                          cells_kept=from_cells)
     if ghosts is None or (ghosts.cells is None and ghosts.points is None):
         return out
     if isinstance(points, Same) and isinstance(cells, Same):
         return keep_marks(source, out)
     reason = _unplaceable(source, points, cells, faces_to_cells, edges_to_cells)
     if reason is not None:
-        # Cells from source cells still have their owners: kept beside the record,
-        # for generate_global_ids, which decides the rest.
-        if ghosts.cells is not None and cells is not None and faces_to_cells is None \
-                and edges_to_cells is None:
+        # What cannot be placed is the points (made on, or kept for, shared edges and
+        # faces). Cells from source cells still have their owners: kept, and the
+        # loss recorded for the points alone, so reductions over cells go on;
+        # generate_global_ids decides the rest.
+        if from_cells and ghosts.cells is not None:
             out.ghosts = Ghosts(cells=ghosts.cells if isinstance(cells, Same)
                                 else _take(ghosts.cells, cells.ids))
-        return drop_marks(source, out, reason)
+        return drop_marks(source, out, reason, cells_kept=from_cells)
     point_marks = None
     if isinstance(points, Same):
         point_marks = ghosts.points

@@ -632,6 +632,44 @@ def test_pieces_without_ghost_cells_refuse_what_their_neighbours_decide():
     assert td.statistics(td.PartitionedDataSet(points), "RTData").n == whole.num_points
 
 
+@pytest.mark.parametrize("name", ["contour", "clip", "slice", "threshold", "clip, contour",
+                                  "as_polyhedra, contour"])
+def test_outputs_that_lost_only_their_points_marks_reduce_over_cells(name):
+    """Pieces without ghost cells cannot place the points a filter makes on shared
+    edges and faces, but a cell the filter made from one input cell has that
+    cell's owner. The loss is recorded for the points alone, so a reduction over
+    cells goes on: integrate's measure over the pieces is the whole output's,
+    while a point field's statistics are still refused. The split reading of a
+    mesh of shaped cells and polyhedra is such pieces (a contour's area could not
+    be integrated)."""
+    whole = td.wavelet(6)
+    filter = _FILTERS[name]
+    outputs = [filter(p) for p in td.split(whole, (2, 2, 2))]        # no ghost layers
+    assert any(out._ghosts_lost for out in outputs)
+    assert not any(out._ghosts_lost.cells for out in outputs if out._ghosts_lost)
+    expected = td.integrate(filter(whole), fields=[]).measure
+    total = sum(td.integrate(out, fields=[]).measure for out in outputs if out.num_cells)
+    assert total == pytest.approx(expected, rel=1e-5)
+    if "RTData" in outputs[0].fields:
+        with pytest.raises(NotImplementedError, match="shared points"):
+            td.statistics(td.PartitionedDataSet(outputs), "RTData")
+
+
+def test_a_surface_of_pieces_loses_its_cells_marks_too():
+    """extract_surface's cells are input faces: a piece without ghost cells outputs
+    the faces it shares with its neighbours, so its cells' owners are lost too and
+    integrate refuses; setting the output's ghosts (to None as well) clears the
+    record."""
+    outputs = [td.extract_surface(p) for p in td.split(td.wavelet(6), (2, 2, 2))]
+    lost = [out for out in outputs if out._ghosts_lost]
+    assert lost and all(out._ghosts_lost.cells for out in lost)
+    with pytest.raises(NotImplementedError, match="shared cells"):
+        td.integrate(lost[0], fields=[])
+    lost[0].ghosts = None
+    assert not lost[0]._ghosts_lost
+    td.integrate(lost[0], fields=[])
+
+
 @pytest.mark.parametrize("name", [n for n in _FILTERS if "surface" not in n])
 def test_generate_global_ids_marks_outputs_that_lost_the_marks(name):
     """What a piece without ghost cells cannot decide alone, ``generate_global_ids``

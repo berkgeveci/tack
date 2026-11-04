@@ -220,13 +220,21 @@ def test_shrink(data):
 
 
 def test_a_dataset_built_by_hand_keeps_the_record_of_lost_marks():
-    """Contours of pieces without ghost cells cannot place their points' marks;
-    a reduction over them must refuse, after a user's filter too."""
-    pieces = td.generate_global_ids(td.split(CASES["image"], 4))
+    """Contours of pieces without ghost cells cannot place their points' marks, but
+    each of their cells came from one input cell, whose owner it keeps. A user's
+    filter keeps that record: a reduction over the contours' points refuses, after
+    the filter too, while one over their cells (shrink's L2 values, one block per
+    cell) counts each cell once, as the whole's."""
+    whole = CASES["image"]
+    pieces = td.generate_global_ids(td.split(whole, 4))
     cut = [td.contour(p, "RTData", 180.0) for p in pieces]
-    shrunk = td.PartitionedDataSet([shrink(c, 0.5) for c in cut])
     with pytest.raises(NotImplementedError, match="ghost marks"):
-        td.statistics(shrunk, "RTData")
+        td.statistics(td.PartitionedDataSet(cut), "RTData")
+    shrunk = td.PartitionedDataSet([shrink(c, 0.5) for c in cut])
+    expected = td.statistics(shrink(td.contour(whole, "RTData", 180.0), 0.5), "RTData")
+    got = td.statistics(shrunk, "RTData")
+    assert got.n == expected.n
+    assert got.mean == pytest.approx(expected.mean, rel=1e-6)
 
 
 # ── Faces and cells: jump of cell data, net_flux ────────────────────
