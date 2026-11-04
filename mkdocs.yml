@@ -25,11 +25,19 @@ theme:
   name: material
   # The banner on every version but the latest release (overrides/main.html).
   custom_dir: overrides
+  # The system's fonts, as NumPy's documentation (the PyData theme) uses.
+  font: false
   features:
     - navigation.tabs
     - navigation.sections
+    # A section's index.md opens from its heading in the sidebar; breadcrumbs above
+    # each page and previous/next links below it, as NumPy's documentation has.
+    - navigation.indexes
+    - navigation.path
+    - navigation.footer
     - navigation.top
     - navigation.tracking
+    - content.action.edit
     - content.code.copy
     - content.code.annotate
     # Ties every backend tab on the page together: pick CUDA once and every
@@ -41,14 +49,14 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
+      primary: white
       accent: indigo
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
+      primary: black
       accent: indigo
       toggle:
         icon: material/weather-sunny
@@ -109,84 +117,89 @@ validation:
     not_found: warn
 
 nav:
-  - What Tack is: index.md
-  - Use cases: use-cases.md
-  - Install: install.md
-  - "1. Core":
-      - core/index.md
-      - How a Tack program runs: core/how-programs-run.md
-      - Learn:
-          - Arrays and types: core/arrays-and-types.md
-          - Kernels: core/kernels.md
-          - Control flow and math: core/control-flow-and-math.md
-          - Device functions: core/device-functions.md
-          - Vectors and matrices: core/vectors-and-matrices.md
-          - Device classes: core/device-classes.md
-          - Reductions, scans and sorts: core/reductions-scans-sorts.md
-          - Memory and parallel correctness: core/memory-and-correctness.md
-      - Do:
-          - Choose a device: core/choose-a-device.md
-          - Share arrays: core/share-arrays.md
-          - Workgroups, atomics, textures, random numbers: core/workgroups-atomics-textures.md
-          - Wait without blocking (asyncio): core/asyncio.md
-          - Debug and time a kernel: core/debug-and-time.md
-          - Keep compiled kernels: core/kernel-cache.md
-      - Examples:
-          - core/examples.md
-          - Heat diffusion: users-guide/tutorials/heat.md
-          - Advecting dye: users-guide/tutorials/dye.md
-          - Trail-following agents: users-guide/tutorials/physarum.md
-          - Marching squares: users-guide/tutorials/contours.md
-          - Particle-to-grid simulation: users-guide/tutorials/mpm.md
-          - Tiled n-body forces: users-guide/tutorials/nbody.md
-  - "2. Communication":
-      - communication/index.md
-      - Blocks and worlds: communication/blocks-and-worlds.md
-      - Exchange and plans: communication/exchange-and-plans.md
-      - Route points to blocks: communication/routing.md
-      - Sort and reduce over blocks: communication/sort-and-reduce.md
-      - Run under MPI: communication/mpi.md
-  - "3. Data":
-      - data/index.md
-      - Understand:
-          - Topology and geometry: data/topology-and-geometry.md
-          - Fields and where values live: data/fields.md
-          - Coordinates, units and time: data/units-coordinates-time.md
-          - Cells and meshes: data/cells-and-meshes.md
-          - Polyhedra, polygons and polylines: data/polyhedra.md
-          - Higher-order and finite-element data: data/higher-order.md
-          - Particles and point clouds: data/particles.md
-          - AMR hierarchies and octrees: data/amr-and-octrees.md
-          - Data in pieces: data/pieces.md
-          - Storage and layouts: data/storage-and-layouts.md
-      - Do:
-          - Build meshes and fields: data/build-meshes-and-fields.md
-          - Connect a simulation's data: data/connect-simulation-data.md
-          - Data on devices: data/devices.md
-  - "4. Visualization":
-      - visualization/index.md
-      - Filters by task:
-          - Extract: visualization/extract.md
-          - Derive: visualization/derive.md
-          - Sample and trace: visualization/sample-and-trace.md
-          - Reduce: visualization/reduce.md
-          - Points and particles: visualization/points-and-particles.md
-          - Adaptive data: visualization/adaptive-data.md
-          - Finite-volume data and fluxes: visualization/finite-volume.md
-      - At scale and over time:
-          - Filters over pieces: visualization/over-pieces.md
-          - Steps over time: visualization/over-time.md
-      - Extend:
-          - Views: visualization/views.md
-          - Write a mesh algorithm: visualization/write-a-mesh-algorithm.md
-          - Write a filter: visualization/write-a-filter.md
-      - Connect:
-          - VTK: visualization/vtk.md
-          - MFEM, Warp and others: visualization/mfem-warp-and-others.md
-      - Examples:
-          - visualization/examples.md
-          - Gallery: vis-guide/gallery.md
-          - MFEM gallery: vis-guide/mfem-gallery.md
+  # Five tabs, as NumPy's documentation has a few: what comes before the layers
+  # (NumPy's "Getting started"), the guide (the four layers, each a group of the
+  # sidebar), the reference, the developers' guide and the design notes.
+  - Get started:
+      - index.md
+      - Use cases: use-cases.md
+      - Install: install.md
+  - Guide:
+      - Core:
+          - core/index.md
+          - How a Tack program runs: core/how-programs-run.md
+          - Learn:
+              - Arrays and types: core/arrays-and-types.md
+              - Kernels: core/kernels.md
+              - Control flow and math: core/control-flow-and-math.md
+              - Device functions: core/device-functions.md
+              - Vectors and matrices: core/vectors-and-matrices.md
+              - Device classes: core/device-classes.md
+              - Reductions, scans and sorts: core/reductions-scans-sorts.md
+              - Memory and parallel correctness: core/memory-and-correctness.md
+          - Do:
+              - Choose a device: core/choose-a-device.md
+              - Share arrays: core/share-arrays.md
+              - Workgroups, atomics, textures, random numbers: core/workgroups-atomics-textures.md
+              - Wait without blocking (asyncio): core/asyncio.md
+              - Debug and time a kernel: core/debug-and-time.md
+              - Keep compiled kernels: core/kernel-cache.md
+          - Examples:
+              - core/examples.md
+              - Heat diffusion: users-guide/tutorials/heat.md
+              - Advecting dye: users-guide/tutorials/dye.md
+              - Trail-following agents: users-guide/tutorials/physarum.md
+              - Marching squares: users-guide/tutorials/contours.md
+              - Particle-to-grid simulation: users-guide/tutorials/mpm.md
+              - Tiled n-body forces: users-guide/tutorials/nbody.md
+      - Communication:
+          - communication/index.md
+          - Blocks and worlds: communication/blocks-and-worlds.md
+          - Exchange and plans: communication/exchange-and-plans.md
+          - Route points to blocks: communication/routing.md
+          - Sort and reduce over blocks: communication/sort-and-reduce.md
+          - Run under MPI: communication/mpi.md
+      - Data:
+          - data/index.md
+          - Understand:
+              - Topology and geometry: data/topology-and-geometry.md
+              - Fields and where values live: data/fields.md
+              - Coordinates, units and time: data/units-coordinates-time.md
+              - Cells and meshes: data/cells-and-meshes.md
+              - Polyhedra, polygons and polylines: data/polyhedra.md
+              - Higher-order and finite-element data: data/higher-order.md
+              - Particles and point clouds: data/particles.md
+              - AMR hierarchies and octrees: data/amr-and-octrees.md
+              - Data in pieces: data/pieces.md
+              - Storage and layouts: data/storage-and-layouts.md
+          - Do:
+              - Build meshes and fields: data/build-meshes-and-fields.md
+              - Connect a simulation's data: data/connect-simulation-data.md
+              - Data on devices: data/devices.md
+      - Visualization:
+          - visualization/index.md
+          - Filters by task:
+              - Extract: visualization/extract.md
+              - Derive: visualization/derive.md
+              - Sample and trace: visualization/sample-and-trace.md
+              - Reduce: visualization/reduce.md
+              - Points and particles: visualization/points-and-particles.md
+              - Adaptive data: visualization/adaptive-data.md
+              - Finite-volume data and fluxes: visualization/finite-volume.md
+          - At scale and over time:
+              - Filters over pieces: visualization/over-pieces.md
+              - Steps over time: visualization/over-time.md
+          - Extend:
+              - Views: visualization/views.md
+              - Write a mesh algorithm: visualization/write-a-mesh-algorithm.md
+              - Write a filter: visualization/write-a-filter.md
+          - Connect:
+              - VTK: visualization/vtk.md
+              - MFEM, Warp and others: visualization/mfem-warp-and-others.md
+          - Examples:
+              - visualization/examples.md
+              - Gallery: vis-guide/gallery.md
+              - MFEM gallery: vis-guide/mfem-gallery.md
   - Reference:
       - Core:
           - Runtime API: contracts/runtime-api.md
@@ -242,6 +255,9 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/berkgeveci/tack
+
+extra_css:
+  - stylesheets/tack.css
 
 extra_javascript:
   - assets/guide-section-links.js
