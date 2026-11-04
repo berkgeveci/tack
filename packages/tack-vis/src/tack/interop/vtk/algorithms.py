@@ -57,23 +57,79 @@ run that succeeded), for Python callers.
 import tack
 
 __all__ = [
+    "Advect",
+    "AsPolygons",
+    "AsPolyhedra",
+    "BoundaryFaces",
+    "CellCenters",
+    "CellGeometry",
+    "CellIds",
     "CellQuality",
+    "CheckWinding",
     "Clip",
+    "Composite",
     "ConnectedComponents",
     "Contour",
+    "Convert",
+    "Cross",
+    "Cylindrical",
+    "Deposit",
+    "Dot",
+    "EdgeLengths",
     "Elevation",
+    "ExtractCells",
+    "ExtractEdges",
+    "ExtractExtent",
+    "ExtractGeometry",
+    "ExtractPoints",
     "ExtractSurface",
+    "FaceCenters",
+    "FaceGeometry",
+    "FeatureEdges",
+    "FlowQuantities",
     "GenerateGlobalIds",
     "GhostCells",
+    "GhostPoints",
+    "Glyphs",
     "Gradients",
+    "HaloCatalog",
+    "ImplicitValues",
+    "Interpolate",
+    "Jump",
+    "LogValues",
+    "Magnitude",
+    "Mask",
+    "MaskPoints",
     "MergePieces",
+    "MergePoints",
+    "Outliers",
+    "PointIds",
+    "PointNormals",
     "Probe",
+    "Project",
+    "RemoveGhosts",
+    "Shrink",
+    "Slice",
     "SlicePlane",
+    "SphDensity",
+    "SphInterpolate",
+    "Spherical",
+    "Split",
     "Streamlines",
+    "Subdivide",
     "SurfaceNormals",
     "TackAlgorithm",
     "Tetrahedralize",
     "Threshold",
+    "ThresholdPoints",
+    "Transform",
+    "Triangulate",
+    "Tubes",
+    "UpwindFlux",
+    "ValuesAtCenters",
+    "VoxelDownsample",
+    "Voxelize",
+    "Warp",
 ]
 
 import inspect
@@ -310,20 +366,28 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
     it runs; the class gets a parameter for each of its arguments but the data and
     what the wrapper supplies (``_SUPPLIED``, ``EXCLUDE``), with the function's
     defaults, unless the class gives one itself. ``FIELDS`` names the parameters
-    that are fields, in ``SetInputArrayToProcess``'s order, and ``IMPLICIT`` those
-    that may be implicit functions.
+    that are fields, in ``SetInputArrayToProcess``'s order, ``IMPLICIT`` those
+    that may be implicit functions, and ``DATASETS`` those that may be VTK datasets
+    (an image a filter samples onto), converted as the input is.
 
     ``compute(piece)`` gives a Tack dataset from a Tack dataset, by default the
     function called with the parameters; ``execute(data)`` runs it on a dataset or
     on each piece of a ``PartitionedDataSet``, and a subclass whose answer needs every
-    piece overrides it. ``OUTPUT`` names the output's VTK type for a dataset input
-    (``None``: the input's own)."""
+    piece overrides it. ``OUTPUT`` names the output's VTK type for a dataset input:
+    a VTK class name; ``None``, the input's own; ``"structure"``, an image,
+    rectilinear or structured grid's own and otherwise an unstructured grid (a
+    filter that keeps the cells' structure); ``"points"``, a structured grid for any
+    of those three and otherwise an unstructured grid (a filter that moves the
+    points). ``INPUTS`` counts the input ports, the first ``REQUIRED_INPUTS`` of
+    them required."""
 
     OUTPUT = "vtkUnstructuredGrid"
     INPUTS = 1
+    REQUIRED_INPUTS = None
     FUNCTION = None
     FIELDS = ()
     IMPLICIT = ()
+    DATASETS = ()
     EXCLUDE = ()
 
     #: The exception the last run raised, or ``None``.
@@ -402,8 +466,11 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         (``_field_argument``, ``SetInputArrayToProcess``) and VTK's implicit functions
         made Tack's. A required one unset is an error naming it."""
         values = {}
+        supplied = self._supplied()
         for name in getattr(self, "_ARGUMENTS", ()):
             value = getattr(self, name)
+            if value is None and name in supplied:
+                value = supplied[name]
             if name in self.FIELDS:
                 if value is None:
                     value = self._input_array(self.FIELDS.index(name))
@@ -412,6 +479,8 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
                 value = [_field_argument(v) for v in value]
             if name in self.IMPLICIT:
                 value = _implicit(value)
+            if name in self.DATASETS and isinstance(value, vtkDataObject):
+                value = self._dataset(value, self.device)
             if value is None and name in self._REQUIRED:
                 raise ValueError(f"{type(self).__name__} needs {name!r}")
             values[name] = value
@@ -440,6 +509,11 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         """``_as_dataset``, a partitioned one in this run's World."""
         return _in_world(_as_dataset(vtk_data, device), self._run_world)
 
+    def _supplied(self):
+        """Arguments this run supplies where their parameters are unset: seeds read from
+        a source port."""
+        return {}
+
     # ── The pipeline ────────────────────────────────────────────────
 
     # The pipeline's information objects are read and set with Get/Set/Append:
@@ -449,17 +523,29 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         info.Set(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), _INPUT_TYPES[0])
         for kind in _INPUT_TYPES[1:]:
             info.Append(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), kind)
+        required = self.INPUTS if self.REQUIRED_INPUTS is None else self.REQUIRED_INPUTS
+        if port >= required:
+            info.Set(vtkAlgorithm.INPUT_IS_OPTIONAL(), 1)
         return 1
 
     def _output_type(self, input):
         """The VTK class of the output for ``input``, a dataset or a partitioned
         dataset (trees keep their type)."""
+        import vtkmodules.vtkCommonDataModel as dm
+
         if isinstance(input, vtkPartitionedDataSet):
             return vtkPartitionedDataSet
         if self.OUTPUT is None:
             return type(input)
-        import vtkmodules.vtkCommonDataModel as dm
-
+        structured = (dm.vtkImageData, dm.vtkRectilinearGrid, dm.vtkStructuredGrid)
+        if self.OUTPUT == "structure":
+            # By isinstance: a vtkUniformGrid is an image, and the pythonic API's
+            # classes are subclasses.
+            return next((kind for kind in structured if isinstance(input, kind)),
+                        dm.vtkUnstructuredGrid)
+        if self.OUTPUT == "points":
+            return (dm.vtkStructuredGrid if isinstance(input, structured)
+                    else dm.vtkUnstructuredGrid)
         return getattr(dm, self.OUTPUT)
 
     def RequestDataObject(self, request, inInfo, outInfo):
@@ -657,8 +743,38 @@ class _FieldAlgorithm(TackAlgorithm):
     def new_fields(self, data):
         if self.FUNCTION is None:
             raise NotImplementedError(f"{type(self).__name__} gives no new_fields()")
+        from tack.dataset import DataSet
+
         result = self._function()(data, **self.arguments())
-        return result if isinstance(result, dict) else {self.name: result}
+        if hasattr(result, "_asdict"):              # CellGeometry, FlowQuantities, ...
+            result = result._asdict()
+        if isinstance(result, DataSet):             # the input with fields added
+            return {name: result.fields[name] for name in self.RESULT_FIELDS}
+        return result if isinstance(result, dict) else {self._output_name(): result}
+
+    #: The fields a function that gives its input back with fields added adds.
+    RESULT_FIELDS = ()
+
+    def _output_name(self):
+        """The new field's name: the ``name`` parameter, or by default the field the
+        filter reads (``field``)."""
+        name = getattr(self, "name", None)
+        if name is not None:
+            return name
+        field = getattr(self, "field", None)
+        if isinstance(field, str):
+            return field
+        if isinstance(field, tuple) and field and isinstance(field[0], str):
+            return field[0]
+        raise ValueError(f"{type(self).__name__} needs a name for its new field")
+
+
+class _Whole(TackAlgorithm):
+    """A filter whose Tack function takes a ``PartitionedDataSet`` itself: a partitioned
+    input goes to it whole, not piece by piece."""
+
+    def execute(self, data):
+        return self.compute(data)
 
 
 # ── Filters that make a dataset ─────────────────────────────────────
@@ -712,8 +828,9 @@ class Threshold(TackAlgorithm):
     all_points = Parameter(True, "a point field: every point of a cell in range")
 
 
-class ExtractSurface(TackAlgorithm):
-    """``td.extract_surface``: the boundary faces of the cells, as polygons. VTK's
+class ExtractSurface(_Whole):
+    """``td.extract_surface``: the boundary faces of the cells, as polygons. Of pieces,
+    the whole's surface: faces the pieces share are left out. VTK's
     ``vtkDataSetSurfaceFilter``."""
 
     FUNCTION = "extract_surface"
@@ -737,25 +854,70 @@ class SurfaceNormals(TackAlgorithm):
     consistent = Parameter(True, "wind the polygons consistently first")
 
 
-class ConnectedComponents(TackAlgorithm):
+class ConnectedComponents(_Whole):
     """``td.connected_components``: ``region`` on the cells and ``point_region`` on the
     points, cells connected through shared points (or, with ``radius``, points
-    within it). VTK's ``vtkConnectivityFilter``."""
+    within it). Of pieces, regions are joined across them and numbered over the
+    whole. VTK's ``vtkConnectivityFilter``."""
 
     OUTPUT = None
     FUNCTION = "connected_components"
 
 
-class Streamlines(TackAlgorithm):
-    """``td.streamlines``: the paths of ``seeds`` (an ``(n, 3)`` array) through the
-    velocity ``field``, up to ``steps`` steps of ``step_size``. VTK's
-    ``vtkStreamTracer``."""
+class _Seeded(_Whole):
+    """A filter of particles from seeds: ``seeds``, or where that is unset, the points
+    of the data on input port 1 (``SetSourceConnection``, ``SetSourceData``), as
+    ``vtkStreamTracer`` takes its seeds. Of pieces, the particles go from piece to
+    piece (and rank to rank), each path traced over the whole."""
+
+    INPUTS = 2
+    REQUIRED_INPUTS = 1
+
+    def SetSourceConnection(self, port):
+        self.SetInputConnection(1, port)
+
+    def SetSourceData(self, data):
+        self.SetInputDataObject(1, data)
+
+    def _prepare(self, inInfo):
+        self._seeds = None
+        if self.seeds is None and inInfo[1].GetNumberOfInformationObjects():
+            self._seeds = _points_of(self.GetInputData(inInfo, 1, 0))
+
+    def _supplied(self):
+        return {"seeds": getattr(self, "_seeds", None)}
+
+
+def _points_of(vtk_data):
+    """The world positions of the points of ``vtk_data`` -- a dataset, a partitioned
+    dataset or a tree, every dataset in it -- as one ``(n, 3)`` double array."""
+    import numpy as np
+
+    if isinstance(vtk_data, (*_TREES, vtkPartitionedDataSet)):
+        leaves = []
+        iterator = vtk_data.NewIterator()
+        iterator.InitTraversal()
+        while not iterator.IsDoneWithTraversal():
+            leaves.append(iterator.GetCurrentDataObject())
+            iterator.GoToNextItem()
+    else:
+        leaves = [vtk_data]
+    positions = [np.asarray(_as_dataset(leaf).world_positions(), np.float64).reshape(-1, 3)
+                 for leaf in leaves if leaf is not None and leaf.GetNumberOfPoints()]
+    return np.concatenate(positions) if positions else np.zeros((0, 3))
+
+
+class Streamlines(_Seeded):
+    """``td.streamlines``: the paths of ``seeds`` (an ``(n, 3)`` array, or the points of
+    the data on port 1) through the velocity ``field``, up to ``steps`` steps of
+    ``step_size``. VTK's ``vtkStreamTracer``."""
 
     FUNCTION = "streamlines"
     FIELDS = ("field",)
 
     field = Parameter(None, "the velocity field")
-    seeds = Parameter(None, "the seed points, an (n, 3) array")
+    seeds = Parameter(None, "the seed points, an (n, 3) array; by default the points "
+                            "of the data on port 1")
     step_size = Parameter(0.01, "the step, in time (or in length with step_unit)")
     steps = Parameter(1000, "the most steps a path takes")
     integrator = Parameter("rk4", "rk4, rk45 or euler")
@@ -771,7 +933,7 @@ class Probe(TackAlgorithm):
     structure. It runs on the source's device unless ``device`` says otherwise, the
     input moved there."""
 
-    OUTPUT = None
+    OUTPUT = "structure"
     INPUTS = 2
     FUNCTION = "probe"
     EXCLUDE = ("where",)
@@ -783,17 +945,6 @@ class Probe(TackAlgorithm):
 
     def SetSourceData(self, data):
         self.SetInputDataObject(1, data)
-
-    def _output_type(self, input):
-        import vtkmodules.vtkCommonDataModel as dm
-
-        if isinstance(input, vtkPartitionedDataSet):
-            return vtkPartitionedDataSet
-        # What dataset_to_vtk makes of the input's structure.
-        for kind in (dm.vtkImageData, dm.vtkRectilinearGrid, dm.vtkStructuredGrid):
-            if isinstance(input, kind):
-                return kind
-        return dm.vtkUnstructuredGrid
 
     def _prepare(self, inInfo):
         import tack.dataset as td
@@ -855,6 +1006,632 @@ class CellQuality(_FieldAlgorithm):
     FUNCTION = "cell_quality"
 
     measures = Parameter(None, "the measures' names (by default each shape's own)")
+
+
+# ── More base classes ───────────────────────────────────────────────
+
+class _OnFaces(TackAlgorithm):
+    """A filter that computes fields on faces (``ON = "faces"``) or edges (``"edges"``),
+    which VTK keeps nowhere on the cells: the output is every face as a polygon (a 2D
+    mesh's edges as lines), or every edge as a line, numbered as the faces or edges,
+    the fields its cell data; the input's point fields stay on the points and its
+    cell fields go to the faces, each from its side 0 cell. ``name`` names a single
+    new field."""
+
+    ON = "faces"
+
+    def compute(self, data):
+        import numpy as np
+
+        import tack.dataset as td
+
+        result = self._function()(data, **self.arguments())
+        new = result._asdict() if hasattr(result, "_asdict") else {self.name: result}
+        fields = {**data.fields}
+        for name, field in new.items():
+            fields[name if name not in fields else (name, field.space)] = field
+        with_fields = td.DataSet(data.topology, data.geometry, fields=fields, sets=data.sets,
+                                 ghosts=data.ghosts, global_ids=data.global_ids,
+                                 **data._frame())
+        if self.ON == "edges":
+            return td.extract_edges(with_fields)
+        faces = np.arange(data.topology.faces().num_faces)
+        return td.extract_surface(with_fields, faces=faces)
+
+
+# ── Cells kept whole ────────────────────────────────────────────────
+
+class ExtractCells(TackAlgorithm):
+    """``td.extract_cells``: the cells given by ``cells`` -- ids (an array), an integer
+    cell field's name, or a cell set's name -- with only the points they use. VTK's
+    ``vtkExtractCells``."""
+
+    FUNCTION = "extract_cells"
+
+
+class ExtractGeometry(TackAlgorithm):
+    """``td.extract_geometry``: the whole cells inside an implicit ``function`` (Tack's
+    or VTK's), or outside it, or cut by it. VTK's ``vtkExtractGeometry``."""
+
+    FUNCTION = "extract_geometry"
+    IMPLICIT = ("function",)
+
+
+class ExtractExtent(TackAlgorithm):
+    """``td.extract_extent``: a box of a structured grid's points (``extent``, per axis a
+    (low, high) pair or VTK's flat six), every ``rate``-th. VTK's ``vtkExtractGrid``."""
+
+    OUTPUT = "structure"
+    FUNCTION = "extract_extent"
+
+
+class Mask(TackAlgorithm):
+    """``td.mask``: every ``stride``-th cell, with only the points they use (Viskores'
+    ``Mask``)."""
+
+    FUNCTION = "mask"
+
+
+# ── Cutting ─────────────────────────────────────────────────────────
+
+class Slice(TackAlgorithm):
+    """``td.slice``: where an implicit ``function`` (Tack's or VTK's) is ``value``.
+    VTK's ``vtkCutter``."""
+
+    FUNCTION = "slice"
+    IMPLICIT = ("function",)
+
+
+# ── Surfaces and edges ──────────────────────────────────────────────
+
+class BoundaryFaces(TackAlgorithm):
+    """``td.boundary_faces``: the boundary, a face set, given as its faces' polygons (a 2D
+    mesh's boundary edges as lines): ``extract_surface`` of that set, which a 2D mesh's
+    ``ExtractSurface`` passes through."""
+
+    FUNCTION = "boundary_faces"
+
+    def compute(self, data):
+        import tack.dataset as td
+
+        return td.extract_surface(data, faces=td.boundary_faces(data))
+
+
+class ExtractEdges(TackAlgorithm):
+    """``td.extract_edges``: the edges (every one, or ``edges``' ids) as line cells.
+    VTK's ``vtkExtractEdges``."""
+
+    FUNCTION = "extract_edges"
+
+
+class FeatureEdges(TackAlgorithm):
+    """``td.feature_edges``: a surface's boundary, feature, non-manifold and manifold
+    edges as line cells, with ``kind``. VTK's ``vtkFeatureEdges``."""
+
+    FUNCTION = "feature_edges"
+
+
+# ── Shapes for drawing ──────────────────────────────────────────────
+
+class Tubes(TackAlgorithm):
+    """``td.tubes``: lines as tubes of ``radius`` (scaled by the ``radius_by`` field),
+    with outward normals. VTK's ``vtkTubeFilter``."""
+
+    FUNCTION = "tubes"
+    FIELDS = ("radius_by",)
+
+
+class Glyphs(TackAlgorithm):
+    """``td.glyphs``: an arrow at each point along the ``vectors`` field, scaled by
+    ``scale`` (and the ``scale_by`` field). VTK's ``vtkGlyph3D``."""
+
+    FUNCTION = "glyphs"
+    FIELDS = ("vectors", "scale_by")
+
+
+# ── Connectivity and winding ────────────────────────────────────────
+
+class CheckWinding(_FieldAlgorithm):
+    """``td.check_winding``: the cells whose faces do not wind consistently, a cell set
+    of polyhedra or polygons, given as a cell array ``name``, 1 for those cells."""
+
+    FUNCTION = "check_winding"
+
+    name = Parameter("inconsistent", "the new cell array's name")
+
+    def new_fields(self, data):
+        import tack
+        from tack.dataset import Constant, Field
+
+        flags = self._function()(data).flags()
+        return {self.name: Field(Constant(data.topology), flags.astype(tack.u8))}
+
+
+class MergePoints(TackAlgorithm):
+    """``td.merge_points``: coincident points (or points within ``tolerance``) made one.
+    VTK's ``vtkStaticCleanUnstructuredGrid``."""
+
+    FUNCTION = "merge_points"
+
+
+# ── Changing cell types ─────────────────────────────────────────────
+
+class Triangulate(TackAlgorithm):
+    """``td.triangulate``: 2D cells as triangles. VTK's ``vtkTriangleFilter``."""
+
+    FUNCTION = "triangulate"
+
+
+class AsPolyhedra(TackAlgorithm):
+    """``td.as_polyhedra``: a shape-based mesh as a polyhedral one, every cell a
+    polyhedron."""
+
+    FUNCTION = "as_polyhedra"
+
+
+class AsPolygons(TackAlgorithm):
+    """``td.as_polygons``: 2D cells as a polygonal mesh, each cell's points its loop."""
+
+    FUNCTION = "as_polygons"
+
+
+class Shrink(TackAlgorithm):
+    """``td.shrink``: every cell shrunk toward its centroid by ``factor``, each on points
+    of its own (``td.subdivide(..., 1)`` of the shrunk cells, which have no shared
+    points for VTK). VTK's ``vtkShrinkFilter``."""
+
+    FUNCTION = "shrink"
+
+    def compute(self, data):
+        import tack.dataset as td
+
+        return td.subdivide(td.shrink(data, **self.arguments()), 1)
+
+
+class Subdivide(TackAlgorithm):
+    """``td.subdivide``: curved or higher-order cells as linear sub-cells, ``level`` a
+    cell along each axis. VTK's ``vtkCellGridToUnstructuredGrid``."""
+
+    FUNCTION = "subdivide"
+
+
+# ── Moving the geometry ─────────────────────────────────────────────
+
+def _matrix(value):
+    """An affine map as a NumPy matrix: VTK's ``vtkMatrix4x4`` or a linear transform's
+    matrix (``vtkTransform``) read out; anything else as it is."""
+    import numpy as np
+    from vtkmodules.vtkCommonMath import vtkMatrix4x4
+
+    if hasattr(value, "GetMatrix") and not isinstance(value, vtkMatrix4x4):
+        value = value.GetMatrix()
+    if isinstance(value, vtkMatrix4x4):
+        return np.array([[value.GetElement(i, j) for j in range(4)] for i in range(4)])
+    return value
+
+
+class Transform(TackAlgorithm):
+    """``td.transform``: the geometry under an affine ``matrix`` (4x4 or 3x4, a
+    ``vtkMatrix4x4`` or a ``vtkTransform``); an image stays an image. VTK's
+    ``vtkTransformFilter``."""
+
+    OUTPUT = "structure"
+    FUNCTION = "transform"
+
+    def arguments(self):
+        values = super().arguments()
+        values["matrix"] = _matrix(values["matrix"])
+        return values
+
+
+class Warp(TackAlgorithm):
+    """``td.warp``: the points moved along ``direction`` (a 3-vector field, or one vector)
+    times ``scale`` (and the ``scale_by`` field). VTK's ``vtkWarpVector`` and
+    ``vtkWarpScalar``."""
+
+    OUTPUT = "points"
+    FUNCTION = "warp"
+    FIELDS = ("direction", "scale_by")
+
+
+class Cylindrical(TackAlgorithm):
+    """``td.cylindrical``: Cartesian positions as cylindrical ``(r, theta, z)``, or back
+    with ``inverse`` (Viskores' ``CylindricalCoordinateTransform``)."""
+
+    OUTPUT = "points"
+    FUNCTION = "cylindrical"
+
+
+class Spherical(TackAlgorithm):
+    """``td.spherical``: Cartesian positions as spherical ``(r, theta, phi)``, or back with
+    ``inverse`` (Viskores' ``SphericalCoordinateTransform``)."""
+
+    OUTPUT = "points"
+    FUNCTION = "spherical"
+
+
+# ── Measures and quality ────────────────────────────────────────────
+
+class CellGeometry(_FieldAlgorithm):
+    """``td.cell_geometry``: each cell's ``measure`` (volume, area or length) and
+    ``centroid``, as cell arrays. VTK's ``vtkCellSizeFilter``."""
+
+    FUNCTION = "cell_geometry"
+
+
+class FaceGeometry(_OnFaces):
+    """``td.face_geometry``: each face's ``normal`` and ``area``, on the faces as
+    polygons."""
+
+    FUNCTION = "face_geometry"
+
+
+class CellCenters(_FieldAlgorithm):
+    """``td.cell_centers``: each cell's parametric center, as a cell array ``name`` (VTK's
+    ``vtkCellCenters`` makes them points instead)."""
+
+    FUNCTION = "cell_centers"
+
+    name = Parameter("center", "the new cell array's name")
+
+
+class FaceCenters(_OnFaces):
+    """``td.face_centers``: each face's area centroid, as ``name`` on the faces as
+    polygons."""
+
+    FUNCTION = "face_centers"
+
+    name = Parameter("center", "the new array's name")
+
+
+class EdgeLengths(_OnFaces):
+    """``td.edge_lengths``: each edge's length, as ``name`` on the edges as lines."""
+
+    ON = "edges"
+    FUNCTION = "edge_lengths"
+
+    name = Parameter("length", "the new array's name")
+
+
+class ImplicitValues(_FieldAlgorithm):
+    """``td.implicit_values``: an implicit ``function`` (Tack's or VTK's) at the points, as
+    a point array ``name``. VTK's ``vtkSampleImplicitFunctionFilter``."""
+
+    FUNCTION = "implicit_values"
+    IMPLICIT = ("function",)
+
+    name = Parameter("implicit", "the new point array's name")
+
+
+class CellIds(_FieldAlgorithm):
+    """``td.cell_ids``: each cell's id, as a cell array ``name``. VTK's
+    ``vtkGenerateIds``."""
+
+    FUNCTION = "cell_ids"
+
+    name = Parameter("cell_id", "the new cell array's name")
+
+
+class PointIds(_FieldAlgorithm):
+    """``td.point_ids``: each point's id, as a point array ``name``. VTK's
+    ``vtkGenerateIds``."""
+
+    FUNCTION = "point_ids"
+
+    name = Parameter("point_id", "the new point array's name")
+
+
+# ── Fields from fields ──────────────────────────────────────────────
+
+class FlowQuantities(_FieldAlgorithm):
+    """``td.flow_quantities``: ``divergence``, ``vorticity`` and ``q_criterion`` from a
+    velocity's ``gradient`` field. VTK's ``vtkGradientFilter``'s."""
+
+    FUNCTION = "flow_quantities"
+    FIELDS = ("gradient",)
+
+
+_SPACES = {"points": "H1", "cells": "Constant"}
+
+
+def _space(data, to):
+    """The space ``to`` names on ``data``'s topology: ``"points"`` (``H1``) or ``"cells"``
+    (``Constant``); a Tack space as it is."""
+    import tack.dataset as td
+
+    if isinstance(to, str):
+        if to not in _SPACES:
+            raise ValueError(f"to is 'points' or 'cells', not {to!r}")
+        return getattr(td, _SPACES[to])(data.topology)
+    return to
+
+
+class Project(_FieldAlgorithm):
+    """``td.project``: ``field`` moved ``to`` the points or the cells, as an array ``name``
+    (by default the field's own name). VTK's ``vtkCellDataToPointData`` and
+    ``vtkPointDataToCellData``."""
+
+    FUNCTION = "project"
+    FIELDS = ("field",)
+    EXCLUDE = ("space",)
+
+    to = Parameter("points", "where the field goes: points or cells")
+    name = Parameter(None, "the new array's name; by default the field's")
+
+    def new_fields(self, data):
+        values = self.arguments()
+        result = self._function()(data, values.pop("field"), _space(data, self.to), **values)
+        return {self._output_name(): result}
+
+
+class ValuesAtCenters(_FieldAlgorithm):
+    """``td.values_at_centers``: ``field`` at each cell's parametric center, as a cell
+    array ``name`` (by default the field's own name)."""
+
+    FUNCTION = "values_at_centers"
+    FIELDS = ("field",)
+
+    name = Parameter(None, "the new cell array's name; by default the field's")
+
+
+class Interpolate(_FieldAlgorithm):
+    """``td.interpolate``: a ``@tack.func`` of world position, ``function``, at the points
+    (or ``to="cells"``, at the cells), as an array ``name``."""
+
+    FUNCTION = "interpolate"
+    EXCLUDE = ("space",)
+
+    to = Parameter("points", "where the values go: points or cells")
+    name = Parameter("interpolated", "the new array's name")
+
+    def new_fields(self, data):
+        values = self.arguments()
+        result = self._function()(data, values.pop("function"), _space(data, self.to),
+                                  **values)
+        return {self.name: result}
+
+
+class Magnitude(_FieldAlgorithm):
+    """``td.magnitude``: each vector's length, as an array ``name`` (Viskores'
+    ``VectorMagnitude``)."""
+
+    FUNCTION = "magnitude"
+    FIELDS = ("field",)
+
+    name = Parameter("magnitude", "the new array's name")
+
+
+class Dot(_FieldAlgorithm):
+    """``td.dot``: the dot product of the vector fields ``a`` and ``b``, as an array
+    ``name`` (Viskores' ``DotProduct``)."""
+
+    FUNCTION = "dot"
+    FIELDS = ("a", "b")
+
+    name = Parameter("dot", "the new array's name")
+
+
+class Cross(_FieldAlgorithm):
+    """``td.cross``: the cross product of the 3-vector fields ``a`` and ``b``, as an array
+    ``name`` (Viskores' ``CrossProduct``)."""
+
+    FUNCTION = "cross"
+    FIELDS = ("a", "b")
+
+    name = Parameter("cross", "the new array's name")
+
+
+class Composite(_FieldAlgorithm):
+    """``td.composite``: the scalar ``fields`` as the components of one vector field
+    ``name`` (Viskores' ``CompositeVectors``)."""
+
+    FUNCTION = "composite"
+
+    fields = Parameter(None, "the scalar fields, in component order (required)")
+    name = Parameter("composite", "the new array's name")
+
+    def new_fields(self, data):
+        if not self.fields:
+            raise ValueError("Composite needs 'fields'")
+        return {self.name: self._function()(data, *[_field_argument(f) for f in self.fields])}
+
+
+class LogValues(_FieldAlgorithm):
+    """``td.log_values``: the logarithm of ``field`` in ``base``, as an array ``name``
+    (Viskores' ``LogValues``)."""
+
+    FUNCTION = "log_values"
+    FIELDS = ("field",)
+
+    name = Parameter("log", "the new array's name")
+
+
+class Convert(TackAlgorithm):
+    """``td.convert``: the geometry (or the field ``field``) in ``unit``, its known unit
+    converted; an image stays an image."""
+
+    OUTPUT = "structure"
+    FUNCTION = "convert"
+
+
+# ── Finite volumes ──────────────────────────────────────────────────
+
+class Jump(_OnFaces):
+    """``td.jump``: ``field``'s difference across each face, as ``name`` on the faces as
+    polygons."""
+
+    FUNCTION = "jump"
+    FIELDS = ("field",)
+
+    name = Parameter("jump", "the new array's name")
+
+
+class UpwindFlux(_OnFaces):
+    """``td.upwind_flux``: the upwind flux of ``field`` by a constant ``velocity`` through
+    each face, as ``name`` on the faces as polygons."""
+
+    FUNCTION = "upwind_flux"
+    FIELDS = ("field",)
+
+    name = Parameter("flux", "the new array's name")
+
+
+# ── Probing, sampling and particles ─────────────────────────────────
+
+class Voxelize(_Whole):
+    """``td.voxelize``: the input on the voxels of ``grid`` (a ``vtkImageData`` or a Tack
+    image), with ``fraction``, the share of each voxel the input covers, and the
+    fields' means."""
+
+    OUTPUT = "vtkImageData"
+    FUNCTION = "voxelize"
+    DATASETS = ("grid",)
+
+
+class Advect(_Seeded):
+    """``td.advect``: the particles from ``seeds`` (an ``(n, 3)`` array, or the points of the
+    data on port 1) moved through the velocity ``field`` by up to ``steps`` steps,
+    where they stopped, as vertex cells with ``steps``, ``time`` and ``status``
+    (Viskores' ``ParticleAdvection``)."""
+
+    FUNCTION = "advect"
+    FIELDS = ("field",)
+
+    seeds = Parameter(None, "the seed points, an (n, 3) array; by default the points "
+                            "of the data on port 1")
+
+
+# ── Point clouds ────────────────────────────────────────────────────
+
+class ExtractPoints(TackAlgorithm):
+    """``td.extract_points``: the points inside an implicit ``function`` (Tack's or VTK's),
+    or outside it, as vertex cells. VTK's ``vtkExtractPoints``."""
+
+    FUNCTION = "extract_points"
+    IMPLICIT = ("function",)
+
+
+class ThresholdPoints(TackAlgorithm):
+    """``td.threshold_points``: the points whose ``field`` lies in ``[lower, upper]``, as
+    vertex cells. VTK's ``vtkThresholdPoints``."""
+
+    FUNCTION = "threshold_points"
+    FIELDS = ("field",)
+
+
+class MaskPoints(TackAlgorithm):
+    """``td.mask_points``: every ``stride``-th point, as vertex cells. VTK's
+    ``vtkMaskPoints``."""
+
+    FUNCTION = "mask_points"
+
+
+class PointNormals(_FieldAlgorithm):
+    """``td.point_normals``: each point's normal from its neighbourhood (``k`` nearest, or
+    within ``radius``), as a point array ``normals``. VTK's
+    ``vtkPCANormalEstimation``."""
+
+    FUNCTION = "point_normals"
+    RESULT_FIELDS = ("normals",)
+
+
+class Outliers(_Whole):
+    """``td.outliers``: the points with ``outlier`` (1 for an outlier) and
+    ``mean_distance``, by a radius test or a statistical one, over every piece. VTK's
+    ``vtkRadiusOutlierRemoval`` and ``vtkStatisticalOutlierRemoval`` (which remove
+    them)."""
+
+    FUNCTION = "outliers"
+
+
+class VoxelDownsample(_Whole):
+    """``td.voxel_downsample``: one point per occupied voxel of side ``size``, over every
+    piece. VTK's ``vtkVoxelGrid``."""
+
+    FUNCTION = "voxel_downsample"
+
+
+class Deposit(_Whole):
+    """``td.deposit``: the points (or their ``field``) counted, summed or averaged onto
+    ``grid`` (a ``vtkImageData`` or a Tack image), over every piece: the grid with a
+    cell array ``name`` (Viskores' ``ParticleDensityNearestGridPoint`` and
+    ``ParticleDensityCloudInCell``)."""
+
+    OUTPUT = "vtkImageData"
+    FUNCTION = "deposit"
+    FIELDS = ("field",)
+    DATASETS = ("grid",)
+
+    name = Parameter("deposit", "the new cell array's name")
+
+    def compute(self, data):
+        import tack.dataset as td
+
+        values = self.arguments()
+        grid = values["grid"]
+        deposited = self._function()(data, **values)
+        return td.DataSet(grid.topology, grid.geometry, fields={self.name: deposited},
+                          **grid._frame())
+
+
+class SphDensity(_FieldAlgorithm):
+    """``td.sph_density``: each particle's SPH density from its ``mass`` and
+    ``smoothing_length`` (fields' names, or numbers), as a point array ``density``."""
+
+    FUNCTION = "sph_density"
+    RESULT_FIELDS = ("density",)
+
+
+class SphInterpolate(TackAlgorithm):
+    """``td.sph_interpolate``: the particles' -- the data on input port 1
+    (``SetSourceConnection``, ``SetSourceData``), with their density -- fields at the
+    input's points by SPH kernel sums, on the input's structure. VTK's
+    ``vtkSPHInterpolator``."""
+
+    OUTPUT = "structure"
+    INPUTS = 2
+    FUNCTION = "sph_interpolate"
+    EXCLUDE = ("target",)
+
+    def SetSourceConnection(self, port):
+        self.SetInputConnection(1, port)
+
+    def SetSourceData(self, data):
+        self.SetInputDataObject(1, data)
+
+    def _prepare(self, inInfo):
+        self._particles = self._dataset(self.GetInputData(inInfo, 1, 0), self.device)
+
+    def compute(self, data):
+        return self._function()(self._particles, data, **self.arguments())
+
+
+class HaloCatalog(_Whole):
+    """``td.halo_catalog``: the halos of particles labelled by ``region`` (as
+    ``ConnectedComponents`` with a ``radius`` labels them), one point each with its
+    count, mass, center and radius, over every piece."""
+
+    FUNCTION = "halo_catalog"
+
+
+# ── Pieces and ghosts ───────────────────────────────────────────────
+
+class Split(TackAlgorithm):
+    """``td.split``: a structured grid cut into ``pieces``, with ``ghost_layers``, as a
+    ``vtkPartitionedDataSet``."""
+
+    FUNCTION = "split"
+
+    def _output_type(self, input):
+        return vtkPartitionedDataSet
+
+
+class RemoveGhosts(TackAlgorithm):
+    """``td.remove_ghosts``: a piece without its ghost and hidden cells; a structured
+    piece stays structured. VTK's ``vtkRemoveGhosts``."""
+
+    OUTPUT = "structure"
+    FUNCTION = "remove_ghosts"
 
 
 # ── Filters over every piece ────────────────────────────────────────
@@ -926,6 +1703,14 @@ class MergePieces(_OverPieces):
         if len(kinds) == 1 and next(iter(kinds)) is not dm.vtkPolyData:
             return next(iter(kinds))
         return dm.vtkUnstructuredGrid
+
+
+
+class GhostPoints(_OverPieces):
+    """``td.ghost_points``: point-cloud pieces, each with copies of the other pieces'
+    points within ``radius`` (or its points' ``k`` nearest) appended as ghosts."""
+
+    FUNCTION = "ghost_points"
 
 
 del tack

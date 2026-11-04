@@ -177,18 +177,52 @@ the Tack filter is a parameter, with the filter's default, except the data
 and what the algorithm supplies itself (the device, a locator, the
 communicator): `Contour(field="p", value=0.5, merge_points=False)`.
 
-| Algorithm | Tack filter | Output |
+Every algorithm of the [reference](../vis-guide/reference/algorithms.md) has
+one, named as the Tack function in CamelCase, but for the summaries (to come)
+and the finite-volume operators that take values on faces (`net_flux`,
+`divergence`, `perot`), which VTK keeps nowhere. "Fields" means the input's
+type, shallow-copied, with the new arrays added; "faces" means every face as a
+polygon (a 2D mesh's edges as lines), or every edge as a line, the new values
+their cell data.
+
+| Group | Algorithms | Output |
 |---|---|---|
-| `Contour`, `SlicePlane`, `Clip`, `Threshold` | `contour`, `slice_plane`, `clip`, `threshold` | `vtkUnstructuredGrid` |
-| `ExtractSurface`, `Tetrahedralize`, `SurfaceNormals`, `Streamlines` | `extract_surface`, `tetrahedralize`, `surface_normals`, `streamlines` | `vtkUnstructuredGrid` |
-| `ConnectedComponents` | `connected_components` | the input's type, with `region` arrays |
-| `Probe` | `probe`, of the source on port 1 at the input's points | the input's structure, with the source's fields |
-| `Gradients`, `Elevation`, `CellQuality` | `gradients`, `point_elevation`, `cell_quality` | the input's type, with the new arrays added |
-| `GhostCells`, `GenerateGlobalIds`, `MergePieces` | `ghost_cells`, `generate_global_ids`, `merge_pieces` | over every piece of a `vtkPartitionedDataSet` |
+| Cells kept whole | `Threshold`, `ExtractCells`, `ExtractGeometry`, `Mask` | `vtkUnstructuredGrid` |
+| | `ExtractExtent` | the input's structure |
+| Cutting | `Contour`, `Slice`, `SlicePlane`, `Clip` | `vtkUnstructuredGrid` |
+| Surfaces and edges | `ExtractSurface`, `BoundaryFaces`, `ExtractEdges`, `FeatureEdges`, `SurfaceNormals` | `vtkUnstructuredGrid` |
+| Shapes for drawing | `Tubes`, `Glyphs` | `vtkUnstructuredGrid` |
+| Connectivity and winding | `ConnectedComponents` | the input's type, with `region` arrays |
+| | `CheckWinding` | fields: `inconsistent` on the cells |
+| | `MergePoints` | `vtkUnstructuredGrid` |
+| Changing cell types | `Tetrahedralize`, `Triangulate`, `AsPolyhedra`, `AsPolygons`, `Shrink`, `Subdivide` | `vtkUnstructuredGrid` |
+| Moving the geometry | `Transform` | the input's structure (an image stays an image) |
+| | `Warp`, `Cylindrical`, `Spherical` | a structured grid for a structured input, else `vtkUnstructuredGrid` |
+| Measures and quality | `CellGeometry`, `CellCenters`, `CellQuality`, `Elevation`, `ImplicitValues`, `CellIds`, `PointIds` | fields |
+| | `FaceGeometry`, `FaceCenters`, `EdgeLengths` | faces (edges) |
+| Fields from fields | `Gradients`, `FlowQuantities`, `Project`, `ValuesAtCenters`, `Interpolate`, `Magnitude`, `Dot`, `Cross`, `Composite`, `LogValues` | fields |
+| | `Convert` | the input's structure |
+| Finite volumes | `Jump`, `UpwindFlux` | faces |
+| Probing, sampling and particles | `Probe` (the source on port 1), `SphInterpolate` (the particles on port 1) | the input's structure, with the source's fields |
+| | `Voxelize` | `vtkImageData` (the `grid` parameter's) |
+| | `Streamlines`, `Advect` (seeds on port 1, or `seeds=`) | `vtkUnstructuredGrid` |
+| Point clouds | `ExtractPoints`, `ThresholdPoints`, `MaskPoints`, `Outliers`, `VoxelDownsample`, `HaloCatalog` | `vtkUnstructuredGrid` |
+| | `PointNormals`, `SphDensity` | fields |
+| | `Deposit` | `vtkImageData` (the `grid` parameter's) |
+| Pieces and ghosts | `GhostCells`, `GenerateGlobalIds`, `MergePieces`, `GhostPoints` | over every piece of a `vtkPartitionedDataSet` |
+| | `Split` | a `vtkPartitionedDataSet` |
+| | `RemoveGhosts` | the input's structure |
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
-`vtkPartitionedDataSet`. The last row's algorithms need every piece at once,
-so they take the pieces together; see [Filters over pieces](over-pieces.md).
+`vtkPartitionedDataSet`. The algorithms whose Tack filter answers for the
+pieces together take them together: `GhostCells`, `GenerateGlobalIds` and
+`MergePieces`; `ExtractSurface`, which leaves out the faces pieces share;
+`ConnectedComponents`, whose regions join across pieces; `Streamlines` and
+`Advect`, whose particles go from piece to piece; and the point-cloud and
+sampling ones (`Voxelize`, `Outliers`, `VoxelDownsample`, `Deposit`,
+`HaloCatalog`). See [Filters over pieces](over-pieces.md). Particles are handed
+from piece to piece after whole steps where the pieces have a layer of ghost
+cells (`GhostCells`); without one, each crossing costs a shortened step.
 
 Readers of Exodus, IOSS, CGNS, EnSight and OpenFOAM files give trees of
 datasets: a `vtkMultiBlockDataSet` or a `vtkPartitionedDataSetCollection`. The
