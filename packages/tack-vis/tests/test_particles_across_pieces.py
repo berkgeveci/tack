@@ -130,6 +130,42 @@ def test_pieces_with_a_ghost_layer_give_the_wholes_particles(make):
     assert got[2][1] < 200
 
 
+
+def test_a_particle_pushed_into_a_sliver_between_pieces_goes_on():
+    """Pieces whose shared faces are not one surface (a hexahedron's bilinear face
+    against a polyhedron's fanned one, in a split reading) leave slivers no piece
+    holds. A particle pushed just out of one piece into such a sliver goes on
+    from where the push would have ended going the way to the boundary again,
+    if a piece holds that, with that move in its time, its path's length and its
+    stretch; one that leaves the domain stops just outside it."""
+    def block(x0):
+        grid = td.uniform_grid((6, 11, 11), origin=(x0, 0.0, 0.0), spacing=(0.1, 0.1, 0.1),
+                               dtype=tack.f64)
+        v = np.zeros((grid.num_points, 3))
+        v[:, 0] = 1.0
+        grid.fields["v"] = td.Field(td.H1(grid), tack.array(v, tack.vec3(tack.f64)))
+        return grid
+
+    pieces = td.PartitionedDataSet([block(0.0), block(0.501)])     # a gap of 0.001
+    seed = [[0.05, 0.5, 0.5]]
+    out = by_seed(td.advect(pieces, "v", seed, 0.3, 100, step_unit="length", max_length=0.8))
+    x, n, status, t = out[0]
+    assert status & ParticleStatus.TERMINATE and not status & ParticleStatus.SPATIAL_BOUNDS
+    np.testing.assert_allclose(x, [0.85, 0.5, 0.5], atol=1e-9)       # 0.8 from the seed
+    assert t == pytest.approx(0.8, abs=1e-9)
+    lines = td.streamlines(pieces, "v", seed, 0.3, 100, step_unit="length", max_length=0.8)
+    total = 0.0
+    for part in lines:
+        if part.num_cells:
+            offsets, ids = (a.numpy() for a in part.topology.lines())
+            p = part.positions()
+            total += sum(np.linalg.norm(np.diff(p[ids[a:b]], axis=0), axis=1).sum()
+                         for a, b in zip(offsets[:-1], offsets[1:]))
+    assert total == pytest.approx(0.8, abs=1e-9)                     # the gap crossed in a stretch
+    out = by_seed(td.advect(pieces, "v", [[0.7, 0.5, 0.5]], 0.3, 100, step_unit="length"))
+    x, n, status, t = out[0]
+    assert status & ParticleStatus.SPATIAL_BOUNDS and 1.001 < x[0] < 1.002   # just outside
+
 @pytest.mark.quick
 def test_rk45_steps_go_with_the_particles_across_pieces():
     """RK45 adapts each particle's step, and the step goes with it from piece to

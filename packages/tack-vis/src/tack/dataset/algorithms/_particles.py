@@ -15,7 +15,9 @@ Rounds until no particle is in flight:
    fits in the ghost layer (``step_size`` times the speed under its width).
    Without ghost cells it stops where it leaves the piece, by the short step to
    the boundary and the push out, as on one dataset, and goes on in the piece
-   it was pushed into.
+   it was pushed into; pushed into a sliver no piece holds (shared faces that
+   are not one surface), from where the push would have ended going the way
+   to the boundary again (``_route``).
 3. Particles still in flight go back to 1.
 
 Every round each particle in flight takes a step or stops, so the rounds end.
@@ -46,9 +48,12 @@ from tack.dataset.spaces import Values
 
 __all__ = ["advect_pieces", "streamlines_pieces"]
 
-_FIELDS = ("time", "steps", "status", "seed", "segments", "step", "travelled")
+_FIELDS = ("time", "steps", "status", "seed", "segments", "step", "travelled",
+           "beyond_x", "beyond_y", "beyond_z", "beyond_time", "beyond_length")
 _DTYPES = {"time": np.float64, "steps": np.int32, "status": np.int32, "seed": np.int64,
-           "segments": np.int32, "step": np.float64, "travelled": np.float64}
+           "segments": np.int32, "step": np.float64, "travelled": np.float64,
+           "beyond_x": np.float64, "beyond_y": np.float64, "beyond_z": np.float64,
+           "beyond_time": np.float64, "beyond_length": np.float64}
 
 
 class _Particles:
@@ -56,7 +61,11 @@ class _Particles:
     ``steps``, ``status``, ``seed`` (its global number), ``segments`` (the
     pieces' runs it has had, for ``streamlines``), ``step`` (its current step,
     which RK45 adapts; 0 before its first) and ``travelled`` (its path's length
-    so far, for ``max_length``)."""
+    so far, for ``max_length``). A particle pushed out of the piece it was on
+    also has ``beyond_*``, where the push would have ended had it gone the way
+    to the boundary again, the move there and its time and length (``_route``
+    tries it when no piece holds the particle); they stay on the host and are
+    zero on arrival."""
 
     def __init__(self, x=None, **values):
         self.x = np.zeros((0, 3)) if x is None else np.asarray(x, np.float64).reshape(-1, 3)
@@ -219,7 +228,14 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
     for _ in range(int(steps) + 2):
         if not blocks.all_reduce({g: len(pending[g]) for g in blocks.local}):
             break
-        arrived, outside = _route(blocks, pieces, locators, boxes, pending)
+        arrived, outside, extended = _route(blocks, pieces, locators, boxes, pending)
+        for g in blocks.local:
+            for seed, x, t in extended[g]:          # the stretch goes on to there
+                for k in range(len(traced[g]) - 1, -1, -1):
+                    if traced[g][k][0] == seed:
+                        s_id, index, xs, ts = traced[g][k]
+                        traced[g][k] = (s_id, index, np.vstack([xs, x[None]]), np.append(ts, t))
+                        break
         for g in blocks.local:
             finished[g].append(outside[g])
             pending[g], done = _advance(pieces[g - blocks.local.start], field,
@@ -264,8 +280,10 @@ def _seeded(blocks, seeds, origin):
 
 def _route(blocks, pieces, locators, boxes, pending):
     """Each particle in flight to the lowest piece one of whose own cells holds it
-    (``tack.communication.Routing``): ``(arrived, outside)``, the particles each
-    piece takes, and those no piece takes, left with the piece they were on."""
+    (``tack.communication.Routing``): ``(arrived, outside, extended)``, the
+    particles each piece takes, those no piece takes, left with the piece they
+    were on, and per piece ``(seed, x, time)`` for each particle that goes on
+    from further along its push out (``_Particles``' ``beyond_*``)."""
     def holds(g, x):
         piece = pieces[g - blocks.local.start]
         with piece.device:
@@ -280,6 +298,30 @@ def _route(blocks, pieces, locators, boxes, pending):
         return np.where(owned, 1 + held.numpy(), 0)
 
     routing = tc.Routing(blocks, {g: pending[g].x for g in blocks.local}, boxes, holds)
+    # A particle no piece holds, pushed out of the piece it was on, may be in a
+    # sliver between pieces whose shared faces are not one surface (a
+    # hexahedron's bilinear face against a polyhedron's fanned one): it goes on
+    # from where the push would have ended going the way to the boundary again,
+    # if a piece holds that, that move counted in its time and length and
+    # added to its stretch (``extended``).
+    extended = {g: [] for g in blocks.local}
+    candidates = {g: np.flatnonzero((routing.destination[g] < 0)
+                                    & (pending[g].beyond_length > 0)) for g in blocks.local}
+    if blocks.all_reduce({g: len(candidates[g]) for g in blocks.local}):
+        moves = {g: np.stack([pending[g].beyond_x, pending[g].beyond_y, pending[g].beyond_z],
+                             axis=1)[candidates[g]] for g in blocks.local}
+        further = tc.Routing(blocks, {g: pending[g].x[candidates[g]] + moves[g]
+                                      for g in blocks.local}, boxes, holds)
+        for g in blocks.local:
+            placed = further.destination[g] >= 0
+            rows = candidates[g][placed]
+            particles = pending[g]
+            particles.x[rows] += moves[g][placed]
+            particles.time[rows] += particles.beyond_time[rows]
+            particles.travelled[rows] += particles.beyond_length[rows]
+            extended[g] = [(int(particles.seed[r]), particles.x[r].copy(), float(particles.time[r]))
+                           for r in rows.tolist()]
+        routing = tc.Routing(blocks, {g: pending[g].x for g in blocks.local}, boxes, holds)
     outside, state = {}, {}
     for g in blocks.local:
         particles = pending[g]
@@ -297,7 +339,7 @@ def _route(blocks, pieces, locators, boxes, pending):
             continue
         values = {**values, **_bits(x, blocks.device(g))}
         arrived[g] = _Particles.received(values)
-    return arrived, outside
+    return arrived, outside, extended
 
 
 def _advance(piece, field, particles, step_size, steps, integrator, record, traced,
@@ -320,7 +362,10 @@ def _advance(piece, field, particles, step_size, steps, integrator, record, trac
     out = _Particles(xs.numpy().reshape(-1, 3), time=times.numpy(), steps=taken.numpy(),
                      status=status.numpy(), seed=particles.seed,
                      segments=particles.segments + 1, step=carried[0].numpy(),
-                     travelled=carried[1].numpy())
+                     travelled=carried[1].numpy(),
+                     **dict(zip(("beyond_x", "beyond_y", "beyond_z"),
+                                carried[2].numpy().reshape(-1, 3).astype(np.float64).T)),
+                     beyond_time=carried[3].numpy(), beyond_length=carried[4].numpy())
     if record:
         lengths = lengths.numpy()
         trace = trace.numpy().reshape(-1, capacity, 3)
