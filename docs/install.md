@@ -10,7 +10,7 @@ needs Python 3.11 or newer. There is no build step: Tack is pure Python and
 compiles kernels when they are first called.
 
 ```bash
-git clone https://github.com/berkgeveci/tack.git
+git clone https://github.com/Kitware/tack.git
 cd tack
 uv sync --extra cpu
 uv run python -c "import tack; print(tack.device('cpu'))"    # prints: cpu
