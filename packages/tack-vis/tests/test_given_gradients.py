@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A field given its gradient: world_gradient, world_jet and gradients read it instead of
 differentiating the basis."""
 
