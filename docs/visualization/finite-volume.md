@@ -1,12 +1,12 @@
 # Finite-volume data and fluxes
 
-This page is for anyone who analyses the output of a finite-volume code: cell
-averages, cell-centred vectors, and normal velocities or fluxes through
-faces. It shows how to keep those quantities on the cells and faces they
-belong to, compute face geometry, read the two sides of a face, take jumps,
+A finite-volume code stores cell averages, cell-centred vectors, and normal
+velocities or fluxes through faces. To check its balances, you keep each
+quantity on the cells or faces it belongs to and compute with the faces'
+geometry. Tack's face algorithms read the two sides of a face, take jumps,
 upwind fluxes, net fluxes and divergences, and reconstruct cell vectors from
-face-normal components. After it, you can check a simulation's balances in
-Tack and write face kernels of your own.
+face-normal components. With them you can check a simulation's balances in
+Tack, and write face kernels of your own in the same way.
 
 The algorithms on this page work on every topology with faces: structured
 grids, unstructured meshes and polyhedra. VTK has no counterparts for them.

@@ -4,11 +4,11 @@ A kernel that works on a mesh asks questions in mesh terms. Which points does
 this cell have? Where are they? What is the field's value here? A dataset
 answers from arrays, and the arrays differ from one kind of mesh to the next.
 A **view** stands between the two. It is a small object that holds a dataset's
-arrays and answers those questions, and it is compiled into the kernel. This
-page is for readers who will write their own algorithms. It explains what a
-view is, where views come from, and what a kernel may rely on. After it, the
-tutorials [Write a mesh algorithm](write-a-mesh-algorithm.md) and
-[Write a filter](write-a-filter.md) put views to work.
+arrays and answers those questions, and it is compiled into the kernel. Every
+algorithm you write sees its dataset through views, so they come first: what a
+view is, where views come from, and what a kernel may rely on. The tutorials
+[Write a mesh algorithm](write-a-mesh-algorithm.md) and
+[Write a filter](write-a-filter.md) then put views to work.
 
 The page assumes [kernels](../core/kernels.md) and
 [device classes](../core/device-classes.md) from the Core layer, and a

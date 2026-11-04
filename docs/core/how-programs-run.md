@@ -1,12 +1,11 @@
 # How a Tack program runs
 
 A Tack program is a Python program in which some functions are compiled for a
-device. This page explains where each part of a program runs, how a
-calculation splits into kernels, in what order the device runs them, and what
-makes Tack compile a kernel again. It is for anyone turning NumPy code into
-kernels. After reading it you can structure a simulation's time loop, give a
-kernel the values it needs, and predict when a call will be slow because it
-compiles.
+device. Turning NumPy code into such a program raises a few questions. Which
+parts run on the device, and which in Python? How does a calculation split
+into kernels, and in what order does the device run them? Why is one call
+slow, because it compiles, when the next is fast? The answers shape how you
+write a simulation's time loop and give a kernel the values it needs.
 
 ## Host code and device code
 

@@ -1,12 +1,12 @@
 # Memory and parallel correctness
 
-A kernel's iterations run at the same time, in no promised order. This
-page explains how to write kernels whose answer does not depend on that
-order. It is for anyone moving from NumPy, where every operation finishes
-before the next begins, to kernels, where thousands of iterations share
-the same arrays. After it you can tell which iteration owns each output,
-when a kernel needs a second array, an atomic or a scan, and what Tack
-checks for you and what it leaves to you.
+A kernel's iterations run at the same time, in no promised order. In NumPy,
+every operation finishes before the next begins. In a kernel, thousands of
+iterations share the same arrays at once, and the answer must not depend on
+their order. Writing such kernels comes down to knowing which iteration owns
+each output. From that follows when a kernel needs a second array, an atomic
+or a scan. Tack checks some of this for you, and the page says what it leaves
+to you.
 
 The question to ask of every kernel is this: **which iteration writes each
 output, and what can it read while other iterations are writing?** This

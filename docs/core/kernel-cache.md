@@ -2,10 +2,10 @@
 
 A kernel compiles the first time it is called with new argument types and
 shapes. Tack keeps what it compiles on disk, so the next process that calls
-the same kernel loads it instead of compiling it again. This page is for
-anyone who wants to know where that cache lives, how to move it, limit it or
-turn it off, and how to use it in an MPI job on a shared file system. The
-cache is on by default and needs no code.
+the same kernel loads it instead of compiling it again. The cache is on by
+default and needs no code. You need the rest of this page only to find where
+the cache lives, move it, limit it or turn it off, or use it in an MPI job on
+a shared file system.
 
 This example runs one small program twice, each time in a new process, with
 the cache in a directory of its own. The first run compiles and stores the

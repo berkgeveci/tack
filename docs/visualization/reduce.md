@@ -2,11 +2,10 @@
 
 Some answers are a few numbers, not a new mesh: the range and mean of a field,
 how its values spread, how many separate regions a threshold leaves and how
-big each is. This page shows Tack's reductions for readers who know VTK's
-`vtkDescriptiveStatistics` and `vtkConnectivityFilter`: `statistics`,
-`entropy` and `connected_components`. After it you can summarize a field,
-weight the summary by volume or mass, and label the connected regions of a
-mesh or a point cloud.
+big each is. Tack's reductions compute them. `statistics` and `entropy`
+summarize a field, as VTK's `vtkDescriptiveStatistics` does, and a summary
+can be weighted by volume or mass. `connected_components` labels the
+connected regions of a mesh or a point cloud, as `vtkConnectivityFilter` does.
 
 ## Summarize a field
 

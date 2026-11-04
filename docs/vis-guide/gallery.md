@@ -328,9 +328,10 @@ point shared by cells is computed once, from the edge or face it lies on.
 Each mesh in eight pieces, one an octant of the cube (an image split into eight
 blocks), each given a layer of its neighbours' cells as ghosts, and drawn pulled
 apart: a piece's own cells in its color, its ghosts faint, reaching into the
-pieces around it. Polyhedra are not shown, since `ghost_cells` does not take
-polyhedral pieces yet, nor curved and high-order cells, whose geometry and
-fields ghost cells do not carry yet (it refuses them).
+pieces around it. Polyhedra are not drawn here, though `ghost_cells` takes
+polyhedral pieces too ([Filters over pieces](../visualization/over-pieces.md)).
+Curved and high-order cells are not drawn either: ghost cells do not carry
+their geometry and fields yet, so `ghost_cells` refuses them.
 
 <div class="grid cards" markdown>
 

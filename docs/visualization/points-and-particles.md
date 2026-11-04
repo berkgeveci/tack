@@ -1,11 +1,11 @@
 # Points and particles
 
-This page is for anyone who analyses data that comes as points rather than
-cells: LiDAR and photogrammetry scans, or the particles of SPH, N-body and
-molecular dynamics codes. It shows how to find each point's neighbours, mark
-noise, thin a cloud, estimate normals, put points on a grid, resample SPH
-particles and find dark matter halos. Each algorithm names its VTK or
-Viskores counterpart, so you can find the filter you already use.
+Some data comes as points rather than cells: LiDAR and photogrammetry scans,
+or the particles of SPH, N-body and molecular dynamics codes. Most questions
+about such data start from each point's neighbours. Tack's point algorithms
+find those neighbours, mark noise, thin a cloud, estimate normals, put points
+on a grid, resample SPH particles and find dark matter halos. Each names its
+VTK or Viskores counterpart, so you can find the filter you already use.
 
 A point cloud in Tack is a dataset whose cells are its points, one vertex
 cell each. Its fields are point data. How a cloud is stored, and how it keeps

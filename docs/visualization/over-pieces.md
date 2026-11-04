@@ -1,11 +1,12 @@
 # Filters over pieces
 
-This page is for anyone whose data comes in pieces: a reader's partitions, a
-simulation's blocks, the share of each GPU or MPI rank. It shows what changes
-when filters run on pieces, how to add ghost cells and global ids, which
-algorithms combine the pieces into the whole's answer, and how to merge the
-pieces back into one dataset. After it, you can run the same analysis on one
-process or on many ranks and get the whole dataset's results.
+Data often comes in pieces: a reader's partitions, a simulation's blocks, the
+share of each GPU or MPI rank. The analysis should still give the whole
+dataset's results, whether the pieces are on one process or on many ranks.
+Tack runs filters on each piece and combines the pieces only where an answer
+needs all of them. The sections below show what changes when filters run on
+pieces, how to add ghost cells and global ids, which algorithms combine the
+pieces, and how to merge the pieces back into one dataset.
 
 Tack keeps each piece a whole dataset, and a
 [`PartitionedDataSet`](../reference/glossary.md) holds them, as VTK's
@@ -157,6 +158,27 @@ piece holding it. `ghost_cells` takes unstructured, polyhedral or structured
 pieces, all of one kind. Structured pieces stay structured, each its block
 grown by the layers. `as_polyhedra` makes shaped pieces polyhedral, for a
 reader that gives both kinds.
+
+<div class="grid cards" markdown>
+
+-   ![Pieces of an image with ghost cells](../assets/gallery/pieces-image.jpg){ loading=lazy width=240 height=210 }
+
+    **An image**, split into eight structured blocks
+
+-   ![Pieces of tetrahedra with ghost cells](../assets/gallery/pieces-linear.jpg){ loading=lazy width=240 height=210 }
+
+    **Tetrahedra**, extracted by octant
+
+-   ![Pieces of a mixed mesh with ghost cells](../assets/gallery/pieces-mixed.jpg){ loading=lazy width=240 height=210 }
+
+    **Hexahedra, wedges and pyramids**, extracted by octant
+
+</div>
+
+Each mesh of a unit cube is cut into eight pieces, one an octant, and
+`ghost_cells` gives each piece one layer. The pieces are drawn pulled apart.
+A piece's own cells have its color, and its ghost cells are faint, reaching
+into the pieces around it.
 
 A filter that needs each entity's neighbours is right on what a piece owns,
 but wrong on the rim of the ghost layer, whose neighbours the piece lacks.

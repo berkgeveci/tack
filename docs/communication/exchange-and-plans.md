@@ -1,11 +1,10 @@
 # Exchange data and refresh ghosts with plans
 
-This page shows how to move Tack arrays between blocks. It is for readers who
-have blocks (see [Blocks and worlds](blocks-and-worlds.md)) and need each
-block to see some of its neighbours' data. After it you can send any arrays
-from any block to any block with `exchange`, find each block's neighbours from
-their bounding boxes, and keep an exchange that repeats every step as a
-`Plan`, which is how ghost cells are refreshed.
+Once a problem is cut into [blocks](blocks-and-worlds.md), each block usually
+needs some of its neighbours' data. `exchange` sends any Tack arrays from any
+block to any block. `link_by_bounds` finds each block's neighbours from their
+bounding boxes. An exchange that repeats every step, such as refreshing ghost
+cells, is kept as a `Plan` and run again with new values.
 
 <!-- tack-check: exchange -->
 ```python

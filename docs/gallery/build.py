@@ -12,8 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-SCRIPTS = ("contour", "slice", "clip", "threshold", "surfaces", "quality", "gradients", "probe",
-           "subdivide", "pieces", "streamlines", "glyphs", "pathlines", "mfem_examples")
+SCRIPTS = ("extract", "contour", "slice", "clip", "threshold", "surfaces", "quality",
+           "gradients", "probe", "subdivide", "pieces", "streamlines", "glyphs", "pathlines",
+           "mfem_examples")
 
 
 def main():

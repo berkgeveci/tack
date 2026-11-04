@@ -1,13 +1,12 @@
 # Route points to blocks
 
-This page shows how to send points to the blocks that hold them when you do
-not know those blocks in advance. A probe asks for values at points anywhere
-in a domain, and a particle that moves must go to the block whose part of the
-domain it entered. `Routing` does both. It is for readers who know
-[blocks](blocks-and-worlds.md) and [exchanges](exchange-and-plans.md). After
-it you can route points by a test of your own, send values with them, return
-answers to where the points came from, and move particles between blocks in
-rounds.
+A probe asks for values at points anywhere in a domain, and a particle that
+moves must go to the block whose part of the domain it entered. In both cases
+a point must reach the block that holds it, and no one knows that block in
+advance. `Routing` sends each point there by a test of your own. It also sends
+values with the points and returns answers to where they came from. Particles
+move between blocks by routing in rounds. The page builds on
+[blocks](blocks-and-worlds.md) and [exchanges](exchange-and-plans.md).
 
 <!-- tack-check: probe -->
 ```python

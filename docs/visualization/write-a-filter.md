@@ -3,12 +3,12 @@
 A filter is a Python function that takes a dataset and returns a new dataset
 or a field, running kernels to do the work. Tack's built-in filters are
 written that way, with the same public names you have, so a filter of your own
-can do anything theirs do. This tutorial is for readers who have written a
-[mesh algorithm](write-a-mesh-algorithm.md) and now want a whole filter. It
-rewrites six built-ins, and each rewrite gives the built-in's result in every
-part: topology, geometry, fields and their units, sets, ghost marks, global
-ids, origin, spatial unit and time. After it you can write a filter that keeps
-everything a dataset means, on one piece or on many.
+can do anything theirs do. This tutorial rewrites six built-ins, building on
+the kernels of [Write a mesh algorithm](write-a-mesh-algorithm.md). Each
+rewrite gives the built-in's result in every part: topology, geometry, fields
+and their units, sets, ghost marks, global ids, origin, spatial unit and time.
+Keeping all of them is what lets a filter's output mean what its input meant,
+on one piece or on many.
 
 ## A first filter
 

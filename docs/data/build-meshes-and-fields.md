@@ -1,13 +1,13 @@
 # Build meshes and fields
 
-This page shows how to make a dataset from your own numbers: the mesh, the
-fields on it, and named selections of its points, cells and faces. It is for
-anyone whose data does not come from a reader, such as a test case, a
-synthetic field or a mesh generator's output. After it you can build every
-kind of mesh Tack holds, from an image to an unstructured grid of mixed cells,
-and attach point data, cell data and higher-order fields to it. What the parts
-mean is explained in [Topology and geometry](topology-and-geometry.md) and
-[Fields and where values live](fields.md). This page is about the calls.
+Not every dataset comes from a file. A test case, a synthetic field or a mesh
+generator's output starts as arrays of numbers, and you make the dataset from
+them yourself. Every kind of mesh Tack holds can be built this way, from an
+image to an unstructured grid of mixed cells. You then attach point data, cell
+data and higher-order fields to it, and name selections of its points, cells
+and faces as sets. [Topology and geometry](topology-and-geometry.md) and
+[Fields and where values live](fields.md) explain what the parts mean. The
+calls that make them are the subject here.
 
 You build three parts: a mesh (its topology and geometry), fields, and sets.
 This dataset is an image of 4 x 3 x 2 cells with a height at each point, a

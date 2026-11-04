@@ -1,10 +1,11 @@
 # Debug and time a kernel
 
-A new kernel can give wrong values, crash, or run slower than it should. This
-page is for anyone with such a kernel. After reading it you can check a kernel
-against an independent reference, choose a tolerance for the comparison, find
-an index out of bounds with debug mode, print from a kernel, read the code
-Tack generates, and time a kernel so the number means what you think.
+A new kernel can give wrong values, crash, or run slower than it should. The
+first step is to check it against an independent reference, with a tolerance
+that suits the comparison. Debug mode then finds an index out of bounds,
+`print` shows values from inside a kernel, and the generated code shows what
+Tack made of your source. Timing comes last, measured so that the number
+means what you think.
 
 The most common bug is an index one past the end of an array. Kernels do not
 check their indices, so the read quietly takes a neighbouring value. Debug

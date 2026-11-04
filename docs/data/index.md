@@ -1,12 +1,11 @@
-# Data: a dataset in five minutes
+# Data: datasets, fields and spaces
 
-This page starts the Data layer of Tack, the data model that holds meshes,
-particles and refined grids on any device. It is written for readers who
-know VTK. In five minutes you build a mesh, attach point data and cell data
-to it, and see how Tack names the parts VTK users already know. You also
-attach a third kind of field that VTK has no association for, and move the
-whole dataset to a GPU. The later pages of the layer explain each part in
-depth.
+A Tack dataset is VTK's dataset in other words: cells, points, point data and
+cell data, on whichever device you compute on. The one new idea is the
+*space*, which says where a field's values live and what they mean between
+them. Point data and cell data are two spaces; the same idea holds the
+discontinuous and higher-order fields simulations write, which VTK has no
+association for.
 
 ## Build a grid with point data and cell data
 
@@ -105,147 +104,16 @@ The same name can be used in two spaces, as VTK allows a point array and a
 cell array called `p`. [Fields and where values live](fields.md) covers the
 other spaces and how to look up fields by name.
 
-## Build an unstructured mesh as VTK stores one
+## Other kinds of data, and other devices
 
-An unstructured mesh in Tack is described with the arrays of a
-`vtkUnstructuredGrid`: a VTK cell type per cell, offsets, and the
-connectivity. This mesh has a hexahedron (VTK type 12) with a pyramid
-(VTK type 14) on top. The corners of each cell are in VTK's order.
-
-<!-- tack-check: five-minute-unstructured -->
-```python
-import numpy as np
-
-import tack
-import tack.dataset as td
-
-tack.set_default_device("cpu")
-
-positions = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
-                      [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
-                      [0.5, 0.5, 1.6]], np.float32)
-cells = td.UnstructuredTopology(types=[12, 14], offsets=[0, 8, 13],
-                                connectivity=[0, 1, 2, 3, 4, 5, 6, 7,    # the hexahedron
-                                              4, 5, 6, 7, 8])            # the pyramid
-mesh = td.DataSet(cells, positions)
-
-mesh.fields["height"] = td.Field(td.H1(mesh), tack.array(positions[:, 2]))
-mesh.fields["material"] = td.Field(td.Constant(mesh), tack.array([1.0, 2.0], dtype=tack.f32))
-
-print(mesh.num_points, "points,", mesh.num_cells, "cells")    # 9 points, 2 cells
-assert mesh.fields["material"].space.size == 2
-```
-
-The offsets have one more entry than there are cells. Cell `c` uses the
-connectivity entries from `offsets[c]` up to `offsets[c + 1]`. Giving
-`DataSet` a NumPy array of positions makes its geometry, one 3-vector per
-point. [Cells and meshes](cells-and-meshes.md) lists the cell types and the
-kinds of mesh Tack holds.
-
-## Add a field VTK has no association for
-
-Simulations often store fields that are neither point data nor cell data. A
-discontinuous Galerkin (DG) solver keeps a polynomial in each cell. Each
-cell has values of its own, which need not match its neighbour's at a shared
-face. Tack holds such a field in an `L2` space, the finite-element name for
-fields that may jump from cell to cell. Its order is the polynomial order in
-each cell.
-
-The example below puts all three kinds of field on one grid: point data,
-cell data and a cubic DG field. `td.interpolate` fills the DG field from a
-function of position, evaluated where each cell's values sit. The function
-is a device function, which [Device functions](../core/device-functions.md)
-introduces. A cubic in a
-hexahedron has 4 x 4 x 4 = 64 values, so this field has 64 values a cell.
-
-<!-- tack-check: five-minute-dg -->
-```python
-import numpy as np
-
-import tack
-import tack.dataset as td
-
-tack.set_default_device("cpu")
-
-data = td.uniform_grid((5, 4, 3), spacing=(0.25, 0.25, 0.5))
-height = tack.array(data.positions()[:, 2])
-material = tack.array(np.arange(data.num_cells) % 2, dtype=tack.i32)
-
-
-@tack.func
-def cubic(x):
-    return x.x * x.x * x.x - x.y * x.z
-
-
-dg = td.L2(data, order=3)                              # a cubic in each cell
-data.fields["height"] = td.Field(td.H1(data), height)              # point data
-data.fields["material"] = td.Field(td.Constant(data), material)    # cell data
-data.fields["cubic"] = td.interpolate(data, cubic, dg)             # DG, order 3
-
-for name, field in data.fields.items():
-    print(f"{name:9} {field.space!r:36} {field.space.size} values")
-# height    H1(order=1)                          60 values
-# material  Constant()                           24 values
-# cubic     L2(order=3, basis='gauss_lobatto')   1536 values
-assert dg.size == 64 * data.num_cells
-```
-
-Each field has its own space, and none of them changes the mesh.
-Higher-order fields, curved cells and the bases they use have a page of
-their own, [Higher-order and finite-element data](higher-order.md).
-
-## Run on a GPU
-
-A dataset lives on one device, as a Tack array does. Everything made while a
-device is the default goes there. `to_device` copies a dataset, with its
-topology, geometry, fields and sets, to another device. The code that builds
-and uses the dataset does not change.
-
-<!-- tack-check: five-minute-device -->
-```python
-import tack
-import tack.dataset as td
-
-tack.set_default_device("cpu")
-
-target = "cpu"          # "cuda", "hip", "metal" or "level_zero" on a GPU
-
-data = td.uniform_grid((5, 4, 3), spacing=(0.25, 0.25, 0.5))
-data.fields["height"] = td.Field(td.H1(data), tack.array(data.positions()[:, 2]))
-
-moved = data.to_device(target)
-print(moved.device)                                   # cpu
-assert moved.fields["height"].device == tack.device(target)
-```
-
-On a GPU, `positions()` and `values.numpy()` copy values back to the host.
-Use them to inspect results, not inside a loop.
-[Choose a device](../core/choose-a-device.md) explains devices, and
-[Data on devices](devices.md) explains where each part of a dataset lives.
-
-## A preview: contour the grid
-
-The Visualization layer runs filters on these datasets. As a preview, this
-example contours the height at 0.75, which makes a flat sheet of triangles.
-The filter returns a new dataset and leaves its input unchanged.
-
-<!-- tack-check: five-minute-contour -->
-```python
-import tack
-import tack.dataset as td
-
-tack.set_default_device("cpu")
-
-data = td.uniform_grid((5, 4, 3), spacing=(0.25, 0.25, 0.5))
-data.fields["height"] = td.Field(td.H1(data), tack.array(data.positions()[:, 2]))
-
-surface = td.contour(data, "height", 0.75)
-print(surface.num_cells, "triangles")                 # 24 triangles
-assert surface.num_cells == 24
-```
-
-[Visualization: filters you know](../visualization/index.md) starts that
-layer.
+The same parts hold every kind of data the layer covers. An unstructured mesh
+of mixed cells is a topology built from a `vtkUnstructuredGrid`'s arrays
+([Cells and meshes](cells-and-meshes.md)). A discontinuous Galerkin field,
+with a polynomial in each cell that may jump at the faces, is a field in an
+`L2` space ([Fields and where values live](fields.md#fields-that-jump-between-cells),
+[Higher-order and finite-element data](higher-order.md)). A dataset lives on
+one device, as an array does, and `data.to_device("cuda")` copies it to another
+([Data on devices](devices.md)).
 
 ## VTK's terms and Tack's
 

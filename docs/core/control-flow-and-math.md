@@ -1,12 +1,12 @@
 # Control flow and math
 
 Inside a kernel's parallel loop you write ordinary Python: conditions, loops
-and math. This page shows what each iteration can do: `if` and conditional
-expressions, `for` and `while` loops with `break` and `continue`, the math
-functions, and how integer and floating-point arithmetic behave. It is for
-readers who have written a first kernel ([Kernels](kernels.md)). After it you
-can write iterative per-element algorithms, such as Newton's method or a
-bounded search, and know which arithmetic gives the same answer as NumPy.
+and math. Each iteration can branch with `if` and conditional expressions,
+loop with `for` and `while`, and leave a loop with `break` or `continue`.
+That is enough for iterative per-element algorithms, such as Newton's method
+or a bounded search. The math functions are here too. So are the rules of
+integer and floating-point arithmetic, which tell you when a kernel gives the
+same answer as NumPy.
 
 ## A first example
 

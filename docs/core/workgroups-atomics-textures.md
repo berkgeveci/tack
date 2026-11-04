@@ -1,12 +1,12 @@
 # Use workgroups, atomics, textures and random numbers
 
 Most kernels are a parallel loop in which each iteration reads what it likes
-and writes its own output. This page is for kernel writers who need more than
-that. It covers four tools. Atomics let many iterations update one element.
+and writes its own output. Some calculations need more than that, and Tack
+has four tools for them. Atomics let many iterations update one element.
 Random numbers come out the same on every device. 3D textures sample a volume
 with trilinear interpolation. Workgroups let GPU threads cooperate through
-shared memory. After reading it you can use each one, and you know which
-devices support it.
+shared memory. Not every device supports every tool, and the page says which
+ones do.
 
 A histogram of random samples uses the first two:
 

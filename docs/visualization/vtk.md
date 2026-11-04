@@ -2,11 +2,10 @@
 
 Tack does not read most file formats, and it does not render. VTK does both,
 so most workflows read with VTK, compute with Tack and draw or write with VTK.
-This page shows how to move datasets between the two, how to share memory
-instead of copying, and how to put Tack's filters into a VTK pipeline beside
-VTK's own. It also covers VTK's higher-order cells and cell grids. It is for
-readers who know VTK's data model; Tack's terms are in the
-[glossary](../reference/glossary.md).
+Moving a dataset between the two takes one call each way. The two can share
+memory instead of copying it, and Tack's filters can sit in a VTK pipeline
+beside VTK's own. VTK's higher-order cells and cell grids convert too. Tack's
+terms are in the [glossary](../reference/glossary.md).
 
 Install VTK with Tack's `interop` extra (`uv sync --extra interop`). Tack needs
 VTK 9.7.1 or later and uses VTK's pythonic API throughout.
@@ -315,6 +314,30 @@ cells for a Bernstein field, and VTK's classic quadratic cells for a
 serendipity field. `"lagrange"`, `"bezier"` and `"quadratic"` choose one.
 Without `higher_order`, a higher-order field goes to VTK as its values at the
 points, on linear cells.
+
+To draw a higher-order dataset with VTK's linear cells and keep its shape,
+subdivide it first. `td.subdivide(data, n)` cuts each cell into `n` linear
+sub-cells along each axis and evaluates the fields at the new points, as
+VTK's `vtkCellGridToUnstructuredGrid` does. A point that cells share is
+computed once.
+
+<div class="grid cards" markdown>
+
+-   ![Sub-cells of an order-4 field](../assets/gallery/subdivide-high-order.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 4** on straight hexahedra
+
+-   ![Sub-cells of curved cells](../assets/gallery/subdivide-curved.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 3** on curved hexahedra, the sub-cells following the curves
+
+</div>
+
+Each picture is `td.subdivide(data, 4)` of a unit cube's 27 hexahedra, with
+the cells about one corner left out so the inside shows. The sub-cells'
+edges are drawn, and the color is the field. The
+[gallery](../vis-guide/gallery.md#subdivide) shows curved tetrahedra and
+wedges too.
 
 ## Read and write cell grids
 

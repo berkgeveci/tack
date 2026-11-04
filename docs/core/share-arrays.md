@@ -1,11 +1,10 @@
 # Share arrays with NumPy, PyTorch, CuPy and VTK
 
 Data usually comes from somewhere else: a NumPy script, a PyTorch model, a
-simulation's own GPU memory, a VTK pipeline. This page is for anyone who needs
-to get such data into Tack kernels and the results back out. After reading it
-you can copy values in and out, share memory with other libraries through
-DLPack without copying, wrap a raw pointer from a simulation, and exchange
-arrays with VTK.
+simulation's own GPU memory, a VTK pipeline. The question is how to get it
+into Tack kernels and the results back out, and when a copy can be avoided.
+Tack shares memory with other libraries through DLPack. It can also wrap a
+raw pointer from a simulation, and it exchanges arrays with VTK.
 
 There are two ways in. A *copy* gives Tack its own array, independent of the
 source. A *shared* array uses the source's memory, so a write through either

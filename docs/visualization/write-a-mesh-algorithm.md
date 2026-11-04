@@ -1,13 +1,12 @@
 # Write a mesh algorithm
 
-This tutorial is for readers who want to compute something per cell, per face
-or per node of a mesh that no built-in algorithm computes. You write a
-[kernel](../core/kernels.md) and hand it to `td.for_each`, which runs it over
-the dataset with a [view](views.md) of the mesh and of each field. The kernel
-never switches on the cell type and never parses connectivity, so it runs on
-hexahedra, wedges, images and polyhedra alike, on every device. Over the
-tutorial you will write six kernels on one small mesh, and check each against
-an exact answer.
+When no built-in algorithm computes what you need per cell, per face or per
+node of a mesh, write a [kernel](../core/kernels.md) and hand it to
+`td.for_each`. It runs the kernel over the dataset with a [view](views.md) of
+the mesh and of each field. The kernel never switches on the cell type and
+never parses connectivity, so it runs on hexahedra, wedges, images and
+polyhedra alike, on every device. Over the tutorial you will write six
+kernels on one small mesh, and check each against an exact answer.
 
 Read [Views](views.md) first for what a view is. The kernel syntax is Core's
 ([kernels](../core/kernels.md), [device functions](../core/device-functions.md));

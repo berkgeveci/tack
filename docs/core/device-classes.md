@@ -2,11 +2,11 @@
 
 A device class is a Python class whose objects kernels can take as
 arguments. An object bundles arrays, numbers and methods, and a kernel
-calls its methods as it would in Python. This page is for anyone whose
-kernels have grown long argument lists, or who wants one kernel to work
-with several data layouts. After it you can write device classes, choose
-which of their values are compiled in, nest objects inside objects, make
-objects indexable like arrays, and write kernels as methods.
+calls its methods as it would in Python. One object can replace a long list
+of kernel arguments. Objects of different classes let one kernel work with
+several data layouts. You choose which of an object's values are compiled
+in, and objects can hold other objects, be indexed like arrays, and have
+kernels as methods.
 
 <!-- tack-check: device-classes-first -->
 ```python

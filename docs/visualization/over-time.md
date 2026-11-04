@@ -1,11 +1,11 @@
 # Steps over time
 
-This page is for anyone who analyses a simulation one time step at a time,
-in situ or from a series of files. It shows how to keep running statistics
-over the steps, take time derivatives, carry particles through a velocity
-field that changes in time, and build pathlines and streaklines. After it,
-you can write an analysis loop that receives each step once and keeps only
-what it needs of earlier ones.
+A simulation produces its time steps one after another, in situ or as a
+series of files. An analysis of them should receive each step once and keep
+only what it needs of earlier ones. Tack's temporal filters work that way.
+They keep running statistics over the steps, take time derivatives, carry
+particles through a velocity field that changes in time, and build pathlines
+and streaklines.
 
 Tack keeps no series of steps. Each step is a dataset at its own time,
 `data.time` in `data.time_unit`, and every filter keeps that time on what it
@@ -236,6 +236,22 @@ assert paths.num_cells == 3 and streak.num_cells == 1
 `Advection`'s arguments and returns the current pathlines every step: a
 polyline per particle, with `seed` and `time` on its points. A particle's
 first point stays alone, in no line, until the particle has moved.
+
+<div class="grid cards" markdown>
+
+-   ![Pathlines through tetrahedra](../assets/gallery/pathlines-linear.jpg){ loading=lazy width=240 height=210 }
+
+    **Tetrahedra**: the velocity linear in each cell
+
+-   ![Pathlines through curved cells](../assets/gallery/pathlines-curved.jpg){ loading=lazy width=240 height=210 }
+
+    **Order 3** on curved hexahedra
+
+</div>
+
+Each picture follows 16 particles through 60 steps of a swirl that changes
+in time, inside a unit cube. Each path is drawn as a tube colored by `time`.
+The [gallery](../vis-guide/gallery.md#pathlines) shows two more kinds of cell.
 
 `Streaklines(field, seeds, releases=1)` releases `releases` particles at each
 seed every step, at times spread evenly over the interval since the previous

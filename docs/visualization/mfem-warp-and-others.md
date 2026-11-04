@@ -5,9 +5,9 @@ finite-element library, gives meshes and solutions of any order, curved and
 discontinuous; Tack reads them into its spaces without resampling them onto
 linear cells. **NVIDIA Warp** runs Python kernels on NVIDIA GPUs; Tack shares
 arrays with it, and datasets with its simulation-data library, warp-simdata.
-This page shows how to do both, and where to go for other libraries. It is for
-readers who have data in one of these and want Tack's algorithms on it. Tack's
-terms are in the [glossary](../reference/glossary.md).
+Data in either one goes through Tack's algorithms as it is, and the last
+section says where to go for other libraries. Tack's terms are in the
+[glossary](../reference/glossary.md).
 
 ## Bring an MFEM solution into Tack
 

@@ -3,10 +3,9 @@
 Tack's core, the `tack` package, lets you write parallel numerical code as
 ordinary Python functions and run it on a CPU or a GPU: Apple's through
 Metal, NVIDIA's through CUDA, AMD's through HIP and Intel's through Level
-Zero. This page is for Python programmers who know NumPy, and perhaps CuPy or
-PyTorch, but have not written GPU code. After it you can run a kernel on your
-own machine, say what happens the first time you call it and every time after,
-and choose what to read next.
+Zero. If you know NumPy, and perhaps CuPy or PyTorch, but have never written
+GPU code, start here. You will run a kernel on your own machine and see what
+happens the first time you call it and every time after.
 
 ## Run your first kernel
 

@@ -1,11 +1,10 @@
 # Run under MPI
 
-This page shows how to run a computation written on blocks over many MPI
-ranks: on a workstation with `mpiexec`, or on a cluster under Slurm with a GPU
-per rank. It is for readers who have a computation on `tc.Blocks` that works
-in one process (see the [section's first page](index.md)). After it you can
-install mpi4py for Tack, give each rank its blocks and its GPU, choose how
-messages travel between ranks, and keep compiled kernels for a large job.
+A computation written on `tc.Blocks` that works in one process can run over
+many MPI ranks, on a workstation with `mpiexec` or on a cluster under Slurm
+with a GPU per rank. To get there, you install mpi4py, give each rank its
+blocks and its GPU, and choose how messages travel between ranks. A large job
+also keeps its compiled kernels in one bundle that every rank reads.
 
 Only the world changes. Everything else in the program stays as it is:
 
@@ -18,14 +17,26 @@ world = tc.World(MPI.COMM_WORLD)
 blocks = tc.Blocks(["cpu"] * 2, world)             # two blocks on every rank
 ```
 
-The ghost example of the section's first page takes `--mpi` to make its world
-this way. Its six blocks are shared out over the ranks, and every run gives
-the same line, bit for bit:
+The example `docs/examples/comm_ghosts.py` diffuses heat along a line of 240
+cells cut into six blocks. Before every step, a `Plan` refreshes each block's
+ghost cells, as in [Exchange and plans](exchange-and-plans.md). The example
+takes `--mpi` to make its world this way, and its six blocks are then shared
+out over the ranks. On a laptop with Open MPI 5.0, every run prints the same
+maximum and the same hash of the line's bytes:
 
 ```console
+$ python docs/examples/comm_ghosts.py --check
+1 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d
+$ mpiexec -n 2 python docs/examples/comm_ghosts.py --mpi --check
+2 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d
 $ mpiexec -n 3 python docs/examples/comm_ghosts.py --mpi --check
 3 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d
+$ mpiexec -n 6 python docs/examples/comm_ghosts.py --mpi --check
+6 rank(s), 6 blocks: max 0.492189, sha256 4d622496db333f4d
 ```
+
+`--check` also compares each run with the same kernel on one array of 240
+cells, and every run passes, bit for bit.
 
 ## Install mpi4py
 

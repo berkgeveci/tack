@@ -1,12 +1,10 @@
 # Vectors and matrices
 
 Positions, velocities, colours and deformation gradients all have several
-components. This page shows how to write their arithmetic in a kernel as
-whole values, `p + dt * v` or `F @ G`, instead of one scalar name per
-component. It is for anyone who has written a first kernel and now has
-data with more than one number per element. After it you can store
-vectors and matrices in arrays, compute with them in kernels, and read
-them back into NumPy.
+components. In a kernel you write their arithmetic as whole values,
+`p + dt * v` or `F @ G`, instead of one scalar name per component. Arrays
+store vectors and matrices as elements, and they read back into NumPy like
+any other array.
 
 <!-- tack-check: vectors-first -->
 ```python
