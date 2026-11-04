@@ -71,6 +71,21 @@ def test_an_error_is_vtks_and_kept():
     assert contour(image).number_of_cells > 0 and contour.error is None
 
 
+def test_a_failed_run_keeps_its_error_without_its_frames():
+    """The error is kept without its traceback: that held the run's frames, the
+    algorithm and VTK's information objects in a cycle, which crashed Python's
+    collector freeing them."""
+    import gc
+
+    source = _wavelet()
+    contour = ta.Contour(field="no such field")
+    contour.SetInputConnection(source.GetOutputPort())
+    contour.Update()
+    assert contour.error is not None and contour.error.__traceback__ is None
+    del contour, source
+    gc.collect()
+
+
 def test_an_unknown_parameter_is_refused():
     with pytest.raises(TypeError, match="no parameter 'values'"):
         ta.Contour(field="RTData", values=[1.0])
@@ -282,3 +297,305 @@ def test_probe_in_a_pipeline_keeps_an_images_structure():
     out = probe.GetOutputDataObject(0)
     assert isinstance(out, vtk.vtkImageData) and out.dimensions == (5, 5, 5)
     assert set(out.point_data.keys()) == {"RTData", "valid"}
+
+
+# ── Trees: multiblocks and collections ──────────────────────────────
+
+def _collection():
+    """A vtkPartitionedDataSetCollection of the wavelet's two halves and the whole, named,
+    with a data assembly naming them."""
+    whole, halves = _halves()
+    tree = vtk.vtkPartitionedDataSetCollection()
+    tree.SetNumberOfPartitionedDataSets(2)
+    tree.SetPartitionedDataSet(0, halves)
+    one = vtk.vtkPartitionedDataSet()
+    one.append(whole)
+    tree.SetPartitionedDataSet(1, one)
+    for i, name in enumerate(["halves", "whole"]):
+        tree.GetMetaData(i).Set(vtk.vtkCompositeDataSet.NAME(), name)
+    assembly = vtk.vtkDataAssembly()
+    assembly.SetRootNodeName("wavelet")
+    for i, name in enumerate(["halves", "whole"]):
+        assembly.AddDataSetIndex(assembly.AddNode(name), i)
+    tree.SetDataAssembly(assembly)
+    return tree
+
+
+def _multiblock():
+    """A multiblock of the whole wavelet, its halves as a vtkMultiPieceDataSet, and a
+    nested multiblock holding the whole again, named."""
+    whole, halves = _halves()
+    pieces = vtk.vtkMultiPieceDataSet()
+    pieces.SetNumberOfPieces(2)
+    for i in range(2):
+        pieces.SetPiece(i, halves.GetPartition(i))
+    inner = vtk.vtkMultiBlockDataSet()
+    inner.SetNumberOfBlocks(1)
+    inner.SetBlock(0, whole)
+    tree = vtk.vtkMultiBlockDataSet()
+    tree.SetNumberOfBlocks(3)
+    for i, block in enumerate([whole, pieces, inner]):
+        tree.SetBlock(i, block)
+        tree.GetMetaData(i).Set(vtk.vtkCompositeDataSet.NAME(), f"block {i}")
+    return tree
+
+
+def test_a_collection_keeps_its_structure_names_and_assembly():
+    out = ta.Contour(field="RTData", value=150.0)(_collection())
+    assert isinstance(out, vtk.vtkPartitionedDataSetCollection)
+    assert out.GetNumberOfPartitionedDataSets() == 2
+    assert [out.GetMetaData(i).Get(vtk.vtkCompositeDataSet.NAME()) for i in range(2)] == [
+        "halves", "whole"]
+    assert out.GetDataAssembly().GetRootNodeName() == "wavelet"
+    whole = _vtk_contour(_wavelet()(), 150.0).number_of_cells
+    assert out.GetPartitionedDataSet(1).GetPartition(0).number_of_cells == whole
+    halves = out.GetPartitionedDataSet(0)
+    assert sum(halves.GetPartition(i).number_of_cells for i in range(2)) == whole
+
+
+def test_a_multiblock_keeps_its_structure_and_names():
+    out = ta.Contour(field="RTData", value=150.0)(_multiblock())
+    assert isinstance(out, vtk.vtkMultiBlockDataSet)
+    assert [out.GetMetaData(i).Get(vtk.vtkCompositeDataSet.NAME()) for i in range(3)] == [
+        "block 0", "block 1", "block 2"]
+    whole = _vtk_contour(_wavelet()(), 150.0).number_of_cells
+    assert out.GetBlock(0).number_of_cells == whole
+    pieces = out.GetBlock(1)
+    assert isinstance(pieces, vtk.vtkMultiPieceDataSet)
+    assert sum(pieces.GetPiece(i).number_of_cells for i in range(2)) == whole
+    assert out.GetBlock(2).GetBlock(0).number_of_cells == whole
+
+
+def _point_ids(pieces):
+    return [np.asarray(pieces.GetPartition(i).GetPointData().GetGlobalIds())
+            for i in range(pieces.GetNumberOfPartitions())]
+
+
+@pytest.mark.parametrize("tree, pieces", [
+    (_collection, lambda out: out.GetPartitionedDataSet(0)),
+    (_multiblock, lambda out: out.GetBlock(1)),
+])
+def test_a_filter_over_pieces_takes_each_partitioned_block_whole(tree, pieces):
+    """The halves are numbered together: the plane they share has one id per point, so
+    the ids run to the whole's point count, once each (by VTK's executive alone, a
+    multiblock's pieces would each be numbered from 0)."""
+    out = ta.GenerateGlobalIds()(tree())
+    ids = _point_ids(pieces(out))
+    assert len(ids) == 2
+    assert np.array_equal(np.unique(np.concatenate(ids)),
+                          np.arange(_wavelet()().number_of_points))
+
+
+def test_merging_in_a_collection_gives_one_partition_per_dataset():
+    out = ta.MergePieces()(_collection())
+    halves = out.GetPartitionedDataSet(0)
+    assert halves.GetNumberOfPartitions() == 1
+    assert halves.GetPartition(0).number_of_points == _wavelet()().number_of_points
+
+
+def test_a_field_filter_on_a_tree_adds_its_arrays_to_every_block():
+    out = ta.Gradients(field="RTData", at="points")(_collection())
+    for i in range(2):
+        node = out.GetPartitionedDataSet(i)
+        for j in range(node.GetNumberOfPartitions()):
+            assert "gradient" in node.GetPartition(j).point_data.keys()
+
+
+def test_probe_into_a_tree_from_a_tree():
+    source = _collection()
+    where = _multiblock()
+    probe = ta.Probe()
+    probe.SetInputDataObject(0, where)
+    probe.SetSourceData(source)
+    probe.Update()
+    out = probe.GetOutputDataObject(0)
+    assert isinstance(out, vtk.vtkMultiBlockDataSet)
+    values = np.asarray(out.GetBlock(0).point_data["RTData"])
+    np.testing.assert_allclose(values, np.asarray(_wavelet()().point_data["RTData"]),
+                               rtol=1e-5)
+
+
+# ── Parameters from the Tack function ───────────────────────────────
+
+def test_every_argument_of_the_tack_function_is_a_parameter():
+    """Contour's are td.contour's, but for the data: the class's own ``field`` and
+    ``value`` and generated ones such as ``merge_points``, with td.contour's defaults."""
+    import inspect
+
+    names = set(inspect.signature(td.contour).parameters) - {"data"}
+    contour = ta.Contour()
+    for name in names:
+        assert hasattr(contour, name), name
+    assert contour.merge_points is True and contour.dimension is None
+    # A generated parameter is set and passed like any other.
+    plain = (_wavelet() >> ta.Contour(field="RTData", value=150.0))()
+    unmerged = (_wavelet() >> ta.Contour(field="RTData", value=150.0, merge_points=False))()
+    assert unmerged.number_of_points > plain.number_of_points
+    assert unmerged.number_of_cells == plain.number_of_cells
+
+
+def test_what_the_wrapper_supplies_is_no_parameter():
+    assert not hasattr(ta.Streamlines(), "locator")
+    assert not hasattr(ta.GhostCells(), "world")
+    assert not hasattr(ta.Probe(), "where")
+
+
+def test_a_required_argument_unset_is_named():
+    source = _wavelet()             # held: a temporary's port outlives it (VTK bugs)
+    threshold = ta.Threshold(lower=0.0, upper=1.0)
+    threshold.SetInputConnection(source.GetOutputPort())
+    threshold.Update()
+    assert "needs 'field'" in str(threshold.error)
+
+
+# ── Fields: by association, and VTK's SetInputArrayToProcess ─────────
+
+def _two_of_one_name():
+    """The wavelet with ``p``, a point array (``RTData``) and a cell array (each cell's
+    first point's value, plus a million) of one name."""
+    grid = _wavelet()()
+    for attributes, values in [
+            (grid.point_data, np.asarray(grid.point_data["RTData"])),
+            (grid.cell_data, np.full(grid.number_of_cells, 1e6, np.float32))]:
+        # Copied into VTK's own memory: vtkFloatArray(values) would share the NumPy
+        # array's without holding it.
+        array = vtk.vtkFloatArray()
+        array.SetNumberOfValues(values.size)
+        np.asarray(array)[:] = values
+        array.SetName("p")
+        attributes.AddArray(array)
+    return grid
+
+
+@pytest.mark.parametrize("field, kept", [(("p", "points"), True), (("p", "cells"), False)])
+def test_a_field_named_with_where_vtk_keeps_it(field, kept):
+    out = ta.Threshold(field=field, lower=0.0, upper=200.0)(_two_of_one_name())
+    assert (out.number_of_cells > 0) is kept
+
+
+def test_set_input_array_to_process_chooses_the_field():
+    threshold = ta.Threshold(lower=0.0, upper=200.0)
+    threshold.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, "p")
+    assert threshold(_two_of_one_name()).number_of_cells == 0
+    threshold.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "p")
+    assert threshold(_two_of_one_name()).number_of_cells > 0
+    # A parameter set wins.
+    threshold.field = ("p", "cells")
+    assert threshold(_two_of_one_name()).number_of_cells == 0
+
+
+def test_a_name_both_kinds_have_is_refused_unless_told_which():
+    threshold = ta.Threshold(field="p", lower=0.0, upper=200.0)
+    threshold.SetInputDataObject(0, _two_of_one_name())
+    threshold.Update()
+    assert threshold.error is not None
+
+
+# ── VTK's implicit functions ────────────────────────────────────────
+
+def _boolean(operation):
+    b = vtk.vtkImplicitBoolean()
+    b.SetOperationType(operation)
+    b.AddFunction(vtk.vtkSphere(center=(0, 0, 0), radius=6.0))
+    b.AddFunction(vtk.vtkPlane(origin=(1, 0, 0), normal=(1, 0, 0)))
+    return b
+
+
+@pytest.mark.parametrize("vtk_function, tack_function", [
+    (lambda: vtk.vtkPlane(origin=(1, 0, 0), normal=(1, 2, 0)),
+     lambda: td.Plane((1, 0, 0), (1, 2, 0))),
+    (lambda: vtk.vtkSphere(center=(1, 0, 0), radius=5.0), lambda: td.Sphere((1, 0, 0), 5.0)),
+    (lambda: vtk.vtkCylinder(center=(0, 1, 0), axis=(0, 0, 1), radius=4.0),
+     lambda: td.Cylinder((0, 1, 0), (0, 0, 1), 4.0)),
+    (lambda: _box(), lambda: td.Box((-3, -2, -1), (4, 5, 6))),
+    (lambda: _planes(), lambda: td.Planes([(0, 0, 3), (0, 0, -3)], [(0, 0, 1), (0, 0, -1)])),
+    (lambda: _boolean(0), lambda: td.Union(td.Sphere((0, 0, 0), 6.0),
+                                           td.Plane((1, 0, 0), (1, 0, 0)))),
+    (lambda: _boolean(1), lambda: td.Intersection(td.Sphere((0, 0, 0), 6.0),
+                                                  td.Plane((1, 0, 0), (1, 0, 0)))),
+    (lambda: _boolean(2), lambda: td.Difference(td.Sphere((0, 0, 0), 6.0),
+                                                td.Plane((1, 0, 0), (1, 0, 0)))),
+])
+def test_vtks_implicit_functions_clip_as_tacks(vtk_function, tack_function):
+    by_vtk = ta.Clip(by=vtk_function(), inside=True)(_wavelet()())
+    by_tack = ta.Clip(by=tack_function(), inside=True)(_wavelet()())
+    assert by_vtk.number_of_cells == by_tack.number_of_cells > 0
+    np.testing.assert_array_equal(np.asarray(by_vtk.points.data),
+                                  np.asarray(by_tack.points.data))
+
+
+def _box():
+    box = vtk.vtkBox()
+    box.SetBounds(-3, 4, -2, 5, -1, 6)
+    return box
+
+
+def _planes():
+    planes = vtk.vtkPlanes()
+    planes.SetPoints(vtk.vtkPoints(data=np.array([[0, 0, 3], [0, 0, -3]], np.float64)))
+    planes.SetNormals(vtk.vtkDoubleArray(np.array([[0, 0, 1], [0, 0, -1]], np.float64)))
+    return planes
+
+
+def test_an_implicit_function_tack_has_none_of_is_named():
+    source = _wavelet()
+    clip = ta.Clip(by=vtk.vtkSuperquadric())
+    clip.SetInputConnection(source.GetOutputPort())
+    clip.Update()
+    assert "vtkSuperquadric" in str(clip.error)
+
+
+# ── Time ────────────────────────────────────────────────────────────
+
+def _time_source(tree):
+    from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
+
+    sddp = vtk.vtkStreamingDemandDrivenPipeline
+
+    class Source(VTKPythonAlgorithmBase):
+        """The wavelet at times 0, 1 and 2, as an image or a one-block multiblock."""
+
+        def __init__(self):
+            VTKPythonAlgorithmBase.__init__(
+                self, nInputPorts=0, nOutputPorts=1,
+                outputType="vtkMultiBlockDataSet" if tree else "vtkImageData")
+
+        def RequestInformation(self, request, inInfo, outInfo):
+            info = outInfo.GetInformationObject(0)
+            info.Remove(sddp.TIME_STEPS())
+            for step in (0.0, 1.0, 2.0):
+                info.Append(sddp.TIME_STEPS(), step)
+            info.Set(sddp.TIME_RANGE(), [0.0, 2.0], 2)
+            if not tree:
+                info.Set(sddp.WHOLE_EXTENT(), [-8, 8, -8, 8, -8, 8], 6)
+            return 1
+
+        def RequestData(self, request, inInfo, outInfo):
+            info = outInfo.GetInformationObject(0)
+            step = info.Get(sddp.UPDATE_TIME_STEP()) if info.Has(sddp.UPDATE_TIME_STEP()) else 0.0
+            out = self.GetOutputData(outInfo, 0)
+            if tree:
+                out.SetNumberOfBlocks(1)
+                out.SetBlock(0, _wavelet()())
+            else:
+                out.ShallowCopy(_wavelet()())
+            out.GetInformation().Set(vtk.vtkDataObject.DATA_TIME_STEP(), step)
+            return 1
+
+    return Source()
+
+
+@pytest.mark.parametrize("tree", [False, True])
+@pytest.mark.parametrize("make", [lambda: ta.Contour(field="RTData", value=150.0),
+                                  lambda: ta.Gradients(field="RTData")])
+def test_time_passes_through(tree, make):
+    f = make()
+    source = _time_source(tree)
+    f.SetInputConnection(source.GetOutputPort())
+    f.UpdateInformation()
+    assert f.GetOutputInformation(0).Get(vtk.vtkStreamingDemandDrivenPipeline.TIME_STEPS()) == (
+        0.0, 1.0, 2.0)
+    f.UpdateTimeStep(1.0)
+    assert f.error is None
+    out = f.GetOutputDataObject(0)
+    assert out.GetInformation().Get(vtk.vtkDataObject.DATA_TIME_STEP()) == 1.0
