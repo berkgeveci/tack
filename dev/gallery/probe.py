@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Probe: each kind of cell sampled at the points of a tilted image plane wider than
 the cube, the points no cell holds dropped, colored by the field, over the cells'
 outline. On the curved cells the plane's edge follows the curved boundary.

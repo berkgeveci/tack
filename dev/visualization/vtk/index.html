@@ -1,4 +1,7 @@
 
+
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -5408,50 +5411,159 @@ marks the algorithm modified, so the pipeline runs again. Every argument of
 the Tack filter is a parameter, with the filter's default, except the data
 and what the algorithm supplies itself (the device, a locator, the
 communicator): <code>Contour(field="p", value=0.5, merge_points=False)</code>.</p>
+<p>Every algorithm of the <a href="../../vis-guide/reference/algorithms/">reference</a> has
+one, named as the Tack function in CamelCase, but for the summaries (to come)
+and the finite-volume operators that take values on faces (<code>net_flux</code>,
+<code>divergence</code>, <code>perot</code>), which VTK keeps nowhere. "Fields" means the input's
+type, shallow-copied, with the new arrays added; "faces" means every face as a
+polygon (a 2D mesh's edges as lines), or every edge as a line, the new values
+their cell data.</p>
 <table>
 <thead>
 <tr>
-<th>Algorithm</th>
-<th>Tack filter</th>
+<th>Group</th>
+<th>Algorithms</th>
 <th>Output</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>Contour</code>, <code>SlicePlane</code>, <code>Clip</code>, <code>Threshold</code></td>
-<td><code>contour</code>, <code>slice_plane</code>, <code>clip</code>, <code>threshold</code></td>
+<td>Cells kept whole</td>
+<td><code>Threshold</code>, <code>ExtractCells</code>, <code>ExtractGeometry</code>, <code>Mask</code></td>
 <td><code>vtkUnstructuredGrid</code></td>
 </tr>
 <tr>
-<td><code>ExtractSurface</code>, <code>Tetrahedralize</code>, <code>SurfaceNormals</code>, <code>Streamlines</code></td>
-<td><code>extract_surface</code>, <code>tetrahedralize</code>, <code>surface_normals</code>, <code>streamlines</code></td>
+<td></td>
+<td><code>ExtractExtent</code></td>
+<td>the input's structure</td>
+</tr>
+<tr>
+<td>Cutting</td>
+<td><code>Contour</code>, <code>Slice</code>, <code>SlicePlane</code>, <code>Clip</code></td>
 <td><code>vtkUnstructuredGrid</code></td>
 </tr>
 <tr>
+<td>Surfaces and edges</td>
+<td><code>ExtractSurface</code>, <code>BoundaryFaces</code>, <code>ExtractEdges</code>, <code>FeatureEdges</code>, <code>SurfaceNormals</code></td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td>Shapes for drawing</td>
+<td><code>Tubes</code>, <code>Glyphs</code></td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td>Connectivity and winding</td>
 <td><code>ConnectedComponents</code></td>
-<td><code>connected_components</code></td>
 <td>the input's type, with <code>region</code> arrays</td>
 </tr>
 <tr>
-<td><code>Probe</code></td>
-<td><code>probe</code>, of the source on port 1 at the input's points</td>
+<td></td>
+<td><code>CheckWinding</code></td>
+<td>fields: <code>inconsistent</code> on the cells</td>
+</tr>
+<tr>
+<td></td>
+<td><code>MergePoints</code></td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td>Changing cell types</td>
+<td><code>Tetrahedralize</code>, <code>Triangulate</code>, <code>AsPolyhedra</code>, <code>AsPolygons</code>, <code>Shrink</code>, <code>Subdivide</code></td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td>Moving the geometry</td>
+<td><code>Transform</code></td>
+<td>the input's structure (an image stays an image)</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Warp</code>, <code>Cylindrical</code>, <code>Spherical</code></td>
+<td>a structured grid for a structured input, else <code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td>Measures and quality</td>
+<td><code>CellGeometry</code>, <code>CellCenters</code>, <code>CellQuality</code>, <code>Elevation</code>, <code>ImplicitValues</code>, <code>CellIds</code>, <code>PointIds</code></td>
+<td>fields</td>
+</tr>
+<tr>
+<td></td>
+<td><code>FaceGeometry</code>, <code>FaceCenters</code>, <code>EdgeLengths</code></td>
+<td>faces (edges)</td>
+</tr>
+<tr>
+<td>Fields from fields</td>
+<td><code>Gradients</code>, <code>FlowQuantities</code>, <code>Project</code>, <code>ValuesAtCenters</code>, <code>Interpolate</code>, <code>Magnitude</code>, <code>Dot</code>, <code>Cross</code>, <code>Composite</code>, <code>LogValues</code></td>
+<td>fields</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Convert</code></td>
+<td>the input's structure</td>
+</tr>
+<tr>
+<td>Finite volumes</td>
+<td><code>Jump</code>, <code>UpwindFlux</code></td>
+<td>faces</td>
+</tr>
+<tr>
+<td>Probing, sampling and particles</td>
+<td><code>Probe</code> (the source on port 1), <code>SphInterpolate</code> (the particles on port 1)</td>
 <td>the input's structure, with the source's fields</td>
 </tr>
 <tr>
-<td><code>Gradients</code>, <code>Elevation</code>, <code>CellQuality</code></td>
-<td><code>gradients</code>, <code>point_elevation</code>, <code>cell_quality</code></td>
-<td>the input's type, with the new arrays added</td>
+<td></td>
+<td><code>Voxelize</code></td>
+<td><code>vtkImageData</code> (the <code>grid</code> parameter's)</td>
 </tr>
 <tr>
-<td><code>GhostCells</code>, <code>GenerateGlobalIds</code>, <code>MergePieces</code></td>
-<td><code>ghost_cells</code>, <code>generate_global_ids</code>, <code>merge_pieces</code></td>
+<td></td>
+<td><code>Streamlines</code>, <code>Advect</code> (seeds on port 1, or <code>seeds=</code>)</td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td>Point clouds</td>
+<td><code>ExtractPoints</code>, <code>ThresholdPoints</code>, <code>MaskPoints</code>, <code>Outliers</code>, <code>VoxelDownsample</code>, <code>HaloCatalog</code></td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td></td>
+<td><code>PointNormals</code>, <code>SphDensity</code></td>
+<td>fields</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Deposit</code></td>
+<td><code>vtkImageData</code> (the <code>grid</code> parameter's)</td>
+</tr>
+<tr>
+<td>Pieces and ghosts</td>
+<td><code>GhostCells</code>, <code>GenerateGlobalIds</code>, <code>MergePieces</code>, <code>GhostPoints</code></td>
 <td>over every piece of a <code>vtkPartitionedDataSet</code></td>
+</tr>
+<tr>
+<td></td>
+<td><code>Split</code></td>
+<td>a <code>vtkPartitionedDataSet</code></td>
+</tr>
+<tr>
+<td></td>
+<td><code>RemoveGhosts</code></td>
+<td>the input's structure</td>
 </tr>
 </tbody>
 </table>
 <p>A <code>vtkPartitionedDataSet</code> input runs the filter on each piece and gives a
-<code>vtkPartitionedDataSet</code>. The last row's algorithms need every piece at once,
-so they take the pieces together; see <a href="../over-pieces/">Filters over pieces</a>.</p>
+<code>vtkPartitionedDataSet</code>. The algorithms whose Tack filter answers for the
+pieces together take them together: <code>GhostCells</code>, <code>GenerateGlobalIds</code> and
+<code>MergePieces</code>; <code>ExtractSurface</code>, which leaves out the faces pieces share;
+<code>ConnectedComponents</code>, whose regions join across pieces; <code>Streamlines</code> and
+<code>Advect</code>, whose particles go from piece to piece; and the point-cloud and
+sampling ones (<code>Voxelize</code>, <code>Outliers</code>, <code>VoxelDownsample</code>, <code>Deposit</code>,
+<code>HaloCatalog</code>). See <a href="../over-pieces/">Filters over pieces</a>. Particles are handed
+from piece to piece after whole steps where the pieces have a layer of ghost
+cells (<code>GhostCells</code>); without one, each crossing costs a shortened step.</p>
 <p>Readers of Exodus, IOSS, CGNS, EnSight and OpenFOAM files give trees of
 datasets: a <code>vtkMultiBlockDataSet</code> or a <code>vtkPartitionedDataSetCollection</code>. The
 algorithms take them as they are and give a tree of the same shape, with the
@@ -5459,6 +5571,16 @@ blocks' names and a collection's data assembly. Each partitioned dataset in the
 tree, a <code>vtkMultiPieceDataSet</code> block too, is filtered as a whole, so
 <code>GhostCells</code> and <code>GenerateGlobalIds</code> see all its pieces together, and each
 block that is one dataset is filtered on its own.</p>
+<p>Over MPI ranks, each rank's pipeline holds its own pieces, and the algorithms
+whose answer needs every piece take the other ranks' too. They take the ranks
+from VTK, as VTK's own parallel filters do: VTK's global controller
+(<code>vtkMultiProcessController.GetGlobalController()</code>, which <code>pvbatch</code> sets, or a
+script with <code>SetGlobalController</code>), its communicator made mpi4py's by VTK's
+<code>vtkMPI4PyCommunicator</code>. <code>tack.interop.vtk.world()</code> gives that <code>World</code>. VTK's
+wheels have no MPI, so with them give the ranks yourself, an mpi4py
+communicator or a <code>World</code>: <code>GenerateGlobalIds(world=MPI.COMM_WORLD)</code>. Over
+ranks, <code>MergePieces</code> gives the whole to its <code>root</code> rank and an empty dataset
+to the others.</p>
 <p>A field is named as a string, or with where VTK keeps it when a point array and
 a cell array share the name: <code>field=("p", "cells")</code>. Or choose it as VTK's own
 filters do, with <code>SetInputArrayToProcess</code>, numbering the algorithm's field

@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Clip: each kind of cell with a ball about a corner of the cube taken out, the
 kept part's surface colored by the field, over the cells' outline.
 

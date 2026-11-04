@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Filters over pieces: ghost cells, reductions, global ids, merging, probes and
 particles across pieces, checked against the whole dataset."""
 
