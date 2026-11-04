@@ -54,7 +54,8 @@ cannot be shared.
 
 import tack
 
-__all__ = ["array_to_vtk", "dataset_to_vtk", "init_level_zero", "vtk_to_array", "vtk_to_dataset"]
+__all__ = ["array_to_vtk", "dataset_to_vtk", "init_level_zero", "vtk_to_array", "vtk_to_dataset",
+           "world"]
 
 
 def _dlpack_support():
@@ -68,6 +69,52 @@ def _dlpack_support():
             "directions rely on."
         ) from exc
     return dlpack_support
+
+
+#: The Tack World of each VTK MPI controller, by its address: World(comm) duplicates
+#: the communicator, so one per controller, gone with it.
+_worlds = {}
+
+
+def world(controller=None):
+    """The ``tack.communication.World`` of VTK's processes: of ``controller``, by default
+    VTK's global one (``vtkMultiProcessController.GetGlobalController()``, which
+    pvbatch sets, and a script sets with ``SetGlobalController``). An MPI controller
+    of more than one process gives ``World(comm)``, its communicator made mpi4py's
+    by VTK's ``vtkMPI4PyCommunicator.ConvertToPython``, as VTK's own parallel NumPy
+    reductions do; no controller, another kind, or one process gives ``World()``,
+    this process alone. The same controller gives the same World.
+
+    A VTK without MPI (every VTK wheel) has no controller to ask: give Tack's
+    algorithms the world yourself (``world=``, an mpi4py communicator or a
+    World). An MPI controller in a VTK built without ``vtkParallelMPI4Py`` is
+    refused, as Tack cannot reach its communicator."""
+    from tack.communication import World
+
+    if controller is None:
+        try:
+            from vtkmodules.vtkParallelCore import vtkMultiProcessController
+        except ImportError:
+            return World()
+        controller = vtkMultiProcessController.GetGlobalController()
+    if (controller is None or not controller.IsA("vtkMPIController")
+            or controller.GetNumberOfProcesses() <= 1):
+        return World()
+    address = controller.GetAddressAsString("vtkObject")
+    found = _worlds.get(address)
+    if found is None:
+        try:
+            from vtkmodules.vtkParallelMPI4Py import vtkMPI4PyCommunicator
+        except ImportError as exc:
+            raise RuntimeError(
+                "VTK's controller is an MPI one, but this VTK has no vtkParallelMPI4Py "
+                "to give its communicator to mpi4py: build VTK with "
+                "VTK_MODULE_ENABLE_VTK_ParallelMPI4Py, or give Tack's algorithms "
+                "world= yourself") from exc
+        comm = vtkMPI4PyCommunicator.ConvertToPython(controller.GetCommunicator())
+        found = _worlds[address] = World(comm)
+        controller.AddObserver("DeleteEvent", lambda caller, event: _worlds.pop(address, None))
+    return found
 
 
 def init_level_zero():

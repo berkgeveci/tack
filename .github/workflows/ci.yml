@@ -424,8 +424,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
 
-      - name: Sync the workspace
-        run: uv sync --extra cpu --extra dev --extra mpi
+      - name: Sync the workspace, with VTK for its algorithms across ranks
+        run: uv sync --extra cpu --extra dev --extra mpi --extra interop
 
       - name: Run the communication tests
         run: >-
@@ -438,6 +438,13 @@ jobs:
           packages/tack-vis/tests/test_probe_pieces.py
           packages/tack-vis/tests/test_connected_components.py
           packages/tack-vis/tests/test_merge_pieces.py
+
+      # VTK's wheel has no MPI, so the world is given (an mpi4py communicator);
+      # taking it from VTK's controller is tested where VTK is built with MPI.
+      - name: Run Tack's VTK algorithms across ranks
+        run: >-
+          uv run pytest -q -rs packages/tack-vis/tests/test_vtk_algorithms.py
+          -k "mpi or world"
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not

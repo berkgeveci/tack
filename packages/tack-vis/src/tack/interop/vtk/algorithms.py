@@ -257,6 +257,20 @@ def _implicit(function):
                      "implicit function")
 
 
+#: Worlds made of communicators given as ``world=``, by the communicator's id, each held
+#: with its communicator.
+_given_worlds = {}
+
+
+def _in_world(data, world):
+    """``data``; a ``PartitionedDataSet`` in ``world``, its pieces this process's."""
+    from tack.dataset import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet) and data.world is not world:
+        return PartitionedDataSet(list(data), world=world)
+    return data
+
+
 def _block_names(source, out, count):
     """Copy each block's metadata (its name) from tree ``source`` to ``out``."""
     for i in range(count):
@@ -315,6 +329,9 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
     device = Parameter(None, "the device the filter runs on, a name or a tack.Device; "
                              "by default where its input's memory is. The input moves "
                              "there once (VTK's arrays stay as they are)")
+    world = Parameter(None, "the processes the pieces are spread over: a "
+                            "tack.communication.World or an mpi4py communicator; by "
+                            "default VTK's (tack.interop.vtk.world)")
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -340,6 +357,7 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             setattr(cls, argument.name, parameter)
         cls._ARGUMENTS = tuple(arguments)
         cls._REQUIRED = frozenset(required)
+        cls._TAKES_WORLD = "world" in inspect.signature(function).parameters
 
     @classmethod
     def _function(cls):
@@ -394,7 +412,30 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             if value is None and name in self._REQUIRED:
                 raise ValueError(f"{type(self).__name__} needs {name!r}")
             values[name] = value
+        if getattr(self, "_TAKES_WORLD", False):
+            values["world"] = self._run_world
         return values
+
+    def _world(self):
+        """The World this run's pieces are spread over: ``world`` (a World, or an mpi4py
+        communicator, kept as one World), else VTK's (``tack.interop.vtk.world``)."""
+        from tack.communication import World
+        from tack.interop.vtk import world
+
+        given = self.world
+        if given is None:
+            return world()
+        if isinstance(given, World):
+            return given
+        kept = _given_worlds.get(id(given))
+        if kept is None or kept[0] is not given:
+            # Held with its communicator: World(comm) duplicates it, so one per comm.
+            kept = _given_worlds[id(given)] = (given, World(given))
+        return kept[1]
+
+    def _dataset(self, vtk_data, device):
+        """``_as_dataset``, a partitioned one in this run's World."""
+        return _in_world(_as_dataset(vtk_data, device), self._run_world)
 
     # ── The pipeline ────────────────────────────────────────────────
 
@@ -449,6 +490,7 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             return 0
 
     def RequestData(self, request, inInfo, outInfo):
+        self._run_world = self._world()
         self._prepare(inInfo)
         input = self.GetInputData(inInfo, 0, 0)
         output = self.GetOutputData(outInfo, 0)
@@ -502,7 +544,7 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         """The filter's result for one unit: a dataset or a partitioned dataset."""
         from tack.interop.vtk import dataset_to_vtk
 
-        return dataset_to_vtk(self.execute(_as_dataset(vtk_data, self.device)), copy=False)
+        return dataset_to_vtk(self.execute(self._dataset(vtk_data, self.device)), copy=False)
 
     # ── The filter ──────────────────────────────────────────────────
 
@@ -552,7 +594,7 @@ class _FieldAlgorithm(TackAlgorithm):
     OUTPUT = None
 
     def _unit(self, vtk_data):
-        data = _as_dataset(vtk_data, self.device)
+        data = self._dataset(vtk_data, self.device)
         if isinstance(vtk_data, vtkPartitionedDataSet):
             # Iterating a partitioned dataset gives its non-empty partitions, the
             # pieces vtk_to_dataset made, in order.
@@ -764,7 +806,7 @@ class Probe(TackAlgorithm):
                                     iterator.GetCurrentDataObject())
                 iterator.GoToNextItem()
             source = leaves
-        self._source = _as_dataset(source, self.device)
+        self._source = self._dataset(source, self.device)
         self._where_device = self.device
         if self._where_device is None and not isinstance(self._source, td.PartitionedDataSet):
             self._where_device = self._source.device
@@ -773,7 +815,7 @@ class Probe(TackAlgorithm):
         import tack.dataset as td
         from tack.interop.vtk import dataset_to_vtk
 
-        where = _as_dataset(vtk_data, self._where_device)
+        where = self._dataset(vtk_data, self._where_device)
         return dataset_to_vtk(td.probe(self._source, where, **self.arguments()), copy=False)
 
 
@@ -822,7 +864,8 @@ class _OverPieces(TackAlgorithm):
         from tack.dataset import PartitionedDataSet
 
         if not isinstance(data, PartitionedDataSet):
-            data = PartitionedDataSet([data])
+            # This process's one piece, beside the other processes' (``world``).
+            data = PartitionedDataSet([data], world=self._run_world)
         return self.over_pieces(data)
 
     def over_pieces(self, pieces):
@@ -855,11 +898,21 @@ class GenerateGlobalIds(_OverPieces):
 class MergePieces(_OverPieces):
     """``td.merge_pieces``: the pieces as one dataset, shared points once. Pieces of a
     structured grid that tile it give the grid; anything else an unstructured
-    grid. VTK's ``vtkMergeBlocks``."""
+    grid. Over MPI ranks the dataset is the ``root`` rank's; the others get an empty
+    one of the same type. VTK's ``vtkMergeBlocks``."""
 
     FUNCTION = "merge_pieces"
 
     tolerance = Parameter(0.0, "how far apart two pieces' copies of a point may be")
+
+    def _unit(self, vtk_data):
+        from tack.interop.vtk import dataset_to_vtk
+
+        merged = self.execute(self._dataset(vtk_data, self.device))
+        if merged is None:
+            # Not the root rank, which merge_pieces gives the whole.
+            return self._output_type(vtk_data)()
+        return dataset_to_vtk(merged, copy=False)
 
     def _output_type(self, input):
         import vtkmodules.vtkCommonDataModel as dm
