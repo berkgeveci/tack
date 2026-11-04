@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Extract surface and feature edges: the cube with a ball taken out (as the clip
 entries make it), its boundary, and its edges where the boundary turns by more
 than 30 degrees, on each kind of cell.

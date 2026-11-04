@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Field and geometry transforms and vector analysis (now in tack.dataset.algorithms), in
 Viskores' conventions, against VTK where VTK has the filter."""
 

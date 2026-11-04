@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """07 -- Atomic operations for thread-safe accumulation.
 
 When multiple threads write to the same memory location, you need

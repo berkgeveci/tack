@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Viskores' test datasets (``_viskores_datasets``): small meshes with what real ones
 carry and generated ones do not -- inside-out cells, cells of every dimension in
 one mesh, pyramids and wedges beside hexahedra, polygons. Measures held to

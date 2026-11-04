@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Workgroup (shared) and per-iteration (local) arrays, as lowering emits them.
 
 `tack.shared(dtype, n)`, `tack.shared_like(array, n)`,

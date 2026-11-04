@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Level Zero in a context another library owns.
 
 A USM pointer means something only inside the context it was allocated

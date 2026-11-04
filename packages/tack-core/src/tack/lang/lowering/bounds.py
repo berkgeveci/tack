@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Debug mode's bounds checks, as lowering emits them.
 
 With `tack.set_debug(True)` every array access's index goes through

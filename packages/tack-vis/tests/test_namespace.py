@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The ``tack`` namespace as tack-vis extends it.
 
 tack-core and tack-vis share the ``tack`` namespace through ``extend_path``,

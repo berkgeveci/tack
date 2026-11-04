@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Metal arrays shared with VTK, with any VTK: on Apple silicon a Metal buffer is
 host memory, so ``dataset_to_vtk(copy=False)`` hands VTK views of the buffers
 themselves (after one wait), and ``vtk_to_dataset(copy=False)`` with Metal the

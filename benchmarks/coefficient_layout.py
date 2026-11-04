@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The coefficient layout of an ``L2`` field (question 1 of the vault's Dataset API todo):
 each cell's values together (Tack's layout, MFEM's and VTK cell grids': cell ``c``'s
 value ``n`` at ``c * N + n``) against cell-fastest (value ``n`` of every cell together,

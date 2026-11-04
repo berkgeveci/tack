@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Datasets run where their arrays are.
 
 A dataset is on the device its topology, geometry, fields and sets are on, and

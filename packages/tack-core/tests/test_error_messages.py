@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Errors have to say what to do about them.
 
 Two habits made Tack's failures harder to act on than they needed to be.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``integrate``: the measure of a dataset and the integrals of its fields over it, by
 quadrature in each cell's reference element through its own map -- curved cells and
 fields of any order exactly, to rounding (VTK's vtkIntegrateAttributes)."""

@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Gradients: the P surface (the field's zero) colored by the field's gradient's
 length, on each kind of cell, over the cells' outline. A linear field's gradient
 is averaged to the points; a high-order one's is taken at the nodes of an L2 space

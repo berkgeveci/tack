@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Named constants a kernel may read from its defining scope.
 
 A kernel is compiled from its own source and captures nothing from the

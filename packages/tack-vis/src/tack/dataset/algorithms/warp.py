@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``warp``: the geometry moved along ``direction`` -- a 3-vector field in the geometry's space (or its name), or one 3-vector for every point -- times ``scale`` and, if given, a scalar field ``scale_by`` in the same space (Viskores' Warp; VTK's vtkWarpVector and vtkWarpScalar)."""
 
 import numpy as np

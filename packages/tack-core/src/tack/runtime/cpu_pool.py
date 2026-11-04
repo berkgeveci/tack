@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A persistent thread pool for CPU fan-outs, JIT-compiled with llvmlite.
 
 A fan-out through ``ThreadPoolExecutor`` costs about 60 µs per worker on a

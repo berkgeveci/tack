@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for signed/unsigned promotion, C keyword escaping, and unsigned casts."""
 
 import numpy as np

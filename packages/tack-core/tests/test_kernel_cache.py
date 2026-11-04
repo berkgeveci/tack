@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compiled-kernel cache correctness.
 
 Regression tests for the cache key.  The cache was once keyed on

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The parts of lowering (Python AST to Tack IR) that `KernelTransformer` is built from.
 
 `tack.lang.ast_transform.KernelTransformer` walks a kernel's AST and emits

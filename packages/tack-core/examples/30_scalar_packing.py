@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """30 -- Scalar packing: many scalar parameters without hitting GPU limits.
 
 GPU backends (especially Metal) have a limited number of buffer bindings

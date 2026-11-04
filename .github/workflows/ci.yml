@@ -74,6 +74,10 @@ jobs:
           python3 tools/changelog.py check
           cd tools && uv run --no-project --with pytest pytest -q
 
+      # Every source file opens with an SPDX copyright and license header.
+      - name: SPDX headers
+        run: python3 tools/spdx_headers.py check
+
   # ── Docs ───────────────────────────────────────────────────────────
   #
   # --strict makes a broken internal link or a page missing from the nav a

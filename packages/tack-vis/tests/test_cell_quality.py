@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``cell_quality``: Verdict's measures (VTK's ``vtkMeshQuality``) where VTK defines
 them, the same definitions extended to every shape, and the cases VTK has no
 measure for (order-2 cells, polyhedra, polygons)."""

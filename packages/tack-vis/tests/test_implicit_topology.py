@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Implicit topology arrays: an ``UnstructuredTopology`` whose types, offsets or
 connectivity are implicit arrays (``ConstantArray``, ``CountingArray``) keeps them
 implicit, behaves exactly as one that stores the same values, is what filters

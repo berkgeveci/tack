@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Parallel prefix sum (scan) on tack arrays.
 
 Reduce, then scan, by chunks: one thread per chunk of ``_CHUNK``

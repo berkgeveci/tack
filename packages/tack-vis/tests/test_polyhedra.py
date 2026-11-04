@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for tack.dataset.polyhedra: the polyhedral topology, phase 1.
 
 Shape-based meshes converted to polyhedra must give back exactly what the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Cell shapes: VTK's linear cells as template classes.
 
 Each shape is a ``@tack.device_class`` class whose ``@tack.func`` methods

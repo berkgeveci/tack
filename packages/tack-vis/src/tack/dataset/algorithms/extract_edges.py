@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``extract_edges``: the edges of set ``name`` (all of them by default) as line cells on the same points, each running from its lower point id to its higher. Values on edges become the lines' cell values, and edge sets cell sets; point fields (``H1``, values on points) stay on the same points -- an order-2 field's or geometry's values at the points, the lines being linear. Cell fields are left behind: an edge has as many cells as meet there. An ``L2`` geometry's edges are each cell's own."""
 
 import numpy as np

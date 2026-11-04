@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack CUDA backend — compiles kernels via NVRTC and dispatches on NVIDIA GPUs.
 
 Pipeline:

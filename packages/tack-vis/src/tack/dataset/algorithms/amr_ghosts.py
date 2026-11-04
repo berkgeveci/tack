@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Ghost cells of an AMR hierarchy, and fine data averaged down onto coarse.
 
 Every value a box holds but does not own is a weighted sum of values other

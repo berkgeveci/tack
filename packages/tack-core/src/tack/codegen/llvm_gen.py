@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack LLVM IR code generation — transforms Tack IR to LLVM IR via llvmlite.
 
 Generates a kernel function with signature:

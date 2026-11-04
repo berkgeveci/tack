@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``feature_edges``: a surface's boundary, feature, non-manifold and manifold edges as
 line cells on the same points, as VTK's ``vtkFeatureEdges`` finds them."""
 

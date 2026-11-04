@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2016, Los Alamos National Security, LLC
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``halo_catalog``: the halos of dark matter particles -- groups such as ``connected_components(particles, radius=linking_length, min_size=..., periodic=box)`` makes (friends-of-friends) -- as a point cloud of one point per halo, with its mass, centres, most bound particle, velocities and radius. Ported from Viskores' cosmotools (``viskores/worklet/cosmotools``) and improved: per-particle masses, softening, periodic boxes, and the exact pruned search for the most bound particle on every large halo.
 
 The most bound particle (MBP) is the one of least potential ``phi_i = -G sum_j m_j

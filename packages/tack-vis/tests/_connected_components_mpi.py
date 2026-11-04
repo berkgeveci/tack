@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_connected_components``' check under MPI: ``mpiexec -n 2 python
 _connected_components_mpi.py``. Each rank labels its share of the pieces; rank 0
 compares every cell's region with the whole's, and prints ``ok`` or fails."""

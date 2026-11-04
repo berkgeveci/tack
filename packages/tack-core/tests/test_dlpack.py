@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """DLPack interop — zero-copy exchange with numpy, torch, cupy and friends.
 
 `lang/dlpack.py` had no coverage at all: 80 statements never imported by

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``cell_quality``: how well shaped each cell is, by measures of its corners' Jacobians
 and its edges, for every shape -- order-2 geometry, wedges, pyramids, polygons and
 polyhedra included."""

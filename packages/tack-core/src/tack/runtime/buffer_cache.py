@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Device memory of dropped arrays, kept for the next arrays of its size.
 
 ``BufferCache`` holds addresses by capacity: an allocation rounds its size up

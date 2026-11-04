@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Bases of any order on triangles and tetrahedra (round 2 of the vault's
 higher-order proposal): equispaced nodes (VTK's and gmsh's), Silvester's product
 basis, values shared by entity with triangle faces placed through their

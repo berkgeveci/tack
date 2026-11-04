@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Datasets made from formulas, for tests and examples: Viskores' sources
 (``viskores::source``), on rectilinear grids with uniform spacing.
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Global ids: each point's and cell's number across every piece of a partitioned dataset.
 
 A piece numbers its points and cells from 0, so the same point has a number per

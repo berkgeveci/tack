@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Behavioral baseline for docs/reference/language-contract.md.
 
 LC1–LC8 are ordinary regressions. Numerical cases run on every available

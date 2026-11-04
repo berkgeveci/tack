@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Built-in filters rewritten with public names only, held to the built-ins.
 
 Tack's filters are meant to be extended with the machinery they are written

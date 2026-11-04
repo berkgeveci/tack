@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Shared contracts at algorithm boundaries and through empty pipelines."""
 
 import numpy as np

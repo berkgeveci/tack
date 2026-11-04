@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The JIT'd thread pool (`tack.runtime.cpu_pool`): a fan-out as one ctypes
 call. The policy that decides *whether* to fan out is tested through the
 Python path in test_cpu_threading.py; here the pool itself is: that it is

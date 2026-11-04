@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``face_geometry``: ``(normal, area)``: fields on faces, of any size of polygon. A face's normal points out of its side 0; on a non-planar face it is the mean normal."""
 
 from typing import NamedTuple

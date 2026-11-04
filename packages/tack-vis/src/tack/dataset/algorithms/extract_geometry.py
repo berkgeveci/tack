@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``extract_geometry``: the whole cells inside ``function``'s region (all their points at or below zero), or, with ``inside=False``, outside it (all above); with ``boundary``, also the cells it cuts (some point on the kept side). Cells are not split -- that is clip. Points are compacted and fields carried, as by ``threshold``."""
 
 import numpy as np

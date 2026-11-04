@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``upwind_flux``: the flux of ``field`` carried by a constant ``velocity`` through each face, out of side 0: ``(v . n) * area * u``, ``u`` taken from the upwind side at the face's center -- the side the flow leaves -- as a DG advection scheme does. A boundary face takes its one side's value whichever way the flow goes. ``divergence`` of the result is each cell's net outflow."""
 
 import tack

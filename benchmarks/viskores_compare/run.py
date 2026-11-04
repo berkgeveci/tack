@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack against Viskores, reached through VTK's vtkm... filters: on CUDA, or on
 the CPU (Viskores' TBB or OpenMP device against Tack's CPU or another GPU).
 

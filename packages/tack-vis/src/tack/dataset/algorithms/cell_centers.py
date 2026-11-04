@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``cell_centers``: each cell's center, where the geometry maps its parametric center, or on a cell with no reference element the mean of its points: a field on cells."""
 
 import tack

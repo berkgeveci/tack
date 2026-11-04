@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Backend fixtures, shared by every package's tests.
 
 Discovers what this machine can run once, at import, and hands it out as

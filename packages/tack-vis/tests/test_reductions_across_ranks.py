@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``statistics`` and ``entropy`` of a partitioned dataset across MPI ranks.
 
 Each rank passes its share of the pieces, with a ``tack.communication.World``;

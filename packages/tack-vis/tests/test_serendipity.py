@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Serendipity (``H1(order=2, basis="serendipity")``): the full order-2 space less its
 values at quad faces' centres and cells' insides, which its functions determine from
 the corners and edges -- VTK's quad8, hex20 and wedge15, Exodus's and Abaqus's

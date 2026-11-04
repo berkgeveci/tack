@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The dispatch fast path's invariant, as a property: equal call signatures
 mean the same variant and the same arguments.
 

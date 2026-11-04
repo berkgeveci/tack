@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """CUDA/HIP 64-bit CAS operations without optional native add overloads.
 
 Each helper returns the element's value before the update, as the native

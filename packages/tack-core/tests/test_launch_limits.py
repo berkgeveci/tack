@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A GPU launch must index every iteration once, or be refused up front.
 
 CUDA and HIP computed the thread index as a 32-bit product, so a launch of

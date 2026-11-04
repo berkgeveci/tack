@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Checks lowering runs on what it has emitted.
 
 Effects outside the parallel loop, a vector or tuple left where a scalar

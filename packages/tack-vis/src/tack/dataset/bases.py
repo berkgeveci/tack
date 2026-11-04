@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Lagrange bases of any order on the tensor shapes: segments, quads, pixels,
 hexahedra and voxels.
 

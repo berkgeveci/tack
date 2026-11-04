@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The contract every Tack backend implements.
 
 Backends were duck-typed: the contract had to be reconstructed by reading

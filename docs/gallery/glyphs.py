@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Glyphs: the swirl's velocity as arrows on a lattice across the cube's middle,
 sampled by probe, over the slice there colored by speed.
 

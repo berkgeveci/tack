@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The disk cache of lowered and compiled kernels (``tack.cache``).
 
 Each case runs kernels in fresh processes against a temporary cache

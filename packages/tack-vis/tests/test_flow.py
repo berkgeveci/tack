@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Particle advection and streamlines, by Viskores' rules.
 
 A linear velocity field is reproduced exactly by every linear shape's

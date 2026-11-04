@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Promoted-precision, Python-style floating floor division and remainder.
 
 Use a truncating remainder, correct its sign to the divisor, and reconstruct

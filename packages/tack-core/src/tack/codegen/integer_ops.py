@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Portable fixed-width integer expressions for the C-family backends.
 
 Arithmetic uses unsigned carriers (at least 32 bits to avoid C's signed

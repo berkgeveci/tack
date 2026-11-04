@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Debug mode's bounds checks: the parts shared by lowering, the passes and dispatch.
 
 With ``tack.set_debug(True)`` (or ``TACK_DEBUG=1``) every index of an array

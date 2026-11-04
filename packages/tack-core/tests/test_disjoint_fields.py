@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The CPU backend's proven-disjoint specialization.
 
 Arrays may share storage, so the generated code never promises otherwise

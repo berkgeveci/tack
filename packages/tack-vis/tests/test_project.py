@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``project``: a field into another space of its topology. Exact where the target
 holds the source (a continuous field into a higher order, anything of order up
 to 1 into order-1 L2), averaged otherwise: onto points as VTK averages, onto

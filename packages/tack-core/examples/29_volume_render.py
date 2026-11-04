@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """29 -- Volume rendering of a rectilinear grid.
 
 Ray-cast volume renderer using front-to-back compositing with a simple

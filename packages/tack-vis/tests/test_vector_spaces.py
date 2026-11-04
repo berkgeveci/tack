@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """HDiv and HCurl reproduce the fields their spaces hold, through their Piola maps."""
 
 import itertools

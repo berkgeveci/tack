@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Topology: cells, and the faces and edges derived from them.
 
 Two kinds of topology, as in ``docs/vis-guide/design/dataset-api.md`` §3.1:

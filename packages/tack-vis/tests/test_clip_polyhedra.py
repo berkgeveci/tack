@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``clip`` of polyhedral topologies: each cut cell becomes the polyhedron of its kept
 part (its faces clipped, its iso-polygons as caps), faces shared stay shared. Held
 to the shape-based clip of the same cells where both are exact (planes), to its
