@@ -32,6 +32,7 @@ from the cells, are evaluated cell by cell through the fields' bases, the
 points bucketed by the cell found.
 """
 
+import copy
 import warnings
 from typing import NamedTuple
 
@@ -612,7 +613,8 @@ class CellLocator:
     and advection take it for any dataset of the same topology and geometry,
     and refuse it once Tack has written the positions since (a kernel, `fill`
     or `copyto` into them). Without one they use the locator the topology
-    keeps (`cached_locator`), made again when the geometry changes. Writes
+    keeps (`cached_locator`), made again when the geometry changes, or kept
+    for a geometry of the same positions (a copy: `rebound`). Writes
     Tack does not see -- through memory shared by DLPack, `export_memory` or
     `wrap_ptr` -- need a new locator."""
 
@@ -737,6 +739,30 @@ class CellLocator:
         return (data.topology is self.data.topology
                 and data.geometry.values is self._geometry
                 and arrays._revision(self._geometry) == self._revision)
+
+    def holds_positions_of(self, data):
+        """Whether ``data`` is its topology at its origin with the same positions it
+        was made from, in another geometry (a copy of the positions, or new arrays
+        of the same values): its bins are ``data``'s too. The values are compared
+        on the device."""
+        mine, theirs = self._geometry, data.geometry.values
+        return (data.topology is self.data.topology
+                and np.array_equal(np.asarray(data.origin), np.asarray(self.data.origin))
+                and arrays._revision(mine) == self._revision
+                and _same_values(mine, theirs, data))
+
+    def rebound(self, data):
+        """This locator for ``data``, a geometry of the same positions
+        (``holds_positions_of``): its bins and boxes shared, and the search,
+        which reads the positions themselves, made again from ``data``'s."""
+        from tack.dataset.dataset import DataSet
+
+        out = copy.copy(self)
+        out.__dict__.pop("_mesh_search", None)
+        out.data = DataSet(data.topology, data.geometry, **data._frame())
+        out._geometry = data.geometry.values
+        out._revision = arrays._revision(out._geometry)
+        return out
 
     def _grid(self):
         return (*map(float, self.origin), *map(float, self.inverse), *map(int, self.dims))
@@ -944,6 +970,35 @@ def cached_locator(data):
     topology = data.topology
     locator = topology._locator
     if locator is None or not locator.serves(data):
-        locator = CellLocator(data)
+        # A geometry of the same positions -- a temporal filter's copy of a step,
+        # or a simulation's new arrays over an unchanged mesh -- keeps the bins:
+        # building them again was half of a step of pathlines.
+        if locator is not None and locator.holds_positions_of(data):
+            locator = locator.rebound(data)
+        else:
+            locator = CellLocator(data)
         topology._locator = locator
     return locator
+
+
+@tack.kernel
+def _differing(a, b, out):
+    for i in range(out.shape[0]):
+        out[i] = 1 if any(a[i] != b[i]) else 0
+
+
+def _same_values(a, b, data):
+    """Whether position arrays ``a`` and ``b`` (stored or implicit) hold the same
+    values, compared on ``data``'s device (NaN never equal)."""
+    if a is b:
+        return True
+    n = arrays.size_of(a)
+    if (n != arrays.size_of(b) or arrays.width_of(a) != arrays.width_of(b)
+            or arrays.dtype_of(a) != arrays.dtype_of(b)):
+        return False
+    if not n:
+        return True
+    with data.device:
+        flags = tack.empty((n,), tack.i32)
+        _differing(a, b, flags)
+        return int(flags.max()) == 0

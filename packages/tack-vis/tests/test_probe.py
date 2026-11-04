@@ -290,6 +290,45 @@ def test_probe_reuses_the_locator_its_topology_keeps_until_the_geometry_changes(
     assert data.topology._locator.serves(moved)
 
 
+
+def test_a_geometry_of_the_same_positions_keeps_the_locators_bins(backend):
+    """A copy of the positions (a temporal filter's previous step, a simulation's
+    new arrays over an unchanged mesh) is another geometry, which the topology's
+    locator does not serve, but its bins are the copy's too: the locator is
+    rebound to it, its boxes and bins shared, and finds the same cells. Positions
+    that differ, or a locator whose own positions were written since, build anew."""
+    grid = td.uniform_grid((5, 5, 5), spacing=(0.25, 0.25, 0.25))
+    x = grid.positions().astype(np.float32)
+    topology = td.tetrahedralize(grid).topology
+    data = td.DataSet(topology, tack.array(x, tack.vec3(tack.f32)))
+    data.fields["x"] = td.Field(td.H1(data), tack.array(x[:, 0]))
+    query = [[0.3, 0.4, 0.5], [0.9, 0.1, 0.6]]
+    first = td.probe(data, query)
+    kept = topology._locator
+    bins = kept.cell_bins()                    # made on first use: before the copy here
+    copy = td.DataSet(topology, tack.array(x, tack.vec3(tack.f32)))
+    copy.fields["x"] = data.fields["x"]
+    again = td.probe(copy, query)
+    rebound = topology._locator
+    assert rebound is not kept and rebound.serves(copy) and not rebound.serves(data)
+    assert rebound.lo is kept.lo and rebound.cell_bins() is bins
+    np.testing.assert_array_equal(again.fields["x"].values.numpy(), first.fields["x"].values.numpy())
+
+    moved = td.DataSet(topology, tack.array(x + np.float32(1.0), tack.vec3(tack.f32)))
+    moved.fields["x"] = data.fields["x"]
+    td.probe(moved, query)
+    assert topology._locator.lo is not kept.lo                    # other positions: built
+
+    positions = copy.geometry.values
+    td.probe(copy, query)                                         # rebound to the copy again
+    assert topology._locator.lo is not kept.lo
+    shared = topology._locator
+    _shift_x(positions, 10.0)                                     # its positions written
+    other = td.DataSet(topology, tack.array(x, tack.vec3(tack.f32)))
+    other.fields["x"] = data.fields["x"]
+    td.probe(other, query)
+    assert topology._locator.lo is not shared.lo                  # stale: built anew
+
 def test_probe_preserves_f64_point_coordinates(f64_backend):
     source = td.uniform_grid((2, 2, 2), dtype=tack.f64)
     points = np.array([[0.5 + 1e-9, 0.5, 0.5]], np.float64)

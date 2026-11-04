@@ -441,6 +441,43 @@ def test_pathlines_and_streaklines():
                                [2.0, 1.5, 1.0, 0.5, 0.0])
 
 
+
+def test_pathlines_build_each_meshs_locator_once(monkeypatch):
+    """A new mesh each step (adaptive refinement, as the dam break's): the copy
+    Pathlines keep of the previous step has the step's positions, so it takes the
+    step's locator's bins instead of building them again, which was half of a
+    step's time. The paths are those of keeping references (copy=False)."""
+    from tack.dataset import locator as located
+
+    built = []
+    real = located.CellLocator.__init__
+
+    def counting(self, *args, **kwargs):
+        built.append(1)
+        real(self, *args, **kwargs)
+
+    def step(t):
+        grid = _flow(t, _along_x(lambda t: 1.0 + t))
+        x = grid.positions().astype(np.float32)
+        data = td.DataSet(td.tetrahedralize(grid).topology, tack.array(x, tack.vec3(tack.f32)),
+                          unit="m", time=t, time_unit="s")
+        data.fields["v"] = td.Field(td.H1(data), grid.fields["v"].values, "m/s")
+        return data
+
+    steps = [step(t) for t in (0.0, 1.0, 2.0, 3.0)]
+    monkeypatch.setattr(located.CellLocator, "__init__", counting)
+    paths = {}
+    for copy in (True, False):
+        for data in steps:
+            data.topology._locator = None
+        built.clear()
+        lines = td.Pathlines("v", seeds=[[1.0, 5.0, 1.0], [2.0, 3.0, 1.0]], copy=copy)
+        for data in steps:
+            out = lines.update(data)
+        assert len(built) == len(steps)                           # one a mesh
+        paths[copy] = out.world_positions()
+    np.testing.assert_array_equal(paths[True], paths[False])
+
 def test_advection_over_pieces_is_the_wholes():
     def rotation(x, t):
         v = np.zeros_like(x)
