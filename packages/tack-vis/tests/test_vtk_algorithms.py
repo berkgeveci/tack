@@ -953,17 +953,16 @@ def test_each_wrapper_gives_its_tack_filters_output(name):
     _assert_same(_contents(out), _contents(dataset_to_vtk(direct(_tack(data())))))
 
 
-def test_every_algorithm_but_the_tables_and_amr_has_a_wrapper():
-    """Every algorithm of the reference page, but those for later (statistics,
-    entropy, integrate, average_down), the in-place update_ghosts, and the finite
-    volume operators that take values on faces, which VTK keeps nowhere."""
+def test_every_algorithm_has_a_wrapper():
+    """Every algorithm of the reference page, but the in-place update_ghosts and the
+    finite volume operators that take values on faces, which VTK keeps nowhere (and
+    the first wrappers, named otherwise)."""
     import re
     from pathlib import Path
 
     page = (Path(__file__).parents[3] / "docs/vis-guide/reference/algorithms.md").read_text()
     names = set(re.findall(r"^\| \[`(\w+)`\]", page, re.M))
-    later = {"statistics", "entropy", "integrate", "average_down", "update_ghosts",
-             "net_flux", "divergence", "perot", "contour", "slice_plane", "clip", "threshold",
+    later = {"update_ghosts", "net_flux", "divergence", "perot", "contour", "slice_plane", "clip", "threshold",
              "extract_surface", "tetrahedralize", "surface_normals", "connected_components",
              "streamlines", "probe", "gradients", "point_elevation", "cell_quality",
              "ghost_cells", "generate_global_ids", "merge_pieces"}
@@ -1178,3 +1177,243 @@ def test_a_surfaces_measure_is_its_area():
     out = ta.Integrate()(surface)
     assert "Area" in out.cell_data.keys()
     assert out.cell_data["Area"].GetValue(0) == pytest.approx(6 * 16 * 16, rel=1e-12)
+
+
+# ── AMR hierarchies ─────────────────────────────────────────────────
+
+def _pulse():
+    """VTK's AMR Gaussian pulse: a level-0 box and two finer boxes in it, the pulse as
+    cell data."""
+    from vtkmodules.vtkFiltersAMR import vtkAMRGaussianPulseSource
+
+    return vtkAMRGaussianPulseSource(dimension=3)()
+
+
+def _hierarchy(amr):
+    return vtk_to_dataset(amr, dtype=None)
+
+
+def _amr_bounds(amr):
+    """``(lo, hi)``: a hierarchy's ``GetBounds()`` returns a pointer's name (9.7.1)."""
+    bounds = [0.0] * 6
+    amr.GetBounds(bounds)
+    return np.asarray(bounds[::2]), np.asarray(bounds[1::2])
+
+
+PULSE = ("Gaussian-Pulse", td.Constant)
+
+
+def test_an_amr_hierarchy_is_reduced_once_per_region():
+    """What a finer box covers counts once: the statistics, entropy and integral of the
+    hierarchy are Tack's, the cells counted those no finer box covers."""
+    amr = _pulse()
+    hierarchy = _hierarchy(amr)
+    stats = td.statistics(hierarchy, PULSE)
+    table = ta.Statistics(fields=["Gaussian-Pulse"])(amr)
+    for name in ta.Statistics.NAMES:
+        assert table.GetColumnByName(name).GetValue(0) == pytest.approx(
+            getattr(stats, name), rel=1e-12), name
+    every_cell = sum(amr.GetDataSetAsCartesianGrid(level, i).number_of_cells
+                     for level in range(amr.GetNumberOfLevels())
+                     for i in range(amr.GetNumberOfBlocks(level)))
+    assert stats.n < every_cell
+    entropy = ta.Entropy(fields=["Gaussian-Pulse"], bins=16)(amr)
+    assert entropy.GetColumnByName("entropy").GetValue(0) == pytest.approx(
+        td.entropy(hierarchy, PULSE, bins=16), rel=1e-12)
+    integral = ta.Integrate(fields=["Gaussian-Pulse"])(amr)
+    lo, hi = _amr_bounds(amr)
+    assert integral.cell_data["Volume"].GetValue(0) == pytest.approx(np.prod(hi - lo),
+                                                                     rel=1e-12)
+    expected = td.integrate(hierarchy._as_pieces(), fields=[PULSE]).values
+    assert integral.cell_data["Gaussian-Pulse"].GetValue(0) == pytest.approx(
+        next(iter(expected.values())), rel=1e-12)
+
+
+def test_probe_and_voxelize_take_an_amr_hierarchy_at_its_finest_boxes():
+    amr = _pulse()
+    hierarchy = _hierarchy(amr)
+    lo, hi = _amr_bounds(amr)
+    image = vtk.vtkImageData(dimensions=(9, 9, 9), origin=tuple(lo),
+                             spacing=tuple((hi - lo) / 8))
+    probe = ta.Probe()
+    probe.SetInputDataObject(0, image)
+    probe.SetSourceData(amr)
+    probe.Update()
+    assert probe.error is None, probe.error
+    expected = td.probe(hierarchy, vtk_to_dataset(image, dtype=None))
+    np.testing.assert_array_equal(
+        np.asarray(probe.GetOutputDataObject(0).point_data["Gaussian-Pulse"]),
+        expected.fields["Gaussian-Pulse"].values.numpy())
+    voxels = ta.Voxelize(grid=image, fields=["Gaussian-Pulse"], samples=2)(amr)
+    assert isinstance(voxels, vtk.vtkImageData)
+    direct = td.voxelize(hierarchy, vtk_to_dataset(image, dtype=None),
+                         fields=[PULSE], samples=2)
+    np.testing.assert_array_equal(np.asarray(voxels.cell_data["fraction"]),
+                                  direct.fields["fraction"].values.numpy())
+
+
+def test_ghost_cells_of_an_amr_hierarchy_feed_the_next_amr_filter():
+    """The grown boxes go out as the input's hierarchy with larger blocks, and the next
+    filter takes the grown hierarchy as it was made, in a pipeline or given what
+    calling GhostCells returned (a shallow copy): VTK's blocks with ghost layers
+    could not be converted again. Its ghosts count nowhere."""
+    amr = _pulse()
+    grown = ta.GhostCells(layers=1)(amr)
+    assert isinstance(grown, vtk.vtkOverlappingAMR)
+    expected = td.ghost_cells(_hierarchy(amr), 1)
+    for (level, box), (lv, i, block) in zip(expected, ta._blocks(grown)):
+        assert level == lv
+        assert block.GetDimensions() == tuple(box.topology.point_dims)
+        assert grown.GetAMRBox(lv, i).GetNumberOfCells() == amr.GetAMRBox(
+            lv, i).GetNumberOfCells()
+    assert ta._as_dataset(grown).layers == 1
+    once = ta.Statistics(fields=["Gaussian-Pulse"])(amr)
+    pipeline = ta.GhostCells(layers=1) >> ta.Statistics(fields=["Gaussian-Pulse"])
+    for table in (pipeline(amr), ta.Statistics(fields=["Gaussian-Pulse"])(grown)):
+        assert table.GetColumnByName("n").GetValue(0) == once.GetColumnByName(
+            "n").GetValue(0)
+        assert table.GetColumnByName("mean").GetValue(0) == pytest.approx(
+            once.GetColumnByName("mean").GetValue(0), rel=1e-12)
+    # The input's entry is its own: the output's metadata is not the input's.
+    assert ta._as_dataset(amr).layers == 0
+
+
+def test_average_down_puts_the_fine_values_in_the_coarse_cells_and_leaves_its_input():
+    amr = _pulse()
+    before = [np.asarray(block.cell_data["Gaussian-Pulse"]).copy()
+              for _, _, block in ta._blocks(amr)]
+    out = ta.AverageDown(field="Gaussian-Pulse")(amr)
+    assert isinstance(out, vtk.vtkOverlappingAMR)
+    for kept, (_, _, block) in zip(before, ta._blocks(amr)):
+        np.testing.assert_array_equal(np.asarray(block.cell_data["Gaussian-Pulse"]), kept)
+    expected = _hierarchy(amr)
+    td.average_down(expected, PULSE)
+    changed = False
+    for (_, box), (_, _, block), kept in zip(expected, ta._blocks(out), before):
+        values = np.asarray(block.cell_data["Gaussian-Pulse"])
+        np.testing.assert_array_equal(values, box.fields[PULSE].values.numpy())
+        changed |= not np.array_equal(values, kept)
+    assert changed                              # the coarse box's refined cells
+
+
+def test_a_field_filter_runs_box_by_box_and_keeps_the_hierarchy():
+    """Each block gets the fields the filter computes on it alone; the output is the
+    input's hierarchy, its blocks shallow copies, and the next filter takes it."""
+    amr = _pulse()
+    out = ta.Elevation()(amr)
+    assert isinstance(out, vtk.vtkOverlappingAMR)
+    assert out.GetNumberOfLevels() == amr.GetNumberOfLevels()
+    for (level, index, block), (_, _, given) in zip(ta._blocks(out), ta._blocks(amr)):
+        assert out.GetAMRBox(level, index).GetNumberOfCells() == given.number_of_cells
+        alone = ta.Elevation()(given)
+        np.testing.assert_array_equal(np.asarray(block.point_data["elevation"]),
+                                      np.asarray(alone.point_data["elevation"]))
+        assert "elevation" not in given.point_data.keys()
+    # The input's Tack hierarchy with the field: the same topologies, nothing built again.
+    box = next(box for _, box in ta._as_dataset(out))
+    assert "elevation" in box.fields
+    assert box.topology is next(box for _, box in ta._as_dataset(amr)).topology
+    table = ta.Statistics(fields=["elevation"])(out)
+    assert table.GetColumnByName("n").GetValue(0) > 0
+
+
+def test_a_filter_that_makes_a_dataset_gives_a_partitioned_dataset_per_level():
+    """Box by box, the cells finer boxes cover left out: each level's cells are those
+    the Tack filter keeps of its boxes in the hierarchy, marks and all: the coarse
+    level's, fewer than its block has. A contour after the points' values is one per
+    level."""
+    amr = _pulse()
+    hierarchy = _hierarchy(amr)
+    threshold = ta.Threshold(field=("Gaussian-Pulse", "cells"), lower=-1.0, upper=1.0)
+    out = threshold(amr)
+    assert isinstance(out, vtk.vtkPartitionedDataSetCollection)
+    assert out.GetNumberOfPartitionedDataSets() == amr.GetNumberOfLevels()
+    for level, pieces in enumerate(hierarchy.levels):
+        assert out.GetMetaData(level).Get(vtk.vtkCompositeDataSet.NAME()) == f"level{level}"
+        got = sum(block.number_of_cells for block in out.GetPartitionedDataSet(level))
+        expected = sum(td.threshold(box, PULSE, -1.0, 1.0).topology.num_cells
+                       for box in pieces)
+        assert got == expected
+    coarse = sum(block.number_of_cells for block in out.GetPartitionedDataSet(0))
+    assert 0 < coarse < amr.GetDataSetAsCartesianGrid(0, 0).number_of_cells  # refined out
+    peak = max(np.asarray(block.cell_data["Gaussian-Pulse"]).max()
+               for _, _, block in ta._blocks(amr))
+    surfaces = (ta.Project(field=("Gaussian-Pulse", "cells"), to="points", name="p")
+                >> ta.Contour(field="p", value=peak / 4))(amr)
+    assert isinstance(surfaces, vtk.vtkPartitionedDataSetCollection)
+    assert sum(block.number_of_cells for level in range(amr.GetNumberOfLevels())
+               for block in surfaces.GetPartitionedDataSet(level)) > 0
+
+
+def test_a_hierarchy_is_probed_at_its_points_box_by_box():
+    amr = _pulse()
+    probe = ta.Probe()
+    probe.SetInputDataObject(0, amr)
+    probe.SetSourceData(_wavelet((-4, 4, -4, 4, -4, 4))())
+    probe.Update()
+    assert probe.error is None, probe.error
+    out = probe.GetOutputDataObject(0)
+    assert isinstance(out, vtk.vtkPartitionedDataSetCollection)
+    assert all("RTData" in block.point_data.keys()
+               for level in range(out.GetNumberOfPartitionedDataSets())
+               for block in out.GetPartitionedDataSet(level))
+
+
+def test_filters_whose_answer_box_by_box_would_mislead_refuse_a_hierarchy():
+    amr = _pulse()
+    ids = ta.GenerateGlobalIds()
+    ids.SetInputDataObject(0, amr)
+    assert ids.Update() == 0 and isinstance(ids.error, TypeError)
+    assert "would mislead" in str(ids.error)
+    lines = ta.Streamlines(field="v", seeds=np.zeros((1, 3)))
+    lines.SetInputDataObject(0, amr)
+    assert lines.Update() == 0 and isinstance(lines.error, TypeError)
+    seeded = ta.Streamlines(field="v", step_size=1e-4, steps=2)
+    seeded.SetInputDataObject(0, _small())
+    seeded.SetSourceData(amr)
+    assert seeded.Update() == 0 and "port 1" in str(seeded.error)
+
+
+def test_an_amr_hierarchy_is_one_tack_hierarchy_until_a_block_changes():
+    """In its shallow copies too; a block's array modified, one added, or a block
+    replaced, it is converted again (its own modification time follows none)."""
+    amr = _pulse()
+    first = ta._as_dataset(amr)
+    assert ta._as_dataset(amr) is first
+    copy = amr.NewInstance()
+    copy.ShallowCopy(amr)
+    assert ta._as_dataset(copy) is first
+    amr.GetDataSetAsCartesianGrid(1, 0).cell_data["Gaussian-Pulse"].Modified()
+    second = ta._as_dataset(amr)
+    assert second is not first
+    amr.GetDataSetAsCartesianGrid(1, 0).cell_data["twice"] = 2 * np.asarray(
+        amr.GetDataSetAsCartesianGrid(1, 0).cell_data["Gaussian-Pulse"])
+    third = ta._as_dataset(amr)
+    assert third is not second
+    assert "twice" in [box for _, box in third][1].fields      # level 1's first box
+    block = amr.GetDataSetAsCartesianGrid(0, 0).NewInstance()
+    block.DeepCopy(amr.GetDataSetAsCartesianGrid(0, 0))
+    amr.SetDataSet(0, 0, block)
+    assert ta._as_dataset(amr) is not third
+
+
+def test_an_amr_filter_runs_on_the_device_it_is_given():
+    from tack.runtime import dispatch
+    from tack.runtime.cpu import CPUBackend
+
+    class SecondCPU(CPUBackend):
+        """A CPU backend posing as another device's, as ``test_partitioned.py`` makes."""
+
+        display_name = "second device"
+
+        @property
+        def memory_domain(self):
+            return ("cpu", 1)
+
+    amr = _pulse()
+    other = dispatch.as_device(SecondCPU())
+    table = ta.Statistics(fields=["Gaussian-Pulse"], device=other)(amr)
+    once = ta.Statistics(fields=["Gaussian-Pulse"])(amr)
+    assert all(box.device == other for _, box in ta._as_dataset(amr, other))
+    assert table.GetColumnByName("mean").GetValue(0) == pytest.approx(
+        once.GetColumnByName("mean").GetValue(0), rel=1e-12)

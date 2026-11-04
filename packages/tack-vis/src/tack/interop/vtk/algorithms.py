@@ -28,6 +28,19 @@ in it (a ``vtkMultiPieceDataSet`` block too, whole) and on each dataset that is 
 block of its own, and the output is a tree of the same shape, with the blocks'
 names and a collection's data assembly.
 
+An AMR hierarchy (``vtkOverlappingAMR``) is one Tack ``AMRDataSet``, its boxes marked
+with what a finer box covers (``REFINEDCELL``) and what a sibling holds. The filters
+whose Tack algorithm takes one take it whole -- ``Probe`` (as its source),
+``Statistics``, ``Entropy``, ``Integrate``, ``Voxelize``, ``GhostCells`` and
+``AverageDown`` -- so each region counts once; a hierarchy out (``GhostCells``,
+``AverageDown``) has the input's boxes. The others run box by box, each level's
+boxes as the pieces of a partitioned dataset, leaving out the cells finer boxes
+cover, as Tack's filters do on AMR: a filter that computes fields gives the
+hierarchy with them, one that makes a dataset a ``vtkPartitionedDataSetCollection``
+with a partitioned dataset per level (``level0``, ...), whose contours and slices do
+not join where the levels meet. ``GenerateGlobalIds``, ``Streamlines`` and
+``Advect``, whose answer box by box would mislead, refuse one.
+
 Filters that make a dataset give a ``vtkUnstructuredGrid`` (or keep a structured
 grid's type where the Tack filter does); filters that compute a field (``Gradients``,
 ``Elevation``, ``CellQuality``) give their input's type, shallow-copied, with the
@@ -57,6 +70,7 @@ __all__ = [
     "Advect",
     "AsPolygons",
     "AsPolyhedra",
+    "AverageDown",
     "BoundaryFaces",
     "CellCenters",
     "CellGeometry",
@@ -139,8 +153,10 @@ from vtkmodules.vtkCommonDataModel import (
     vtkDataObject,
     vtkMultiBlockDataSet,
     vtkMultiPieceDataSet,
+    vtkOverlappingAMR,
     vtkPartitionedDataSet,
     vtkPartitionedDataSetCollection,
+    vtkUniformGridAMR,
 )
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithm
 
@@ -172,6 +188,13 @@ _TREES = (vtkMultiBlockDataSet, vtkPartitionedDataSetCollection)
 # in place, as VTK's own filters need. Beside the dataset sharing VTK's memory, an
 # entry keeps its copy on each device a filter asked for (``device=``), so the data
 # moves there once.
+#
+# An AMR hierarchy's entry is kept on its metadata (``_holder``), which VTK shares
+# between a hierarchy and its shallow copies -- what calling a filter gives is one,
+# made of new blocks over the same arrays -- and is valid for its blocks' arrays,
+# each by address and modification time (``_signature``): the hierarchy's own
+# modification time does not follow its blocks'. A hierarchy ``GhostCells`` grew
+# reaches the next filter so, which could not convert it again.
 
 #: The attribute of a VTK dataset's wrapper that holds its entry: ``((modification
 #: time, time step), {device: DataSet})``.
@@ -179,34 +202,88 @@ _CACHE = "_tack_cache"
 
 
 def _key(vtk_data):
-    """What an entry is valid for: the dataset's modification time and time step."""
+    """What an entry is valid for: the dataset's modification time and time step; an
+    AMR hierarchy's blocks' arrays (``_signature``) and time step."""
     from tack.interop.vtk import _time_key
 
     info = vtk_data.GetInformation()
-    return vtk_data.GetMTime(), (info.Get(_time_key()) if info.Has(_time_key()) else None)
+    time = info.Get(_time_key()) if info.Has(_time_key()) else None
+    if isinstance(vtk_data, vtkUniformGridAMR):
+        return _signature(vtk_data), time
+    return vtk_data.GetMTime(), time
+
+
+def _holder(vtk_data):
+    """What keeps ``vtk_data``'s entry: its wrapper; an AMR hierarchy's metadata, which
+    its shallow copies share."""
+    if isinstance(vtk_data, vtkOverlappingAMR):
+        meta = vtk_data.GetOverlappingAMRMetaData()
+        if meta is not None:
+            return meta
+    return vtk_data
+
+
+def _signature(amr):
+    """An AMR hierarchy as its entry knows it: each block here, its place and lattice
+    (an image's origin and spacing) and its arrays (a rectilinear grid's coordinates
+    too) by address and modification time. A shallow copy has the same; a block
+    replaced, an array changed with ``Modified()``, added or removed, does not. The
+    modification time is VTK's global counter, so a new array at a freed one's
+    address differs."""
+    from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid
+
+    def stamp(array):
+        return array.GetName(), array.GetAddressAsString("vtkObject"), array.GetMTime()
+
+    out = []
+    for level, index, block in _blocks(amr):
+        if isinstance(block, vtkRectilinearGrid):
+            lattice = tuple(stamp(a) for a in (block.GetXCoordinates(),
+                                                block.GetYCoordinates(),
+                                                block.GetZCoordinates()))
+        else:
+            lattice = block.GetOrigin(), block.GetSpacing()
+        arrays = tuple(stamp(data.GetAbstractArray(i))
+                       for data in (block.GetPointData(), block.GetCellData())
+                       for i in range(data.GetNumberOfArrays()))
+        out.append((level, index, block.GetDimensions(), lattice, arrays))
+    return tuple(out)
+
+
+def _blocks(amr):
+    """``(level, index, block)`` for each block an AMR hierarchy holds here (another
+    rank's are empty)."""
+    for level in range(amr.GetNumberOfLevels()):
+        for index in range(amr.GetNumberOfBlocks(level)):
+            block = amr.GetDataSetAsCartesianGrid(level, index)
+            if block is not None:
+                yield level, index, block
 
 
 def _remember(vtk_data, data):
     """Keep ``data`` as the Tack dataset of ``vtk_data`` as it is now."""
-    setattr(vtk_data, _CACHE, (_key(vtk_data), {None: data}))
+    setattr(_holder(vtk_data), _CACHE, (_key(vtk_data), {None: data}))
 
 
 def _entry(vtk_data):
     """``vtk_data``'s entry, or ``None`` (none, or a stale one)."""
-    entry = getattr(vtk_data, _CACHE, None)
+    entry = getattr(_holder(vtk_data), _CACHE, None)
     return entry if entry is not None and entry[0] == _key(vtk_data) else None
 
 
-def _as_dataset(vtk_data, device=None):
+def _as_dataset(vtk_data, device=None, world=None):
     """``vtk_to_dataset(vtk_data, dtype=None, copy=False)``, the same Tack dataset for
     the same VTK dataset unchanged (each piece of a ``vtkPartitionedDataSet``);
-    with ``device``, that dataset moved there (the same moved one each time)."""
+    with ``device``, that dataset moved there (the same moved one each time). An
+    AMR hierarchy is converted in ``world`` (``_as_hierarchy``)."""
     import tack
     from tack.dataset import PartitionedDataSet
     from tack.interop.vtk import _time_key, vtk_to_dataset
 
     if isinstance(device, str):
         device = tack.device(device)
+    if isinstance(vtk_data, vtkOverlappingAMR):
+        return _as_hierarchy(vtk_data, device, world)
     if isinstance(vtk_data, vtkPartitionedDataSet):
         pieces = [vtk_data.GetPartition(i) for i in range(vtk_data.number_of_partitions)]
         data = PartitionedDataSet(_as_dataset(piece, device) for piece in pieces
@@ -228,6 +305,93 @@ def _as_dataset(vtk_data, device=None):
     if device not in copies:
         copies[device] = data.to_device(device)
     return copies[device]
+
+
+def _as_hierarchy(vtk_amr, device, world):
+    """A ``vtkOverlappingAMR`` as its ``AMRDataSet``, this rank's boxes sharing VTK's
+    memory, the hierarchy in ``world`` (by default VTK's): the same one while the
+    hierarchy and its blocks are unchanged, in the same world; with ``device``, its
+    boxes moved there."""
+    from tack.interop.vtk import vtk_to_dataset
+
+    entry = _entry(vtk_amr)
+    kept = entry is not None and (world is None or _same_world(entry[1][None].world, world))
+    if world is not None and world.size > 1:
+        # Converting is collective: every rank converts again if one does.
+        kept = all(world._allgather(kept))
+    if not kept:
+        _remember(vtk_amr, vtk_to_dataset(vtk_amr, dtype=None, copy=False, world=world))
+        entry = _entry(vtk_amr)
+    copies = entry[1]
+    if device is None:
+        return copies[None]
+    if device not in copies:
+        copies[device] = _hierarchy_on(copies[None], device)
+    return copies[device]
+
+
+def _same_world(a, b):
+    """Whether two Worlds are one: the same, or each this process alone (``world()``
+    makes one each call without an MPI controller)."""
+    return a is b or (a.size == 1 and b.size == 1)
+
+
+def _hierarchy_on(amr, device):
+    """``amr`` with its boxes on ``device``: itself where they are."""
+    from tack.dataset import AMRDataSet
+
+    levels = [[box.to_device(device) for box in pieces] for pieces in amr.levels]
+    if all(moved is box for moved, (_, box) in zip((b for lv in levels for b in lv), amr)):
+        return amr                          # memory the device addresses already
+    if amr.layers:
+        raise ValueError("an AMR hierarchy with ghost layers stays on its device: give "
+                         "GhostCells the device instead")
+    return AMRDataSet._grown(amr, levels, amr._extents, amr.layers, amr._fills)
+
+
+def _device_of(data):
+    """The device a Tack dataset, or an AMR hierarchy's first box, is on."""
+    from tack.dataset import AMRDataSet
+
+    if isinstance(data, AMRDataSet):
+        return next((box.device for _, box in data), None)
+    return data.device
+
+
+def _amr_like(source):
+    """An empty ``vtkOverlappingAMR`` of ``source``'s hierarchy, with metadata of its own:
+    ``CopyStructure`` shares the input's, which holds the input's entry."""
+    from vtkmodules.vtkCommonDataModel import vtkOverlappingAMRMetaData
+
+    out = vtkOverlappingAMR()
+    out.CopyStructure(source)
+    meta = vtkOverlappingAMRMetaData()
+    meta.DeepCopy(source.GetOverlappingAMRMetaData())
+    out.SetAMRMetaData(meta)
+    return out
+
+
+def _amr_output(source, amr):
+    """A ``vtkOverlappingAMR`` of ``source``'s hierarchy (its boxes, origin, spacings and
+    ratios, on every rank) holding ``amr``'s boxes, sharing Tack's memory: this
+    rank's blocks of ``source`` in order, as they were converted. ``amr`` is
+    remembered as its Tack hierarchy: one ``GhostCells`` grew could not be converted
+    again, VTK's blocks with ghost layers being refused."""
+    out = _amr_like(source)
+    held = {}
+    for level, index, _ in _blocks(source):
+        held.setdefault(level, []).append(index)
+    from tack.interop.vtk import dataset_to_vtk
+
+    for level, pieces in enumerate(amr.levels):
+        indices = held.get(level, [])
+        if len(indices) != len(pieces):
+            raise ValueError(f"level {level} has {len(pieces)} boxes here, the input "
+                             f"{len(indices)}")
+        for index, box in zip(indices, pieces):
+            out.SetDataSet(level, index, dataset_to_vtk(box, copy=False))
+    _remember(out, amr)
+    return out
 
 
 class Parameter:
@@ -396,11 +560,16 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
     filter that keeps the cells' structure); ``"points"``, a structured grid for any
     of those three and otherwise an unstructured grid (a filter that moves the
     points). ``INPUTS`` counts the input ports, the first ``REQUIRED_INPUTS`` of
-    them required."""
+    them required. ``AMR_PORTS`` are the ports that take an AMR hierarchy
+    (``vtkOverlappingAMR``), the Tack function given the ``AMRDataSet`` whole; on
+    port 0 of any other filter it runs box by box (``_by_box``) unless ``BY_BOX``
+    is false, and anywhere else one is refused (``_check_amr``)."""
 
     OUTPUT = "vtkUnstructuredGrid"
     INPUTS = 1
     REQUIRED_INPUTS = None
+    AMR_PORTS = ()
+    BY_BOX = True
     FUNCTION = None
     FIELDS = ()
     IMPLICIT = ()
@@ -523,8 +692,8 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         return kept[1]
 
     def _dataset(self, vtk_data, device):
-        """``_as_dataset``, a partitioned one in this run's World."""
-        return _in_world(_as_dataset(vtk_data, device), self._run_world)
+        """``_as_dataset``, a partitioned one or a hierarchy in this run's World."""
+        return _in_world(_as_dataset(vtk_data, device, self._run_world), self._run_world)
 
     def _supplied(self):
         """Arguments this run supplies where their parameters are unset: seeds read from
@@ -540,16 +709,45 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         info.Set(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), _INPUT_TYPES[0])
         for kind in _INPUT_TYPES[1:]:
             info.Append(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), kind)
+        if port in self.AMR_PORTS:
+            # A partitioned collection already, in VTK's model: named for what it is.
+            info.Append(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkOverlappingAMR")
         required = self.INPUTS if self.REQUIRED_INPUTS is None else self.REQUIRED_INPUTS
         if port >= required:
             info.Set(vtkAlgorithm.INPUT_IS_OPTIONAL(), 1)
         return 1
+
+    def _check_amr(self, data, port):
+        """Refuse an AMR hierarchy where the filter takes none, whole or box by box.
+        VTK makes one a partitioned collection, which went through ``_tree`` level
+        by level into an output of the hierarchy's type that could not hold it: an
+        empty hierarchy, and no error."""
+        if not isinstance(data, vtkUniformGridAMR):
+            return
+        if not isinstance(data, vtkOverlappingAMR):
+            raise TypeError(f"{type(self).__name__}: Tack's AMR is overlapping "
+                            f"(vtkOverlappingAMR), not a {data.GetClassName()}")
+        if port not in self.AMR_PORTS and not (port == 0 and self.BY_BOX):
+            raise TypeError(f"{type(self).__name__} takes no AMR hierarchy on port {port}"
+                            + ("" if port else ": box by box, its answer would mislead"))
+
+    def _amr_output_type(self):
+        """The output's VTK class for a hierarchy filtered box by box."""
+        return vtkPartitionedDataSetCollection
+
+    def _check_inputs(self, inInfo):
+        for port in range(self.GetNumberOfInputPorts()):
+            for i in range(inInfo[port].GetNumberOfInformationObjects()):
+                self._check_amr(self.GetInputData(inInfo, port, i), port)
 
     def _output_type(self, input):
         """The VTK class of the output for ``input``, a dataset or a partitioned
         dataset (trees keep their type)."""
         import vtkmodules.vtkCommonDataModel as dm
 
+        if isinstance(input, vtkOverlappingAMR):
+            # A hierarchy, unless the filter makes a type of its own.
+            return vtkOverlappingAMR if self.OUTPUT is None else getattr(dm, self.OUTPUT)
         if isinstance(input, vtkPartitionedDataSet):
             return vtkPartitionedDataSet
         if self.OUTPUT is None:
@@ -569,7 +767,13 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         input = self.GetInputData(inInfo, 0, 0)
         if input is None:
             return 0
-        kind = type(input) if isinstance(input, _TREES) else self._output_type(input)
+        if isinstance(input, vtkOverlappingAMR) and 0 in self.AMR_PORTS:
+            kind = self._output_type(input)
+        elif isinstance(input, vtkOverlappingAMR) and self.BY_BOX:
+            kind = self._amr_output_type()
+        else:
+            # A tree's type; a hierarchy this filter refuses (RequestData) its own.
+            kind = type(input) if isinstance(input, _TREES) else self._output_type(input)
         output = outInfo.GetInformationObject(0)
         current = output.Get(vtkDataObject.DATA_OBJECT())
         if current is None or type(current) is not kind:
@@ -597,20 +801,48 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
 
     def RequestData(self, request, inInfo, outInfo):
         self._run_world = self._world()
+        self._check_inputs(inInfo)
         self._prepare(inInfo)
         input = self.GetInputData(inInfo, 0, 0)
         output = self.GetOutputData(outInfo, 0)
-        if isinstance(input, _TREES):
+        if isinstance(input, vtkOverlappingAMR) and 0 not in self.AMR_PORTS:
+            self._set_unit_output(output, self._by_box(input))
+        elif isinstance(input, _TREES) and not isinstance(input, vtkOverlappingAMR):
             # Shares the blocks: what was made, and remembered, is the output's.
             output.CompositeShallowCopy(self._tree(input))
         else:
             self._set_unit_output(output, self._unit(input))
         return 1
 
+    def _by_box(self, vtk_amr):
+        """The output for an AMR hierarchy this filter takes box by box: each level's
+        boxes, this rank's, as the pieces of a partitioned dataset (``_level``), the
+        cells finer boxes cover left out by the filter as their marks say; a
+        ``vtkPartitionedDataSetCollection`` of one partitioned dataset per level,
+        named ``level<l>``."""
+        from vtkmodules.vtkCommonDataModel import vtkCompositeDataSet
+
+        from tack.interop.vtk import dataset_to_vtk
+
+        amr = self._dataset(vtk_amr, self.device)
+        out = vtkPartitionedDataSetCollection()
+        out.SetNumberOfPartitionedDataSets(amr.num_levels)
+        for level, pieces in enumerate(amr.levels):
+            result = self._level(pieces)
+            out.SetPartitionedDataSet(level, vtkPartitionedDataSet() if result is None else
+                                      _as_partitioned(dataset_to_vtk(result, copy=False)))
+            out.GetMetaData(level).Set(vtkCompositeDataSet.NAME(), f"level{level}")
+        return out
+
+    def _level(self, pieces):
+        """The result for one level's boxes, a ``PartitionedDataSet``."""
+        return self.execute(pieces)
+
     def _prepare(self, inInfo):
         """Read what every unit of a run needs from the other ports (a source)."""
 
     def _set_unit_output(self, output, result):
+        # A hierarchy's entry goes with it: on its metadata, which the copy shares.
         _set_output(self, output, result)
 
     def _tree(self, node):
@@ -647,10 +879,15 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         return out
 
     def _unit(self, vtk_data):
-        """The filter's result for one unit: a dataset or a partitioned dataset."""
+        """The filter's result for one unit: a dataset, a partitioned dataset or an AMR
+        hierarchy."""
+        from tack.dataset import AMRDataSet
         from tack.interop.vtk import dataset_to_vtk
 
-        return dataset_to_vtk(self.execute(self._dataset(vtk_data, self.device)), copy=False)
+        result = self.execute(self._dataset(vtk_data, self.device))
+        if isinstance(result, AMRDataSet):
+            return _amr_output(vtk_data, result)
+        return dataset_to_vtk(result, copy=False)
 
     # ── The filter ──────────────────────────────────────────────────
 
@@ -698,6 +935,29 @@ class _FieldAlgorithm(TackAlgorithm):
     or one field named by the ``name`` parameter."""
 
     OUTPUT = None
+
+    def _amr_output_type(self):
+        return vtkOverlappingAMR
+
+    def _by_box(self, vtk_amr):
+        """The hierarchy with the fields computed on each box, its blocks shallow copies
+        of the input's with the new arrays; its Tack hierarchy the input's with them,
+        on the same boxes and marks."""
+        from tack.dataset import AMRDataSet
+
+        amr = self._dataset(vtk_amr, self.device)
+        out = _amr_like(vtk_amr)
+        levels = [[] for _ in range(amr.num_levels)]
+        whole = True
+        for (level, index, block), (_, box) in zip(_blocks(vtk_amr), amr):
+            one, kept = self._with_fields(block, box)
+            out.SetDataSet(level, index, one)
+            levels[level].append(kept)
+            whole &= kept is not None
+        if whole:
+            _remember(out, AMRDataSet._grown(amr, levels, amr._extents, amr.layers,
+                                             amr._fills))
+        return out
 
     def _unit(self, vtk_data):
         data = self._dataset(vtk_data, self.device)
@@ -889,6 +1149,8 @@ class _Seeded(_Whole):
 
     INPUTS = 2
     REQUIRED_INPUTS = 1
+    # Box by box, a path would end where a finer box covers the coarse one.
+    BY_BOX = False
 
     def SetSourceConnection(self, port):
         self.SetInputConnection(1, port)
@@ -946,12 +1208,14 @@ class Probe(TackAlgorithm):
     input port 1 (``SetSourceConnection``, ``SetSourceData``) -- at the points of the
     input (port 0), as point data on the input's structure, with ``valid`` (0 where
     no source cell holds the point). A partitioned source is probed as a whole, and a
-    tree as the partitioned dataset of its blocks; a tree on port 0 keeps its
-    structure. It runs on the source's device unless ``device`` says otherwise, the
-    input moved there."""
+    tree as the partitioned dataset of its blocks; an AMR hierarchy at each point's
+    finest box (as ``vtkAMRResampleFilter``, onto any points); a tree on port 0 keeps
+    its structure. It runs on the source's device unless ``device`` says otherwise,
+    the input moved there."""
 
     OUTPUT = "structure"
     INPUTS = 2
+    AMR_PORTS = (1,)
     FUNCTION = "probe"
     EXCLUDE = ("where",)
 
@@ -967,7 +1231,7 @@ class Probe(TackAlgorithm):
         import tack.dataset as td
 
         source = self.GetInputData(inInfo, 1, 0)
-        if isinstance(source, _TREES):
+        if isinstance(source, _TREES) and not isinstance(source, vtkOverlappingAMR):
             # Every dataset in the tree, as the pieces of one partitioned dataset.
             leaves = vtkPartitionedDataSet()
             iterator = source.NewIterator()
@@ -980,7 +1244,16 @@ class Probe(TackAlgorithm):
         self._source = self._dataset(source, self.device)
         self._where_device = self.device
         if self._where_device is None and not isinstance(self._source, td.PartitionedDataSet):
-            self._where_device = self._source.device
+            self._where_device = _device_of(self._source)
+
+    def _level(self, pieces):
+        import tack.dataset as td
+
+        arguments = self.arguments()
+        return td.PartitionedDataSet(
+            [td.probe(self._source, piece if self._where_device is None
+                      else piece.to_device(self._where_device), **arguments)
+             for piece in pieces], world=pieces.world)
 
     def _unit(self, vtk_data):
         import tack.dataset as td
@@ -1498,9 +1771,10 @@ class UpwindFlux(_OnFaces):
 class Voxelize(_Whole):
     """``td.voxelize``: the input on the voxels of ``grid`` (a ``vtkImageData`` or a Tack
     image), with ``fraction``, the share of each voxel the input covers, and the
-    fields' means."""
+    fields' means. An AMR hierarchy is sampled at each sample's finest box."""
 
     OUTPUT = "vtkImageData"
+    AMR_PORTS = (0,)
     FUNCTION = "voxelize"
     DATASETS = ("grid",)
 
@@ -1658,9 +1932,9 @@ class _OverPieces(TackAlgorithm):
     whole (a single dataset is one piece)."""
 
     def execute(self, data):
-        from tack.dataset import PartitionedDataSet
+        from tack.dataset import AMRDataSet, PartitionedDataSet
 
-        if not isinstance(data, PartitionedDataSet):
+        if not isinstance(data, (PartitionedDataSet, AMRDataSet)):
             # This process's one piece, beside the other processes' (``world``).
             data = PartitionedDataSet([data], world=self._run_world)
         return self.over_pieces(data)
@@ -1669,13 +1943,18 @@ class _OverPieces(TackAlgorithm):
         return self._function()(pieces, **self.arguments())
 
     def _output_type(self, input):
-        return vtkPartitionedDataSet
+        return vtkOverlappingAMR if isinstance(input, vtkOverlappingAMR) else vtkPartitionedDataSet
 
 
 class GhostCells(_OverPieces):
     """``td.ghost_cells``: each piece grown by ``layers`` of its neighbours' cells,
-    marked ``DUPLICATECELL``. VTK's ``vtkGhostCellsGenerator``."""
+    marked ``DUPLICATECELL``. VTK's ``vtkGhostCellsGenerator``. An AMR hierarchy's
+    boxes each grow within their level, a ghost a sibling holds copied from it, else
+    from the coarser level (AMReX's ``FillBoundary`` and ``FillPatchTwoLevels``): a
+    hierarchy of the input's boxes, its blocks the grown ones, which the AMR filters
+    after it take as they are."""
 
+    AMR_PORTS = (0,)
     FUNCTION = "ghost_cells"
 
     layers = Parameter(1, "the layers of ghost cells")
@@ -1688,6 +1967,7 @@ class GenerateGlobalIds(_OverPieces):
     VTK's ``vtkGenerateGlobalIds``."""
 
     FUNCTION = "generate_global_ids"
+    BY_BOX = False                      # a level's ids would repeat another's
 
     tolerance = Parameter(0.0, "how far apart two pieces' copies of a point may be")
 
@@ -1730,16 +2010,66 @@ class GhostPoints(_OverPieces):
     FUNCTION = "ghost_points"
 
 
+# ── AMR hierarchies ─────────────────────────────────────────────────
+
+class AverageDown(TackAlgorithm):
+    """``td.average_down``: an AMR hierarchy with its finer levels' values of ``field`` in
+    the coarse cells and points they cover, finest level first -- a refined cell the
+    volume-weighted mean of the fine cells over it, a refined point the fine point's
+    value at its location. AMReX's ``average_down``. The input stays as it was: the
+    output's ``field`` is a copy, its other arrays the input's."""
+
+    OUTPUT = None
+    AMR_PORTS = (0,)
+    FUNCTION = "average_down"
+    FIELDS = ("field",)
+
+    def compute(self, data):
+        from tack.dataset import AMRDataSet
+
+        if not isinstance(data, AMRDataSet):
+            raise TypeError("AverageDown takes an AMR hierarchy (vtkOverlappingAMR), not a "
+                            f"{type(data).__name__}")
+        field = self.arguments()["field"]
+        out = _with_copy_of(data, field)
+        self._function()(out, field)            # in place
+        return out
+
+
+def _with_copy_of(amr, key):
+    """``amr`` with each box's field ``key`` a copy of it, the rest shared."""
+    import tack
+    from tack.dataset import AMRDataSet, DataSet, Field
+
+    levels = []
+    for pieces in amr.levels:
+        boxes = []
+        for box in pieces:
+            field = box.fields[key]
+            values = field.values
+            # An implicit array stays: average_down refuses it, naming it.
+            copied = Field(field.space, values.copy() if isinstance(values, tack.Array)
+                           else values, field.unit)
+            fields = {name: copied if f is field else f for name, f in box.fields.items()}
+            boxes.append(DataSet(box.topology, box.geometry, fields=fields, sets=box.sets,
+                                 ghosts=box.ghosts, global_ids=box.global_ids,
+                                 **box._frame()))
+        levels.append(boxes)
+    return AMRDataSet._grown(amr, levels, amr._extents, amr.layers, amr._fills)
+
+
 # ── Reductions: one answer for all the input ────────────────────────
 
 class _Reduction(TackAlgorithm):
     """A filter whose answer is one result for all its input: every dataset in it (a
     partitioned dataset's pieces, a tree's datasets) on every rank, reduced together,
     as VTK's ``vtkDescriptiveStatistics`` and ``vtkIntegrateAttributes`` reduce
-    composite data. Every rank gets the result. ``reduce(pieces)`` gives the VTK
+    composite data; an AMR hierarchy's boxes with their marks, so what a finer box
+    covers and what a sibling holds count once. Every rank gets the result. ``reduce(pieces)`` gives the VTK
     output from a ``PartitionedDataSet`` of every dataset in the input."""
 
     OUTPUT = "vtkTable"
+    AMR_PORTS = (0,)
 
     fields = Parameter(None, "the fields: names, or (name, 'points' / 'cells'); by "
                              "default every field. A vector field is reduced a "
@@ -1759,7 +2089,12 @@ class _Reduction(TackAlgorithm):
         from tack.dataset import PartitionedDataSet
 
         self._run_world = self._world()
+        self._check_inputs(inInfo)
         input = self.GetInputData(inInfo, 0, 0)
+        if isinstance(input, vtkOverlappingAMR):
+            hierarchy = _as_dataset(input, self.device, self._run_world)
+            self.GetOutputData(outInfo, 0).ShallowCopy(self.reduce(hierarchy._as_pieces()))
+            return 1
         if isinstance(input, (*_TREES, vtkPartitionedDataSet)):
             leaves = []
             iterator = input.NewIterator()
