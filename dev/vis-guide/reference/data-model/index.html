@@ -17198,10 +17198,10 @@ are carried, not read.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">122</span>
-<span class="normal">123</span>
-<span class="normal">124</span>
-<span class="normal">125</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">cells</span> <span class="o">=</span> <span class="n">_marks</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">points</span> <span class="o">=</span> <span class="n">_marks</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">)</span>
     <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_device</span>                    <span class="c1"># refuses marks on two devices</span>
@@ -17263,11 +17263,11 @@ are carried, not read.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">136</span>
-<span class="normal">137</span>
-<span class="normal">138</span>
-<span class="normal">139</span>
-<span class="normal">140</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">to_device</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;These marks on ``device``.&quot;&quot;&quot;</span>
     <span class="n">target</span> <span class="o">=</span> <span class="n">as_device</span><span class="p">(</span><span class="n">backend_of</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">Ghosts</span><span class="p">(</span><span class="kc">None</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cells</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">cells</span><span class="o">.</span><span class="n">to_device</span><span class="p">(</span><span class="n">target</span><span class="p">),</span>
@@ -20607,15 +20607,15 @@ origin, spatial unit and time.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">keep_marks</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">keep_marks</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``out``, a dataset on ``source``&#39;s cells and points (the same topology), with</span>
 <span class="sd">    ``source``&#39;s ghost marks -- and its record of having lost them -- and its</span>
 <span class="sd">    origin, spatial unit and time.&quot;&quot;&quot;</span>
@@ -20638,7 +20638,7 @@ origin, spatial unit and time.</p>
 
 
 <a href="#tack.dataset.drop_marks" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">drop_marks</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">drop_marks</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cells_kept</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -20647,28 +20647,40 @@ origin, spatial unit and time.</p>
 it ghost marks: if <code>source</code> had marks, or had lost them, record that
 <code>out</code> lost them (<code>reason</code>, a sentence saying why, or <code>True</code>), so
 reductions refuse it rather than count shared cells and points once per
-piece.</p>
+piece. With <code>cells_kept</code> only its points' marks are lost: its cells came one
+each from <code>source</code>'s cells, whose marks (or, without any, ownership of every
+cell) <code>out</code> keeps, unless <code>source</code> had lost those too.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">51</span>
-<span class="normal">52</span>
-<span class="normal">53</span>
-<span class="normal">54</span>
-<span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">drop_marks</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span>
+<span class="normal">95</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">drop_marks</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cells_kept</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``out``, made from ``source``&#39;s cells and points by a filter that cannot give</span>
 <span class="sd">    it ghost marks: if ``source`` had marks, or had lost them, record that</span>
 <span class="sd">    ``out`` lost them (``reason``, a sentence saying why, or ``True``), so</span>
 <span class="sd">    reductions refuse it rather than count shared cells and points once per</span>
-<span class="sd">    piece.&quot;&quot;&quot;</span>
+<span class="sd">    piece. With ``cells_kept`` only its points&#39; marks are lost: its cells came one</span>
+<span class="sd">    each from ``source``&#39;s cells, whose marks (or, without any, ownership of every</span>
+<span class="sd">    cell) ``out`` keeps, unless ``source`` had lost those too.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">source</span><span class="o">.</span><span class="n">ghosts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">source</span><span class="o">.</span><span class="n">_ghosts_lost</span><span class="p">:</span>
-        <span class="n">out</span><span class="o">.</span><span class="n">_ghosts_lost</span> <span class="o">=</span> <span class="n">source</span><span class="o">.</span><span class="n">_ghosts_lost</span> <span class="ow">or</span> <span class="n">reason</span>
+        <span class="n">before</span> <span class="o">=</span> <span class="n">_lost</span><span class="p">(</span><span class="n">source</span><span class="o">.</span><span class="n">_ghosts_lost</span><span class="p">)</span>
+        <span class="n">points</span> <span class="o">=</span> <span class="n">before</span><span class="o">.</span><span class="n">points</span> <span class="ow">or</span> <span class="n">before</span><span class="o">.</span><span class="n">cells</span> <span class="ow">or</span> <span class="n">reason</span>
+        <span class="n">cells</span> <span class="o">=</span> <span class="n">before</span><span class="o">.</span><span class="n">cells</span> <span class="k">if</span> <span class="n">cells_kept</span> <span class="k">else</span> <span class="p">(</span><span class="n">before</span><span class="o">.</span><span class="n">cells</span> <span class="ow">or</span> <span class="n">reason</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">_ghosts_lost</span> <span class="o">=</span> <span class="n">_Lost</span><span class="p">(</span><span class="n">cells</span><span class="o">=</span><span class="n">cells</span><span class="p">,</span> <span class="n">points</span><span class="o">=</span><span class="n">points</span><span class="p">)</span>
     <span class="n">out</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">source</span><span class="o">.</span><span class="n">origin</span>
     <span class="k">return</span> <span class="n">_keep_frame</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -20701,35 +20713,35 @@ carried. Given field <code>arguments</code> too (<code>Field</code>s of
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">494</span>
-<span class="normal">495</span>
-<span class="normal">496</span>
-<span class="normal">497</span>
-<span class="normal">498</span>
-<span class="normal">499</span>
-<span class="normal">500</span>
-<span class="normal">501</span>
-<span class="normal">502</span>
-<span class="normal">503</span>
-<span class="normal">504</span>
-<span class="normal">505</span>
-<span class="normal">506</span>
-<span class="normal">507</span>
-<span class="normal">508</span>
-<span class="normal">509</span>
-<span class="normal">510</span>
-<span class="normal">511</span>
-<span class="normal">512</span>
-<span class="normal">513</span>
-<span class="normal">514</span>
-<span class="normal">515</span>
-<span class="normal">516</span>
-<span class="normal">517</span>
-<span class="normal">518</span>
-<span class="normal">519</span>
-<span class="normal">520</span>
-<span class="normal">521</span>
-<span class="normal">522</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">542</span>
+<span class="normal">543</span>
+<span class="normal">544</span>
+<span class="normal">545</span>
+<span class="normal">546</span>
+<span class="normal">547</span>
+<span class="normal">548</span>
+<span class="normal">549</span>
+<span class="normal">550</span>
+<span class="normal">551</span>
+<span class="normal">552</span>
+<span class="normal">553</span>
+<span class="normal">554</span>
+<span class="normal">555</span>
+<span class="normal">556</span>
+<span class="normal">557</span>
+<span class="normal">558</span>
+<span class="normal">559</span>
+<span class="normal">560</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span>
+<span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">visible</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="n">arguments</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` without its hidden cells (``HIDDENCELL``: data not valid there) and</span>
 <span class="sd">    refined cells (``REFINEDCELL``: an AMR cell a finer level covers), which</span>
@@ -20786,42 +20798,7 @@ with ghost marks they are refused rather than counted twice.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">186</span>
-<span class="normal">187</span>
-<span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span>
-<span class="normal">202</span>
-<span class="normal">203</span>
-<span class="normal">204</span>
-<span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
-<span class="normal">208</span>
-<span class="normal">209</span>
-<span class="normal">210</span>
-<span class="normal">211</span>
-<span class="normal">212</span>
-<span class="normal">213</span>
-<span class="normal">214</span>
-<span class="normal">215</span>
-<span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">221</span>
 <span class="normal">222</span>
 <span class="normal">223</span>
 <span class="normal">224</span>
@@ -20842,7 +20819,46 @@ with ghost marks they are refused rather than counted twice.</p>
 <span class="normal">239</span>
 <span class="normal">240</span>
 <span class="normal">241</span>
-<span class="normal">242</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">owned_values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The values of ``field`` (a ``Field`` of ``data``, or its name) that ``data`` owns: all of</span>
 <span class="sd">    them when it has no marks for where they live, else those of cells and</span>
@@ -20855,24 +20871,28 @@ with ghost marks they are refused rather than counted twice.</p>
 
     <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
         <span class="n">field</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">_ghosts_lost</span><span class="p">:</span>
-        <span class="n">why</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">_ghosts_lost</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">_ghosts_lost</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span>
-            <span class="s2">&quot;the filter that made it does not carry the marks&quot;</span><span class="p">)</span>
+    <span class="n">space</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span>
+    <span class="n">on_points</span> <span class="o">=</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Values</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="o">==</span> <span class="s2">&quot;points&quot;</span><span class="p">)</span>
+    <span class="n">on_cells</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="p">(</span><span class="n">Constant</span><span class="p">,</span> <span class="n">L2</span><span class="p">))</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Values</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="o">==</span> <span class="s2">&quot;cells&quot;</span><span class="p">)</span>
+    <span class="c1"># Only the marks of where the values live: a filter that lost its points&#39;</span>
+    <span class="c1"># marks but kept its cells&#39; still reduces cell values (integrate&#39;s).</span>
+    <span class="n">lost</span> <span class="o">=</span> <span class="n">_lost</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">_ghosts_lost</span><span class="p">)</span>
+    <span class="n">why</span> <span class="o">=</span> <span class="n">lost</span><span class="o">.</span><span class="n">points</span> <span class="k">if</span> <span class="n">on_points</span> <span class="k">else</span> <span class="n">lost</span><span class="o">.</span><span class="n">cells</span> <span class="k">if</span> <span class="n">on_cells</span> <span class="k">else</span> <span class="p">(</span><span class="n">lost</span><span class="o">.</span><span class="n">cells</span> <span class="ow">or</span> <span class="n">lost</span><span class="o">.</span><span class="n">points</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">why</span><span class="p">:</span>
+        <span class="n">kind</span> <span class="o">=</span> <span class="s2">&quot;points&quot;</span> <span class="k">if</span> <span class="n">on_points</span> <span class="k">else</span> <span class="s2">&quot;cells&quot;</span> <span class="k">if</span> <span class="n">on_cells</span> <span class="k">else</span> <span class="s2">&quot;cells and points&quot;</span>
+        <span class="n">reason</span> <span class="o">=</span> <span class="n">why</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">why</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="s2">&quot;the filter that made it does not carry the marks&quot;</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;this dataset is a filter&#39;s output from data with ghost marks, and </span><span class="si">{</span><span class="n">why</span><span class="si">}</span><span class="s2">: &quot;</span>
-            <span class="s2">&quot;its shared cells and points would count once per piece. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;this dataset is a filter&#39;s output from data with ghost marks, and </span><span class="si">{</span><span class="n">reason</span><span class="si">}</span><span class="s2">: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;its shared </span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2"> would count once per piece. &quot;</span>
             <span class="s2">&quot;td.generate_global_ids(pieces) of the outputs marks them by matching &quot;</span>
             <span class="s2">&quot;(or reduce the input instead, or set the output&#39;s ghosts)&quot;</span><span class="p">)</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="n">ghosts</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">ghosts</span>
     <span class="k">if</span> <span class="n">ghosts</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ghosts</span><span class="o">.</span><span class="n">cells</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ghosts</span><span class="o">.</span><span class="n">points</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">values</span>
-    <span class="n">space</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span>
     <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
-    <span class="n">on_points</span> <span class="o">=</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
-        <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Values</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="o">==</span> <span class="s2">&quot;points&quot;</span><span class="p">)</span>
-    <span class="n">on_cells</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="p">(</span><span class="n">Constant</span><span class="p">,</span> <span class="n">L2</span><span class="p">))</span> <span class="ow">or</span> <span class="p">(</span>
-        <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Values</span><span class="p">)</span> <span class="ow">and</span> <span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="o">==</span> <span class="s2">&quot;cells&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">on_points</span><span class="p">:</span>
         <span class="n">marks</span><span class="p">,</span> <span class="n">skipped</span> <span class="o">=</span> <span class="n">ghosts</span><span class="o">.</span><span class="n">points</span><span class="p">,</span> <span class="n">Ghosts</span><span class="o">.</span><span class="n">SKIPPED_POINTS</span>
     <span class="k">elif</span> <span class="n">on_cells</span><span class="p">:</span>
