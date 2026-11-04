@@ -150,18 +150,24 @@ class _Groups:
         """``levels``: the levels whose boxes are members (all by default); the groups
         are the devices of every box, so every rank makes the same blocks."""
         d = amr.dimension
+        # Each box's device, looked up once: ``DataSet.device`` searches the dataset's
+        # parts on every call (27 us; 3.6 s of average_down's per-box calls).
+        every = [box.device for _, box in amr]
         devices = []
-        for _, box in amr:
-            if box.device not in devices:
-                devices.append(box.device)
-        self.local, self.pieces, of_box = [], [], []
+        for device in every:
+            if device not in devices:
+                devices.append(device)
+        self.local, self.pieces, self.devices, of_box = [], [], [], []
+        n = 0
         for level, pieces in enumerate(amr.levels):
-            if levels is not None and level not in levels:
-                continue
             for k, box in enumerate(pieces):
+                device, n = every[n], n + 1
+                if levels is not None and level not in levels:
+                    continue
                 self.local.append((level, amr._first[level] + k))
                 self.pieces.append(box)
-                of_box.append(devices.index(box.device))
+                self.devices.append(device)
+                of_box.append(devices.index(device))
         self.blocks = tc.Blocks(devices, amr.world)
         gids = list(self.blocks.local)
         self.members = {g: [i for i, k in enumerate(of_box) if k == n] for n, g in enumerate(gids)}
@@ -349,16 +355,98 @@ def _index(same, j, r, points, use_box):
     return q0, q1, q2
 
 
+@tack.func
+def _hole(same, j, a, points):
+    """Axis ``a`` of box ``j``'s grown extent, for ``_shell_index``: its size, and the
+    start and size of the hole in it, the entries a sibling never holds (the box's
+    own cells, or its own points off its boundary); an axis the boxes lack is one
+    entry, inside the hole."""
+    n = 1 + 0 * j
+    start = 0 * j
+    size = 1 + 0 * j
+    if a < same.d:
+        lo = same.lo[3 * j + a]
+        hi = same.hi[3 * j + a]
+        elo = same.elo[3 * j + a]
+        n = same.ehi[3 * j + a] - elo + points
+        start = lo - elo + points
+        size = hi - lo - points
+    return n, start, size
+
+
+@tack.func
+def _shell_index(same, j, r, points):
+    """Entry ``r`` of box ``j``'s shell: its grown extent less the hole (``_hole``),
+    x fastest, as ``(q0, q1, q2)``. Slabs of z before the hole, through it and
+    after it, and in a slab through it rows of y alike, so the hole's entries are
+    never enumerated."""
+    nx, ax, hx = _hole(same, j, 0, points)
+    ny, ay, hy = _hole(same, j, 1, points)
+    nz, az, hz = _hole(same, j, 2, points)
+    if hx <= 0 or hy <= 0 or hz <= 0:       # no hole
+        hx = 0 * hx
+        hy = 0 * hy
+        hz = 0 * hz
+        ax = 0 * ax
+        ay = 0 * ay
+        az = nz
+    slab = nx * ny
+    holed = slab - hx * hy
+    z = 0 * r
+    rest = r
+    full = 1
+    if r < az * slab:
+        z = r // slab
+        rest = r - z * slab
+    elif r < az * slab + hz * holed:
+        k = r - az * slab
+        z = az + k // holed
+        rest = k - (z - az) * holed
+        full = 0
+    else:
+        k = r - az * slab - hz * holed
+        z = az + hz + k // slab
+        rest = k - (z - az - hz) * slab
+    y = 0 * r
+    x = 0 * r
+    if full == 1:
+        y = rest // nx
+        x = rest - y * nx
+    elif rest < ay * nx:
+        y = rest // nx
+        x = rest - y * nx
+    elif rest < ay * nx + hy * (nx - hx):
+        m = rest - ay * nx
+        y = ay + m // (nx - hx)
+        x = m - (y - ay) * (nx - hx)
+        if x >= ax:
+            x = x + hx
+    else:
+        m = rest - ay * nx - hy * (nx - hx)
+        y = ay + hy + m // nx
+        x = m - (y - ay - hy) * nx
+    return same.elo[3 * j] + x, same.elo[3 * j + 1] + y, same.elo[3 * j + 2] + z
+
+
+def _shell_sizes(boxes, extents, d, points):
+    """Each box's shell entries (``_shell_index``): its grown extent's cells or points
+    less the hole."""
+    lo, hi = boxes[:, 0, :d], boxes[:, 1, :d]
+    full = np.prod(extents[:, 1, :d] - extents[:, 0, :d] + points, axis=1)
+    hole = np.prod(np.maximum(hi - lo - points, 0), axis=1)
+    return full - hole
+
+
 @tack.kernel
 def _ghost_cells_of(same, coarse, has_coarse, r0, r1, r2, ids, offsets, n, targets, groups,
                     places):
-    # Each entry of the boxes' grown extents: a ghost cell's target place and its one
+    # Each entry of the boxes' shells (``_shell_index``): a ghost cell's target place and its one
     # source, a sibling's (the lowest holding it) else the coarse cell's; -1 targets
     # for the boxes' own cells, -1 groups for ghosts nothing holds (hidden).
     for e in range(targets.shape[0]):
         b = _entry(offsets, n, e)
         j = ids[b]
-        q0, q1, q2 = _index(same, j, e - offsets[b], 0, 0)
+        q0, q1, q2 = _shell_index(same, j, e - offsets[b], 0)
         target = -1
         group = -1
         place = 0 * j
@@ -384,7 +472,7 @@ def _ghost_cells_of(same, coarse, has_coarse, r0, r1, r2, ids, offsets, n, targe
 @tack.kernel
 def _ghost_points_of(same, coarse, has_coarse, r0, r1, r2, den, ids, offsets, n, write, starts,
                      counts, targets, groups, places, weights):
-    # Each point of the boxes' grown extents: its sources' count (-1 not a target, 0
+    # Each point of the boxes' shells (``_shell_index``): its sources' count (-1 not a target, 0
     # hidden) and, with ``write``, the sources at ``starts``. A ghost point is a
     # sibling's (the lowest holding it), else interpolated in the coarse cell
     # holding it by its corners' owners (the lowest coarse box holding each); an
@@ -393,7 +481,7 @@ def _ghost_points_of(same, coarse, has_coarse, r0, r1, r2, den, ids, offsets, n,
     for e in range(counts.shape[0]):
         b = _entry(offsets, n, e)
         j = ids[b]
-        q0, q1, q2 = _index(same, j, e - offsets[b], 1, 0)
+        q0, q1, q2 = _shell_index(same, j, e - offsets[b], 1)
         big = same.ids.shape[0] + same.lo.shape[0]
         count = -1
         at = starts[e] if write == 1 else 0 * e
@@ -597,8 +685,9 @@ def _ghost_parts(amr, groups, extents):
             nb = len(ids)
             with device:
                 ids_d = tack.array(ids, tack.i64)
-            # Cells: one source each.
-            offsets, offsets_d = _entries(np.prod(ext[:, 1, :d] - ext[:, 0, :d], axis=1), device)
+            own = amr._boxes[level][ids]
+            # Cells: one source each, for the shell's cells only.
+            offsets, offsets_d = _entries(_shell_sizes(own, ext, d, 0), device)
             total = int(offsets[-1])
             with device:
                 targets = tack.empty((total,), tack.i64)
@@ -611,16 +700,16 @@ def _ghost_parts(amr, groups, extents):
             box = _entry_boxes(offsets)
             cbase = groups.cell_base[level][ids]
             gone = np.flatnonzero((t >= 0) & (gr < 0))
-            for place, own in _by_box(gone - offsets[box[gone]], box[gone], places).items():
-                hidden[place] = (own, hidden[place][1])
+            for place, lost in _by_box(t[gone] - cbase[box[gone]], box[gone], places).items():
+                hidden[place] = (lost, hidden[place][1])
             kept = (t >= 0) & (gr >= 0)
             cells["targets"].append(t[kept])
             cells["box"].append(box[kept] + sum(len(x) for x in cells["places"]))
             cells["base"].append(cbase[box[kept]])
             cells["places"].append(places)
             cells["sources"].append(np.stack([gr[kept], pl[kept]], axis=1))
-            # Points: a count, then the sources.
-            offsets, offsets_d = _entries(np.prod(ext[:, 1, :d] - ext[:, 0, :d] + 1, axis=1), device)
+            # Points: a count, then the sources, for the shell's points only.
+            offsets, offsets_d = _entries(_shell_sizes(own, ext, d, 1), device)
             total = int(offsets[-1])
             with device:
                 counts = tack.empty((total,), tack.i32)
@@ -644,8 +733,8 @@ def _ghost_parts(amr, groups, extents):
             box = _entry_boxes(offsets)
             pbase = groups.point_base[level][ids]
             gone = np.flatnonzero(c == 0)
-            for place, own in _by_box(gone - offsets[box[gone]], box[gone], places).items():
-                hidden[place] = (hidden[place][0], own)
+            for place, lost in _by_box(t[gone] - pbase[box[gone]], box[gone], places).items():
+                hidden[place] = (hidden[place][0], lost)
             kept = c > 0
             points["targets"].append(t[kept])
             points["box"].append(box[kept] + sum(len(x) for x in points["places"]))
@@ -777,9 +866,9 @@ def amr_ghost_cells(amr, layers, fields):
     grown_boxes, arrays_by_kind, positions = [], [], []
     for i, ((level, k), piece) in enumerate(zip(groups.local, pieces)):
         box, ext = amr._boxes[level][k], extents[level][k]
-        with piece.device:
+        with groups.devices[i]:
             assembled = {name: _placed(piece.fields[name].values, _kind(piece.fields[name]),
-                                       box, ext, d, piece) for name in names}
+                                       box, ext, d) for name in names}
             positions.append(tack.array(_placed_host(piece.positions(), "points", box, ext, d),
                                         tack.vec3(piece.dtype)) if need else None)
         arrays_by_kind.append(assembled)
@@ -798,8 +887,8 @@ def amr_ghost_cells(amr, layers, fields):
                            amr._refined_boxes(level, extents[level][ks])))
     out = [[] for _ in range(amr.num_levels)]
     for i, level, k, piece, box, ext in grown_boxes:
-        out[level].append(_grown_box(piece, box, ext, d, arrays_by_kind[i], names,
-                                     positions[i], hidden[i], refined[level, k]))
+        out[level].append(_grown_box(piece, groups.devices[i], box, ext, d, arrays_by_kind[i],
+                                     names, positions[i], hidden[i], refined[level, k]))
     return AMRDataSet._grown(amr, out, extents, int(layers), fills)
 
 
@@ -821,21 +910,38 @@ def _placed_host(values, kind, box, ext, d):
     return out.reshape((-1, *extra))
 
 
-def _placed(values, kind, box, ext, d, piece):
-    count = piece.num_points if kind == "points" else piece.num_cells
-    values = arrays.materialize(_point_values(values, count))
-    host = arrays.to_host(values)
-    width = getattr(values.dtype, "_vector_n", None) or getattr(values, "_vector_n", None)
-    host = np.asarray(host).reshape(count, -1) if width else np.asarray(host).reshape(count)
-    return tack.array(_placed_host(host, kind, box, ext, d), values.dtype)
+def _placed(values, kind, box, ext, d):
+    """A box's values placed in an array of the grown extent, zeros elsewhere, on the
+    device (through the host it was 3.6 s of AMR-Wind's five levels)."""
+    extra = 1 if kind == "points" else 0
+    own = np.ones(3, np.int64)
+    grown = np.ones(3, np.int64)
+    start = np.zeros(3, np.int64)
+    own[:d] = box[1, :d] - box[0, :d] + extra
+    grown[:d] = ext[1, :d] - ext[0, :d] + extra
+    start[:d] = box[0, :d] - ext[0, :d]
+    values = arrays.materialize(_point_values(values, int(np.prod(own))))
+    out = tack.zeros((int(np.prod(grown)),), values.dtype)
+    if values.shape[0]:
+        _place_into(values, out, *map(int, own[:2]), *map(int, grown[:2]), *map(int, start))
+    return out
 
 
-def _grown_box(piece, box, ext, d, assembled, names, positions, hidden, refined):
+@tack.kernel
+def _place_into(values, out, nx, ny, gx, gy, sx, sy, sz):
+    for k in range(values.shape[0]):
+        i = k % nx
+        j = (k // nx) % ny
+        m = k // (nx * ny)
+        out[(i + sx) + gx * ((j + sy) + gy * (m + sz))] = values[k]
+
+
+def _grown_box(piece, device, box, ext, d, assembled, names, positions, hidden, refined):
     """The box grown to ``ext``: its topology, geometry, fields and marks."""
     from tack.dataset.algorithms.ghost_cells import _kind
 
     dims = tuple(int(v) + 1 for v in (ext[1, :d] - ext[0, :d]))
-    with piece.device:
+    with device:
         topology = StructuredTopology(dims, id_dtype=piece.topology.id_dtype,
                                       offset=tuple(int(v) for v in ext[0, :d]))
     coordinates = piece.geometry.values
@@ -846,7 +952,7 @@ def _grown_box(piece, box, ext, d, assembled, names, positions, hidden, refined)
         shift[:d] = (box[0, :d] - ext[0, :d]) * spacing[:d]
         geometry = UniformCoordinates(dims, np.asarray(coordinates._origin) - shift,
                                       coordinates._spacing, dtype=coordinates.dtype,
-                                      device=piece.device)
+                                      device=device)
     else:
         grid = positions.numpy().reshape(-1, 3).astype(np.float64)
         grid = _extrapolated(grid, hidden_points, dims)
@@ -861,12 +967,12 @@ def _grown_box(piece, box, ext, d, assembled, names, positions, hidden, refined)
                     axes.append(np.asarray(
                         arrays.to_host((coordinates.x, coordinates.y, coordinates.z)[a]),
                         np.float64))
-            geometry = CartesianProduct(*axes, dtype=coordinates.dtype, device=piece.device)
+            geometry = CartesianProduct(*axes, dtype=coordinates.dtype, device=device)
         else:
-            with piece.device:
+            with device:
                 geometry = tack.array(grid.astype(piece.dtype.numpy_dtype), tack.vec3(piece.dtype))
     cells, points = _grown_marks(piece, box, ext, d, hidden_cells, hidden_points, refined)
-    with piece.device:
+    with device:
         out = DataSet(topology, geometry, dtype=piece.dtype,
                       ghosts=Ghosts(cells=cells, points=points), **piece._frame())
         for name in names:
@@ -984,27 +1090,27 @@ def average_down(amr, field):
         # Cells: sums of measure times value over sums of measure. The measures are
         # the boxes' own, each found once.
         weighted, sums = [], []
-        for key, box, array in zip(groups.local, groups.pieces, values):
+        for key, box, device, array in zip(groups.local, groups.pieces, groups.devices, values):
             if key not in measures:
-                measures[key] = _measures(box, array.dtype)
-            with box.device:
+                measures[key] = _measures(box, device, array.dtype)
+            with device:
                 weighted.append(_times(array, measures[key]))
                 sums.append(measures[key].copy())       # the fill sums into them
         fill.run(weighted)
         fill.run(sums)
         for i, targets in fill.box_targets.items():
             if len(targets):
-                with groups.pieces[i].device:
+                with groups.devices[i]:
                     _divide(weighted[i], sums[i], tack.array(targets, tack.i64), values[i])
 
 
-def _measures(box, dtype):
+def _measures(box, device, dtype):
     """A box's cells' measures in ``dtype``: an image's, all alike, the product of its
     spacing (``cell_geometry`` of each of AMR-Wind's 15,598 boxes was 10 s)."""
     from tack.dataset.algorithms.cell_geometry import cell_geometry
 
     coordinates = box.geometry.values
-    with box.device:
+    with device:
         if isinstance(coordinates, UniformCoordinates):
             d = len(box.topology.point_dims)
             volume = float(np.prod(np.asarray(coordinates._spacing, np.float64)[:d]))
