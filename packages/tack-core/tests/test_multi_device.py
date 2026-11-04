@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Two devices of one type in one process (CUDA, HIP, Level Zero).
 
 Each test runs on every type with at least two devices here, and skips

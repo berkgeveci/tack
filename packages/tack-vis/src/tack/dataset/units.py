@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Physical units of fields: plain strings, checked and combined by unyt.
 
 A field's unit (``Field.unit``) is meaning, not storage: arrays and kernels

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The filter pairs: a VTK filter and the Tack call that does the same work.
 
 Each pair names the fields its input carries -- on both sides, because

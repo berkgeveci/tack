@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The integer type of a topology's ids: ``i32``, or ``i64`` when it is too large.
 
 Every id a topology stores or derives -- point and cell ids, offsets into its

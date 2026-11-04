@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``probe``: ``data``'s fields at the points of ``where`` -- a dataset, or an ``(n, 3)`` array of points, which becomes vertex cells -- as Viskores' Probe and VTK's vtkProbeFilter: the result is ``where`` with each field as point data, a field with a basis (``H1``, ``L2``, ``Constant``, values on points) evaluated through it in the cell holding the point, values on cells taken from that cell, and ``valid`` (1, or 0 where no cell holds the point and the values are 0). ``locator`` reuses a ``CellLocator`` of ``data``."""
 
 import numpy as np

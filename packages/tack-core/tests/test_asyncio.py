@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """`tack.sync_async` and `Array.numpy_async`: waiting for the device from
 ``asyncio`` without blocking the event loop (`tack.runtime.aio`)."""
 import asyncio

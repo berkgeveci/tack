@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``H1(..., dofs=table)``: values numbered by an element-to-DOF table, as MFEM and VTK's
 cell grids store them, instead of by entity. A table space holds the same
 polynomials as the space numbered by entity, so a field in it is held to its twin

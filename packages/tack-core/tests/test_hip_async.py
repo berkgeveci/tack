@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """HIP launches are queued on a stream and return at once; the host waits
 only where it reads an array. Results must be the same as when every launch
 completed before returning: order, each launch's own scalars, host writes

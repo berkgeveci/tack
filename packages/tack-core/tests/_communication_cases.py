@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Cases of communication across ranks, run on threads and under MPI.
 
 Each case is ``(ranks, body, check)``: ``body(world)`` runs on every rank and

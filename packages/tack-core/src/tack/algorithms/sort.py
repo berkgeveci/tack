@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Sorting and segmented reductions on tack arrays.
 
 A stable least-significant-digit radix sort, with ``unique`` and

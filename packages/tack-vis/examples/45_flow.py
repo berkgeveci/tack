@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """45 -- Flow: gradients, vorticity, particles and streamlines.
 
 A velocity field on a uniform grid -- a rigid rotation about the z axis with an

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tubes``: lines as tubes of quads round them, VTK's vtkTubeFilter."""
 
 import math

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Matrices: small fixed-size matrices, scalarized like vectors."""
 
 import numpy as np

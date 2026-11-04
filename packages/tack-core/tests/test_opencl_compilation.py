@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compile generated OpenCL C with Clang, in the shapes a device rejected.
 
 Two defects reached an Intel Max 1100 and failed there, in `3ead45d`: a float

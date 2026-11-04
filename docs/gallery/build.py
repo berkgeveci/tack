@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Regenerate every gallery picture (docs/assets/gallery/), each script in its own
 process; the pictures are checked in.
 

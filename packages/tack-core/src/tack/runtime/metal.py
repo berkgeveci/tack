@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack Metal compute backend — compiles kernels to MSL and dispatches on GPU.
 
 Pipeline:

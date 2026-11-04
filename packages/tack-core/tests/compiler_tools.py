@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Host compiler preflight shared by syntax and sanitized execution checks.
 
 Unconfigured developer machines may skip absent or unusable tooling. An

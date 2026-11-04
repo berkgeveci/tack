@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Keeping cells or points: the compaction behind ``threshold``,
 ``extract_cells``, ``extract_geometry``, ``mask`` and the point extractions,
 which keeps the used points, renumbers them and carries fields -- and on a

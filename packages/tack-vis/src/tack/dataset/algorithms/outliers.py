@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``outliers``: points with too few neighbours within a radius, or too far from their k nearest, marked -- as VTK's vtkRadiusOutlierRemoval and vtkStatisticalOutlierRemoval, and PDAL's ``filters.outlier`` (which marks too)."""
 
 import numpy as np

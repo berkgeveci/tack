@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Serendipity fields read as the full order-2 space.
 
 ``H1(order=2, basis="serendipity")`` stores the points' values, then one value per

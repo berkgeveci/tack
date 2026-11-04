@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``probe`` of a partitioned source.
 
 Each probed point goes to the lowest piece one of whose own cells holds it

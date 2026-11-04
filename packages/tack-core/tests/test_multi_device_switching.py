@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Several CUDA and HIP devices in one process, against fake runtimes.
 
 The CUDA driver works in the thread's current context and HIP on its current

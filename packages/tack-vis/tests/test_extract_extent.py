@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``extract_extent``: a box of a structured grid's points, every ``rate``-th, as a
 structured grid of the same kind, held to VTK's own extractors (vtkExtractVOI for
 images, vtkExtractRectilinearGrid, vtkExtractGrid) point for point and cell for

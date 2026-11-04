@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Shared kernel utility functions used by all backends.
 
 These helpers handle template detection, vector array detection, texture detection,

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for array utility functions: copy, astype, reshape, concat, zeros, etc."""
 
 import numpy as np

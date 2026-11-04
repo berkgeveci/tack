@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``composite``: scalar fields of one space as the components of one vector field (Viskores' CompositeVectors), in the order given."""
 
 import tack

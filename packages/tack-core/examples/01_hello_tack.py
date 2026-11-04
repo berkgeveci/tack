@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """01 -- Hello Tack: your first kernel.
 
 This is the simplest possible Tack program.  It creates two arrays,

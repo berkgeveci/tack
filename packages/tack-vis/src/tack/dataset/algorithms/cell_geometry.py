@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``cell_geometry``: a ``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A quad's area, its bilinear patch's by Gauss quadrature; any other 2D cell's, the fan of triangles from its points' mean (each signed by the cell's Newell normal)."""
 
 from typing import NamedTuple

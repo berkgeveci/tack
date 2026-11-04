@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Run ``_communication_cases`` under MPI: ``mpiexec -n 3 python _communication_mpi.py``.
 
 Each case runs on a communicator of its first ranks, through

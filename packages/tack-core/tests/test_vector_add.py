@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Test vector addition — simplest kernel, validates basic pipeline."""
 
 import numpy as np

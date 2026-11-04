@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Splitting cells into pieces, behind ``tetrahedralize`` and ``triangulate``.
 
 Tetrahedra conform, as VTK's ``vtkDataSetTriangleFilter``'s do: two cells

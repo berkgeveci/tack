@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Partitioned datasets: a dataset in pieces, as VTK's ``vtkPartitionedDataSet``.
 
 A ``PartitionedDataSet`` is an ordered list of ``DataSet``s. Each piece is a

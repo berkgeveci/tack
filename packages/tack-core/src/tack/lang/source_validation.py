@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Reject source constructs before lowering can discard part of their AST.
 
 Validate original device functions before return restructuring or renaming,

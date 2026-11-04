@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Octrees: a grid of trees whose nodes are Morton-sorted, as a linear octree --
 VTK's ``vtkHyperTreeGrid`` with a branching factor of 2, laid out for GPUs.
 

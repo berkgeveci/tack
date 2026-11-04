@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """05 -- Multi-dimensional parallel iteration with tack.ndindex.
 
 Instead of computing linear indices manually, use tack.ndindex(w, h) to

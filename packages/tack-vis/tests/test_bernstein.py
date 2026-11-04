@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Bernstein spaces (``basis="bernstein"``): values are the Bernstein polynomials'
 coefficients, not values at nodes, on segments, quads, hexahedra, triangles,
 tetrahedra and wedges. Every filter sees the same polynomials as the equispaced

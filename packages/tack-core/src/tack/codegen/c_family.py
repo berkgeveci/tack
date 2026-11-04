@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """What the C-family code generators share.
 
 CUDA C, HIP C, OpenCL C and the Metal Shading Language spell statements,

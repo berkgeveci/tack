@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The Warp backend (a prototype): Tack kernels compiled and launched by NVIDIA Warp.
 
 Each kernel runs on the CPU backend and on ``tack.device("warp")`` (Warp's

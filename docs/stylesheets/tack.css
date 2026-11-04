@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: Copyright (c) Kitware Inc. */
+/* SPDX-License-Identifier: BSD-3-Clause */
+
 /* The site's look, after NumPy's documentation (the PyData Sphinx theme): a plain
    header and tab row, set apart from the page by a hairline rather than a colour
    or a shadow; the sections as dark links, the current one underlined. */

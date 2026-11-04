@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Loops, as lowering emits them.
 
 A kernel has one parallel loop, a `for` over `range` or `tack.ndindex`

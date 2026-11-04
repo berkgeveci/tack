@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Drive the GPU backends' execute() on a machine with no GPU.
 
 Everything the CUDA/HIP/Level Zero backends do between "kernel called" and

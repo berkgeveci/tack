@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Devices are values: an array belongs to one, and a kernel runs where its arrays are.
 
 ``tack.device("cpu")`` is one device per type, the same value every time,

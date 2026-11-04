@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack func decorator — captures device-side functions for inlining into kernels.
 
 Functions decorated with @tack.func are inlined at the AST level when called

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """IR pass — packs scalar kernel parameters into array buffers.
 
 Solves the Metal 31 buffer binding limit by replacing N scalar parameters

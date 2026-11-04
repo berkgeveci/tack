@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_point_pieces``' check under MPI: ``mpiexec -n 2 python _point_pieces_mpi.py``.
 Each rank runs the point filters over its share of the pieces; rank 0 compares
 what every rank found with the whole's answers, and prints ``ok`` or fails."""

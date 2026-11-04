@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Ghost marks: which of a dataset's cells and points another piece owns.
 
 A piece of a partitioned dataset holds copies of what its neighbours own, so

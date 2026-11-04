@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """47 -- Tack's filters in a VTK pipeline: read, filter, write, render.
 
 VTK's readers and writers do the I/O and VTK renders; Tack's filters sit in the

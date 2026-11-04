@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Finding points near points: uniform bins over a dataset's points.
 
 ``PointLocator`` puts each point in a bin of a uniform grid over the points'

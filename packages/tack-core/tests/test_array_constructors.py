@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The NumPy-style constructors, and copying versus allocating matching storage."""
 
 import numpy as np

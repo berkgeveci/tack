@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Implicit arrays: every kind against NumPy, composed to depth, as a field's values
 in filters, and uniform grids against VTK's image data."""
 

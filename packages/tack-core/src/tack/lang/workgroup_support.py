@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Target capability checks for IR that requires a workgroup execution model."""
 
 from tack.lang import ir

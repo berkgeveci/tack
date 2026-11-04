@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``interpolate``: a field whose values are a function of position, evaluated at a space's nodes -- each node once, where the geometry puts it -- with no array of node positions stored."""
 
 import numpy as np

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``point_elevation``: each geometry value's position along the line from ``low_point`` to ``high_point``, clamped to it and mapped to ``range`` (VTK's vtkElevationFilter, Viskores' PointElevation): a field in the geometry's space."""
 
 import numpy as np

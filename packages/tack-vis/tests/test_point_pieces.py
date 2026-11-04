@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Point clouds in pieces: ``ghost_points`` and the point filters over a
 ``PartitionedDataSet``, each held to the whole's answer.
 

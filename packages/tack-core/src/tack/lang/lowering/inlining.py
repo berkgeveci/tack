@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Device functions (`@tack.func`), inlined at their call sites.
 
 A call is replaced by the callee's body with its locals renamed apart

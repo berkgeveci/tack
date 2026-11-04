@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Finding the cell a point lies in, and probing fields there.
 
 ``CellLocator(data)`` bins the cells' bounding boxes on a two-level grid over

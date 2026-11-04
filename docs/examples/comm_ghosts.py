@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Diffuse heat along a line cut into six blocks, refreshing ghost cells with a Plan
 before every step: in one process, or over MPI ranks with --mpi, to the same bits.
 

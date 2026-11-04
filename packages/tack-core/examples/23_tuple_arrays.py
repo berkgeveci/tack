@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """23 -- Multi-component tuple arrays: AOS vs SOA layouts.
 
 Inspired by VTK's vtkDataArray hierarchy.  Both AOS and SOA array types

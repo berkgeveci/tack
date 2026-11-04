@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Subdivide: high-order and curved cells as the linear sub-cells the cutting filters
 cut and VTK can draw, 4 a side, the cells about a corner left out so the inside
 shows: each sub-cell's edges drawn, the field as color.

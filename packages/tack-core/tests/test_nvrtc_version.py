@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Which NVRTC releases the CUDA backend warns about (no GPU required)."""
 
 from tack.runtime.nvrtc_version import old_nvrtc_message

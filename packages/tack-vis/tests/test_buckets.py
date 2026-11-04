@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """bucket_order: the stable order of keys that lead with a bounded id, found by
 bucketing instead of sorting -- what face, edge, cell-point and point-link
 derivation and contour point merging use. Keys are ids, or tuples of 2 or 4

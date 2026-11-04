@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``merge_points``: coincident points made one, against VTK's
 ``vtkStaticCleanUnstructuredGrid``, on meshes written without merging their points
 (each cell's corners its own points, as the 512 ``eta`` pieces of berk's

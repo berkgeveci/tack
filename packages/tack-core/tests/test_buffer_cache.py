@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``runtime.buffer_cache.BufferCache``, the cache of dropped arrays' buffers HIP
 allocates through (ROCm 7.1.1's pool slowed with every allocation it made)."""
 

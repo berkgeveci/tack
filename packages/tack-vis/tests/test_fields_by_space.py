@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Fields that share a name in different spaces (``data.fields``, ``Fields``): a point
 field and a cell field called ``"p"``, as VTK keeps them, each found by its space,
 carried by filters, chosen with ``fields=``, taken by algorithms as ``(name,

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Vector and matrix constants read at a runtime index: one table load.
 
 ``FACES[4 * f + k]`` used to lower to a chain of conditional expressions,

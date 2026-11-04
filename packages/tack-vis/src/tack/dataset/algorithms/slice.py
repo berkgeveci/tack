@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``slice``: where ``function`` (``tack.dataset.implicit``) is zero: a contour of its values on the geometry, carrying fields as ``contour`` does. ``slice_plane`` is this with a ``Plane``."""
 
 from tack.dataset.algorithms._common import _length

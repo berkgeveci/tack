@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Collision-free identifiers shared by code generation and entry lookup.
 
 Every IR binding is encoded, rather than testing vendor keyword lists. The

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``copy_ast``: a deep copy of a Python syntax tree, as ``copy.deepcopy`` makes it.
 
 Lowering copies a device function's or a template method's tree for every

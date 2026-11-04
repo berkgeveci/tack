@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``world_hessian``: a field's second derivatives in the world from its basis' second
 derivatives and the geometry's. On affine cells, against the exact Hessians of
 polynomials the spaces hold; on distorted and curved cells, against central

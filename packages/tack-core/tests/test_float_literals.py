@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Float literals are weakly typed: they take the precision of what they meet.
 
 Every float literal used to be f32, so `x * 0.1` on an f64 array multiplied

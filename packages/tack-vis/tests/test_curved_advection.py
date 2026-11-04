@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Advection and probe on curved cells and high-order fields: ``by_id`` reads a curved
 cell (``H1`` geometry above order 1) and a field of any interpolated space
 through each shape group's own view (``_ByShape``), so the search from the

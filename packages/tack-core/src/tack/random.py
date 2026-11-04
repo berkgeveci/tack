@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Random numbers in kernels, from a counter-based generator with explicit state.
 
 Nothing here is hidden: a kernel seeds a ``u32`` state from the element it

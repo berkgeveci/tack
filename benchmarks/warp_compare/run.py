@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack against NVIDIA's warp-simdata, on the operators both have.
 
 The meshes and fields are the VTK comparison's (``vtk_compare/meshes.py``:
