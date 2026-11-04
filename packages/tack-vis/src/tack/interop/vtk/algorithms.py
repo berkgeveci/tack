@@ -160,6 +160,32 @@ _TREES = (vtkMultiBlockDataSet, vtkPartitionedDataSetCollection)
 
 _datasets = {}          # address -> ((modification time, time step), {device: DataSet})
 
+#: Addresses of VTK datasets deleted since the cache was last used. A DeleteEvent only
+#: notes one, and its entry goes at the next use (``_drop_deleted``), outside whatever
+#: freed the dataset.
+_deleted = []
+
+#: Each DeleteEvent observer, by its dataset's address, kept here until it has fired.
+#: Referenced only by its VTK object, an observer is garbage when Python's collector
+#: frees that object in a cycle (a traceback's frame holding it): the collector clears
+#: the function's globals and closure, then the deletion calls it, and Python crashed.
+_observers = {}
+
+
+def _note_deleted(address):
+    """A DeleteEvent observer noting ``address`` deleted."""
+    def note(caller, event):
+        _deleted.append(address)
+    return note
+
+
+def _drop_deleted():
+    """Drop the entries, and observers, of the VTK datasets deleted since the last use."""
+    while _deleted:
+        address = _deleted.pop()
+        _datasets.pop(address, None)
+        _observers.pop(address, None)
+
 
 def _key(vtk_data):
     from tack.interop.vtk import _time_key
@@ -170,10 +196,14 @@ def _key(vtk_data):
 
 def _remember(vtk_data, data):
     """Keep ``data`` as the Tack dataset of ``vtk_data`` as it is now."""
+    _drop_deleted()
     address = vtk_data.GetAddressAsString("vtkObject")
     if address not in _datasets:
-        # The address, not the caller: a DeleteEvent's caller is None.
-        vtk_data.AddObserver("DeleteEvent", lambda caller, event: _datasets.pop(address, None))
+        # The address, not the caller: a DeleteEvent's caller is None. Only noted
+        # (see ``_deleted``); a later object at this address gets its own observer,
+        # since the noted address is dropped before it is remembered.
+        _observers[address] = observer = _note_deleted(address)
+        vtk_data.AddObserver("DeleteEvent", observer)
     _datasets[address] = (_key(vtk_data), {None: data})
 
 
@@ -197,6 +227,7 @@ def _as_dataset(vtk_data, device=None):
             data = vtk_to_dataset(vtk_data, dtype=None, copy=False)
             return data if device is None else data.to_device(device)
         return data
+    _drop_deleted()
     entry = _datasets.get(vtk_data.GetAddressAsString("vtkObject"))
     if entry is None or entry[0] != _key(vtk_data):
         _remember(vtk_data, vtk_to_dataset(vtk_data, dtype=None, copy=False))

@@ -250,7 +250,10 @@ def test_an_entry_goes_with_its_vtk_dataset():
     assert address in ta._datasets
     del grid
     gc.collect()
-    assert address not in ta._datasets
+    # The deletion is noted, and the entry goes at the cache's next use.
+    assert address in ta._deleted
+    ta._drop_deleted()
+    assert address not in ta._datasets and address not in ta._observers
 
 
 def test_a_field_filters_output_keeps_its_inputs_topology():
@@ -1042,3 +1045,27 @@ def test_particles_go_from_piece_to_piece(make):
     furthest_halves = ends(on_halves)[:, 0].max()
     assert furthest_whole > 0.0                     # the paths do cross x = 0
     np.testing.assert_allclose(furthest_halves, furthest_whole, rtol=1e-6)
+
+
+def test_a_dataset_the_collector_frees_leaves_its_observer_callable():
+    """A dataset an algorithm read, freed by Python's collector in a cycle made after
+    it was read (a traceback's frames hold one so): its DeleteEvent observer, referenced
+    only by it, was cleared as garbage first, and calling it crashed Python (VTK bugs
+    19). The observers are kept reachable, so this collects without crashing."""
+    import gc
+
+    class Holder:
+        pass
+
+    addresses = []
+    for _ in range(3):
+        data = _wavelet((-4, 4, -4, 4, -4, 4))()
+        assert ta.Contour(field="RTData", value=150.0)(data).number_of_cells > 0
+        addresses.append(data.GetAddressAsString("vtkObject"))
+        holder = Holder()
+        holder.cycle = holder
+        holder.data = data
+        del data, holder
+        gc.collect()
+    ta._drop_deleted()
+    assert not any(address in ta._observers for address in addresses)
