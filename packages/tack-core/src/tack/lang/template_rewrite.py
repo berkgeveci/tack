@@ -385,12 +385,14 @@ def rewrite_templates(kernel_ast, template_args, python_func=None):
     # for it (`b.combine(a, i)` while `a` is being resolved).
     roots = {}
     pending = {name for name, _ in template_args.values()}
+    synthetic = set()
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
         param_name, obj = template_args[idx]
         pending.discard(param_name)
         root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs,
                                       funcdef._tack_held_arrays, specializer)
+        synthetic.update(extra)
 
         # obj[i], obj[i] = v and len(obj) as the protocol's method calls
         _desugar_indexing(funcdef, param_name, root, used_names)
@@ -403,7 +405,64 @@ def rewrite_templates(kernel_ast, template_args, python_func=None):
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
+    _prune_synthetic(funcdef, resolved_funcs, synthetic)
     return rewritten, resolved_funcs
+
+
+def _prune_synthetic(kernel_def, resolved_funcs, synthetic):
+    """Keep in each resolved method the synthetic parameters it reads, itself or
+    through the methods it calls, and drop the rest from it and its calls.
+
+    Every method of a template tree takes the whole tree's synthetic parameters
+    (its arrays and runtime scalars), so a call passes them all; inlined, each
+    became a local copy, and a method of a view holding others carried every
+    one of theirs. A fixpoint over the calls between resolved methods finds what
+    each needs."""
+    defs = {name: f._funcdef for name, f in resolved_funcs.items()
+            if isinstance(f, _ResolvedFunc)}
+    if not defs:
+        return
+
+    def calls(funcdef):
+        return [n for n in ast.walk(funcdef) if isinstance(n, ast.Call)
+                and getattr(n.func, '_tack_template_call', False) and n.func.id in defs]
+
+    def passed(call):
+        """``(position, name)`` of the synthetic names a call passes as they are."""
+        return [(k, a.id) for k, a in enumerate(call.args)
+                if isinstance(a, ast.Name) and a.id in synthetic]
+
+    params = {name: [a.arg for a in d.args.args] for name, d in defs.items()}
+    sites = {name: calls(d) for name, d in defs.items()}
+    direct = {}
+    for name, funcdef in defs.items():
+        through = {id(call.args[k]) for call in sites[name] for k, _ in passed(call)}
+        direct[name] = {n.id for n in ast.walk(funcdef) if isinstance(n, ast.Name)
+                        and n.id in synthetic and id(n) not in through}
+    need = {name: set(direct[name]) for name in defs}
+    changed = True
+    while changed:
+        changed = False
+        for name in defs:
+            for call in sites[name]:
+                callee = params[call.func.id]
+                for k, arg in passed(call):
+                    used = (k >= len(callee) or callee[k] not in synthetic
+                            or callee[k] in need[call.func.id])
+                    if used and arg not in need[name]:
+                        need[name].add(arg)
+                        changed = True
+
+    def keep(callee, k):
+        names = params[callee]
+        return k >= len(names) or names[k] not in synthetic or names[k] in need[callee]
+
+    for funcdef in [kernel_def, *defs.values()]:
+        for call in calls(funcdef):
+            call.args = [a for k, a in enumerate(call.args) if keep(call.func.id, k)]
+    for name, funcdef in defs.items():
+        funcdef.args.args = [a for a in funcdef.args.args
+                             if a.arg not in synthetic or a.arg in need[name]]
 
 
 _INDEXING = ("__getitem__", "__setitem__", "__len__")
