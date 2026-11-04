@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """CPU threading policy — when to fan out, and that it stays correct.
 
 The backend decides between a serial run and a thread fan-out by comparing

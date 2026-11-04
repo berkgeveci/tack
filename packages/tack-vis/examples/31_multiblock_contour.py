@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """31 -- Multi-block contour: isosurface extraction across AMR patches.
 
 Each block (an AMR patch, a FAB) is a uniform grid of its own, a

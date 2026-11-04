@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Constant tables for the C-family generators (CUDA, HIP, OpenCL, Metal).
 
 An ``IRTableLoad`` -- a vector or matrix constant read at a runtime index

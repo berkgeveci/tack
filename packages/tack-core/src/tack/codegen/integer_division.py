@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Typed integer floor division shared by the C-family generators.
 
 The domain excludes zero divisors and signed minimum / -1. Operands are

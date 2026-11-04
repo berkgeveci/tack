@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A pytest plugin that runs the suite on the Warp backend (a prototype).
 
     PYTHONPATH=packages/tack-core/tests uv run pytest -p _warp_default packages/tack-vis/tests -m quick

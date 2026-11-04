@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The dispatch fast path: a call whose signature was seen before reuses the
 variant that call resolved, without rebuilding the key. What the signature
 must still separate (integer widths, the float context, class constants,

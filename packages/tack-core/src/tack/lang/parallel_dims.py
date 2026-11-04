@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Multi-dimensional parallel loops: lowering helpers and launch geometry.
 
 A kernel's parallel loop over ``tack.ndindex`` of two or three dimensions

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """14 -- Jacobi iterative solver for the 2D Laplace equation.
 
 Solves laplacian(u) = 0 on a 2D grid with fixed boundary conditions using

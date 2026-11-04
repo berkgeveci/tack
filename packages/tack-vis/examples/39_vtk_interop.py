@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """39 -- VTK interop: hand data between Tack and VTK without copying.
 
 Tack computes, VTK filters, Tack computes again -- and the data never

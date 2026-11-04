@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """tack.interop.vtk — Zero-copy interop between VTK arrays and Tack arrays.
 
     from tack.interop.vtk import vtk_to_array, array_to_vtk

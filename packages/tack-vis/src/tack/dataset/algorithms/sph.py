@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``sph_interpolate`` and ``sph_density``: values of smoothed-particle hydrodynamics (SPH) particles -- each with a smoothing length, a mass and a density -- at other points, by kernel sums, as VTK's vtkSPHInterpolator and SPLASH; and densities by the SPH sum.
 
 The kernels are VTK's (vtkSPHCubicKernel, vtkSPHQuarticKernel,

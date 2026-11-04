@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_particles_across_pieces``' check under MPI: ``mpiexec -n 2 python
 _particles_mpi.py``. Each rank advects from its share of the seeds over its share
 of the pieces; rank 0 compares with one process given all of both, and prints

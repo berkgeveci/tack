@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Local variable typing in kernels.
 
 Every backend gives a local one storage slot, so the annotation pass gives

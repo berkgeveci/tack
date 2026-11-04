@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``cross``: ``a x b`` at every value of two 3-vector fields in one space."""
 
 import tack

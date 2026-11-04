@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for the CPU JIT backend — validates end-to-end compilation and execution."""
 
 import numpy as np

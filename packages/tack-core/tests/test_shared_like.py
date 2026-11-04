@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for tack.shared_like (Layer 4 of type system refactor).
 
 Validates that tack.shared_like(array, size) allocates shared memory

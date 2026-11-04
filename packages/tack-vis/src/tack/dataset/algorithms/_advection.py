@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The advection kernel ``advect`` and ``streamlines`` share, by Viskores' rules:
 RK4 or Euler steps; a step leaving the mesh bisected to the boundary and the
 particle pushed out; a stop after its steps, outside, or at zero velocity.

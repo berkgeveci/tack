@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Debug mode's bounds checks in the C-family generators (CUDA, HIP, OpenCL, MSL).
 
 One helper per kernel, ``__tack_in_bounds__``, tests an index against its

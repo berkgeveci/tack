@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Does the CPU backend fan out when it should?
 
 The backend decides between a serial run and a thread fan-out by comparing

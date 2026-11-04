@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """49 -- Streamlines in a VTK pipeline: Tack traces, VTK makes tubes and renders.
 
 A velocity field on an image is written and read back as a .vti file; Tack's

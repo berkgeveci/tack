@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """17 -- 2D Heat equation with explicit time stepping.
 
 Solves the heat equation du/dt = alpha * laplacian(u) on a 2D grid using forward

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tables of a Tack-versus-Viskores run: one per mesh and size, a row per filter.
 
     python report.py results-viskores [--size 5M] [--mesh hex]

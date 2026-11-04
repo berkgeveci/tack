@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """18 -- 1D Wave equation simulation.
 
 Solves the wave equation d2u/dt2 = c^2 * d2u/dx2 using the leapfrog

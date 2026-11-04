@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Filling device memory on the device.
 
 ``Array.fill`` and ``tack.zeros``/``ones``/``full`` on CUDA, HIP and Level Zero

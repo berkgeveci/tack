@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``mask``: every ``stride``-th cell (0, stride, 2 * stride, ...), as Viskores' ``Mask``."""
 
 import tack

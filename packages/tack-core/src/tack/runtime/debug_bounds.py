@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Debug mode at dispatch: the hidden arguments, and the IndexError after a launch.
 
 A kernel lowered in debug mode takes two hidden arrays after its own

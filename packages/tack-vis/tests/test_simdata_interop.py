@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Datasets between Tack and warp-simdata (`tack.interop.warp`'s `to_simdata` and
 `from_simdata`), on Warp's default device.
 

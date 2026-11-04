@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Thorough performance benchmark -- CPU JIT vs Metal GPU vs NumPy.
 
 Tests across:

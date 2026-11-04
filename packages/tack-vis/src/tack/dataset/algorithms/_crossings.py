@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Exact crossings: where a cut through sub-cells crosses a sub-edge, the field's own
 root along it, not the crossing of its lattice values' straight line.
 

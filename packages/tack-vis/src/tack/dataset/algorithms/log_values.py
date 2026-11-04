@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``log_values``: the logarithm of a scalar field in ``base`` (e, 2, 10, or any), values below ``min_value`` -- by default the smallest positive normal float, as in Viskores' LogValues -- taken as ``min_value``."""
 
 import math

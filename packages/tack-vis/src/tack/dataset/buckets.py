@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Sorting keys that lead with a bounded id, by bucketing.
 
 Every sort the dataset code needs is of keys that lead with a point or cell

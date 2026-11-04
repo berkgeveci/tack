@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Faces of a 2D mesh: codimension 1, so its edges -- on the shape path as on the
 polygonal one. Their geometry (an edge's in-plane normal out of side 0, its
 length as its area), their sides, and the finite-volume algorithms that work

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``merge_points``: a dataset's coincident points made one, as VTK's
 vtkStaticCleanUnstructuredGrid and Viskores' CleanGrid merge them."""
 

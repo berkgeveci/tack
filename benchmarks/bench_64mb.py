@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """64 MB benchmark -- CPU JIT vs CUDA GPU vs NumPy, formatted table."""
 
 import time

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tack.interop.vtk.algorithms``: Tack's filters as VTK algorithms, in VTK pipelines
 beside VTK's own, on datasets and on partitioned datasets. Each gives what the
 Tack filter gives called directly, and where VTK has the same filter, VTK's

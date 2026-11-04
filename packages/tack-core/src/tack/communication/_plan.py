@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A retained exchange: elements gathered on their blocks, sent, and scattered on others."""
 
 import numpy as np

@@ -189,6 +189,21 @@ uvx ruff check .
 CI runs the same thing and it is the fastest job, so it will tell you first
 either way. It is configured in `pyproject.toml` under `[tool.ruff]`.
 
+**Every source file opens with an SPDX header** (`.py`, `.js`, `.css`, `.html`
+outside `archive/`), as in ParaView and VTK:
+
+```python
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+```
+
+`python tools/spdx_headers.py add` writes it into new files and `check` (in
+the lint job) finds any without one. Code from elsewhere names each holder on
+a `SPDX-FileCopyrightText` line of its own and keeps its license: the Taichi and
+Warp adaptations in `docs/examples/` are Apache-2.0 with both holders, and
+`tack.dataset`'s clip tables, VisIt's, carry Lawrence Livermore's line. Data,
+generated files and Markdown carry no header.
+
 Two things about that config are worth knowing before you argue with it.
 
 **Kernel bodies are not Python.** Inside `@tack.kernel`, names like `sqrt` and
@@ -211,7 +226,7 @@ Record what the PR changes for users in a file of its own in `changelog.d/`
 (`python tools/changelog.py release VERSION DATE`), so two PRs never conflict
 over it.
 
-Open a PR against `main`. CI runs lint (with `tools/changelog.py check`), the suite on Python 3.11/3.12/3.13, the
+Open a PR against `main`. CI runs lint (with `tools/changelog.py check` and `tools/spdx_headers.py check`), the suite on Python 3.11/3.12/3.13, the
 packaging gate, the example sweep, and a Metal job on an Apple Silicon runner.
 All of them should be green.
 

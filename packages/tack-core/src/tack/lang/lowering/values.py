@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Values that exist only during lowering, and the names they use.
 
 A vector or matrix is lowered to one scalar IR expression per component

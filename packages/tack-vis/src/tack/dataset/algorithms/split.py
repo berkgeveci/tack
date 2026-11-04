@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``split``: a structured grid cut by index ranges into a ``PartitionedDataSet`` of structured grids, each carrying its block of the points, cells, fields and sets."""
 
 import numpy as np

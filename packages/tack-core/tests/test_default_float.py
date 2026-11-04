@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tack.set_default_float``: the float type arrays get when nothing chooses one.
 Constructors without a ``dtype``, Python floats, vector and matrix types without a
 component type and implicit arrays follow it; NumPy arrays keep their type, and

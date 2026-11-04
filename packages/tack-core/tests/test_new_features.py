@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for new Tack features: @tack.func, ndindex, multi-dim indexing,
 array[()], Vector types, and vector methods."""
 

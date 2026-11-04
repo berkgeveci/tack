@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Conservative copy propagation for inlined kernel arguments.
 
 Tack's former LICM treated an invariant address as an invariant value and

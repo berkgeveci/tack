@@ -1,5 +1,7 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) The Taichi Authors
 # SPDX-License-Identifier: Apache-2.0
+
 """A falling fluid block using MLS-MPM, adapted from Taichi's mpm88.py.
 
 Copyright (c) The Taichi Authors; original example by Yuanming Hu.

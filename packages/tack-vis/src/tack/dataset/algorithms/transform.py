@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``transform``: the geometry under an affine map: a 4x4 matrix (its last row 0 0 0 1) or 3x4, applied to each position as a column (Viskores' PointTransform, VTK's vtkTransformFilter)."""
 
 import numpy as np

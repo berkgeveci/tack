@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Structure-of-arrays storage: a vector or matrix array kept one array per component.
 
 `tack.soa(x, y, z)` wraps arrays that exist already; `layout="soa"` on a

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Sorting and segmented reductions, checked against NumPy's stable sort.
 
 The radix sort is portable (no workgroup primitives), so every case runs

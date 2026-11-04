@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compare Tack's dataset filters with VTK's, on the same meshes and the same threads.
 
 Each configuration runs in its own process, because both systems fix their

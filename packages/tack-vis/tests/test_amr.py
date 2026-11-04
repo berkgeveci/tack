@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Block-structured AMR (``AMRDataSet``): the hierarchy, its marks, ghost cells and
 averages. Probing and the MPI runs, which compile probe's kernels, are in
 ``test_amr_probe.py``.

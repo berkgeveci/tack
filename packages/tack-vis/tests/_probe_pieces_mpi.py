@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_probe_pieces``' check under MPI: ``mpiexec -n 2 python
 _probe_pieces_mpi.py``. Each rank probes its share of the points over its share
 of the pieces; rank 0 compares with probing the whole grid, and prints ``ok``

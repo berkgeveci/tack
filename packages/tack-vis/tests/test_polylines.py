@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Polylines (``PolylineTopology``): chains of points, the polyhedral path two
 dimensions down. Their faces are their ends; their geometry, extraction,
 averaging, boundary and VTK round trip; streamlines are tested with advection.

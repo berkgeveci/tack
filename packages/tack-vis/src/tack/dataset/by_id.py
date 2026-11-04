@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Cells and fields reached by cell id, for work that runs from the points.
 
 The cell-side search (``CellLocator``'s, through each group's view) cannot

@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Cell and face kernels, a subset, and a checked integrated flux balance."""
 
 import argparse

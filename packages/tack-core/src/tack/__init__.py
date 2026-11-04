@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack: a Python-first compute framework.
 
 Kernels are Python functions decorated with ``@tack.kernel``, compiled when

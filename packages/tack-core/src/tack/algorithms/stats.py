@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Statistics and analysis on tack arrays.
 
 Each statistic forms its terms -- |x|, x², (x - mean)², a·b, x ≠ 0 -- in a

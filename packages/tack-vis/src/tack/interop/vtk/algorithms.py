@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack's filters as VTK algorithms: ``VTKPythonAlgorithmBase`` subclasses that sit in
 a VTK pipeline beside VTK's own.
 

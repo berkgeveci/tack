@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Waiting for the device from ``asyncio`` without blocking the event loop.
 
 Kernel launches stay plain calls: on the GPU backends they are queued and

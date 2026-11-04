@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """What the gallery's scripts share: the datasets of each kind of cell, the field
 they cut, a mesh's outline, and a picture drawn through VTK.
 

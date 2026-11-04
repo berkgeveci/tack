@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``remove_ghosts``: a piece without the cells another piece owns or that are hidden, as VTK's vtkRemoveGhosts, for the last step before rendering, writing one file, or code that does not know ghost marks."""
 
 import numpy as np

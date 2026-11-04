@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Spaces: where a field's values live, on one topology, and the layout that follows.
 
 A space is constructed on a topology (or a dataset, for its topology) and

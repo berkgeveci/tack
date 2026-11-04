@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """How filters carry fields: one set of rules (``tack.dataset.carry``) for every
 filter that makes a new dataset, and ``fields=`` to choose which come."""
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack HIP C code generation — transforms Tack IR to HIP C source for hipRTC.
 
 Generates an ``extern "C" __global__`` kernel function where:

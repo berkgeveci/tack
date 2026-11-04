@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``clip`` of a polyhedral topology: each cut cell becomes the polyhedron of its kept
 part -- its faces clipped, plus its iso-polygons (López's, as ``contour`` traces
 them) as caps -- so faces two cells share stay one face, and the output is a

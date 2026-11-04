@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Run the examples of the pages given: every Python block marked with
 ``<!-- tack-check: name -->`` on the line before its fence, each in a fresh
 process, on the CPU; check every snippet a page includes exists; and flag the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``shrink``: every cell shrunk toward its centroid (the mean of its corners) by ``factor``, as Viskores' Shrink and VTK's vtkShrinkFilter. Viskores gives each cell its own copies of its points; here that is an ``L2`` geometry on the same topology, and point data becomes ``L2`` the same way (each cell's own copy of its corners' values). Everything else is kept, the topology's faces and edges with it."""
 
 import tack

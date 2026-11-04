@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Bases of any order on the tensor shapes (``tack.dataset.bases``): ``H1`` and ``L2``
 of order 3 and up on segments, quads, pixels, hexahedra and voxels, on
 Gauss-Lobatto, equispaced or (``L2``) Gauss-Legendre nodes.

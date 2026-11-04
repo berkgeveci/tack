@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Python's indexing protocol on device classes.
 
 A `@tack.device_class` that defines `__getitem__`, `__setitem__` and

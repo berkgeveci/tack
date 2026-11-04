@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Finding the copies of points and cells across the pieces of a partitioned dataset.
 
 Copies are found by exact value -- a point's coordinates, a cell's points' global

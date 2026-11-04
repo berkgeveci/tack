@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack AST transformation — Python AST to Tack IR.
 
 Transforms a @kernel-decorated Python function's AST into Tack's internal IR.

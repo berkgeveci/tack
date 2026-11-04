@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tetrahedralize``: every 3D cell as tetrahedra that meet face to face, as VTK's vtkDataSetTriangleFilter makes them (a structured grid's hexahedra in 5, alternating; a hexahedron or voxel of any other topology in 6, a wedge in 3, a pyramid in 2); other cells are left out. The points are the same; cell fields go to each cell's tetrahedra."""
 
 from tack.dataset.algorithms._refine import _split

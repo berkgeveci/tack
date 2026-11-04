@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``surface_normals``: a surface's polygons wound consistently and its normals at the points and cells -- VTK's vtkPolyDataNormals without splitting."""
 
 import numpy as np

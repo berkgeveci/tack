@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """PyVista's example datasets (``_pyvista_datasets``): real meshes as VTK's readers
 give them -- quadratic cells, hidden cells, boundary patches merged with the
 volume, surfaces with lines, point clouds of 100k points, integer fields.

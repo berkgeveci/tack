@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for scalar parameter matching (Layer 3 of type system refactor).
 
 Validates that Python float scalars match the array dtype context:

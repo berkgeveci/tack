@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """The problems of the MFEM gallery, solved with PyMFEM (Tack's ``interop`` extra):
 MFEM's examples (https://mfem.org, ``examples/exN.cpp``; PyMFEM's ``exN.py``),
 each one's steps written out on MFEM's meshes as PyMFEM ships them, refined to a
