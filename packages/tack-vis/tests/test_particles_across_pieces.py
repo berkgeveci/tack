@@ -11,6 +11,7 @@ own seeds, give what one process gives (``_particles_mpi.py``).
 """
 
 import os
+from itertools import pairwise
 
 import numpy as np
 import pytest
@@ -160,7 +161,7 @@ def test_a_particle_pushed_into_a_sliver_between_pieces_goes_on():
             offsets, ids = (a.numpy() for a in part.topology.lines())
             p = part.positions()
             total += sum(np.linalg.norm(np.diff(p[ids[a:b]], axis=0), axis=1).sum()
-                         for a, b in zip(offsets[:-1], offsets[1:]))
+                         for a, b in pairwise(offsets))
     assert total == pytest.approx(0.8, abs=1e-9)                     # the gap crossed in a stretch
     out = by_seed(td.advect(pieces, "v", [[0.7, 0.5, 0.5]], 0.3, 100, step_unit="length"))
     x, n, status, t = out[0]
