@@ -982,3 +982,63 @@ def test_sph_interpolate_takes_its_particles_on_port_1():
     assert sph.error is None, sph.error
     expected = td.sph_interpolate(_tack(particles), _tack(target), fields=["h"])
     _assert_same(_contents(sph.GetOutputDataObject(0)), _contents(dataset_to_vtk(expected)))
+
+
+# ── Filters that take the pieces together ───────────────────────────
+
+def _whole_and_halves(with_velocity=False):
+    whole, halves = _halves()
+    if with_velocity:
+        for data in [whole, *(halves.GetPartition(i) for i in range(2))]:
+            values = np.asarray(data.point_data["RTData"])
+            velocity = vtk.vtkFloatArray()       # VTK's own memory, not a NumPy temporary's
+            velocity.SetNumberOfComponents(3)
+            velocity.SetNumberOfTuples(values.size)
+            np.asarray(velocity)[:] = np.stack([np.ones_like(values), 0.5 * np.ones_like(values),
+                                                np.zeros_like(values)], axis=1)
+            velocity.SetName("v")
+            data.point_data.AddArray(velocity)
+    return whole, halves
+
+
+def _cells(pieces):
+    return sum(pieces.GetPartition(i).number_of_cells
+               for i in range(pieces.GetNumberOfPartitions()))
+
+
+def test_the_surface_of_pieces_is_the_wholes():
+    whole, halves = _whole_and_halves()
+    assert _cells(ta.ExtractSurface()(halves)) == ta.ExtractSurface()(whole).number_of_cells
+
+
+def test_connected_regions_join_across_pieces():
+    whole, halves = _whole_and_halves()
+    out = ta.ConnectedComponents()(halves)
+    regions = np.concatenate([np.asarray(out.GetPartition(i).cell_data["region"])
+                              for i in range(2)])
+    assert set(np.unique(regions)) == {0}          # one region, not one per piece
+
+
+@pytest.mark.parametrize("make", [ta.Streamlines, ta.Advect])
+def test_particles_go_from_piece_to_piece(make):
+    """A seed in the first half moving along +x crosses into the second half: traced
+    over the whole, it ends where it ends on the whole mesh. On pieces with a layer
+    of ghost cells, as GhostCells makes them, particles are handed over after whole
+    steps; without one, a particle leaving a piece is pushed just past its boundary,
+    a shortened step that counts against ``steps``."""
+    whole, halves = _whole_and_halves(with_velocity=True)
+    seeds = np.array([[-6.0, 0.0, 0.0], [-2.0, 1.0, 1.0]])
+    options = {"field": "v", "seeds": seeds, "step_size": 0.25, "steps": 40}
+    on_whole = make(**options)(whole)
+    on_halves = (ta.GhostCells() >> make(**options))(halves)
+
+    def ends(data):
+        parts = ([data] if not isinstance(data, vtk.vtkPartitionedDataSet)
+                 else [data.GetPartition(i) for i in range(data.GetNumberOfPartitions())])
+        return np.concatenate([np.asarray(p.points.data) for p in parts
+                               if p is not None and p.number_of_points])
+
+    furthest_whole = ends(on_whole)[:, 0].max()
+    furthest_halves = ends(on_halves)[:, 0].max()
+    assert furthest_whole > 0.0                     # the paths do cross x = 0
+    np.testing.assert_allclose(furthest_halves, furthest_whole, rtol=1e-6)

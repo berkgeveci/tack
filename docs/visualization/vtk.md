@@ -214,8 +214,15 @@ their cell data.
 | | `RemoveGhosts` | the input's structure |
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
-`vtkPartitionedDataSet`. The last row's algorithms need every piece at once,
-so they take the pieces together; see [Filters over pieces](over-pieces.md).
+`vtkPartitionedDataSet`. The algorithms whose Tack filter answers for the
+pieces together take them together: `GhostCells`, `GenerateGlobalIds` and
+`MergePieces`; `ExtractSurface`, which leaves out the faces pieces share;
+`ConnectedComponents`, whose regions join across pieces; `Streamlines` and
+`Advect`, whose particles go from piece to piece; and the point-cloud and
+sampling ones (`Voxelize`, `Outliers`, `VoxelDownsample`, `Deposit`,
+`HaloCatalog`). See [Filters over pieces](over-pieces.md). Particles are handed
+from piece to piece after whole steps where the pieces have a layer of ghost
+cells (`GhostCells`); without one, each crossing costs a shortened step.
 
 Readers of Exodus, IOSS, CGNS, EnSight and OpenFOAM files give trees of
 datasets: a `vtkMultiBlockDataSet` or a `vtkPartitionedDataSetCollection`. The

@@ -766,6 +766,14 @@ class _FieldAlgorithm(TackAlgorithm):
         raise ValueError(f"{type(self).__name__} needs a name for its new field")
 
 
+class _Whole(TackAlgorithm):
+    """A filter whose Tack function takes a ``PartitionedDataSet`` itself: a partitioned
+    input goes to it whole, not piece by piece."""
+
+    def execute(self, data):
+        return self.compute(data)
+
+
 # ── Filters that make a dataset ─────────────────────────────────────
 
 class Contour(TackAlgorithm):
@@ -817,8 +825,9 @@ class Threshold(TackAlgorithm):
     all_points = Parameter(True, "a point field: every point of a cell in range")
 
 
-class ExtractSurface(TackAlgorithm):
-    """``td.extract_surface``: the boundary faces of the cells, as polygons. VTK's
+class ExtractSurface(_Whole):
+    """``td.extract_surface``: the boundary faces of the cells, as polygons. Of pieces,
+    the whole's surface: faces the pieces share are left out. VTK's
     ``vtkDataSetSurfaceFilter``."""
 
     FUNCTION = "extract_surface"
@@ -842,19 +851,21 @@ class SurfaceNormals(TackAlgorithm):
     consistent = Parameter(True, "wind the polygons consistently first")
 
 
-class ConnectedComponents(TackAlgorithm):
+class ConnectedComponents(_Whole):
     """``td.connected_components``: ``region`` on the cells and ``point_region`` on the
     points, cells connected through shared points (or, with ``radius``, points
-    within it). VTK's ``vtkConnectivityFilter``."""
+    within it). Of pieces, regions are joined across them and numbered over the
+    whole. VTK's ``vtkConnectivityFilter``."""
 
     OUTPUT = None
     FUNCTION = "connected_components"
 
 
-class _Seeded(TackAlgorithm):
+class _Seeded(_Whole):
     """A filter of particles from seeds: ``seeds``, or where that is unset, the points
     of the data on input port 1 (``SetSourceConnection``, ``SetSourceData``), as
-    ``vtkStreamTracer`` takes its seeds."""
+    ``vtkStreamTracer`` takes its seeds. Of pieces, the particles go from piece to
+    piece (and rank to rank), each path traced over the whole."""
 
     INPUTS = 2
     REQUIRED_INPUTS = 1
@@ -995,14 +1006,6 @@ class CellQuality(_FieldAlgorithm):
 
 
 # ── More base classes ───────────────────────────────────────────────
-
-class _Whole(TackAlgorithm):
-    """A filter whose Tack function takes a ``PartitionedDataSet`` itself: a partitioned
-    input goes to it whole, not piece by piece."""
-
-    def execute(self, data):
-        return self.compute(data)
-
 
 class _OnFaces(TackAlgorithm):
     """A filter that computes fields on faces (``ON = "faces"``) or edges (``"edges"``),
