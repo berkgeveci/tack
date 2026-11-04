@@ -74,6 +74,7 @@ __all__ = [
     "Dot",
     "EdgeLengths",
     "Elevation",
+    "Entropy",
     "ExtractCells",
     "ExtractEdges",
     "ExtractExtent",
@@ -91,6 +92,7 @@ __all__ = [
     "Gradients",
     "HaloCatalog",
     "ImplicitValues",
+    "Integrate",
     "Interpolate",
     "Jump",
     "LogValues",
@@ -112,6 +114,7 @@ __all__ = [
     "SphInterpolate",
     "Spherical",
     "Split",
+    "Statistics",
     "Streamlines",
     "Subdivide",
     "SurfaceNormals",
@@ -1739,6 +1742,261 @@ class GhostPoints(_OverPieces):
     points within ``radius`` (or its points' ``k`` nearest) appended as ghosts."""
 
     FUNCTION = "ghost_points"
+
+
+# ── Reductions: one answer for all the input ────────────────────────
+
+class _Reduction(TackAlgorithm):
+    """A filter whose answer is one result for all its input: every dataset in it (a
+    partitioned dataset's pieces, a tree's datasets) on every rank, reduced together,
+    as VTK's ``vtkDescriptiveStatistics`` and ``vtkIntegrateAttributes`` reduce
+    composite data. Every rank gets the result. ``reduce(pieces)`` gives the VTK
+    output from a ``PartitionedDataSet`` of every dataset in the input."""
+
+    OUTPUT = "vtkTable"
+
+    fields = Parameter(None, "the fields: names, or (name, 'points' / 'cells'); by "
+                             "default every field. A vector field is reduced a "
+                             "component at a time")
+
+    def RequestDataObject(self, request, inInfo, outInfo):
+        import vtkmodules.vtkCommonDataModel as dm
+
+        kind = getattr(dm, self.OUTPUT)
+        output = outInfo.GetInformationObject(0)
+        current = output.Get(vtkDataObject.DATA_OBJECT())
+        if current is None or not current.IsA(self.OUTPUT):
+            output.Set(vtkDataObject.DATA_OBJECT(), kind())
+        return 1
+
+    def RequestData(self, request, inInfo, outInfo):
+        from tack.dataset import PartitionedDataSet
+
+        self._run_world = self._world()
+        input = self.GetInputData(inInfo, 0, 0)
+        if isinstance(input, (*_TREES, vtkPartitionedDataSet)):
+            leaves = []
+            iterator = input.NewIterator()
+            iterator.InitTraversal()
+            while not iterator.IsDoneWithTraversal():
+                leaves.append(iterator.GetCurrentDataObject())
+                iterator.GoToNextItem()
+        else:
+            leaves = [input]
+        pieces = PartitionedDataSet([_as_dataset(leaf, self.device) for leaf in leaves],
+                                    world=self._run_world)
+        self.GetOutputData(outInfo, 0).ShallowCopy(self.reduce(pieces))
+        return 1
+
+    def _selected(self, pieces):
+        """``(label, where, key, component)`` for each value to reduce: the chosen fields
+        (``fields``, or ``SetInputArrayToProcess``'s, or every field), a vector field's
+        components one by one (``component`` None for a scalar)."""
+        import tack.dataset as td
+        from tack.arrays import width_of
+
+        first = next(iter(pieces), None)
+        if first is None:
+            return []
+        chosen = self.fields
+        if chosen is None:
+            chosen = [a for a in map(self._input_array, range(self._arrays_set()))
+                      if a is not None] or None
+        if chosen is None:
+            chosen = [(name, "points" if _on_points(field.space) else "cells")
+                      for name, field in first.fields.entries()]
+        elif isinstance(chosen, (str, tuple)):
+            chosen = [chosen]
+        selected = []
+        for value in chosen:
+            key = _field_argument(value)
+            field = first.fields[key]
+            name = key if isinstance(key, str) else key[0]
+            where = "points" if _on_points(field.space) else "cells"
+            width = width_of(field.values)
+            components = [None] if not width else list(range(width))
+            selected += [(name, where, (name, td.H1 if where == "points" else td.Constant), c)
+                         for c in components]
+        return selected
+
+    def _arrays_set(self):
+        arrays = self.GetInformation().Get(vtkAlgorithm.INPUT_ARRAYS_TO_PROCESS())
+        return 0 if arrays is None else arrays.GetNumberOfInformationObjects()
+
+
+def _on_points(space):
+    from tack.dataset import H1, Values
+
+    return isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")
+
+
+def _component_pieces(pieces, key, component):
+    """``pieces`` with the field ``key``'s ``component`` (a scalar field's self for None)
+    as the field ``__value__``."""
+    from tack.arrays import ExtractComponent
+    from tack.dataset import DataSet, Field, PartitionedDataSet
+
+    out = []
+    for piece in pieces:
+        field = piece.fields[key]
+        values = field.values if component is None else ExtractComponent(field.values,
+                                                                          component)
+        out.append(DataSet(piece.topology, piece.geometry,
+                           fields={"__value__": Field(field.space, values, field.unit)},
+                           ghosts=piece.ghosts, global_ids=piece.global_ids,
+                           **piece._frame()))
+    return PartitionedDataSet(out, world=pieces.world)
+
+
+def _table(columns):
+    """A ``vtkTable`` of ``columns``, ``{name: list}``: strings as a string column,
+    integers as ``i64``, the rest as doubles (``None`` as NaN)."""
+    from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkStringArray, vtkTypeInt64Array
+    from vtkmodules.vtkCommonDataModel import vtkTable
+
+    table = vtkTable()
+    for name, values in columns.items():
+        if all(isinstance(v, str) for v in values) and values:
+            array = vtkStringArray()
+            for v in values:
+                array.InsertNextValue(v)
+        elif all(isinstance(v, int) and not isinstance(v, bool) for v in values) and values:
+            array = vtkTypeInt64Array()
+            for v in values:
+                array.InsertNextValue(v)
+        else:
+            array = vtkDoubleArray()
+            for v in values:
+                array.InsertNextValue(float("nan") if v is None else float(v))
+        array.SetName(name)
+        table.AddColumn(array)
+    return table
+
+
+class Statistics(_Reduction):
+    """``td.statistics`` of each field (each component of a vector field) over all the
+    input: a ``vtkTable``, a row per field and component, with columns ``field``,
+    ``where``, ``component`` (-1 for a scalar), the statistics as Tack names them --
+    ``n``, ``min``, ``max``, ``sum``, ``mean``, ``m2``, ``m3``, ``m4``,
+    ``sample_variance``, ``population_variance``, ``sample_stddev``,
+    ``population_stddev``, ``skewness``, ``kurtosis`` (not the excess) and
+    ``weight`` -- and ``unit``, the field's (``""`` unknown). VTK's
+    ``vtkDescriptiveStatistics``."""
+
+    NAMES = ("n", "min", "max", "sum", "mean", "m2", "m3", "m4", "sample_variance",
+             "population_variance", "sample_stddev", "population_stddev", "skewness",
+             "kurtosis", "weight")
+
+    weights = Parameter(None, "weights: 'volume' (each cell's measure, a point's share "
+                              "of its cells'), or a field; by default none")
+
+    def reduce(self, pieces):
+        import tack.dataset as td
+
+        columns = {"field": [], "where": [], "component": [],
+                   **{name: [] for name in self.NAMES}, "unit": []}
+        for name, where, key, component in self._selected(pieces):
+            stats = td.statistics(_component_pieces(pieces, key, component), "__value__",
+                                  weights=self.weights)
+            columns["field"].append(name)
+            columns["where"].append(where)
+            columns["component"].append(-1 if component is None else component)
+            for statistic in self.NAMES:
+                columns[statistic].append(getattr(stats, statistic))
+            columns["unit"].append(stats.unit or "")
+        return _table(columns)
+
+
+class Entropy(_Reduction):
+    """``td.entropy`` of each field (each component of a vector field) over all the input,
+    in bits, its values in ``bins`` equal bins over their range: a ``vtkTable`` with
+    columns ``field``, ``where``, ``component`` (-1 for a scalar) and ``entropy``.
+    Viskores' ``Entropy``."""
+
+    bins = Parameter(10, "the number of equal bins over the values' range")
+    weights = Parameter(None, "weights: 'volume', or a field; by default none")
+
+    def reduce(self, pieces):
+        import tack.dataset as td
+
+        columns = {"field": [], "where": [], "component": [], "entropy": []}
+        for name, where, key, component in self._selected(pieces):
+            columns["field"].append(name)
+            columns["where"].append(where)
+            columns["component"].append(-1 if component is None else component)
+            columns["entropy"].append(td.entropy(_component_pieces(pieces, key, component),
+                                                 "__value__", bins=self.bins,
+                                                 weights=self.weights))
+        return _table(columns)
+
+
+class Integrate(_Reduction):
+    """``td.integrate`` over all the input, as VTK's ``vtkIntegrateAttributes`` gives it:
+    a ``vtkUnstructuredGrid`` of one vertex at the input's centroid (the integral of
+    position over the measure), each point field's integral as point data and each
+    cell field's as cell data, and the measure as the cell array ``Length``, ``Area``
+    or ``Volume``, by the cells' dimension. Integrals are by quadrature through each
+    cell's own map, so curved and higher-order cells exactly."""
+
+    OUTPUT = "vtkUnstructuredGrid"
+
+    fields = Parameter(None, "the fields to integrate: names, or (name, 'points' / "
+                             "'cells'); by default every field")
+
+    def reduce(self, pieces):
+        import numpy as np
+        from vtkmodules.vtkCommonCore import vtkDoubleArray, vtkPoints
+        from vtkmodules.vtkCommonDataModel import vtkUnstructuredGrid
+
+        import tack.dataset as td
+        from tack.interop.vtk import _label
+
+        selected = {}
+        for name, where, key, _ in self._selected(pieces):
+            selected.setdefault((name, where), key)
+        first = next(iter(pieces), None)
+        origin = np.asarray(first.origin if first is not None else (0.0, 0.0, 0.0), float)
+        out = []
+        for piece in pieces:
+            fields = {f"{where}:{name}": piece.fields[key]
+                      for (name, where), key in selected.items()}
+            position = piece.geometry
+            if np.any(np.asarray(piece.origin, float) != origin):
+                # Pieces on other origins: their positions relative to the first's.
+                values = piece.world_positions() - origin
+                position = td.Field(piece.geometry.space,
+                                    tack.array(values.astype(np.float32 if values.dtype
+                                                             == np.float32 else
+                                                             np.float64)))
+            fields["__position__"] = position
+            out.append(td.DataSet(piece.topology, piece.geometry, fields=fields,
+                                  ghosts=piece.ghosts, global_ids=piece.global_ids,
+                                  **piece._frame()))
+        integrals = td.integrate(td.PartitionedDataSet(out, world=pieces.world),
+                                 fields=list(fields) if out else None)
+        measure = integrals.measure
+        centre = origin + (np.asarray(integrals.values["__position__"], float) / measure
+                           if measure else 0.0)
+        grid = vtkUnstructuredGrid()
+        points = vtkPoints()
+        points.InsertNextPoint(*centre)
+        grid.SetPoints(points)
+        grid.InsertNextCell(1, 1, [0])                      # VTK_VERTEX
+        for (name, where), _ in selected.items():
+            value = np.atleast_1d(np.asarray(integrals.values[f"{where}:{name}"], float))
+            array = vtkDoubleArray()
+            array.SetNumberOfComponents(value.size)
+            array.InsertNextTuple(value.tolist())
+            array.SetName(name)
+            (grid.GetPointData() if where == "points" else grid.GetCellData()).AddArray(array)
+            _label(array, integrals.units.get(f"{where}:{name}"))
+        dimension = max((piece.topology.dimension for piece in pieces), default=3)
+        total = vtkDoubleArray()
+        total.InsertNextValue(measure)
+        total.SetName({1: "Length", 2: "Area"}.get(dimension, "Volume"))
+        _label(total, integrals.measure_unit)
+        grid.GetCellData().AddArray(total)
+        return grid
 
 
 del tack
