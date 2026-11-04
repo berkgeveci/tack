@@ -242,18 +242,35 @@ def test_a_changed_dataset_is_converted_again():
 
 
 def test_an_entry_goes_with_its_vtk_dataset():
+    """The entry is an attribute of the dataset's wrapper: it outlives the wrapper while
+    the dataset lives (a fresh wrapper has it) and goes with the dataset."""
     import gc
+    import weakref
 
-    grid = _rotation()
-    ta._as_dataset(grid)
-    address = grid.GetAddressAsString("vtkObject")
-    assert address in ta._datasets
-    del grid
+    holder = vtk.vtkPartitionedDataSet()
+    holder.append(_rotation())
+    data = weakref.ref(ta._as_dataset(holder.GetPartition(0)))
     gc.collect()
-    # The deletion is noted, and the entry goes at the cache's next use.
-    assert address in ta._deleted
-    ta._drop_deleted()
-    assert address not in ta._datasets and address not in ta._observers
+    assert data() is not None and ta._as_dataset(holder.GetPartition(0)) is data()
+    holder.SetPartition(0, None)
+    gc.collect()
+    assert data() is None
+
+
+def test_an_entry_is_stale_after_modified_or_a_new_time():
+    """``Modified()`` (here an array's) or another time step converts again; values
+    written in place without ``Modified()`` reach the fields, which share VTK's memory,
+    but the entry stays, as VTK's own pipeline would not run again either."""
+    grid = _rotation()
+    data = ta._as_dataset(grid)
+    np.asarray(grid.GetPointData().GetArray("v"))[0] = 7.0
+    assert ta._as_dataset(grid) is data
+    assert data.fields["v"].values.numpy()[0, 0] == 7.0
+    grid.GetPointData().GetArray("v").Modified()
+    moved = ta._as_dataset(grid)
+    assert moved is not data
+    grid.GetInformation().Set(vtk.vtkDataObject.DATA_TIME_STEP(), 3.0)
+    assert ta._as_dataset(grid) is not moved
 
 
 def test_a_field_filters_output_keeps_its_inputs_topology():
@@ -1047,28 +1064,28 @@ def test_particles_go_from_piece_to_piece(make):
     np.testing.assert_allclose(furthest_halves, furthest_whole, rtol=1e-6)
 
 
-def test_a_dataset_the_collector_frees_leaves_its_observer_callable():
+def test_a_dataset_the_collector_frees_takes_its_entry():
     """A dataset an algorithm read, freed by Python's collector in a cycle made after
-    it was read (a traceback's frames hold one so): its DeleteEvent observer, referenced
-    only by it, was cleared as garbage first, and calling it crashed Python (VTK bugs
-    19). The observers are kept reachable, so this collects without crashing."""
+    it was read (as a traceback's frames hold one): a DeleteEvent observer, referenced
+    only by it, was cleared as garbage first and calling it crashed Python (VTK bugs
+    19). The entry is the wrapper's attribute, no observer: it goes with the dataset."""
     import gc
+    import weakref
 
     class Holder:
         pass
 
-    addresses = []
+    entries = []
     for _ in range(3):
         data = _wavelet((-4, 4, -4, 4, -4, 4))()
         assert ta.Contour(field="RTData", value=150.0)(data).number_of_cells > 0
-        addresses.append(data.GetAddressAsString("vtkObject"))
+        entries.append(weakref.ref(ta._as_dataset(data)))
         holder = Holder()
         holder.cycle = holder
         holder.data = data
         del data, holder
         gc.collect()
-    ta._drop_deleted()
-    assert not any(address in ta._observers for address in addresses)
+    assert all(entry() is None for entry in entries)
 
 
 # ── Reductions: Statistics, Entropy, Integrate ──────────────────────
