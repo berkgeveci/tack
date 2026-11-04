@@ -11,6 +11,7 @@ import tack
 from tack import arrays
 from tack.dataset import shapes, units
 from tack.dataset.algorithms._common import _field, _with_basis
+from tack.dataset.algorithms.cell_geometry import _signed_twice_area
 from tack.dataset.dataset import Field, is_field_key
 from tack.dataset.spaces import H1, L2, Constant, Values
 from tack.runtime.dispatch import on_inputs_device
@@ -126,7 +127,11 @@ def _polyhedron_integrals(cells, u, out):
 @tack.kernel
 def _polygon_integrals(cells, u, out):
     # Linear on the triangles fanning a polygon from its points' mean: each one's
-    # area along the polygon's normal (Newell's) times its corners' mean value.
+    # own area (signed by the polygon's normal, Newell's, so a planar polygon not
+    # star-shaped from its mean cancels as it should) times its corners' mean
+    # value. A non-planar polygon is that fan, as Tack interpolates and locates in
+    # it, not its projection onto the normal, which measured a contour's wrinkled
+    # free surface 1% small.
     for c in cells:
         origin = cells.side_position(c, 0, 0)
         n = origin - origin
@@ -146,8 +151,9 @@ def _polygon_integrals(cells, u, out):
         for k in range(cells.num_faces(c)):
             a = cells.side_position(c, k, 0) - origin - xc
             b = cells.side_position(c, k, 1) - origin - xc
-            total += a.cross(b).dot(unit) * (uc + u[cells.side_point_id(c, k, 0)]
-                                             + u[cells.side_point_id(c, k, 1)])
+            twice = _signed_twice_area(a, b, unit)
+            total += twice * (uc + u[cells.side_point_id(c, k, 0)]
+                              + u[cells.side_point_id(c, k, 1)])
         out[cells.entity_id(c)] = total / 6.0
 
 

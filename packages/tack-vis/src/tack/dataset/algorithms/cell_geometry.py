@@ -1,4 +1,4 @@
-"""``cell_geometry``: a ``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A polygon's area, along its own normal (Newell's), for a polygonal topology."""
+"""``cell_geometry``: a ``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A 2D cell's area, the fan of triangles from its points' mean (each signed by the cell's Newell normal)."""
 
 from typing import NamedTuple
 
@@ -43,11 +43,22 @@ def _cell_geometry(cells, volumes, centroids):
             centroids[cells.entity_id(c)] = origin + apexes / cells.num_faces(c)
 
 
+@tack.func
+def _signed_twice_area(a, b, unit):
+    """Twice the area of the triangle on ``a`` and ``b`` (from a polygon's fan
+    center), negative where it winds against ``unit``, the polygon's normal."""
+    cross = a.cross(b)
+    twice = cross.norm()
+    return twice if cross.dot(unit) >= 0.0 else -twice
+
+
 @tack.kernel
 def _polygon_geometry(cells, areas, centroids):
     for c in cells:
-        # Newell's area vector over the polygon's edges, walked its way, then a fan
-        # from its first point weighted by each triangle's area along the normal.
+        # The fan of triangles from its points' mean, as Tack interpolates and
+        # locates in a polygon: each triangle's own area, signed by the polygon's
+        # normal (Newell's, over its edges walked its way), so a non-planar polygon
+        # measures as that fan, not its projection onto the normal.
         origin = cells.side_position(c, 0, 0)
         n = tack.vec3(0.0, 0.0, 0.0)
         for k in range(cells.num_faces(c)):
@@ -55,22 +66,24 @@ def _polygon_geometry(cells, areas, centroids):
                 cells.side_position(c, k, 1) - origin)
         length = n.norm()
         unit = n / length if length > 0.0 else n
+        xc = tack.vec3(0.0, 0.0, 0.0)          # its points' mean: each edge's first
+        for k in range(cells.num_faces(c)):
+            xc += cells.side_position(c, k, 0) - origin
+        xc = xc / cells.num_faces(c)
         twice = 0.0
         weighted = tack.vec3(0.0, 0.0, 0.0)
-        corners = tack.vec3(0.0, 0.0, 0.0)
         for k in range(cells.num_faces(c)):
-            a = cells.side_position(c, k, 0) - origin
-            b = cells.side_position(c, k, 1) - origin
-            t = a.cross(b).dot(unit)
+            a = cells.side_position(c, k, 0) - origin - xc
+            b = cells.side_position(c, k, 1) - origin - xc
+            t = _signed_twice_area(a, b, unit)
             twice += t
             weighted += t * (a + b)
-            corners += a
         areas[cells.entity_id(c)] = 0.5 * twice
         if twice != 0.0:
-            centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
+            centroids[cells.entity_id(c)] = origin + xc + weighted / (3.0 * twice)
         else:
-            # No area to weight by: the mean of its corners.
-            centroids[cells.entity_id(c)] = origin + corners / cells.num_faces(c)
+            # No area to weight by: the mean of its points.
+            centroids[cells.entity_id(c)] = origin + xc
 
 
 #: A 2D shape's corners in order round it.
@@ -90,21 +103,23 @@ def _corner_polygon_geometry(cells, order, areas, centroids):
                 cells.corner_position(c, order[k + 1 if k + 1 < size else 0]) - origin)
         length = n.norm()
         unit = n / length if length > 0.0 else n
+        xc = tack.vec3(0.0, 0.0, 0.0)
+        for k in range(size):
+            xc += cells.corner_position(c, order[k]) - origin
+        xc = xc / size
         twice = 0.0
         weighted = tack.vec3(0.0, 0.0, 0.0)
-        corners = tack.vec3(0.0, 0.0, 0.0)
         for k in range(size):
-            a = cells.corner_position(c, order[k]) - origin
-            b = cells.corner_position(c, order[k + 1 if k + 1 < size else 0]) - origin
-            t = a.cross(b).dot(unit)
+            a = cells.corner_position(c, order[k]) - origin - xc
+            b = cells.corner_position(c, order[k + 1 if k + 1 < size else 0]) - origin - xc
+            t = _signed_twice_area(a, b, unit)
             twice += t
             weighted += t * (a + b)
-            corners += a
         areas[cells.entity_id(c)] = 0.5 * twice
         if twice != 0.0:
-            centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
+            centroids[cells.entity_id(c)] = origin + xc + weighted / (3.0 * twice)
         else:
-            centroids[cells.entity_id(c)] = origin + corners / size
+            centroids[cells.entity_id(c)] = origin + xc
 
 
 @tack.kernel
@@ -155,8 +170,10 @@ def cell_geometry(data):
     taken as fans from their points' means, so a cell with non-planar faces is
     measured as that polyhedron (a hexahedron with warped faces is not quite its
     trilinear volume); its faces must be wound out of it. A 2D cell's area --
-    triangle, quad, pixel or polygon -- along its own normal (Newell's), from
-    its edges going round it. A line's or a polyline's length, and the
+    triangle, quad, pixel or polygon -- as the fan of triangles from its points'
+    mean, Tack's model of a polygon, each triangle's own area (signed by the
+    cell's Newell normal), so a non-planar cell is not measured as its projection
+    onto that normal (which measured a contour's wrinkled free surface 1% small). A line's or a polyline's length, and the
     centroid of its segments; a vertex's point, with measure 0.
 
     On a curved geometry (``H1`` above order 1, or an ``L2`` one of order 2 or

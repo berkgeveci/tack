@@ -165,6 +165,42 @@ def test_point_fields_on_polyhedra_and_polygons():
     assert surface.values["u"] == pytest.approx(6.0 * exact, abs=1e-13)
 
 
+def _fan(x, loop):
+    """A polygon's fan of triangles from its points' mean: their areas, signed by
+    the polygon's Newell normal, and the triangles' corner means of x."""
+    p = x[loop]
+    m = p.mean(axis=0)
+    n = np.sum(np.cross(p, np.roll(p, -1, axis=0)), axis=0)
+    cross = np.cross(p - m, np.roll(p, -1, axis=0) - m)
+    area = np.linalg.norm(cross, axis=1) / 2 * np.sign(cross @ n)
+    return area, (m + p + np.roll(p, -1, axis=0)) / 3
+
+
+def test_a_polygon_is_measured_as_its_fan():
+    """A non-planar polygon is its fan of triangles from its points' mean, as Tack
+    interpolates and locates in it: its area is the fan's, more than its projection
+    onto its normal (which measured a contour's wrinkled free surface 1% small), and
+    a linear field integrates exactly over the fan. A planar polygon whose mean is
+    outside it (a U) still measures its own area: the fan's triangles are signed."""
+    x = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0.6], [0, 1, 0],                 # bent
+                  [3, 0, 0], [6, 0, 0], [6, 3, 0], [5, 3, 0], [5, 1, 0], [4, 1, 0],
+                  [4, 3, 0], [3, 3, 0]], np.float64)                            # a U
+    loops = [[0, 1, 2, 3], list(range(4, 12))]
+    top = td.PolygonalTopology([0, 4, 12], loops[0] + loops[1], num_points=len(x))
+    data = td.DataSet(top, x, dtype=tack.f64)
+    data.fields["u"] = td.Field(td.H1(data), tack.array(x[:, 0] + 2 * x[:, 2]))
+    out = td.integrate(data, "u")
+    areas = [_fan(x, loop)[0] for loop in loops]
+    integral = sum((a * (c[:, 0] + 2 * c[:, 2])).sum() for a, c in (_fan(x, loop) for loop in loops))
+    measures = td.cell_geometry(data).measure.values.numpy()
+    np.testing.assert_allclose(measures, [a.sum() for a in areas], rtol=1e-13)
+    assert out.measure == pytest.approx(sum(a.sum() for a in areas), rel=1e-13)
+    assert out.values["u"] == pytest.approx(integral, rel=1e-13)
+    projected = np.linalg.norm(np.sum(np.cross(x[loops[0]], np.roll(x[loops[0]], -1, axis=0)), axis=0)) / 2
+    assert measures[0] > projected * 1.01
+    assert measures[1] == pytest.approx(9.0 - 2.0, rel=1e-13)       # the U: 3 x 3 less 1 x 2
+
+
 def test_only_the_meshs_own_dimension_counts():
     """A tetrahedron with a triangle, a line and a vertex beside it: the volume's
     integrals leave the lower-dimensional cells out, as VTK's vtkIntegrateAttributes
