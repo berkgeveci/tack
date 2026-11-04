@@ -323,8 +323,11 @@ def test_each_higher_order_cell_cuts_as_vtk(vtk_type):
     kind = {1: "Length", 2: "Area", 3: "Volume"}[dimension]
     total = sum(float(td.cell_geometry(p).measure.values.numpy().sum())
                 for p in ours_clip.partitions if p.num_cells)
-    # vtkClipDataSet places its crossings in single precision whatever its output's.
-    assert total == pytest.approx(_measure(kept, kind), rel=max(rel, 1e-7))
+    # vtkClipDataSet places its crossings in single precision whatever its output's;
+    # and VTK measures a quad as its projection onto its normal, Tack as its
+    # bilinear patch, 2e-4 more on these bent cells' pieces.
+    assert total == pytest.approx(_measure(kept, kind),
+                                  rel=max(rel, 1e-3 if dimension == 2 else 1e-7))
     edges = vtkExtractEdges()(grid)
     if dimension > 1:
         ours_edges = td.extract_edges(data, subdivision=2)

@@ -1,4 +1,4 @@
-"""``cell_geometry``: a ``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A 2D cell's area, the fan of triangles from its points' mean (each signed by the cell's Newell normal)."""
+"""``cell_geometry``: a ``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A quad's area, its bilinear patch's by Gauss quadrature; any other 2D cell's, the fan of triangles from its points' mean (each signed by the cell's Newell normal)."""
 
 from typing import NamedTuple
 
@@ -123,6 +123,39 @@ def _corner_polygon_geometry(cells, order, areas, centroids):
 
 
 @tack.kernel
+def _quad_geometry(cells, points, weights, areas, centroids):
+    # A quad is its bilinear patch: the area element |Xu x Xv| summed at Gauss
+    # points (a square root, exact in no rule, but within rounding of the patch's
+    # area at four points an axis unless the quad is twisted far out of plane),
+    # signed by the quad's Newell normal, so a planar quad that is not convex
+    # measures its own area. Positions from its first corner.
+    for c in cells:
+        origin = cells.corner_position(c, 0)
+        b = cells.corner_position(c, 1) - origin
+        e = cells.corner_position(c, 2) - origin
+        d = cells.corner_position(c, 3) - origin
+        n = e.cross(d - b)
+        length = n.norm()
+        unit = n / length if length > 0.0 else n
+        area = weights[0] * 0.0
+        weighted = b * 0.0
+        for q in range(weights.shape[0]):
+            u = points[q][0]
+            v = points[q][1]
+            xu = (1.0 - v) * b + v * (e - d)
+            xv = (1.0 - u) * d + u * (e - b)
+            t = weights[q] * _signed_twice_area(xu, xv, unit)
+            area += t
+            weighted += t * (u * (1.0 - v) * b + u * v * e + (1.0 - u) * v * d)
+        areas[cells.entity_id(c)] = area
+        if area != 0.0:
+            centroids[cells.entity_id(c)] = origin + weighted / area
+        else:
+            # No area to weight by: the mean of its corners.
+            centroids[cells.entity_id(c)] = origin + 0.25 * (b + e + d)
+
+
+@tack.kernel
 def _line_geometry(cells, lengths, centroids):
     for c in cells:
         # Each segment's length, and its midpoint weighted by it, from the chain's
@@ -169,11 +202,15 @@ def cell_geometry(data):
     divergence theorem over its faces -- polyhedral or of a shape -- with faces
     taken as fans from their points' means, so a cell with non-planar faces is
     measured as that polyhedron (a hexahedron with warped faces is not quite its
-    trilinear volume); its faces must be wound out of it. A 2D cell's area --
-    triangle, quad, pixel or polygon -- as the fan of triangles from its points'
-    mean, Tack's model of a polygon, each triangle's own area (signed by the
-    cell's Newell normal), so a non-planar cell is not measured as its projection
-    onto that normal (which measured a contour's wrinkled free surface 1% small). A line's or a polyline's length, and the
+    trilinear volume); its faces must be wound out of it. A quad's area is its
+    bilinear patch's, by 4 x 4 Gauss points (within rounding unless it is
+    twisted far out of plane), as ``integrate`` integrates over it. A triangle's,
+    pixel's or polygon's is the fan of triangles from its points' mean, Tack's
+    model of a polygon, each triangle's own area. Both are signed by the cell's
+    Newell normal, so a planar cell that is not convex measures its own area,
+    and a non-planar one is not measured as its projection onto that normal
+    (which measured a contour's wrinkled free surface 1% small; VTK measures a
+    quad so). A line's or a polyline's length, and the
     centroid of its segments; a vertex's point, with measure 0.
 
     On a curved geometry (``H1`` above order 1, or an ``L2`` one of order 2 or
@@ -195,6 +232,11 @@ def cell_geometry(data):
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 3:
             _cell_geometry(data.domain_view("cells", group), volumes, centroids)
+        elif group.count and group.shape is shapes.Quad:
+            from tack.dataset.algorithms.integrate import _QUAD_POINTS, _tables
+
+            _quad_geometry(data.domain_view("cells", group),
+                           *_tables(data, shapes.Quad, _QUAD_POINTS), volumes, centroids)
         elif group.count and group.shape.DIMENSION < data.topology.dimension and \
                 group.shape in _ROUND:
             _corner_polygon_geometry(data.domain_view("cells", group),

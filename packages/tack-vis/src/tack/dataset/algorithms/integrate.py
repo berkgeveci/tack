@@ -223,6 +223,17 @@ def _tables(data, shape, n):
 
 _TENSOR = (shapes.Line, shapes.Pixel, shapes.Quad, shapes.Voxel, shapes.Hexahedron)
 
+#: Gauss points an axis on a quad, at least: a quad out of plane has an area element
+#: (|J0 x J1|, a square root) no rule integrates exactly; four points an axis give
+#: its bilinear patch's area within rounding unless it is twisted far out of plane
+#: (a saddle of unit height on a unit square: 6e-5).
+_QUAD_POINTS = 4
+
+
+def _per_axis(shape, n):
+    """``n`` points an axis, or ``_QUAD_POINTS`` on a quad if more."""
+    return max(n, _QUAD_POINTS) if shape is shapes.Quad else n
+
 
 def _points_per_axis(data, field_order, shape=None):
     """Enough Gauss points an axis for a field of ``field_order`` on ``data``'s
@@ -245,10 +256,12 @@ def cell_measures(data, n=None):
     vec = tack.vec(3, data.dtype)
     measures = tack.empty((data.num_cells,), data.dtype)
     centroids = tack.empty((data.num_cells,), vec)
+    given = n
     n = _points_per_axis(data, 0) if n is None else n
     for group in data.launch_groups("cells", []):
         if group.count:
-            _cell_measures(data.domain_view("cells", group), *_tables(data, group.shape, n),
+            m = n if given is not None else _per_axis(group.shape, n)
+            _cell_measures(data.domain_view("cells", group), *_tables(data, group.shape, m),
                            measures, centroids)
     return measures, centroids
 
@@ -264,7 +277,7 @@ def _cell_values(data, field):
     for group in data.launch_groups("cells", [field]):
         if group.count and group.shape.DIMENSION == top:
             _cell_integrals(data.domain_view("cells", group), field.view(group),
-                            *_tables(data, group.shape, n), out)
+                            *_tables(data, group.shape, _per_axis(group.shape, n)), out)
     return out
 
 
