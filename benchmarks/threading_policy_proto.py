@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Prototype: one estimator for item 20 and P6, scored against ground truth.
 
 The backend's threshold is

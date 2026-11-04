@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Two hot spots diffusing on a square plate, with zero-temperature edges.
 
 Adapted from Tack's 17_heat_equation.py; see the tutorial for attribution.

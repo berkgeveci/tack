@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack template rewrite — AST pre-pass that resolves template parameters.
 
 When a @tack.kernel is called with a @tack.device_class object, this pass

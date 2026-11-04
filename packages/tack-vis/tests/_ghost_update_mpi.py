@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_ghost_update``'s check across MPI ranks:
 ``mpiexec -n 2 python _ghost_update_mpi.py 4`` (the number of pieces, shared out
 evenly). Rank 0 prints ``ok`` with the errors, or the failure."""

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Warp code generation: typed Tack IR to the source of a ``@wp.kernel``.
 
 A prototype. NVIDIA Warp's kernel language is Python parsed by Warp, so

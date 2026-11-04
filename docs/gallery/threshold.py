@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Threshold: the cells where the field is at least 1 -- the eight blobs about the
 cube's corners and the middles of its faces -- on each kind of cell, over the
 cells' outline.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``L2``'s layout (the vault's coefficient-layout proposal): ``"blocks"`` keeps each
 cell's values together, ``"cells"`` stores them cell-fastest, ``"auto"`` chooses by
 device. Every operation must give the same answer either way; only where the

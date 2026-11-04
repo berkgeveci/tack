@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tack.math``: GLSL-style helpers as device functions, on scalars and vectors."""
 
 import numpy as np

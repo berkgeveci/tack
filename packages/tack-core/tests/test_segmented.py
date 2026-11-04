@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Segmented operations (``tack.algorithms.segmented``), checked against NumPy.
 
 Segments are CSR offsets over flat values. The shapes are the ones the layer is

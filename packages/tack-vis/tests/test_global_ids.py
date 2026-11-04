@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Global ids: the data model, what filters carry, VTK's arrays, and generating them.
 
 ``generate_global_ids`` is checked against VTK's ``vtkGenerateGlobalIds`` on

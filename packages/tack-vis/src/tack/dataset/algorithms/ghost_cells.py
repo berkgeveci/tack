@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Ghost cells for the pieces of a partitioned dataset, and refreshing their values.
 
 ``ghost_cells`` gives each piece a layer of its neighbours' cells, as VTK's

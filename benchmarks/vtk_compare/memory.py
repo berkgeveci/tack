@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Peak memory of each filter, Tack's and VTK's, on the meshes of ``run.py``.
 
 Each (mesh, size, filter, system) runs in a process of its own: it builds the

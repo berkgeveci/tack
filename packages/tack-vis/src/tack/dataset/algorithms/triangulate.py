@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``triangulate``: every 2D cell as triangles: a quad or pixel in 2, a polygon in a fan from its first point; other cells are left out. The points are the same; cell fields go to each cell's triangles."""
 
 import tack

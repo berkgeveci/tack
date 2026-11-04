@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``face_centers``: each face's area centroid: a field on faces. The face is fanned from its points' mean, so both its cells -- which store it once -- see the same fan."""
 
 import tack

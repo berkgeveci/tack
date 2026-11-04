@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Dispatching one kernel from several threads.
 
 `resolve_variant` has to work out the argument types before it can build a

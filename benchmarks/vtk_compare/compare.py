@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compare vtk_compare runs of several builds, row by row.
 
     python benchmarks/vtk_compare/compare.py BASE=DIR [LABEL=DIR ...] [--sizes 1M,5M]

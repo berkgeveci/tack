@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Communication between blocks: the patterns algorithms over pieces are written on.
 
 A block is a unit of work on one device -- in ``tack.dataset``, a piece of a

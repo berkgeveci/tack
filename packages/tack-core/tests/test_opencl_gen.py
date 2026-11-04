@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for OpenCL C code generation — no GPU required.
 
 Level Zero was the only backend with no codegen test at all. CUDA and HIP

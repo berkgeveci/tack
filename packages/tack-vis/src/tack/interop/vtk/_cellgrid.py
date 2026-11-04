@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """VTK cell grids (``vtkCellGrid``, the discontinuous-Galerkin cells of VTK's
 Filters/CellGrid) as Tack datasets.
 

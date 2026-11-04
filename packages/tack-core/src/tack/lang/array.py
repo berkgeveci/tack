@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack arrays — typed storage living on a device.
 
 Arrays are made by the NumPy-style constructors (``tack.empty``,

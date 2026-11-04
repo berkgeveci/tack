@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``point_ids``: each point's id, as values on points: an implicit array, nothing stored."""
 
 from tack.arrays import CountingArray

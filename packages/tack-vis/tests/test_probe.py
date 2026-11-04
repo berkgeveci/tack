@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """CellLocator and probe, against VTK's vtkProbeFilter.
 
 vtkProbeFilter is the reference for which points lie in the mesh and, on

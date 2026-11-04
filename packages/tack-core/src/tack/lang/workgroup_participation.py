@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Conservative uniformity checks for workgroup barriers and reductions.
 
 Uniform means equal across a workgroup, not necessarily across the grid.

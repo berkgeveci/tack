@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Cosmology halos: friends-of-friends by ``connected_components(radius=, periodic=)``
 and ``halo_catalog``, ported from Viskores' cosmotools. Against Viskores' own
 test cases (``UnitTestCosmoTools.cxx``) and brute force."""

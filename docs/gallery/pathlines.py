@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Pathlines: particles carried through an unsteady swirl -- its second part's weight
 rising and falling over the steps -- each one's path as a tube colored by time, on
 each kind of cell, over the cells' outline.

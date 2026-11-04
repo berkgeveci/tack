@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """15 -- Matrix multiplication.
 
 Compute C = A @ B for square matrices stored as flat 1D arrays.

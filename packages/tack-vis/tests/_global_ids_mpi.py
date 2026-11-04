@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_global_ids``' check across MPI ranks: ``mpiexec -n 2 python
 _global_ids_mpi.py``. Every rank numbers its share of the pieces by each route;
 rank 0 compares every piece with what one process gives, and prints ``ok`` or

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """`array.shape[k]` and `len(array)` anywhere in a kernel.
 
 Both are documented as general kernel-language features, but they used to

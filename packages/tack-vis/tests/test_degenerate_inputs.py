@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Empty and degenerate inputs: grids with sizes of 1 and 0, cells of no volume,
 one-dimensional meshes, infinite values.
 

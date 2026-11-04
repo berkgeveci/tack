@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_octrees``' check under MPI: ``mpiexec -n 2 python _octree_mpi.py``. Each
 rank holds a share of the trees; every rank's statistics and entropy of the
 octree must be the whole's, to rounding, its points probed over every rank's

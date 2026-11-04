@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Sets: named selections of a dataset's points, cells, faces or edges (``data.sets``).
 
 A ``Set`` knows what it selects (``on``), so a cell, face or edge set is an

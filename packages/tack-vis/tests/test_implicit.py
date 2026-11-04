@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Implicit functions and the filters that take them, against VTK: the functions'
 values, slice (vtkCutter), extract_geometry (vtkExtractGeometry), and the
 point and cell extractions (vtkExtractPoints, vtkThresholdPoints,

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Which NVRTC releases the CUDA backend warns about.
 
 Kept apart from ``cuda_backend`` so the rule can be tested without

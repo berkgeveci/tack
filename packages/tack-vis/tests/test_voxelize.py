@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``voxelize``: data onto an image's voxels, the fraction each voxel the data covers
 and each field's mean over that part, by sampling. Checked where the answer is
 exact (voxels aligned with the data, a linear field), against probe at the voxel

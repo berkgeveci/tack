@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The CHANGELOG's entries, one file per change, gathered at release.
 
 A pull request does not edit ``CHANGELOG.md``: it adds a file to

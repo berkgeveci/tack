@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Block-structured adaptive mesh refinement: ``AMRDataSet``, levels of structured
 boxes, each finer than the one before, as VTK's ``vtkOverlappingAMR`` and
 AMReX's hierarchy of ``BoxArray``s.

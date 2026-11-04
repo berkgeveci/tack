@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Temporal filters, phase T0 of the vault's proposal: each dataset is one step,
 at ``time`` in ``time_unit``, kept by every filter as the origin is; pieces,
 AMR boxes and octrees at two times are refused; VTK's ``DATA_TIME_STEP`` maps

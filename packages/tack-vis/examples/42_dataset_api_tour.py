@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """42 -- A tour of tack.dataset, the dataset API (docs/vis-guide/reference/dataset-api.md).
 
 One mixed unstructured grid (hexahedra, wedges, pyramids and tetrahedra)

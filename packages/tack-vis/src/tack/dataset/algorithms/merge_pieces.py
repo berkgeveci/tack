@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``merge_pieces``: a partitioned dataset's pieces as one dataset, each cell and point
 once, for writing one file or handing to code that knows no pieces."""
 

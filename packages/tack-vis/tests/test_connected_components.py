@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Connected components: cells connected through shared points, on one dataset and
 across the pieces of a partitioned one.
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Generated fixed-width integer expressions against an independent oracle.
 
 `test_integer_semantics.py` pins each integer operation on boundary and

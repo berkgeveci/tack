@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """VTK's cell grid tests, through Tack: every ``.dg`` file of VTK's test data read
 by ``vtk_to_dataset``, held to what VTK computes on it -- its evaluator at random
 points of every cell (the geometry and each field), its cell centres, point

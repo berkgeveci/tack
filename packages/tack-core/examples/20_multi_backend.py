@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """20 -- Running the same kernel on multiple backends.
 
 One of Tack's key features: write your kernel once, run it on CPU,

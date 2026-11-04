@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Floating // and % preserve precision, divisor sign, and exceptional classes."""
 
 import itertools

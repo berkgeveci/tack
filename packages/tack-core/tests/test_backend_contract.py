@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Every backend declares the same capabilities, honestly.
 
 The point of the Backend base class is that callers ask what a backend

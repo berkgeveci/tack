@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """19 -- Image processing kernels.
 
 Demonstrates common image processing operations as Tack kernels:

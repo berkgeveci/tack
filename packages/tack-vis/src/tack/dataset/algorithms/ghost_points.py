@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``ghost_points``: each piece of a partitioned point cloud with copies of the other
 pieces' points it needs, so that filters over neighbours run per piece and are
 right on the points it owns, as ``ghost_cells`` does for meshes.

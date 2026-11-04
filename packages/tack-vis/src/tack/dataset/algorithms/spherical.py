@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``spherical``: the geometry's Cartesian positions as spherical ``(r, theta, phi)`` -- ``theta`` from the z axis, ``phi`` in ``[0, 2pi)`` -- or back with ``inverse``, as Viskores' SphericalCoordinateTransform."""
 
 from tack.dataset.algorithms._moving import _from_spherical, _recoordinate, _to_spherical

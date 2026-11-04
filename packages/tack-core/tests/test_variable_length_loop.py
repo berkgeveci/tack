@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for sequential for-loops with runtime bounds from array loads.
 
 This validates the pattern used by Viskores-style variable-length cell

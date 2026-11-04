@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Print the comparison from a vtk_compare results directory.
 
 Reads every ``<config>.json`` that ``run.py`` wrote there: ``cpu1``, the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Particles that cross the pieces of a partitioned dataset: ``advect`` and
 ``streamlines`` over a ``PartitionedDataSet``, written on ``tack.communication``.
 

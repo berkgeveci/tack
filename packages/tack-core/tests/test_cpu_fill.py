@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The CPU backend's allocation and fill: a new array is not filled, and a
 large fill runs as a kernel through the dispatch (`CPUBackend.fill_array`),
 storing what `ndarray.fill` would store and refusing what it would refuse."""

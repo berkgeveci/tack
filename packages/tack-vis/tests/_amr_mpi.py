@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_amr``'s check under MPI: ``mpiexec -n 2 python _amr_mpi.py``. Each rank
 holds a share of each level's boxes; rank 0 compares every box's marks with the
 whole hierarchy's in one process, and prints ``ok`` or fails. (Which sibling owns a

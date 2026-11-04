@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Partitioned datasets: the container, ghost marks, ``split``, the reductions
 that combine pieces, and VTK's partitioned datasets and collections.
 

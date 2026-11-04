@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The arrays of `tack.arrays` are indexable in any kernel.
 
 Every implicit array defines `__getitem__` (its `get`) and `__len__`, so a

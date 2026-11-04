@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``deposit``: particles onto an image -- into the cell holding each (nearest grid point) or onto that cell's corners by trilinear weights (cloud in cell) -- as counts, sums, means, minima or maxima, as Viskores' ParticleDensityNearestGridPoint and ParticleDensityCloudInCell and yt's deposition. A LiDAR elevation raster (a DSM's highest return, a DTM's lowest) is the maximum or minimum of the heights on a 2D image."""
 
 import numpy as np

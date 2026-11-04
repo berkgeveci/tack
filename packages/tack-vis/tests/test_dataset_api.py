@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for the dataset API prototype (``docs/vis-guide/design/dataset-api.md``).
 
 Derived faces and edges are checked against a hand-built mixed mesh and,

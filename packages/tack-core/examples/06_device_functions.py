@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """06 -- Device functions with @tack.func.
 
 Use @tack.func to define helper functions that are inlined into kernels

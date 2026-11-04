@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_ghost_cells``' check across MPI ranks: ``mpiexec -n 2 python
 _ghost_cells_mpi.py``. Every rank generates ghost cells for its share of the
 pieces; rank 0 compares each piece with what one process makes of all of them,

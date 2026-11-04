@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack runtime dispatch — devices, the default device, and where a launch runs.
 
 A device is a value: ``tack.device("cuda")`` names one backend, made on first

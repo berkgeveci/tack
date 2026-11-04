@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Rules that depend on more than a cell agree across the pieces of a partitioned dataset.
 
 ``tetrahedralize`` splits a shared face along one diagonal on both sides. On a

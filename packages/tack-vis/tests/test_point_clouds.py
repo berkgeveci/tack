@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Point clouds: the point locator and the filters on it (``voxel_downsample``,
 ``outliers``, ``point_normals``, clusters by ``connected_components``, ``deposit``,
 ``sph_interpolate``, ``sph_density``), against brute force in NumPy and against

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for tack.dataset.shapes: VTK's linear cells as template classes.
 
 VTK is the reference. Its tables (points, centers, edges, faces) are

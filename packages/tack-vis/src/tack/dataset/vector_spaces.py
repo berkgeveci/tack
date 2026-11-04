@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Vector spaces on hexahedra, voxels and tetrahedra: ``HDiv``, its values on faces, and
 ``HCurl``, on edges; above order 1, on hexahedra and voxels, also on faces and inside cells.
 

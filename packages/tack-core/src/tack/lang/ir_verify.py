@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compiler invariants at the boundaries of Tack's IR pipeline.
 
 This verifies the tree and the annotations needed by the next pass. It is

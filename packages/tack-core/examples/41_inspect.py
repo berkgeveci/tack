@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Example: inspecting generated kernel code.
 
 tack.inspect() shows the generated code for a kernel without executing it.

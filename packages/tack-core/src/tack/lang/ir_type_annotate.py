@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """IR pass — annotates all IR nodes with resolved types.
 
 Walks the IR after type inference and propagates types from parameters

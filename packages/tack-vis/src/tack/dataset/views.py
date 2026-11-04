@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The template views kernels iterate: one entity kind, one shape, at a time.
 
 A view's class combines mixins, made once per combination and reused, so

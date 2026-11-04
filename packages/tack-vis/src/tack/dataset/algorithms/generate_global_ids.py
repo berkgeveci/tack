@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Global ids for the points and cells of a partitioned dataset's pieces."""
 
 import numpy as np

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Resolve static device calls in the defining Python namespace.
 
 Only module attributes are followed: resolving a call must not execute a

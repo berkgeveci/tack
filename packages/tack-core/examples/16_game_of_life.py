@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """16 -- Conway's Game of Life.
 
 A cellular automaton on a 2D grid.  Each cell is alive (1) or dead (0).

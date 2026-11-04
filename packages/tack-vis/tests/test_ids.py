@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Ids: a topology's id_dtype, i32 unless asked for i64, given i64 fields, or too
 large; never wrapped. The whole suite also runs with every topology in i64
 (``pytest --ids=i64``); these are the rules themselves."""

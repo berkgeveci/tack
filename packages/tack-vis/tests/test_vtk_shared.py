@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``vtk_to_dataset(..., copy=False)`` and ``dataset_to_vtk(..., copy=False)``: VTK's
 and Tack's datasets sharing their arrays on the CPU instead of copying them --
 the points, data arrays, cell types, offsets and connectivity, ghost marks and

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """46 -- Cutting and sampling: implicit functions, clip, extract, slice and probe.
 
 VTK's wavelet on a uniform grid, cut and sampled the common ways, each result

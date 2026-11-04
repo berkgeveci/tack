@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Share a VTK image's scalars with Tack on CPU, update them, and export to VTK.
 
 Requires a VTK build with vtkmodules.util.dlpack_support. Rendering is not needed.

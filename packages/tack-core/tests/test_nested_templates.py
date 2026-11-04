@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Templates holding templates: ``self.base.get(k)`` through any depth.
 
 A device-class object may hold others as instance attributes. Their methods,

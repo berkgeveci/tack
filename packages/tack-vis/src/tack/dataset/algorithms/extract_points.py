@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``extract_points``: the points inside ``function``'s region (at or below zero), or outside it (above), as vertex cells. Needs an ``H1`` geometry: one position per point."""
 
 import numpy as np

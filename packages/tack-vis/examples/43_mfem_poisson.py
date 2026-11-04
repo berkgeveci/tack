@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """43 -- A Poisson solution from MFEM, curved and quadratic, through tack.dataset.
 
 Solves -laplace(u) = 1 with u = 0 on the boundary in PyMFEM (MFEM's first

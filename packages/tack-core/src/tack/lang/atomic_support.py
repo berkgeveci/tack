@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Atomic target domains, checked before optimization or device compilation."""
 
 from tack.lang import ir

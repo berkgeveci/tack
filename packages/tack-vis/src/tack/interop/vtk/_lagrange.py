@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """VTK's Lagrange cells -- ``VTK_LAGRANGE_CURVE``, ``VTK_LAGRANGE_QUADRILATERAL``,
 ``VTK_LAGRANGE_HEXAHEDRON``, ``VTK_LAGRANGE_TRIANGLE`` and ``VTK_LAGRANGE_TETRAHEDRON``
 -- as Tack's bases on equispaced nodes, both ways. A triangle's or tetrahedron's

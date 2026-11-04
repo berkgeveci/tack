@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """DLPack support for Tack arrays.
 
 Implements the DLPack protocol (__dlpack__, __dlpack_device__) for

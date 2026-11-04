@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Element moves the communication algorithms share: whole elements of any type,
 through each array's flat scalar view, on the array's device."""
 

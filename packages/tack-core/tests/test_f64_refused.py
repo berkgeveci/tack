@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A device without f64 refuses a kernel that computes in f64, once its types are
 known: Metal, a Level Zero device without fp64, and a CPU posing as such a device,
 which is how the tests find what Metal's compiler would (``refuse_f64``)."""

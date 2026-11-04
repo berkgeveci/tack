@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Copy propagation must preserve ordering with bounded assignment analysis."""
 
 import numpy as np

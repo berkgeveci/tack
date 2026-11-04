@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_merge_pieces``' check under MPI: ``mpiexec -n 2 python
 _merge_pieces_mpi.py``. Each rank passes its share of the pieces; rank 0 gets the
 merged dataset and compares it with one process's, the others get ``None``."""

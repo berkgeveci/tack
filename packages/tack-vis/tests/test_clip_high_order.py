@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``clip`` and ``threshold`` of curved cells and high-order fields: the cells the
 field's Bernstein bound keeps entirely stay as they are, and the rest are cut on
 linear sub-cells, as ``contour`` cuts them; the result is

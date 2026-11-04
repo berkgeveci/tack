@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """NUMA interleave for CPU array allocations.
 
 These tests need a machine with two or more memory nodes, so they skip almost

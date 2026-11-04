@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Contour, clip and threshold of one ball, as "Extract parts of a dataset" compares
 them: the distance from the centre of a cube, r, and the three answers about
 r <= 0.5. Each is cut open by the plane y = 0, so the sphere shows as a shell, the

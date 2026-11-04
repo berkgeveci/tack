@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for tack.interop.vtk.
 
 The module is a thin layer over DLPack: VTK and Tack both speak it, so the

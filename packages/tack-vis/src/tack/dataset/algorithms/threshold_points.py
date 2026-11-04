@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``threshold_points``: the points whose ``field`` (point data: ``H1``, values on points) lies in ``[lower, upper]``, as vertex cells."""
 
 from tack import arrays
