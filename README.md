@@ -492,6 +492,7 @@ run on one machine does not mean every backend was exercised — the CI log prin
 which backends it found. Submitting a contribution certifies that you may
 contribute it under Tack's license (the Developer Certificate of Origin, in
 CONTRIBUTING.md); there is no separate agreement to sign.
+[GOVERNANCE.md](GOVERNANCE.md) says who maintains Tack and how decisions are made.
 
 ## License
 
