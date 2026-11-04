@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_vtk_algorithms``' check across MPI ranks: ``mpiexec -n 3 python
 _vtk_algorithms_mpi.py comm|vtk``. Each rank holds one slab of VTK's wavelet, the
 slabs sharing their planes of points, in a ``vtkPartitionedDataSet`` of one
