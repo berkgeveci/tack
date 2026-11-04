@@ -367,9 +367,10 @@ whose nodes are Tack's equispaced nodes in Tack's order.
   contour's cell types come out as a `vtkConstantArray` and its offsets as a
   `vtkAffineArray`.
 - **Level Zero.** A Level Zero pointer means something only in the context
-  that allocated it. To share device arrays with a VTK built with Viskores on
-  Kokkos' SYCL backend, start Tack with `tack.interop.vtk.init_level_zero()`
-  instead of `tack.set_default_device("level_zero")`.
+  that allocated it. To share device arrays with a VTK that holds Level Zero
+  memory (its own device arrays, or Viskores on Kokkos' SYCL backend), start
+  Tack with `tack.interop.vtk.init_level_zero()` instead of
+  `tack.set_default_device("level_zero")`.
 - **The full signatures** are in the
   [Data Model reference](../vis-guide/reference/data-model.md#interoperability).
 
