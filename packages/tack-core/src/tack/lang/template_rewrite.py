@@ -655,12 +655,15 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays,
         # Names first, so methods can call siblings and nested objects' methods.
         node.methods = {name: fresh_name(f"__tmpl_{param_name}_{prefix}{name}__", used_names)
                         for name in methods}
-    for node in nodes.values():
-        for method_name, func_obj in template_func_methods(type(node.obj)).items():
-            if method_name in node.methods:
-                resolved_name = node.methods[method_name]
-                resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
-                                                                node, extra, specializer)
+    methods = {node.methods[name]: (func_obj, node) for node in nodes.values()
+               for name, func_obj in template_func_methods(type(node.obj)).items()
+               if name in node.methods}
+    if specializer is not None:
+        specializer.unresolved.update(methods)
+    for resolved_name, (func_obj, node) in methods.items():
+        if resolved_name not in resolved_funcs:
+            resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
+                                                            node, extra, specializer)
     return nodes[()], extra
 
 
@@ -821,6 +824,11 @@ class _Specializer:
         self.resolved_funcs = resolved_funcs
         self.used_names = used_names
         self.copies = {}
+        # Methods of the templates being resolved, by resolved name, not resolved
+        # yet: one is resolved when a call binding a template into it is reached
+        # first (``self.inner.f(self.mesh)``, inner's methods after self's).
+        self.unresolved = {}
+        self.resolving = set()
 
     def call(self, call, roots, funcdef, python_func):
         """``call`` with any template arguments bound into a copy of its callee."""
@@ -861,6 +869,8 @@ class _Specializer:
         or a ``@tack.func`` bound where the calling function was defined."""
         func = call.func
         if getattr(func, '_tack_template_call', False):
+            if func.id not in self.resolved_funcs:
+                self._resolve_now(func.id)
             resolved = self.resolved_funcs[func.id]
             return (resolved._funcdef, getattr(resolved, 'func', None),
                     getattr(resolved, 'roots', {}))
@@ -873,6 +883,18 @@ class _Specializer:
             raise TypeError(f"'{ast.unparse(func)}' is given a device-class object, but is "
                             "not a @tack.func or a template's method")
         return callee._funcdef, callee.func, {}
+
+    def _resolve_now(self, name):
+        """Resolve the template method ``name`` before the call that binds into it."""
+        if name in self.resolving or name not in self.unresolved:
+            raise TypeError(f"'{name}' is passed a device-class object from within its own "
+                            "resolution: recursion through templates is not supported")
+        func_obj, node = self.unresolved[name]
+        self.resolving.add(name)
+        try:
+            self.resolved_funcs[name] = _resolve_method(func_obj, name, node, node.extra, self)
+        finally:
+            self.resolving.discard(name)
 
     def _copy(self, key, callee_def, callee_func, bound, params, inherited=None):
         """Make the copy, recorded under ``key`` as ``(name, added)``: its synthetic

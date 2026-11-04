@@ -177,3 +177,48 @@ def test_flattened_names_may_not_collide(backend, value):
     out = tack.empty((1,), tack.i32)
     with pytest.raises(Exception, match="flatten to the same name"):
         _read_both(_Clash("base__get", value), out)
+
+
+@tack.device_class
+class _Mesh:
+    def __init__(self, scale):
+        self.scale = scale
+
+
+@tack.device_class
+class _Values:
+    def __init__(self, n):
+        self.x = tack.empty((n,))
+
+    @tack.func
+    def scaled(self, mesh, i):
+        return mesh.scale * self.x[i]
+
+
+@tack.device_class
+class _Holder:
+    def __init__(self, values, mesh):
+        self.values = values
+        self.mesh = mesh
+
+    @tack.func
+    def read(self, i):
+        return self.values.scaled(self.mesh, i) + 1.0
+
+
+@tack.kernel
+def _read_all(h, out):
+    for i in range(out.shape[0]):
+        out[i] = h.read(i)
+
+
+def test_a_method_passes_one_held_template_to_another_s_method(backend):
+    """``self.values.scaled(self.mesh, i)``: the held object's method is resolved
+    when the call binding ``mesh`` into it is reached, before its own turn. It
+    raised a KeyError for the method's resolved name."""
+    values = _Values(4)
+    tack.copyto(values.x, np.arange(4, dtype=np.float32))
+    out = tack.empty((4,))
+    _read_all(_Holder(values, _Mesh(3.0)), out)
+    np.testing.assert_allclose(out.numpy(), 3.0 * np.arange(4) + 1.0)
+
