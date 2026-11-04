@@ -5400,11 +5400,14 @@ connect with <code>&gt;&gt;</code> like any VTK algorithm:</p>
 <span class="n">reference</span> <span class="o">=</span> <span class="p">(</span><span class="n">source</span> <span class="o">&gt;&gt;</span> <span class="n">Tetrahedralize</span><span class="p">()</span> <span class="o">&gt;&gt;</span> <span class="n">theirs</span><span class="p">)()</span>
 <span class="k">assert</span> <span class="n">surface</span><span class="o">.</span><span class="n">number_of_cells</span> <span class="o">==</span> <span class="n">reference</span><span class="o">.</span><span class="n">number_of_cells</span>
 </code></pre></div>
-<p>Each algorithm converts its input with <code>copy=False</code>, runs the Tack filter on
-the CPU and hands its result back to VTK with <code>copy=False</code>, so no array is
-copied where both sides store it alike. Parameters are properties, given to
-the constructor or set later; setting one marks the algorithm modified, so
-the pipeline runs again.</p>
+<p>Each algorithm converts its input with <code>copy=False</code>, runs the Tack filter
+where the input's memory is (or on <code>device=</code>), and hands its result back to
+VTK with <code>copy=False</code>, so no array is copied where both sides store it alike.
+Parameters are properties, given to the constructor or set later; setting one
+marks the algorithm modified, so the pipeline runs again. Every argument of
+the Tack filter is a parameter, with the filter's default, except the data
+and what the algorithm supplies itself (the device, a locator, the
+communicator): <code>Contour(field="p", value=0.5, merge_points=False)</code>.</p>
 <table>
 <thead>
 <tr>
@@ -5430,6 +5433,11 @@ the pipeline runs again.</p>
 <td>the input's type, with <code>region</code> arrays</td>
 </tr>
 <tr>
+<td><code>Probe</code></td>
+<td><code>probe</code>, of the source on port 1 at the input's points</td>
+<td>the input's structure, with the source's fields</td>
+</tr>
+<tr>
 <td><code>Gradients</code>, <code>Elevation</code>, <code>CellQuality</code></td>
 <td><code>gradients</code>, <code>point_elevation</code>, <code>cell_quality</code></td>
 <td>the input's type, with the new arrays added</td>
@@ -5444,6 +5452,48 @@ the pipeline runs again.</p>
 <p>A <code>vtkPartitionedDataSet</code> input runs the filter on each piece and gives a
 <code>vtkPartitionedDataSet</code>. The last row's algorithms need every piece at once,
 so they take the pieces together; see <a href="../over-pieces/">Filters over pieces</a>.</p>
+<p>Readers of Exodus, IOSS, CGNS, EnSight and OpenFOAM files give trees of
+datasets: a <code>vtkMultiBlockDataSet</code> or a <code>vtkPartitionedDataSetCollection</code>. The
+algorithms take them as they are and give a tree of the same shape, with the
+blocks' names and a collection's data assembly. Each partitioned dataset in the
+tree, a <code>vtkMultiPieceDataSet</code> block too, is filtered as a whole, so
+<code>GhostCells</code> and <code>GenerateGlobalIds</code> see all its pieces together, and each
+block that is one dataset is filtered on its own.</p>
+<p>A field is named as a string, or with where VTK keeps it when a point array and
+a cell array share the name: <code>field=("p", "cells")</code>. Or choose it as VTK's own
+filters do, with <code>SetInputArrayToProcess</code>, numbering the algorithm's field
+parameters in order. Where Tack takes an implicit function (<code>Clip</code>'s <code>by</code>),
+VTK's <code>vtkPlane</code>, <code>vtkSphere</code>, <code>vtkBox</code>, <code>vtkCylinder</code>, <code>vtkPlanes</code> and
+<code>vtkImplicitBoolean</code> work as Tack's. They are the same functions, so a clip
+at any value matches, except that a <code>vtkPlane</code>'s normal is made a unit vector.</p>
+<!-- tack-check: vtk-pipeline-trees -->
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">vtkmodules.vtkCommonDataModel</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dm</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vtkmodules.vtkImagingCore</span><span class="w"> </span><span class="kn">import</span> <span class="n">vtkExtractVOI</span><span class="p">,</span> <span class="n">vtkRTAnalyticSource</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tack.interop.vtk.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">Clip</span><span class="p">,</span> <span class="n">GenerateGlobalIds</span><span class="p">,</span> <span class="n">Threshold</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="n">image</span> <span class="o">=</span> <span class="n">vtkRTAnalyticSource</span><span class="p">(</span><span class="n">whole_extent</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))()</span>
+<span class="n">halves</span> <span class="o">=</span> <span class="n">dm</span><span class="o">.</span><span class="n">vtkPartitionedDataSet</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">extent</span> <span class="ow">in</span> <span class="p">[(</span><span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="o">-</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">)]:</span>
+    <span class="n">halves</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">vtkExtractVOI</span><span class="p">(</span><span class="n">voi</span><span class="o">=</span><span class="n">extent</span><span class="p">)(</span><span class="n">image</span><span class="p">))</span>
+<span class="n">tree</span> <span class="o">=</span> <span class="n">dm</span><span class="o">.</span><span class="n">vtkPartitionedDataSetCollection</span><span class="p">()</span>
+<span class="n">tree</span><span class="o">.</span><span class="n">SetNumberOfPartitionedDataSets</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">tree</span><span class="o">.</span><span class="n">SetPartitionedDataSet</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">halves</span><span class="p">)</span>
+<span class="n">tree</span><span class="o">.</span><span class="n">GetMetaData</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">Set</span><span class="p">(</span><span class="n">dm</span><span class="o">.</span><span class="n">vtkCompositeDataSet</span><span class="o">.</span><span class="n">NAME</span><span class="p">(),</span> <span class="s2">&quot;wavelet&quot;</span><span class="p">)</span>
+
+<span class="n">numbered</span> <span class="o">=</span> <span class="n">GenerateGlobalIds</span><span class="p">()(</span><span class="n">tree</span><span class="p">)</span>          <span class="c1"># the two halves numbered together</span>
+<span class="k">assert</span> <span class="n">numbered</span><span class="o">.</span><span class="n">GetMetaData</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">Get</span><span class="p">(</span><span class="n">dm</span><span class="o">.</span><span class="n">vtkCompositeDataSet</span><span class="o">.</span><span class="n">NAME</span><span class="p">())</span> <span class="o">==</span> <span class="s2">&quot;wavelet&quot;</span>
+
+<span class="n">threshold</span> <span class="o">=</span> <span class="n">Threshold</span><span class="p">(</span><span class="n">lower</span><span class="o">=</span><span class="mf">150.0</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="mf">250.0</span><span class="p">)</span>
+<span class="n">threshold</span><span class="o">.</span><span class="n">SetInputArrayToProcess</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">dm</span><span class="o">.</span><span class="n">vtkDataObject</span><span class="o">.</span><span class="n">FIELD_ASSOCIATION_POINTS</span><span class="p">,</span>
+                                 <span class="s2">&quot;RTData&quot;</span><span class="p">)</span>
+<span class="n">ball</span> <span class="o">=</span> <span class="n">Clip</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="n">dm</span><span class="o">.</span><span class="n">vtkSphere</span><span class="p">(</span><span class="n">center</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">radius</span><span class="o">=</span><span class="mf">6.0</span><span class="p">),</span> <span class="n">inside</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">inside</span> <span class="o">=</span> <span class="p">(</span><span class="n">threshold</span> <span class="o">&gt;&gt;</span> <span class="n">ball</span><span class="p">)(</span><span class="n">tree</span><span class="p">)</span>
+<span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inside</span><span class="p">,</span> <span class="n">dm</span><span class="o">.</span><span class="n">vtkPartitionedDataSetCollection</span><span class="p">)</span>
+</code></pre></div>
 <p>An exception in a filter is VTK's error. It is printed, the output is left
 empty, and the algorithm's <code>error</code> attribute keeps the exception for Python
 callers. <code>error</code> is <code>None</code> after a run that succeeded, so a script checks it
@@ -5488,6 +5538,12 @@ answer needs every piece overrides <code>execute(data)</code> instead. <code>OUT
 the output's VTK type for a dataset input: <code>"vtkUnstructuredGrid"</code> by
 default, or <code>None</code> for the input's own type. A filter of your own
 (<a href="../write-a-filter/">Write a filter</a>) goes into <code>compute</code> the same way.</p>
+<p>To wrap a <code>tack.dataset</code> function as it is, name it instead: <code>FUNCTION =
+"threshold"</code> gives the class a parameter for each of its arguments and a
+<code>compute</code> that calls it. <code>FIELDS</code> names the parameters that are fields, which
+then take <code>("p", "points")</code> and <code>SetInputArrayToProcess</code>, and <code>IMPLICIT</code> the
+ones that take VTK's implicit functions. The built-in algorithms are written
+so.</p>
 <h2 id="read-meshes-with-polyhedra-repeated-points-or-inside-out-cells">Read meshes with polyhedra, repeated points or inside-out cells<a class="headerlink" href="#read-meshes-with-polyhedra-repeated-points-or-inside-out-cells" title="Permanent link">&para;</a></h2>
 <p><code>vtk_to_dataset</code> takes options for meshes as simulation codes write them:</p>
 <table>

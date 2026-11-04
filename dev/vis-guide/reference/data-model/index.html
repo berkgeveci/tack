@@ -6263,6 +6263,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#tack.interop.vtk.algorithms.TackAlgorithm.arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        arguments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tack.interop.vtk.algorithms.TackAlgorithm.execute" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -10221,6 +10232,17 @@
   
     <nav class="md-nav" aria-label="TackAlgorithm">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tack.interop.vtk.algorithms.TackAlgorithm.arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        arguments
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#tack.interop.vtk.algorithms.TackAlgorithm.execute" class="md-nav__link">
@@ -23240,26 +23262,41 @@ from tack.interop.vtk.algorithms import Contour
 reader = vtkXMLUnstructuredGridReader(file_name="mesh.vtu")
 surface = (reader &gt;&gt; Contour(field="pressure", value=0.5))()
 </code></pre>
-<p>Each takes a <code>vtkDataSet</code> or a <code>vtkPartitionedDataSet</code>. Its input becomes a
-Tack dataset sharing VTK's memory (<code>vtk_to_dataset(..., copy=False)</code>), the
-filter runs where that memory is -- on the CPU, or on the GPU holding an input of
-Viskores arrays -- and its result goes back to VTK sharing Tack's
-(<code>dataset_to_vtk(..., copy=False)</code>, a GPU's as Viskores arrays): no array is
-copied either way where its values are stored as Tack keeps them, so a chain of
-these filters on a GPU stays there. One VTK dataset, unchanged, is one Tack
-dataset to every filter that reads it, so what Tack derives from its topology
-(locators, faces, point links) is built once: by several filters on one input, or
-by one run again after a parameter changes. A field filter's output is its
-input's Tack dataset with the new fields, on the same topology.</p>
-<p>A partitioned input runs the filter on each piece and gives a
-<code>vtkPartitionedDataSet</code>; the filters whose answer needs every piece
-(<code>GhostCells</code>, <code>GenerateGlobalIds</code>, <code>MergePieces</code>) take them together.</p>
+<p>Each takes a <code>vtkDataSet</code>, a <code>vtkPartitionedDataSet</code>, or a tree of them: a
+<code>vtkMultiBlockDataSet</code> or a <code>vtkPartitionedDataSetCollection</code>, as readers of
+Exodus, IOSS, CGNS, EnSight and OpenFOAM files give. Its input becomes a Tack
+dataset sharing VTK's memory (<code>vtk_to_dataset(..., copy=False)</code>), the filter runs
+where that memory is -- on the CPU, or on the GPU holding an input of VTK's device
+arrays -- and its result goes back to VTK sharing Tack's (<code>dataset_to_vtk(...,
+copy=False)</code>): no array is copied either way where its values are stored as Tack
+keeps them, so a chain of these filters on a GPU stays there. One VTK dataset,
+unchanged, is one Tack dataset to every filter that reads it, so what Tack derives
+from its topology (locators, faces, point links) is built once: by several filters
+on one input, or by one run again after a parameter changes. A field filter's
+output is its input's Tack dataset with the new fields, on the same topology.</p>
+<p>A partitioned dataset is one Tack <code>PartitionedDataSet</code>: the filter runs on each
+piece and gives a <code>vtkPartitionedDataSet</code>, and the filters whose answer needs
+every piece (<code>GhostCells</code>, <code>GenerateGlobalIds</code>, <code>MergePieces</code>) take them
+together. A tree keeps its structure: the filter runs on each partitioned dataset
+in it (a <code>vtkMultiPieceDataSet</code> block too, whole) and on each dataset that is a
+block of its own, and the output is a tree of the same shape, with the blocks'
+names and a collection's data assembly.</p>
 <p>Filters that make a dataset give a <code>vtkUnstructuredGrid</code> (or keep a structured
 grid's type where the Tack filter does); filters that compute a field (<code>Gradients</code>,
 <code>Elevation</code>, <code>CellQuality</code>) give their input's type, shallow-copied, with the
 new arrays added.</p>
 <p>Parameters are properties, given to the constructor or set later; setting one
-marks the algorithm modified. Field names are given by name (<code>field=</code>).</p>
+marks the algorithm modified. A wrapper has a parameter for every argument of its
+Tack function but the data and what the wrapper supplies itself (the device, a
+locator, the communicator), with the function's defaults. A field is given by
+name (<code>field="p"</code>), or by name and where VTK keeps it, <code>("p", "points")</code> or
+<code>("p", "cells")</code>, for a point and a cell array of one name; or, as VTK filters
+take it, with <code>SetInputArrayToProcess(index, 0, 0, association, name)</code>, the
+wrapper's field parameters numbered in order. Where an implicit function goes
+(<code>Clip</code>'s <code>by</code>), VTK's own (<code>vtkPlane</code>, <code>vtkSphere</code>, <code>vtkBox</code>,
+<code>vtkCylinder</code>, <code>vtkPlanes</code>, <code>vtkImplicitBoolean</code>) work as Tack's: the same
+function, so the same zero set and values; a <code>vtkPlane</code> is normalized, its
+values those of the unit normal.</p>
 <p>An exception in a filter is VTK's error: printed, the output left empty and
 <code>Update()</code> false. It is also kept as the algorithm's <code>error</code> (<code>None</code> after a
 run that succeeded), for Python callers.</p>
@@ -23311,9 +23348,9 @@ with <code>Modified()</code> so the pipeline runs again.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">133</span>
-<span class="normal">134</span>
-<span class="normal">135</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">doc</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">doc</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">default</span> <span class="o">=</span> <span class="n">default</span>
     <span class="bp">self</span><span class="o">.</span><span class="vm">__doc__</span> <span class="o">=</span> <span class="n">doc</span>
 </code></pre></div></td></tr></table></div>
@@ -23358,11 +23395,17 @@ with <code>Modified()</code> so the pipeline runs again.</p>
 
 
 
-        <p>A Tack filter as a VTK algorithm of one input and one output. Subclasses give
-<code>compute(piece)</code>, a Tack dataset from a Tack dataset; <code>execute(data)</code> runs
-it on a dataset or on each piece of a <code>PartitionedDataSet</code>, and a subclass
-whose answer needs every piece overrides it. <code>OUTPUT</code> names the output's
-VTK type for a dataset input (<code>None</code>: the input's own).</p>
+        <p>A Tack filter as a VTK algorithm. <code>FUNCTION</code> names the <code>tack.dataset</code> function
+it runs; the class gets a parameter for each of its arguments but the data and
+what the wrapper supplies (<code>_SUPPLIED</code>, <code>EXCLUDE</code>), with the function's
+defaults, unless the class gives one itself. <code>FIELDS</code> names the parameters
+that are fields, in <code>SetInputArrayToProcess</code>'s order, and <code>IMPLICIT</code> those
+that may be implicit functions.</p>
+<p><code>compute(piece)</code> gives a Tack dataset from a Tack dataset, by default the
+function called with the parameters; <code>execute(data)</code> runs it on a dataset or
+on each piece of a <code>PartitionedDataSet</code>, and a subclass whose answer needs every
+piece overrides it. <code>OUTPUT</code> names the output's VTK type for a dataset input
+(<code>None</code>: the input's own).</p>
 
 
 
@@ -23373,19 +23416,19 @@ VTK type for a dataset input (<code>None</code>: the input's own).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23417,6 +23460,69 @@ VTK type for a dataset input (<code>None</code>: the input's own).</p>
 <div class="doc doc-object doc-function">
 
 
+<h5 id="tack.interop.vtk.algorithms.TackAlgorithm.arguments" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">arguments</span>
+
+
+<a href="#tack.interop.vtk.algorithms.TackAlgorithm.arguments" class="headerlink" title="Permanent link">&para;</a></h5>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">arguments</span><span class="p">()</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The Tack function's keyword arguments from the parameters: fields resolved
+(<code>_field_argument</code>, <code>SetInputArrayToProcess</code>) and VTK's implicit functions
+made Tack's. A required one unset is an error naming it.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">arguments</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The Tack function&#39;s keyword arguments from the parameters: fields resolved</span>
+<span class="sd">    (``_field_argument``, ``SetInputArrayToProcess``) and VTK&#39;s implicit functions</span>
+<span class="sd">    made Tack&#39;s. A required one unset is an error naming it.&quot;&quot;&quot;</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_ARGUMENTS&quot;</span><span class="p">,</span> <span class="p">()):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">FIELDS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_input_array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">FIELDS</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">_field_argument</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;fields&quot;</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="p">[</span><span class="n">_field_argument</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">IMPLICIT</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">_implicit</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_REQUIRED</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> needs </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">values</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">values</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h5 id="tack.interop.vtk.algorithms.TackAlgorithm.execute" class="doc doc-heading">
             <span class="doc doc-object-name doc-function-name">execute</span>
 
@@ -23433,15 +23539,15 @@ on each piece.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">236</span>
-<span class="normal">237</span>
-<span class="normal">238</span>
-<span class="normal">239</span>
-<span class="normal">240</span>
-<span class="normal">241</span>
-<span class="normal">242</span>
-<span class="normal">243</span>
-<span class="normal">244</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">509</span>
+<span class="normal">510</span>
+<span class="normal">511</span>
+<span class="normal">512</span>
+<span class="normal">513</span>
+<span class="normal">514</span>
+<span class="normal">515</span>
+<span class="normal">516</span>
+<span class="normal">517</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The result for a Tack dataset or ``PartitionedDataSet``: ``compute`` on it, or</span>
 <span class="sd">    on each piece.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">PartitionedDataSet</span>
@@ -23483,7 +23589,7 @@ on each piece.</p>
 
 
         <p><code>td.contour</code>: the isosurface (isolines in 2D) of a point field at <code>value</code> (a
-number or a sequence of them).</p>
+number or a sequence of them). VTK's <code>vtkContourFilter</code>.</p>
 
 
 
@@ -23494,19 +23600,19 @@ number or a sequence of them).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23561,7 +23667,8 @@ number or a sequence of them).</p>
 
 
 
-        <p><code>td.slice_plane</code>: the cut by the plane through <code>origin</code> normal to <code>normal</code>.</p>
+        <p><code>td.slice_plane</code>: the cut by the plane through <code>origin</code> normal to <code>normal</code>.
+VTK's <code>vtkCutter</code> with a <code>vtkPlane</code>.</p>
 
 
 
@@ -23572,19 +23679,19 @@ number or a sequence of them).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23639,9 +23746,9 @@ number or a sequence of them).</p>
 
 
 
-        <p><code>td.clip</code>: the part of the cells where <code>by</code> (a point field's name, or a Tack
-implicit function such as <code>td.Plane</code>) is above <code>value</code> (below with
-<code>inside</code>).</p>
+        <p><code>td.clip</code>: the part of the cells where <code>by</code> (a point field, or an implicit
+function: Tack's, such as <code>td.Plane</code>, or VTK's, such as <code>vtkPlane</code>) is above
+<code>value</code> (below with <code>inside</code>). VTK's <code>vtkTableBasedClipDataSet</code>.</p>
 
 
 
@@ -23652,19 +23759,19 @@ implicit function such as <code>td.Plane</code>) is above <code>value</code> (be
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23720,7 +23827,8 @@ implicit function such as <code>td.Plane</code>) is above <code>value</code> (be
 
 
         <p><code>td.threshold</code>: the cells whose <code>field</code> lies in <code>[lower, upper]</code> (a point
-field at all of a cell's points, or any with <code>all_points=False</code>).</p>
+field at all of a cell's points, or any with <code>all_points=False</code>). VTK's
+<code>vtkThreshold</code>.</p>
 
 
 
@@ -23731,19 +23839,19 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23798,7 +23906,8 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
 
 
-        <p><code>td.extract_surface</code>: the boundary faces of the cells, as polygons.</p>
+        <p><code>td.extract_surface</code>: the boundary faces of the cells, as polygons. VTK's
+<code>vtkDataSetSurfaceFilter</code>.</p>
 
 
 
@@ -23809,19 +23918,19 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23876,7 +23985,8 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
 
 
-        <p><code>td.tetrahedralize</code>: every 3D cell as tetrahedra, conforming across faces.</p>
+        <p><code>td.tetrahedralize</code>: every 3D cell as tetrahedra, conforming across faces.
+VTK's <code>vtkDataSetTriangleFilter</code>.</p>
 
 
 
@@ -23887,19 +23997,19 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -23955,7 +24065,8 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
 
         <p><code>td.surface_normals</code>: a surface with <code>normals</code> on its points and
-<code>cell_normals</code> on its cells, its polygons wound consistently.</p>
+<code>cell_normals</code> on its cells, its polygons wound consistently. VTK's
+<code>vtkPolyDataNormals</code>.</p>
 
 
 
@@ -23966,19 +24077,19 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24034,7 +24145,8 @@ field at all of a cell's points, or any with <code>all_points=False</code>).</p>
 
 
         <p><code>td.connected_components</code>: <code>region</code> on the cells and <code>point_region</code> on the
-points, cells connected through shared points.</p>
+points, cells connected through shared points (or, with <code>radius</code>, points
+within it). VTK's <code>vtkConnectivityFilter</code>.</p>
 
 
 
@@ -24045,19 +24157,19 @@ points, cells connected through shared points.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24113,7 +24225,8 @@ points, cells connected through shared points.</p>
 
 
         <p><code>td.streamlines</code>: the paths of <code>seeds</code> (an <code>(n, 3)</code> array) through the
-velocity <code>field</code>, up to <code>steps</code> fixed steps of <code>step_size</code>.</p>
+velocity <code>field</code>, up to <code>steps</code> steps of <code>step_size</code>. VTK's
+<code>vtkStreamTracer</code>.</p>
 
 
 
@@ -24124,19 +24237,19 @@ velocity <code>field</code>, up to <code>steps</code> fixed steps of <code>step_
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24191,11 +24304,13 @@ velocity <code>field</code>, up to <code>steps</code> fixed steps of <code>step_
 
 
 
-        <p><code>td.probe</code>, as <code>vtkProbeFilter</code>: the fields of the source -- the dataset on
+        <p><code>td.probe</code>, as <code>vtkProbeFilter</code>: the fields of the source -- the data on
 input port 1 (<code>SetSourceConnection</code>, <code>SetSourceData</code>) -- at the points of the
 input (port 0), as point data on the input's structure, with <code>valid</code> (0 where
-no source cell holds the point). It runs on the source's device unless
-<code>device</code> says otherwise, the input moved there.</p>
+no source cell holds the point). A partitioned source is probed as a whole, and a
+tree as the partitioned dataset of its blocks; a tree on port 0 keeps its
+structure. It runs on the source's device unless <code>device</code> says otherwise, the
+input moved there.</p>
 
 
 
@@ -24206,19 +24321,19 @@ no source cell holds the point). It runs on the source's device unless
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24274,7 +24389,7 @@ no source cell holds the point). It runs on the source's device unless
 
 
         <p><code>td.gradients</code>: the gradient of <code>field</code> as a new array <code>name</code>, on the
-cells (or the points, <code>at="points"</code>).</p>
+cells (or the points, <code>at="points"</code>). VTK's <code>vtkGradientFilter</code>.</p>
 
 
 
@@ -24285,19 +24400,19 @@ cells (or the points, <code>at="points"</code>).</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24353,7 +24468,7 @@ cells (or the points, <code>at="points"</code>).</p>
 
 
         <p><code>td.point_elevation</code>: each point's place along <code>low_point</code> to <code>high_point</code>,
-scaled to <code>range</code>, as a point array <code>name</code>.</p>
+scaled to <code>range</code>, as a point array <code>name</code>. VTK's <code>vtkElevationFilter</code>.</p>
 
 
 
@@ -24364,19 +24479,19 @@ scaled to <code>range</code>, as a point array <code>name</code>.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24432,7 +24547,7 @@ scaled to <code>range</code>, as a point array <code>name</code>.</p>
 
 
         <p><code>td.cell_quality</code>: each measure (Verdict's, generalized) as a cell array of its
-name.</p>
+name. VTK's <code>vtkMeshQuality</code>.</p>
 
 
 
@@ -24443,19 +24558,19 @@ name.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24511,7 +24626,7 @@ name.</p>
 
 
         <p><code>td.ghost_cells</code>: each piece grown by <code>layers</code> of its neighbours' cells,
-marked <code>DUPLICATECELL</code>.</p>
+marked <code>DUPLICATECELL</code>. VTK's <code>vtkGhostCellsGenerator</code>.</p>
 
 
 
@@ -24522,19 +24637,19 @@ marked <code>DUPLICATECELL</code>.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24590,7 +24705,8 @@ marked <code>DUPLICATECELL</code>.</p>
 
 
         <p><code>td.generate_global_ids</code>: ids of points and cells unique over the pieces, a
-shared point's copies one id (VTK's <code>GlobalPointIds</code> and <code>GlobalCellIds</code>).</p>
+shared point's copies one id (VTK's <code>GlobalPointIds</code> and <code>GlobalCellIds</code>).
+VTK's <code>vtkGenerateGlobalIds</code>.</p>
 
 
 
@@ -24601,19 +24717,19 @@ shared point's copies one id (VTK's <code>GlobalPointIds</code> and <code>Global
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
@@ -24670,7 +24786,7 @@ shared point's copies one id (VTK's <code>GlobalPointIds</code> and <code>Global
 
         <p><code>td.merge_pieces</code>: the pieces as one dataset, shared points once. Pieces of a
 structured grid that tile it give the grid; anything else an unstructured
-grid.</p>
+grid. VTK's <code>vtkMergeBlocks</code>.</p>
 
 
 
@@ -24681,19 +24797,19 @@ grid.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/interop/vtk/algorithms.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">):</span>
     <span class="c1"># The output port says vtkDataObject: RequestDataObject makes the output&#39;s</span>
     <span class="c1"># type from the input&#39;s (a partitioned dataset for pieces), which the</span>
     <span class="c1"># executive would replace if the port named a narrower one.</span>
