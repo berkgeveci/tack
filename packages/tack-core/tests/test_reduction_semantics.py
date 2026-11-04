@@ -266,14 +266,16 @@ def test_native_reduction_cpp_syntax(dialect, op, tmp_path):
     clang = require_clang('cxx')
     # Validate full kernel C++ with declared GPU builtins, without pretending
     # this checks the vendor compiler, GPU barriers or atomic scheduling.
-    preamble = '''#include <stdint.h>
+    preamble = '''#include <cmath>
+#include <stdint.h>
 #define __device__
 #define __global__
-// CUDA's unfusable products, as the generator emits them for a named product.
+// CUDA's unfusable products and its explicit fused multiply-adds, as the
+// generator emits them.
 static inline float __fmul_rn(float a, float b) { return a * b; }
 static inline double __dmul_rn(double a, double b) { return a * b; }
-static inline float __fmaf_rn(float a, float b, float c) { return fmaf(a, b, c); }
-static inline double __fma_rn(double a, double b, double c) { return fma(a, b, c); }
+static inline float __fmaf_rn(float a, float b, float c) { return std::fma(a, b, c); }
+static inline double __fma_rn(double a, double b, double c) { return std::fma(a, b, c); }
 #define __shared__
 struct Dim { unsigned int x; };
 extern Dim threadIdx, blockIdx, blockDim;

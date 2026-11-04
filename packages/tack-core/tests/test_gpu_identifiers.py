@@ -297,14 +297,16 @@ def test_generated_cpp_compiles_and_executes_collisions(generate, named_kernel, 
                        if not line.startswith('#include'))
     entry = kernel_entry_name(function.name)
     source = '''
+#include <cmath>
 #include <cstdio>
 #define __global__
 #define __device__
-// CUDA's unfusable products, as the generator emits them for a named product.
+// CUDA's unfusable products and its explicit fused multiply-adds, as the
+// generator emits them.
 static inline float __fmul_rn(float a, float b) { return a * b; }
 static inline double __dmul_rn(double a, double b) { return a * b; }
-static inline float __fmaf_rn(float a, float b, float c) { return fmaf(a, b, c); }
-static inline double __fma_rn(double a, double b, double c) { return fma(a, b, c); }
+static inline float __fmaf_rn(float a, float b, float c) { return std::fma(a, b, c); }
+static inline double __fma_rn(double a, double b, double c) { return std::fma(a, b, c); }
 struct Grid { unsigned int x; };
 Grid blockIdx = {0}, blockDim = {1}, threadIdx = {0};
 ''' + source + f'''

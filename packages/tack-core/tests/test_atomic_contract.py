@@ -282,13 +282,15 @@ def test_cuda_hip_wide_atomic_syntax(arch, generator, dtype, op, tmp_path):
     clang = require_clang('cxx')
     func, _ = _typed_ir(dtype, op)
     body = generator(func).replace('#include <hip/hip_runtime.h>\n', '')
-    preamble = '''#define __device__
+    preamble = '''#include <cmath>
+#define __device__
 #define __global__
-// CUDA's unfusable products, as the generator emits them for a named product.
+// CUDA's unfusable products and its explicit fused multiply-adds, as the
+// generator emits them.
 static inline float __fmul_rn(float a, float b) { return a * b; }
 static inline double __dmul_rn(double a, double b) { return a * b; }
-static inline float __fmaf_rn(float a, float b, float c) { return fmaf(a, b, c); }
-static inline double __fma_rn(double a, double b, double c) { return fma(a, b, c); }
+static inline float __fmaf_rn(float a, float b, float c) { return std::fma(a, b, c); }
+static inline double __fma_rn(double a, double b, double c) { return std::fma(a, b, c); }
 struct Dim { unsigned int x; };
 extern Dim threadIdx, blockIdx, blockDim;
 unsigned long long atomicCAS(unsigned long long*, unsigned long long, unsigned long long);
