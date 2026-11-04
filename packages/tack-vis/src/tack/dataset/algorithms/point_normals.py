@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``point_normals``: each point's normal from the principal axes of its neighbourhood -- the direction of least spread of its k nearest points, or of those within a radius -- as VTK's vtkPCANormalEstimation and PDAL's ``filters.normal``."""
 
 import numpy as np

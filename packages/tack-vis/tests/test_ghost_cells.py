@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Ghost cells generated for unstructured pieces, and refreshing their values.
 
 ``ghost_cells`` is checked entity by entity, by position, against the ghost

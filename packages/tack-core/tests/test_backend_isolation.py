@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU backends must not depend on the CPU backend.
 
 ``tack.runtime.cpu`` imports llvmlite at module scope, and llvmlite is a

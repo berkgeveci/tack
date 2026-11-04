@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``as_polyhedra``: a shape-based dataset as a polyhedral one, every cell a polyhedron."""
 
 import tack

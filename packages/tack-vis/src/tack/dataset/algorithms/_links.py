@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Averaging over each point's cells, through the point links: ``gradients(at="points")``,
 ``to_points`` and ``surface_normals``.
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``jump``: a field's difference across each face at the face's center, side 1 minus side 0 (zero on the boundary): a field on faces. Each side is the field as its own cell's basis has it at the face's center, so a DG field's jumps are its own, of any order, not its cells' averages; a continuous field's are zero. Cell data (``Constant``, values on cells) is read from each side's cell directly, on any topology, polyhedral included."""
 
 import tack

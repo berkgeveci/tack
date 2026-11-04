@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Pieces: each kind of cell in eight pieces, one an octant of the cube, each given a
 layer of its neighbours' cells as ghosts, and drawn pulled apart: a piece's own
 cells in its color, its ghost cells faint.

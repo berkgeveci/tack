@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack's disk cache of compiled kernels.
 
 A kernel's first call compiles it, and most of that time is Tack's own

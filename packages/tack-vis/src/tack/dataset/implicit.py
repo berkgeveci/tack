@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Implicit functions: regions of space by the sign of a function.
 
 ``value(p)`` is negative inside, zero on the surface and positive outside,

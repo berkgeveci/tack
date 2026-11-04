@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Datasets: a topology, a geometry, fields on spaces, and sets.
 
 As ``docs/vis-guide/design/dataset-api.md`` §3 describes them:

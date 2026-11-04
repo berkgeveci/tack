@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``surface_normals``: a surface's polygons wound alike and its normals at points and
 cells, held to VTK's vtkPolyDataNormals (without splitting)."""
 

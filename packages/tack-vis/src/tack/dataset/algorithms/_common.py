@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Small helpers every algorithm shares: fields by name or object, new
 fields of values, compaction of 0/1 flags into ids, closing offsets."""
 

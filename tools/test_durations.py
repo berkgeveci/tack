@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Write the test files' durations the root conftest's ``--shard`` balances by.
 
 Reads pytest's ``--durations=0`` report on stdin and writes ``test-durations.json``

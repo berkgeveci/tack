@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """40 -- GPU-accelerated statistics and analysis.
 
 Demonstrates tack.algorithms statistics functions that run entirely

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``glyphs``: an arrow at each point along a vector field, VTK's vtkGlyph3D with its
 arrow source."""
 

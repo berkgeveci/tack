@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``for c in obj``: a device-class object supplies the loop's iteration space.
 
 The class declares ``__tack_iterate__``, one to three of its scalar

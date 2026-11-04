@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Arrays: values apart from how they are stored -- stored, or computed from the index.
 
 An array is a Tack array (``tack.empty``, ``tack.array``), stored

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compare generic deepcopy with specialized cloning on dataset filters' IR.
 
     uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Probing an AMR hierarchy (at the finest level holding each point; onto an image,
 a resampling as VTK's ``vtkAMRResampleFilter``), the boxes on two devices, and the
 hierarchy over 2 and 3 MPI ranks (``_amr_mpi.py``). Apart from ``test_amr.py``

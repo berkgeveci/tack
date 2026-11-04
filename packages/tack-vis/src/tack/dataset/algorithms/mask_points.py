@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``mask_points``: every ``stride``-th point (0, stride, 2 * stride, ...) as vertex cells, as Viskores' ``MaskPoints``."""
 
 import tack

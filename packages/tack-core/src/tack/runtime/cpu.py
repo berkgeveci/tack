@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack CPU backend — JIT compiles kernels via llvmlite and runs with thread pool.
 
 The kernel function signature is:

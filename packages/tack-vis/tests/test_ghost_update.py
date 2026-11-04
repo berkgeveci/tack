@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Refreshing ghost values from their owners with a `tack.communication.Plan`.
 
 A filter that needs a point's neighbours is right on a piece's owned points

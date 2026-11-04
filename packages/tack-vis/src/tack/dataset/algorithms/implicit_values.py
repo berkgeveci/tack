@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``implicit_values``: an implicit function (``tack.dataset.implicit``) at the geometry's values: a field in the geometry's space, negative inside the function's region. On an ``H1`` geometry that is one value per point."""
 
 import tack

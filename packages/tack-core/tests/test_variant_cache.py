@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compiled variants must be keyed on everything baked into the code.
 
 The IR pass pipeline substitutes dispatch-time constants into the IR — a

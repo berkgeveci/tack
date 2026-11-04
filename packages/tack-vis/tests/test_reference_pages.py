@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The visualization guide's reference pages name everything ``tack.dataset`` exports.
 
 ``docs/vis-guide/reference/algorithms.md`` renders each algorithm's docstring

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """02 -- Math builtins available inside kernels.
 
 Tack kernels have access to standard math functions without any imports.

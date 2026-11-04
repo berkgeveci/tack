@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Polyhedral topologies: every cell a list of faces, every face a polygon stored once.
 
 ``docs/vis-guide/design/polyhedra.md``, phase 1. A ``PolyhedralTopology`` holds

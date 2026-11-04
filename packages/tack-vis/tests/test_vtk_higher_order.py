@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """VTK's tests of its higher-order unstructured cells, through Tack: the Lagrange,
 quadratic, biquadratic, triquadratic and cubic cells of VTK's test data, and one
 cell of each type as VTK's quadratic-cell tests build them, read by

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Structural children of Tack IR, independent of pass annotations.
 
 Add new node kinds here when extending the IR. Unknown nodes fail loudly;

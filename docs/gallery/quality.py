@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Cell quality: each cell's scaled Jacobian (1 ideal, 0 degenerate, negative
 inverted), on meshes with their inner points jittered and on curved cells, the
 cells near a corner taken out so the inside shows.

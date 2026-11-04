@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Per-face computations shared by ``jump``, ``upwind_flux``, ``divergence``
 and ``perot``."""
 

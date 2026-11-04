@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Structural passes must reach every child, including less common nodes."""
 
 from types import SimpleNamespace

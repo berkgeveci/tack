@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """21 -- VTK-style array abstraction with compile-time dispatch.
 
 Demonstrates using @tack.device_class templates to build a generic

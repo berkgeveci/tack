@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Arrays between Tack and NVIDIA Warp (`tack.interop.warp`), without copies.
 
 On Warp's default device, CUDA or CPU: element types map both ways, the

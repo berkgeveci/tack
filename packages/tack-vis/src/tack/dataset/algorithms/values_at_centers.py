@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``values_at_centers``: ``field`` evaluated at each cell's parametric center, through its basis, or on a cell with no reference element at the mean of its points."""
 
 import tack

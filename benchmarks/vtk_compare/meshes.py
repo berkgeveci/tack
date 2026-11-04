@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Meshes for the VTK comparison, built once with NumPy and handed to both sides.
 
 A mesh is points and cells of one linear shape (hexahedra or tetrahedra),

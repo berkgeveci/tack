@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tubes`` and ``glyphs``: geometry made to be drawn, VTK's vtkTubeFilter and
 vtkGlyph3D with its arrow source, with the input's fields carried."""
 

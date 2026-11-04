@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tack.random``: a counter-based generator with explicit state, mirrored in NumPy."""
 
 import numpy as np

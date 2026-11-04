@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``as_polygons``: a shape-based dataset of 2D cells -- triangles, quads, pixels -- as a polygonal one: each cell's points in order become its loop. Fields carry as ``as_polyhedra``'s do, but values on faces and edges, whose numbering the polygonal topology derives afresh, are dropped."""
 
 import tack

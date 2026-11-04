@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Streamlines: paths through a swirl from seeds across the cube, as tubes colored
 by the time taken, on each kind of cell, over the cells' outline.
 

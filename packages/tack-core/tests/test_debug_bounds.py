@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Debug mode: every array index is checked, one dimension at a time.
 
 With ``tack.set_debug(True)`` an out-of-bounds access is skipped (a load

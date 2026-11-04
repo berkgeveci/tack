@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_reductions_across_ranks``' check under MPI: ``mpiexec -n 4 python
 _reductions_mpi.py 6`` (the number of pieces). Every rank must get exactly what
 one process gets; rank 0 prints ``ok`` or fails."""

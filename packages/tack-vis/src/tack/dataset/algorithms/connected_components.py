@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``connected_components``: which cells are connected through shared points, as VTK's
 vtkConnectivityFilter and Viskores' CellSetConnectivity: the dataset with a
 ``region`` field on its cells and points."""

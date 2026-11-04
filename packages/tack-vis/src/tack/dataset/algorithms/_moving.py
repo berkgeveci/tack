@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Moving a dataset's geometry, behind ``warp``, ``transform``,
 ``cylindrical`` and ``spherical``."""
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``@tack.device_class``: a class whose objects kernels can take and specialize on.
 
 An object of a device class is passed to a ``@tack.kernel`` like any

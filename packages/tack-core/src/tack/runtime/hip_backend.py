@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack HIP backend — compiles kernels via hipRTC and dispatches on AMD GPUs.
 
 Pipeline:

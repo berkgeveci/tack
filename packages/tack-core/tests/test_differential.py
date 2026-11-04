@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Compare compiled kernels with the same source executed serially by Python.
 
 Inputs stay in bounds and within exact i32 arithmetic. Every parallel

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """03 -- Scalar arguments: pass Python numbers directly to kernels.
 
 Kernels can accept plain Python int/float values alongside arrays.

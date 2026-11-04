@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """A Griffe extension that puts tack-vis's subpackages (``tack.dataset``,
 ``tack.interop``) under tack-core's ``tack``, as ``pkgutil.extend_path``
 does at run time.

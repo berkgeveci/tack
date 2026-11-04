@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack MSL code generation — transforms Tack IR to Metal Shading Language source.
 
 Generates a ``kernel void`` compute function where:

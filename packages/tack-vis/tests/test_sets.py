@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Sets (``tack.dataset.Set``): named selections of points, cells, faces or edges.
 Made and checked, iterated over (cell, face and edge sets), and carried through
 filters by the same maps as fields."""

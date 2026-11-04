@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Every field view's nodes: ``NODES`` per cell, ``node_parametric(k)`` and
 ``dof_index(c, k)``, numbered as ``dof(c, k)``, on every shape, space, order and
 basis. Checked against ``td.interpolate``, which places each space's values at its

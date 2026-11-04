@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Physical units (phase U0 of the vault's units proposal): units on fields, the
 spatial unit on the geometry, kept by every filter that keeps a quantity,
 unknown (``None``) from the rest, mismatched spatial units refused, ``convert``

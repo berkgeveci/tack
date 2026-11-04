@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for automatic scalar parameter packing into constant buffers.
 
 GPU backends pack scalar params into typed array buffers to reduce buffer

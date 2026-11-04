@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tack Level Zero backend — compiles kernels via ocloc and dispatches on Intel GPUs.
 
 Pipeline:

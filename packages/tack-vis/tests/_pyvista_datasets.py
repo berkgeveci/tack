@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """PyVista's example datasets (``pyvista.examples.downloads``), read with VTK alone.
 
 The files are those of the ``pyvista/vtk-data`` repository, in its layout (a

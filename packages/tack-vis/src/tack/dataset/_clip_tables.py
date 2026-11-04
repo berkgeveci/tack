@@ -1,8 +1,11 @@
-"""Clip case tables, generated from Viskores' ClipTables.h
-(viskores/filter/contour/worklet/clip, Viskores 1.1.9999, ab6b17965) by
-packages/tack-vis/tools/make_clip_tables.py; do not edit. Copyright (c) Kitware, Inc.; covered by the Viskores license
-(BSD-3-Clause; https://github.com/Viskores/viskores/blob/main/LICENSE.txt).
-The tables descend from VisIt's.
+# SPDX-FileCopyrightText: Copyright (c) 2000 - 2009, Lawrence Livermore National Security, LLC
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Clip case tables: VisIt's (Jeremy Meredith, LLNL, 2003), as VTK keeps them in
+vtkTableBasedClipCases.h and Viskores copied them into ClipTables.h. Generated
+from Viskores' (viskores/filter/contour/worklet/clip, Viskores 1.1.9999,
+ab6b17965) by packages/tack-vis/tools/make_clip_tables.py; do not edit.
 
 Per shape (VTK cell type id): ``EDGES[shape]``, the corners of each local edge
 (E00, E01, ...), flattened; ``CASES[invert][shape]``, for each case (bit k set

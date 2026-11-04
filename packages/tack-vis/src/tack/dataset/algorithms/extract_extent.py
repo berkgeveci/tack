@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``extract_extent``: a box of a structured grid's points, every ``rate``-th, as a structured grid of the same kind -- VTK's vtkExtractGrid (VOI)."""
 
 import numpy as np

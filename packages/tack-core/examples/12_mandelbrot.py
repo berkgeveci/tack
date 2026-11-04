@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """12 -- Mandelbrot set fractal.
 
 Classic GPU compute example: compute the Mandelbrot set on a 2D grid.

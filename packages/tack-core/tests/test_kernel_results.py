@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Kernels that end in ``return expr``: the value is computed after the launch."""
 
 import numpy as np

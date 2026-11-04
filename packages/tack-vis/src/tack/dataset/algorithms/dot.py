@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``dot``: ``a . b`` at every value of two vector fields of one width and space."""
 
 import tack

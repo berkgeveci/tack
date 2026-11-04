@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """31 -- Zero-copy buffer interop between Tack and Dawn.
 
 Demonstrates sharing GPU memory between Tack (compute) and Dawn

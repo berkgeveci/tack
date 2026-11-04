@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``convert``: a field, or a dataset's field or geometry, in another unit."""
 
 import numpy as np

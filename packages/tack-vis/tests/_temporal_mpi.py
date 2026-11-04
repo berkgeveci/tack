@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``test_temporal``'s check under MPI: ``mpiexec -n 2 python _temporal_mpi.py``. The
 steps' pieces are shared out over the ranks, each rank advects its own seeds
 through them (each point probed on the rank whose cells hold it), and its

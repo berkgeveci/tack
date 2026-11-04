@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Arrays and datasets between Tack and NVIDIA Warp, without copies where they agree.
 
 With the Warp device (``tack.device("warp")``) a Tack array's memory is a

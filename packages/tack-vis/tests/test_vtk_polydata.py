@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``vtk_to_dataset`` of a ``vtkPolyData``: VTK's surfaces, lines and points, as the
 unstructured grid of their cells -- the shapes of each kind, strips as their
 triangles with their cell data, attributes carried as a grid's are."""

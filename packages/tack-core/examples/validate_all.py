@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Validation suite -- runs Taichi-style examples on every backend this machine has.
 
 Tests:

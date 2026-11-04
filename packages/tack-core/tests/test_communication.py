@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Communication between blocks: exchange, the collectives, links and plans.
 
 Blocks are put on a simulated second device -- a CPU backend whose memory

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Bernstein spaces' coefficients from values at nodes, and back.
 
 A Bernstein space's values are coefficients, not values at nodes, so what fills a

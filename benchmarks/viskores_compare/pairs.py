@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """The filter pairs: a Viskores filter, reached through VTK, and the Tack call that
 does the same work.
 

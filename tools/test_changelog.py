@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-License-Identifier: BSD-3-Clause
+
 """``tools/changelog.py``: entry files parse, gather and land in the CHANGELOG."""
 
 import subprocess
