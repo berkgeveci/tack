@@ -1362,8 +1362,11 @@ The rules are Viskores':
 
 - a step is taken whole when every stage of it lies in the mesh;
 - a step that would leave the mesh is bisected to the boundary, and the
-  particle is then pushed out by the step still left, ending just outside
-  with `SPATIAL_BOUNDS`;
+  particle is then pushed just outside by an Euler step from the last point
+  inside (the bisection's bracket, grown until the locator finds no cell
+  there, at most the way to the boundary again), ending with
+  `SPATIAL_BOUNDS`; its time and path length count the way it went.
+  Viskores pushes by the way to the boundary again, counting it once;
 - a particle stops after `steps` steps, outside the mesh, or at zero
   velocity;
 - a seed outside the mesh does not move and loses `SUCCESS`.

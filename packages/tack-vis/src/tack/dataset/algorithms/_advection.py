@@ -153,6 +153,8 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
         w5 = w1
         curr = x
         out = x
+        push = h - h              # the push out's length past curr
+        wc = h - h                # the time a unit of length takes at curr
         mode = _STEP
         stage = 0
         sub = hc
@@ -378,19 +380,33 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     r1 = sub
                 bisect = 1
             elif mode == _LAST:
+                # The push out: an Euler step from curr, the last point inside, by
+                # the bisection's bracket, so the particle lands just outside, r1
+                # from where it was (Viskores' SmallStep pushes from curr by r1,
+                # twice the way to the boundary, counting it once: between
+                # pieces a path went on from there, past max_length, or out of
+                # the mesh across a thin layer). A bracket too small to leave
+                # the tolerance or a position's last bit grows fourfold, to r1.
                 vel = v
-                out = curr + r1 * vel
-                if by_length == 1:
-                    t += r1 * w
-                else:
-                    t += r1
+                wc = w
+                push = r1 - r0
+                if push <= 0.0:
+                    push = r1
+                out = curr + push * vel
                 mode = _OUT
+            elif mode == _OUT and found == 1 and push < r1:
+                push = min(4.0 * push, r1)
+                out = curr + push * vel
             else:
-                # Where the push out ends: the step is taken, in or out.
+                # Where the push out ends: the step is taken, in or out, r0 + push
+                # along the way.
                 if by_length == 1:
-                    gone += r1
+                    t += (r0 + push) * wc
+                    gone += r0 + push
                 else:
+                    t += r0 + push
                     gone += (out - x).norm()
+                start = x
                 x = out
                 n += 1
                 here += 1
@@ -401,7 +417,7 @@ def _advect(mesh, velocity, h, max_steps, method, by_length, eps, xs, times, ste
                     length += 1
                 if found == 0:
                     st = st | SPATIAL_BOUNDS
-                elif method == _RK45 and (out - x).norm() < min_step * (
+                elif method == _RK45 and (x - start).norm() < min_step * (
                         1.0 if by_length == 1 else vel.norm()):
                     # Moved less than RK45's shortest step: at a wall the flow
                     # turns back from, a stage point swings out of the mesh at

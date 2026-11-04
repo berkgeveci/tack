@@ -119,7 +119,12 @@ def test_pieces_with_a_ghost_layer_give_the_wholes_particles(make):
         assert n == whole.fields["steps"].values.numpy()[q]
         assert status == whole.fields["status"].values.numpy()[q]
         np.testing.assert_allclose(x, whole.positions()[q], atol=1e-5)
-        assert t == pytest.approx(float(whole.fields["time"].values.numpy()[q]), rel=1e-5)
+        # A particle that left the domain was pushed just past its edge, as far as
+        # its dataset's locator says it is out: the tolerance follows the
+        # dataset's extent, so a piece's push and the whole's differ by about it.
+        left = status & ParticleStatus.SPATIAL_BOUNDS
+        assert t == pytest.approx(float(whole.fields["time"].values.numpy()[q]),
+                                  rel=1e-5, abs=1e-5 if left else 0.0)
     assert got[4][2] == ParticleStatus.SPATIAL_BOUNDS              # seeded outside
     assert got[2][2] & ParticleStatus.SPATIAL_BOUNDS              # left through the top
     assert got[2][1] < 200
