@@ -11861,9 +11861,15 @@ unknown, an angle and lengths being no one unit. Fields come along.</p>
 divergence theorem over its faces -- polyhedral or of a shape -- with faces
 taken as fans from their points' means, so a cell with non-planar faces is
 measured as that polyhedron (a hexahedron with warped faces is not quite its
-trilinear volume); its faces must be wound out of it. A 2D cell's area --
-triangle, quad, pixel or polygon -- along its own normal (Newell's), from
-its edges going round it. A line's or a polyline's length, and the
+trilinear volume); its faces must be wound out of it. A quad's area is its
+bilinear patch's, by 4 x 4 Gauss points (within rounding unless it is
+twisted far out of plane), as <code>integrate</code> integrates over it. A triangle's,
+pixel's or polygon's is the fan of triangles from its points' mean, Tack's
+model of a polygon, each triangle's own area. Both are signed by the cell's
+Newell normal, so a planar cell that is not convex measures its own area,
+and a non-planar one is not measured as its projection onto that normal
+(which measured a contour's wrinkled free surface 1% small; VTK measures a
+quad so). A line's or a polyline's length, and the
 centroid of its segments; a vertex's point, with measure 0.</p>
 <p>On a curved geometry (<code>H1</code> above order 1, or an <code>L2</code> one of order 2 or
 more) each cell is measured as it is, by quadrature through its own map
@@ -11873,57 +11879,74 @@ those weigh. (A curved cell was measured by its corners.)</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/cell_geometry.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">151</span>
-<span class="normal">152</span>
-<span class="normal">153</span>
-<span class="normal">154</span>
-<span class="normal">155</span>
-<span class="normal">156</span>
-<span class="normal">157</span>
-<span class="normal">158</span>
-<span class="normal">159</span>
-<span class="normal">160</span>
-<span class="normal">161</span>
-<span class="normal">162</span>
-<span class="normal">163</span>
-<span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span>
-<span class="normal">181</span>
-<span class="normal">182</span>
-<span class="normal">183</span>
-<span class="normal">184</span>
-<span class="normal">185</span>
-<span class="normal">186</span>
-<span class="normal">187</span>
-<span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span>
+<span class="normal">207</span>
+<span class="normal">208</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_geometry</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell&#39;s volume, by the</span>
 <span class="sd">    divergence theorem over its faces -- polyhedral or of a shape -- with faces</span>
 <span class="sd">    taken as fans from their points&#39; means, so a cell with non-planar faces is</span>
 <span class="sd">    measured as that polyhedron (a hexahedron with warped faces is not quite its</span>
-<span class="sd">    trilinear volume); its faces must be wound out of it. A 2D cell&#39;s area --</span>
-<span class="sd">    triangle, quad, pixel or polygon -- along its own normal (Newell&#39;s), from</span>
-<span class="sd">    its edges going round it. A line&#39;s or a polyline&#39;s length, and the</span>
+<span class="sd">    trilinear volume); its faces must be wound out of it. A quad&#39;s area is its</span>
+<span class="sd">    bilinear patch&#39;s, by 4 x 4 Gauss points (within rounding unless it is</span>
+<span class="sd">    twisted far out of plane), as ``integrate`` integrates over it. A triangle&#39;s,</span>
+<span class="sd">    pixel&#39;s or polygon&#39;s is the fan of triangles from its points&#39; mean, Tack&#39;s</span>
+<span class="sd">    model of a polygon, each triangle&#39;s own area. Both are signed by the cell&#39;s</span>
+<span class="sd">    Newell normal, so a planar cell that is not convex measures its own area,</span>
+<span class="sd">    and a non-planar one is not measured as its projection onto that normal</span>
+<span class="sd">    (which measured a contour&#39;s wrinkled free surface 1% small; VTK measures a</span>
+<span class="sd">    quad so). A line&#39;s or a polyline&#39;s length, and the</span>
 <span class="sd">    centroid of its segments; a vertex&#39;s point, with measure 0.</span>
 
 <span class="sd">    On a curved geometry (``H1`` above order 1, or an ``L2`` one of order 2 or</span>
@@ -11945,6 +11968,11 @@ those weigh. (A curved cell was measured by its corners.)</p>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
             <span class="n">_cell_geometry</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">volumes</span><span class="p">,</span> <span class="n">centroids</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span> <span class="ow">is</span> <span class="n">shapes</span><span class="o">.</span><span class="n">Quad</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.integrate</span><span class="w"> </span><span class="kn">import</span> <span class="n">_QUAD_POINTS</span><span class="p">,</span> <span class="n">_tables</span>
+
+            <span class="n">_quad_geometry</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span>
+                           <span class="o">*</span><span class="n">_tables</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">shapes</span><span class="o">.</span><span class="n">Quad</span><span class="p">,</span> <span class="n">_QUAD_POINTS</span><span class="p">),</span> <span class="n">volumes</span><span class="p">,</span> <span class="n">centroids</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">&lt;</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="ow">and</span> \
                 <span class="n">group</span><span class="o">.</span><span class="n">shape</span> <span class="ow">in</span> <span class="n">_ROUND</span><span class="p">:</span>
             <span class="n">_corner_polygon_geometry</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span>
@@ -14811,26 +14839,7 @@ the pieces' order.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/integrate.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">330</span>
-<span class="normal">331</span>
-<span class="normal">332</span>
-<span class="normal">333</span>
-<span class="normal">334</span>
-<span class="normal">335</span>
-<span class="normal">336</span>
-<span class="normal">337</span>
-<span class="normal">338</span>
-<span class="normal">339</span>
-<span class="normal">340</span>
-<span class="normal">341</span>
-<span class="normal">342</span>
-<span class="normal">343</span>
-<span class="normal">344</span>
-<span class="normal">345</span>
-<span class="normal">346</span>
-<span class="normal">347</span>
-<span class="normal">348</span>
-<span class="normal">349</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">349</span>
 <span class="normal">350</span>
 <span class="normal">351</span>
 <span class="normal">352</span>
@@ -14851,7 +14860,26 @@ the pieces' order.</p>
 <span class="normal">367</span>
 <span class="normal">368</span>
 <span class="normal">369</span>
-<span class="normal">370</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The measure of ``data`` -- its cells&#39; total volume, area or length -- and the</span>
 <span class="sd">    integral over it of each of ``fields`` (names; by default every field with a</span>
