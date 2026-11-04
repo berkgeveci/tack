@@ -848,7 +848,7 @@ class DataSet:
                 raise TypeError(f"ghost marks are a tack.dataset.ghosts.Ghosts, not "
                                 f"{type(ghosts).__name__}")
             ghosts._check(self.topology)
-            self._ghosts_lost = False
+        self._ghosts_lost = False           # marks set, or none: nothing lost
         self._ghosts = ghosts
 
     @property
