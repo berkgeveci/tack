@@ -36,7 +36,8 @@ def values_at_centers(data, field):
     elif isinstance(field.space, H1) and field.space.order == 1:
         from tack.dataset.algorithms.project import _distinct_point_means
 
-        for_each(_distinct_point_means, data, "cells", materialize(field.values), out)
+        for_each(_distinct_point_means, data, "cells", materialize(field.values), out,
+                 float("nan"))
     elif isinstance(field.space, Constant):
         tack.copyto(out, materialize(field.values))
     else:

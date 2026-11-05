@@ -525,6 +525,50 @@ def carry_marks(source, out, points=None, cells=None, faces_to_cells=None,
 # ── Hidden cells ────────────────────────────────────────────────────
 
 @tack.kernel
+def _hide_by_points(cells, point_marks, cell_marks):
+    # HIDDENCELL on each cell with a HIDDENPOINT corner.
+    for c in cells:
+        hidden = 0
+        for j in range(cells.NUM_POINTS):
+            if (point_marks[cells.point_id(c, j)] & 2) != 0:
+                hidden = 1
+        if hidden == 1:
+            e = cells.entity_id(c)
+            cell_marks[e] = cell_marks[e] | 32
+
+
+@tack.kernel
+def _hide_rows_by_points(offsets, members, point_marks, cell_marks):
+    for c in range(cell_marks.shape[0]):
+        for k in range(offsets[c], offsets[c + 1]):
+            if (point_marks[members[k]] & 2) != 0:
+                cell_marks[c] = cell_marks[c] | 32
+
+
+def hidden_by_points(topology, ghosts):
+    """``ghosts`` with ``HIDDENCELL`` on every cell of ``topology`` that has a
+    ``HIDDENPOINT`` corner: VTK's visibility, where a cell is visible only if it and
+    all its points are (a structured grid blanked by points, a uniform grid's
+    point blanking). ``ghosts`` itself where no point is hidden."""
+    if ghosts is None or not _has(ghosts.points, Ghosts.HIDDENPOINT):
+        return ghosts
+    marks = tack.empty((topology.num_cells,), tack.u8)
+    if ghosts.cells is not None:
+        tack.copyto(marks, ghosts.cells)
+    else:
+        marks.fill(0)
+    if not getattr(topology, "reference_cells", True):
+        offsets, members = _rows(topology)
+        if topology.num_cells:
+            _hide_rows_by_points(offsets, members, ghosts.points, marks)
+    else:
+        for group in topology.groups():
+            if group.count:
+                _hide_by_points(group.view(), ghosts.points, marks)
+    return Ghosts(cells=marks, points=ghosts.points)
+
+
+@tack.kernel
 def _clear_marked(marks, bits, keep, out):
     for c in range(out.shape[0]):
         out[c] = keep[c] if (marks[c] & bits) == 0 else 0

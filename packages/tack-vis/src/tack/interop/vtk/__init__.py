@@ -1627,6 +1627,11 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
     cells, points = (_ghost_marks(cell_data, share, device),
                      _ghost_marks(point_data, share, device))
     ghosts = None if cells is None and points is None else Ghosts(cells=cells, points=points)
+    # VTK hides a cell with a hidden point (a grid blanked by points): so do Tack's
+    # filters, which leave out hidden cells.
+    from tack.dataset.ghosts import hidden_by_points
+
+    ghosts = hidden_by_points(topology, ghosts)
     cells, points = (_global_ids(cell_data, share, device),
                      _global_ids(point_data, share, device))
     global_ids = None if cells is None and points is None else GlobalIds(cells=cells,

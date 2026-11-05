@@ -432,3 +432,20 @@ def test_average_is_for_one_value_a_cell(backend):
         td.project(data, "f", td.Constant(data), average="corners")
     with pytest.raises(ValueError, match="one value"):
         td.project(data, "f", td.H1(data, order=2), average="nodes")
+
+
+def test_an_empty_polygon_projects_to_nan():
+    """A polygon of no points (VTK allows one) has no value: NaN, by either average,
+    where the mean over its points divided by zero and read past the cell."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], np.float32)
+    topology = td.PolygonalTopology(tack.array(np.array([0, 0, 4], np.int64)),
+                                    tack.array(np.arange(4, dtype=np.int64)), num_points=4)
+    data = td.DataSet(topology, points)
+    data.fields["s"] = td.Field(td.H1(data), tack.array(np.array([1, 2, 3, 4], np.float32)))
+    data.fields["v"] = td.Field(td.H1(data), tack.array(np.tile([1.0, 2.0, 3.0], (4, 1))
+                                                        .astype(np.float32), tack.vec3()))
+    for average in ("nodes", "integral"):
+        s = td.project(data, "s", td.Constant(data), average=average).values.numpy()
+        v = td.project(data, "v", td.Constant(data), average=average).values.numpy()
+        assert np.isnan(s[0]) and s[1] == pytest.approx(2.5)
+        assert np.isnan(v[0]).all() and v[1].tolist() == [1.0, 2.0, 3.0]
