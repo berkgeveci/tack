@@ -2956,6 +2956,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#in-a-vtk-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In a VTK pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#details" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5050,6 +5061,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#in-a-vtk-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In a VTK pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#details" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5477,8 +5499,59 @@ state, so every step must bring the same pieces, and the output is pieces
 too. Over MPI ranks each rank feeds its own pieces. The statistics and
 derivatives need nothing from other ranks. <code>Advection</code> over pieces probes
 each point on the rank whose cells hold it, so particles stay on the rank
-that released them. <a href="../over-pieces/">Filters over pieces</a> explains pieces
-and ranks.</p>
+that released them. Every rank takes part in each probe, so a rank may hold
+no seeds at all. <a href="../over-pieces/">Filters over pieces</a> explains pieces and
+ranks.</p>
+<h2 id="in-a-vtk-pipeline">In a VTK pipeline<a class="headerlink" href="#in-a-vtk-pipeline" title="Permanent link">&para;</a></h2>
+<p><code>tack.interop.vtk.algorithms</code> has each of these filters as a VTK algorithm:
+<code>RunningStatistics</code>, <code>TimeDerivative</code>, <code>Advection</code>, <code>Pathlines</code> and
+<code>Streaklines</code>. Each works in one of two modes.</p>
+<ul>
+<li><strong>In situ</strong>, the filter cannot drive the pipeline. Each execution takes the
+  step its input holds and gives the output at that step, stamped with its
+  time: the statistics or the paths up to that step, the particles at it. An
+  execution at the time of the step it took last gives the same output again
+  without taking the step twice. A step back in time, a changed parameter, or
+  VTK's reset signal starts the filter over.</li>
+<li><strong>Driving</strong>, the filter asks its input for the steps it needs, one per pass,
+  and never asks again for a step it has taken. <code>RunningStatistics</code>,
+  <code>Advection</code> and <code>Pathlines</code> take every step (or those in <code>time_range</code>) and
+  give one output after the last, with no time on it. The time is in the
+  data: the paths' <code>time</code> on their points, and for <code>Advection</code> the particles
+  at every step in one cloud, with <code>step</code> and <code>time</code> on the points.
+  <code>Streaklines</code> and <code>TimeDerivative</code> give their answer at the time requested
+  of them, stamped with it. They go on from the steps they have taken, and a
+  request for an earlier time starts them over.</li>
+</ul>
+<p>A filter drives where its input has time steps, unless VTK's
+<code>NO_PRIOR_TEMPORAL_ACCESS</code> key says the pipeline cannot go back in time, as
+an in situ adaptor sets it. <code>mode="in situ"</code> or <code>mode="driving"</code> chooses
+either. Driving to a step gives what the same steps give in situ.</p>
+<!-- tack-check: over-time-vtk -->
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">vtkmodules.vtkFiltersGeneral</span><span class="w"> </span><span class="kn">import</span> <span class="n">vtkTimeSourceExample</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tack.interop.vtk.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">RunningStatistics</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="c1"># Driving: the filter runs the source through its ten steps itself.</span>
+<span class="n">source</span> <span class="o">=</span> <span class="n">vtkTimeSourceExample</span><span class="p">()</span>
+<span class="n">stats</span> <span class="o">=</span> <span class="n">RunningStatistics</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Point Value&quot;</span><span class="p">])</span>
+<span class="n">stats</span><span class="o">.</span><span class="n">SetInputConnection</span><span class="p">(</span><span class="n">source</span><span class="o">.</span><span class="n">GetOutputPort</span><span class="p">())</span>
+<span class="n">stats</span><span class="o">.</span><span class="n">Update</span><span class="p">()</span>
+<span class="n">over_all</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">GetOutputDataObject</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">over_all</span><span class="o">.</span><span class="n">GetFieldData</span><span class="p">()</span><span class="o">.</span><span class="n">GetArray</span><span class="p">(</span><span class="s2">&quot;count&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">GetValue</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="mi">10</span>
+
+<span class="c1"># In situ: each step is handed to the filter, which gives the statistics so far.</span>
+<span class="n">live</span> <span class="o">=</span> <span class="n">RunningStatistics</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Point Value&quot;</span><span class="p">],</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;in situ&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="n">source</span><span class="o">.</span><span class="n">UpdateTimeStep</span><span class="p">(</span><span class="n">step</span> <span class="o">/</span> <span class="mi">9</span><span class="p">)</span>
+    <span class="n">live</span><span class="o">.</span><span class="n">SetInputDataObject</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">source</span><span class="o">.</span><span class="n">GetOutputDataObject</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+    <span class="n">live</span><span class="o">.</span><span class="n">Update</span><span class="p">()</span>
+<span class="n">so_far</span> <span class="o">=</span> <span class="n">live</span><span class="o">.</span><span class="n">GetOutputDataObject</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">so_far</span><span class="o">.</span><span class="n">GetFieldData</span><span class="p">()</span><span class="o">.</span><span class="n">GetArray</span><span class="p">(</span><span class="s2">&quot;count&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">GetValue</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span>
+</code></pre></div>
 <h2 id="details">Details<a class="headerlink" href="#details" title="Permanent link">&para;</a></h2>
 <p><strong>How many particles.</strong> The particles live on the host in double precision.
 Each substep probes both steps for every particle. Point location runs on the

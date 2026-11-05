@@ -5567,6 +5567,16 @@ their cell data.</p>
 <td><code>AverageDown</code></td>
 <td><code>vtkOverlappingAMR</code></td>
 </tr>
+<tr>
+<td>Over time</td>
+<td><code>RunningStatistics</code>, <code>TimeDerivative</code></td>
+<td>fields, over the steps</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Advection</code>, <code>Pathlines</code>, <code>Streaklines</code> (seeds on port 1, or <code>seeds=</code>)</td>
+<td><code>vtkUnstructuredGrid</code></td>
+</tr>
 </tbody>
 </table>
 <p>A <code>vtkPartitionedDataSet</code> input runs the filter on each piece and gives a
@@ -5693,6 +5703,9 @@ empty, as VTK spreads a hierarchy, and the ranks convert it together
 <span class="n">kept</span> <span class="o">=</span> <span class="n">Threshold</span><span class="p">(</span><span class="n">field</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;Gaussian-Pulse&quot;</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">lower</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)(</span><span class="n">pulse</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">kept</span><span class="o">.</span><span class="n">GetNumberOfPartitionedDataSets</span><span class="p">()</span> <span class="o">==</span> <span class="mi">2</span>       <span class="c1"># a level each, box by box</span>
 </code></pre></div>
+<p>The temporal filters run in situ, one step per execution, or drive the
+pipeline through the input's time steps themselves. See
+<a href="../over-time/#in-a-vtk-pipeline">Steps over time</a>.</p>
 <h2 id="write-your-own-vtk-algorithm">Write your own VTK algorithm<a class="headerlink" href="#write-your-own-vtk-algorithm" title="Permanent link">&para;</a></h2>
 <p>Subclass <code>TackAlgorithm</code> and give it <code>compute(data)</code>, a Tack dataset from a
 Tack dataset. One algorithm can run several Tack filters, with no conversion
