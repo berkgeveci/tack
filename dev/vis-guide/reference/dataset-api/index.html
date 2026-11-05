@@ -3800,6 +3800,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#fields-evaluated-where-they-are-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields evaluated where they are read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moving-a-field-between-spaces" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5318,6 +5329,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#fields-evaluated-where-they-are-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields evaluated where they are read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moving-a-field-between-spaces" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5963,7 +5985,54 @@ array accesses.</p>
   area, an id) are left alone.</li>
 </ul>
 <p>Attributes: <code>topology</code>, <code>size</code>, <code>on</code> (the entity kind the values are
-indexed by), <code>interpolated</code>, and <code>order</code> where it applies.</p>
+indexed by), <code>interpolated</code>, <code>continuous</code>, and <code>order</code> where it applies.</p>
+<h3 id="fields-evaluated-where-they-are-read">Fields evaluated where they are read<a class="headerlink" href="#fields-evaluated-where-they-are-read" title="Permanent link">&para;</a></h3>
+<p>A space may compute its field at each point an algorithm reads it instead of
+storing values, as a field expression does. <code>Space</code> declares what such a space
+gives, each with its default:</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>evaluated</code></td>
+<td><code>False</code></td>
+<td>the view's <code>value(c, pc)</code> and <code>corner_value(c, j)</code> compute the field (with <code>value_range(c)</code>, a bound on the cell, which may be unbounded); its <code>values</code> hold nothing to read</td>
+</tr>
+<tr>
+<td><code>continuous</code></td>
+<td><code>False</code> (<code>True</code> for <code>H1</code>)</td>
+<td><code>contour</code> shares crossings between cells, so its surface is watertight</td>
+</tr>
+<tr>
+<td><code>default_subdivision</code></td>
+<td><code>1</code></td>
+<td>the lattice steps along each cell axis that <code>contour</code>, <code>clip</code> and <code>threshold</code> cut a cell into by default</td>
+</tr>
+<tr>
+<td><code>integration_order</code></td>
+<td><code>None</code></td>
+<td>the polynomial order <code>integrate</code>'s quadrature is exact to; <code>None</code> and <code>integrate</code> refuses the field</td>
+</tr>
+<tr>
+<td><code>rebind(field, data)</code></td>
+<td><code>None</code></td>
+<td>the field on a filter's output, made from the fields carried there; <code>None</code> and the filter leaves it out</td>
+</tr>
+<tr>
+<td><code>stored(field, data)</code></td>
+<td><code>field</code></td>
+<td>the field as stored values on <code>data</code>'s device, which <code>statistics</code>, <code>entropy</code>, <code>owned_values</code> and <code>dataset_to_vtk</code> read</td>
+</tr>
+</tbody>
+</table>
+<p>An unbounded <code>value_range</code> cuts every cell, so <code>clip</code> and <code>threshold</code> give the
+same region as for a stored field of the same values, in more pieces.</p>
 <h3 id="moving-a-field-between-spaces">Moving a field between spaces<a class="headerlink" href="#moving-a-field-between-spaces" title="Permanent link">&para;</a></h3>
 <p><code>project(data, field, space)</code> gives <code>field</code> in another space of the same
 topology, as a new field. Values on points or cells count as order-1 <code>H1</code>

@@ -7697,7 +7697,7 @@ the fewest whose estimated error is within it).</p>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;threshold needs a field on the points or cells, not </span><span class="si">{</span><span class="n">space</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.subdivide</span><span class="w"> </span><span class="kn">import</span> <span class="n">split_by_range</span><span class="p">,</span> <span class="n">subdivides</span>
 
-    <span class="n">by_cells</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Constant</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="o">==</span> <span class="s2">&quot;cells&quot;</span>
+    <span class="n">by_cells</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Constant</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="o">==</span> <span class="s2">&quot;cells&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">space</span><span class="o">.</span><span class="n">evaluated</span>
                                                <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="p">(</span><span class="n">H1</span><span class="p">,</span> <span class="n">L2</span><span class="p">)))</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">by_cells</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span>
             <span class="n">subdivides</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span> <span class="ow">or</span> <span class="n">tolerance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -8182,8 +8182,8 @@ of the first cell to cross there.</p>
 vertices): the surface stops at the cells that hold numbers, and no point
 is placed on an edge to a missing value.</p>
 <p>With <code>merge_points</code>, triangles share their points: by global edge when
-the field and the geometry are both continuous, so the surface is
-watertight; otherwise only within each cell, so a DG field's surface
+the field and the geometry are both continuous (an <code>H1</code> field, or one of a
+space that declares itself <code>continuous</code>), so the surface is watertight; otherwise only within each cell, so a DG field's surface
 keeps its jumps and an <code>L2</code> geometry's its gaps. <code>H1</code> fields carry
 onto the surface's points, interpolated along the same edges; cell
 fields (<code>Constant</code>, values on cells) onto its triangles, from the cell
@@ -8451,8 +8451,8 @@ each came from.</p>
 <span class="sd">    is placed on an edge to a missing value.</span>
 
 <span class="sd">    With ``merge_points``, triangles share their points: by global edge when</span>
-<span class="sd">    the field and the geometry are both continuous, so the surface is</span>
-<span class="sd">    watertight; otherwise only within each cell, so a DG field&#39;s surface</span>
+<span class="sd">    the field and the geometry are both continuous (an ``H1`` field, or one of a</span>
+<span class="sd">    space that declares itself ``continuous``), so the surface is watertight; otherwise only within each cell, so a DG field&#39;s surface</span>
 <span class="sd">    keeps its jumps and an ``L2`` geometry&#39;s its gaps. ``H1`` fields carry</span>
 <span class="sd">    onto the surface&#39;s points, interpolated along the same edges; cell</span>
 <span class="sd">    fields (``Constant``, values on cells) onto its triangles, from the cell</span>
@@ -8510,7 +8510,7 @@ each came from.</p>
     <span class="n">space</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">space</span><span class="o">.</span><span class="n">interpolated</span> <span class="ow">or</span> <span class="n">space</span><span class="o">.</span><span class="n">on</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="s2">&quot;points&quot;</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;contour needs a field with a basis on the cells, not </span><span class="si">{</span><span class="n">space</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">per_cell</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
+    <span class="n">per_cell</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">space</span><span class="o">.</span><span class="n">continuous</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
     <span class="n">groups</span> <span class="o">=</span> <span class="p">[</span><span class="n">g</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">field</span><span class="p">])</span>
               <span class="k">if</span> <span class="n">g</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">g</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">CONTOUR_TRIANGLES</span><span class="p">]</span>
     <span class="n">n_cells</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">num_cells</span>
@@ -14724,7 +14724,10 @@ a tuple for a vector field.</p>
 its own map (<code>quadrature</code>: collapsed onto simplices and wedges), with enough
 points for the field's order and the geometry's, so a curved geometry and a
 field of any order (<code>H1</code>, <code>L2</code>, point and cell data) integrate exactly, to
-rounding. Polyhedra, polygons and polylines take their measure from
+rounding. An evaluated field (an expression's) is integrated through its view
+in the same way, with points for its space's <code>integration_order</code>: exact where
+the field is a polynomial of that order, a quadrature approximation where it
+is not. Polyhedra, polygons and polylines take their measure from
 <code>cell_geometry</code> and integrate cell data and point data, which is linear on
 their pieces (sub-tetrahedra, triangles, segments), exactly. Only the cells of the mesh's dimension count, as in VTK: a volume's
 integrals leave out its surfaces, lines and vertices. Only owned cells count
@@ -14734,14 +14737,7 @@ the pieces' order.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/integrate.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">356</span>
-<span class="normal">357</span>
-<span class="normal">358</span>
-<span class="normal">359</span>
-<span class="normal">360</span>
-<span class="normal">361</span>
-<span class="normal">362</span>
-<span class="normal">363</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">363</span>
 <span class="normal">364</span>
 <span class="normal">365</span>
 <span class="normal">366</span>
@@ -14779,7 +14775,17 @@ the pieces' order.</p>
 <span class="normal">398</span>
 <span class="normal">399</span>
 <span class="normal">400</span>
-<span class="normal">401</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The measure of ``data`` -- its cells&#39; total volume, area or length -- and the</span>
 <span class="sd">    integral over it of each of ``fields`` (names; a mapping of names to field</span>
@@ -14792,7 +14798,10 @@ the pieces' order.</p>
 <span class="sd">    its own map (``quadrature``: collapsed onto simplices and wedges), with enough</span>
 <span class="sd">    points for the field&#39;s order and the geometry&#39;s, so a curved geometry and a</span>
 <span class="sd">    field of any order (``H1``, ``L2``, point and cell data) integrate exactly, to</span>
-<span class="sd">    rounding. Polyhedra, polygons and polylines take their measure from</span>
+<span class="sd">    rounding. An evaluated field (an expression&#39;s) is integrated through its view</span>
+<span class="sd">    in the same way, with points for its space&#39;s ``integration_order``: exact where</span>
+<span class="sd">    the field is a polynomial of that order, a quadrature approximation where it</span>
+<span class="sd">    is not. Polyhedra, polygons and polylines take their measure from</span>
 <span class="sd">    ``cell_geometry`` and integrate cell data and point data, which is linear on</span>
 <span class="sd">    their pieces (sub-tetrahedra, triangles, segments), exactly. Only the cells of the mesh&#39;s dimension count, as in VTK: a volume&#39;s</span>
 <span class="sd">    integrals leave out its surfaces, lines and vertices. Only owned cells count</span>
