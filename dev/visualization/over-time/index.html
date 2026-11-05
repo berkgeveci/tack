@@ -5527,6 +5527,12 @@ ranks.</p>
 <code>NO_PRIOR_TEMPORAL_ACCESS</code> key says the pipeline cannot go back in time, as
 an in situ adaptor sets it. <code>mode="in situ"</code> or <code>mode="driving"</code> chooses
 either. Driving to a step gives what the same steps give in situ.</p>
+<p>A reader that gives a tree of datasets at each step (OpenFOAM, IOSS, CGNS)
+feeds a filter of each kind unit by unit: each partitioned dataset in the tree,
+and each block that is one dataset, has a Tack filter of its own, and the output
+is a tree of the same shape. <code>52_vtk_pathlines.py</code> in
+<code>packages/tack-vis/examples/</code> follows pathlines through an OpenFOAM case both
+ways.</p>
 <!-- tack-check: over-time-vtk -->
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">vtkmodules.vtkFiltersGeneral</span><span class="w"> </span><span class="kn">import</span> <span class="n">vtkTimeSourceExample</span>
 
