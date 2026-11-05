@@ -7116,7 +7116,9 @@ side <code>s</code> and its local face number.</p>
 what they do, with their parameters. They share one set of conventions:</p>
 <ul>
 <li>the dataset comes first: <code>f(data, ...)</code>;</li>
-<li>a field argument is a <code>Field</code> or the name of one of <code>data</code>'s fields;</li>
+<li>a field argument is a <code>Field</code>, the name of one of <code>data</code>'s fields, or an
+  object whose <code>on(data)</code> gives the <code>Field</code> on <code>data</code> (a field expression's),
+  which over a <code>PartitionedDataSet</code> gives each piece's;</li>
 <li>an algorithm that makes a new dataset takes <code>fields=</code> (all by default, a
   name, a list of names, or <code>[]</code> for none) and returns a <code>DataSet</code>;</li>
 <li>an algorithm that computes a field returns a <code>Field</code>, and several fields a
