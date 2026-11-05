@@ -503,8 +503,16 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
             raise ValueError("the geometry cannot be carried by these maps; pass it")
     carried = {}
     for name in selected(data, fields):
-        field = _carry_field(data.fields[name], data, out, points, cells, faces,
+        source = data.fields[name]
+        field = _carry_field(source, data, out, points, cells, faces,
                              faces_to_cells, edges, edges_to_cells)
+        if field is not None and source.gradient is not None:
+            gradient = _carry_field(source.gradient, data, out, points, cells, faces,
+                                    faces_to_cells, edges, edges_to_cells)
+            # A field whose gradient cannot come along goes with it: without it,
+            # gradients of the output would quietly differentiate the basis instead.
+            field = (None if gradient is None
+                     else Field(field.space, field.values, field.unit, gradient=gradient))
         if field is not None:
             carried[name] = field
     if sets is None:

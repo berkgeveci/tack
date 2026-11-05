@@ -165,7 +165,8 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
 def _derivative_mixins(field, group, mixins, attributes):
     """Where a field view's ``world_gradient`` and ``world_jet`` come from: the gradient
     the field was given, a space's own mixin, or else the basis -- the parts of it the
-    view has, since every method of a view resolves when a kernel takes it."""
+    view has. A kernel compiles only the methods it reaches, so a view may carry
+    derivatives nothing asks for."""
     from tack.dataset.algorithms.gradients import _BasisGradient, _BasisJet, _GivenGradient
 
     given = getattr(field, "gradient", None)
