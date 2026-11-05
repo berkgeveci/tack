@@ -115,6 +115,18 @@ def _moments(data, field, weights=None):
                           else owned_values(data, _weights(data, field, weights)))
 
 
+def _per_piece(data, field, weights, what):
+    """``{id(piece): (field, weights)}``: each piece's field and weights, resolved
+    once a piece (``fields_of``); ``"volume"`` and no weights as they are."""
+    pieces = list(data)
+    fields = fields_of(data, field, what)
+    if weights is None or (isinstance(weights, str) and weights == "volume"):
+        per = [weights] * len(pieces)
+    else:
+        per = fields_of(data, weights, f"{what}' weights")
+    return {id(p): (f, w) for p, f, w in zip(pieces, fields, per)}
+
+
 def _units(data, field, weights):
     """``(unit, weight_unit)`` of one dataset's ``field`` weighted by ``weights``."""
     from tack.dataset.algorithms._common import _measure_unit
@@ -274,16 +286,16 @@ def statistics(data, field, weights=None, level=None):
     if isinstance(data, AMRDataSet):
         data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
-        fields_of(data, field, "statistics")
         from tack.dataset import units
 
+        given = _per_piece(data, field, weights, "statistics")
         # Every rank's pieces' units, so a rank holding none agrees with the rest.
         every = [pair for part in data.world._allgather(
-            [_units(piece, field, weights) for piece in data]) for pair in part]
+            [_units(piece, *given[id(piece)]) for piece in data]) for pair in part]
         unit = units.common("statistics' pieces' field", [u for u, _ in every])
         weight_unit = units.common("statistics' pieces' weights", [w for _, w in every])
         moments = None
-        for part in _over_pieces(data, lambda piece: _moments(piece, field, weights)):
+        for part in _over_pieces(data, lambda piece: _moments(piece, *given[id(piece)])):
             if part is not None:
                 moments = part if moments is None else _merged(moments, part)
     else:

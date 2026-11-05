@@ -9,7 +9,7 @@ from tack.arrays import size_of, width_of
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms.statistics import _over_pieces
 from tack.dataset.ghosts import owned_values
-from tack.dataset.partitioned import PartitionedDataSet, fields_of
+from tack.dataset.partitioned import PartitionedDataSet
 from tack.runtime.dispatch import on_inputs_device
 
 __all__ = ['entropy']
@@ -80,8 +80,11 @@ def entropy(data, field, bins=10, weights=None, level=None):
     if isinstance(data, AMRDataSet):
         data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
-        fields_of(data, field, "entropy")
-        extrema = [e for e in _over_pieces(data, lambda piece: _extrema(piece, field))
+        from tack.dataset.algorithms.statistics import _per_piece
+
+        given = _per_piece(data, field, weights, "entropy")
+        extrema = [e for e in _over_pieces(data, lambda piece: _extrema(piece,
+                                                                        given[id(piece)][0]))
                    if e is not None]
         if not extrema:
             raise ValueError("entropy of no values")
@@ -89,6 +92,7 @@ def entropy(data, field, bins=10, weights=None, level=None):
                        float(np.max([e[1] for e in extrema])))
 
         def counts(piece):
+            field, weights = given[id(piece)]
             if _extrema(piece, field) is None:
                 return np.zeros(bins)
             return _counts(piece, field, bins, value_range, weights)

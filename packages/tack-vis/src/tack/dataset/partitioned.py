@@ -70,19 +70,26 @@ class PartitionedDataSet:
 
 
 def fields_of(data, field, what):
-    """The field named ``field`` in each piece of ``data``, for an algorithm that
-    combines them (``what``): a name, since a ``Field`` belongs to one piece's
-    topology; a piece without it is refused."""
+    """``field`` in each piece of ``data``, for an algorithm that combines them
+    (``what``): a list of each piece's ``Field``, resolved once a piece. ``field`` is
+    a name, or an object whose ``on(piece)`` gives the piece's ``Field``; a
+    ``Field`` belongs to one piece's topology and is refused, as is a piece
+    without the name."""
+    from tack.dataset.algorithms._common import _field
     from tack.dataset.dataset import is_field_key
 
-    if not is_field_key(field):
+    named = is_field_key(field)
+    if not named and not callable(getattr(field, "on", None)):
         raise TypeError(f"{what} of a PartitionedDataSet takes a field's name (or name "
-                        "and space): a Field belongs to one partition's topology")
+                        "and space) or an object whose on(piece) gives the piece's: a "
+                        "Field belongs to one partition's topology")
+    out = []
     for i, piece in enumerate(data):
-        if field not in piece.fields:
+        if named and field not in piece.fields:
             raise KeyError(f"partition {i} has no field {field!r}: it has "
                            f"{', '.join(map(repr, piece.fields)) or 'none'}")
-    return field
+        out.append(_field(piece, field))
+    return out
 
 
 def common_origin(data, what, world=None):

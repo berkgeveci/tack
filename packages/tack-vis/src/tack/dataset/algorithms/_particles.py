@@ -43,7 +43,7 @@ from tack.dataset.algorithms._advection import (
 )
 from tack.dataset.algorithms._common import _time_unit
 from tack.dataset.algorithms._extract import _vertices
-from tack.dataset.dataset import DataSet, Field
+from tack.dataset.dataset import DataSet, Field, is_field_key
 from tack.dataset.ghosts import Ghosts, visible
 from tack.dataset.locator import cached_locator
 from tack.dataset.partitioned import PartitionedDataSet, common_origin, fields_of
@@ -214,6 +214,8 @@ def _rounds(data, field, seeds, step_size, steps, integrator, record, unit="time
     positions, times)``."""
     if int(steps) < 1:
         raise ValueError(f"steps must be at least 1, not {steps!r}")
+    if not is_field_key(field):
+        raise TypeError("advection of a PartitionedDataSet takes a field's name")
     fields_of(data, field, "advection")
     pieces = []
     for piece in data:                       # each piece's work on its own device
