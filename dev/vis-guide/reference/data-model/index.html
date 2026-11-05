@@ -15121,8 +15121,7 @@ neighbouring pieces agree.</p>
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/topology.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">523</span>
-<span class="normal">524</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">524</span>
 <span class="normal">525</span>
 <span class="normal">526</span>
 <span class="normal">527</span>
@@ -15140,7 +15139,8 @@ neighbouring pieces agree.</p>
 <span class="normal">539</span>
 <span class="normal">540</span>
 <span class="normal">541</span>
-<span class="normal">542</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">point_dims</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">542</span>
+<span class="normal">543</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">point_dims</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="n">point_dims</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">point_dims</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">point_dims</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="ow">or</span> <span class="nb">min</span><span class="p">(</span><span class="n">point_dims</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;point_dims must be 1 to 3 sizes of at least 2, not </span><span class="si">{</span><span class="n">point_dims</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -15231,8 +15231,7 @@ the connectivity of cells that each have their own points a
 
                   <details class="mkdocstrings-source">
                     <summary>Source code in <code>packages/tack-vis/src/tack/dataset/topology.py</code></summary>
-                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">399</span>
-<span class="normal">400</span>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">400</span>
 <span class="normal">401</span>
 <span class="normal">402</span>
 <span class="normal">403</span>
@@ -15256,7 +15255,8 @@ the connectivity of cells that each have their own points a
 <span class="normal">421</span>
 <span class="normal">422</span>
 <span class="normal">423</span>
-<span class="normal">424</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">424</span>
+<span class="normal">425</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">num_points</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">id_dtype</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">types</span> <span class="o">=</span> <span class="n">_as_field</span><span class="p">(</span><span class="n">types</span><span class="p">,</span> <span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">num_cells</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">types</span><span class="p">)</span>
@@ -15318,8 +15318,7 @@ first use and kept. A cell naming a point more than once has it once.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/topology.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">444</span>
-<span class="normal">445</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">445</span>
 <span class="normal">446</span>
 <span class="normal">447</span>
 <span class="normal">448</span>
@@ -15331,7 +15330,8 @@ first use and kept. A cell naming a point more than once has it once.</p>
 <span class="normal">454</span>
 <span class="normal">455</span>
 <span class="normal">456</span>
-<span class="normal">457</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">457</span>
+<span class="normal">458</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_points</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s points, sorted and unique: ``(offsets, point_ids)``, CSR in</span>
 <span class="sd">    ``id_dtype``, as a polyhedral or polyline topology gives them; derived on</span>
