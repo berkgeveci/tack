@@ -629,6 +629,15 @@ def _as_polydata(data):
     return out
 
 
+def _empty_everywhere(vtk_data, world):
+    """Whether a partitioned dataset has no partitions on any rank of ``world``."""
+    count = sum(vtk_data.GetPartition(i) is not None
+                for i in range(vtk_data.GetNumberOfPartitions()))
+    if world is not None and world.size > 1:
+        return not any(world._allgather(count))
+    return count == 0
+
+
 def _as_partitioned(result):
     """A filter's result for a place that holds a partitioned dataset: as it is if it is
     one, else one partition."""
@@ -943,7 +952,7 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             # Shares the blocks: what was made, and remembered, is the output's.
             output.CompositeShallowCopy(self._tree(input))
         else:
-            self._set_unit_output(output, self._unit(input))
+            self._set_unit_output(output, self._unit_of(input))
         _keep_active(self.GetInputData(inInfo, self.ACTIVE_FROM, 0), output,
                      self._made_active())
         return 1
@@ -969,10 +978,15 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         amr = self._dataset(vtk_amr, self.device)
         out = vtkPartitionedDataSetCollection()
         out.SetNumberOfPartitionedDataSets(amr.num_levels)
+        # A box is an image, so only a filter that always gives polydata gives it here.
+        polydata = self._gives_polydata(None)
         for level, pieces in enumerate(amr.levels):
             result = self._level(pieces)
+            if result is not None:
+                result = dataset_to_vtk(result, copy=False)
+                result = _as_polydata(result) if polydata else result
             out.SetPartitionedDataSet(level, vtkPartitionedDataSet() if result is None else
-                                      _as_partitioned(dataset_to_vtk(result, copy=False)))
+                                      _as_partitioned(result))
             out.GetMetaData(level).Set(vtkCompositeDataSet.NAME(), f"level{level}")
         return out
 
@@ -999,7 +1013,7 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             for i in range(count):
                 child = node.GetPartitionedDataSet(i)
                 if child is not None:
-                    out.SetPartitionedDataSet(i, _as_partitioned(self._unit(child)))
+                    out.SetPartitionedDataSet(i, _as_partitioned(self._unit_of(child)))
             _block_names(node, out, count)
             if node.GetDataAssembly() is not None:
                 out.SetDataAssembly(node.GetDataAssembly())
@@ -1014,11 +1028,21 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             if isinstance(child, _TREES):
                 out.SetBlock(i, self._tree(child))
             elif isinstance(child, vtkMultiPieceDataSet):
-                out.SetBlock(i, _as_multipiece(self._unit(child)))
+                out.SetBlock(i, _as_multipiece(self._unit_of(child)))
             else:
                 out.SetBlock(i, self._unit(child))
         _block_names(node, out, count)
         return out
+
+    def _unit_of(self, vtk_data):
+        """``_unit``, but for a partitioned dataset with no partitions on any rank (the
+        node and side sets of an Exodus file, unread) an empty one, without running the
+        filter: a filter over pieces has none to start from. Asked of every rank for
+        each partitioned dataset, in the tree's order, so collective."""
+        if isinstance(vtk_data, vtkPartitionedDataSet) and _empty_everywhere(
+                vtk_data, self._run_world):
+            return type(vtk_data)()
+        return self._unit(vtk_data)
 
     def _unit(self, vtk_data):
         """The filter's result for one unit: a dataset, a partitioned dataset or an AMR
@@ -2339,31 +2363,36 @@ class GenerateGlobalIds(_OverPieces):
 
 class MergePieces(_OverPieces):
     """``td.merge_pieces``: the pieces as one dataset, shared points once. Pieces of a
-    structured grid that tile it give the grid; anything else an unstructured
-    grid. Over MPI ranks the dataset is the ``root`` rank's; the others get an empty
-    one of the same type. VTK's ``vtkMergeBlocks``."""
+    structured grid that tile it give the grid, polygonal pieces ``vtkPolyData``, and
+    anything else an unstructured grid. Over MPI ranks the dataset is the ``root``
+    rank's; the others get an empty one of the same type. VTK's ``vtkMergeBlocks``."""
 
     FUNCTION = "merge_pieces"
 
     tolerance = Parameter(0.0, "how far apart two pieces' copies of a point may be")
 
     def _unit(self, vtk_data):
+        import vtkmodules.vtkCommonDataModel as dm
+
         from tack.interop.vtk import dataset_to_vtk
 
+        kind = self._output_type(vtk_data)
         merged = self.execute(self._dataset(vtk_data, self.device))
         if merged is None:
             # Not the root rank, which merge_pieces gives the whole.
-            return self._output_type(vtk_data)()
-        return dataset_to_vtk(merged, copy=False)
+            return kind()
+        out = dataset_to_vtk(merged, copy=False)
+        return _as_polydata(out) if kind is dm.vtkPolyData else out
 
     def _output_type(self, input):
         import vtkmodules.vtkCommonDataModel as dm
 
         if not isinstance(input, vtkPartitionedDataSet):
             return type(input)
-        kinds = {type(block) for block in input}
-        if len(kinds) == 1 and next(iter(kinds)) is not dm.vtkPolyData:
-            return next(iter(kinds))
+        # By class name: the pythonic API's datasets are subclasses of VTK's.
+        kinds = {block.GetClassName() for block in input if block is not None}
+        if len(kinds) == 1:
+            return getattr(dm, next(iter(kinds)))
         return dm.vtkUnstructuredGrid
 
 
@@ -2710,10 +2739,12 @@ class _Temporal(TackAlgorithm):
     By default a filter drives where its input has time steps and VTK does not say
     the pipeline cannot go back in time (``NO_PRIOR_TEMPORAL_ACCESS``, which an in
     situ adaptor sets). Driving to a step gives the output the same steps give in
-    situ. A tree or an AMR hierarchy is refused; a partitioned dataset's pieces each
-    keep their state, as Tack's filters do. Subclasses give ``_make()``, the Tack
-    filter, and ``_output(result, input, data, final)``, the VTK output for its
-    result."""
+    situ. A tree (``vtkMultiBlockDataSet``, ``vtkPartitionedDataSetCollection``) gives
+    a tree of the same shape: each unit in it (a partitioned dataset, or a block that
+    is one dataset) has a Tack filter of its own, fed its part of each step. A
+    partitioned dataset's pieces each keep their state, as Tack's filters do; an AMR
+    hierarchy is refused. Subclasses give ``_make()``, the Tack filter, and
+    ``_output(result, input, data, final)``, the VTK output for its result."""
 
     INPUTS = 1
     BY_BOX = False
@@ -2736,12 +2767,12 @@ class _Temporal(TackAlgorithm):
         self._start_over()
 
     def _start_over(self):
-        self._filter = None           # the Tack filter, made at the first step
+        self._units = {}              # per unit of the input, in order: its _UnitState
+        self._filter = None           # the unit's Tack filter, while it is fed
         self._fed = None              # driving: the index of the last step taken
         self._time = None             # in situ: the time of the last step taken
         self._made_at = None          # the parameter changes it was made at
         self._kept = None             # (output, index or time) of the last output
-        self._results = []            # driving, accumulating: what each step gave
         self._stale = False
 
     def _changes(self):
@@ -2824,9 +2855,8 @@ class _Temporal(TackAlgorithm):
         self._run_world = self._world()
         self._check_inputs(inInfo)
         input = self.GetInputData(inInfo, 0, 0)
-        if isinstance(input, _TREES):
-            raise TypeError(f"{type(self).__name__} takes a dataset or a partitioned "
-                            f"dataset, not a {input.GetClassName()}")
+        if isinstance(input, vtkOverlappingAMR):
+            raise TypeError(f"{type(self).__name__} takes no AMR hierarchy")
         output = self.GetOutputData(outInfo, 0)
         try:
             if self._driving:
@@ -2846,37 +2876,33 @@ class _Temporal(TackAlgorithm):
             self._set(output, *self._kept)
             return
         k = self._queue.pop(0)
-        data = self._dataset(input, self.device)
-        if self._filter is None:
-            self._filter = self._make(data)
+        made = not self._units
+        last = not self._queue
+        result = self._feed(input, k, last)
+        if made:
             self._made_at = self._changes()
-        result = self._filter.update(data)
         self._fed = k
-        if self.ACCUMULATES:
-            self._results.append((k, result))
-        if self._queue:
+        if not last:
             request.Set(s.CONTINUE_EXECUTING(), 1)
             self._looping = True
             return
         request.Remove(s.CONTINUE_EXECUTING())
         self._looping = False
-        if self.ACCUMULATES:
-            self._kept = (self._output(self._results, input, data, final=True), None)
-            self._results = []
-        else:
-            self._kept = (self._output(result, input, data, final=False), k)
+        self._kept = (result, None if self.ACCUMULATES else k)
         self._set(output, *self._kept)
 
     def _in_situ(self, info, input, output):
         from tack.interop.vtk import _time_of
 
         s = _pipeline()
-        data = self._dataset(input, self.device)
-        t = _time_of(data)
+        if isinstance(input, _TREES):
+            t = _tree_time(input)
+        else:
+            t = _time_of(self._dataset(input, self.device))
         if t is None:
             raise ValueError(f"{type(self).__name__} needs each step's time "
                              "(DATA_TIME_STEP)")
-        reset = (self._filter is None or self._made_at != self._changes()
+        reset = (not self._units or self._made_at != self._changes()
                  or (self._time is not None and t < self._time)
                  or (info.Has(s.NO_PRIOR_TEMPORAL_ACCESS())
                      and info.Get(s.NO_PRIOR_TEMPORAL_ACCESS())
@@ -2886,12 +2912,49 @@ class _Temporal(TackAlgorithm):
             return
         if reset:
             self._start_over()
-            self._filter = self._make(data)
-            self._made_at = self._changes()
-        result = self._filter.update(data)
+        result = self._feed(input, None, True)
+        self._made_at = self._changes()
         self._time = t
-        self._kept = (self._output(result, input, data, final=False), t)
+        self._kept = (result, t)
         self._set(output, *self._kept)
+
+    def _feed(self, input, k, last):
+        """Feed each unit of ``input`` its part of the step (driving, the step's index
+        ``k``): the output, a tree of the units' outputs for a tree, where this step
+        gives one (``last``; in situ, every step), else ``None``."""
+        if isinstance(input, _TREES):
+            self._feeding = (0, k, last, _tree_time(input))
+            out = self._tree(input)
+        else:
+            self._feeding = (0, k, last, None)
+            out = self._unit_of(input)
+        return out if last else None
+
+    def _unit(self, vtk_data):
+        # One unit's part of the step (``_feed``), with its own Tack filter.
+        from tack.interop.vtk import _time_of
+
+        index, k, last, time = self._feeding
+        self._feeding = (index + 1, k, last, time)
+        data = self._dataset(vtk_data, self.device)
+        if time is not None and _time_of(data) is None:
+            data = _at_time(data, time)     # a reader stamps the tree, not its blocks
+        unit = self._units.get(index)
+        if unit is None:
+            self._filter = None
+            unit = self._units[index] = _UnitState(self._make(data),
+                                                   getattr(self, "_names", None))
+        self._filter, self._names = unit.filter, unit.names
+        result = unit.filter.update(data)
+        if not self._driving:
+            return self._output(result, vtk_data, data, final=False)
+        if self.ACCUMULATES:
+            unit.results.append((k, result))
+            if not last:
+                return None
+            results, unit.results = unit.results, []
+            return self._output(results, vtk_data, data, final=True)
+        return self._output(result, vtk_data, data, final=False) if last else None
 
     def _set(self, output, result, at):
         """Make ``output`` the VTK ``result``: at its step's time, or at none."""
@@ -2923,6 +2986,47 @@ class _Temporal(TackAlgorithm):
             return list(first.fields)
         chosen = [self.fields] if isinstance(self.fields, (str, tuple)) else self.fields
         return [_field_argument(value) for value in chosen]
+
+
+def _tree_time(tree):
+    """The time of a tree's step: VTK's stamp on the tree (``DATA_TIME_STEP``), as a
+    reader gives it, else on its first dataset that has one, else ``None``."""
+    key = vtkDataObject.DATA_TIME_STEP()
+    if tree.GetInformation().Has(key):
+        return tree.GetInformation().Get(key)
+    iterator = tree.NewIterator()
+    iterator.InitTraversal()
+    while not iterator.IsDoneWithTraversal():
+        info = iterator.GetCurrentDataObject().GetInformation()
+        if info.Has(key):
+            return info.Get(key)
+        iterator.GoToNextItem()
+    return None
+
+
+def _at_time(data, time):
+    """A Tack dataset or ``PartitionedDataSet`` at ``time``: shallow copies, so that the
+    dataset kept for the VTK one (``_as_dataset``) is left as it was."""
+    import copy
+
+    from tack.dataset import PartitionedDataSet
+
+    if isinstance(data, PartitionedDataSet):
+        return PartitionedDataSet([_at_time(piece, time) for piece in data], world=data.world)
+    out = copy.copy(data)
+    out.time = time
+    return out
+
+
+class _UnitState:
+    """A temporal filter's state for one unit of its input: the Tack ``filter``, the
+    field ``names`` it was made with, and, driving a filter that accumulates, each
+    step's ``(index, result)`` so far."""
+
+    def __init__(self, filter, names):
+        self.filter = filter
+        self.names = names
+        self.results = []
 
 
 def _pipeline():

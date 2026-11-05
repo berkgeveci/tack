@@ -28,7 +28,7 @@ try:
     import vtkmodules.vtkCommonDataModel  # noqa: F401  (registers the pythonic API)
     from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
 
-    from tack.interop.vtk import vtk_to_dataset
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
 except ImportError:
     if env_flag("TACK_REQUIRE_VTK"):
         raise
@@ -137,3 +137,15 @@ def test_an_images_extent_is_its_offset():
     image = vtkRTAnalyticSource(whole_extent=(-3, 4, -2, 2, 1, 5))()
     data = vtk_to_dataset(image)
     assert data.topology.offset == (-3, -2, 1)
+    # And back: the extent, the points where they were, for each kind of grid.
+    back = dataset_to_vtk(data)
+    assert tuple(back.extent) == (-3, 4, -2, 2, 1, 5)
+    np.testing.assert_array_equal(back.GetPoint(0), image.GetPoint(0))
+    wavelet = td.wavelet((0, 5, 0, 5, 0, 5))
+    for piece in td.split(wavelet, (2, 1, 1)):
+        for kind in (piece, td.DataSet(piece.topology, piece.positions())):
+            grid = dataset_to_vtk(kind)
+            start = piece.topology.offset
+            assert tuple(grid.extent[0::2]) == start
+            np.testing.assert_allclose(grid.GetPoint(0), piece.positions()[0], rtol=1e-6)
+            assert vtk_to_dataset(grid).topology.offset == start

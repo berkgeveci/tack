@@ -89,13 +89,16 @@ def sort_by_key(blocks, keys, values=None, samples=16):
 
 
 def _in_one_place(blocks):
-    """Whether every block is on this rank and on one device: then the ranges need
-    not travel as messages, every block sending to every other (P squared of
-    them: 3.6M kernel launches matching 512 pieces' points)."""
-    if len(blocks.local) != blocks.count or not blocks.count:
-        return False
-    first = blocks.device(blocks.local.start)
-    return all(blocks.device(gid) == first for gid in blocks.local)
+    """Whether every block is on one rank and one device: then the ranges need not
+    travel as messages, every block sending to every other (P squared of them:
+    3.6M kernel launches matching 512 pieces' points). Every rank takes the same
+    path: the others, holding no block, skip the exchange too, so over MPI the
+    rank that holds them says whether they are on one device."""
+    here = bool(blocks.count) and len(blocks.local) == blocks.count and all(
+        blocks.device(gid) == blocks.device(blocks.local.start) for gid in blocks.local)
+    if blocks.world.size > 1:
+        return any(blocks.world._allgather(here))
+    return here
 
 
 def _sorted_in_one_place(blocks, ordered, carried, splitters, kinds, given):
@@ -104,6 +107,8 @@ def _sorted_in_one_place(blocks, ordered, carried, splitters, kinds, given):
     in the block, the order the messages give) and cut where the splitters cut
     them, so each block holds what it would have received."""
     gids = list(blocks.local)
+    if not gids:                        # another rank holds them all
+        return {}, ({} if given else None)
     device = blocks.device(gids[0])
     key_type, value_types = kinds[gids[0]]
     counts = np.zeros(blocks.count, np.int64)

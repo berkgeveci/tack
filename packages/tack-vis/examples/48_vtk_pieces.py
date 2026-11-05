@@ -15,7 +15,7 @@ The pipeline:
       >> Contour(field="RTData")      Tack: each piece's isosurface, its ghost
                                       triangles marked as the neighbour's
       >> MergePieces()                Tack: one surface, shared points once
-      >> vtkXMLUnstructuredGridWriter
+      >> vtkXMLPolyDataWriter
 
 The pieces are written first: VTK's wavelet cut into slabs (vtkExtractVOI),
 tetrahedralized by Tack, so they meet face to face. The merged surface is
@@ -44,13 +44,13 @@ _parser.add_argument('--output', default='results/vtk_pipelines',
 _parser.add_argument('--png', help='render the pieces\' isosurfaces to this PNG file')
 _args = _parser.parse_args()
 
-import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
+import vtkmodules.vtkCommonDataModel  # noqa: F401  (registers the pythonic constructors)
 from vtkmodules.vtkCommonDataModel import vtkPartitionedDataSet
 from vtkmodules.vtkImagingCore import vtkExtractVOI, vtkRTAnalyticSource
 from vtkmodules.vtkIOParallelXML import vtkXMLPartitionedDataSetWriter
 from vtkmodules.vtkIOXML import (
     vtkXMLPartitionedDataSetReader,
-    vtkXMLUnstructuredGridWriter,
+    vtkXMLPolyDataWriter,
 )
 
 import tack
@@ -119,8 +119,8 @@ for i, piece in enumerate(surfaces):
     ghost_triangles = int((piece.cell_data["vtkGhostType"] != 0).sum())
     print(f"  piece {i}: {piece.number_of_cells} triangles, {ghost_triangles} of them its "
           f"neighbours' (ghosts)")
-surface_path = output / "pieces_isosurface.vtu"
-write(vtkXMLUnstructuredGridWriter(file_name=str(surface_path)), merged, surface_path)
+surface_path = output / "pieces_isosurface.vtp"
+write(vtkXMLPolyDataWriter(file_name=str(surface_path)), merged, surface_path)
 print(f"wrote {surface_path}: {merged.number_of_cells} triangles, {merged.number_of_points} "
       f"points")
 
@@ -141,40 +141,16 @@ assert merged.number_of_points == one.number_of_points
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+    import _scene
     from vtkmodules.vtkFiltersCore import vtkThreshold
-    from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        vtkActor,
-        vtkPolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
 
     colours = [(0.89, 0.42, 0.33), (0.36, 0.62, 0.84), (0.55, 0.78, 0.45), (0.95, 0.77, 0.36),
                (0.70, 0.52, 0.82), (0.40, 0.80, 0.78)]
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
+    layers = []
     for i, piece in enumerate(surfaces):
         # Each piece's own triangles: ghost marks 0, in the cell data.
         owned = vtkThreshold(lower_threshold=0, upper_threshold=0)
         owned.SetInputArrayToProcess(0, 0, 0, 1, "vtkGhostType")
-        mapper = vtkPolyDataMapper(scalar_visibility=False)
-        piece >> owned >> vtkGeometryFilter() >> mapper
-        actor = vtkActor(mapper=mapper)
-        actor.property.color = colours[i % len(colours)]
-        renderer.AddActor(actor)
-    window = vtkRenderWindow(off_screen_rendering=True, size=(800, 600))
-    window.AddRenderer(renderer)
-    renderer.ResetCamera()
-    renderer.active_camera.Azimuth(30)
-    renderer.active_camera.Elevation(20)
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+        layers.append(_scene.Layer(owned(piece), color=colours[i % len(colours)]))
+    way = _scene.render(_args.png, layers, azimuth=30, elevation=20)
+    print(f"rendered {_args.png} ({way})")

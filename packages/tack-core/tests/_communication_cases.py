@@ -213,6 +213,23 @@ def _check_routed(results):
     assert arrived[0] == sorted([0, *(10 * h + 2 for h in range(count))])
     assert arrived[-1] == sorted([10 * (count - 1), *(10 * h + 1 for h in range(count))])
 
+def _sort_on_one_rank(world):
+    """Every block on rank 0, the other ranks with none: every rank takes the sort's
+    path without messages, or the ranks with none wait in an exchange alone."""
+    blocks = tc.Blocks(["cpu"] * 4 if world.rank == 0 else [], world)
+    keys = {g: tack.array(_sort_input(g), tack.i64) for g in blocks.local}
+    out_keys, _ = tc.sort_by_key(blocks, keys)
+    # And then a message, which pairs only if every rank skipped the same exchange.
+    incoming = blocks.exchange({g: {} for g in blocks.local})
+    return {g: out_keys[g].numpy().tolist() for g in blocks.local}, len(incoming)
+
+
+def _check_sort_on_one_rank(results):
+    every = results[0][0]
+    assert all(result == ({}, 0) for result in results[1:])
+    keys = [k for g in sorted(every) for k in every[g]]
+    assert keys == sorted(k for g in range(4) for k in _sort_input(g))
+
 
 CASES = {
     "contiguous ids": (3, _contiguous_ids, _check_contiguous_ids),
@@ -224,5 +241,6 @@ CASES = {
     "links": (2, _links, _check_links),
     "a plan in a ring": (3, _plan_ring, _check_plan_ring),
     "a sort": (2, _sort, _check_sort),
+    "a sort of blocks all on one rank": (3, _sort_on_one_rank, _check_sort_on_one_rank),
     "routing": (3, _routed, _check_routed),
 }
