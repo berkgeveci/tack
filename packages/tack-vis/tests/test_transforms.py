@@ -140,6 +140,65 @@ def test_transform_is_vtks(backend):
         td.transform(vtk_to_dataset(grid), np.ones((4, 4)))
 
 
+@pytest.mark.parametrize("shear", [False, True])
+def test_vectors_turn_and_normals_stay_normal(backend, shear):
+    """Named vectors take the map's linear part, normals its inverse transpose made
+    unit length: a surface's normal is still normal to it after a shear, where the
+    linear part would tilt it."""
+    m = _affine(4, shear=shear)
+    linear = m[:3, :3]
+    grid = td.uniform_grid((3, 3, 2))
+    n = grid.num_points
+    rng = np.random.default_rng(5)
+    v = rng.normal(size=(n, 3)).astype(np.float32)
+    normal = rng.normal(size=(n, 3))
+    normal /= np.linalg.norm(normal, axis=1)[:, None]
+    grid.fields["v"] = td.Field(td.H1(grid), tack.array(v, tack.vec3()), "m/s")
+    grid.fields["n"] = td.Field(td.H1(grid), tack.array(normal.astype(np.float32),
+                                                        tack.vec3()))
+    grid.fields["kept"] = td.Field(td.H1(grid), tack.array(v, tack.vec3()))
+    out = td.transform(grid, m, vectors="v", normals=["n"])
+    np.testing.assert_allclose(out.fields["v"].values.numpy(), v @ linear.T, rtol=1e-5,
+                               atol=1e-5)
+    assert out.fields["v"].unit == "m/s"
+    expected = normal @ np.linalg.inv(linear)
+    expected /= np.linalg.norm(expected, axis=1)[:, None]
+    np.testing.assert_allclose(out.fields["n"].values.numpy(), expected, atol=1e-5)
+    # Normal still: perpendicular to every direction the map moves the plane's to.
+    tangents = np.cross(normal, [1.0, 0.0, 0.0])
+    np.testing.assert_allclose(np.einsum("ij,ij->i", out.fields["n"].values.numpy(),
+                                         tangents @ linear.T), 0.0, atol=1e-5)
+    np.testing.assert_array_equal(out.fields["kept"].values.numpy(), v)
+    with pytest.raises(TypeError, match="3-vector"):
+        grid.fields["s"] = td.Field(td.H1(grid), tack.array(v[:, 0].copy()))
+        td.transform(grid, m, vectors="s")
+    with pytest.raises(ValueError, match="singular"):
+        td.transform(grid, np.diag([1.0, 1.0, 0.0, 1.0]), normals="n")
+
+
+@needs_vtk
+def test_the_vtk_algorithm_transforms_the_active_vectors_and_normals_as_vtk():
+    from tack.interop.vtk import algorithms as ta
+
+    sphere = vtk.vtkSphereSource()()
+    n = sphere.number_of_points
+    sphere.point_data["v"] = np.random.default_rng(6).normal(size=(n, 3))
+    sphere.GetPointData().SetActiveVectors("v")
+    t = vtk.vtkTransform()
+    t.RotateWXYZ(33.0, 0.2, 1.0, 0.4)
+    t.Scale(1.5, 0.7, 2.0)
+    theirs = vtk.vtkTransformFilter(transform=t)(sphere)
+    ours = ta.Transform(matrix=t)(sphere)
+    for name in ("v", "Normals"):
+        np.testing.assert_allclose(np.asarray(ours.point_data[name]),
+                                   np.asarray(theirs.point_data[name]), atol=1e-5)
+    np.testing.assert_allclose(np.asarray(ours.points.data), np.asarray(theirs.points.data),
+                               atol=1e-5)
+    untouched = ta.Transform(matrix=t, vectors=[], normals=[])(sphere)
+    np.testing.assert_array_equal(np.asarray(untouched.point_data["Normals"]),
+                                  np.asarray(sphere.point_data["Normals"]))
+
+
 @tack.func
 def _wave(x):
     return tack.sin(x[0]) * x[1] + 0.5 * x[2] * x[2]

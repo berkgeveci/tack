@@ -1520,16 +1520,50 @@ def _matrix(value):
 
 class Transform(TackAlgorithm):
     """``td.transform``: the geometry under an affine ``matrix`` (4x4 or 3x4, a
-    ``vtkMatrix4x4`` or a ``vtkTransform``); an image stays an image. VTK's
-    ``vtkTransformFilter``."""
+    ``vtkMatrix4x4`` or a ``vtkTransform``); an image stays an image. The input's
+    active vectors turn with it and its active normals stay normal, on the points
+    and on the cells, as VTK's ``vtkTransformFilter`` transforms them, unless
+    ``vectors`` or ``normals`` name others (``[]``: none)."""
 
     OUTPUT = "structure"
     FUNCTION = "transform"
 
+    vectors = Parameter(None, "the 3-vector fields that turn with the map; by default the "
+                              "input's active vectors")
+    normals = Parameter(None, "the 3-vector fields that stay normal to the moved surface; "
+                              "by default the input's active normals")
+
+    def _unit(self, vtk_data):
+        self._active = _active_vectors(vtk_data)
+        return super()._unit(vtk_data)
+
     def arguments(self):
         values = super().arguments()
         values["matrix"] = _matrix(values["matrix"])
+        active = getattr(self, "_active", {"vectors": [], "normals": []})
+        for name in ("vectors", "normals"):
+            given = getattr(self, name)
+            values[name] = active[name] if given is None else [
+                _field_argument(v) for v in ([given] if isinstance(given, (str, tuple))
+                                             else given)]
         return values
+
+
+def _active_vectors(vtk_data):
+    """The active 3-component vectors and normals of a VTK dataset (a partitioned one's
+    first partition), on its points and cells, as Tack's field keys."""
+    block = vtk_data
+    if isinstance(vtk_data, vtkPartitionedDataSet):
+        block = next(iter(vtk_data), None)
+    out = {"vectors": [], "normals": []}
+    if block is None:
+        return out
+    for attributes, where in ((block.GetPointData(), "points"), (block.GetCellData(), "cells")):
+        for role, array in (("vectors", attributes.GetVectors()),
+                            ("normals", attributes.GetNormals())):
+            if array is not None and array.GetName() and array.GetNumberOfComponents() == 3:
+                out[role].append(_field_argument((array.GetName(), where)))
+    return out
 
 
 class Warp(TackAlgorithm):
