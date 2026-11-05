@@ -157,6 +157,12 @@ its own backends, so GPU memory grows with the worker count. The `timing` tests
 skip themselves on a busy host, so a parallel run skips them; run `-m timing`
 alone when they matter. CI runs the suite serially (`uv run pytest`).
 
+On a pull request CI runs the jobs its files need (`tools/ci_changes.py`): a
+change to the docs alone runs lint and the docs build, one to an example lint
+and the examples; a change to the packages, the build or the workflows runs
+everything. The jobs left out report "skipping". Pushes to `main` run
+everything.
+
 ## The thing to know about the tests
 
 **A green run does not mean every backend was exercised.** Each backend's tests
