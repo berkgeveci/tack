@@ -139,6 +139,23 @@ def _same_space(*fields):
     return space, n
 
 
+def mesh_kept(data, key, make):
+    """``make()``, kept with ``data``'s mesh under ``key``: for what is computed from the
+    mesh alone (``cell_geometry``, ``face_geometry``, ``surface_normals``). Every
+    dataset on the same geometry (and so the same topology) shares it,
+    and it is made again when the mesh changes: another geometry, or positions
+    Tack has written since (``arrays._revision``; writes through shared memory are
+    not seen). New fields leave it as it is."""
+    geometry = data.geometry
+    revision = arrays._revision(geometry.values)
+    kept = geometry.__dict__.get("_mesh_kept")
+    if kept is None or kept[0] != revision:
+        kept = geometry.__dict__["_mesh_kept"] = (revision, {})
+    if key not in kept[1]:
+        kept[1][key] = make()
+    return kept[1][key]
+
+
 def _field(data, field):
     """A field by name or object, checked against the dataset before launch."""
     from tack.dataset.dataset import Field, is_field_key

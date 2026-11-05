@@ -275,7 +275,8 @@ class _Topology:
     _point_locator = None
     #: The boundary `extract_surface` found from the cells alone
     #: (`extract_surface._fresh_boundary`): the surface's topology and each of
-    #: its faces' cells, so that a repeated call only carries the fields.
+    #: its faces' cells, so that a repeated call only carries the fields; and the
+    #: surface's geometry with the geometry it was taken from (`_on_boundary`).
     _boundary = None
     #: Its 2D cells' sides matched by their points, for contour lines
     #: (`contour._sides`): a side of any number of cells, unlike `faces()`.

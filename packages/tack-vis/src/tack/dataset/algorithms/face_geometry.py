@@ -82,7 +82,16 @@ def face_geometry(data):
     one on a non-planar face; a 2D mesh's faces are edges, the normal in the
     plane of side 0's cell and the "area" the edge's length; a polyline mesh's
     faces are the polylines' ends, the normal along the line out of side 0 and
-    the "area" 1."""
+    the "area" 1.
+
+    The fields are kept with the mesh (``mesh_kept``): computed once a mesh, and
+    again when its geometry changes."""
+    from tack.dataset.algorithms._common import mesh_kept
+
+    return mesh_kept(data, "face_geometry", lambda: _face_geometry_of(data))
+
+
+def _face_geometry_of(data):
     faces = data.topology.faces()
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)

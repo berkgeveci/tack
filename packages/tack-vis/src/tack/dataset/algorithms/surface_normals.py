@@ -8,7 +8,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.dataset import shapes
-from tack.dataset.algorithms._common import _table, _vectors
+from tack.dataset.algorithms._common import _table, _vectors, mesh_kept
 from tack.dataset.algorithms._links import _average_links
 from tack.dataset.carry import Same, _take, carry
 from tack.dataset.dataset import Field
@@ -225,10 +225,20 @@ def surface_normals(data, consistent=True, weights=None):
         raise ValueError(f"surface_normals takes 2D cells (a surface), not a mesh of "
                          f"dimension {data.topology.dimension}: extract_surface a solid "
                          "first")
+    topology, points, cell_normals = mesh_kept(
+        data, ("surface_normals", bool(consistent), weights),
+        lambda: _normals(data, consistent, weights))
+    data = carry(data, topology, points=Same(), cells=Same())          # not the input
+    data.fields["normals"] = Field(Values(data, "points"), points, "dimensionless")
+    data.fields["cell_normals"] = Field(Values(data, "cells"), cell_normals, "dimensionless")
+    return data
+
+
+def _normals(data, consistent, weights):
+    """``(topology, point normals, cell normals)``: the surface's topology, rewound
+    where ``consistent`` winds it, and its normals' arrays."""
     if consistent and isinstance(data.topology, UnstructuredTopology) and data.num_cells:
         data = _consistent(data)
-    else:
-        data = carry(data, data.topology, points=Same(), cells=Same())    # not the input
     n = data.num_cells
     cell_normals = _vectors(n, data.dtype)
     areas = tack.empty((n,), data.dtype)
@@ -267,6 +277,4 @@ def surface_normals(data, consistent=True, weights=None):
         offsets, links = data.topology.point_links()
         _average_links(offsets, links, corners, points)
         _unit(points)
-    data.fields["normals"] = Field(Values(data, "points"), points, "dimensionless")
-    data.fields["cell_normals"] = Field(Values(data, "cells"), cell_normals, "dimensionless")
-    return data
+    return data.topology, points, cell_normals

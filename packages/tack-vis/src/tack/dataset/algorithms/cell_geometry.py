@@ -219,7 +219,16 @@ def cell_geometry(data):
     On a curved geometry (``H1`` above order 1, or an ``L2`` one of order 2 or
     more) each cell is measured as it is, by quadrature through its own map
     (``integrate.cell_measures``): its volume, area or length, and the centroid
-    those weigh. (A curved cell was measured by its corners.)"""
+    those weigh. (A curved cell was measured by its corners.)
+
+    The fields are kept with the mesh (``mesh_kept``): computed once a mesh, and
+    again when its geometry changes."""
+    from tack.dataset.algorithms._common import mesh_kept
+
+    return mesh_kept(data, "cell_geometry", lambda: _cell_geometry_of(data))
+
+
+def _cell_geometry_of(data):
     space = data.geometry.space
     if getattr(data.topology, "reference_cells", True) and (
             (isinstance(space, H1) and space.order > 1)
