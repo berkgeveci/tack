@@ -1,0 +1,98 @@
+# Publish tack-core to PyPI. tack-vis is not published: users install it from
+# this repository at the release tag (docs/install.md).
+#
+# - A release tag (v0.7.0) builds tack-core, checks it, and publishes it to PyPI
+#   once the `pypi` environment's reviewers approve.
+# - Run by hand (Actions > Publish > Run workflow) it publishes the same build to
+#   TestPyPI instead: the dry run before a release. TestPyPI refuses a version it
+#   has, so a second dry run of one version needs a dev version
+#   (`0.7.0.dev1` in packages/tack-core/pyproject.toml) on a branch.
+#
+# Uploads use trusted publishing (GitHub's OIDC token): no API token is stored.
+# PyPI and TestPyPI each have a trusted publisher for this repository, this
+# workflow (publish.yml) and the environment (pypi, testpypi).
+
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check tack-core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+
+      - name: The tag is the package's version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('packages/tack-core/pyproject.toml', 'rb'))['project']['version'])")
+          test "v$version" = "$GITHUB_REF_NAME" || {
+            echo "::error::tag $GITHUB_REF_NAME, but tack-core's version is $version"; exit 1; }
+
+      - name: Build the wheel and the sdist
+        run: |
+          uv build --out-dir dist packages/tack-core
+          uvx twine check --strict dist/*
+          ls -l dist
+
+      - name: tack-core alone, from its wheel and from its sdist
+        run: |
+          for built in "$(ls dist/tack_core-*.whl)" "$(ls dist/tack_core-*.tar.gz)"; do
+            rm -rf /tmp/coreenv && uv venv -q /tmp/coreenv --python 3.13
+            VIRTUAL_ENV=/tmp/coreenv uv pip install -q "${built}[cpu]"
+            (cd /tmp && /tmp/coreenv/bin/python "$GITHUB_WORKSPACE/tools/check_core_install.py")
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    name: Publish to TestPyPI (run by hand)
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/tack-core
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    name: Publish to PyPI (release tag)
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tack-core
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
