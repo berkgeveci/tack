@@ -115,3 +115,17 @@ def test_point_data_keeps_its_given_gradient(backend):
     given = np.tile(np.float32([4.0, 5.0, 6.0]), (data.num_cells, 1))
     data.fields["u"] = td.Field(td.Values(data, "points"), u.values, gradient=_per_cell(data, given))
     np.testing.assert_allclose(td.gradients(data, "u").values.numpy(), given)
+
+
+def test_a_given_gradient_goes_with_its_field_through_filters(backend):
+    data = _data()
+    given = np.random.default_rng(2).uniform(-1, 1, (data.num_cells, 3)).astype(np.float32)
+    u = td.interpolate(data, _u, td.H1(data))
+    data.fields["u"] = td.Field(u.space, u.values, gradient=_per_cell(data, given))
+    centers = td.cell_centers(data).values.numpy()
+    keep = centers[:, 0] < 0.7
+    data.fields["x"] = td.Field(td.Constant(data), tack.array(centers[:, 0].astype(np.float32)))
+    out = td.threshold(data, "x", -1.0, 0.7)
+    assert out.num_cells == int(keep.sum())
+    assert out.fields["u"].gradient is not None
+    np.testing.assert_allclose(td.gradients(out, "u").values.numpy(), given[keep])
