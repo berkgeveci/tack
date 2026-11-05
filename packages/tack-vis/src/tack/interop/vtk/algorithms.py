@@ -1026,7 +1026,9 @@ class _FieldAlgorithm(TackAlgorithm):
                                       or (isinstance(space, Values) and space.on == "cells")):
                 raise TypeError(f"{name!r} is on {space!r}, which VTK keeps nowhere")
             attributes = out.point_data if on_points else out.cell_data
-            _set_values(attributes, name, _to_vtk_values(field.values, share=True, name=name))
+            values, share = _vtk_values_of(block, piece, field, name) if on_points else \
+                (field.values, True)
+            _set_values(attributes, name, _to_vtk_values(values, share=share, name=name))
             _label(attributes[name], field.unit)
         if any(name in piece.fields for name in fields):
             return out, None
@@ -1062,6 +1064,54 @@ class _FieldAlgorithm(TackAlgorithm):
         if isinstance(field, tuple) and field and isinstance(field[0], str):
             return field[0]
         raise ValueError(f"{type(self).__name__} needs a name for its new field")
+
+
+def _vtk_values_of(block, piece, field, name):
+    """``(values, share)``: a point field of ``piece``, the Tack dataset of the VTK
+    dataset ``block``, as values at ``block``'s points. On linear cells those are
+    the field's own values, shared. On VTK's higher-order cells, whose points are
+    the cells' nodes, the field goes into the space the import made (``project``:
+    exactly, for an ``H1`` field of that order or below and for values on Tack's
+    points, the corners) and each VTK point takes its node's value, a copy; the
+    import recorded which node each point is (``_lagrange.VTK_NODES``, on the
+    topology, or on the topology of the dataset kept for ``block`` where ``piece``
+    is a copy on another device)."""
+    import numpy as np
+
+    from tack import arrays
+    from tack.dataset import H1, project
+    from tack.interop.vtk._lagrange import VTK_NODES
+
+    nodes = getattr(piece.topology, VTK_NODES, None)
+    if nodes is None:
+        entry = _entry(block)
+        if entry is not None:
+            nodes = getattr(entry[1][None].topology, VTK_NODES, None)
+    count = block.GetNumberOfPoints()
+    if nodes is None:
+        if count != piece.num_points:
+            raise ValueError(f"{name!r} has values at {piece.num_points} points, and the VTK "
+                             f"dataset {count}")
+        return field.values, True
+    order, basis, node_of = nodes
+    if len(node_of) != count:
+        raise ValueError(f"{name!r}: the VTK dataset has {count} points, its cells' nodes "
+                         f"{len(node_of)}")
+    space = H1(piece, order=order, basis=basis) if order > 1 else H1(piece)
+    if not (isinstance(field.space, H1) and field.space.order == space.order
+            and field.space.basis == space.basis):
+        kind = arrays.dtype_of(field.values)
+        if getattr(kind, "scalar_dtype", kind).numpy_dtype.kind != "f":
+            raise TypeError(f"{name!r} holds integers at the cells' corners, and VTK's "
+                            "higher-order cells have nodes between them, which an integer "
+                            "field has no value at")
+        field = project(piece, field, space)
+    values = np.asarray(arrays.to_host(field.values))
+    out = values[np.maximum(node_of, 0)]
+    out[node_of < 0] = 0                    # a point no cell uses
+    import tack
+
+    return tack.array(np.ascontiguousarray(out)), False
 
 
 class _Whole(TackAlgorithm):
@@ -2600,9 +2650,11 @@ def _arrays_onto(vtk_data, pieces, names, keep):
                     attributes.AddArray(ghosts)
         for name in names:
             field = piece.fields[name]
-            attributes = out.point_data if _on_points(field.space) else out.cell_data
-            _set_values(attributes, name, _to_vtk_values(field.values, share=True,
-                                                         name=name))
+            on_points = _on_points(field.space)
+            attributes = out.point_data if on_points else out.cell_data
+            values, share = _vtk_values_of(block, piece, field, name) if on_points else \
+                (field.values, True)
+            _set_values(attributes, name, _to_vtk_values(values, share=share, name=name))
             _label(attributes[name], field.unit)
         return out
 

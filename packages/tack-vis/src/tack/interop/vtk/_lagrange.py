@@ -223,6 +223,11 @@ def _node_places(cells, u, node_of, starts, out):
             out[starts[e] + n] = u.dof_index(c, node_of[n])
 
 
+#: The attribute of a topology made from VTK's higher-order cells that says where each
+#: VTK point is in the import's ``H1`` space: ``(order, basis, node of each point)``.
+VTK_NODES = "_vtk_nodes"
+
+
 def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
     """A ``vtkUnstructuredGrid`` of VTK's higher-order cells -- Lagrange, Bezier, the
     classic quadratic, biquadratic and triquadratic ones, cubic lines -- of any
@@ -295,9 +300,13 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
     point_arrays = [name for name in grid.point_data.keys() if name not in skipped]
     sources = [points] + [np.asarray(grid.point_data[name]).reshape(len(points), -1)
                           for name in point_arrays]
+    # Which node of the space each VTK point is (-1 for a point no cell uses): the
+    # field algorithms write a field back onto these points through it (_VTK_NODES).
+    node_of_point = np.full(len(points), -1, np.int64)
     if order == 1:
         space = H1(data)
         node_values = [source[corner_ids] for source in sources]
+        node_of_point[corner_ids] = np.arange(len(corner_ids))
     else:
         space = H1(data, order=order, basis=basis)
         # Where each cell's nodes live in the space, cell by cell.
@@ -330,22 +339,25 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
                     out[at.reshape(-1)] = source[vtk_points.reshape(-1)]
                 seen = np.full(space.size, -1, np.int64)
                 seen[at.reshape(-1)] = vtk_points.reshape(-1)
+                node_of_point[vtk_points.reshape(-1)] = at.reshape(-1)
                 shared_bad |= bool((seen[at.reshape(-1)] != vtk_points.reshape(-1)).any())
             else:
                 if bezier:
                     raise NotImplementedError("Bezier cells whose nodes are not Tack's")
+                own = index >= 0
                 for out, source in zip(node_values, sources, strict=True):
                     values = np.einsum("nj,cjk->cnk", weights, source[rows])
                     # The cell's own nodes copied, as above; the others interpolated.
-                    own = index >= 0
                     values[:, own] = source[rows[:, index[own]]]
                     fresh = ~written[at]
                     out[at[fresh]] = values[fresh]
+                node_of_point[rows[:, index[own]].reshape(-1)] = at[:, own].reshape(-1)
             written[at.reshape(-1)] = True
         if shared_bad:
             raise NotImplementedError("the higher-order cells do not share their points as an "
                                       "H1 space shares its nodes (each cell's own copies)")
         data.geometry = Field(space, _vectors(node_values[0] - shift, dtype))
+    setattr(topology, VTK_NODES, (order, basis if order > 1 else None, node_of_point))
     for name, values in zip(point_arrays, node_values[1:], strict=True):
         array = grid.point_data[name]
         if not np.issubdtype(np.asarray(array).dtype, np.floating) and order > 1:
