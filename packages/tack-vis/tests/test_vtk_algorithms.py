@@ -52,7 +52,7 @@ def _vtk_contour(data, value):
 
 def test_contour_in_a_pipeline_gives_vtks_cells():
     out = (_wavelet() >> ta.Contour(field="RTData", value=150.0))()
-    assert isinstance(out, vtk.vtkUnstructuredGrid)
+    assert isinstance(out, vtk.vtkPolyData)                  # as VTK's contour gives it
     assert out.number_of_cells == _vtk_contour(_wavelet()(), 150.0).number_of_cells
 
 
@@ -301,7 +301,8 @@ def test_probe_gives_vtks_values():
     probe.SetSourceData(source)
     probe.Update()
     out = probe.GetOutputDataObject(0)
-    assert probe.error is None and isinstance(out, vtk.vtkUnstructuredGrid)
+    # A polygonal input stays polygonal, as VTK's probe keeps its input's type.
+    assert probe.error is None and isinstance(out, vtk.vtkPolyData)
     reference = vtk.vtkProbeFilter()
     reference.SetInputData(points)
     reference.SetSourceData(source)
@@ -924,6 +925,12 @@ def _contents(vtk_data):
         out |= {"types": np.asarray(vtk_data.cell_types),
                 "offsets": np.asarray(vtk_data.cells.offsets_array),
                 "connectivity": np.asarray(vtk_data.cells.connectivity_array)}
+    if isinstance(vtk_data, vtk.vtkPolyData):
+        for kind in ("verts", "lines", "polys", "strips"):
+            cells = getattr(vtk_data, f"Get{kind.capitalize()}")()
+            if cells.GetNumberOfCells():
+                out[f"{kind} offsets"] = np.asarray(cells.GetOffsetsArray())
+                out[f"{kind} connectivity"] = np.asarray(cells.GetConnectivityArray())
     for where, attributes in [("point", vtk_data.GetPointData()),
                               ("cell", vtk_data.GetCellData())]:
         for i in range(attributes.GetNumberOfArrays()):
@@ -953,7 +960,11 @@ def test_each_wrapper_gives_its_tack_filters_output(name):
     algorithm = make()
     out = algorithm(data())
     assert algorithm.error is None, algorithm.error
-    _assert_same(_contents(out), _contents(dataset_to_vtk(direct(_tack(data())))))
+    expected = dataset_to_vtk(direct(_tack(data())))
+    first = out.GetPartition(0) if isinstance(out, vtk.vtkPartitionedDataSet) else out
+    if isinstance(first, vtk.vtkPolyData):           # points, lines, surfaces: VTK's type
+        expected = ta._as_polydata(expected)
+    _assert_same(_contents(out), _contents(expected))
 
 
 def test_every_algorithm_has_a_wrapper():
@@ -1134,6 +1145,48 @@ def test_temporal_statistics_on_higher_order_cells():
         (x / 2 + x / 3) / 2, atol=1e-6)
 
 
+# ── vtkPolyData out, as VTK's filters of points, lines and surfaces ──
+
+def test_points_lines_and_surfaces_come_out_as_polydata():
+    """They feed what takes only polydata (vtkCleanPolyData here, vtkPolyDataMapper);
+    a filter that keeps its input's kind keeps a polygonal one polygonal; a clip of a
+    volume stays an unstructured grid, as vtkClipDataSet gives it."""
+    wavelet = _wavelet((-6, 6, -6, 6, -6, 6))()
+    sphere = vtk.vtkSphereSource()()
+    contour = ta.Contour(field="RTData", value=150.0)
+    assert isinstance(contour(wavelet), vtk.vtkPolyData)
+    cleaned = (_wavelet((-6, 6, -6, 6, -6, 6)) >> contour >> vtk.vtkCleanPolyData())()
+    assert cleaned.GetNumberOfPolys() == contour(wavelet).GetNumberOfPolys() > 0
+    for make in (ta.ExtractSurface, ta.ExtractEdges, ta.Triangulate):
+        assert isinstance(make()(sphere if make is not ta.ExtractSurface else wavelet),
+                          vtk.vtkPolyData)
+    assert isinstance(ta.Clip(by=vtk.vtkPlane())(sphere), vtk.vtkPolyData)
+    assert isinstance(ta.Clip(by="RTData", value=150.0)(wavelet), vtk.vtkUnstructuredGrid)
+    assert isinstance(ta.Warp(direction="Normals", scale=0.1)(sphere), vtk.vtkPolyData)
+    pieces = ta.Contour(field="RTData", value=150.0)(_halves()[1])
+    assert all(isinstance(piece, vtk.vtkPolyData) for piece in pieces)
+
+
+def test_a_grid_of_mixed_cells_goes_into_a_polydatas_parts_in_order():
+    """Vertices, lines and polygons go into their parts, the cell data taken in that
+    order (a polydata numbers verts, then lines, then polys); a pixel becomes a quad,
+    its corners reordered."""
+    grid = vtk.vtkUnstructuredGrid()
+    grid.points = vtk.vtkPoints(data=np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
+                                               [2, 0, 0]], float))
+    grid.Allocate(4)
+    grid.InsertNextCell(vtk.VTK_PIXEL, 4, [0, 1, 2, 3])
+    grid.InsertNextCell(vtk.VTK_LINE, 2, [1, 4])
+    grid.InsertNextCell(vtk.VTK_VERTEX, 1, [4])
+    grid.InsertNextCell(vtk.VTK_TRIANGLE, 3, [1, 4, 3])
+    grid.cell_data["id"] = np.arange(4, dtype=np.float64)
+    out = ta._as_polydata(grid)
+    assert (out.GetNumberOfVerts(), out.GetNumberOfLines(), out.GetNumberOfPolys()) == (1, 1, 2)
+    np.testing.assert_array_equal(np.asarray(out.cell_data["id"]), [2, 1, 0, 3])
+    quad = [out.GetCell(2).GetPointId(i) for i in range(4)]
+    assert quad == [0, 1, 3, 2] and out.GetCellType(2) == vtk.VTK_QUAD
+
+
 # ── Seeds on a port ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize("make", [
@@ -1163,7 +1216,8 @@ def test_sph_interpolate_takes_its_particles_on_port_1():
     sph.Update()
     assert sph.error is None, sph.error
     expected = td.sph_interpolate(_tack(particles), _tack(target), fields=["h"])
-    _assert_same(_contents(sph.GetOutputDataObject(0)), _contents(dataset_to_vtk(expected)))
+    _assert_same(_contents(sph.GetOutputDataObject(0)),
+                 _contents(ta._as_polydata(dataset_to_vtk(expected))))
 
 
 # ── Filters that take the pieces together ───────────────────────────
