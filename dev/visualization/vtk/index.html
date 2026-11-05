@@ -5412,9 +5412,9 @@ the Tack filter is a parameter, with the filter's default, except the data
 and what the algorithm supplies itself (the device, a locator, the
 communicator): <code>Contour(field="p", value=0.5, merge_points=False)</code>.</p>
 <p>Every algorithm of the <a href="../../vis-guide/reference/algorithms/">reference</a> has
-one, named as the Tack function in CamelCase, but for the summaries (to come)
-and the finite-volume operators that take values on faces (<code>net_flux</code>,
-<code>divergence</code>, <code>perot</code>), which VTK keeps nowhere. "Fields" means the input's
+one, named as the Tack function in CamelCase, but for the finite-volume
+operators that take values on faces (<code>net_flux</code>, <code>divergence</code>, <code>perot</code>), which
+VTK keeps nowhere. "Fields" means the input's
 type, shallow-copied, with the new arrays added; "faces" means every face as a
 polygon (a 2D mesh's edges as lines), or every edge as a line, the new values
 their cell data.</p>
@@ -5508,6 +5508,16 @@ their cell data.</p>
 <td>faces</td>
 </tr>
 <tr>
+<td>Summaries</td>
+<td><code>Statistics</code>, <code>Entropy</code></td>
+<td><code>vtkTable</code>, a row per field (and component)</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Integrate</code></td>
+<td><code>vtkUnstructuredGrid</code> of one vertex, as <code>vtkIntegrateAttributes</code></td>
+</tr>
+<tr>
 <td>Probing, sampling and particles</td>
 <td><code>Probe</code> (the source on port 1), <code>SphInterpolate</code> (the particles on port 1)</td>
 <td>the input's structure, with the source's fields</td>
@@ -5551,6 +5561,11 @@ their cell data.</p>
 <td></td>
 <td><code>RemoveGhosts</code></td>
 <td>the input's structure</td>
+</tr>
+<tr>
+<td>AMR hierarchies</td>
+<td><code>AverageDown</code></td>
+<td><code>vtkOverlappingAMR</code></td>
 </tr>
 </tbody>
 </table>
@@ -5620,6 +5635,64 @@ at any value matches, except that a <code>vtkPlane</code>'s normal is made a uni
 empty, and the algorithm's <code>error</code> attribute keeps the exception for Python
 callers. <code>error</code> is <code>None</code> after a run that succeeded, so a script checks it
 after <code>Update()</code> or a pipeline call.</p>
+<p>The summaries reduce all their input to one answer, as VTK's
+<code>vtkDescriptiveStatistics</code> and <code>vtkIntegrateAttributes</code> do: every dataset of a
+partitioned dataset or a tree, on every MPI rank, and every rank gets the
+answer. A point that pieces share counts once where its copies' owner is
+marked: run <code>GhostCells</code> or <code>GenerateGlobalIds</code> first (pieces cut without
+either, such as <code>vtkExtractVOI</code>'s, count it in each). <code>Statistics</code> and
+<code>Entropy</code> take <code>fields</code> (by default every field) and give a row per field, a
+vector field's components one by one; the statistics keep Tack's names
+(<code>kurtosis</code> is not the excess). <code>Integrate</code> puts its one point at the input's
+centroid, each field's integral on it, and the measure as <code>Length</code>, <code>Area</code> or
+<code>Volume</code>; integrals are by quadrature through each cell's map, so curved and
+higher-order cells exactly.</p>
+<p>An AMR hierarchy, a <code>vtkOverlappingAMR</code>, is one Tack <code>AMRDataSet</code> (see
+<a href="../../data/amr-and-octrees/">AMR and octrees</a>), each box marked with what a
+finer box covers. The algorithms whose Tack filter takes a hierarchy take it
+whole: <code>Probe</code> as its source (each point at its finest box, as
+<code>vtkAMRResampleFilter</code> samples), <code>Statistics</code>, <code>Entropy</code>, <code>Integrate</code>,
+<code>Voxelize</code>, <code>GhostCells</code> and <code>AverageDown</code>. A region that a finer box covers,
+and a point that a sibling box holds, counts once. <code>GhostCells</code> grows each box
+within its level and gives a <code>vtkOverlappingAMR</code> of the input's boxes whose
+blocks are the grown ones. <code>AverageDown</code> puts the finer levels' values of one
+field into the coarse cells and points they cover and leaves its input as it
+was.</p>
+<p>The other algorithms run box by box, as Tack's filters do on AMR, each level's
+boxes taken as the pieces of a partitioned dataset and the cells a finer box
+covers left out. One that computes fields (<code>Elevation</code>, <code>Gradients</code>,
+<code>Project</code>, ...) gives the hierarchy back with them. One that makes a dataset
+(<code>Contour</code>, <code>Clip</code>, <code>Slice</code>, <code>Threshold</code>, ...) gives a
+<code>vtkPartitionedDataSetCollection</code> with a partitioned dataset per level, named
+<code>level0</code>, <code>level1</code>, and so on. Contours and slices of different levels do not
+join where the levels meet (<a href="../adaptive-data/">Adaptive data</a> has the limits),
+and <code>Gradients</code> at a box's edge needs <code>GhostCells</code> first, as for any pieces.
+<code>GenerateGlobalIds</code>, <code>Streamlines</code> and <code>Advect</code> refuse a hierarchy, since box by
+box their answers would mislead: ids repeated from level to level, paths
+ending where a finer box begins. Over MPI ranks, each rank holds its own blocks, the others'
+empty, as VTK spreads a hierarchy, and the ranks convert it together
+(<code>vtk_to_dataset(amr, world=...)</code> does the same).</p>
+<!-- tack-check: vtk-pipeline-amr -->
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">vtkmodules.vtkFiltersAMR</span><span class="w"> </span><span class="kn">import</span> <span class="n">vtkAMRGaussianPulseSource</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">tack</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tack.interop.vtk.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">AverageDown</span><span class="p">,</span> <span class="n">GhostCells</span><span class="p">,</span> <span class="n">Statistics</span><span class="p">,</span> <span class="n">Threshold</span>
+
+<span class="n">tack</span><span class="o">.</span><span class="n">set_default_device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+
+<span class="n">pulse</span> <span class="o">=</span> <span class="n">vtkAMRGaussianPulseSource</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="mi">3</span><span class="p">)()</span>       <span class="c1"># a box, two finer ones in it</span>
+<span class="n">once</span> <span class="o">=</span> <span class="n">Statistics</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Gaussian-Pulse&quot;</span><span class="p">])(</span><span class="n">pulse</span><span class="p">)</span>    <span class="c1"># covered cells counted once</span>
+
+<span class="n">grown</span> <span class="o">=</span> <span class="n">GhostCells</span><span class="p">(</span><span class="n">layers</span><span class="o">=</span><span class="mi">1</span><span class="p">)(</span><span class="n">pulse</span><span class="p">)</span>                    <span class="c1"># blocks grown by a layer</span>
+<span class="k">assert</span> <span class="n">grown</span><span class="o">.</span><span class="n">GetDataSetAsCartesianGrid</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">number_of_cells</span> <span class="o">&gt;</span> <span class="mi">4</span> <span class="o">*</span> <span class="mi">6</span> <span class="o">*</span> <span class="mi">10</span>
+<span class="n">again</span> <span class="o">=</span> <span class="n">Statistics</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Gaussian-Pulse&quot;</span><span class="p">])(</span><span class="n">grown</span><span class="p">)</span>   <span class="c1"># ghosts count nowhere</span>
+<span class="k">assert</span> <span class="n">again</span><span class="o">.</span><span class="n">GetColumnByName</span><span class="p">(</span><span class="s2">&quot;n&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">GetValue</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="n">once</span><span class="o">.</span><span class="n">GetColumnByName</span><span class="p">(</span><span class="s2">&quot;n&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">GetValue</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">averaged</span> <span class="o">=</span> <span class="n">AverageDown</span><span class="p">(</span><span class="n">field</span><span class="o">=</span><span class="s2">&quot;Gaussian-Pulse&quot;</span><span class="p">)(</span><span class="n">pulse</span><span class="p">)</span>  <span class="c1"># fine values in the coarse box</span>
+
+<span class="n">kept</span> <span class="o">=</span> <span class="n">Threshold</span><span class="p">(</span><span class="n">field</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;Gaussian-Pulse&quot;</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">lower</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)(</span><span class="n">pulse</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">kept</span><span class="o">.</span><span class="n">GetNumberOfPartitionedDataSets</span><span class="p">()</span> <span class="o">==</span> <span class="mi">2</span>       <span class="c1"># a level each, box by box</span>
+</code></pre></div>
 <h2 id="write-your-own-vtk-algorithm">Write your own VTK algorithm<a class="headerlink" href="#write-your-own-vtk-algorithm" title="Permanent link">&para;</a></h2>
 <p>Subclass <code>TackAlgorithm</code> and give it <code>compute(data)</code>, a Tack dataset from a
 Tack dataset. One algorithm can run several Tack filters, with no conversion

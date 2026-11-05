@@ -5422,7 +5422,8 @@ every rank, each as its <code>(lo, hi)</code> cell indices.</p>
 back for images and rectilinear boxes. A hierarchy with curvilinear boxes
 goes to VTK as a <code>vtkPartitionedDataSetCollection</code> with one partitioned
 dataset per level. <code>td.amr_gaussian_pulse</code> makes VTK's Gaussian-pulse test
-hierarchy.</p>
+hierarchy. In a VTK pipeline, Tack's AMR filters take a <code>vtkOverlappingAMR</code>
+whole (see <a href="../../visualization/vtk/">VTK</a>).</p>
 <h2 id="tree-based-amr">Tree-based AMR<a class="headerlink" href="#tree-based-amr" title="Permanent link">&para;</a></h2>
 <p>An <code>OctreeDataSet</code> holds a grid of trees. The <em>roots</em> are an image or a
 rectilinear grid, 2D or 3D, and each of its cells is the root of one tree.
