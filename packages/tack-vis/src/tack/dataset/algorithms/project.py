@@ -119,14 +119,20 @@ def _corner_copies(cells, u, offsets, out):
 
 
 @tack.kernel
-def _distinct_point_means(cells, values, out):
-    # A polyhedral, polygonal or polyline cell: the mean over its distinct points.
+def _distinct_point_means(cells, values, out, empty):
+    # A polyhedral, polygonal or polyline cell: the mean over its distinct points. A
+    # cell of none (VTK allows an empty polygon) has no value: ``empty`` (NaN), what
+    # ``out`` held times 0 plus it, so nothing is read past the cell.
     for c in cells:
         n = cells.num_points(c)
-        total = values[cells.point_id(c, 0)]
-        for j in range(1, n):
-            total += values[cells.point_id(c, j)]
-        out[cells.entity_id(c)] = total / n
+        e = cells.entity_id(c)
+        if n == 0:
+            out[e] = out[e] * 0.0 + empty
+        else:
+            total = values[cells.point_id(c, 0)]
+            for j in range(1, n):
+                total += values[cells.point_id(c, j)]
+            out[e] = total / n
 
 
 @tack.kernel
@@ -170,12 +176,12 @@ def _onto_cells(data, field, groups, place, out, average):
 def _polyhedral_means(data, field, average):
     """Each polyhedron's, polygon's or polyline's one value of a point field: its
     integral, linear on the cell's pieces, over its measure, or its distinct
-    points' mean (also where a cell has no measure)."""
+    points' mean (also where a cell has no measure); NaN for a cell of no points."""
     from tack.dataset.algorithms.cell_geometry import cell_geometry
 
     values = materialize(field.values)
     out = _like(values, data.num_cells)
-    for_each(_distinct_point_means, data, "cells", values, out)
+    for_each(_distinct_point_means, data, "cells", values, out, float("nan"))
     if average == "integral" and data.num_cells:
         measures = materialize(cell_geometry(data).measure.values)
         _divided(_no_reference_values(data, field), measures, out, data.num_cells)

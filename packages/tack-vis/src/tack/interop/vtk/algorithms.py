@@ -1429,6 +1429,12 @@ class ConnectedComponents(_Whole):
     OUTPUT = None
     FUNCTION = "connected_components"
 
+    def _unit(self, vtk_data):
+        # The input with the two arrays: its own type, as VTK's filter keeps it
+        # (dataset_to_vtk would make a polygonal input an unstructured grid).
+        result = self.execute(self._dataset(vtk_data, self.device))
+        return _arrays_onto(vtk_data, result, ["region", "point_region"], keep=True)
+
 
 class _Seeded(_Whole):
     """A filter of particles from seeds: ``seeds``, or where that is unset, the points

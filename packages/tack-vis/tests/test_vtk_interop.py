@@ -457,3 +457,30 @@ def test_level_zero_memory_from_a_private_context_is_refused():
 
     with pytest.raises(RuntimeError, match="same Level Zero context"):
         interop.array_to_vtk(field, n_components=1)
+
+
+def test_a_hidden_point_hides_its_cells_as_in_vtk():
+    """VTK sees a cell only where it and all its points are visible (a grid blanked by
+    points): the import marks a cell with a HIDDENPOINT corner HIDDENCELL, so Tack's
+    filters leave it out as VTK's do, the point marks kept."""
+    vtk = pytest.importorskip("vtkmodules.all")
+    import tack.dataset as td
+    from tack.interop.vtk import vtk_to_dataset
+
+    tack.set_default_device("cpu")
+    image = vtk.vtkRTAnalyticSource(whole_extent=(0, 4, 0, 4, 0, 4))()
+    level = float(np.asarray(image.point_data["RTData"])[62]) + 0.5
+    for blank in (False, True):
+        grid = vtk.vtkImageDataToPointSet()(image)
+        if blank:
+            grid.BlankPoint(62)
+        theirs = vtk.vtkContourFilter()
+        theirs.SetInputData(grid)
+        theirs.SetValue(0, level)
+        theirs.Update()
+        data = vtk_to_dataset(grid, dtype=None)
+        ours = td.contour(data, "RTData", level)
+        assert ours.num_cells == theirs.GetOutput().GetNumberOfCells()
+    hidden = np.asarray(data.ghosts.cells.numpy()) & td.Ghosts.HIDDENCELL
+    assert np.count_nonzero(hidden) == 8                       # the point's cells
+    assert data.ghosts.points.numpy()[62] & td.Ghosts.HIDDENPOINT

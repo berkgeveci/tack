@@ -34,7 +34,8 @@ def cell_centers(data):
     if not getattr(data.topology, "reference_cells", True):
         from tack.dataset.algorithms.project import _distinct_point_means
 
-        for_each(_distinct_point_means, data, "cells", materialize(data.geometry.values), out)
+        for_each(_distinct_point_means, data, "cells", materialize(data.geometry.values), out,
+                 float("nan"))
     else:
         for_each(_centers, data, "cells", out)
     return Field(Values(data, "cells"), out, data.unit)

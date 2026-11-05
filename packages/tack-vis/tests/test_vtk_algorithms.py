@@ -1187,6 +1187,20 @@ def test_a_grid_of_mixed_cells_goes_into_a_polydatas_parts_in_order():
     assert quad == [0, 1, 3, 2] and out.GetCellType(2) == vtk.VTK_QUAD
 
 
+def test_connected_components_keeps_its_inputs_type():
+    """VTK's vtkConnectivityFilter keeps a polygonal input polygonal: the arrays go onto
+    a copy of the input (dataset_to_vtk made it an unstructured grid, and the
+    algorithm refused its own output)."""
+    two = vtk.vtkAppendPolyData()
+    two.AddInputData(vtk.vtkSphereSource()())
+    two.AddInputData(vtk.vtkSphereSource(center=(3, 0, 0))())
+    two.Update()
+    out = ta.ConnectedComponents()(two.GetOutput())
+    assert isinstance(out, vtk.vtkPolyData)
+    assert sorted(np.unique(np.asarray(out.cell_data["region"]))) == [0, 1]
+    assert "point_region" in out.point_data.keys()
+
+
 # ── Seeds on a port ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize("make", [
