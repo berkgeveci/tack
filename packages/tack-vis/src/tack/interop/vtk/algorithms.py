@@ -830,7 +830,17 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             output.CompositeShallowCopy(self._tree(input))
         else:
             self._set_unit_output(output, self._unit(input))
+        _keep_active(self.GetInputData(inInfo, self.ACTIVE_FROM, 0), output,
+                     self._made_active())
         return 1
+
+    #: The input port whose active attributes the output keeps (Probe's source's).
+    ACTIVE_FROM = 0
+
+    def _made_active(self):
+        """``{(where, role): name}``: the arrays this filter makes that VTK's makes
+        active (``Scalars``, ``Normals``, ...), set over what the input's give."""
+        return {}
 
     def _by_box(self, vtk_amr):
         """The output for an AMR hierarchy this filter takes box by box: each level's
@@ -923,6 +933,56 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         if self.FUNCTION is None:
             raise NotImplementedError(f"{type(self).__name__} gives no compute()")
         return self._function()(data, **self.arguments())
+
+
+#: VTK's attribute roles, as vtkDataSetAttributes names them.
+_ROLES = ("Scalars", "Vectors", "Normals", "TCoords", "Tensors")
+
+
+def _datasets_in(data):
+    """The datasets in ``data``: itself, or a composite's leaves."""
+    if data is None:
+        return []
+    if isinstance(data, vtkDataObject) and data.IsA("vtkCompositeDataSet"):
+        out, iterator = [], data.NewIterator()
+        iterator.InitTraversal()
+        while not iterator.IsDoneWithTraversal():
+            out.append(iterator.GetCurrentDataObject())
+            iterator.GoToNextItem()
+        return [d for d in out if d.IsA("vtkDataSet")]
+    return [data] if data.IsA("vtkDataSet") else []
+
+
+def _keep_active(source, out, made):
+    """Give every dataset in ``out`` the active attributes VTK's filter would: those of
+    ``source`` (its first dataset's) where an array of the name is there and the
+    role has none yet -- the scalars a contour carried, the vectors a clip kept --
+    then ``made``, the filter's own (``_made_active``). Tack keeps no roles, so the
+    arrays it carries come back plain, and mappers, glyphs and lighting read the
+    roles."""
+    names = {}
+    for leaf in _datasets_in(source)[:1]:
+        for where, attributes in (("points", leaf.GetPointData()), ("cells", leaf.GetCellData())):
+            for role in _ROLES:
+                array = getattr(attributes, f"Get{role}")()
+                if array is not None and array.GetName():
+                    names[where, role] = array.GetName()
+    if not names and not made:
+        return
+    for leaf in _datasets_in(out):
+        # Setting a role modifies the dataset: an entry valid before stays valid,
+        # the arrays being the same.
+        entry = _entry(leaf)
+        attributes = {"points": leaf.GetPointData(), "cells": leaf.GetCellData()}
+        for (where, role), name in names.items():
+            target = attributes[where]
+            if getattr(target, f"Get{role}")() is None and target.GetAbstractArray(name):
+                getattr(target, f"SetActive{role}")(name)
+        for (where, role), name in made.items():
+            if attributes[where].GetAbstractArray(name):
+                getattr(attributes[where], f"SetActive{role}")(name)
+        if entry is not None:
+            setattr(_holder(leaf), _CACHE, (_key(leaf), entry[1]))
 
 
 def _without_tracebacks(error, seen=None):
@@ -1198,6 +1258,9 @@ class SurfaceNormals(TackAlgorithm):
 
     consistent = Parameter(True, "wind the polygons consistently first")
 
+    def _made_active(self):
+        return {("points", "Normals"): "normals"}
+
 
 class ConnectedComponents(_Whole):
     """``td.connected_components``: ``region`` on the cells and ``point_region`` on the
@@ -1284,6 +1347,7 @@ class Probe(TackAlgorithm):
     OUTPUT = "structure"
     INPUTS = 2
     AMR_PORTS = (1,)
+    ACTIVE_FROM = 1                     # the probed fields are the source's
     FUNCTION = "probe"
     EXCLUDE = ("where",)
 
@@ -1355,6 +1419,9 @@ class Elevation(_FieldAlgorithm):
     high_point = Parameter((0.0, 0.0, 1.0), "where it is range[1]")
     range = Parameter((0.0, 1.0), "the elevation's range")
     name = Parameter("elevation", "the new array's name")
+
+    def _made_active(self):
+        return {("points", "Scalars"): self._output_name()}
 
 
 class CellQuality(_FieldAlgorithm):
@@ -1477,6 +1544,9 @@ class Tubes(TackAlgorithm):
 
     FUNCTION = "tubes"
     FIELDS = ("radius_by",)
+
+    def _made_active(self):
+        return {("points", "Normals"): "normals"}
 
 
 class Glyphs(TackAlgorithm):
@@ -1659,6 +1729,9 @@ class ImplicitValues(_FieldAlgorithm):
     IMPLICIT = ("function",)
 
     name = Parameter("implicit", "the new point array's name")
+
+    def _made_active(self):
+        return {("points", "Scalars"): self._output_name()}
 
 
 class CellIds(_FieldAlgorithm):
@@ -1892,6 +1965,9 @@ class PointNormals(_FieldAlgorithm):
 
     FUNCTION = "point_normals"
     RESULT_FIELDS = ("normals",)
+
+    def _made_active(self):
+        return {("points", "Normals"): "normals"}
 
 
 class Outliers(_Whole):

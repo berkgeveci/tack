@@ -974,6 +974,37 @@ def test_every_algorithm_has_a_wrapper():
     assert not missing
 
 
+# ── Active attributes ───────────────────────────────────────────────
+
+def _active(data, where="points"):
+    attributes = data.GetPointData() if where == "points" else data.GetCellData()
+    return {role: (getattr(attributes, f"Get{role}")().GetName()
+                   if getattr(attributes, f"Get{role}")() is not None else None)
+            for role in ("Scalars", "Vectors", "Normals")}
+
+
+def test_outputs_keep_the_inputs_active_attributes_as_vtks_filters_do():
+    """Tack keeps no roles: a carried array came back plain, so a mapper colored by
+    nothing (VTK's tests rendered white). The output's arrays of the names the
+    input's active ones have are active again; the filter's own array where VTK's
+    makes it so (an elevation's scalars, a surface's or tube's normals), over a
+    carried one."""
+    wavelet = _wavelet((-6, 6, -6, 6, -6, 6))()
+    assert _active(ta.Elevation()(wavelet))["Scalars"] == "elevation"
+    assert _active(ta.Contour(field="RTData", value=150.0)(wavelet))["Scalars"] == "RTData"
+    assert _active(ta.Clip(by="RTData", value=150.0)(wavelet))["Scalars"] == "RTData"
+    halves = ta.Threshold(field="RTData", lower=150.0, upper=300.0)(_halves()[1])
+    assert all(_active(piece)["Scalars"] == "RTData" for piece in halves)
+    probe = ta.Probe()
+    probe.SetInputDataObject(0, vtk.vtkSphereSource()())
+    probe.SetSourceData(wavelet)
+    probe.Update()
+    assert _active(probe.GetOutputDataObject(0))["Scalars"] == "RTData"   # the source's
+    edges = ta.ExtractEdges()(vtk.vtkCubeSource()())         # carries the cube's Normals
+    assert _active(ta.Tubes(radius=0.05, sides=8)(edges))["Normals"] == "normals"
+    assert _active(ta.SurfaceNormals()(vtk.vtkSphereSource()()))["Normals"] == "normals"
+
+
 # ── Higher-order cells: fields at VTK's nodes ───────────────────────
 
 def _quadratic_quads():
