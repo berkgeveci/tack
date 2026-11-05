@@ -974,6 +974,95 @@ def test_every_algorithm_has_a_wrapper():
     assert not missing
 
 
+# ── Higher-order cells: fields at VTK's nodes ───────────────────────
+
+def _quadratic_quads():
+    """Two quad8 cells (VTK_QUADRATIC_QUAD) side by side, the shared edge's middle
+    node pushed off the line: VTK's points are corners and edge middles, 13."""
+    corners = [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]
+    middles = [(0.5, 0), (1, 0.5 + 0.0), (0.5, 1), (0, 0.5), (1.5, 0), (2, 0.5), (1.5, 1)]
+    points = np.array([(x, y, 0.0) for x, y in corners + middles])
+    points[7, 0] = 1.1                                  # the shared edge, curved
+    grid = vtk.vtkUnstructuredGrid()
+    grid.points = vtk.vtkPoints(data=points)
+    grid.Allocate(2)
+    grid.InsertNextCell(vtk.VTK_QUADRATIC_QUAD, 8, [0, 1, 4, 3, 6, 7, 8, 9])
+    grid.InsertNextCell(vtk.VTK_QUADRATIC_QUAD, 8, [1, 2, 5, 4, 10, 11, 12, 7])
+    return grid
+
+
+def _quadratic_tetra():
+    corners = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    edges = [(0, 1), (1, 2), (0, 2), (0, 3), (1, 3), (2, 3)]        # VTK's tet10 order
+    points = np.array(corners + [tuple((np.add(corners[a], corners[b])) / 2)
+                                 for a, b in edges], float)
+    points[4] += (0.0, -0.1, 0.0)                                    # one edge curved
+    grid = vtk.vtkUnstructuredGrid()
+    grid.points = vtk.vtkPoints(data=points)
+    grid.Allocate(1)
+    grid.InsertNextCell(vtk.VTK_QUADRATIC_TETRA, 10, list(range(10)))
+    return grid
+
+
+@pytest.mark.parametrize("make", [_quadratic_quads, _quadratic_tetra])
+def test_a_field_filter_writes_every_node_of_higher_order_cells(make):
+    """The new arrays have a value at each of VTK's points, the edge middles too, in
+    VTK's order: the elevation of each node's own position, and its gradient
+    constant. Tack numbers the nodes of its order-2 space otherwise, and keeps
+    values on points at the corners only."""
+    grid = make()
+    elevation = ta.Elevation(low_point=(0, 0, 0), high_point=(2, 0, 0), name="e")(grid)
+    assert elevation.GetNumberOfPoints() == grid.GetNumberOfPoints()
+    x = np.asarray(grid.points.data)
+    np.testing.assert_allclose(np.asarray(elevation.point_data["e"]),
+                               np.clip(x[:, 0] / 2, 0, 1), atol=1e-6)
+    gradient = ta.Gradients(field=("e", "points"), at="points", name="g")(elevation)
+    values = np.asarray(gradient.point_data["g"])
+    assert values.shape == (grid.GetNumberOfPoints(), 3)
+    np.testing.assert_allclose(values, np.tile([0.5, 0, 0], (len(values), 1)), atol=1e-5)
+
+
+def test_higher_order_nodes_on_another_device_and_integers_refused():
+    """A copy of the dataset on another device finds the nodes through the dataset kept
+    for the VTK one; an integer field on the points has no value at an edge's
+    middle, and is refused."""
+    from tack.runtime import dispatch
+    from tack.runtime.cpu import CPUBackend
+
+    class SecondCPU(CPUBackend):
+        display_name = "second device"
+
+        @property
+        def memory_domain(self):
+            return ("cpu", 1)
+
+    grid = _quadratic_quads()
+    other = dispatch.as_device(SecondCPU())
+    moved = ta.Elevation(low_point=(0, 0, 0), high_point=(2, 0, 0), name="e", device=other)
+    out = moved(grid)
+    assert moved.error is None, moved.error
+    np.testing.assert_allclose(np.asarray(out.point_data["e"]),
+                               np.asarray(grid.points.data)[:, 0] / 2, atol=1e-6)
+    ids = ta.PointIds()
+    ids.SetInputDataObject(0, grid)
+    assert ids.Update() == 0 and "integers" in str(ids.error)
+
+
+def test_temporal_statistics_on_higher_order_cells():
+    statistics = ta.RunningStatistics(fields=["e"])
+    for t in (0.0, 1.0):
+        step = ta.Elevation(low_point=(0, 0, 0), high_point=(2 + t, 0, 0), name="e")(
+            _quadratic_quads())
+        step.GetInformation().Set(vtk.vtkDataObject.DATA_TIME_STEP(), t)
+        statistics.SetInputDataObject(0, step)
+        statistics.Update()
+        assert statistics.error is None, statistics.error
+    x = np.asarray(_quadratic_quads().points.data)[:, 0]
+    np.testing.assert_allclose(
+        np.asarray(statistics.GetOutputDataObject(0).point_data["e_mean"]),
+        (x / 2 + x / 3) / 2, atol=1e-6)
+
+
 # ── Seeds on a port ─────────────────────────────────────────────────
 
 @pytest.mark.parametrize("make", [
