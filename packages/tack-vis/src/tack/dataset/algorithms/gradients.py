@@ -20,20 +20,33 @@ __all__ = ['gradients', 'world_gradient', 'world_hessian', 'world_jet']
 
 @tack.func
 def world_gradient(cells, u, c, pc):
-    """`u`'s gradient in the world at parametric `pc` of cell `c`: its
-    parametric gradient through the geometry's Jacobian. For kernels that need a
-    field's gradient where `gradients` does not put it."""
-    # d(u)/d(x) from d(u)/d(pc), through the geometry's Jacobian J. A solid's is
-    # J^-T d(u)/d(pc). A 2D cell's lies in its tangent plane, spanned by J's
-    # columns a and b: g = alpha a + beta b with g . a and g . b the parametric
-    # derivatives, VTK's and Viskores' in-plane gradient (no area: NaN, as a
-    # solid of no volume). Lines and vertices: zero.
-    g = tack.vec3(0.0, 0.0, 0.0)
-    if cells.DIMENSION == 3:
-        g = cells.geometry_jacobian(c, pc).inverse().transpose() @ u.parametric_gradient(c, pc)
-    elif cells.DIMENSION == 2:
-        g = _in_plane(cells.geometry_jacobian(c, pc), u.parametric_gradient(c, pc))
-    return g
+    """`u`'s gradient in the world at parametric `pc` of cell `c`, as its view gives it:
+    from its basis by default (`_BasisGradient`), the gradient it was given
+    (`Field(..., gradient=)`), or a space's own. For kernels that need a field's
+    gradient where `gradients` does not put it."""
+    return u.world_gradient(cells, c, pc)
+
+
+@tack.func
+def world_hessian(cells, u, c, pc):
+    """`u`'s second derivatives in the world at parametric `pc` of solid cell `c`, a
+    symmetric 3x3 matrix, as its view gives them (`world_jet`). From the basis: by the
+    chain rule through the geometry, the parametric Hessian less the geometry's
+    curvature along the world gradient, taken to world axes on both sides by the
+    inverse Jacobian; analytic on every shape at orders 1 and 2, and at any order on
+    tensor shapes, simplices and wedges; zero on surfaces, lines and vertices. NaN for
+    a field given only its gradient."""
+    _, _, h = world_jet(cells, u, c, pc)
+    return h
+
+
+@tack.func
+def world_jet(cells, u, c, pc):
+    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of cell
+    `c`, as its view gives them, from one pass over the cell's values where it can:
+    what a kernel needing several of them reads once. The gradient is
+    `world_gradient`'s, and the Hessian `world_hessian`'s."""
+    return u.world_jet(cells, c, pc)
 
 
 @tack.func
@@ -49,36 +62,57 @@ def _in_plane(m, d):
     return ((bb * d[0] - ab * d[1]) * a + (aa * d[1] - ab * d[0]) * b) / det
 
 
+class _BasisGradient:
+    """A field view's world gradient from its basis: on every field view with a
+    ``parametric_gradient`` and no other source (``_derivative_mixins``)."""
 
-@tack.func
-def world_hessian(cells, u, c, pc):
-    """`u`'s second derivatives in the world at parametric `pc` of solid cell `c`, a
-    symmetric 3x3 matrix: by the chain rule through the geometry, the parametric
-    Hessian less the geometry's curvature along the world gradient, taken to world
-    axes on both sides by the inverse Jacobian. Analytic from the basis on every
-    shape at orders 1 and 2, and at any order on tensor shapes, simplices and
-    wedges. Zero on surfaces, lines and vertices."""
-    _, _, h = world_jet(cells, u, c, pc)
-    return h
+    @tack.func
+    def world_gradient(self, cells, c, pc):
+        # d(u)/d(x) from d(u)/d(pc), through the geometry's Jacobian J. A solid's is
+        # J^-T d(u)/d(pc). A 2D cell's lies in its tangent plane, spanned by J's
+        # columns a and b: g = alpha a + beta b with g . a and g . b the parametric
+        # derivatives, VTK's and Viskores' in-plane gradient (no area: NaN, as a
+        # solid of no volume). Lines and vertices: zero.
+        g = tack.vec3(0.0, 0.0, 0.0)
+        if cells.DIMENSION == 3:
+            g = cells.geometry_jacobian(c, pc).inverse().transpose() @ self.parametric_gradient(c, pc)
+        elif cells.DIMENSION == 2:
+            g = _in_plane(cells.geometry_jacobian(c, pc), self.parametric_gradient(c, pc))
+        return g
 
 
-@tack.func
-def world_jet(cells, u, c, pc):
-    """Scalar `u`'s value, world gradient and world Hessian at parametric `pc` of cell
-    `c`, from the field view's `parametric_jet`, one pass over the cell's values: what a
-    kernel needing several of them reads once. The gradient is `world_gradient`'s on
-    every cell, in the cell's plane on surfaces, and the Hessian `world_hessian`'s, zero
-    on surfaces, lines and vertices."""
-    v, pg, ph = u.parametric_jet(c, pc)
-    g = tack.vec3(0.0, 0.0, 0.0)
-    h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
-    if cells.DIMENSION == 3:
-        inverse = cells.geometry_jacobian(c, pc).inverse()
-        g = inverse.transpose() @ pg
-        h = inverse.transpose() @ (ph - cells.geometry_curvature(c, pc, g)) @ inverse
-    elif cells.DIMENSION == 2:
-        g = _in_plane(cells.geometry_jacobian(c, pc), pg)
-    return v, g, h
+class _BasisJet:
+    """A field view's value, world gradient and world Hessian from its basis, in one
+    pass: on every field view with a ``parametric_jet``."""
+
+    @tack.func
+    def world_jet(self, cells, c, pc):
+        v, pg, ph = self.parametric_jet(c, pc)
+        g = tack.vec3(0.0, 0.0, 0.0)
+        h = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        if cells.DIMENSION == 3:
+            inverse = cells.geometry_jacobian(c, pc).inverse()
+            g = inverse.transpose() @ pg
+            h = inverse.transpose() @ (ph - cells.geometry_curvature(c, pc, g)) @ inverse
+        elif cells.DIMENSION == 2:
+            g = _in_plane(cells.geometry_jacobian(c, pc), pg)
+        return v, g, h
+
+
+class _GivenGradient:
+    """A field given its gradient (``Field(..., gradient=)``): ``world_gradient`` is that
+    field's value at ``pc`` of cell ``c``, and ``world_jet`` pairs it with the field's
+    value and a Hessian of NaN, which a gradient alone does not determine."""
+
+    @tack.func
+    def world_gradient(self, cells, c, pc):
+        return self.given_gradient.value(c, pc)
+
+    @tack.func
+    def world_jet(self, cells, c, pc):
+        n = self.no_hessian
+        return (self.value(c, pc), self.given_gradient.value(c, pc),
+                tack.mat3([n, n, n], [n, n, n], [n, n, n]))
 
 
 @tack.kernel
@@ -279,6 +313,24 @@ def _polyhedral_scalar_gradients(data, field, at):
 
 
 @tack.kernel
+def _row(values, k, out):
+    for i in range(out.shape[0]):
+        v = values[i]
+        out[i] = tack.vec3(v[3 * k], v[3 * k + 1], v[3 * k + 2])
+
+
+def _gradient_row(gradient, k):
+    """Row ``k`` of a vector field's given gradient: its component ``k``'s."""
+    if gradient is None:
+        return None
+    values = materialize(gradient.values)
+    out = tack.empty((size_of(values),), tack.vec(3, arrays.dtype_of(values)))
+    if out.shape[0]:
+        _row(values, k, out)
+    return Field(gradient.space, out, gradient.unit)
+
+
+@tack.kernel
 def _component(values, k, out):
     for i in range(out.shape[0]):
         out[i] = values[i][k]
@@ -355,6 +407,9 @@ def gradients(data, field, at="cells"):
     Viskores adds nothing but still counts the cell). ``flow_quantities`` derives divergence, vorticity and
     the Q-criterion from a vector field's gradient.
 
+    A field given its gradient (``Field(..., gradient=)``) gives that instead of its
+    basis', evaluated at the same points and averaged the same way.
+
     On a polyhedral topology there is no reference element. A cell's gradient
     of point data is then Green-Gauss over its boundary: the faces walked
     outward and fanned from their points' means (the triangles ``cell_geometry``
@@ -365,6 +420,9 @@ def gradients(data, field, at="cells"):
     get zero. At the points, the cells' gradients are averaged over the cells
     around each point."""
     field = _with_basis(data, _field(data, field))
+    if not getattr(data.topology, "reference_cells", True) and field.gradient is not None:
+        raise NotImplementedError("gradients of a field given its gradient on a mesh without "
+                                  "reference elements")
     if (not getattr(data.topology, "reference_cells", True)
             and not isinstance(field.space, (H1, Constant))):
         raise NotImplementedError(f"gradients of a field on {field.space!r} on a mesh "
@@ -394,7 +452,7 @@ def gradients(data, field, at="cells"):
         part = tack.empty((size_of(field.values),), arrays.dtype_of(field.values))
         if part.shape[0]:
             _component(values, k, part)
-        rows = _scalar_gradients(data, Field(field.space, part), at)
+        rows = _scalar_gradients(data, Field(field.space, part, gradient=_gradient_row(field.gradient, k)), at)
         if n:
             _place_rows(rows, k, out)
     return Field(space, out, unit)
