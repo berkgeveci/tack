@@ -94,7 +94,9 @@ def full_values(space, values):
     width = arrays.width_of(held)
     # The centres are sums with weights (-1/4, 1/2): an integer field's in floating
     # point, the type its basis is evaluated in (in an integer type they truncated).
-    dtype = _float_type(arrays.dtype_of(held), space.topology.device)
+    from tack.runtime.dispatch import backend_of
+
+    dtype = _float_type(arrays.dtype_of(held), backend_of(space.topology.device))
     out = tack.empty((full.size,), tack.vec(width, dtype) if width else dtype,
                      device=space.topology.device)
     stored = arrays.size_of(held)

@@ -74,21 +74,31 @@ def test_extents_are_vtks(kind, voi, rate):
                                   np.asarray(theirs.cell_data["cid"]))
 
 
-@pytest.mark.parametrize("kind", ["image", "rectilinear"])
+@pytest.mark.parametrize("kind", ["image", "rectilinear", "curvilinear", "curvilinear xy"])
 def test_a_flat_grid_takes_vtks_three_axes(kind):
-    """A flat image or rectilinear grid (here in the xz plane) is a 2D grid in
-    Tack; VTK still gives its extent and rate in three axes."""
+    """A flat grid (here in the xz plane, or xy) is a 2D grid in Tack; VTK still
+    gives its extent and rate in three axes. A curvilinear grid's coordinates do
+    not say which axis is flat: VTK's (0, 0) pair does."""
     voi, rate = (1, 7, 0, 0, 2, 6), (2, 1, 2)
     if kind == "image":
         grid = vtk.vtkImageData(dimensions=(9, 1, 7), spacing=(0.5, 1.0, 2.0),
                                 origin=(1.0, 2.0, 3.0))
+    elif kind.startswith("curvilinear"):
+        dims = (9, 1, 7) if kind == "curvilinear" else (9, 7, 1)
+        if kind != "curvilinear":
+            voi, rate = (1, 7, 2, 6, 0, 0), (2, 2, 1)
+        grid = vtk.vtkImageDataToPointSet()(vtk.vtkImageData(dimensions=dims,
+                                                             spacing=(0.5, 1.0, 2.0)))
+        x = np.asarray(grid.points.data)
+        grid.points = vtk.vtkPoints(data=x + 0.1 * np.sin(x[:, [1, 2, 0]]))
     else:
         grid = vtk.vtkRectilinearGrid(dimensions=(9, 1, 7))
         grid.x_coordinates = vtk.vtkDoubleArray(np.cumsum(np.linspace(0.5, 1.5, 9)))
         grid.y_coordinates = vtk.vtkDoubleArray(np.array([2.0]))
         grid.z_coordinates = vtk.vtkDoubleArray(np.cumsum(np.linspace(1.0, 3.0, 7)))
     grid.point_data["v"] = np.arange(grid.number_of_points, dtype=np.float64)
-    extractor = vtk.vtkExtractVOI if kind == "image" else vtk.vtkExtractRectilinearGrid
+    extractor = {"image": vtk.vtkExtractVOI, "rectilinear": vtk.vtkExtractRectilinearGrid}.get(
+        kind, vtk.vtkExtractGrid)
     theirs = extractor(voi=voi, sample_rate=rate)(grid)
     ours = td.extract_extent(vtk_to_dataset(grid, dtype=tack.f64), voi, rate)
     np.testing.assert_allclose(ours.positions(),

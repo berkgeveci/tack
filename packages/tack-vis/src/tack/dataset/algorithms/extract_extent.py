@@ -63,9 +63,14 @@ def _vtk_form(data, n, extent, rate):
     image's (``(i0, i1, j0, j1, 0, 0)``, a rate per axis), reduced to the
     grid's ``n`` axes; anything else as it is."""
     values = np.asarray(extent, dtype=np.int64).reshape(-1)
-    axes = _grid_axes(data, n) if values.size == 6 else None
-    if axes is None:
+    if values.size != 6 or n == 3:
         return extent, rate
+    axes = _grid_axes(data, n)
+    if axes is None:
+        # A flat curvilinear grid's coordinates do not say which axis is flat:
+        # those whose pair is not (0, 0), as VTK writes a flat axis, else the first.
+        spanned = [a for a in range(3) if (values[2 * a], values[2 * a + 1]) != (0, 0)]
+        axes = spanned if len(spanned) == n else list(range(n))
     extent = [values[2 * a:2 * a + 2] for a in axes]
     if np.ndim(rate) == 1 and len(rate) == 3:
         rate = [rate[a] for a in axes]
@@ -81,8 +86,9 @@ def extract_extent(data, extent, rate=1, fields=None):
     ``rate``-th along each axis (a number, or one per axis): a structured grid
     of the same kind, an image's coordinates still uniform, a rectilinear
     grid's axes cut, explicit points taken. VTK's ``vtkExtractGrid``. A flat
-    image or rectilinear grid also takes VTK's three axes' extent and rates,
-    the flat axis's pair and rate ignored.
+    grid also takes VTK's three axes' extent and rates, the flat axis's pair and
+    rate ignored: an image's or rectilinear grid's flat axis is where its
+    coordinates have one point, a curvilinear grid's where the pair is (0, 0).
 
     An axis of one point is dropped: a k-plane of a 3D grid is a 2D grid,
     whose cells are faces of the 3D grid's. Point fields come along at the
