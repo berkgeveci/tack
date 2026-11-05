@@ -14785,7 +14785,21 @@ the pieces' order.</p>
 <span class="normal">408</span>
 <span class="normal">409</span>
 <span class="normal">410</span>
-<span class="normal">411</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">integrate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The measure of ``data`` -- its cells&#39; total volume, area or length -- and the</span>
 <span class="sd">    integral over it of each of ``fields`` (names; a mapping of names to field</span>
@@ -14814,23 +14828,37 @@ the pieces' order.</p>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.statistics</span><span class="w"> </span><span class="kn">import</span> <span class="n">_over_pieces</span>
 
         <span class="n">pieces</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-        <span class="n">names</span> <span class="o">=</span> <span class="n">_names</span><span class="p">(</span><span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">pieces</span> <span class="k">else</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">Field</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">names</span><span class="p">):</span>
+        <span class="c1"># Refused alike on every rank, a rank without pieces too: from the arguments.</span>
+        <span class="n">given</span> <span class="o">=</span> <span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">fields</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="s2">&quot;items&quot;</span><span class="p">)</span> <span class="k">else</span>
+                 <span class="p">[]</span> <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span>
+                 <span class="p">[</span><span class="n">fields</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">fields</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="n">Field</span><span class="p">)</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">fields</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">Field</span><span class="p">)</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">given</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;integrate over a PartitionedDataSet takes fields by name or &quot;</span>
                             <span class="s2">&quot;as objects whose on(piece) gives the piece&#39;s: a Field belongs &quot;</span>
                             <span class="s2">&quot;to one partition&#39;s topology&quot;</span><span class="p">)</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="n">_names</span><span class="p">(</span><span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">fields</span><span class="p">)</span> <span class="k">if</span> <span class="n">pieces</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="c1"># The names and the measure&#39;s unit as a rank with pieces finds them: a rank</span>
+        <span class="c1"># without any gets the same answer (the sums, and the fields&#39; units, are every</span>
+        <span class="c1"># rank&#39;s).</span>
+        <span class="n">mine</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">names</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">([</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">names</span><span class="p">],</span>
+                                           <span class="n">_measure_unit</span><span class="p">(</span><span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+        <span class="n">labels</span><span class="p">,</span> <span class="n">measure_unit</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">world</span><span class="o">.</span><span class="n">_allgather</span><span class="p">(</span><span class="n">mine</span><span class="p">)</span> <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">),</span>
+                                    <span class="p">([],</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">names</span> <span class="o">=</span> <span class="p">[(</span><span class="n">name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">]</span>
         <span class="n">parts</span> <span class="o">=</span> <span class="n">_over_pieces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">piece</span><span class="p">:</span> <span class="n">_piece</span><span class="p">(</span><span class="n">piece</span><span class="p">,</span> <span class="n">names</span><span class="p">))</span>
         <span class="n">measure</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">fsum</span><span class="p">(</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">)</span>
-        <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">v</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">names</span><span class="p">}</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">v</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">}</span>
         <span class="n">field_units</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span> <span class="k">if</span> <span class="n">parts</span> <span class="k">else</span> <span class="p">{}</span>
-        <span class="n">first</span> <span class="o">=</span> <span class="n">pieces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">pieces</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">out_units</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">units</span><span class="o">.</span><span class="n">derived</span><span class="p">((</span><span class="n">field_units</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">measure_unit</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+                     <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">}</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">names</span> <span class="o">=</span> <span class="n">_names</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
         <span class="n">measure</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">field_units</span> <span class="o">=</span> <span class="n">_piece</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">names</span><span class="p">)</span>
-        <span class="n">first</span> <span class="o">=</span> <span class="n">data</span>
-    <span class="n">out_units</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">units</span><span class="o">.</span><span class="n">derived</span><span class="p">((</span><span class="n">field_units</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">_measure_unit</span><span class="p">(</span><span class="n">first</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
-                 <span class="k">if</span> <span class="n">first</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">names</span><span class="p">}</span>
-    <span class="k">return</span> <span class="n">Integrals</span><span class="p">(</span><span class="n">measure</span><span class="o">=</span><span class="n">measure</span><span class="p">,</span> <span class="n">measure_unit</span><span class="o">=</span><span class="n">_measure_unit</span><span class="p">(</span><span class="n">first</span><span class="p">)</span> <span class="k">if</span> <span class="n">first</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">measure_unit</span> <span class="o">=</span> <span class="n">_measure_unit</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">out_units</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">units</span><span class="o">.</span><span class="n">derived</span><span class="p">((</span><span class="n">field_units</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="n">measure_unit</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+                     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">names</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">Integrals</span><span class="p">(</span><span class="n">measure</span><span class="o">=</span><span class="n">measure</span><span class="p">,</span> <span class="n">measure_unit</span><span class="o">=</span><span class="n">measure_unit</span><span class="p">,</span>
                      <span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">ndim</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">v</span><span class="p">)))</span>
                              <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
                      <span class="n">units</span><span class="o">=</span><span class="n">out_units</span><span class="p">)</span>
@@ -15569,10 +15597,7 @@ its origin and time. <code>data</code>'s and <code>grid</code>'s spatial units m
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/voxelize.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 80</span>
-<span class="normal"> 81</span>
-<span class="normal"> 82</span>
-<span class="normal"> 83</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 83</span>
 <span class="normal"> 84</span>
 <span class="normal"> 85</span>
 <span class="normal"> 86</span>
@@ -15645,7 +15670,10 @@ its origin and time. <code>data</code>'s and <code>grid</code>'s spatial units m
 <span class="normal">153</span>
 <span class="normal">154</span>
 <span class="normal">155</span>
-<span class="normal">156</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">voxelize</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">voxelize</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data`` on the voxels (cells) of ``grid``, an image (``uniform_grid``): the</span>
 <span class="sd">    image with ``fraction``, the share of each voxel&#39;s volume the data covers, and</span>
 <span class="sd">    each of ``fields``&#39; mean over that share (point and cell fields with a basis,</span>
@@ -18541,7 +18569,11 @@ exchange moves all the point fields, one all the cell fields.</p>
 <span class="normal">228</span>
 <span class="normal">229</span>
 <span class="normal">230</span>
-<span class="normal">231</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update_ghosts</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">):</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">update_ghosts</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy the named fields&#39; values on ghost points and cells from the pieces that</span>
 <span class="sd">    own them, in place, for a ``PartitionedDataSet`` that ``ghost_cells`` or</span>
 <span class="sd">    ``ghost_points`` made.</span>
@@ -18564,6 +18596,8 @@ exchange moves all the point fields, one all the cell fields.</p>
                          <span class="s2">&quot;ghost_points made, which keeps the exchanges&quot;</span><span class="p">)</span>
     <span class="n">pieces</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="n">blocks</span> <span class="o">=</span> <span class="n">plans</span><span class="p">[</span><span class="s2">&quot;points&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">blocks</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">blocks</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
+        <span class="k">return</span>                              <span class="c1"># no pieces anywhere: nothing to refresh</span>
     <span class="n">by_kind</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;points&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">},</span> <span class="s2">&quot;cells&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">g</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">}}</span>
     <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">g</span><span class="p">,</span> <span class="n">piece</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">,</span> <span class="n">pieces</span><span class="p">):</span>
@@ -18579,7 +18613,9 @@ exchange moves all the point fields, one all the cell fields.</p>
                                 <span class="sa">f</span><span class="s2">&quot;a </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">, not a Tack array&quot;</span><span class="p">)</span>
             <span class="n">by_kind</span><span class="p">[</span><span class="n">kind</span><span class="p">][</span><span class="n">g</span><span class="p">][</span><span class="n">field_label</span><span class="p">(</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">values</span>
     <span class="k">for</span> <span class="n">kind</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">by_kind</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+        <span class="c1"># Every rank&#39;s pieces&#39; say, a rank without pieces too: it takes part in the</span>
+        <span class="c1"># exchange the others run.</span>
+        <span class="k">if</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_reduce</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">values</span><span class="p">[</span><span class="n">g</span><span class="p">]))</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">},</span> <span class="s2">&quot;max&quot;</span><span class="p">):</span>
             <span class="n">plans</span><span class="p">[</span><span class="n">kind</span><span class="p">]</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -18965,7 +19001,8 @@ input back -- with its offset and its coordinates (uniform, rectilinear
 or explicit); other pieces give an unstructured dataset.</p>
 <p>Across MPI ranks every rank passes its pieces and the result is on the
 <code>root</code> rank (<code>None</code> elsewhere), on <code>device</code> (by default the device
-of the root rank's first piece).</p>
+of the root rank's first piece). A root with no pieces gets the merge made
+on the first rank that has some, moved to it (on its default device).</p>
 
 
             <details class="mkdocstrings-source">
@@ -19018,7 +19055,13 @@ of the root rank's first piece).</p>
 <span class="normal">68</span>
 <span class="normal">69</span>
 <span class="normal">70</span>
-<span class="normal">71</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">merge_pieces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">merge_pieces</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``data``&#39;s pieces as one dataset: every cell a piece owns, once, and every point</span>
 <span class="sd">    once, with the point and cell fields (``fields`` choosing them as filters</span>
 <span class="sd">    do), as VTK&#39;s vtkMergeBlocks after vtkRemoveGhosts.</span>
@@ -19037,7 +19080,8 @@ of the root rank's first piece).</p>
 
 <span class="sd">    Across MPI ranks every rank passes its pieces and the result is on the</span>
 <span class="sd">    ``root`` rank (``None`` elsewhere), on ``device`` (by default the device</span>
-<span class="sd">    of the root rank&#39;s first piece).&quot;&quot;&quot;</span>
+<span class="sd">    of the root rank&#39;s first piece). A root with no pieces gets the merge made</span>
+<span class="sd">    on the first rank that has some, moved to it (on its default device).&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">PartitionedDataSet</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;merge_pieces takes a PartitionedDataSet, not </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.ghost_cells</span><span class="w"> </span><span class="kn">import</span> <span class="n">_carried</span><span class="p">,</span> <span class="n">_kind</span>
@@ -19052,21 +19096,26 @@ of the root rank's first piece).</p>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;root is a rank, 0 to </span><span class="si">{</span><span class="n">world</span><span class="o">.</span><span class="n">size</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">, not </span><span class="si">{</span><span class="n">root</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">firsts</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="n">g</span> <span class="o">==</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="o">.</span><span class="n">start</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">})</span>
     <span class="n">starts</span> <span class="o">=</span> <span class="p">[</span><span class="n">g</span> <span class="k">for</span> <span class="n">g</span><span class="p">,</span> <span class="n">first</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">firsts</span><span class="p">)</span> <span class="k">if</span> <span class="n">first</span><span class="p">]</span>
-    <span class="n">target</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">g</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">starts</span> <span class="k">if</span> <span class="n">blocks</span><span class="o">.</span><span class="n">rank_of</span><span class="p">(</span><span class="n">g</span><span class="p">)</span> <span class="o">==</span> <span class="n">root</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;merge_pieces gathers onto a piece of rank </span><span class="si">{</span><span class="n">root</span><span class="si">}</span><span class="s2">, which has none&quot;</span><span class="p">)</span>
-    <span class="n">on_root</span> <span class="o">=</span> <span class="n">target</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">starts</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;merge_pieces has no pieces on any rank to merge&quot;</span><span class="p">)</span>
+    <span class="c1"># Onto the root&#39;s first piece; a root with no pieces gets the merge made on</span>
+    <span class="c1"># the first rank that has some (``_to_root``).</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">g</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">starts</span> <span class="k">if</span> <span class="n">blocks</span><span class="o">.</span><span class="n">rank_of</span><span class="p">(</span><span class="n">g</span><span class="p">)</span> <span class="o">==</span> <span class="n">root</span><span class="p">),</span> <span class="n">starts</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">on_target</span> <span class="o">=</span> <span class="n">target</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">local</span>
     <span class="n">out_device</span> <span class="o">=</span> <span class="p">(</span><span class="n">tack</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span> <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span>
-                  <span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">target</span><span class="p">))</span> <span class="k">if</span> <span class="n">on_root</span> <span class="k">else</span> <span class="kc">None</span>
+                  <span class="n">blocks</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">target</span><span class="p">))</span> <span class="k">if</span> <span class="n">on_target</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="n">structured</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">all_gather</span><span class="p">({</span><span class="n">g</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">StructuredTopology</span><span class="p">)</span>
                                     <span class="k">for</span> <span class="n">g</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">blocks</span><span class="o">.</span><span class="n">local</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)})</span>
-    <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">structured</span><span class="p">):</span>
-        <span class="n">tiled</span> <span class="o">=</span> <span class="n">_box</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">tiled</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">_merged_structured</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">names</span><span class="p">,</span> <span class="n">_kind</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">out_device</span><span class="p">,</span>
-                                      <span class="n">tiled</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">_merged_unstructured</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">names</span><span class="p">,</span> <span class="n">_kind</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">out_device</span><span class="p">,</span>
-                                <span class="n">tolerance</span><span class="p">)</span>
+    <span class="n">tiled</span> <span class="o">=</span> <span class="n">_box</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">)</span> <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">structured</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">tiled</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="n">_merged_structured</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">names</span><span class="p">,</span> <span class="n">_kind</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">out_device</span><span class="p">,</span> <span class="n">tiled</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="n">_merged_unstructured</span><span class="p">(</span><span class="n">blocks</span><span class="p">,</span> <span class="n">pieces</span><span class="p">,</span> <span class="n">names</span><span class="p">,</span> <span class="n">_kind</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">out_device</span><span class="p">,</span>
+                                      <span class="n">tolerance</span><span class="p">)</span>
+    <span class="n">source</span> <span class="o">=</span> <span class="n">blocks</span><span class="o">.</span><span class="n">rank_of</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">source</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">merged</span>
+    <span class="k">return</span> <span class="n">_to_root</span><span class="p">(</span><span class="n">world</span><span class="p">,</span> <span class="n">merged</span><span class="p">,</span> <span class="n">source</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -19118,10 +19167,7 @@ level first, so a value reaches the coarsest level in one call.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/amr_ghosts.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1060</span>
-<span class="normal">1061</span>
-<span class="normal">1062</span>
-<span class="normal">1063</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1063</span>
 <span class="normal">1064</span>
 <span class="normal">1065</span>
 <span class="normal">1066</span>
@@ -19165,7 +19211,11 @@ level first, so a value reaches the coarsest level in one call.</p>
 <span class="normal">1104</span>
 <span class="normal">1105</span>
 <span class="normal">1106</span>
-<span class="normal">1107</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">average_down</span><span class="p">(</span><span class="n">amr</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+<span class="normal">1107</span>
+<span class="normal">1108</span>
+<span class="normal">1109</span>
+<span class="normal">1110</span>
+<span class="normal">1111</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">average_down</span><span class="p">(</span><span class="n">amr</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Put the finer levels&#39; data into the coarse cells and points they cover, in</span>
 <span class="sd">    place, as AMReX&#39;s ``average_down``: each refined coarse cell (``REFINEDCELL``)</span>
 <span class="sd">    takes the volume-weighted average of the fine cells over it, each refined</span>
@@ -19177,7 +19227,8 @@ level first, so a value reaches the coarsest level in one call.</p>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">amr</span><span class="p">,</span> <span class="n">AMRDataSet</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;average_down takes an AMRDataSet, not </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">amr</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">boxes</span> <span class="o">=</span> <span class="p">[</span><span class="n">box</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">box</span> <span class="ow">in</span> <span class="n">amr</span><span class="p">]</span>
-    <span class="n">kinds</span> <span class="o">=</span> <span class="p">{</span><span class="n">_kind</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">])</span> <span class="k">for</span> <span class="n">box</span> <span class="ow">in</span> <span class="n">boxes</span><span class="p">}</span>
+    <span class="c1"># Every rank&#39;s boxes&#39; say: a rank without boxes knows nothing of the field.</span>
+    <span class="n">kinds</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="o">*</span><span class="n">amr</span><span class="o">.</span><span class="n">world</span><span class="o">.</span><span class="n">_allgather</span><span class="p">({</span><span class="n">_kind</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">])</span> <span class="k">for</span> <span class="n">box</span> <span class="ow">in</span> <span class="n">boxes</span><span class="p">}))</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">kinds</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="kc">None</span> <span class="ow">in</span> <span class="n">kinds</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;average_down averages a point or cell field; </span><span class="si">{</span><span class="n">field</span><span class="si">!r}</span><span class="s2"> is not one&quot;</span><span class="p">)</span>
     <span class="n">kind</span> <span class="o">=</span> <span class="n">kinds</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
