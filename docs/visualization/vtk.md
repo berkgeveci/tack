@@ -178,9 +178,9 @@ and what the algorithm supplies itself (the device, a locator, the
 communicator): `Contour(field="p", value=0.5, merge_points=False)`.
 
 Every algorithm of the [reference](../vis-guide/reference/algorithms.md) has
-one, named as the Tack function in CamelCase, but for the summaries (to come)
-and the finite-volume operators that take values on faces (`net_flux`,
-`divergence`, `perot`), which VTK keeps nowhere. "Fields" means the input's
+one, named as the Tack function in CamelCase, but for the finite-volume
+operators that take values on faces (`net_flux`, `divergence`, `perot`), which
+VTK keeps nowhere. "Fields" means the input's
 type, shallow-copied, with the new arrays added; "faces" means every face as a
 polygon (a 2D mesh's edges as lines), or every edge as a line, the new values
 their cell data.
@@ -203,6 +203,8 @@ their cell data.
 | Fields from fields | `Gradients`, `FlowQuantities`, `Project`, `ValuesAtCenters`, `Interpolate`, `Magnitude`, `Dot`, `Cross`, `Composite`, `LogValues` | fields |
 | | `Convert` | the input's structure |
 | Finite volumes | `Jump`, `UpwindFlux` | faces |
+| Summaries | `Statistics`, `Entropy` | `vtkTable`, a row per field (and component) |
+| | `Integrate` | `vtkUnstructuredGrid` of one vertex, as `vtkIntegrateAttributes` |
 | Probing, sampling and particles | `Probe` (the source on port 1), `SphInterpolate` (the particles on port 1) | the input's structure, with the source's fields |
 | | `Voxelize` | `vtkImageData` (the `grid` parameter's) |
 | | `Streamlines`, `Advect` (seeds on port 1, or `seeds=`) | `vtkUnstructuredGrid` |
@@ -285,6 +287,19 @@ An exception in a filter is VTK's error. It is printed, the output is left
 empty, and the algorithm's `error` attribute keeps the exception for Python
 callers. `error` is `None` after a run that succeeded, so a script checks it
 after `Update()` or a pipeline call.
+
+The summaries reduce all their input to one answer, as VTK's
+`vtkDescriptiveStatistics` and `vtkIntegrateAttributes` do: every dataset of a
+partitioned dataset or a tree, on every MPI rank, and every rank gets the
+answer. A point that pieces share counts once where its copies' owner is
+marked: run `GhostCells` or `GenerateGlobalIds` first (pieces cut without
+either, such as `vtkExtractVOI`'s, count it in each). `Statistics` and
+`Entropy` take `fields` (by default every field) and give a row per field, a
+vector field's components one by one; the statistics keep Tack's names
+(`kurtosis` is not the excess). `Integrate` puts its one point at the input's
+centroid, each field's integral on it, and the measure as `Length`, `Area` or
+`Volume`; integrals are by quadrature through each cell's map, so curved and
+higher-order cells exactly.
 
 ## Write your own VTK algorithm
 

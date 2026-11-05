@@ -253,7 +253,10 @@ def test_an_entry_goes_with_its_vtk_dataset():
     assert address in ta._datasets
     del grid
     gc.collect()
-    assert address not in ta._datasets
+    # The deletion is noted, and the entry goes at the cache's next use.
+    assert address in ta._deleted
+    ta._drop_deleted()
+    assert address not in ta._datasets and address not in ta._observers
 
 
 def test_a_field_filters_output_keeps_its_inputs_topology():
@@ -1045,3 +1048,119 @@ def test_particles_go_from_piece_to_piece(make):
     furthest_halves = ends(on_halves)[:, 0].max()
     assert furthest_whole > 0.0                     # the paths do cross x = 0
     np.testing.assert_allclose(furthest_halves, furthest_whole, rtol=1e-6)
+
+
+def test_a_dataset_the_collector_frees_leaves_its_observer_callable():
+    """A dataset an algorithm read, freed by Python's collector in a cycle made after
+    it was read (a traceback's frames hold one so): its DeleteEvent observer, referenced
+    only by it, was cleared as garbage first, and calling it crashed Python (VTK bugs
+    19). The observers are kept reachable, so this collects without crashing."""
+    import gc
+
+    class Holder:
+        pass
+
+    addresses = []
+    for _ in range(3):
+        data = _wavelet((-4, 4, -4, 4, -4, 4))()
+        assert ta.Contour(field="RTData", value=150.0)(data).number_of_cells > 0
+        addresses.append(data.GetAddressAsString("vtkObject"))
+        holder = Holder()
+        holder.cycle = holder
+        holder.data = data
+        del data, holder
+        gc.collect()
+    ta._drop_deleted()
+    assert not any(address in ta._observers for address in addresses)
+
+
+# ── Reductions: Statistics, Entropy, Integrate ──────────────────────
+
+def _row(table, row=0):
+    return {table.GetColumnName(i): table.GetValue(row, i).ToString()
+            for i in range(table.GetNumberOfColumns())}
+
+
+def test_statistics_are_tacks_in_a_table():
+    image = _wavelet()()
+    table = ta.Statistics(fields=["RTData"])(image)
+    assert isinstance(table, vtk.vtkTable) and table.GetNumberOfRows() == 1
+    expected = td.statistics(vtk_to_dataset(image, dtype=None), "RTData")
+    row = _row(table)
+    assert (row["field"], row["where"], row["component"]) == ("RTData", "points", "-1")
+    for name in ta.Statistics.NAMES:
+        column = table.GetColumnByName(name)
+        assert column.GetValue(0) == pytest.approx(getattr(expected, name), rel=1e-12), name
+
+
+def test_a_vector_field_is_reduced_a_component_at_a_time():
+    image = (_wavelet() >> ta.Gradients(field="RTData", at="points"))()
+    table = ta.Statistics(fields=[("gradient", "points")])(image)
+    assert table.GetNumberOfRows() == 3
+    assert [table.GetColumnByName("component").GetValue(i) for i in range(3)] == [0, 1, 2]
+    values = np.asarray(image.point_data["gradient"])
+    np.testing.assert_allclose([table.GetColumnByName("mean").GetValue(i) for i in range(3)],
+                               values.astype(np.float64).mean(axis=0), rtol=1e-6)
+
+
+def test_every_field_by_default_and_by_set_input_array_to_process():
+    image = (_wavelet() >> ta.Elevation())()
+    table = ta.Statistics()(image)
+    assert sorted(table.GetColumnByName("field").GetValue(i)
+                  for i in range(table.GetNumberOfRows())) == ["RTData", "elevation"]
+    chosen = ta.Statistics()
+    chosen.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS,
+                                  "elevation")
+    assert _row(chosen(image))["field"] == "elevation"
+
+
+def test_entropy_is_tacks():
+    image = _wavelet()()
+    table = ta.Entropy(fields=["RTData"], bins=16)(image)
+    expected = td.entropy(vtk_to_dataset(image, dtype=None), "RTData", bins=16)
+    assert table.GetColumnByName("entropy").GetValue(0) == pytest.approx(expected, rel=1e-12)
+
+
+@pytest.mark.parametrize("marks", [ta.GenerateGlobalIds, ta.GhostCells])
+def test_a_reduction_of_pieces_and_trees_is_the_wholes(marks):
+    """The halves share a plane of points: with its copies' owner marked (global ids or
+    ghost cells), each is counted once, and the halves' statistics are the whole's."""
+    whole, halves = _halves()
+    expected = ta.Statistics(fields=["RTData"])(whole)
+    tree = vtk.vtkPartitionedDataSetCollection()
+    tree.SetNumberOfPartitionedDataSets(1)
+    tree.SetPartitionedDataSet(0, marks()(halves))
+    for table in [(marks() >> ta.Statistics(fields=["RTData"]))(halves),
+                  ta.Statistics(fields=["RTData"])(tree)]:
+        assert table.GetColumnByName("n").GetValue(0) == expected.GetColumnByName(
+            "n").GetValue(0)
+        # Over pieces, sums of f32 values and moments combine in another order.
+        for name in ta.Statistics.NAMES:
+            assert table.GetColumnByName(name).GetValue(0) == pytest.approx(
+                expected.GetColumnByName(name).GetValue(0), rel=1e-6), name
+
+
+def test_integrate_is_vtks_integrate_attributes():
+    image = (_wavelet() >> ta.Gradients(field="RTData", name="g"))()
+    ours = ta.Integrate()(image)
+    theirs = vtk.vtkIntegrateAttributes()(image)
+    assert isinstance(ours, vtk.vtkUnstructuredGrid) and ours.number_of_points == 1
+    np.testing.assert_allclose(ours.points.data.GetTuple3(0), theirs.points.data.GetTuple3(0),
+                               atol=1e-9)
+    assert ours.cell_data["Volume"].GetValue(0) == pytest.approx(
+        theirs.cell_data["Volume"].GetValue(0), rel=1e-12)
+    assert ours.point_data["RTData"].GetValue(0) == pytest.approx(
+        theirs.point_data["RTData"].GetValue(0), rel=1e-6)
+    np.testing.assert_allclose(ours.cell_data["g"].GetTuple3(0),
+                               theirs.cell_data["g"].GetTuple3(0), rtol=1e-6)
+    _, halves = _halves()
+    pieces = ta.Integrate()(halves)
+    assert pieces.cell_data["Volume"].GetValue(0) == pytest.approx(
+        theirs.cell_data["Volume"].GetValue(0), rel=1e-12)
+
+
+def test_a_surfaces_measure_is_its_area():
+    surface = (_wavelet() >> ta.ExtractSurface())()
+    out = ta.Integrate()(surface)
+    assert "Area" in out.cell_data.keys()
+    assert out.cell_data["Area"].GetValue(0) == pytest.approx(6 * 16 * 16, rel=1e-12)

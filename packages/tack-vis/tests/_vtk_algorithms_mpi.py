@@ -64,6 +64,14 @@ def main():
     assert owned == cells, (owned, cells)
     assert size == 1 or np.count_nonzero(marks), "no ghost cells from the neighbours"
 
+    # Reductions: every rank gets the whole's, each shared point counted once.
+    stats = (ta.GenerateGlobalIds(**options) >> ta.Statistics(fields=["RTData"],
+                                                              **options))(pieces)
+    count = stats.GetColumnByName("n").GetValue(0)
+    assert count == points, (count, points)
+    volume = ta.Integrate(**options)(pieces).GetCellData().GetArray("Volume").GetValue(0)
+    assert volume == 16.0 ** 3, volume
+
     merged = ta.MergePieces(**options)(pieces)
     if rank == 0:
         assert merged.number_of_points == points, (merged.number_of_points, points)
