@@ -122,7 +122,8 @@ def _compare(grid, data, rng, rtol=1e-12):
         width = values.shape[1]
         ours = tack.empty((len(pcs),), tack.f64 if width == 1 else tack.vec(width, tack.f64))
         positions = tack.empty((len(pcs),), tack.vec3(tack.f64))
-        td.for_each(_at, data, "cells", data.fields[name], points, ours, positions)
+        # The point array's field: a cell array of the same name is another.
+        td.for_each(_at, data, "cells", data.fields[name, td.H1], points, ours, positions)
         theirs_x, theirs = _vtk_at(grid, pcs, values)
         np.testing.assert_allclose(positions.numpy() + np.asarray(data.origin), theirs_x,
                                    atol=1e-12 * max(np.abs(theirs_x).max(), 1.0))
@@ -227,10 +228,14 @@ def test_lagrange_slices_and_clips_are_vtks(hexahedra):
 
 @needs_data
 def test_lagrange_boundaries_are_vtks(hexahedra):
-    """``vtkDataSetSurfaceFilter``'s boundary is Tack's at level 0 (the corners), and
-    finer, both approach the curved boundary's exact area (``integrate`` of Tack's
-    curved ``extract_surface``), Tack's 2^n split nearer than VTK's level n."""
+    """``vtkDataSetSurfaceFilter``'s boundary is Tack's at level 0 (the corners: the
+    same faces, both measured by ``vtkCellSizeFilter``, since Tack measures a bent
+    quad as its fan from the mean and VTK as two triangles), and finer, both
+    approach the curved boundary's exact area (``integrate`` of Tack's curved
+    ``extract_surface``), Tack's 2^n split nearer than VTK's level n."""
     from vtkmodules.vtkFiltersGeometry import vtkDataSetSurfaceFilter
+
+    from tack.interop.vtk import dataset_to_vtk
 
     grid, _ = hexahedra
     data = vtk_to_dataset(grid, dtype=tack.f64)
@@ -238,9 +243,11 @@ def test_lagrange_boundaries_are_vtks(hexahedra):
     for level in range(4):
         theirs = _measure(vtkDataSetSurfaceFilter(nonlinear_subdivision_level=level)(grid),
                           "Area")
-        ours = _total(td.extract_surface(td.subdivide(data, 2 ** level, fields=[])))
+        surface = td.extract_surface(td.subdivide(data, 2 ** level, fields=[]))
+        ours = _total(surface)
         if level == 0:
-            assert ours == pytest.approx(theirs, rel=1e-12)
+            assert _measure(dataset_to_vtk(surface), "Area") == pytest.approx(theirs,
+                                                                              rel=1e-12)
         else:
             assert abs(ours - exact) <= abs(theirs - exact)
 
@@ -276,6 +283,22 @@ def _one_cell(vtk_type):
     u = x[:, 0] + 0.6 * x[:, 1] + 0.3 * x[:, 2] + 0.4 * x[:, 0] * x[:, 1]
     grid.point_data["u"] = vtkDoubleArray(u)
     return grid
+
+
+def test_a_point_and_a_cell_array_of_one_name_are_both_read():
+    """A higher-order grid's point array and cell array of one name are two fields, as
+    on linear cells: the cell array went over the point array (CylinderQuadratic.vtk's
+    ``velocity`` and ``pressure``)."""
+    from vtkmodules.vtkCommonCore import vtkDoubleArray
+
+    grid = _one_cell(24)
+    grid.cell_data["u"] = vtkDoubleArray(np.array([7.0]))
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    point, cell = data.fields["u", td.H1], data.fields["u", td.Constant]
+    # The point values, in Tack's node order: the same values.
+    np.testing.assert_array_equal(np.sort(point.values.numpy()),
+                                  np.sort(np.asarray(grid.point_data["u"])))
+    assert cell.values.numpy().tolist() == [7.0]
 
 
 @pytest.mark.parametrize("vtk_type", list(_CELLS))
