@@ -410,7 +410,7 @@ jobs:
   mpi:
     name: mpi
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       TACK_REQUIRE_MPI: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"
@@ -449,6 +449,11 @@ jobs:
         run: >-
           uv run pytest -q -rs packages/tack-vis/tests/test_vtk_algorithms.py
           -k "mpi or world"
+
+      # Every algorithm over pieces with ranks that hold none: about 1.5 minutes a
+      # layout of pieces, four layouts.
+      - name: Run the algorithms over pieces with empty ranks
+        run: uv run pytest -q -rs packages/tack-vis/tests/test_empty_ranks.py
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not

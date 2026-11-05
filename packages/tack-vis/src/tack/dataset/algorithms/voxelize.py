@@ -63,17 +63,20 @@ def _means(values, valid, v0, per, out, n):
 
 def _like(data):
     """A dataset standing for ``data``'s frame and type: itself, a first piece or box,
-    an octree's roots."""
+    an octree's roots; on a rank with no pieces or boxes, a piece of nothing in the
+    others' frame (``_stand_in``, so collective for pieces and hierarchies)."""
+    from tack.dataset.algorithms._common import _stand_in
     from tack.dataset.amr import AMRDataSet
     from tack.dataset.octree import OctreeDataSet
-    from tack.dataset.partitioned import PartitionedDataSet
+    from tack.dataset.partitioned import PartitionedDataSet, common_origin
 
     if isinstance(data, OctreeDataSet):
         return data.roots
     if isinstance(data, AMRDataSet):
-        return next(box for _, box in data)
+        data = data._as_pieces()
     if isinstance(data, PartitionedDataSet):
-        return next(iter(data))
+        nothing = _stand_in(data, common_origin(data, "voxelize"))
+        return nothing if nothing is not None else next(iter(data))
     return data
 
 

@@ -39,7 +39,8 @@ def merge_pieces(data, root=0, fields=None, device=None, tolerance=0.0):
 
     Across MPI ranks every rank passes its pieces and the result is on the
     ``root`` rank (``None`` elsewhere), on ``device`` (by default the device
-    of the root rank's first piece)."""
+    of the root rank's first piece). A root with no pieces gets the merge made
+    on the first rank that has some, moved to it (on its default device)."""
     if not isinstance(data, PartitionedDataSet):
         raise TypeError(f"merge_pieces takes a PartitionedDataSet, not {type(data).__name__}")
     from tack.dataset.algorithms.ghost_cells import _carried, _kind
@@ -54,21 +55,112 @@ def merge_pieces(data, root=0, fields=None, device=None, tolerance=0.0):
         raise ValueError(f"root is a rank, 0 to {world.size - 1}, not {root}")
     firsts = blocks.all_gather({g: g == blocks.local.start for g in blocks.local})
     starts = [g for g, first in enumerate(firsts) if first]
-    target = next((g for g in starts if blocks.rank_of(g) == root), None)
-    if target is None:
-        raise ValueError(f"merge_pieces gathers onto a piece of rank {root}, which has none")
-    on_root = target in blocks.local
+    if not starts:
+        raise ValueError("merge_pieces has no pieces on any rank to merge")
+    # Onto the root's first piece; a root with no pieces gets the merge made on
+    # the first rank that has some (``_to_root``).
+    target = next((g for g in starts if blocks.rank_of(g) == root), starts[0])
+    on_target = target in blocks.local
     out_device = (tack.device(device) if device is not None else
-                  blocks.device(target)) if on_root else None
+                  blocks.device(target)) if on_target else None
     structured = blocks.all_gather({g: isinstance(p.topology, StructuredTopology)
                                     for g, p in zip(blocks.local, pieces)})
-    if all(structured):
-        tiled = _box(blocks, pieces)
-        if tiled is not None:
-            return _merged_structured(blocks, pieces, names, _kind, target, out_device,
-                                      tiled)
-    return _merged_unstructured(blocks, pieces, names, _kind, target, out_device,
-                                tolerance)
+    tiled = _box(blocks, pieces) if all(structured) else None
+    if tiled is not None:
+        merged = _merged_structured(blocks, pieces, names, _kind, target, out_device, tiled)
+    else:
+        merged = _merged_unstructured(blocks, pieces, names, _kind, target, out_device,
+                                      tolerance)
+    source = blocks.rank_of(target)
+    if source == root:
+        return merged
+    return _to_root(world, merged, source, root, device)
+
+
+def _to_root(world, merged, source, root, device):
+    """The merged dataset, made on rank ``source``, moved to rank ``root`` (on
+    ``device``, by default the default device there): its description in a small
+    gather, its arrays in one exchange. ``None`` on every other rank."""
+    carrier = tc.Blocks([tack.device(device) if device is not None
+                         else tack.get_default_device()], world)   # one block a rank
+    description, payload = _described(merged) if world.rank == source else (None, {})
+    description = world._allgather(description)[source]
+    outgoing = {world.rank: ({root: payload} if world.rank == source else {})}
+    incoming = carrier.exchange(outgoing)
+    if world.rank != root:
+        return None
+    with carrier.device(root):
+        return _rebuilt(description, incoming[root].get(source, {}))
+
+
+def _described(data):
+    """A merged dataset as ``(description, arrays)``: everything but the arrays in
+    small Python values, the arrays (explicit, by name) to send."""
+    payload = {}
+
+    def put(name, values):
+        payload[name] = arrays.materialize(values)
+        return name
+
+    topology = data.topology
+    if isinstance(topology, StructuredTopology):
+        shape = ("structured", topology.point_dims, topology.offset, topology.id_dtype)
+    else:
+        shape = ("unstructured", topology.num_points, topology.id_dtype,
+                 put("\0types", topology.types), put("\0offsets", topology.offsets),
+                 put("\0connectivity", topology.connectivity))
+    coordinates = data.geometry.values
+    if isinstance(coordinates, UniformCoordinates):
+        geometry = ("uniform", coordinates.dims, tuple(coordinates._origin),
+                    tuple(coordinates._spacing), np.asarray(coordinates._matrix).tolist())
+    elif isinstance(coordinates, CartesianProduct):
+        geometry = ("rectilinear", put("\0x", coordinates.xs), put("\0y", coordinates.ys),
+                    put("\0z", coordinates.zs))
+    else:
+        geometry = ("points", put("\0positions", coordinates))
+    fields = []
+    for name, field in data.fields.items():
+        space = type(field.space).__name__
+        on = getattr(field.space, "on", None)
+        fields.append((name, space, on, field.unit, put(f"field {len(fields)}", field.values)))
+    ghosts = data.ghosts
+    marks = (None if ghosts is None or ghosts.cells is None else put("\0cell marks", ghosts.cells),
+             None if ghosts is None or ghosts.points is None
+             else put("\0point marks", ghosts.points))
+    ids = data.global_ids
+    numbers = (None if ids is None or ids.cells is None else put("\0cell ids", ids.cells),
+               None if ids is None or ids.points is None else put("\0point ids", ids.points))
+    return (shape, geometry, data.dtype, data._frame(), fields, marks, numbers), payload
+
+
+def _rebuilt(description, received):
+    """``_described``'s dataset again, from its description and the arrays received."""
+    shape, geometry, dtype, frame, fields, marks, numbers = description
+    if shape[0] == "structured":
+        topology = StructuredTopology(shape[1], id_dtype=shape[3], offset=shape[2])
+    else:
+        topology = UnstructuredTopology(received[shape[3]], received[shape[4]],
+                                        received[shape[5]], num_points=shape[1],
+                                        id_dtype=shape[2])
+    if geometry[0] == "uniform":
+        values = UniformCoordinates(geometry[1], geometry[2], geometry[3], geometry[4],
+                                    dtype=dtype)
+    elif geometry[0] == "rectilinear":
+        values = CartesianProduct(*(received[name] for name in geometry[1:]), dtype=dtype)
+    else:
+        values = received[geometry[1]]
+    cell_marks, point_marks = (received[m] if m is not None else None for m in marks)
+    cell_ids, point_ids = (received[n] if n is not None else None for n in numbers)
+    out = DataSet(topology, values, dtype=dtype,
+                  ghosts=Ghosts(cells=cell_marks, points=point_marks)
+                  if cell_marks is not None or point_marks is not None else None,
+                  global_ids=GlobalIds(cells=cell_ids, points=point_ids)
+                  if cell_ids is not None or point_ids is not None else None, **frame)
+    spaces = {"H1": lambda on: H1(out), "Constant": lambda on: Constant(out),
+              "Values": lambda on: Values(out, on)}
+    for name, space, on, unit, key in fields:
+        out.fields[name] = Field(spaces[space](on), received[key], unit)
+    return out
 
 
 def _box(blocks, pieces):
