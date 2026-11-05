@@ -44,10 +44,14 @@ with a partitioned dataset per level (``level0``, ...), whose contours and slice
 not join where the levels meet. ``GenerateGlobalIds``, ``Streamlines`` and
 ``Advect``, whose answer box by box would mislead, refuse one.
 
-Filters that make a dataset give a ``vtkUnstructuredGrid`` (or keep a structured
-grid's type where the Tack filter does); filters that compute a field (``Gradients``,
-``Elevation``, ``CellQuality``) give their input's type, shallow-copied, with the
-new arrays added.
+Filters of points, lines and surfaces (contours, slices, surfaces, edges, tubes,
+glyphs, streamlines, point clouds) give ``vtkPolyData``, as VTK's do, so they feed
+``vtkPolyDataMapper`` and VTK's polygonal filters; ``Clip`` and ``MergePoints`` give
+it for a ``vtkPolyData`` input, as ``vtkClipPolyData`` and ``vtkCleanPolyData``.
+Other filters that make a dataset give a ``vtkUnstructuredGrid`` (or keep a
+structured grid's type, or a polygonal input's, where the Tack filter does);
+filters that compute a field (``Gradients``, ``Elevation``, ``CellQuality``) give
+their input's type, shallow-copied, with the new arrays added.
 
 Parameters are properties, given to the constructor or set later; setting one
 marks the algorithm modified. A wrapper has a parameter for every argument of its
@@ -536,6 +540,95 @@ def _block_names(source, out, count):
             out.GetMetaData(i).Copy(source.GetMetaData(i))
 
 
+#: Where each VTK cell type of points, lines and surfaces goes in a vtkPolyData:
+#: 0 its vertices, 1 its lines, 2 its polygons.
+_POLYDATA_PART = {1: 0, 2: 0, 3: 1, 4: 1, 5: 2, 7: 2, 8: 2, 9: 2}
+
+
+def _int64_array(values):
+    from vtkmodules.vtkCommonCore import vtkTypeInt64Array
+
+    array = vtkTypeInt64Array()
+    array.SetNumberOfTuples(len(values))
+    import numpy as np
+
+    np.asarray(array)[:] = values
+    return array
+
+
+def _as_polydata(data):
+    """``data`` -- an unstructured grid of vertices, lines and surface cells, or a
+    partitioned dataset of them -- as ``vtkPolyData``, as VTK's filters of points,
+    lines and surfaces give it: the same points, point data and field data; the
+    cells as vertices, lines and polygons. Where they are all of one kind (as nearly
+    always) the cells and cell data are the grid's own; otherwise they are taken in
+    vertex, line, polygon order, as a polydata numbers them. A pixel becomes a quad
+    (its corners reordered). Anything else as it is."""
+    import numpy as np
+    import vtkmodules.vtkCommonDataModel as dm
+
+    if isinstance(data, vtkPartitionedDataSet):
+        out = vtkPartitionedDataSet()
+        out.SetNumberOfPartitions(data.GetNumberOfPartitions())
+        for i in range(data.GetNumberOfPartitions()):
+            part = data.GetPartition(i)
+            out.SetPartition(i, _as_polydata(part) if part is not None else None)
+        return out
+    if not isinstance(data, dm.vtkUnstructuredGrid):
+        return data
+    out = dm.vtkPolyData()
+    if data.GetPoints() is not None:
+        out.SetPoints(data.GetPoints())
+    out.GetPointData().ShallowCopy(data.GetPointData())
+    out.GetFieldData().ShallowCopy(data.GetFieldData())
+    n = data.GetNumberOfCells()
+    if n == 0:
+        return out
+    types = np.asarray(data.cell_types, np.int64).reshape(-1)
+    part = np.full(max(int(types.max()) + 1, 10), -1, np.int64)
+    for t, k in _POLYDATA_PART.items():
+        part[t] = k
+    parts = part[types]
+    if (parts < 0).any():
+        bad = sorted(set(types[parts < 0].tolist()))
+        raise TypeError(f"cell types {bad} have no place in a vtkPolyData")
+    setters = (out.SetVerts, out.SetLines, out.SetPolys)
+    present = np.unique(parts)
+    if len(present) == 1 and not (types == 8).any():
+        setters[int(present[0])](data.GetCells())
+        out.GetCellData().ShallowCopy(data.GetCellData())
+        return out
+    offsets = np.asarray(data.cells.offsets_array, np.int64)
+    connectivity = np.asarray(data.cells.connectivity_array, np.int64).copy()
+    for c in np.flatnonzero(types == 8):            # a pixel's corners as a quad's
+        a = offsets[c]
+        connectivity[a + 2], connectivity[a + 3] = connectivity[a + 3], connectivity[a + 2]
+    order = np.argsort(parts, kind="stable")
+    for k in present:
+        cells = order[parts[order] == k]
+        sizes = offsets[cells + 1] - offsets[cells]
+        rows = np.concatenate([connectivity[offsets[c]:offsets[c + 1]] for c in cells])
+        array = dm.vtkCellArray()
+        array.SetData(_int64_array(np.concatenate([[0], np.cumsum(sizes)])),
+                      _int64_array(rows))
+        setters[int(k)](array)
+    cell_data = data.GetCellData()
+    for i in range(cell_data.GetNumberOfArrays()):
+        array = cell_data.GetAbstractArray(i)
+        taken = array.NewInstance()
+        taken.SetName(array.GetName())
+        taken.SetNumberOfComponents(array.GetNumberOfComponents())
+        taken.SetNumberOfTuples(n)
+        for j, c in enumerate(order):
+            taken.SetTuple(j, int(c), array)
+        out.GetCellData().AddArray(taken)
+    for role in _ROLES:
+        active = getattr(cell_data, f"Get{role}")()
+        if active is not None and active.GetName():
+            getattr(out.GetCellData(), f"SetActive{role}")(active.GetName())
+    return out
+
+
 def _as_partitioned(result):
     """A filter's result for a place that holds a partitioned dataset: as it is if it is
     one, else one partition."""
@@ -573,11 +666,14 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
     function called with the parameters; ``execute(data)`` runs it on a dataset or
     on each piece of a ``PartitionedDataSet``, and a subclass whose answer needs every
     piece overrides it. ``OUTPUT`` names the output's VTK type for a dataset input:
-    a VTK class name; ``None``, the input's own; ``"structure"``, an image,
+    a VTK class name (``"vtkPolyData"`` for a filter of points, lines and surfaces,
+    as VTK's give them); ``None``, the input's own; ``"structure"``, an image,
     rectilinear or structured grid's own and otherwise an unstructured grid (a
     filter that keeps the cells' structure); ``"points"``, a structured grid for any
     of those three and otherwise an unstructured grid (a filter that moves the
-    points). ``INPUTS`` counts the input ports, the first ``REQUIRED_INPUTS`` of
+    points); ``"surfaces"``, an unstructured grid. With ``None``, ``"structure"``,
+    ``"points"`` and ``"surfaces"`` a ``vtkPolyData`` input gives a ``vtkPolyData``
+    (``_gives_polydata``), as VTK's polygonal filters keep it. ``INPUTS`` counts the input ports, the first ``REQUIRED_INPUTS`` of
     them required. ``AMR_PORTS`` are the ports that take an AMR hierarchy
     (``vtkOverlappingAMR``), the Tack function given the ``AMRDataSet`` whole; on
     port 0 of any other filter it runs box by box (``_by_box``) unless ``BY_BOX``
@@ -768,6 +864,10 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             return vtkOverlappingAMR if self.OUTPUT is None else getattr(dm, self.OUTPUT)
         if isinstance(input, vtkPartitionedDataSet):
             return vtkPartitionedDataSet
+        if self._gives_polydata(input):
+            return dm.vtkPolyData
+        if self.OUTPUT == "surfaces":
+            return dm.vtkUnstructuredGrid
         if self.OUTPUT is None:
             return type(input)
         structured = (dm.vtkImageData, dm.vtkRectilinearGrid, dm.vtkStructuredGrid)
@@ -780,6 +880,20 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
             return (dm.vtkStructuredGrid if isinstance(input, structured)
                     else dm.vtkUnstructuredGrid)
         return getattr(dm, self.OUTPUT)
+
+    def _gives_polydata(self, input):
+        """Whether the output for ``input`` (a dataset, or a partitioned dataset's first
+        partition) is ``vtkPolyData``: a filter of points, lines and surfaces, or one
+        that keeps its input's kind given polydata."""
+        import vtkmodules.vtkCommonDataModel as dm
+
+        if isinstance(input, vtkPartitionedDataSet):
+            # By index: a multiblock's vtkMultiPieceDataSet block does not iterate.
+            input = input.GetPartition(0) if input.GetNumberOfPartitions() else None
+        if self.OUTPUT == "vtkPolyData":
+            return True
+        return (self.OUTPUT in (None, "structure", "points", "surfaces")
+                and isinstance(input, dm.vtkPolyData))
 
     def RequestDataObject(self, request, inInfo, outInfo):
         input = self.GetInputData(inInfo, 0, 0)
@@ -915,7 +1029,8 @@ class TackAlgorithm(VTKPythonAlgorithmBase):
         result = self.execute(self._dataset(vtk_data, self.device))
         if isinstance(result, AMRDataSet):
             return _amr_output(vtk_data, result)
-        return dataset_to_vtk(result, copy=False)
+        out = dataset_to_vtk(result, copy=False)
+        return _as_polydata(out) if self._gives_polydata(vtk_data) else out
 
     # ── The filter ──────────────────────────────────────────────────
 
@@ -1224,6 +1339,7 @@ class Contour(_OfAComponent):
     number or a sequence of them); of a vector field, its ``component`` (the first
     by default, as VTK's ``ArrayComponent``). VTK's ``vtkContourFilter``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "contour"
     FIELDS = ("field",)
 
@@ -1235,6 +1351,7 @@ class SlicePlane(TackAlgorithm):
     """``td.slice_plane``: the cut by the plane through ``origin`` normal to ``normal``.
     VTK's ``vtkCutter`` with a ``vtkPlane``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "slice_plane"
 
     origin = Parameter((0.0, 0.0, 0.0), "a point of the plane")
@@ -1246,6 +1363,7 @@ class Clip(TackAlgorithm):
     function: Tack's, such as ``td.Plane``, or VTK's, such as ``vtkPlane``) is above
     ``value`` (below with ``inside``). VTK's ``vtkTableBasedClipDataSet``."""
 
+    OUTPUT = "surfaces"
     FUNCTION = "clip"
     FIELDS = ("by",)
     IMPLICIT = ("by",)
@@ -1276,6 +1394,7 @@ class ExtractSurface(_Whole):
     the whole's surface: faces the pieces share are left out. VTK's
     ``vtkDataSetSurfaceFilter``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "extract_surface"
     EXCLUDE = ("faces",)
 
@@ -1292,6 +1411,7 @@ class SurfaceNormals(TackAlgorithm):
     ``cell_normals`` on its cells, its polygons wound consistently. VTK's
     ``vtkPolyDataNormals``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "surface_normals"
 
     consistent = Parameter(True, "wind the polygons consistently first")
@@ -1366,6 +1486,7 @@ class Streamlines(_Seeded):
     the data on port 1) through the velocity ``field``, up to ``steps`` steps of
     ``step_size``. VTK's ``vtkStreamTracer``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "streamlines"
     FIELDS = ("field",)
 
@@ -1436,7 +1557,8 @@ class Probe(TackAlgorithm):
         from tack.interop.vtk import dataset_to_vtk
 
         where = self._dataset(vtk_data, self._where_device)
-        return dataset_to_vtk(td.probe(self._source, where, **self.arguments()), copy=False)
+        out = dataset_to_vtk(td.probe(self._source, where, **self.arguments()), copy=False)
+        return _as_polydata(out) if self._gives_polydata(vtk_data) else out
 
 
 # ── Filters that compute fields ─────────────────────────────────────
@@ -1547,6 +1669,7 @@ class Slice(TackAlgorithm):
     """``td.slice``: where an implicit ``function`` (Tack's or VTK's) is ``value``.
     VTK's ``vtkCutter``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "slice"
     IMPLICIT = ("function",)
 
@@ -1558,6 +1681,7 @@ class BoundaryFaces(TackAlgorithm):
     mesh's boundary edges as lines): ``extract_surface`` of that set, which a 2D mesh's
     ``ExtractSurface`` passes through."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "boundary_faces"
 
     def compute(self, data):
@@ -1570,6 +1694,7 @@ class ExtractEdges(TackAlgorithm):
     """``td.extract_edges``: the edges (every one, or ``edges``' ids) as line cells.
     VTK's ``vtkExtractEdges``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "extract_edges"
 
 
@@ -1577,6 +1702,7 @@ class FeatureEdges(TackAlgorithm):
     """``td.feature_edges``: a surface's boundary, feature, non-manifold and manifold
     edges as line cells, with ``kind``. VTK's ``vtkFeatureEdges``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "feature_edges"
 
 
@@ -1586,6 +1712,7 @@ class Tubes(TackAlgorithm):
     """``td.tubes``: lines as tubes of ``radius`` (scaled by the ``radius_by`` field),
     with outward normals. VTK's ``vtkTubeFilter``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "tubes"
     FIELDS = ("radius_by",)
 
@@ -1597,6 +1724,7 @@ class Glyphs(TackAlgorithm):
     """``td.glyphs``: an arrow at each point along the ``vectors`` field, scaled by
     ``scale`` (and the ``scale_by`` field). VTK's ``vtkGlyph3D``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "glyphs"
     FIELDS = ("vectors", "scale_by")
 
@@ -1623,6 +1751,7 @@ class MergePoints(TackAlgorithm):
     """``td.merge_points``: coincident points (or points within ``tolerance``) made one.
     VTK's ``vtkStaticCleanUnstructuredGrid``."""
 
+    OUTPUT = "surfaces"
     FUNCTION = "merge_points"
 
 
@@ -1631,6 +1760,7 @@ class MergePoints(TackAlgorithm):
 class Triangulate(TackAlgorithm):
     """``td.triangulate``: 2D cells as triangles. VTK's ``vtkTriangleFilter``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "triangulate"
 
 
@@ -1644,6 +1774,7 @@ class AsPolyhedra(TackAlgorithm):
 class AsPolygons(TackAlgorithm):
     """``td.as_polygons``: 2D cells as a polygonal mesh, each cell's points its loop."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "as_polygons"
 
 
@@ -1769,6 +1900,7 @@ class FaceGeometry(_OnFaces):
     """``td.face_geometry``: each face's ``normal`` and ``area``, on the faces as
     polygons."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "face_geometry"
 
 
@@ -1785,6 +1917,7 @@ class FaceCenters(_OnFaces):
     """``td.face_centers``: each face's area centroid, as ``name`` on the faces as
     polygons."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "face_centers"
 
     name = Parameter("center", "the new array's name")
@@ -1793,6 +1926,7 @@ class FaceCenters(_OnFaces):
 class EdgeLengths(_OnFaces):
     """``td.edge_lengths``: each edge's length, as ``name`` on the edges as lines."""
 
+    OUTPUT = "vtkPolyData"
     ON = "edges"
     FUNCTION = "edge_lengths"
 
@@ -1969,6 +2103,7 @@ class Jump(_OnFaces):
     """``td.jump``: ``field``'s difference across each face, as ``name`` on the faces as
     polygons."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "jump"
     FIELDS = ("field",)
 
@@ -1979,6 +2114,7 @@ class UpwindFlux(_OnFaces):
     """``td.upwind_flux``: the upwind flux of ``field`` by a constant ``velocity`` through
     each face, as ``name`` on the faces as polygons."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "upwind_flux"
     FIELDS = ("field",)
 
@@ -2004,6 +2140,7 @@ class Advect(_Seeded):
     where they stopped, as vertex cells with ``steps``, ``time`` and ``status``
     (Viskores' ``ParticleAdvection``)."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "advect"
     FIELDS = ("field",)
 
@@ -2017,6 +2154,7 @@ class ExtractPoints(TackAlgorithm):
     """``td.extract_points``: the points inside an implicit ``function`` (Tack's or VTK's),
     or outside it, as vertex cells. VTK's ``vtkExtractPoints``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "extract_points"
     IMPLICIT = ("function",)
 
@@ -2025,6 +2163,7 @@ class ThresholdPoints(TackAlgorithm):
     """``td.threshold_points``: the points whose ``field`` lies in ``[lower, upper]``, as
     vertex cells. VTK's ``vtkThresholdPoints``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "threshold_points"
     FIELDS = ("field",)
 
@@ -2033,6 +2172,7 @@ class MaskPoints(TackAlgorithm):
     """``td.mask_points``: every ``stride``-th point, as vertex cells. VTK's
     ``vtkMaskPoints``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "mask_points"
 
 
@@ -2054,6 +2194,7 @@ class Outliers(_Whole):
     ``vtkRadiusOutlierRemoval`` and ``vtkStatisticalOutlierRemoval`` (which remove
     them)."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "outliers"
 
 
@@ -2061,6 +2202,7 @@ class VoxelDownsample(_Whole):
     """``td.voxel_downsample``: one point per occupied voxel of side ``size``, over every
     piece. VTK's ``vtkVoxelGrid``."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "voxel_downsample"
 
 
@@ -2124,6 +2266,7 @@ class HaloCatalog(_Whole):
     ``ConnectedComponents`` with a ``radius`` labels them), one point each with its
     count, mass, center and radius, over every piece."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "halo_catalog"
 
 
@@ -2229,6 +2372,7 @@ class GhostPoints(_OverPieces):
     """``td.ghost_points``: point-cloud pieces, each with copies of the other pieces'
     points within ``radius`` (or its points' ``k`` nearest) appended as ghosts."""
 
+    OUTPUT = "vtkPolyData"
     FUNCTION = "ghost_points"
 
 
@@ -2904,7 +3048,7 @@ class _Particles(_Temporal):
 
     INPUTS = 2
     REQUIRED_INPUTS = 1
-    OUTPUT = "vtkUnstructuredGrid"
+    OUTPUT = "vtkPolyData"
 
     field = Parameter(None, "the velocity field (required): a name, or (name, 'points' "
                             "/ 'cells')")
@@ -2943,7 +3087,7 @@ class _Particles(_Temporal):
     def _output(self, result, input, data, final):
         from tack.interop.vtk import dataset_to_vtk
 
-        out = dataset_to_vtk(result, copy=False)
+        out = _as_polydata(dataset_to_vtk(result, copy=False))
         # Of pieces, this rank's paths or lines are one dataset: its one partition.
         return _as_partitioned(out) if isinstance(input, vtkPartitionedDataSet) else out
 
@@ -2957,6 +3101,7 @@ class Advection(_Particles):
     time steps) beside those, at no time. Over MPI ranks each rank releases the seeds
     it is given."""
 
+    OUTPUT = "vtkPolyData"
     time_range = Parameter(None, "driving: (first, last), the times of the steps to "
                                  "take; by default every step")
 
@@ -3004,6 +3149,7 @@ class Pathlines(_Particles):
     the paths up to the step, at its time; driving, through every step taken (or
     those in ``time_range``), at no time. VTK's ``vtkParticlePathFilter``."""
 
+    OUTPUT = "vtkPolyData"
     time_range = Parameter(None, "driving: (first, last), the times of the steps to "
                                  "take; by default every step")
 
@@ -3024,6 +3170,7 @@ class Streaklines(_Particles):
     at the time requested, going on from the steps taken. VTK's
     ``vtkStreaklineFilter``."""
 
+    OUTPUT = "vtkPolyData"
     ACCUMULATES = False
 
     releases = Parameter(1, "the particles released at each seed from step to step")

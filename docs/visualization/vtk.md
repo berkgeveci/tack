@@ -189,15 +189,17 @@ their cell data.
 |---|---|---|
 | Cells kept whole | `Threshold`, `ExtractCells`, `ExtractGeometry`, `Mask` | `vtkUnstructuredGrid` |
 | | `ExtractExtent` | the input's structure |
-| Cutting | `Contour`, `Slice`, `SlicePlane`, `Clip` | `vtkUnstructuredGrid` |
-| Surfaces and edges | `ExtractSurface`, `BoundaryFaces`, `ExtractEdges`, `FeatureEdges`, `SurfaceNormals` | `vtkUnstructuredGrid` |
-| Shapes for drawing | `Tubes`, `Glyphs` | `vtkUnstructuredGrid` |
+| Cutting | `Contour`, `Slice`, `SlicePlane` | `vtkPolyData` |
+| | `Clip` | `vtkUnstructuredGrid`; `vtkPolyData` for a `vtkPolyData` input |
+| Surfaces and edges | `ExtractSurface`, `BoundaryFaces`, `ExtractEdges`, `FeatureEdges`, `SurfaceNormals` | `vtkPolyData` |
+| Shapes for drawing | `Tubes`, `Glyphs` | `vtkPolyData` |
 | Connectivity and winding | `ConnectedComponents` | the input's type, with `region` arrays |
 | | `CheckWinding` | fields: `inconsistent` on the cells |
-| | `MergePoints` | `vtkUnstructuredGrid` |
-| Changing cell types | `Tetrahedralize`, `Triangulate`, `AsPolyhedra`, `AsPolygons`, `Shrink`, `Subdivide` | `vtkUnstructuredGrid` |
+| | `MergePoints` | `vtkUnstructuredGrid`; `vtkPolyData` for a `vtkPolyData` input |
+| Changing cell types | `Tetrahedralize`, `AsPolyhedra`, `Shrink`, `Subdivide` | `vtkUnstructuredGrid` |
+| | `Triangulate`, `AsPolygons` | `vtkPolyData` |
 | Moving the geometry | `Transform` | the input's structure (an image stays an image) |
-| | `Warp`, `Cylindrical`, `Spherical` | a structured grid for a structured input, else `vtkUnstructuredGrid` |
+| | `Warp`, `Cylindrical`, `Spherical` | a structured grid for a structured input, `vtkPolyData` for a `vtkPolyData`, else `vtkUnstructuredGrid` |
 | Measures and quality | `CellGeometry`, `CellCenters`, `CellQuality`, `Elevation`, `ImplicitValues`, `CellIds`, `PointIds` | fields |
 | | `FaceGeometry`, `FaceCenters`, `EdgeLengths` | faces (edges) |
 | Fields from fields | `Gradients`, `FlowQuantities`, `Project`, `ValuesAtCenters`, `Interpolate`, `Magnitude`, `Dot`, `Cross`, `Composite`, `LogValues` | fields |
@@ -207,8 +209,8 @@ their cell data.
 | | `Integrate` | `vtkUnstructuredGrid` of one vertex, as `vtkIntegrateAttributes` |
 | Probing, sampling and particles | `Probe` (the source on port 1), `SphInterpolate` (the particles on port 1) | the input's structure, with the source's fields |
 | | `Voxelize` | `vtkImageData` (the `grid` parameter's) |
-| | `Streamlines`, `Advect` (seeds on port 1, or `seeds=`) | `vtkUnstructuredGrid` |
-| Point clouds | `ExtractPoints`, `ThresholdPoints`, `MaskPoints`, `Outliers`, `VoxelDownsample`, `HaloCatalog` | `vtkUnstructuredGrid` |
+| | `Streamlines`, `Advect` (seeds on port 1, or `seeds=`) | `vtkPolyData` |
+| Point clouds | `ExtractPoints`, `ThresholdPoints`, `MaskPoints`, `Outliers`, `VoxelDownsample`, `HaloCatalog` | `vtkPolyData` |
 | | `PointNormals`, `SphDensity` | fields |
 | | `Deposit` | `vtkImageData` (the `grid` parameter's) |
 | Pieces and ghosts | `GhostCells`, `GenerateGlobalIds`, `MergePieces`, `GhostPoints` | over every piece of a `vtkPartitionedDataSet` |
@@ -216,7 +218,7 @@ their cell data.
 | | `RemoveGhosts` | the input's structure |
 | AMR hierarchies | `AverageDown` | `vtkOverlappingAMR` |
 | Over time | `RunningStatistics`, `TimeDerivative` | fields, over the steps |
-| | `Advection`, `Pathlines`, `Streaklines` (seeds on port 1, or `seeds=`) | `vtkUnstructuredGrid` |
+| | `Advection`, `Pathlines`, `Streaklines` (seeds on port 1, or `seeds=`) | `vtkPolyData` |
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
 `vtkPartitionedDataSet`. The algorithms whose Tack filter answers for the
@@ -400,7 +402,9 @@ assert (source >> skin)().number_of_cells != boundary.number_of_cells
 `compute` runs once per piece of a partitioned input. An algorithm whose
 answer needs every piece overrides `execute(data)` instead. `OUTPUT` names
 the output's VTK type for a dataset input: `"vtkUnstructuredGrid"` by
-default, or `None` for the input's own type. A filter of your own
+default, `"vtkPolyData"` for a filter of points, lines and surfaces (its cells
+become the polydata's vertices, lines and polygons), or `None` for the input's own
+type. A filter of your own
 ([Write a filter](write-a-filter.md)) goes into `compute` the same way.
 
 To wrap a `tack.dataset` function as it is, name it instead: `FUNCTION =
