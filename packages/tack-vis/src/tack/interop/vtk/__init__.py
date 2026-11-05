@@ -1980,7 +1980,8 @@ def _amr_to_vtk(amr):
                                        else (1, 1, 1))
     for level, pieces in enumerate(amr.levels):
         for k, box in enumerate(pieces):
-            out.SetDataSet(level, amr._first[level] + k, dataset_to_vtk(box))
+            # VTK's AMR blocks start their extents at 0 (the AMR box places them).
+            out.SetDataSet(level, amr._first[level] + k, _from_zero(dataset_to_vtk(box)))
     return out
 
 
@@ -2414,6 +2415,8 @@ def _dataset_to_vtk(data, copy=True):
     else:
         raise TypeError(f"unsupported topology {type(topology).__name__} with "
                         f"{type(coordinates).__name__}")
+    if isinstance(grid, (vtkImageData, vtkRectilinearGrid, vtkStructuredGrid)):
+        _place_extent(grid, topology)
     from tack.dataset.carry import _point_values
 
     _write_fields(grid, data, share)
@@ -2459,6 +2462,49 @@ def _datasets_to_collection(datasets):
         out.SetPartitionedDataSet(i, dataset_to_vtk(pieces))
         out.GetMetaData(i).Set(vtkCompositeDataSet.NAME(), str(name))
     return out
+
+
+def _place_extent(grid, topology):
+    """Give a structured VTK grid the extent of its topology's place in a larger grid
+    (``StructuredTopology.offset``, which ``vtk_to_dataset`` reads from the extent),
+    an image's origin moved so that its points stay where they are."""
+    import numpy as np
+    from vtkmodules.vtkCommonDataModel import vtkImageData
+
+    offset = getattr(topology, "offset", None)
+    if not offset or not any(offset):
+        return
+    dims = [0, 0, 0]
+    grid.GetDimensions(dims)
+    start, axes = [0, 0, 0], iter(offset)
+    for axis in range(3):
+        if dims[axis] != 1:                 # the topology has the axes of 2+ points
+            start[axis] = next(axes)
+    if isinstance(grid, vtkImageData):
+        matrix = grid.direction_matrix
+        direction = np.array([[matrix.GetElement(r, c) for c in range(3)] for r in range(3)])
+        first = np.asarray(grid.origin, np.float64)
+        grid.origin = tuple(first - direction @ (np.asarray(start) * np.asarray(grid.spacing)))
+    grid.SetExtent(*[v for a in range(3) for v in (start[a], start[a] + dims[a] - 1)])
+
+
+def _from_zero(grid):
+    """A structured VTK grid with its extent from 0, as VTK's AMR blocks are, an
+    image's origin its first point: undoing ``_place_extent``."""
+    import numpy as np
+    from vtkmodules.vtkCommonDataModel import vtkImageData
+
+    extent = list(grid.GetExtent())
+    start = np.asarray(extent[0::2], np.float64)
+    if not start.any():
+        return grid
+    if isinstance(grid, vtkImageData):
+        matrix = grid.direction_matrix
+        direction = np.array([[matrix.GetElement(r, c) for c in range(3)] for r in range(3)])
+        grid.origin = tuple(np.asarray(grid.origin, np.float64)
+                            + direction @ (start * np.asarray(grid.spacing)))
+    grid.SetExtent(*[v for a in range(3) for v in (0, extent[2 * a + 1] - extent[2 * a])])
+    return grid
 
 
 def _time_key():

@@ -11,9 +11,10 @@ Marked `slow` and deselected from the default run, because the full sweep
 takes about a minute against an 18-second suite. CI runs it as its own
 job; locally, `pytest -m slow`.
 
-Examples that need an optional third-party package, or that do not offer
-the selected backend (CPU unless `TACK_EXAMPLES_ARCH` names another), skip
-themselves with the reason. That keeps the suite honest
+Examples that need an optional third-party package, that do not offer
+the selected backend (CPU unless `TACK_EXAMPLES_ARCH` names another), or
+that read VTK's test data and cannot fetch it, skip themselves with the
+reason. That keeps the suite honest
 about what it actually checked, and means adding an example with a new
 optional dependency will not turn CI red. A missing *tack* module is not
 treated as optional — that is a real failure.
@@ -84,6 +85,9 @@ def test_example_runs(path):
 
     if f"invalid choice: '{ARCH}'" in combined:
         pytest.skip(f"example does not offer the {ARCH} backend")
+
+    if "needs VTK's test data" in combined:
+        pytest.skip("needs VTK's test data (TACK_VTK_DATA, or a network to fetch it)")
 
     pytest.fail(f"{_example_id(path)} exited {proc.returncode}\n"
                 f"{combined[-3000:]}")

@@ -369,7 +369,10 @@ def to_dataset(grid, types, dtype, id_dtype, shift, unit_of, float_fields):
         array = grid.cell_data[name]
         values = np.asarray(array)
         values = values.reshape(values.shape[0], -1)
-        data.fields[name] = Field(Constant(data), float_fields(values), unit_of(array))
+        space = Constant(data)
+        # A point array and a cell array of one name are two fields of that name.
+        key = name if name not in data.fields else (name, space)
+        data.fields[key] = Field(space, float_fields(values), unit_of(array))
     return data
 
 

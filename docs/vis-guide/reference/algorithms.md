@@ -18,8 +18,8 @@ Every algorithm is in `tack.dataset.algorithms`, one module each, and
 `tack.dataset` re-exports them all. They share conventions, set out in the
 Dataset API reference's [Algorithms and filters](dataset-api.md#algorithms-and-filters):
 
-- the dataset comes first, and a field argument is a `Field` or the name of one
-  of the dataset's fields;
+- the dataset comes first, and a field argument is a `Field`, the name of one
+  of the dataset's fields, or an object whose `on(data)` gives the `Field`;
 - an algorithm that makes a new dataset takes `fields=`: which fields to carry
   (all by default, a name, a list of names, or `[]` for none), carried by the
   rules in [how fields carry through filters](dataset-api.md#algorithms-and-filters);

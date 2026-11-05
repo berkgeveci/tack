@@ -312,17 +312,21 @@ def _no_reference_values(data, field):
 
 
 def _piece(data, names):
-    """One dataset's owned cells' measure and integrals, summed in cell order (f64)."""
+    """One dataset's owned cells' measure and integrals, summed in cell order (f64):
+    ``names`` as ``_names`` gives them, every ``Field`` carried with the cells kept
+    in one ``visible``."""
     from tack.dataset.algorithms.cell_geometry import cell_geometry
     from tack.dataset.ghosts import owned_values, visible
 
-    data = visible(data)
+    data, *given = visible(data, *(field for _, field in names)) if names else (visible(data),)
     measures = Field(Values(data, "cells"), _top_cells(data, arrays.materialize(
         cell_geometry(data).measure.values)))
     measure = float(np.sum(np.asarray(owned_values(data, measures).numpy(), np.float64)))
     values = {}
-    for name in names:
-        field = data.fields[name]
+    field_units = {}
+    for (name, _), field in zip(names, given):
+        field = _field(data, field)
+        field_units[name] = field.unit
         if not getattr(data.topology, "reference_cells", True):
             space = _with_basis(data, field).space
             if _on_points(space):
@@ -346,14 +350,15 @@ def _piece(data, names):
         per_cell = _cell_values(data, field)
         values[name] = np.asarray(owned_values(data, Field(Values(data, "cells"), per_cell))
                                   .numpy(), np.float64).sum(axis=0)
-    return measure, values
+    return measure, values, field_units
 
 
 @on_inputs_device
 def integrate(data, fields=None):
     """The measure of ``data`` -- its cells' total volume, area or length -- and the
-    integral over it of each of ``fields`` (names; by default every field with a
-    basis or on the cells), as VTK's ``vtkIntegrateAttributes`` gives them:
+    integral over it of each of ``fields`` (names; a mapping of names to field
+    arguments, each integral under its name; by default every field with a basis
+    or on the cells), as VTK's ``vtkIntegrateAttributes`` gives them:
     ``Integrals(measure, measure_unit, values, units)``, ``values[name]`` a float or
     a tuple for a vector field.
 
@@ -375,17 +380,21 @@ def integrate(data, fields=None):
 
         pieces = list(data)
         names = _names(pieces[0], fields) if pieces else []
+        if any(isinstance(field, Field) for _, field in names):
+            raise TypeError("integrate over a PartitionedDataSet takes fields by name or "
+                            "as objects whose on(piece) gives the piece's: a Field belongs "
+                            "to one partition's topology")
         parts = _over_pieces(data, lambda piece: _piece(piece, names))
-        measure = math.fsum(m for m, _ in parts)
-        values = {name: np.sum([v[name] for _, v in parts], axis=0) for name in names}
+        measure = math.fsum(m for m, _, _ in parts)
+        values = {name: np.sum([v[name] for _, v, _ in parts], axis=0) for name, _ in names}
+        field_units = parts[0][2] if parts else {}
         first = pieces[0] if pieces else None
     else:
         names = _names(data, fields)
-        measure, values = _piece(data, names)
+        measure, values, field_units = _piece(data, names)
         first = data
-    out_units = {name: units.derived((first.fields[name].unit, 1),
-                                     (_measure_unit(first), 1)) if first is not None else None
-                 for name in names}
+    out_units = {name: units.derived((field_units[name], 1), (_measure_unit(first), 1))
+                 if first is not None else None for name, _ in names}
     return Integrals(measure=measure, measure_unit=_measure_unit(first) if first else None,
                      values={name: (float(v) if np.ndim(v) == 0 else tuple(map(float, v)))
                              for name, v in values.items()},
@@ -393,11 +402,22 @@ def integrate(data, fields=None):
 
 
 def _names(data, fields):
+    """``[(name, field)]``, each field a field argument (``_field``): every stored
+    field with a basis or on the cells by default, the names given, or a mapping's
+    entries. Names and ``Field``s are checked here; an object whose ``on(data)``
+    gives the field is resolved once a piece, where it is integrated."""
     if fields is None:
-        return [name for name, field in data.fields.items()
+        return [(name, name) for name, field in data.fields.items()
                 if isinstance(field.space, (H1, L2, Constant))
                 or (isinstance(field.space, Values) and field.space.on in ("points", "cells"))]
-    names = [fields] if is_field_key(fields) else list(fields)
-    for name in names:
-        _field(data, name)
+    if hasattr(fields, "items"):
+        names = list(fields.items())
+    else:
+        entries = [fields] if is_field_key(fields) or isinstance(fields, Field) else list(fields)
+        if any(not is_field_key(entry) for entry in entries):
+            raise TypeError("integrate names each Field it is given: pass {name: field}")
+        names = [(entry, entry) for entry in entries]
+    for _, field in names:
+        if is_field_key(field) or isinstance(field, Field):
+            _field(data, field)
     return names
