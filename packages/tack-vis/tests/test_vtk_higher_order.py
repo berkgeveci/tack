@@ -373,3 +373,19 @@ def _gradient_at(cells, u, pcs, out):
     for c in cells:
         e = cells.entity_id(c)
         out[e] = world_gradient(cells, u, c, pcs[e])   # in a surface's plane on 2D cells
+
+
+@pytest.mark.parametrize("vtk_type", [23, 25, 26])
+def test_serendipity_cells_with_integer_point_data_slice(vtk_type):
+    """A serendipity cell (quad8, hex20, wedge15) carrying a 64-bit integer point field --
+    VTK's node numbers, as cuttertest.vtu has -- slices: the field's full values
+    are found in floating point on the topology's device (a device, where a
+    backend went, failed)."""
+    from tack.dataset import implicit
+
+    grid = _one_cell(vtk_type)
+    grid.point_data["node"] = np.arange(grid.number_of_points, dtype=np.int64)
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    center = tuple(np.asarray(grid.points.data).mean(axis=0))
+    out = td.slice(data, implicit.Plane(center, (1.0, 0.2, 0.3)))
+    assert out.num_cells > 0
