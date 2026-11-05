@@ -189,12 +189,13 @@ floating-point policy).
   proves do not overlap any other array. The check runs on every dispatch,
   and the result is part of the variant key.
 - **Floating point.** CUDA compiles with `--ftz=false --prec-div=true
-  --prec-sqrt=true --fmad=true` and without `--use_fast_math`; Metal sets
+  --prec-sqrt=true --fmad=false` and without `--use_fast_math`; Metal sets
   `fastMathEnabled` to false; HIP limits contraction to one expression
   (`-ffp-contract=on`), since hipRTC's default fused across statements and
-  gave one variable two values; CUDA's generator rounds a product outside a
-  sum itself (`__fmul_rn`), since NVRTC has no such option and fused one
-  into a later statement; the CPU emits no LLVM fast-math flags. See
+  gave one variable two values; CUDA's generator writes the permitted
+  contractions itself (`__fmaf_rn`) and rounds every other product
+  (`__fmul_rn`), since NVRTC has no per-expression option and fused across
+  statements, and differently in two kernels sharing a function; the CPU emits no LLVM fast-math flags. See
   the [floating-point policy](../reference/language-contract.md#floating-point-execution-policy).
 - **Optimization.** `optimize_ir` (`lang/ir_optimize.py`) performs only
   conservative copy propagation; LICM and CSE stay disabled until they have

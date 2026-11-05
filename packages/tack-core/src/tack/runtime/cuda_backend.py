@@ -798,11 +798,13 @@ def _warn_if_old_nvrtc():
 
 
 # Preserve NaNs, signed zeros, and expression grouping in every kernel.
-# Adjacent multiply/add contraction is permitted by the language contract.
+# Multiply/add contraction, which the language contract permits, is written
+# into the source as explicit fused multiply-adds (CUDACodeGen), not left to
+# NVRTC.
 # Part of the disk cache's target: PTX compiled with other options is another
 # artifact.
 _NVRTC_OPTIONS = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
-                  b"--fmad=true", b"--extra-device-vectorization"]
+                  b"--fmad=false", b"--extra-device-vectorization"]
 
 
 def _compile_ptx(cuda_source: str, func_name: str) -> bytes:

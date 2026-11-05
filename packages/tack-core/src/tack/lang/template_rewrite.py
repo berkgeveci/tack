@@ -388,12 +388,14 @@ def rewrite_templates(kernel_ast, template_args, python_func=None):
     # for it (`b.combine(a, i)` while `a` is being resolved).
     roots = {}
     pending = {name for name, _ in template_args.values()}
+    synthetic = set()
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
         param_name, obj = template_args[idx]
         pending.discard(param_name)
         root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs,
                                       funcdef._tack_held_arrays, specializer)
+        synthetic.update(extra)
 
         # obj[i], obj[i] = v and len(obj) as the protocol's method calls
         _desugar_indexing(funcdef, param_name, root, used_names)
@@ -406,7 +408,87 @@ def rewrite_templates(kernel_ast, template_args, python_func=None):
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
+    _resolve_reachable(funcdef, resolved_funcs, specializer)
+    _prune_synthetic(funcdef, resolved_funcs, synthetic)
     return rewritten, resolved_funcs
+
+
+def _resolve_reachable(kernel_def, resolved_funcs, specializer):
+    """Resolve the template methods the kernel calls, and those they call: only
+    these are lowered, so a view's other methods cost nothing, and one that would
+    not resolve (a method using what this object lacks) is never reached."""
+    seen = set()
+    todo = [kernel_def]
+    while todo:
+        funcdef = todo.pop()
+        for node in ast.walk(funcdef):
+            if not (isinstance(node, ast.Name) and getattr(node, '_tack_template_call', False)):
+                continue
+            name = node.id
+            if name in seen:
+                continue
+            seen.add(name)
+            if name not in resolved_funcs and name in specializer.unresolved:
+                specializer._resolve_now(name)
+            resolved = resolved_funcs.get(name)
+            if isinstance(resolved, _ResolvedFunc):
+                todo.append(resolved._funcdef)
+
+
+def _prune_synthetic(kernel_def, resolved_funcs, synthetic):
+    """Keep in each resolved method the synthetic parameters it reads, itself or
+    through the methods it calls, and drop the rest from it and its calls.
+
+    Every method of a template tree takes the whole tree's synthetic parameters
+    (its arrays and runtime scalars), so a call passes them all; inlined, each
+    became a local copy, and a method of a view holding others carried every
+    one of theirs. A fixpoint over the calls between resolved methods finds what
+    each needs."""
+    defs = {name: f._funcdef for name, f in resolved_funcs.items()
+            if isinstance(f, _ResolvedFunc)}
+    if not defs:
+        return
+
+    def calls(funcdef):
+        return [n for n in ast.walk(funcdef) if isinstance(n, ast.Call)
+                and getattr(n.func, '_tack_template_call', False) and n.func.id in defs]
+
+    def passed(call):
+        """``(position, name)`` of the synthetic names a call passes as they are."""
+        return [(k, a.id) for k, a in enumerate(call.args)
+                if isinstance(a, ast.Name) and a.id in synthetic]
+
+    params = {name: [a.arg for a in d.args.args] for name, d in defs.items()}
+    sites = {name: calls(d) for name, d in defs.items()}
+    direct = {}
+    for name, funcdef in defs.items():
+        through = {id(call.args[k]) for call in sites[name] for k, _ in passed(call)}
+        direct[name] = {n.id for n in ast.walk(funcdef) if isinstance(n, ast.Name)
+                        and n.id in synthetic and id(n) not in through}
+    need = {name: set(direct[name]) for name in defs}
+    changed = True
+    while changed:
+        changed = False
+        for name in defs:
+            for call in sites[name]:
+                callee = params[call.func.id]
+                for k, arg in passed(call):
+                    used = (k >= len(callee) or callee[k] not in synthetic
+                            or callee[k] in need[call.func.id])
+                    if used and arg not in need[name]:
+                        need[name].add(arg)
+                        changed = True
+
+    def keep(callee, k):
+        names = params[callee]
+        return k >= len(names) or names[k] not in synthetic or names[k] in need[callee]
+
+    for funcdef in [kernel_def, *defs.values()]:
+        for call in calls(funcdef):
+            call.args = [a for k, a in enumerate(call.args) if keep(call.func.id, k)]
+    for name, funcdef in defs.items():
+        funcdef.args.args = [a for a in funcdef.args.args
+                             if a.arg not in synthetic or a.arg in need[name]]
 
 
 _INDEXING = ("__getitem__", "__setitem__", "__len__")
@@ -658,12 +740,16 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays,
         # Names first, so methods can call siblings and nested objects' methods.
         node.methods = {name: fresh_name(f"__tmpl_{param_name}_{prefix}{name}__", used_names)
                         for name in methods}
-    for node in nodes.values():
-        for method_name, func_obj in template_func_methods(type(node.obj)).items():
-            if method_name in node.methods:
-                resolved_name = node.methods[method_name]
-                resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
-                                                                node, extra, specializer)
+    methods = {node.methods[name]: (func_obj, node) for node in nodes.values()
+               for name, func_obj in template_func_methods(type(node.obj)).items()
+               if name in node.methods}
+    if specializer is not None:
+        # Resolved when a call reaches them (``_resolve_reachable``).
+        specializer.unresolved.update(methods)
+        return nodes[()], extra
+    for resolved_name, (func_obj, node) in methods.items():
+        resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
+                                                        node, extra, specializer)
     return nodes[()], extra
 
 
@@ -824,6 +910,11 @@ class _Specializer:
         self.resolved_funcs = resolved_funcs
         self.used_names = used_names
         self.copies = {}
+        # Methods of the templates being resolved, by resolved name, not resolved
+        # yet: one is resolved when a call binding a template into it is reached
+        # first (``self.inner.f(self.mesh)``, inner's methods after self's).
+        self.unresolved = {}
+        self.resolving = set()
 
     def call(self, call, roots, funcdef, python_func):
         """``call`` with any template arguments bound into a copy of its callee."""
@@ -864,6 +955,8 @@ class _Specializer:
         or a ``@tack.func`` bound where the calling function was defined."""
         func = call.func
         if getattr(func, '_tack_template_call', False):
+            if func.id not in self.resolved_funcs:
+                self._resolve_now(func.id)
             resolved = self.resolved_funcs[func.id]
             return (resolved._funcdef, getattr(resolved, 'func', None),
                     getattr(resolved, 'roots', {}))
@@ -876,6 +969,18 @@ class _Specializer:
             raise TypeError(f"'{ast.unparse(func)}' is given a device-class object, but is "
                             "not a @tack.func or a template's method")
         return callee._funcdef, callee.func, {}
+
+    def _resolve_now(self, name):
+        """Resolve the template method ``name`` before the call that binds into it."""
+        if name in self.resolving or name not in self.unresolved:
+            raise TypeError(f"'{name}' is passed a device-class object from within its own "
+                            "resolution: recursion through templates is not supported")
+        func_obj, node = self.unresolved[name]
+        self.resolving.add(name)
+        try:
+            self.resolved_funcs[name] = _resolve_method(func_obj, name, node, node.extra, self)
+        finally:
+            self.resolving.discard(name)
 
     def _copy(self, key, callee_def, callee_func, bound, params, inherited=None):
         """Make the copy, recorded under ``key`` as ``(name, added)``: its synthetic

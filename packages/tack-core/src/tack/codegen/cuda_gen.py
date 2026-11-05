@@ -121,14 +121,17 @@ class CUDACodeGen(CFamilyCodeGen):
     _opaque_negation = False
     # ptxas before 13.3 mis-widens PTX neg.s16/abs.s16; see IntegerCodeGen.
     _ptx_negation = True
-    # NVRTC's --fmad=true fuses a multiply into an add anywhere, across
-    # statements too: `p = a * b; q = p + c` became one fma, p never rounded,
-    # which the language contract forbids (fusion stays inside one
-    # expression; a value bound to a name is rounded once). So a floating
-    # product that is not an operand of a + or - is __fmul_rn/__dmul_rn,
-    # which NVRTC never fuses; a + or - keeps its products plain, fusable as
-    # the contract permits. HIP limits contraction itself (-ffp-contract=on) and OpenCL
-    # contracts per expression, so both keep plain products.
+    # Tack, not NVRTC, chooses where a multiply fuses into an add. With
+    # --fmad=true NVRTC fused wherever it saw fit, across statements too
+    # (`p = a * b; q = p + c` became one fma, p never rounded, which the
+    # language contract forbids), and differently in two inlined copies of one
+    # function, depending on the code around them: two kernels sharing a
+    # computation could disagree in the last bit. So NVRTC runs with
+    # --fmad=false, a + or - with a product operand is an explicit
+    # __fmaf_rn/__fma_rn (the left product when both are), and every other
+    # floating product is __fmul_rn/__dmul_rn. HIP limits contraction itself
+    # (-ffp-contract=on) and OpenCL contracts per expression, so both keep
+    # plain products.
     _rounded_products = True
 
     def __init__(self, ir_func: ir.IRFunction):
@@ -139,8 +142,6 @@ class CUDACodeGen(CFamilyCodeGen):
         self._array_params: set[str] = set()
         self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
         self._declared_vars: set[str] = set()  # vars already emitted with declaration
-        # Products an enclosing + or - may fuse with (by node identity).
-        self._fusable: set[int] = set()
         self._loop_end_name: str | None = None
         self._atomic64 = set()
         self._needs_float_atomic_min = False
@@ -646,9 +647,9 @@ class CUDACodeGen(CFamilyCodeGen):
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         dtype = getattr(node, 'dtype', None)
         if self._rounded_products and node.op in ('+', '-') and dtype in (f32, f64):
-            for operand in (node.left, node.right):
-                if isinstance(operand, ir.IRBinOp) and operand.op == '*':
-                    self._fusable.add(id(operand))
+            fused = self._fused(node, dtype)
+            if fused is not None:
+                return fused
         left = self._expr(node.left)
         right = self._expr(node.right)
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
@@ -679,12 +680,37 @@ class CUDACodeGen(CFamilyCodeGen):
         if node.op == "//":
             # Legacy unannotated integer IR; normal dispatch is fully typed.
             return f"({left} / {right})"
-        if (node.op == '*' and dtype in (f32, f64) and self._rounded_products
-                and id(node) not in self._fusable):
+        if node.op == '*' and dtype in (f32, f64) and self._rounded_products:
             return f"{'__fmul_rn' if dtype is f32 else '__dmul_rn'}({left}, {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"CUDA binop: {node.op}")
+
+    def _fused(self, node, dtype):
+        """``a * b + c``, ``a * b - c``, ``c + a * b`` or ``c - a * b`` as one
+        explicit fused multiply-add, or None when neither operand is a product
+        of this precision."""
+        def product(operand):
+            return (isinstance(operand, ir.IRBinOp) and operand.op == '*'
+                    and getattr(operand, 'dtype', None) is dtype)
+
+        if product(node.left):
+            mul, other, negate_mul = node.left, node.right, False
+        elif product(node.right):
+            mul, other, negate_mul = node.right, node.left, node.op == '-'
+        else:
+            return None
+
+        def operand(expr):
+            return self._integers.convert(self._expr(expr), getattr(expr, 'dtype', None), dtype)
+
+        a, b, c = operand(mul.left), operand(mul.right), operand(other)
+        if negate_mul:
+            a = f"(-{a})"
+        elif node.op == '-':
+            c = f"(-{c})"
+        name = '__fmaf_rn' if dtype is f32 else '__fma_rn'
+        return f"{name}({a}, {b}, {c})"
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
