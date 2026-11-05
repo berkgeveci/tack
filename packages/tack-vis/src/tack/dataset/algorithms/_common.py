@@ -175,6 +175,13 @@ def _field(data, field):
     return field
 
 
+def _stored_field(data, field):
+    """``_field``, read as stored values (its space's ``stored``): for an algorithm
+    that reduces a field's values rather than reading it through its view."""
+    field = _field(data, field)
+    return field.space.stored(field, data)
+
+
 def _with_basis(data, field):
     """Values on points or cells read as the space they are: order-1 ``H1`` and
     ``Constant``, so every algorithm that takes a field with a basis takes them

@@ -206,7 +206,12 @@ def quadrature(shape, n):
 
 
 def _order(space):
-    """The polynomial order a space's values carry along an axis."""
+    """The polynomial order a space's values carry along an axis: an evaluated
+    space's ``integration_order``."""
+    if space.evaluated:
+        if space.integration_order is None:
+            raise TypeError(f"integrate needs {space!r} to give its integration_order")
+        return int(space.integration_order)
     if isinstance(space, (Constant, Values)):
         return 0 if isinstance(space, Constant) or space.on == "cells" else 1
     return max(int(getattr(space, "order", 1)), 0)
@@ -328,6 +333,8 @@ def _piece(data, names):
         field = _field(data, field)
         field_units[name] = field.unit
         if not getattr(data.topology, "reference_cells", True):
+            field = field.space.stored(field, data)
+        if not getattr(data.topology, "reference_cells", True):
             space = _with_basis(data, field).space
             if _on_points(space):
                 per_cell = _top_cells(data, _no_reference_values(data, field))
@@ -366,7 +373,10 @@ def integrate(data, fields=None):
     its own map (``quadrature``: collapsed onto simplices and wedges), with enough
     points for the field's order and the geometry's, so a curved geometry and a
     field of any order (``H1``, ``L2``, point and cell data) integrate exactly, to
-    rounding. Polyhedra, polygons and polylines take their measure from
+    rounding. An evaluated field (an expression's) is integrated through its view
+    in the same way, with points for its space's ``integration_order``: exact where
+    the field is a polynomial of that order, a quadrature approximation where it
+    is not. Polyhedra, polygons and polylines take their measure from
     ``cell_geometry`` and integrate cell data and point data, which is linear on
     their pieces (sub-tetrahedra, triangles, segments), exactly. Only the cells of the mesh's dimension count, as in VTK: a volume's
     integrals leave out its surfaces, lines and vertices. Only owned cells count
@@ -408,7 +418,7 @@ def _names(data, fields):
     gives the field is resolved once a piece, where it is integrated."""
     if fields is None:
         return [(name, name) for name, field in data.fields.items()
-                if isinstance(field.space, (H1, L2, Constant))
+                if isinstance(field.space, (H1, L2, Constant)) or field.space.evaluated
                 or (isinstance(field.space, Values) and field.space.on in ("points", "cells"))]
     if hasattr(fields, "items"):
         names = list(fields.items())

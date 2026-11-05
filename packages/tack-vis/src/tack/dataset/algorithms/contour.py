@@ -461,8 +461,8 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
     is placed on an edge to a missing value.
 
     With ``merge_points``, triangles share their points: by global edge when
-    the field and the geometry are both continuous, so the surface is
-    watertight; otherwise only within each cell, so a DG field's surface
+    the field and the geometry are both continuous (an ``H1`` field, or one of a
+    space that declares itself ``continuous``), so the surface is watertight; otherwise only within each cell, so a DG field's surface
     keeps its jumps and an ``L2`` geometry's its gaps. ``H1`` fields carry
     onto the surface's points, interpolated along the same edges; cell
     fields (``Constant``, values on cells) onto its triangles, from the cell
@@ -520,7 +520,7 @@ def contour(data, field, value, merge_points=True, fields=None, dimension=None,
     space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"contour needs a field with a basis on the cells, not {space!r}")
-    per_cell = 0 if isinstance(space, H1) and isinstance(data.geometry.space, H1) else 1
+    per_cell = 0 if space.continuous and isinstance(data.geometry.space, H1) else 1
     groups = [g for g in data.launch_groups("cells", [field])
               if g.count and g.shape.CONTOUR_TRIANGLES]
     n_cells = data.num_cells

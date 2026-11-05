@@ -737,6 +737,20 @@ class Fields(MutableMapping):
         return f"Fields({{{', '.join(f'{k!r}: {f.space!r}' for k, f in self.items())}}})"
 
 
+def _with_stored_values(data):
+    """``data`` with each evaluated field replaced by its stored values (its space's
+    ``stored``), for writers, which take arrays; ``data`` itself when it has none."""
+    entries = data.fields.entries()
+    if not any(f.space.evaluated for _, f in entries):
+        return data
+    import copy
+
+    out = copy.copy(data)
+    out.fields = [(name, f.space.stored(f, data) if f.space.evaluated else f)
+                  for name, f in entries]
+    return out
+
+
 class DataSet:
     """A topology, a geometry, named fields and named sets. The geometry is a
     ``Field`` in ``H1`` or ``L2`` of 3-vectors -- or positions per point (a host
